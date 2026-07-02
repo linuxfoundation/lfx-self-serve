@@ -46,13 +46,15 @@
               A personal &#64;{{ domain() }} address forwards email to any inbox you choose. The Lifetime Linux.com Email Alias is a one-time add-on for
               Individual Supporters.
             </p>
-            <lfx-button
-              label="Purchase Email"
-              icon="fa-light fa-cart-shopping"
-              severity="info"
-              size="small"
-              (onClick)="purchase()"
-              data-testid="linux-email-purchase-button"></lfx-button>
+            @if (!impersonating()) {
+              <lfx-button
+                label="Purchase Email"
+                icon="fa-light fa-cart-shopping"
+                severity="info"
+                size="small"
+                (onClick)="purchase()"
+                data-testid="linux-email-purchase-button"></lfx-button>
+            }
           </div>
         </lfx-card>
       }
@@ -120,15 +122,17 @@
                 }
               </div>
 
-              <lfx-button
-                type="submit"
-                label="Claim alias"
-                icon="fa-light fa-check"
-                severity="info"
-                size="small"
-                [disabled]="claimForm.invalid || claiming()"
-                [loading]="claiming()"
-                data-testid="linux-email-claim-button"></lfx-button>
+              @if (!impersonating()) {
+                <lfx-button
+                  type="submit"
+                  label="Claim alias"
+                  icon="fa-light fa-check"
+                  severity="info"
+                  size="small"
+                  [disabled]="claimForm.invalid || claiming()"
+                  [loading]="claiming()"
+                  data-testid="linux-email-claim-button"></lfx-button>
+              }
             </form>
           </div>
         </lfx-card>
@@ -173,7 +177,7 @@
               @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
                 <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
               }
-              @if (forwardDirty()) {
+              @if (forwardDirty() && !impersonating()) {
                 <lfx-button
                   type="submit"
                   label="Save"

@@ -29,6 +29,8 @@ export class ProfileWorkExperienceComponent {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — work-experience mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
 
   public readonly hideHeader = input(false);
   public readonly workExperienceChanged = output<void>();

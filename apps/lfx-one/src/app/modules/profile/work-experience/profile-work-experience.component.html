@@ -21,13 +21,15 @@
           <p class="text-base font-medium text-slate-700">No work experience added</p>
           <p class="max-w-sm text-sm text-slate-500">Add your employment history to improve the accuracy of your project affiliations.</p>
         </div>
-        <lfx-button
-          label="Add work experience"
-          icon="fa-light fa-plus"
-          severity="primary"
-          size="small"
-          (onClick)="onAdd()"
-          data-testid="add-work-experience-empty-btn" />
+        @if (!impersonating()) {
+          <lfx-button
+            label="Add work experience"
+            icon="fa-light fa-plus"
+            severity="primary"
+            size="small"
+            (onClick)="onAdd()"
+            data-testid="add-work-experience-empty-btn" />
+        }
       </div>
     </lfx-card>
   } @else {
@@ -46,7 +48,7 @@
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Job Title</th>
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Dates</th>
             <th class="px-5 py-3 text-right">
-              @if (!hideHeader()) {
+              @if (!hideHeader() && !impersonating()) {
                 <lfx-button
                   label="Add Work Experience"
                   icon="fa-light fa-plus"
@@ -101,19 +103,21 @@
               <span class="text-sm text-slate-500">{{ item.startDate }} – {{ item.endDate || 'Present' }}</span>
             </td>
 
-            <!-- Actions -->
+            <!-- Actions (hidden while impersonating — edits act on the real account) -->
             <td class="px-5 py-3.5 text-right">
-              <div class="relative inline-block">
-                <lfx-button
-                  icon="fa-solid fa-ellipsis-vertical"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
-                  (onClick)="actionMenu.toggle($event)"
-                  [attr.data-testid]="'work-experience-menu-' + item.id" />
-                <lfx-menu #actionMenu [model]="menuItemsMap().get(item.id) ?? []" [popup]="true" appendTo="body" />
-              </div>
+              @if (!impersonating()) {
+                <div class="relative inline-block">
+                  <lfx-button
+                    icon="fa-solid fa-ellipsis-vertical"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                    (onClick)="actionMenu.toggle($event)"
+                    [attr.data-testid]="'work-experience-menu-' + item.id" />
+                  <lfx-menu #actionMenu [model]="menuItemsMap().get(item.id) ?? []" [popup]="true" appendTo="body" />
+                </div>
+              }
             </td>
           </tr>
         </ng-template>

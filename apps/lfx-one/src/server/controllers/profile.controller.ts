@@ -45,7 +45,7 @@ import { logger } from '../services/logger.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
 import { UserService } from '../services/user.service';
-import { getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
@@ -154,16 +154,29 @@ export class ProfileController {
         });
       }
 
-      // Construct UserProfile from OIDC token data
-      const userProfile: UserProfile = {
-        id: oidcUser['sub'] as string,
-        email: oidcUser['email'] as string,
-        first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
-        last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
-        username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
-        created_at: (oidcUser['created_at'] || new Date().toISOString()) as string,
-        updated_at: (oidcUser['updated_at'] || new Date().toISOString()) as string,
-      };
+      // Construct UserProfile from token data. During impersonation, req.oidc.user is still the
+      // impersonator, so identity/name fields must come from the effective (target) identity and
+      // NATS metadata — never fall back to the impersonator's OIDC claims.
+      const impersonating = isImpersonating(req);
+      const userProfile: UserProfile = impersonating
+        ? {
+            id: (getEffectiveSub(req) || oidcUser['sub']) as string,
+            email: (getEffectiveEmail(req) || '') as string,
+            first_name: (natsUserData?.given_name || null) as string | null,
+            last_name: (natsUserData?.family_name || null) as string | null,
+            username: (getEffectiveUsername(req) || username) as string,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }
+        : {
+            id: oidcUser['sub'] as string,
+            email: oidcUser['email'] as string,
+            first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
+            last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
+            username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
+            created_at: (oidcUser['created_at'] || new Date().toISOString()) as string,
+            updated_at: (oidcUser['updated_at'] || new Date().toISOString()) as string,
+          };
 
       // Build CombinedProfile response
       const combinedProfile: CombinedProfile = {
@@ -360,8 +373,10 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_user_emails');
 
     try {
-      const userSub = req.oidc?.user?.['sub'] as string | undefined;
-      const sessionEmail = req.oidc?.user?.['email'] as string | undefined;
+      // Effective identity — during impersonation these resolve to the target user; auth-service
+      // resolves emails/identities from the raw sub string, so the target's emails are returned.
+      const userSub = getEffectiveSub(req) ?? undefined;
+      const sessionEmail = getEffectiveEmail(req) ?? undefined;
 
       if (!userSub) {
         return next(
@@ -501,7 +516,8 @@ export class ProfileController {
 
     try {
       const domain = getLinuxForwardDomain('get_linux_alias', 'profile_controller');
-      const userSub = req.oidc?.user?.['sub'] as string | undefined;
+      // Effective sub — the target user's alias state during impersonation (read-only).
+      const userSub = getEffectiveSub(req) ?? undefined;
       if (!userSub) {
         return next(
           ServiceValidationError.forField('user_id', 'User authentication required', {
@@ -532,7 +548,9 @@ export class ProfileController {
         // forwards-service requires a Management-API-audience JWT (Flow C token), same as add_alias.
         // Read the current target best-effort: without a management token in session we still report
         // the claimed state from user_emails.read; forwardTo stays null until the user re-authorizes.
-        const managementToken = this.profileAuthService.getManagementToken(req);
+        // During impersonation the only management token available belongs to the impersonator, not
+        // the target — never use it here; report the claimed state read-only with a null forward.
+        const managementToken = isImpersonating(req) ? null : this.profileAuthService.getManagementToken(req);
         const forward = managementToken ? await this.forwardsService.getForward(req, managementToken, domain) : null;
 
         // A claimed alias always has a forward target. If we had a management token but the read
@@ -548,7 +566,9 @@ export class ProfileController {
         // A claimed alias always has a forward target, but reading it needs the Flow C
         // management token. When it's absent (and the flow is configured), tell the client
         // to re-authorize so it can load the real target instead of defaulting to primary.
-        const forwardAuthRequired = !managementToken && this.profileAuthService.isProfileAuthConfigured();
+        // Suppress the re-auth prompt during impersonation — it is a write-path the impersonator
+        // must not trigger against their own session while viewing the target read-only.
+        const forwardAuthRequired = !isImpersonating(req) && !managementToken && this.profileAuthService.isProfileAuthConfigured();
 
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
         res.json({
@@ -733,6 +753,19 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_developer_token_info');
 
     try {
+      // During impersonation, req.bearerToken is the target user's live access token. Never surface
+      // it to the impersonator — suppress the developer-token endpoint entirely (the UI also hides
+      // the tab). This is a read, but the payload is a live credential, so it is treated like a write.
+      if (isImpersonating(req)) {
+        return next(
+          new AuthorizationError('Developer tokens are not available while impersonating', {
+            operation: 'get_developer_token_info',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
       // Get user ID from auth context
       const userId = await getUsernameFromAuth(req);
 
@@ -931,10 +964,11 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // Extract username from sub by removing provider prefix (e.g., "auth0|fghiasy" → "fghiasy")
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
-      const auth0Sub = req.oidc?.user?.['sub'] as string;
+      // Extract username from sub by removing provider prefix (e.g., "auth0|fghiasy" → "fghiasy").
+      // During impersonation these resolve to the target user so CDP/auth-service reads return the
+      // target's identities.
+      const lfid = this.resolveEffectiveLfid(req, sub);
+      const auth0Sub = (isImpersonating(req) ? getEffectiveSub(req) : req.oidc?.user?.['sub']) as string;
 
       // Fetch CDP identities and auth-service identities in parallel
       const [cdpIdentities, auth0Identities] = await Promise.all([
@@ -948,8 +982,10 @@ export class ProfileController {
       });
 
       // Reconcile CDP identities with auth-service identities and filter to the
-      // (platform, type) combos LFX One can surface for verification via Auth0.
-      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid);
+      // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
+      // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
+      // an impersonator must never mutate the target's CDP records.
+      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid, isImpersonating(req));
       const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
 
       logger.success(req, 'get_identities', startTime, {
@@ -986,8 +1022,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
 
@@ -1021,8 +1056,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-      const lfid = (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+      const lfid = this.resolveEffectiveLfid(req, sub);
 
       const affiliations = await this.cdpService.getProjectAffiliationsForUser(req, lfid);
 
@@ -1985,11 +2019,27 @@ export class ProfileController {
    * 4. In CDP but NOT in auth-service, multi-LFID + verifiedBy=lfxOne → HIDDEN
    * 5. In CDP but NOT in auth-service (all other) → UNVERIFIED
    */
+  /**
+   * Resolves the effective LFID for CDP/auth-service reads. During impersonation this is the target
+   * user's username (from the impersonation session); otherwise it mirrors the pre-existing
+   * derivation (OIDC username/preferred_username, falling back to the prefix-stripped sub).
+   */
+  private resolveEffectiveLfid(req: Request, sub: string): string {
+    const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
+    if (isImpersonating(req)) {
+      return (getEffectiveUsername(req) || subUsername) as string;
+    }
+    return (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+  }
+
   private reconcileIdentities(
     req: Request,
     cdpIdentities: CdpIdentity[],
     authServiceIdentities: Auth0Identity[],
-    lfid: string
+    lfid: string,
+    // When true (impersonation), produce the read-only enriched list without any CDP mutation:
+    // no auto-verify, no synthetic-identity creation. The returned identities are unchanged.
+    readOnly: boolean = false
   ): { enriched: EnrichedIdentity[]; cdpPostsQueued: number } {
     // Build a map of "platform:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
@@ -2026,8 +2076,8 @@ export class ProfileController {
 
       // Rule: The logged-in user's own LFID is always verified
       if (cdp.platform === 'lfid' && cdp.value === lfid) {
-        // Auto-verify LFID in CDP if not already verified with their LFID
-        if (!(cdp.verified && cdp.verifiedBy === lfid)) {
+        // Auto-verify LFID in CDP if not already verified with their LFID (skipped when read-only)
+        if (!readOnly && !(cdp.verified && cdp.verifiedBy === lfid)) {
           this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
             logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
               identity_id: cdp.id,
@@ -2039,8 +2089,8 @@ export class ProfileController {
       }
 
       if (inAuthService) {
-        // In both auth-service and CDP — auto-verify if needed
-        if (!(cdp.verified && cdp.verifiedBy === lfid)) {
+        // In both auth-service and CDP — auto-verify if needed (skipped when read-only)
+        if (!readOnly && !(cdp.verified && cdp.verifiedBy === lfid)) {
           this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
             logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
               identity_id: cdp.id,
@@ -2118,7 +2168,9 @@ export class ProfileController {
         cdpPostPlatform === 'custom' &&
         (postedCustomEmails.has(value) || enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid));
 
-      if (!wouldDuplicateCustomEmail) {
+      // Skip the CDP create entirely when read-only (impersonation) — the synthetic display entry
+      // below is still produced, so the impersonator sees the identity without any CDP mutation.
+      if (!readOnly && !wouldDuplicateCustomEmail) {
         cdpPostsQueued++;
         if (cdpPostPlatform === 'custom') {
           postedCustomEmails.add(value);

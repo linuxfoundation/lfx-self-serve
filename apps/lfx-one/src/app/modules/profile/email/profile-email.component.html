@@ -61,9 +61,9 @@
                     </div>
                   </div>
 
-                  <!-- Action Buttons -->
+                  <!-- Action Buttons (hidden while impersonating — email edits act on the real account) -->
                   <div class="flex items-center gap-2 ml-3 shrink-0">
-                    @if (emailItem.canSetPrimary) {
+                    @if (emailItem.canSetPrimary && !impersonating()) {
                       <lfx-button
                         size="small"
                         label="Make Primary"
@@ -73,7 +73,7 @@
                         [attr.data-testid]="'set-primary-' + emailItem.email">
                       </lfx-button>
                     }
-                    @if (emailItem.canDelete) {
+                    @if (emailItem.canDelete && !impersonating()) {
                       <lfx-button
                         size="small"
                         icon="fa-light fa-trash"
@@ -91,91 +91,93 @@
             <p class="text-sm text-gray-500 text-center py-4" data-testid="no-emails-message">No email addresses found.</p>
           }
 
-          <!-- Add Email Section (OTP Flow) -->
-          <div class="mt-4 pt-4 border-t border-gray-200">
-            @if (!otpStep()) {
-              <!-- Step 1: Enter email -->
-              <label class="block text-sm font-medium text-gray-700 mb-1">Add New Email Address</label>
-              <form [formGroup]="addEmailForm" (ngSubmit)="sendVerificationCode()" class="flex gap-3" data-testid="add-email-form">
-                <div class="flex-1">
-                  <lfx-input-text
-                    control="email"
-                    [form]="addEmailForm"
-                    placeholder="Enter email address"
-                    type="email"
-                    size="small"
-                    styleClass="w-full"
-                    data-testid="add-email-input">
-                  </lfx-input-text>
-                  @if (addEmailForm.get('email')?.invalid && addEmailForm.get('email')?.touched) {
-                    <div class="text-red-600 text-xs mt-1" data-testid="add-email-error">Please enter a valid email address</div>
-                  }
-                </div>
-                <lfx-button
-                  size="small"
-                  type="submit"
-                  label="Send Code"
-                  icon="fa-light fa-envelope"
-                  severity="info"
-                  [disabled]="addEmailForm.invalid || sendingCode()"
-                  [loading]="sendingCode()"
-                  data-testid="send-code-button">
-                </lfx-button>
-              </form>
-              <p class="text-xs text-gray-500 mt-1">A 6-digit verification code will be sent to the new address</p>
-            } @else {
-              <!-- Step 2: Enter OTP -->
-              <div class="flex flex-col gap-3" data-testid="otp-step">
-                <div>
-                  <p class="text-sm font-medium text-gray-700">Enter verification code</p>
-                  <p class="text-xs text-gray-500 mt-0.5">
-                    A 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
-                    >. Enter it below to verify and add the address.
-                  </p>
-                </div>
-                <form [formGroup]="otpForm" (ngSubmit)="verifyAndLink()" class="flex gap-3" data-testid="otp-form">
+          <!-- Add Email Section (OTP Flow) — hidden while impersonating -->
+          @if (!impersonating()) {
+            <div class="mt-4 pt-4 border-t border-gray-200">
+              @if (!otpStep()) {
+                <!-- Step 1: Enter email -->
+                <label class="block text-sm font-medium text-gray-700 mb-1">Add New Email Address</label>
+                <form [formGroup]="addEmailForm" (ngSubmit)="sendVerificationCode()" class="flex gap-3" data-testid="add-email-form">
                   <div class="flex-1">
                     <lfx-input-text
-                      control="otp"
-                      [form]="otpForm"
-                      placeholder="Enter 6-digit code"
-                      type="text"
+                      control="email"
+                      [form]="addEmailForm"
+                      placeholder="Enter email address"
+                      type="email"
                       size="small"
                       styleClass="w-full"
-                      data-testid="otp-input">
+                      data-testid="add-email-input">
                     </lfx-input-text>
+                    @if (addEmailForm.get('email')?.invalid && addEmailForm.get('email')?.touched) {
+                      <div class="text-red-600 text-xs mt-1" data-testid="add-email-error">Please enter a valid email address</div>
+                    }
                   </div>
                   <lfx-button
                     size="small"
                     type="submit"
-                    label="Verify"
-                    icon="fa-light fa-check"
+                    label="Send Code"
+                    icon="fa-light fa-envelope"
                     severity="info"
-                    [disabled]="otpForm.invalid || verifyingOtp()"
-                    [loading]="verifyingOtp()"
-                    data-testid="verify-otp-button">
-                  </lfx-button>
-                  <lfx-button
-                    size="small"
-                    type="button"
-                    label="Cancel"
-                    severity="secondary"
-                    variant="outlined"
-                    (onClick)="cancelOtpStep()"
-                    data-testid="cancel-otp-button">
+                    [disabled]="addEmailForm.invalid || sendingCode()"
+                    [loading]="sendingCode()"
+                    data-testid="send-code-button">
                   </lfx-button>
                 </form>
-                <button
-                  type="button"
-                  class="text-xs text-blue-500 hover:underline self-start"
-                  [disabled]="sendingCode()"
-                  (click)="sendVerificationCode()"
-                  data-testid="resend-code-link">
-                  {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}
-                </button>
-              </div>
-            }
-          </div>
+                <p class="text-xs text-gray-500 mt-1">A 6-digit verification code will be sent to the new address</p>
+              } @else {
+                <!-- Step 2: Enter OTP -->
+                <div class="flex flex-col gap-3" data-testid="otp-step">
+                  <div>
+                    <p class="text-sm font-medium text-gray-700">Enter verification code</p>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                      A 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
+                      >. Enter it below to verify and add the address.
+                    </p>
+                  </div>
+                  <form [formGroup]="otpForm" (ngSubmit)="verifyAndLink()" class="flex gap-3" data-testid="otp-form">
+                    <div class="flex-1">
+                      <lfx-input-text
+                        control="otp"
+                        [form]="otpForm"
+                        placeholder="Enter 6-digit code"
+                        type="text"
+                        size="small"
+                        styleClass="w-full"
+                        data-testid="otp-input">
+                      </lfx-input-text>
+                    </div>
+                    <lfx-button
+                      size="small"
+                      type="submit"
+                      label="Verify"
+                      icon="fa-light fa-check"
+                      severity="info"
+                      [disabled]="otpForm.invalid || verifyingOtp()"
+                      [loading]="verifyingOtp()"
+                      data-testid="verify-otp-button">
+                    </lfx-button>
+                    <lfx-button
+                      size="small"
+                      type="button"
+                      label="Cancel"
+                      severity="secondary"
+                      variant="outlined"
+                      (onClick)="cancelOtpStep()"
+                      data-testid="cancel-otp-button">
+                    </lfx-button>
+                  </form>
+                  <button
+                    type="button"
+                    class="text-xs text-blue-500 hover:underline self-start"
+                    [disabled]="sendingCode()"
+                    (click)="sendVerificationCode()"
+                    data-testid="resend-code-link">
+                    {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}
+                  </button>
+                </div>
+              }
+            </div>
+          }
         </div>
       </div>
     </lfx-card>
