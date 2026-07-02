@@ -24,7 +24,7 @@ import {
   ORG_MEETINGS_TYPE_OPTIONS,
   VALID_ORG_MEETINGS_TAB_IDS,
 } from '@lfx-one/shared/constants';
-import type { FilterOption, OrgMeeting, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
+import type { FilterOption, OrgMeeting, OrgMeetingBase, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
 
 import { OrgUpcomingMeetingsComponent } from './components/org-upcoming-meetings/org-upcoming-meetings.component';
 import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-past-meetings.component';
@@ -156,31 +156,24 @@ export class OrgMeetingsComponent {
 
   private initFilteredUpcoming(): Signal<readonly OrgMeeting[]> {
     return computed(() => {
-      const search = this.filterSearch().toLowerCase();
-      const type = this.filterType();
-      const project = this.filterProject();
       const pendingRsvpOnly = this.pendingRsvpOnly();
-      return this.upcomingMeetings().filter((m) => {
-        const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
-        const matchesType = !type || m.type === type;
-        const matchesProject = !project || m.project === project;
-        const matchesPendingRsvp = !pendingRsvpOnly || m.orgInvitees.some((invitee) => invitee.rsvpStatus === null);
-        return matchesSearch && matchesType && matchesProject && matchesPendingRsvp;
-      });
+      return this.upcomingMeetings()
+        .filter((m) => this.matchesFilters(m))
+        .filter((m) => !pendingRsvpOnly || m.orgInvitees.some((invitee) => invitee.rsvpStatus === null));
     });
   }
 
   private initFilteredPast(): Signal<readonly OrgPastMeeting[]> {
-    return computed(() => {
-      const search = this.filterSearch().toLowerCase();
-      const type = this.filterType();
-      const project = this.filterProject();
-      return this.pastMeetings().filter((m) => {
-        const matchesSearch = !search || m.title.toLowerCase().includes(search) || (m.agenda ?? '').toLowerCase().includes(search);
-        const matchesType = !type || m.type === type;
-        const matchesProject = !project || m.project === project;
-        return matchesSearch && matchesType && matchesProject;
-      });
-    });
+    return computed(() => this.pastMeetings().filter((m) => this.matchesFilters(m)));
+  }
+
+  private matchesFilters(meeting: OrgMeetingBase): boolean {
+    const search = this.filterSearch().toLowerCase();
+    const type = this.filterType();
+    const project = this.filterProject();
+    const matchesSearch = !search || meeting.title.toLowerCase().includes(search) || (meeting.agenda ?? '').toLowerCase().includes(search);
+    const matchesType = !type || meeting.type === type;
+    const matchesProject = !project || meeting.project === project;
+    return matchesSearch && matchesType && matchesProject;
   }
 }

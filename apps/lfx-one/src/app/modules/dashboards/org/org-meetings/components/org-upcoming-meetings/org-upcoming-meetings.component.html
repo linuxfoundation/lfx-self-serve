@@ -81,24 +81,25 @@
 
         <!-- ── Agenda with Show more/less ── -->
         @if (meeting.agenda) {
+          @let expanded = expandedIds().has(meeting.id);
           <div class="flex flex-col gap-1">
-            <p [attr.id]="'org-upcoming-meeting-agenda-' + meeting.id" class="text-sm text-gray-700" [class.line-clamp-3]="!isExpanded(meeting.id)">
+            <p [attr.id]="'org-upcoming-meeting-agenda-' + meeting.id" class="text-sm text-gray-700" [class.line-clamp-3]="!expanded">
               {{ meeting.agenda }}
             </p>
             <button
               type="button"
               class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 rounded w-fit"
-              [attr.aria-expanded]="isExpanded(meeting.id)"
+              [attr.aria-expanded]="expanded"
               [attr.aria-controls]="'org-upcoming-meeting-agenda-' + meeting.id"
               (click)="toggleExpand(meeting.id)">
-              <i [class]="isExpanded(meeting.id) ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'" aria-hidden="true"></i>
-              {{ isExpanded(meeting.id) ? 'Show less' : 'Show more' }}
+              <i [class]="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'" aria-hidden="true"></i>
+              {{ expanded ? 'Show less' : 'Show more' }}
             </button>
           </div>
         }
 
         <!-- ── Two-column: Resources | People Invited or Register ── -->
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <!-- LEFT: Resources -->
           <div class="flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
             <p class="flex items-center gap-1.5 text-sm font-medium text-gray-500"><i class="fa-light fa-paperclip" aria-hidden="true"></i> Resources</p>

@@ -25,11 +25,7 @@ export class OrgUpcomingMeetingsComponent {
   public readonly meetings = input.required<readonly OrgMeeting[]>();
   public readonly loading = input<boolean>(false);
 
-  private readonly expandedIds = signal<ReadonlySet<string>>(new Set());
-
-  protected isExpanded(id: string): boolean {
-    return this.expandedIds().has(id);
-  }
+  protected readonly expandedIds = signal<ReadonlySet<string>>(new Set());
 
   protected toggleExpand(id: string): void {
     this.expandedIds.update((prev) => {
