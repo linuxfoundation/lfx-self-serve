@@ -167,8 +167,10 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            // Source the target's real timestamps from NATS metadata; fall back to '' (explicit
+            // "unknown") rather than a fabricated current time that would change every request.
+            created_at: (natsUserData?.created_at || '') as string,
+            updated_at: (natsUserData?.updated_at || '') as string,
           }
         : {
             id: oidcUser['sub'] as string,
