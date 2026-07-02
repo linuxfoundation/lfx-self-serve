@@ -1,10 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Single source of truth for reward categories. The union type below is derived
-// from this tuple, and `RewardPromotionGroups` keys off the union — adding a
-// new category requires editing only this array.
-export const REWARD_CATEGORIES = ['Event', 'Training', 'Certification'] as const;
+import type { REWARD_CATEGORIES } from '../constants/rewards.constants';
 
 export type RewardPromotionCategory = (typeof REWARD_CATEGORIES)[number];
 

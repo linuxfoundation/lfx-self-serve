@@ -359,3 +359,5 @@ export interface InitiativeMenuItem {
   danger?: boolean;
   command?: (event: unknown) => void;
 }
+
+export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
