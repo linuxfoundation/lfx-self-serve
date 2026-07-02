@@ -251,7 +251,7 @@
         <!-- Invite-only groups: informational only — visitors must wait for an invitation -->
         <div class="rounded-xl bg-gray-50 border border-gray-200 p-6 text-center" role="status" data-testid="committee-overview-invite-only-notice">
           <div class="flex flex-col gap-3 items-center">
-            <i class="fa-light fa-envelope-open-text text-2xl text-gray-500"></i>
+            <i class="fa-light fa-envelope-open-text text-2xl text-gray-500" aria-hidden="true"></i>
             <h3 class="text-base font-semibold text-gray-900">{{ inviteOnlyTitle() }}</h3>
             <p class="text-sm text-gray-600 max-w-md">{{ inviteOnlyDescription() }}</p>
           </div>
