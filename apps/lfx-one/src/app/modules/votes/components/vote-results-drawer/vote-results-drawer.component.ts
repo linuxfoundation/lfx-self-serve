@@ -416,12 +416,12 @@ export class VoteResultsDrawerComponent {
 
   private initVoteEndedEarlyTooltip(): Signal<string | null> {
     return computed(() => {
-      const voteData = this.vote();
-      if (!voteData || !isVoteEndedEarly(voteData) || !voteData.early_end_time) {
+      const vote = this.vote();
+      if (!vote || !isVoteEndedEarly(vote)) {
         return null;
       }
 
-      const formattedEarlyClose = formatDate(voteData.early_end_time, 'MMM d, y', 'en-US');
+      const formattedEarlyClose = formatDate(vote.early_end_time!, 'MMM d, y', 'en-US');
       return getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
     });
   }
