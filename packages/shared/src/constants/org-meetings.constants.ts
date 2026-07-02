@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FilterOption, OrgMeeting, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting } from '../interfaces';
+import type { FilterOption, OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting } from '../interfaces';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
@@ -29,6 +29,16 @@ export const ORG_MEETINGS_KPI_PAST_COUNT = 15;
 
 /** KPI: recordings available from past 30 days (demo). */
 export const ORG_MEETINGS_KPI_RECORDINGS_COUNT = 3;
+
+/** RSVP badge label/style per status, for the Org Meetings upcoming invitee list. */
+export const ORG_MEETINGS_RSVP_BADGES: Record<Exclude<OrgMeetingRsvpStatus, null>, { label: string; badgeClass: string }> = {
+  yes: { label: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-600' },
+  maybe: { label: 'Tentative', badgeClass: 'bg-amber-50 text-amber-600' },
+  no: { label: 'Declined', badgeClass: 'bg-red-50 text-red-600' },
+};
+
+/** RSVP badge shown when an invitee has not responded. */
+export const ORG_MEETINGS_NO_RESPONSE_BADGE = { label: 'No Response', badgeClass: 'bg-gray-100 text-gray-500' };
 
 /** Project filter options for the Org Meetings filter bar. */
 export const ORG_MEETINGS_PROJECT_OPTIONS: FilterOption[] = [

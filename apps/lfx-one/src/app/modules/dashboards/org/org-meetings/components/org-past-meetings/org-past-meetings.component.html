@@ -103,7 +103,9 @@
           <div class="flex items-start">
             <button
               type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              disabled
+              aria-disabled="true"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
               [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
               <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
             </button>
@@ -116,7 +118,9 @@
     <div class="flex justify-center py-4">
       <button
         type="button"
-        class="text-sm text-blue-600 hover:text-blue-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+        disabled
+        aria-disabled="true"
+        class="text-sm text-gray-400 font-medium cursor-not-allowed"
         data-testid="org-past-meetings-show-more">
         <i class="fa-light fa-chevron-down mr-1" aria-hidden="true"></i> Load older meetings
       </button>

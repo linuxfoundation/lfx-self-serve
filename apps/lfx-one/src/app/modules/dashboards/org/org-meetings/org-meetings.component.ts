@@ -14,11 +14,9 @@ import {
   DEFAULT_ORG_MEETINGS_TAB_ID,
   DEMO_PAST_MEETINGS,
   DEMO_UPCOMING_MEETINGS,
-  ORG_MEETINGS_KPI_PAST_COUNT,
   ORG_MEETINGS_KPI_RECORDINGS_COUNT,
   ORG_MEETINGS_KPI_RECURRING_COUNT,
   ORG_MEETINGS_KPI_RECURRING_PROJECTS,
-  ORG_MEETINGS_KPI_UPCOMING_COUNT,
   ORG_MEETINGS_PROJECT_OPTIONS,
   ORG_MEETINGS_TABS,
   ORG_MEETINGS_TYPE_OPTIONS,
@@ -70,6 +68,9 @@ export class OrgMeetingsComponent {
   // === Protected methods ===
   protected switchTab(tabId: OrgMeetingsTabId): void {
     if (tabId === this.activeTab()) return;
+    if (tabId !== 'upcoming') {
+      this.pendingRsvpOnly.set(false);
+    }
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: tabId === DEFAULT_ORG_MEETINGS_TAB_ID ? null : tabId },
@@ -100,7 +101,7 @@ export class OrgMeetingsComponent {
       if (this.activeTab() === 'past') {
         return [
           {
-            value: String(ORG_MEETINGS_KPI_PAST_COUNT),
+            value: String(this.filteredPast().length),
             label: 'Past Meetings',
             icon: 'fa-light fa-clock-rotate-left',
             iconContainerClass: 'bg-gray-200 text-gray-500',
@@ -116,7 +117,7 @@ export class OrgMeetingsComponent {
       const nextDate = this.nextUpcomingMeetingDate();
       return [
         {
-          value: String(ORG_MEETINGS_KPI_UPCOMING_COUNT),
+          value: String(this.filteredUpcoming().length),
           label: 'Upcoming Meetings',
           subLine: nextDate ? `Next: ${nextDate}` : undefined,
           icon: 'fa-light fa-calendar',

@@ -5,16 +5,9 @@ import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
+import { ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingRsvpTally } from '@lfx-one/shared/interfaces';
 import { toAbsoluteUrl } from '@lfx-one/shared/utils';
-
-const RSVP_BADGES: Record<Exclude<OrgMeetingRsvpStatus, null>, { label: string; badgeClass: string }> = {
-  yes: { label: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-600' },
-  maybe: { label: 'Tentative', badgeClass: 'bg-amber-50 text-amber-600' },
-  no: { label: 'Declined', badgeClass: 'bg-red-50 text-red-600' },
-};
-
-const NO_RESPONSE_BADGE = { label: 'No Response', badgeClass: 'bg-gray-100 text-gray-500' };
 
 @Component({
   selector: 'lfx-org-upcoming-meetings',
@@ -60,6 +53,6 @@ export class OrgUpcomingMeetingsComponent {
   }
 
   protected rsvpBadge(status: OrgMeetingRsvpStatus): { label: string; badgeClass: string } {
-    return status ? RSVP_BADGES[status] : NO_RESPONSE_BADGE;
+    return status ? ORG_MEETINGS_RSVP_BADGES[status] : ORG_MEETINGS_NO_RESPONSE_BADGE;
   }
 }
