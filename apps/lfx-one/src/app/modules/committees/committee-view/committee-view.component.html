@@ -175,7 +175,7 @@
                     [loading]="joiningOrLeaving()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-request-to-join-btn" />
-                } @else if (committee()?.join_mode !== 'invite_only') {
+                } @else if (committee()?.join_mode === 'closed') {
                   <lfx-button
                     label="Contact Admin"
                     icon="fa-light fa-envelope"

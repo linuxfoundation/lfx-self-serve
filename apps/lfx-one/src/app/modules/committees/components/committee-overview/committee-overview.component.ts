@@ -136,7 +136,10 @@ export class CommitteeOverviewComponent {
     return this.isVisitor() && (mode === 'open' || mode === 'application') && !this.hasPendingInvite();
   });
 
-  public showInviteOnlyNotice: Signal<boolean> = computed(() => this.isVisitor() && this.committee().join_mode === 'invite_only' && !this.hasPendingInvite());
+  public showInviteOnlyNotice: Signal<boolean> = computed(() => {
+    const mode = this.committee().join_mode;
+    return this.isVisitor() && (mode === 'invite_only' || !mode) && !this.hasPendingInvite();
+  });
 
   public joinButtonLabel: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
