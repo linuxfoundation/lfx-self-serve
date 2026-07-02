@@ -39,7 +39,6 @@ export class LensSwitcherComponent {
   /** Render the vertical lens buttons in the rail. Every current caller (main layout desktop + mobile, docs shell) passes `false` since lenses live in the sidebar tabs; the `true` default is only a standalone-reuse fallback. */
   public readonly showLensButtons = input<boolean>(true);
 
-  protected readonly activeLens = this.lensService.activeLens;
   protected readonly lenses = this.lensService.displayLenses;
   // Hybrid personas merge the 'project' button with the 'foundation' lens state — both map to 'project' for highlighting.
   protected readonly activeLensId = this.lensService.displayActiveLens;

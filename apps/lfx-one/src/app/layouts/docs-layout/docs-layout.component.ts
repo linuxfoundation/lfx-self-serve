@@ -54,7 +54,7 @@ export class DocsLayoutComponent {
 
   protected readonly isAuthenticated = computed(() => this.userService.authenticated());
 
-  // Shared lens nav — rendered faded in the docs shell so the user can return to their last lens.
+  // Shared lens nav — the previously-active lens tab stays selected in the docs shell (no menu item is active on a /docs route) so the user can return to their last lens.
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
 

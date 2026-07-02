@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
 
@@ -10,6 +10,7 @@ import { LensService } from '@services/lens.service';
   selector: 'lfx-lens-tabs',
   imports: [NgClass],
   templateUrl: './lens-tabs.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LensTabsComponent {
   private readonly lensService = inject(LensService);
