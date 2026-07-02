@@ -7,6 +7,7 @@ import {
   CDP_PLATFORM_ICONS,
   CDP_PLATFORM_TO_TYPE_MAP,
   CDP_TO_AUTH0_PROVIDER_MAP,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
@@ -30,6 +31,7 @@ import {
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
+import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -1685,7 +1687,7 @@ export class ProfileController {
       const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, tokenResponse.id_token);
 
       if (!linkResponse.success) {
-        const isAlreadyLinked = linkResponse.error?.includes('already') || linkResponse.message?.includes('already');
+        const isAlreadyLinked = isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message);
         logger.error(req, 'social_auth_callback', startTime, new Error('Identity link failed'), {
           error: linkResponse.error,
           message: linkResponse.message,
@@ -1791,17 +1793,20 @@ export class ProfileController {
           message: response.message,
         });
 
-        if (response.error?.includes('already linked')) {
+        if (isIdentityAlreadyLinkedError(response.error, response.message)) {
           // Upstream auth-service emits the "already linked" error without identifying the
           // owning account, so resolve it here via EMAIL_TO_USERNAME → EMAIL_TO_SUB lookups.
+          // The resolved account is logged for support/debugging only — never returned to the
+          // client, so we don't expose another user's LFID.
           const linkedTo =
             (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
 
-          const message = linkedTo
-            ? `This email is already linked to account: ${linkedTo}`
-            : response.message || 'This email is already linked to another account';
+          logger.warning(req, 'send_email_verification', 'Email already linked to another account', {
+            email,
+            linked_to: linkedTo,
+          });
 
-          res.status(409).json({ success: false, error: response.error, message, linkedTo });
+          res.status(409).json({ success: false, error: response.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });
         } else {
@@ -1917,8 +1922,18 @@ export class ProfileController {
       const linkResponse = await this.emailVerificationService.linkIdentity(req, authToken, identityToken);
 
       if (!linkResponse.success) {
-        if (linkResponse.error?.includes('already linked')) {
-          res.status(409).json({ success: false, error: linkResponse.error, message: linkResponse.message });
+        if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
+          // Resolve the owning account for support/debugging only — never returned to the client.
+          const linkedTo =
+            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
+
+          logger.warning(req, 'verify_and_link_email', 'Email already linked to another account', {
+            email,
+            linked_to: linkedTo,
+          });
+
+          // Never forward the upstream message here — it could name the owning account.
+          res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
         } else if (linkResponse.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: linkResponse.error, message: linkResponse.message });
         } else {
