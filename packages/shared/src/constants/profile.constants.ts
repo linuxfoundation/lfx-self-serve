@@ -144,3 +144,10 @@ export const IDENTITY_PROVIDER_LABELS: Record<IdentityProvider, string> = {
  * Source identifier for work experiences created via LFX One UI
  */
 export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
+
+/**
+ * Generic, non-identifying message returned when an email is already linked to
+ * another account. Intentionally never names the owning account — surfacing the
+ * owning LFID would enable account enumeration.
+ */
+export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to another account';
