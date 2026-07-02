@@ -300,17 +300,27 @@ export class CrowdfundingController {
       }
 
       if (Array.isArray(body['sponsorshipTiers'])) {
-        input.sponsorshipTiers = (body['sponsorshipTiers'] as Record<string, unknown>[])
-          .filter((t) => SPONSORSHIP_TIER_NAMES.includes(t['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number]))
-          .map((t) => ({
-            name: t['name'] as SponsorshipTierName,
-            enabled: t['enabled'] === true,
-            goalCents: parseNonNegativeInt(t['goalCents']),
-            benefits: Array.isArray(t['benefits']) ? (t['benefits'] as unknown[]).filter((b): b is string => typeof b === 'string') : [],
-          }));
+        const rawTiers = body['sponsorshipTiers'] as Record<string, unknown>[];
+        const invalidTier = rawTiers.find((t) => !SPONSORSHIP_TIER_NAMES.includes(t['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number]));
+        if (invalidTier) {
+          throw ServiceValidationError.forField('sponsorshipTiers', `tier name must be one of: ${SPONSORSHIP_TIER_NAMES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
+        input.sponsorshipTiers = rawTiers.map((t) => ({
+          name: t['name'] as SponsorshipTierName,
+          enabled: t['enabled'] === true,
+          goalCents: parseNonNegativeInt(t['goalCents']),
+          benefits: Array.isArray(t['benefits']) ? (t['benefits'] as unknown[]).filter((b): b is string => typeof b === 'string') : [],
+        }));
       }
 
-      if (SPONSORSHIP_DONATION_MODES.includes(body['donationMode'] as (typeof SPONSORSHIP_DONATION_MODES)[number])) {
+      if (body['donationMode'] !== undefined) {
+        if (!SPONSORSHIP_DONATION_MODES.includes(body['donationMode'] as (typeof SPONSORSHIP_DONATION_MODES)[number])) {
+          throw ServiceValidationError.forField('donationMode', `donationMode must be one of: ${SPONSORSHIP_DONATION_MODES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
         input.donationMode = body['donationMode'] as SponsorshipDonationMode;
       }
 

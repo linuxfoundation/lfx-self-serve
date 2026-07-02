@@ -48,6 +48,7 @@
                         [formControlName]="bIdx"
                         [placeholder]="'Benefit ' + (bIdx + 1)"
                         class="flex-1 p-inputtext-sm"
+                        [attr.aria-label]="'Benefit ' + (bIdx + 1)"
                         [attr.data-testid]="'settings-tier-benefit-' + i + '-' + bIdx" />
                       @if (tierData.benefits.length > 1) {
                         <lfx-button
