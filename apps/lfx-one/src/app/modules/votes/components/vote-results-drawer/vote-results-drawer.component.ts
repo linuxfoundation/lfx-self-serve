@@ -17,7 +17,7 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { getVoteEndedEarlyDetailTooltip } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -416,12 +416,12 @@ export class VoteResultsDrawerComponent {
 
   private initVoteEndedEarlyTooltip(): Signal<string | null> {
     return computed(() => {
-      const earlyEndTime = this.vote()?.early_end_time;
-      if (!earlyEndTime) {
+      const vote = this.vote();
+      if (!vote || !isVoteEndedEarly(vote)) {
         return null;
       }
 
-      const formattedEarlyClose = formatDate(earlyEndTime, 'MMM d, y', 'en-US');
+      const formattedEarlyClose = formatDate(vote.early_end_time!, 'MMM d, y', 'en-US');
       return getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
     });
   }

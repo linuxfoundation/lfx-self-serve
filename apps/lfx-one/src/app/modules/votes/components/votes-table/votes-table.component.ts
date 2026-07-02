@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getVoteEndedEarlyDetailTooltip } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -271,9 +271,8 @@ export class VotesTableComponent {
   private toVoteTableRow(vote: Vote): VoteTableRow {
     let endedEarlyTooltip: string | null = null;
 
-    const earlyEndTime = vote.early_end_time;
-    if (earlyEndTime) {
-      const formattedEarlyClose = formatDate(earlyEndTime, 'MMM d, y', 'en-US');
+    if (isVoteEndedEarly(vote)) {
+      const formattedEarlyClose = formatDate(vote.early_end_time!, 'MMM d, y', 'en-US');
       endedEarlyTooltip = getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
     }
 
