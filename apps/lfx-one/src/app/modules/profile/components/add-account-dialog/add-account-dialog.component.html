@@ -86,14 +86,14 @@
             styleClass="w-full gap-3 [&_.p-inputtext]:flex-1"
             data-testid="add-account-otp" />
           @if (verificationError()) {
-            <p class="text-center text-sm text-red-600" data-testid="add-account-otp-error">{{ verificationError() }}</p>
+            <p class="text-center text-sm text-red-600" role="alert" data-testid="add-account-otp-error">{{ verificationError() }}</p>
           }
         </div>
       }
     </div>
 
     @if (!codeSent() && verificationError()) {
-      <p class="text-sm text-red-600" data-testid="add-account-send-error">{{ verificationError() }}</p>
+      <p class="text-sm text-red-600" role="alert" data-testid="add-account-send-error">{{ verificationError() }}</p>
     }
 
     @if (!codeSent()) {

@@ -1923,6 +1923,15 @@ export class ProfileController {
 
       if (!linkResponse.success) {
         if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
+          // Resolve the owning account for support/debugging only — never returned to the client.
+          const linkedTo =
+            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
+
+          logger.warning(req, 'verify_and_link_email', 'Email already linked to another account', {
+            email,
+            linked_to: linkedTo,
+          });
+
           // Never forward the upstream message here — it could name the owning account.
           res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
         } else if (linkResponse.error === 'Service temporarily unavailable') {
