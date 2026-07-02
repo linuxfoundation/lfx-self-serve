@@ -26,8 +26,9 @@ router.get('/auth/start', blockDuringImpersonation, (req, res) => profileControl
 // GET /api/profile/auth/callback - Handle Auth0 callback
 router.get('/auth/callback', blockDuringImpersonation, (req, res) => profileController.handleProfileAuthCallback(req, res));
 
-// GET /api/profile/auth/status - Check if management token is available
-router.get('/auth/status', (req, res) => profileController.getProfileAuthStatus(req, res));
+// GET /api/profile/auth/status - Check if management token is available (blocked while impersonating:
+// it would report the impersonator's Flow C token state, which is irrelevant to the read-only target view)
+router.get('/auth/status', blockDuringImpersonation, (req, res) => profileController.getProfileAuthStatus(req, res));
 
 // GET /api/profile - Get current user's combined profile data
 router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req, res, next));
