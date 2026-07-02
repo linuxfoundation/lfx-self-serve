@@ -309,4 +309,7 @@ export interface TrainingEnrollment {
   isActiveEnrollment: boolean;
 }
 
+/**
+ * Type for training/certification product types
+ */
 export type ProductType = typeof TRAINING_PRODUCT_TYPE | typeof CERTIFICATION_PRODUCT_TYPE;
