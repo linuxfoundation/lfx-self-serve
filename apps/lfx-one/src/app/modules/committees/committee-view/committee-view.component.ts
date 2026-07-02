@@ -384,8 +384,8 @@ export class CommitteeViewComponent {
             this.messageService.add({ severity: 'error', summary: 'Unable to Join', detail, life: 6000 });
           },
         });
-    } else if (joinMode === 'application' || joinMode === 'invite_only') {
-      this.openApplicationDialog(committee.uid, committee.name, joinMode);
+    } else if (joinMode === 'application') {
+      this.openApplicationDialog(committee.uid, committee.name);
     } else {
       // closed — no self-service action available
       this.messageService.add({ severity: 'info', summary: 'Contact Admin', detail: 'Contact a group admin to request membership.' });
@@ -597,16 +597,14 @@ export class CommitteeViewComponent {
       });
   }
 
-  private openApplicationDialog(committeeUid: string, committeeName: string, mode: 'application' | 'invite_only'): void {
-    const isApplication = mode === 'application';
-
+  private openApplicationDialog(committeeUid: string, committeeName: string): void {
     const ref = this.dialogService.open(JoinApplicationDialogComponent, {
-      header: mode === 'invite_only' ? 'Request Access' : 'Request to Join',
+      header: 'Request to Join',
       width: '520px',
       modal: true,
       closable: true,
       dismissableMask: false,
-      data: { committeeName, mode },
+      data: { committeeName },
     }) as DynamicDialogRef;
 
     ref.onClose.pipe(take(1)).subscribe((result: JoinApplicationDialogResult | null) => {
@@ -620,10 +618,8 @@ export class CommitteeViewComponent {
           next: () => {
             this.messageService.add({
               severity: 'success',
-              summary: isApplication ? 'Application Submitted' : 'Request Submitted',
-              detail: isApplication
-                ? `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`
-                : `Your access request for "${committeeName}" has been submitted. An admin will review and send you an invitation if approved.`,
+              summary: 'Application Submitted',
+              detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
               life: 8000,
             });
           },
@@ -631,12 +627,9 @@ export class CommitteeViewComponent {
             const upstream = err.error?.message as string | undefined;
             let detail: string;
             if (err.status === 409) {
-              detail = isApplication ? 'You already have a pending application for this group.' : 'You already have a pending request for this group.';
+              detail = 'You already have a pending application for this group.';
             } else {
-              const fallback = isApplication
-                ? `Failed to submit your request for "${committeeName}". Please try again.`
-                : `Failed to submit your access request for "${committeeName}". Please try again.`;
-              detail = upstream ?? fallback;
+              detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
             }
             this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
           },
