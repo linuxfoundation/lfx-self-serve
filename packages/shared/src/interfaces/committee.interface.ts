@@ -890,7 +890,6 @@ export interface CommitteeUser {
 
 export interface JoinApplicationDialogData {
   committeeName: string;
-  mode: 'application' | 'invite_only';
 }
 
 export interface JoinApplicationDialogResult {
