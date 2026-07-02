@@ -22,6 +22,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { map, of, startWith, switchMap } from 'rxjs';
 
 /**
@@ -38,6 +39,7 @@ export class SidebarNavService {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly userService = inject(UserService);
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
@@ -222,7 +224,17 @@ export class SidebarNavService {
   // foundation's request is in flight, so the nav doesn't momentarily show "Projects"
   // for a foundation that hasn't been verified yet.
   private readonly foundationHasProjects: Signal<boolean> = toSignal(
-    toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
+    toObservable(
+      computed(() => {
+        // Only query when an authenticated user is actually on the foundation lens — this signal
+        // only drives the foundation "Projects" entry. DocsLayoutComponent injects this service
+        // even on public /docs pages, so an ungated query would fire (and 401) for anonymous visitors.
+        if (!this.userService.authenticated() || this.activeLens() !== 'foundation') {
+          return '';
+        }
+        return this.projectContextService.selectedFoundation()?.slug ?? '';
+      })
+    ).pipe(
       switchMap((slug) => {
         if (!slug) {
           return of(false);
