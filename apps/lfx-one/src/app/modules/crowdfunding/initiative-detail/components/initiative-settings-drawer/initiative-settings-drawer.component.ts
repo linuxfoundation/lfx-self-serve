@@ -7,7 +7,7 @@ import { filter, firstValueFrom } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { ButtonComponent } from '@components/button/button.component';
-import { ANNOUNCEMENT_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { ANNOUNCEMENT_ENABLED_FLAG, CROWDFUNDING_SPONSOR_TIERS_FLAG } from '@lfx-one/shared/constants';
 import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -16,6 +16,7 @@ import { SettingsBeneficiariesTabComponent } from './components/settings-benefic
 import { SettingsBrandingTabComponent } from './components/settings-branding-tab/settings-branding-tab.component';
 import { SettingsDetailsTabComponent } from './components/settings-details-tab/settings-details-tab.component';
 import { SettingsFundingTabComponent } from './components/settings-funding-tab/settings-funding-tab.component';
+import { SettingsSponsorshipTiersTabComponent } from './components/settings-sponsorship-tiers-tab/settings-sponsorship-tiers-tab.component';
 
 @Component({
   selector: 'lfx-initiative-settings-drawer',
@@ -27,6 +28,7 @@ import { SettingsFundingTabComponent } from './components/settings-funding-tab/s
     SettingsBrandingTabComponent,
     SettingsBeneficiariesTabComponent,
     SettingsFundingTabComponent,
+    SettingsSponsorshipTiersTabComponent,
   ],
   templateUrl: './initiative-settings-drawer.component.html',
   styleUrl: './initiative-settings-drawer.component.scss',
@@ -44,12 +46,14 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly saving = signal(false);
 
   protected readonly announcementsEnabled = this.featureFlagService.getBooleanFlag(ANNOUNCEMENT_ENABLED_FLAG, false);
+  protected readonly sponsorshipTiersEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_SPONSOR_TIERS_FLAG, false);
 
   protected readonly settingsTabs: Signal<TabOption<string>[]> = computed(() => [
     { value: 'details', label: 'Initiative details' },
     { value: 'branding', label: 'Branding' },
     { value: 'beneficiaries', label: 'Beneficiaries' },
     { value: 'funding', label: 'Funding' },
+    ...(this.sponsorshipTiersEnabled() ? [{ value: 'sponsorship-tiers', label: 'Sponsorship Tiers' }] : []),
     ...(this.announcementsEnabled() ? [{ value: 'announcements', label: 'Announcements', savesInline: true }] : []),
   ]);
 
@@ -61,6 +65,7 @@ export class InitiativeSettingsDrawerComponent {
   private readonly brandingTab = viewChild.required(SettingsBrandingTabComponent);
   private readonly beneficiariesTab = viewChild.required(SettingsBeneficiariesTabComponent);
   private readonly fundingTab = viewChild.required(SettingsFundingTabComponent);
+  private readonly sponsorshipTiersTab = viewChild(SettingsSponsorshipTiersTabComponent);
 
   public constructor() {
     toObservable(this.visible)
@@ -142,6 +147,12 @@ export class InitiativeSettingsDrawerComponent {
           email: (g.value.email as string) || undefined,
         }))
         .filter((b) => b.name || b.email);
+
+      const sponsorshipTiers = this.sponsorshipTiersTab()?.getValue();
+      if (sponsorshipTiers) {
+        input.donationMode = sponsorshipTiers.donationMode;
+        input.sponsorshipTiers = sponsorshipTiers.sponsorshipTiers;
+      }
 
       const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input), { defaultValue: null });
 

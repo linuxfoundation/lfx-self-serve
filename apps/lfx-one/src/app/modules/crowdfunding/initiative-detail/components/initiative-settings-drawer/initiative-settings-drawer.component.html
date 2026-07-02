@@ -6,7 +6,7 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
-  styleClass="xl:w-[600px] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  styleClass="xl:w-[700px] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   data-testid="initiative-settings-drawer">
   <ng-template #header>
     <div class="flex items-start justify-between gap-4 w-full">
@@ -76,6 +76,15 @@
       [class.hidden]="activeSettingsTab() !== 'funding'"
       [visible]="visible()"
       [initiative]="initiative()" />
+    @if (sponsorshipTiersEnabled()) {
+      <lfx-settings-sponsorship-tiers-tab
+        id="settings-panel-sponsorship-tiers"
+        role="tabpanel"
+        aria-labelledby="settings-tab-sponsorship-tiers"
+        [class.hidden]="activeSettingsTab() !== 'sponsorship-tiers'"
+        [visible]="visible()"
+        [initiative]="initiative()" />
+    }
     @if (announcementsEnabled()) {
       <lfx-settings-announcements-tab
         id="settings-panel-announcements"

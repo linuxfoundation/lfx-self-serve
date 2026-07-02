@@ -150,6 +150,8 @@ export interface InitiativeDetail extends InitiativeBase {
   financialSummary?: FinancialSummary;
 
   beneficiaries?: Beneficiary[];
+  sponsorshipTiers?: SponsorshipTier[];
+  donationMode?: SponsorshipDonationMode;
 }
 
 export type CrowdfundingInitiativeStatus = 'submitted' | 'pending' | 'published' | 'declined' | 'hidden';
@@ -300,6 +302,19 @@ export interface UpdateBeneficiaryInput {
   email?: string;
 }
 
+export type SponsorshipTierName = 'platinum' | 'gold' | 'silver' | 'bronze';
+
+/** A configurable sponsorship level a project can offer sponsors. Not yet processed upstream — sent as-is for forward compatibility. */
+export interface SponsorshipTier {
+  name: SponsorshipTierName;
+  enabled: boolean;
+  goalCents?: number;
+  benefits: string[];
+}
+
+/** Whether sponsors pick from fixed tiers or choose their own amount. */
+export type SponsorshipDonationMode = 'tier' | 'open';
+
 export interface UpdateInitiativeInput {
   name?: string;
   description?: string;
@@ -309,6 +324,8 @@ export interface UpdateInitiativeInput {
   status?: CrowdfundingInitiativeStatus;
   goals?: UpdateGoalInput[];
   beneficiaries?: UpdateBeneficiaryInput[];
+  sponsorshipTiers?: SponsorshipTier[];
+  donationMode?: SponsorshipDonationMode;
 }
 
 export interface PresignedURLResult {

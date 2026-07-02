@@ -1,0 +1,81 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="settings-sponsorship-tiers-tab" [formGroup]="form">
+  <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide">Sponsorship Tiers</h3>
+
+  <p class="text-sm text-gray-500">Offer sponsors different funding levels and benefits.</p>
+
+  <div class="flex flex-col gap-1.5">
+    <label class="text-sm font-medium text-gray-700">Donation Option</label>
+    <lfx-select-button
+      [form]="form"
+      control="donationMode"
+      [options]="donationModeOptions"
+      optionLabel="label"
+      optionValue="value"
+      data-testid="settings-donation-mode" />
+  </div>
+
+  @if (form.get('donationMode')?.value === 'tier') {
+    <div class="flex flex-col" formArrayName="tiers" data-testid="settings-sponsorship-tiers-list">
+      @for (tierData of tiersData(); track $index; let i = $index; let last = $last) {
+        <div
+          class="flex flex-col gap-3 py-4"
+          [formGroupName]="i"
+          [class.border-b]="!last"
+          [class.border-gray-200]="!last"
+          [attr.data-testid]="'settings-tier-' + tierNames[i]">
+          <lfx-checkbox
+            [form]="tierData.group"
+            control="enabled"
+            [label]="tierLabels[tierNames[i]]"
+            labelClass="text-sm font-medium text-gray-900 cursor-pointer"
+            [attr.data-testid]="'settings-tier-toggle-' + i" />
+          @if (tierData.group.get('enabled')?.value) {
+            <div class="flex flex-col gap-3 pl-6" [attr.data-testid]="'settings-tier-fields-' + i">
+              <div class="flex flex-col gap-1.5 max-w-[240px]">
+                <label [for]="'tier-goal-' + i" class="text-sm font-medium text-gray-700">Sponsorship Goal</label>
+                <lfx-input-number [form]="tierData.group" control="goal" [id]="'tier-goal-' + i" placeholder="0" [dataTest]="'settings-tier-goal-' + i" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-medium text-gray-700">Benefits</label>
+                <div class="flex flex-col gap-2" formArrayName="benefits">
+                  @for (benefitControl of tierData.benefits.controls; track $index; let bIdx = $index) {
+                    <div class="flex items-center gap-2">
+                      <input
+                        pInputText
+                        [formControlName]="bIdx"
+                        [placeholder]="'Benefit ' + (bIdx + 1)"
+                        class="flex-1 p-inputtext-sm"
+                        [attr.aria-label]="'Benefit ' + (bIdx + 1)"
+                        [attr.data-testid]="'settings-tier-benefit-' + i + '-' + bIdx" />
+                      @if (tierData.benefits.length > 1) {
+                        <lfx-button
+                          icon="fa-regular fa-trash-can"
+                          severity="danger"
+                          [text]="true"
+                          size="small"
+                          (onClick)="removeBenefit(i, bIdx)"
+                          [ariaLabel]="'Remove benefit ' + (bIdx + 1)"
+                          [attr.data-testid]="'settings-remove-benefit-' + i + '-' + bIdx" />
+                      }
+                    </div>
+                  }
+                </div>
+                <lfx-button
+                  label="Add benefit"
+                  icon="fa-solid fa-plus"
+                  severity="secondary"
+                  size="small"
+                  styleClass="self-start"
+                  (onClick)="addBenefit(i)"
+                  [attr.data-testid]="'settings-add-benefit-' + i" />
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

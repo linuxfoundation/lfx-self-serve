@@ -5,8 +5,15 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES } from '@lfx-one/shared/constants';
-import { CreateAnnouncementInput, CrowdfundingInitiativeStatus, UpdateAnnouncementInput, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_DONATION_MODES, SPONSORSHIP_TIER_NAMES } from '@lfx-one/shared/constants';
+import {
+  CreateAnnouncementInput,
+  CrowdfundingInitiativeStatus,
+  SponsorshipDonationMode,
+  SponsorshipTierName,
+  UpdateAnnouncementInput,
+  UpdateInitiativeInput,
+} from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -290,6 +297,31 @@ export class CrowdfundingController {
           name: typeof b['name'] === 'string' ? b['name'] : undefined,
           email: typeof b['email'] === 'string' ? b['email'] : undefined,
         }));
+      }
+
+      if (Array.isArray(body['sponsorshipTiers'])) {
+        const rawTiers = body['sponsorshipTiers'] as Record<string, unknown>[];
+        const invalidTier = rawTiers.find((t) => !SPONSORSHIP_TIER_NAMES.includes(t['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number]));
+        if (invalidTier) {
+          throw ServiceValidationError.forField('sponsorshipTiers', `tier name must be one of: ${SPONSORSHIP_TIER_NAMES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
+        input.sponsorshipTiers = rawTiers.map((t) => ({
+          name: t['name'] as SponsorshipTierName,
+          enabled: t['enabled'] === true,
+          goalCents: parseNonNegativeInt(t['goalCents']),
+          benefits: Array.isArray(t['benefits']) ? (t['benefits'] as unknown[]).filter((b): b is string => typeof b === 'string') : [],
+        }));
+      }
+
+      if (body['donationMode'] !== undefined) {
+        if (!SPONSORSHIP_DONATION_MODES.includes(body['donationMode'] as (typeof SPONSORSHIP_DONATION_MODES)[number])) {
+          throw ServiceValidationError.forField('donationMode', `donationMode must be one of: ${SPONSORSHIP_DONATION_MODES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
+        input.donationMode = body['donationMode'] as SponsorshipDonationMode;
       }
 
       const initiative = await this.crowdfundingService.updateInitiative(req, id, input);
