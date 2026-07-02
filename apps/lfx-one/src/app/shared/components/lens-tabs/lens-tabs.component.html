@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (showTabs()) {
+  <div class="px-[12px] mb-[16px] w-full">
+    <div class="flex w-full items-center gap-1 p-1 rounded-full bg-gray-100" role="tablist" aria-label="Lens" data-testid="lens-tabs">
+      @for (lens of lenses(); track lens.id) {
+        @let isActive = activeLensId() === lens.id;
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="isActive"
+          [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
+          [attr.data-testid]="lens.testId + '-tab'"
+          (click)="switchLens(lens.id)"
+          class="flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors"
+          [ngClass]="isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
+          <i [ngClass]="isActive ? lens.activeIcon : lens.icon" class="text-sm" [class.text-blue-500]="isActive" aria-hidden="true"></i>
+          <span>{{ lens.label }}</span>
+        </button>
+      }
+    </div>
+  </div>
+}

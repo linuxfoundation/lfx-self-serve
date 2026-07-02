@@ -2,8 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <button
+  #selectorTrigger
   type="button"
-  class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full cursor-pointer hover:bg-gray-50 transition-colors rounded-lg"
+  class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full cursor-pointer hover:bg-gray-50 transition-colors rounded-[0.75rem] border border-gray-200 shadow-[0_2px_3px_-1px_rgba(0,0,0,0.08)]"
   (click)="togglePanel($event, popover)"
   [attr.aria-expanded]="popover.overlayVisible"
   data-testid="project-selector">
@@ -46,7 +47,7 @@
   (onShow)="onPopoverShow()"
   (onHide)="onPopoverHide()"
   data-testid="project-selector-panel">
-  <div class="p-1">
+  <div>
     <!-- Search input — no background or border -->
     <div class="relative mb-2">
       <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>

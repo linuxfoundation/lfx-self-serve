@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { ALL_LENSES, DEFAULT_LENS, DEFAULT_NAV_LENS, LENS_COOKIE_KEY, NAV_LENS_COOKIE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { Router } from '@angular/router';
+import {
+  ALL_LENSES,
+  DEFAULT_LENS,
+  DEFAULT_NAV_LENS,
+  LENS_COOKIE_KEY,
+  LENS_DEFAULT_ROUTES,
+  NAV_LENS_COOKIE_KEY,
+  ORG_LENS_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import { Lens, LensOption, NavLens } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
@@ -18,6 +27,7 @@ export class LensService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly personaService = inject(PersonaService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly router = inject(Router);
 
   /** Dark-launch gate; off by default until the LaunchDarkly flag is flipped. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
@@ -36,12 +46,28 @@ export class LensService {
   public readonly displayLenses: Signal<LensOption[]> = this.initDisplayLenses();
   /** True when the user holds both a board role (ED/Board Member) AND a project role (Maintainer/Contributor). */
   public readonly isHybridPersona: Signal<boolean> = computed(() => this.personaService.hasBoardRole() && this.personaService.hasProjectRole());
+  /** Lens to highlight in the switcher UI. Hybrid personas merge foundation + project into the 'project' entry, so a foundation-scoped active lens highlights 'project'. */
+  public readonly displayActiveLens: Signal<Lens> = computed(() => {
+    const active = this.activeLens();
+    return this.isHybridPersona() && active === 'foundation' ? 'project' : active;
+  });
 
   public constructor() {
     const stored = this.loadFromCookie();
     this.selectedLens = signal<Lens>(stored ?? DEFAULT_LENS);
     this.navLensSelection = signal<NavLens>(this.loadNavLensFromCookie() ?? DEFAULT_NAV_LENS);
     this.lastNavLens = this.navLensSelection.asReadonly();
+  }
+
+  /**
+   * Switch the active lens from a UI control and navigate to its default route.
+   * Hybrid personas merge foundation + project into the 'Projects' entry — clicking it returns to the
+   * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
+   */
+  public switchLens(lens: Lens): void {
+    const target = this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
+    this.setLens(target);
+    this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
   }
 
   public setLens(lens: Lens): void {

@@ -27,9 +27,44 @@
   // stylelint-disable-next-line declaration-no-important
   position: fixed !important;
 
-  // Force position to the right of the avatar (override absolutePosition)
-  left: 72px !important;
+  // Force position to the right of the avatar (override absolutePosition).
+  // 56px = 48px rail + 8px gap.
+  left: 56px !important;
   bottom: 16px !important;
   top: auto !important;
+  margin-bottom: 0 !important;
+}
+
+// LFX Apps menu — pinned beside the rail and bottom-aligned to the LFX Apps button
+// (same fixed-anchor approach as the avatar menu, since the tall menu has no room
+// to open below the button). The button is the 3rd item from the bottom of the
+// rail (above the divider + avatar), so its offset from the viewport bottom is
+// stable regardless of whether the impersonation button (top of the footer) shows.
+::ng-deep .lfx-apps-popover.p-popover {
+  // Hide arrow
+  &::before,
+  &::after {
+    display: none !important;
+  }
+
+  // Remove default content padding
+  .p-popover-content {
+    @apply p-0;
+  }
+
+  // PrimeNG sets position/left/top inline via absolutePosition(); !important is
+  // required to override. Fixed keeps the menu put while the page scrolls.
+  // stylelint-disable-next-line declaration-no-important
+  position: fixed !important;
+  // Just to the right of the rail: 56px = 48px rail + 8px gap.
+  // stylelint-disable-next-line declaration-no-important
+  left: 56px !important;
+  // Align the menu's bottom edge with the LFX Apps button's bottom edge:
+  // rail padding (18) + avatar (28) + gap (≈11) + divider (≈1) + gap (≈11).
+  // stylelint-disable-next-line declaration-no-important
+  bottom: 68px !important;
+  // stylelint-disable-next-line declaration-no-important
+  top: auto !important;
+  // stylelint-disable-next-line declaration-no-important
   margin-bottom: 0 !important;
 }

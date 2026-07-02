@@ -7,10 +7,13 @@
     'border-r border-gray-200': !mobile(),
   }"
   data-testid="sidebar">
-  <div class="flex flex-col py-4 h-full min-h-0 overflow-y-auto">
+  <div class="flex flex-col pt-[12px] pb-4 h-full min-h-0 overflow-y-auto">
     <div class="flex flex-col items-start w-full flex-1">
+      <!-- Lens switcher tabs — global persona-scoped lens switch, hidden when only one lens is available. -->
+      <lfx-lens-tabs class="w-full" />
+
       @if (showProjectSelector() && navLens(); as lens) {
-        <div class="px-4 mb-6 w-full">
+        <div class="px-[12px] mb-[16px] w-full">
           @if (!lensLoaded()) {
             <div class="box-border flex gap-3 items-center p-3 w-full rounded-lg" data-testid="sidebar-selector-loading">
               <p-skeleton shape="circle" size="2.5rem" styleClass="shrink-0"></p-skeleton>
@@ -31,7 +34,7 @@
 
       <!-- [class.hidden] avoids SSR hydration mismatch -->
       <div
-        class="px-4 mb-6 w-full"
+        class="px-[12px] mb-[16px] w-full"
         [class.hidden]="!effectiveShowOrgSelector()"
         data-testid="org-selector-slot"
         [attr.data-visible]="effectiveShowOrgSelector()">
@@ -39,7 +42,7 @@
       </div>
 
       <!-- [class.hidden] avoids SSR hydration mismatch -->
-      <div class="px-4 mb-6 w-full" [class.hidden]="!showMeSelector()">
+      <div class="px-[12px] mb-[16px] w-full" [class.hidden]="!showMeSelector()">
         <div data-testid="me-selector" class="box-border flex gap-3 items-start p-3 w-full rounded-lg">
           <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
           <div class="flex flex-col gap-1 grow min-w-0">
@@ -82,7 +85,7 @@
 
       <!-- Hidden on foundation/project lens until nav API responds, since items are lens-scoped. -->
       @if (lensLoaded()) {
-        <div class="flex flex-col gap-2 items-start px-4 w-full">
+        <div class="flex flex-col gap-1 items-start px-[12px] w-full">
           @for (item of itemsWithTestIds(); track item.label) {
             @if (item.isGroup) {
               <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: item }"></ng-container>
@@ -114,7 +117,7 @@
           }
         </div>
       } @else if (isOrgLens()) {
-        <div class="flex flex-col gap-2 items-start px-4 w-full" data-testid="sidebar-org-skeleton">
+        <div class="flex flex-col gap-1 items-start px-[12px] w-full" data-testid="sidebar-org-skeleton">
           <p-skeleton width="100%" height="2rem"></p-skeleton>
 
           <div class="w-full mt-2">
@@ -153,7 +156,7 @@
           </div>
         </div>
       } @else {
-        <div class="flex flex-col gap-2 items-start px-4 w-full" data-testid="sidebar-menu-loading">
+        <div class="flex flex-col gap-1 items-start px-[12px] w-full" data-testid="sidebar-menu-loading">
           <p-skeleton width="100%" height="2rem"></p-skeleton>
           <p-skeleton width="100%" height="2rem"></p-skeleton>
           <p-skeleton width="100%" height="2rem"></p-skeleton>
@@ -162,7 +165,7 @@
       }
     </div>
 
-    <div class="flex flex-col gap-2 items-start px-4 w-full mt-auto pt-4">
+    <div class="flex flex-col gap-1 items-start px-[12px] w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
         @for (item of footerItemsWithTestIds(); track item.label) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
@@ -177,7 +180,7 @@
     <button
       type="button"
       (click)="toggleGroup(item.label)"
-      class="flex items-center gap-2 px-2 py-2 rounded-lg w-full text-left text-base text-gray-600 font-normal hover:bg-gray-50 transition-colors"
+      class="flex items-center gap-2 px-2 h-[32px] rounded-lg w-full text-left text-[13px] text-gray-600 font-normal hover:bg-gray-50 transition-colors"
       [attr.aria-expanded]="expandedGroupStates()[item.label]"
       [attr.aria-label]="item.label">
       <div class="nav-item-icon flex items-center justify-center shrink-0 w-6 h-6">
@@ -204,7 +207,7 @@
       [routerLink]="item.routerLink"
       routerLinkActive="bg-blue-100 font-medium text-gray-950"
       [routerLinkActiveOptions]="{ exact: true }"
-      class="flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-gray-600 font-normal hover:bg-gray-50"
+      class="flex items-center gap-2 px-2 h-[32px] rounded-lg transition-colors cursor-pointer w-full text-[13px] text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
       }"
@@ -226,7 +229,7 @@
       [href]="item.url"
       [target]="item.target || '_blank'"
       [rel]="item.rel || 'noopener noreferrer'"
-      class="flex items-center justify-between gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-gray-600 font-normal hover:bg-gray-50"
+      class="flex items-center justify-between gap-2 px-2 h-[32px] rounded-lg transition-colors cursor-pointer w-full text-[13px] text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
       }"
@@ -251,7 +254,7 @@
     <button
       type="button"
       (click)="item.command()"
-      class="flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-left text-base text-gray-600 font-normal hover:bg-gray-50"
+      class="flex items-center gap-2 px-2 h-[32px] rounded-lg transition-colors cursor-pointer w-full text-left text-[13px] text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 cursor-not-allowed': item.disabled,
       }"
