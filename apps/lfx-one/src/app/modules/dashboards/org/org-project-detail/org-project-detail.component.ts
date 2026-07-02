@@ -315,7 +315,7 @@ export class OrgProjectDetailComponent {
   }
 
   private initDetailStream(): Observable<OrgLensProjectDetailResponse | null> {
-    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(filter((uid): uid is string => !!uid));
+    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid ?? 'demo-org'));
     const orgName$ = toObservable(computed(() => this.accountContext.selectedAccount()?.accountName ?? ''));
     const projectSlug$ = this.route.paramMap.pipe(map((params) => params.get('projectSlug')));
     const retryTrigger$ = toObservable(this.retryTrigger);
