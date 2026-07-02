@@ -6,8 +6,8 @@ import { Component, ElementRef, inject, input, signal, viewChild, PLATFORM_ID } 
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
-import { ALLOWED_LOGO_MIME_TYPES, AllowedLogoMimeType, MAX_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
-import { InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { ALLOWED_LOGO_MIME_TYPES, MAX_LOGO_SIZE_BYTES } from '@lfx-one/shared/constants';
+import { AllowedLogoMimeType, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 
 @Component({

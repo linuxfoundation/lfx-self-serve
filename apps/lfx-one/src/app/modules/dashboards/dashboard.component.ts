@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { afterNextRender, Component, computed, DestroyRef, inject, signal } from '@angular/core';
-import { isBoardScopedPersona } from '@lfx-one/shared/interfaces';
+import { isBoardScopedPersona } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
