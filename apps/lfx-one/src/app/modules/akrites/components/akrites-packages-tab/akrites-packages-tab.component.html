@@ -273,59 +273,7 @@
           <div class="text-xs text-gray-500 font-mono max-w-64 truncate">{{ pkg.purl }}</div>
         </td>
         <td>
-          <span class="inline-flex items-center gap-2 text-gray-600 font-medium whitespace-nowrap">
-            @switch (pkg.ecosystem) {
-              @case ('npm') {
-                <span
-                  class="inline-flex items-center justify-center bg-[#cb3837] text-white font-bold rounded px-1 py-0.5 leading-none tracking-tight flex-shrink-0"
-                  style="font-size: 9px"
-                  aria-hidden="true"
-                  >npm</span
-                >
-                npm
-              }
-              @case ('maven') {
-                <svg viewBox="0 0 24 24" width="16" height="16" class="flex-shrink-0" aria-hidden="true">
-                  <path d="M4 21C4 12 9.5 4.5 18 2c-1.7 9-7.5 15.5-14 19z" fill="#69a2d0" />
-                  <path d="M4 21c4.2-1 8-3.4 11-7.6C14 18.7 9.2 21 4 21z" fill="#cf2b58" />
-                </svg>
-                Maven
-              }
-              @case ('pypi') {
-                <i class="fa-brands fa-python text-[#3776ab] text-base flex-shrink-0" aria-hidden="true"></i>
-                PyPI
-              }
-              @case ('go') {
-                <i class="fa-brands fa-golang text-[#00ADD8] text-base flex-shrink-0" aria-hidden="true"></i>
-                Go
-              }
-              @case ('cargo') {
-                <i class="fa-brands fa-rust text-[#CE422B] text-base flex-shrink-0" aria-hidden="true"></i>
-                Cargo
-              }
-              @case ('nuget') {
-                <span
-                  class="inline-flex items-center justify-center bg-[#004880] text-white font-bold rounded px-1 py-0.5 leading-none tracking-tight flex-shrink-0"
-                  style="font-size: 9px"
-                  aria-hidden="true"
-                  >Nu</span
-                >
-                NuGet
-              }
-              @case ('packagist') {
-                <i class="fa-brands fa-php text-[#f28d1a] text-base flex-shrink-0" aria-hidden="true"></i>
-                Packagist
-              }
-              @case ('rubygems') {
-                <i class="fa-solid fa-gem text-[#c00] text-base flex-shrink-0" aria-hidden="true"></i>
-                RubyGems
-              }
-              @default {
-                <i class="fa-light fa-cube text-gray-400 text-base flex-shrink-0" aria-hidden="true"></i>
-                {{ pkg.ecosystem }}
-              }
-            }
-          </span>
+          <lfx-akrites-ecosystem-badge [ecosystem]="pkg.ecosystem" />
         </td>
         <!-- TODO(v2): replace per-row template functions below with pure pipes or computed() maps to avoid per-cycle re-execution -->
         <td>
