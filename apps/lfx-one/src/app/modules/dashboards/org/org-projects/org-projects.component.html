@@ -458,7 +458,7 @@
       </div>
     }
     <div class="flex items-center justify-between gap-2">
-      @if (editingWorkspace()) {
+      @if (canDeleteEditingWorkspace()) {
         <lfx-button
           label="Delete workspace"
           icon="fa-light fa-trash"

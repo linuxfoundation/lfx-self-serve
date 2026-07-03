@@ -45,6 +45,7 @@ import { SnowflakeService } from './snowflake.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 
 export class OrgLensProjectsService {
+  private static readonly memberServiceWriteHeaders = { 'X-Sync': 'true' };
   private readonly snowflakeService = SnowflakeService.getInstance();
   private readonly microserviceProxy = new MicroserviceProxyService();
 
@@ -146,7 +147,8 @@ export class OrgLensProjectsService {
       undefined,
       {
         name,
-      }
+      },
+      OrgLensProjectsService.memberServiceWriteHeaders
     );
     const workspace = this.mapMemberServiceWorkspace(response, name);
     return { ...workspace, projectSlugs: [] };
@@ -159,10 +161,11 @@ export class OrgLensProjectsService {
       `/b2b_orgs/${encodeURIComponent(accountId)}/workspaces/${encodeURIComponent(workspaceId)}`,
       'PUT',
       undefined,
-      { name }
+      { name },
+      OrgLensProjectsService.memberServiceWriteHeaders
     );
     const workspace = this.mapMemberServiceWorkspace(response, name, workspaceId);
-    const projectSlugs = await this.fetchWorkspaceProjectSlugsWithRetry(req, workspace.id).catch((error: unknown) => {
+    const projectSlugs = await this.fetchWorkspaceProjectSlugsWithRetry(req, workspaceId).catch((error: unknown) => {
       logger.warning(req, 'rename_org_lens_workspace', 'Workspace renamed but project membership refresh failed; returning empty slug list', {
         org_uid: accountId,
         workspace_id: workspaceId,
@@ -178,7 +181,10 @@ export class OrgLensProjectsService {
       req,
       'LFX_V2_MEMBER_SERVICE',
       `/b2b_orgs/${encodeURIComponent(accountId)}/workspaces/${encodeURIComponent(workspaceId)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      undefined,
+      OrgLensProjectsService.memberServiceWriteHeaders
     );
   }
 
@@ -196,7 +202,8 @@ export class OrgLensProjectsService {
           `/b2b_orgs/${encodeURIComponent(accountId)}/workspaces/${encodeURIComponent(workspaceId)}/projects/bulk`,
           'POST',
           undefined,
-          { projects: chunk.map((slug) => ({ project_slug: slug })) }
+          { projects: chunk.map((slug) => ({ project_slug: slug })) },
+          OrgLensProjectsService.memberServiceWriteHeaders
         );
       } catch (error: unknown) {
         const partialSlugs = memberServiceSlugs.length ? memberServiceSlugs : [...new Set(chunkSucceeded)];
@@ -678,7 +685,8 @@ export class OrgLensProjectsService {
       `/b2b_orgs/${encodeURIComponent(accountId)}/workspaces/${encodeURIComponent(workspaceId)}/projects/bulk`,
       'POST',
       undefined,
-      { projects: [{ project_slug: probeSlug }] }
+      { projects: [{ project_slug: probeSlug }] },
+      OrgLensProjectsService.memberServiceWriteHeaders
     );
     return this.mapMemberServiceWorkspaceWithProjects(response, '', workspaceId).projectSlugs;
   }
@@ -783,7 +791,8 @@ export class OrgLensProjectsService {
       `/b2b_orgs/${encodeURIComponent(accountId)}/workspaces/${encodeURIComponent(workspaceId)}/projects/bulk`,
       'POST',
       undefined,
-      { projects: [{ project_slug: slug }] }
+      { projects: [{ project_slug: slug }] },
+      OrgLensProjectsService.memberServiceWriteHeaders
     );
     const projectKey = this.extractProjectUidFromMemberServiceResponse(response, slug);
     if (!projectKey) {
@@ -900,6 +909,20 @@ export class OrgLensProjectsService {
   }
 
   private static isProjectsResponse(value: unknown): value is OrgLensProjectsResponse {
-    return value !== null && typeof value === 'object' && Array.isArray((value as OrgLensProjectsResponse).projects);
+    if (value === null || typeof value !== 'object') {
+      return false;
+    }
+    const candidate = value as OrgLensProjectsResponse;
+    if (typeof candidate.orgSlug !== 'string' || typeof candidate.orgName !== 'string' || !Array.isArray(candidate.projects)) {
+      return false;
+    }
+    return candidate.projects.every(
+      (project) =>
+        typeof project.slug === 'string' &&
+        typeof project.name === 'string' &&
+        Array.isArray(project.healthMetrics) &&
+        Array.isArray(project.maintainers) &&
+        Array.isArray(project.contributors)
+    );
   }
 }

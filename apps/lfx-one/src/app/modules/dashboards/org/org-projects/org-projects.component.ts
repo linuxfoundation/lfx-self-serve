@@ -49,7 +49,7 @@ import { DialogModule } from 'primeng/dialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, concat, firstValueFrom, of, switchMap, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -211,6 +211,15 @@ export class OrgProjectsComponent {
   );
   protected readonly addProjectsSearchEmptyTitle = computed(() => this.initAddProjectsSearchEmptyTitle());
   protected readonly tableEmptyState = computed<OrgProjectsEmptyState>(() => this.initTableEmptyState());
+  protected readonly canDeleteEditingWorkspace = computed(() => {
+    const editing = this.editingWorkspace();
+    return !!editing && !this.isCanonicalDefaultWorkspace(editing);
+  });
+
+  private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
+    map((account) => account?.uid ?? null),
+    distinctUntilChanged()
+  );
 
   public constructor() {
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
@@ -233,6 +242,12 @@ export class OrgProjectsComponent {
 
     this.addProjectsForm.controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe((query) => {
       this.searchAddableProjects(query);
+    });
+
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.workspaceDialogOpen.set(false);
+      this.addProjectsDialogOpen.set(false);
+      this.editingWorkspace.set(null);
     });
 
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -324,10 +339,14 @@ export class OrgProjectsComponent {
       this.addProjectsDialogOpen.set(false);
       return;
     }
+    const accountUid = account.uid;
     this.addProjectsSaving.set(true);
     this.addProjectsSaveError.set(false);
     try {
-      const { workspace: updated } = await firstValueFrom(this.projectsService.addProjectsToWorkspace(account.uid, workspace.id, slugs));
+      const { workspace: updated } = await firstValueFrom(this.projectsService.addProjectsToWorkspace(accountUid, workspace.id, slugs));
+      if (!this.isStillSelectedAccount(accountUid)) {
+        return;
+      }
       this.mergeWorkspace({ ...updated, name: updated.name || workspace.name });
       this.reload.update((n) => n + 1);
       this.addProjectsDialogOpen.set(false);
@@ -378,20 +397,27 @@ export class OrgProjectsComponent {
     if (!account?.uid) {
       return;
     }
+    const accountUid = account.uid;
     const editing = this.editingWorkspace();
     this.workspaceDialogAction.set('save');
     this.workspaceNameError.set(null);
     this.workspaceDialogError.set(null);
     try {
       if (editing) {
-        const { workspace } = await firstValueFrom(this.projectsService.renameWorkspace(account.uid, editing.id, name));
+        const { workspace } = await firstValueFrom(this.projectsService.renameWorkspace(accountUid, editing.id, name));
+        if (!this.isStillSelectedAccount(accountUid)) {
+          return;
+        }
         this.mergeWorkspace({
           ...workspace,
           name,
           projectSlugs: workspace.projectSlugs.length ? workspace.projectSlugs : editing.projectSlugs,
         });
       } else {
-        const { workspace } = await firstValueFrom(this.projectsService.createWorkspace(account.uid, name));
+        const { workspace } = await firstValueFrom(this.projectsService.createWorkspace(accountUid, name));
+        if (!this.isStillSelectedAccount(accountUid)) {
+          return;
+        }
         this.workspaces.update((list) => [...list, workspace]);
         this.selectWorkspace(workspace.id);
       }
@@ -409,13 +435,17 @@ export class OrgProjectsComponent {
     }
     const editing = this.editingWorkspace();
     const account = this.accountContext.selectedAccount();
-    if (!editing || !account?.uid) {
+    if (!editing || !account?.uid || this.isCanonicalDefaultWorkspace(editing)) {
       return;
     }
+    const accountUid = account.uid;
     this.workspaceDialogAction.set('delete');
     this.workspaceDialogError.set(null);
     try {
-      await firstValueFrom(this.projectsService.deleteWorkspace(account.uid, editing.id));
+      await firstValueFrom(this.projectsService.deleteWorkspace(accountUid, editing.id));
+      if (!this.isStillSelectedAccount(accountUid)) {
+        return;
+      }
       const wasActive = this.selectedWorkspaceId() === editing.id;
       const remaining = this.workspaces().filter((w) => w.id !== editing.id);
       this.workspaceLoading.set(true);
@@ -598,15 +628,13 @@ export class OrgProjectsComponent {
           return this.projectsService.getWorkspaces(account.uid).pipe(
             tap((response) => {
               this.workspaces.set(response.workspaces.length ? response.workspaces : [...DEFAULT_ORG_PROJECTS_WORKSPACES]);
-              this.workspaceLoading.set(false);
             }),
             catchError((err) => {
               console.error('Failed to load org project workspaces', err);
               this.workspaceError.set(true);
-              this.workspaces.set([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
-              this.workspaceLoading.set(false);
               return of(null);
-            })
+            }),
+            finalize(() => this.workspaceLoading.set(false))
           );
         })
       ),
@@ -642,13 +670,12 @@ export class OrgProjectsComponent {
           return concat(
             of(null),
             this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
-              tap(() => this.projectsLoading.set(false)),
               catchError((err) => {
                 console.error('Failed to load org projects', err);
                 this.projectsError.set(true);
-                this.projectsLoading.set(false);
                 return of(null);
-              })
+              }),
+              finalize(() => this.projectsLoading.set(false))
             )
           );
         })
@@ -824,6 +851,10 @@ export class OrgProjectsComponent {
       ctaIcon: 'fa-light fa-rotate-left',
       action: 'resetFilters',
     };
+  }
+
+  private isStillSelectedAccount(accountUid: string): boolean {
+    return this.accountContext.selectedAccount()?.uid === accountUid;
   }
 
   private isCanonicalDefaultWorkspace(workspace: Pick<OrgProjectsWorkspace, 'id' | 'name'>): boolean {
