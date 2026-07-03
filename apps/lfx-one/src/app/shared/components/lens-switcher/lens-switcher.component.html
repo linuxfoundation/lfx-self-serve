@@ -103,7 +103,7 @@
       <div class="flex-1"></div>
     }
 
-    <!-- Footer — ordered bottom-up: avatar, divider, LFX Apps, What's New, Docs, then (impersonation divider + button) on top. -->
+    <!-- Footer — ordered bottom-up: avatar, divider, LFX Apps, What's New, Docs, then the impersonation button on top (no divider before it). -->
     <div class="flex flex-col items-center gap-3 mt-auto">
       <!-- Impersonation Button (only for authorized users) -->
       @if (canImpersonate() && !isImpersonating()) {
