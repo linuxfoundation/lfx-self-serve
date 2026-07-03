@@ -505,9 +505,7 @@ export class SidebarNavService {
           icon: 'fa-light fa-graduation-cap',
           routerLink: '/org/training',
         },
-        // INFO: Future Epic implementation — the Meetings page is hidden until the org
-        // meetings feature is built. Restore the entry below to re-enable it.
-        // { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
+        { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
         // INFO: Future Epic implementation — the Groups page is hidden until the org
         // groups feature is built. Restore the entry below to re-enable it.
         // { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
