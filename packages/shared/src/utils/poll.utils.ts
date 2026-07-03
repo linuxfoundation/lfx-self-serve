@@ -31,16 +31,12 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   return 'closed';
 }
 
-/** Tooltip copy when the scheduled close date differs from the actual early close. */
+/** Tooltip copy when a vote auto-ended because all eligible voters responded. */
 export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
   return `Vote closed early on ${earlyEndTimeFormatted}. All voters have responded.`;
 }
 
-/** True when the poll closed before its scheduled end_time (ITX auto-end). */
-export function isVoteEndedEarly(vote: Pick<Vote, 'end_time' | 'early_end_time'>): boolean {
-  if (!vote.early_end_time || !vote.end_time) {
-    return false;
-  }
-
-  return new Date(vote.early_end_time).getTime() < new Date(vote.end_time).getTime();
+/** True when ITX auto-ended the poll because all eligible voters responded. */
+export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
+  return Boolean(vote.early_end_time);
 }
