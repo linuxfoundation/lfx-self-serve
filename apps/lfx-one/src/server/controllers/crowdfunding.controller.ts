@@ -303,9 +303,7 @@ export class CrowdfundingController {
         const rawTiers = body['sponsorshipTiers'] as unknown[];
         const invalidTier = rawTiers.find(
           (t) =>
-            !t ||
-            typeof t !== 'object' ||
-            !SPONSORSHIP_TIER_NAMES.includes((t as Record<string, unknown>)['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number])
+            !t || typeof t !== 'object' || !SPONSORSHIP_TIER_NAMES.includes((t as Record<string, unknown>)['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number])
         );
         if (invalidTier) {
           throw ServiceValidationError.forField('sponsorshipTiers', `tier name must be one of: ${SPONSORSHIP_TIER_NAMES.join(', ')}`, {
