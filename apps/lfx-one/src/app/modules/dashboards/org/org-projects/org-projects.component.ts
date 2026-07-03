@@ -570,7 +570,13 @@ export class OrgProjectsComponent {
   private formatTrendDeltaPct(value: number): string {
     const rounded = Math.round(value * 10) / 10;
     if (Math.abs(rounded) <= 1) {
-      return `${rounded}%`;
+      if (rounded < 0) {
+        const abs = Math.abs(rounded);
+        const body = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
+        return `−${body}%`;
+      }
+      const body = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+      return `${body}%`;
     }
     const sign = rounded > 0 ? '+' : '−';
     const abs = Math.abs(rounded);
