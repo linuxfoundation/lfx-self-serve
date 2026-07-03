@@ -43,7 +43,7 @@ import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
+import { buildOrgCacheKey, valkeyService } from './valkey.service';
 
 export class OrgLensProjectsService {
   private static readonly defaultOrgProjectsWorkspace = DEFAULT_ORG_PROJECTS_WORKSPACES[0];
@@ -53,13 +53,19 @@ export class OrgLensProjectsService {
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
     const cacheKey = `projects:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
-    return withOrgCache(
-      accountId,
-      cacheKey,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchProjects(accountId, orgName, slugs),
-      OrgLensProjectsService.isProjectsResponse
-    );
+    const key = buildOrgCacheKey(accountId, cacheKey);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
+      if (cached !== null) {
+        return cached;
+      }
+    }
+
+    const { response, cdpEnrichmentFailed } = await this.fetchProjects(accountId, orgName, slugs);
+    if (key !== null && !cdpEnrichmentFailed) {
+      await valkeyService.setJson(key, response, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return response;
   }
 
   public async searchProjects(accountId: string, query: string, excludeSlugs: readonly string[] = []): Promise<OrgLensProjectSearchResponse> {
@@ -293,19 +299,26 @@ export class OrgLensProjectsService {
     };
   }
 
-  private async fetchProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
+  private async fetchProjects(
+    accountId: string,
+    orgName: string,
+    slugs: string[] | null
+  ): Promise<{ response: OrgLensProjectsResponse; cdpEnrichmentFailed: boolean }> {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
     const peopleRows = projectSlugs.length ? await this.fetchPeopleRows(accountId, projectSlugs) : [];
-    const cdpProjects = await this.fetchCdpProjects(projectSlugs);
+    const { projects: cdpProjects, enrichmentFailed: cdpEnrichmentFailed } = await this.fetchCdpProjects(projectSlugs);
     const cdpBySlug = new Map(cdpProjects.map((project) => [project.slug?.toLowerCase(), project]));
 
     return {
-      orgSlug: this.slugify(orgName) || accountId,
-      orgName: orgName || 'Your organization',
-      dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-      projects: projectRows.map((row) => this.mapProject(row, peopleRows, cdpBySlug.get(row.PROJECT_SLUG.toLowerCase()))),
+      cdpEnrichmentFailed,
+      response: {
+        orgSlug: this.slugify(orgName) || accountId,
+        orgName: orgName || 'Your organization',
+        dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
+        projects: projectRows.map((row) => this.mapProject(row, peopleRows, cdpBySlug.get(row.PROJECT_SLUG.toLowerCase()))),
+      },
     };
   }
 
@@ -362,9 +375,9 @@ export class OrgLensProjectsService {
     return result.rows;
   }
 
-  private async fetchCdpProjects(slugs: string[]): Promise<OrgProjectsCdpProject[]> {
+  private async fetchCdpProjects(slugs: string[]): Promise<{ projects: OrgProjectsCdpProject[]; enrichmentFailed: boolean }> {
     if (!slugs.length) {
-      return [];
+      return { projects: [], enrichmentFailed: false };
     }
 
     const batches: string[][] = [];
@@ -372,6 +385,7 @@ export class OrgLensProjectsService {
       batches.push(slugs.slice(i, i + ORG_PROJECTS_CDP_PROJECT_BATCH_SIZE));
     }
 
+    let enrichmentFailed = false;
     const responses = await Promise.all(
       batches.map(async (batch) => {
         const url = new URL(ORG_PROJECTS_CDP_PROJECT_API_URL);
@@ -383,17 +397,19 @@ export class OrgLensProjectsService {
         try {
           const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
           if (!response.ok) {
+            enrichmentFailed = true;
             return [] as OrgProjectsCdpProject[];
           }
           const body = (await response.json()) as OrgProjectsCdpProjectListResponse;
           return body.data ?? [];
         } catch {
+          enrichmentFailed = true;
           return [] as OrgProjectsCdpProject[];
         }
       })
     );
 
-    return responses.flat();
+    return { projects: responses.flat(), enrichmentFailed };
   }
 
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[], cdp: OrgProjectsCdpProject | undefined): OrgLensProject {
