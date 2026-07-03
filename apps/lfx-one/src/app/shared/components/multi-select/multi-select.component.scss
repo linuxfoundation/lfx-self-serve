@@ -8,5 +8,11 @@
         @apply text-sm;
       }
     }
+
+    &.org-projects-add-projects-select-panel {
+      .p-multiselect-list-container {
+        height: 16rem;
+      }
+    }
   }
 }

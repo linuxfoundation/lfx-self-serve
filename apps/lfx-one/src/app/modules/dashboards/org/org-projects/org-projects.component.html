@@ -16,292 +16,348 @@
     </p>
   </header>
 
-  <!-- Filters + toolbar + projects table -->
-  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-table-card">
-    <!-- Filter + toolbar bar -->
-    <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 lg:flex-row lg:items-center" data-testid="org-projects-toolbar">
-      <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-        <div class="w-full sm:w-64">
-          <button
-            type="button"
-            class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-900 hover:border-gray-400"
-            (click)="workspacePopover.toggle($event)"
-            [attr.aria-expanded]="workspacePopover.overlayVisible"
-            data-testid="org-projects-workspace-trigger">
-            <span class="truncate">{{ selectedWorkspaceName() }}</span>
-            <i class="fa-light fa-chevron-down text-xs text-gray-400" aria-hidden="true"></i>
-          </button>
+  @if (hasNoOrgAccess()) {
+    <section
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+      data-testid="org-projects-no-access-state">
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+        <i class="fa-light fa-lock text-2xl" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-base font-semibold text-gray-900" data-testid="org-projects-no-access-title">Organization Lens is not available</h2>
+      <p class="max-w-md text-sm text-gray-600" data-testid="org-projects-no-access-description">
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please contact us.
+      </p>
+    </section>
+  } @else if (!orgContextLoaded()) {
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-loading">
+      <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 lg:flex-row lg:items-center">
+        <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+          <p-skeleton width="12rem" height="2.25rem" />
+          <p-skeleton width="10rem" height="2.25rem" />
+          <p-skeleton width="10rem" height="2.25rem" />
         </div>
-        <div class="w-full sm:w-52">
-          <lfx-select
-            [form]="filterForm"
-            control="foundation"
+        <div class="flex items-center gap-2">
+          <p-skeleton width="7rem" height="2rem" />
+          <p-skeleton width="6rem" height="2rem" />
+        </div>
+      </div>
+      <div class="flex flex-col gap-3 p-5">
+        <p-skeleton width="100%" height="2.5rem" />
+        @for (i of [1, 2, 3, 4, 5]; track i) {
+          <p-skeleton width="100%" height="2rem" />
+        }
+      </div>
+    </lfx-card>
+  } @else if (!hasCompany()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="No org selected"
+      subtitle="Select an organization via Impersonate to view projects."
+      data-testid="org-projects-no-company-empty-state" />
+  } @else {
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-table-card">
+      <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 lg:flex-row lg:items-center" data-testid="org-projects-toolbar">
+        <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+          <div class="w-full sm:w-64">
+            <button
+              type="button"
+              class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-900 hover:border-gray-400"
+              (click)="workspacePopover.toggle($event)"
+              [attr.aria-expanded]="workspacePopover.overlayVisible"
+              data-testid="org-projects-workspace-trigger">
+              <span class="truncate">{{ selectedWorkspaceName() }}</span>
+              <i class="fa-light fa-chevron-down text-xs text-gray-400" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="w-full sm:w-52">
+            <lfx-select
+              [form]="filterForm"
+              control="foundation"
+              size="small"
+              optionLabel="label"
+              optionValue="value"
+              [options]="foundationOptions()"
+              [filter]="true"
+              filterPlaceholder="Search foundations…"
+              styleClass="w-full"
+              data-testid="org-projects-foundation-filter" />
+          </div>
+          <div class="w-full sm:w-56">
+            <lfx-multi-select
+              [form]="filterForm"
+              control="employees"
+              optionLabel="label"
+              optionValue="value"
+              [options]="employeeOptions()"
+              placeholder="All Employees"
+              data-testid="org-projects-employee-filter" />
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <lfx-button
+            label="Export to CSV"
+            icon="fa-light fa-file-arrow-down"
+            severity="secondary"
+            [outlined]="true"
             size="small"
-            optionLabel="label"
-            optionValue="value"
-            [options]="foundationOptions()"
-            [filter]="true"
-            filterPlaceholder="Search foundations…"
-            styleClass="w-full"
-            data-testid="org-projects-foundation-filter" />
-        </div>
-        <div class="w-full sm:w-56">
-          <lfx-multi-select
-            [form]="filterForm"
-            control="employees"
-            optionLabel="label"
-            optionValue="value"
-            [options]="employeeOptions()"
-            placeholder="All Employees"
-            data-testid="org-projects-employee-filter" />
+            [disabled]="loading() || totalRecords() === 0"
+            [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
+            (onClick)="exportCsv()"
+            data-testid="org-projects-export-csv" />
+          <lfx-button
+            label="Add Project"
+            icon="fa-light fa-plus"
+            severity="primary"
+            size="small"
+            [disabled]="!canAddProjects()"
+            [tooltip]="addProjectDisabledReason()"
+            (onClick)="openAddProjects()"
+            data-testid="org-projects-add-project" />
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <lfx-button
-          label="Export to CSV"
-          icon="fa-light fa-file-arrow-down"
-          severity="secondary"
-          [outlined]="true"
-          size="small"
-          [disabled]="loading() || totalRecords() === 0"
-          [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
-          (onClick)="exportCsv()"
-          data-testid="org-projects-export-csv" />
-        <lfx-button
-          label="Add Project"
-          icon="fa-light fa-plus"
-          severity="primary"
-          size="small"
-          (onClick)="openAddProjects()"
-          data-testid="org-projects-add-project" />
-      </div>
-    </div>
 
-    <!-- Table area -->
-    <div class="p-5">
-      @if (error()) {
-        <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
-          <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>
-          <p class="text-sm text-gray-600">Something went wrong loading your projects.</p>
-          <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" severity="secondary" [outlined]="true" (onClick)="retry()" />
-        </div>
-      } @else if (!loading() && totalRecords() === 0) {
-        <lfx-empty-state
-          [withCard]="false"
-          icon="fa-light fa-folder-magnifying-glass"
-          title="No projects match your current workspace + filters"
-          subtitle="Try a different workspace or clear your filters."
-          ctaLabel="Reset filters"
-          ctaIcon="fa-light fa-rotate-left"
-          (ctaClick)="resetFilters()"
-          data-testid="org-projects-empty-state" />
-      } @else {
-        <lfx-table
-          [value]="rows()"
-          [loading]="loading()"
-          [paginator]="totalRecords() > pageSize()"
-          [rows]="pageSize()"
-          [first]="pageFirst()"
-          [totalRecords]="totalRecords()"
-          [rowsPerPageOptions]="pageSizeOptions"
-          [alwaysShowPaginator]="false"
-          [showCurrentPageReport]="true"
-          currentPageReportTemplate="{first} - {last} of {totalRecords}"
-          [tableStyle]="{ 'table-layout': 'fixed', width: '100%' }"
-          (onPage)="onPage($event)"
-          data-testid="org-projects-table">
-          <ng-template #header>
-            <tr>
-              <th class="w-[22%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('name')"
-                  pTooltip="The open source project — click the name to open its detail page."
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide"
-                  data-testid="org-projects-sort-name">
-                  Project
-                  <i class="text-xs" [class]="sortIconMap()['name']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[10%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('health')"
-                  pTooltip="CHAOSS health classification from LFX Insights: Excellent, Healthy, or At Risk."
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide">
-                  Health
-                  <i class="text-xs" [class]="sortIconMap()['health']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[15%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('technicalInfluence')"
-                  [pTooltip]="influenceColumnTooltipHtml"
-                  [escape]="false"
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide">
-                  Technical influence
-                  <i class="text-xs" [class]="sortIconMap()['technicalInfluence']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[15%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('ecosystemInfluence')"
-                  [pTooltip]="influenceColumnTooltipHtml"
-                  [escape]="false"
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide">
-                  Ecosystem influence
-                  <i class="text-xs" [class]="sortIconMap()['ecosystemInfluence']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[14%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('influenceTrend')"
-                  pTooltip="Combined influence change over the rolling 12 months. Hover the sparkline for technical and ecosystem detail."
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide"
-                  data-testid="org-projects-sort-trend">
-                  Influence Trend
-                  <i class="text-xs" [class]="sortIconMap()['influenceTrend']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[10%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('contributors')"
-                  [pTooltip]="'Our <strong>Contributors</strong> are our employees who have contributed code to this project.'"
-                  [escape]="false"
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide">
-                  Contributors
-                  <i class="text-xs" [class]="sortIconMap()['contributors']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[10%]">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 whitespace-nowrap font-semibold"
-                  (click)="toggleSort('participants')"
-                  [pTooltip]="
-                    'Our <strong>Participants</strong> are our employees who have been involved in this project in any way, including code contributions, documentation collaboration, events, training, etc.'
-                  "
-                  [escape]="false"
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-wide">
-                  Participants
-                  <i class="text-xs" [class]="sortIconMap()['participants']" aria-hidden="true"></i>
-                </button>
-              </th>
-              <th class="w-[4%] text-right"><span class="sr-only">Actions</span></th>
-            </tr>
-          </ng-template>
-          <ng-template #body let-project let-rowIndex="rowIndex">
-            <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
-              <!-- Project -->
-              <td>
-                <button type="button" class="flex items-center gap-2 text-left" (click)="openDetail(project)">
-                  <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
-                  <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
-                </button>
-              </td>
-              <!-- Health: hover shows the LFX Insights detail popover for mouse users; the full rating + sub-scores
-                   are exposed via aria-label so keyboard / screen-reader users get the same information textually. -->
-              <td>
-                <span
-                  class="inline-flex cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  tabindex="0"
-                  role="img"
-                  [attr.aria-label]="project.healthAriaLabel"
-                  (mouseenter)="openHealth($event, project, healthPop)"
-                  (mouseleave)="scheduleHealthHide(healthPop)"
-                  [attr.data-testid]="'org-projects-health-' + project.slug">
-                  <lfx-tag [value]="project.healthLabel" [severity]="project.healthSeverity" />
-                </span>
-              </td>
-              <!-- Technical Influence (signal-strength bars + band label) -->
-              <td>
-                <span class="inline-flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
-                    @for (bar of project.technicalBars; track $index) {
-                      <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
+      <div class="p-5">
+        @if (workspaceError()) {
+          <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
+            <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>
+            <p class="text-sm font-medium text-gray-900">Could not load your saved workspaces.</p>
+            <p class="max-w-md text-sm text-gray-600">Retry to restore your custom workspaces before using the default view.</p>
+            <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" severity="secondary" [outlined]="true" (onClick)="retry()" />
+          </div>
+        } @else if (projectsError()) {
+          <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
+            <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>
+            <p class="text-sm font-medium text-gray-900">Something went wrong loading your projects.</p>
+            <p class="max-w-md text-sm text-gray-600">Your workspaces are still available. Retry to load the project rows.</p>
+            <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" severity="secondary" [outlined]="true" (onClick)="retry()" />
+          </div>
+        } @else if (!loading() && totalRecords() === 0) {
+          <lfx-empty-state
+            [withCard]="false"
+            [icon]="tableEmptyState().icon"
+            [title]="tableEmptyState().title"
+            [subtitle]="tableEmptyState().subtitle"
+            [ctaLabel]="tableEmptyState().ctaLabel"
+            [ctaIcon]="tableEmptyState().ctaIcon"
+            (ctaClick)="handleEmptyStateAction(tableEmptyState().action)"
+            data-testid="org-projects-empty-state" />
+        } @else {
+          <lfx-table
+            [value]="rows()"
+            [loading]="loading()"
+            [paginator]="totalRecords() > pageSize()"
+            [rows]="pageSize()"
+            [first]="pageFirst()"
+            [totalRecords]="totalRecords()"
+            [rowsPerPageOptions]="pageSizeOptions"
+            [alwaysShowPaginator]="false"
+            [showCurrentPageReport]="true"
+            currentPageReportTemplate="{first} - {last} of {totalRecords}"
+            [tableStyle]="{ 'table-layout': 'fixed', width: '100%' }"
+            (onPage)="onPage($event)"
+            data-testid="org-projects-table">
+            <ng-template #header>
+              <tr>
+                <th class="w-[22%]" [attr.aria-sort]="ariaSortMap()['name']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('name')"
+                    pTooltip="The open source project — click the name to open its detail page."
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide"
+                    data-testid="org-projects-sort-name">
+                    Project
+                    <i class="text-xs" [class]="sortIconMap()['name']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[10%]" [attr.aria-sort]="ariaSortMap()['health']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('health')"
+                    pTooltip="CHAOSS health classification from LFX Insights: Excellent, Healthy, or At Risk."
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide">
+                    Health
+                    <i class="text-xs" [class]="sortIconMap()['health']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[15%]" [attr.aria-sort]="ariaSortMap()['technicalInfluence']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('technicalInfluence')"
+                    [pTooltip]="influenceColumnTooltipHtml"
+                    [escape]="false"
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide">
+                    Technical influence
+                    <i class="text-xs" [class]="sortIconMap()['technicalInfluence']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[15%]" [attr.aria-sort]="ariaSortMap()['ecosystemInfluence']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('ecosystemInfluence')"
+                    [pTooltip]="influenceColumnTooltipHtml"
+                    [escape]="false"
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide">
+                    Ecosystem influence
+                    <i class="text-xs" [class]="sortIconMap()['ecosystemInfluence']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[14%]" [attr.aria-sort]="ariaSortMap()['influenceTrend']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('influenceTrend')"
+                    pTooltip="Combined influence change over the rolling 12 months. Hover the sparkline for technical and ecosystem detail."
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide"
+                    data-testid="org-projects-sort-trend">
+                    Influence Trend (1y)
+                    <i class="text-xs" [class]="sortIconMap()['influenceTrend']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[10%]" [attr.aria-sort]="ariaSortMap()['contributors']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('contributors')"
+                    [pTooltip]="'Our <strong>Contributors</strong> are our employees who have contributed code to this project.'"
+                    [escape]="false"
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide">
+                    Contributors
+                    <i class="text-xs" [class]="sortIconMap()['contributors']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[10%]" [attr.aria-sort]="ariaSortMap()['participants']">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 whitespace-nowrap font-semibold"
+                    (click)="toggleSort('participants')"
+                    [pTooltip]="
+                      'Our <strong>Participants</strong> are our employees who have been involved in this project in any way, including code contributions, documentation collaboration, events, training, etc.'
+                    "
+                    [escape]="false"
+                    tooltipPosition="top"
+                    tooltipStyleClass="lfx-tooltip-wide">
+                    Participants
+                    <i class="text-xs" [class]="sortIconMap()['participants']" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="w-[4%] text-right"><span class="sr-only">Actions</span></th>
+              </tr>
+            </ng-template>
+            <ng-template #body let-project let-rowIndex="rowIndex">
+              <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
+                <td>
+                  <a
+                    [href]="project.insightsUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-2 text-left"
+                    [attr.aria-label]="'Open ' + project.name + ' in LFX Insights'">
+                    <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
+                    <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
+                  </a>
+                </td>
+                <td>
+                  <span
+                    class="inline-flex cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    tabindex="0"
+                    role="img"
+                    [attr.aria-label]="project.healthAriaLabel"
+                    (mouseenter)="openHealth($event, project, healthPop)"
+                    (mouseleave)="scheduleHealthHide(healthPop)"
+                    [attr.data-testid]="'org-projects-health-' + project.slug">
+                    <lfx-tag [value]="project.healthLabel" [severity]="project.healthSeverity" />
+                  </span>
+                </td>
+                <td>
+                  <span class="inline-flex items-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                      @for (bar of project.technicalBars; track $index) {
+                        <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
+                      }
+                      @if (project.technicalInfluence === 'non-lf') {
+                        <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
+                        <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
+                      }
+                    </svg>
+                    <span class="text-sm text-gray-900">{{ project.technicalBandLabel }}</span>
+                  </span>
+                </td>
+                <td>
+                  <span class="inline-flex items-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
+                      @for (bar of project.ecosystemBars; track $index) {
+                        <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
+                      }
+                      @if (project.ecosystemInfluence === 'non-lf') {
+                        <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
+                        <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
+                      }
+                    </svg>
+                    <span class="text-sm text-gray-900">{{ project.ecosystemBandLabel }}</span>
+                  </span>
+                </td>
+                <td>
+                  <div class="flex flex-col items-start gap-1.5">
+                    <span
+                      class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      tabindex="0"
+                      role="img"
+                      [attr.aria-label]="project.trendAriaLabel"
+                      [pTooltip]="project.trendTooltipHtml"
+                      [escape]="false"
+                      tooltipPosition="top"
+                      tooltipStyleClass="lfx-tooltip-trend"
+                      [attr.data-testid]="'org-projects-trend-' + project.slug">
+                      <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
+                    </span>
+                    @if (project.showTrendArrow) {
+                      <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
+                        <span class="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full" [class]="project.trendArrowBadgeClass">
+                          <i [class]="project.trendArrowIcon" aria-hidden="true"></i>
+                        </span>
+                        <span class="font-semibold" [class]="project.trendDeltaTextClass">{{ project.trendDeltaLabel }}</span>
+                      </span>
+                    } @else {
+                      <span class="text-xs font-semibold text-gray-500" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">{{
+                        project.trendDeltaLabel
+                      }}</span>
                     }
-                    @if (project.technicalInfluence === 'non-lf') {
-                      <!-- "No signal" slash: a background-colored casing cuts a gap in the bars, then the grey slash sits in it. -->
-                      <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
-                      <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
-                    }
-                  </svg>
-                  <span class="text-sm text-gray-900">{{ project.technicalBandLabel }}</span>
-                </span>
-              </td>
-              <!-- Ecosystem Influence (signal-strength bars + band label) -->
-              <td>
-                <span class="inline-flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
-                    @for (bar of project.ecosystemBars; track $index) {
-                      <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
-                    }
-                    @if (project.ecosystemInfluence === 'non-lf') {
-                      <!-- "No signal" slash: a background-colored casing cuts a gap in the bars, then the grey slash sits in it. -->
-                      <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
-                      <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
-                    }
-                  </svg>
-                  <span class="text-sm text-gray-900">{{ project.ecosystemBandLabel }}</span>
-                </span>
-              </td>
-              <!-- Influence Trend (sparkline; hover/focus reveals combined/technical/ecosystem 1y deltas) -->
-              <td>
-                <span
-                  class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  tabindex="0"
-                  role="img"
-                  [attr.aria-label]="project.trendAriaLabel"
-                  [pTooltip]="project.trendTooltipHtml"
-                  [escape]="false"
-                  tooltipPosition="top"
-                  tooltipStyleClass="lfx-tooltip-nowrap"
-                  [attr.data-testid]="'org-projects-trend-' + project.slug">
-                  <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
-                </span>
-              </td>
-              <!-- Contributors / Participants (counts only) -->
-              <td>
-                <span class="text-sm font-medium text-gray-900">{{ project.contributors.length }}</span>
-              </td>
-              <td>
-                <span class="text-sm font-medium text-gray-900">{{ project.participants.length }}</span>
-              </td>
-              <!-- Row kebab -->
-              <td class="text-right">
-                <lfx-button
-                  icon="fa-light fa-ellipsis-vertical"
-                  severity="secondary"
-                  [text]="true"
-                  size="small"
-                  styleClass="!px-2"
-                  ariaLabel="Row actions"
-                  (onClick)="openRowMenu(rowActionMenu, project, $event)"
-                  [attr.data-testid]="'org-projects-row-menu-' + project.slug" />
-              </td>
-            </tr>
-          </ng-template>
-        </lfx-table>
-      }
-    </div>
-  </lfx-card>
+                  </div>
+                </td>
+                <td>
+                  <span class="text-sm font-medium text-gray-900">{{ project.contributors.length }}</span>
+                </td>
+                <td>
+                  <span class="text-sm font-medium text-gray-900">{{ project.participants.length }}</span>
+                </td>
+                <td class="text-right">
+                  <lfx-button
+                    icon="fa-light fa-ellipsis-vertical"
+                    severity="secondary"
+                    [text]="true"
+                    size="small"
+                    styleClass="!px-2"
+                    ariaLabel="Row actions"
+                    (onClick)="openRowMenu(rowActionMenu, project, $event)"
+                    [attr.data-testid]="'org-projects-row-menu-' + project.slug" />
+                </td>
+              </tr>
+            </ng-template>
+          </lfx-table>
+        }
+      </div>
+    </lfx-card>
+  }
 </main>
 
 <!-- Shared popup action menu — items rebuilt per row on open -->
@@ -313,11 +369,7 @@
     <div class="flex w-80 flex-col gap-3" (mouseenter)="cancelHealthHide()" (mouseleave)="scheduleHealthHide(healthPop)">
       <div class="flex items-center justify-between gap-3">
         <span class="text-sm font-semibold text-gray-900">Health score</span>
-        <a
-          href="https://insights.linuxfoundation.org"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+        <a [href]="project.insightsUrl" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
           <i class="fa-light fa-arrow-up-right text-xs" aria-hidden="true"></i>
           LFX Insights
         </a>
@@ -384,15 +436,27 @@
   [header]="editingWorkspace() ? 'Workspace settings' : 'Add workspace'"
   [(visible)]="workspaceDialogOpen"
   [modal]="true"
-  [dismissableMask]="true"
+  [closable]="!workspaceDialogPending()"
+  [dismissableMask]="!workspaceDialogPending()"
   [draggable]="false"
   [style]="{ width: '24rem' }"
   data-testid="org-projects-workspace-dialog">
   <div class="flex flex-col gap-4 pt-1">
     <div class="flex flex-col gap-1.5">
       <label for="workspace-name" class="text-sm font-medium text-gray-700">Workspace name</label>
-      <lfx-input-text [form]="workspaceForm" control="name" inputId="workspace-name" placeholder="e.g. Cloud Native focus" size="small" styleClass="w-full" />
+      <lfx-input-text [form]="workspaceForm" control="name" id="workspace-name" placeholder="e.g. Cloud Native focus" size="small" styleClass="w-full" />
+      @if (workspaceNameError(); as message) {
+        <p class="text-xs text-red-600" data-testid="org-projects-workspace-name-error">{{ message }}</p>
+      }
     </div>
+    @if (workspaceDialogErrorMessage(); as message) {
+      <div
+        class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+        data-testid="org-projects-workspace-dialog-error">
+        <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+        <span>{{ message }}</span>
+      </div>
+    }
     <div class="flex items-center justify-between gap-2">
       @if (editingWorkspace()) {
         <lfx-button
@@ -401,14 +465,29 @@
           severity="danger"
           [text]="true"
           size="small"
+          [disabled]="workspaceDialogPending()"
+          [loading]="workspaceDialogAction() === 'delete'"
           (onClick)="deleteWorkspace()"
           data-testid="org-projects-workspace-delete" />
       } @else {
         <span></span>
       }
       <div class="flex items-center gap-2">
-        <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="workspaceDialogOpen.set(false)" />
-        <lfx-button label="Save" severity="primary" size="small" (onClick)="saveWorkspace()" data-testid="org-projects-workspace-save" />
+        <lfx-button
+          label="Cancel"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [disabled]="workspaceDialogPending()"
+          (onClick)="workspaceDialogOpen.set(false)" />
+        <lfx-button
+          label="Save"
+          severity="primary"
+          size="small"
+          [disabled]="workspaceDialogPending()"
+          [loading]="workspaceDialogAction() === 'save'"
+          (onClick)="saveWorkspace()"
+          data-testid="org-projects-workspace-save" />
       </div>
     </div>
   </div>
@@ -419,7 +498,8 @@
   header="Add project(s)"
   [(visible)]="addProjectsDialogOpen"
   [modal]="true"
-  [dismissableMask]="true"
+  [closable]="!addProjectsSaving()"
+  [dismissableMask]="!addProjectsSaving()"
   [draggable]="false"
   [style]="{ width: '30rem' }"
   data-testid="org-projects-add-projects-dialog">
@@ -428,21 +508,75 @@
       <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
       <span>This will be shared across all users in your company.</span>
     </div>
+    <input
+      type="search"
+      class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400"
+      placeholder="Search and select projects"
+      aria-label="Search and select projects"
+      [value]="addProjectsSearchQuery()"
+      (input)="onAddProjectsSearchInput($event)"
+      data-testid="org-projects-add-projects-search" />
     <lfx-multi-select
       [form]="addProjectsForm"
       control="projects"
-      [options]="addableProjectOptions"
+      [options]="addProjectSelectOptions()"
       optionLabel="label"
       optionValue="value"
       optionImage="logoUrl"
-      [filter]="true"
-      filterPlaceHolder="Search and select projects"
+      [filter]="false"
       placeholder="Search and select projects"
       styleClass="w-full"
+      panelStyleClass="org-projects-add-projects-select-panel"
+      scrollHeight="16rem"
       data-testid="org-projects-add-projects-select" />
+    @if (addProjectsSearchLoading()) {
+      <div class="flex items-center gap-2 text-sm text-gray-500" data-testid="org-projects-add-projects-loading">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        <span>Searching projects…</span>
+      </div>
+    } @else if (addProjectsSearchError()) {
+      <div class="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="org-projects-add-projects-error">
+        <div class="flex items-start gap-2 text-sm text-amber-800">
+          <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+          <span>Could not load project matches. Try again.</span>
+        </div>
+        <lfx-button
+          label="Retry"
+          icon="fa-light fa-rotate-right"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="retryAddableProjectsSearch()" />
+      </div>
+    } @else if (addableProjectOptions().length === 0 && selectedAddProjectCount() === 0) {
+      <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600" data-testid="org-projects-add-projects-empty">
+        {{ addProjectsSearchEmptyTitle() }}
+      </div>
+    }
+    @if (addProjectsSaveError()) {
+      <div
+        class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+        data-testid="org-projects-add-projects-save-error">
+        <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+        <span>Could not add the selected projects. Try again.</span>
+      </div>
+    }
     <div class="flex items-center justify-end gap-2">
-      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="addProjectsDialogOpen.set(false)" />
-      <lfx-button label="Add project(s)" severity="primary" size="small" (onClick)="confirmAddProjects()" data-testid="org-projects-add-projects-confirm" />
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        [disabled]="addProjectsSaving()"
+        (onClick)="addProjectsDialogOpen.set(false)" />
+      <lfx-button
+        label="Add project(s)"
+        severity="primary"
+        size="small"
+        [disabled]="selectedAddProjectCount() === 0 || addProjectsSaving()"
+        [loading]="addProjectsSaving()"
+        (onClick)="confirmAddProjects()"
+        data-testid="org-projects-add-projects-confirm" />
     </div>
   </div>
 </p-dialog>

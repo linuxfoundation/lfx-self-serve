@@ -11,9 +11,13 @@
     [showToggleAll]="showToggleAll()"
     [appendTo]="appendTo()"
     [filter]="filter()"
+    [filterBy]="filterBy()"
     [filterPlaceHolder]="filterPlaceHolder()"
     [size]="size()"
     [styleClass]="styleClass()"
+    [panelStyleClass]="panelStyleClass()"
+    [scrollHeight]="scrollHeight()"
+    (onFilter)="filterChange.emit($event.filter ?? '')"
     class="w-full">
     @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">

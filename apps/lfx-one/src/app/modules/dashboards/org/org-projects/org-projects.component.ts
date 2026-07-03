@@ -10,6 +10,7 @@ import {
   DEFAULT_ORG_PROJECTS_SORT_DIR,
   DEFAULT_ORG_PROJECTS_SORT_FIELD,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
+  DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
   HEALTH_SCORE_LABELS,
   HEALTH_SCORE_SEVERITY,
@@ -17,14 +18,23 @@ import {
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
   INFLUENCE_BAND_RANK,
+  INFLUENCE_TREND_ARROW_BADGE_CLASS,
+  INFLUENCE_TREND_ARROW_ICON,
   INFLUENCE_TREND_COLOR,
+  INFLUENCE_TREND_TEXT_CLASS,
+  ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   VALID_ORG_PROJECTS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import type {
+  AddableProjectOption,
   InfluenceBand,
   OrgLensProject,
+  OrgLensProjectSearchResult,
   OrgLensProjectsResponse,
+  OrgProjectsAriaSort,
+  OrgProjectsEmptyAction,
+  OrgProjectsEmptyState,
   OrgProjectsSignalBar,
   OrgProjectsSortField,
   OrgProjectsTableRow,
@@ -32,12 +42,13 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { downloadCsv } from '@lfx-one/shared/utils';
-import { MenuItem } from 'primeng/api';
+import { buildInsightsUrl, downloadCsv } from '@lfx-one/shared/utils';
+import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { Popover, PopoverModule } from 'primeng/popover';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, concat, firstValueFrom, of, switchMap, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -51,9 +62,10 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
-
-const ALL_FOUNDATIONS = 'all';
+import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { PersonaService } from '@shared/services/persona.service';
 
 @Component({
   selector: 'lfx-org-projects',
@@ -69,6 +81,7 @@ const ALL_FOUNDATIONS = 'all';
     MultiSelectComponent,
     PopoverModule,
     SelectComponent,
+    SkeletonModule,
     TableComponent,
     TagComponent,
     TooltipModule,
@@ -80,7 +93,11 @@ export class OrgProjectsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgNavigation = inject(OrgNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
+  private readonly orgRoleGrants = inject(OrgRoleGrantsService);
+  private readonly personaService = inject(PersonaService);
+  private readonly messageService = inject(MessageService);
   /** Pending hide timer for the health popover (lets the cursor cross into the popover). */
   private healthHideTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -99,7 +116,7 @@ export class OrgProjectsComponent {
 
   // Forms
   protected readonly filterForm = new FormGroup({
-    foundation: new FormControl<string>(this.route.snapshot.queryParamMap.get('foundation') ?? ALL_FOUNDATIONS, { nonNullable: true }),
+    foundation: new FormControl<string>(this.route.snapshot.queryParamMap.get('foundation') ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, { nonNullable: true }),
     employees: new FormControl<string[]>(this.readEmployeesFromUrl(), { nonNullable: true }),
   });
   /** Name field for the add / rename workspace dialog. */
@@ -110,14 +127,26 @@ export class OrgProjectsComponent {
   protected readonly addProjectsForm = new FormGroup({
     projects: new FormControl<string[]>([], { nonNullable: true }),
   });
-  /** Catalog of projects that can be added to the workspace (with logos for the multi-select). */
-  protected readonly addableProjectOptions = this.projectsService.getAddableProjectOptions();
+  protected readonly addableProjectOptions = signal<AddableProjectOption[]>([]);
+  private readonly selectedAddableProjectOptions = signal<AddableProjectOption[]>([]);
 
   // Writable Signals
-  protected readonly loading = signal(false);
-  protected readonly error = signal(false);
-  /** Hidden project slugs keyed by workspace id — hide is workspace-local (client-only; never mutates the catalog). */
-  protected readonly hiddenByWorkspace = signal<Record<string, ReadonlySet<string>>>({});
+  private readonly workspaceLoading = signal(false);
+  private readonly projectsLoading = signal(false);
+  protected readonly loading = computed(() => this.workspaceLoading() || this.projectsLoading());
+  protected readonly workspaceError = signal(false);
+  protected readonly projectsError = signal(false);
+  protected readonly error = computed(() => this.workspaceError() || this.projectsError());
+  protected readonly addProjectsSearchLoading = signal(false);
+  protected readonly addProjectsSearchError = signal(false);
+  protected readonly addProjectsSearchQuery = signal('');
+  protected readonly addProjectsSaving = signal(false);
+  protected readonly addProjectsSaveError = signal(false);
+  protected readonly workspaceNameError = signal<string | null>(null);
+  protected readonly workspaceDialogError = signal<'save' | 'delete' | null>(null);
+  protected readonly workspaceDialogAction = signal<'save' | 'delete' | null>(null);
+  protected readonly workspaceDialogPending = computed(() => this.workspaceDialogAction() !== null);
+  protected readonly workspaceDialogErrorMessage = computed(() => this.initWorkspaceDialogErrorMessage());
   /** Shared workspaces (seeded presets + user-created); editable via the workspace dropdown. */
   protected readonly workspaces = signal<OrgProjectsWorkspace[]>([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
   /** Workspace being renamed/deleted in the settings dialog; `null` while the dialog adds a new one. */
@@ -126,65 +155,42 @@ export class OrgProjectsComponent {
   protected readonly workspaceDialogOpen = model(false);
   /** Two-way visibility for the "Add project(s)" dialog (`[(visible)]`). */
   protected readonly addProjectsDialogOpen = model(false);
-  /** Projects added via the Add Project dialog, keyed by workspace id — add is workspace-local (client-only demo state). */
-  protected readonly addedByWorkspace = signal<Record<string, OrgLensProject[]>>({});
-  /** Bumped to re-trigger the demo fetch from the inline error-retry CTA. */
   private readonly reload = signal(0);
+  private readonly workspaceReload = signal(0);
+  private addableProjectsSearchRequestId = 0;
+  private addableProjectsSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Action menu items rebuilt per row when the kebab is opened. */
   protected rowMenuItems: MenuItem[] = [];
 
   // Computed / toSignal
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   private readonly formValue = toSignal(this.filterForm.valueChanges, { initialValue: this.filterForm.getRawValue() });
-  private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
+  private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
+  protected readonly hasNoOrgAccess = computed(
+    () => this.orgRoleGrants.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
+  );
+  protected readonly orgContextLoaded = computed(
+    () => this.hasNoOrgAccess() || (this.orgNavigation.loaded() && this.orgRoleGrants.loaded() && this.personaService.personaLoaded())
+  );
   /** Project whose health detail is shown in the shared hover popover. */
   protected readonly activeHealthProject = signal<OrgProjectsTableRow | null>(null);
 
-  protected readonly sortField = computed<OrgProjectsSortField>(() => {
-    const raw = this.queryParamMap().get('sort');
-    return raw && VALID_ORG_PROJECTS_SORT_FIELDS.has(raw as OrgProjectsSortField) ? (raw as OrgProjectsSortField) : DEFAULT_ORG_PROJECTS_SORT_FIELD;
-  });
+  protected readonly sortField = computed<OrgProjectsSortField>(() => this.initSortField());
   protected readonly sortDir = computed<SortDirection>(() => (this.queryParamMap().get('dir') === 'asc' ? 'asc' : DEFAULT_ORG_PROJECTS_SORT_DIR));
-  /** Pre-computed sort icon class per column — avoids repeated method calls in the template on every CD cycle. */
-  protected readonly sortIconMap = computed<Record<OrgProjectsSortField, string>>(() => {
-    const field = this.sortField();
-    const dir = this.sortDir();
-    const active = dir === 'asc' ? 'fa-solid fa-sort-up text-blue-500' : 'fa-solid fa-sort-down text-blue-500';
-    const inactive = 'fa-light fa-sort text-gray-300';
-    return {
-      name: field === 'name' ? active : inactive,
-      health: field === 'health' ? active : inactive,
-      technicalInfluence: field === 'technicalInfluence' ? active : inactive,
-      ecosystemInfluence: field === 'ecosystemInfluence' ? active : inactive,
-      influenceTrend: field === 'influenceTrend' ? active : inactive,
-      contributors: field === 'contributors' ? active : inactive,
-      participants: field === 'participants' ? active : inactive,
-    };
-  });
-  protected readonly pageSize = computed<number>(() => {
-    const raw = Number(this.queryParamMap().get('size'));
-    return ORG_PROJECTS_PAGE_SIZE_OPTIONS.includes(raw) ? raw : DEFAULT_ORG_PROJECTS_PAGE_SIZE;
-  });
-  protected readonly pageFirst = computed<number>(() => {
-    const page = Math.max(1, Number(this.queryParamMap().get('page')) || 1);
-    return (page - 1) * this.pageSize();
-  });
+  protected readonly sortIconMap = computed<Record<OrgProjectsSortField, string>>(() => this.initSortIconMap());
+  protected readonly ariaSortMap = computed<Record<OrgProjectsSortField, OrgProjectsAriaSort>>(() => this.initAriaSortMap());
+  protected readonly pageSize = computed<number>(() => this.initPageSize());
+  protected readonly pageFirst = computed<number>(() => this.initPageFirst());
 
   // Active workspace comes from the URL (`?workspace=`), validated against the current workspace list.
-  protected readonly selectedWorkspaceId = computed<OrgProjectsWorkspaceId>(() => {
-    const list = this.workspaces();
-    const raw = this.queryParamMap().get('workspace');
-    if (raw && list.some((w) => w.id === raw)) {
-      return raw;
-    }
-    if (list.some((w) => w.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID)) {
-      return DEFAULT_ORG_PROJECTS_WORKSPACE_ID;
-    }
-    return list[0]?.id ?? DEFAULT_ORG_PROJECTS_WORKSPACE_ID;
-  });
-  protected readonly selectedWorkspaceName = computed<string>(() => this.workspaces().find((w) => w.id === this.selectedWorkspaceId())?.name ?? '');
+  protected readonly selectedWorkspaceId = computed<OrgProjectsWorkspaceId>(() => this.initSelectedWorkspaceId());
+  private readonly selectedWorkspace = computed<OrgProjectsWorkspace | null>(() => this.workspaces().find((w) => w.id === this.selectedWorkspaceId()) ?? null);
+  protected readonly selectedWorkspaceName = computed<string>(() => this.selectedWorkspace()?.name ?? '');
+  private readonly workspacesResponse = this.initWorkspaces();
+  private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
   protected readonly foundationOptions = this.initFoundationOptions();
   protected readonly employeeOptions = this.initEmployeeOptions();
 
@@ -195,6 +201,14 @@ export class OrgProjectsComponent {
   /** Table rows: sorted projects enriched with precomputed bar geometry + tooltip HTML (keeps logic out of the template). */
   protected readonly rows = this.initRows();
   protected readonly totalRecords = computed(() => this.sortedProjects().length);
+  protected readonly canAddProjects = computed(() => this.hasCompany() && !!this.selectedWorkspace() && !this.loading() && !this.error());
+  protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
+  protected readonly selectedAddProjectCount = computed(() => this.addProjectsFormValue().projects?.length ?? 0);
+  protected readonly addProjectSelectOptions = computed(() =>
+    this.mergeAddableOptions([...this.selectedAddableProjectOptions(), ...this.addableProjectOptions()])
+  );
+  protected readonly addProjectsSearchEmptyTitle = computed(() => this.initAddProjectsSearchEmptyTitle());
+  protected readonly tableEmptyState = computed<OrgProjectsEmptyState>(() => this.initTableEmptyState());
 
   public constructor() {
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
@@ -202,7 +216,7 @@ export class OrgProjectsComponent {
       void this.router.navigate([], {
         relativeTo: this.route,
         queryParams: {
-          foundation: value.foundation === ALL_FOUNDATIONS ? null : value.foundation,
+          foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
           employees: value.employees && value.employees.length ? value.employees.join(',') : null,
           page: null,
         },
@@ -211,12 +225,30 @@ export class OrgProjectsComponent {
       });
     });
 
+    this.addProjectsForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.syncSelectedAddableProjectOptions();
+    });
+
+    this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (value.name?.trim()) {
+        this.workspaceNameError.set(null);
+      }
+    });
+
     // Clear any pending health-popover hide timer on teardown so it can't fire after destroy.
-    inject(DestroyRef).onDestroy(() => this.cancelHealthHide());
+    inject(DestroyRef).onDestroy(() => {
+      this.cancelHealthHide();
+      if (this.addableProjectsSearchDebounceTimer) {
+        clearTimeout(this.addableProjectsSearchDebounceTimer);
+      }
+    });
   }
 
   // Public methods
   public retry(): void {
+    this.workspaceError.set(false);
+    this.projectsError.set(false);
+    this.workspaceReload.update((n) => n + 1);
     this.reload.update((n) => n + 1);
   }
 
@@ -247,24 +279,60 @@ export class OrgProjectsComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ foundation: ALL_FOUNDATIONS, employees: [] });
+    this.filterForm.reset({ foundation: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, employees: [] });
     this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
   }
 
   protected openAddProjects(): void {
+    if (!this.canAddProjects()) {
+      return;
+    }
     this.addProjectsForm.setValue({ projects: [] });
+    this.addableProjectOptions.set([]);
+    this.selectedAddableProjectOptions.set([]);
+    this.addProjectsSearchError.set(false);
+    this.addProjectsSaveError.set(false);
+    this.addProjectsSearchQuery.set('');
     this.addProjectsDialogOpen.set(true);
+    void this.searchAddableProjects('');
   }
 
-  protected confirmAddProjects(): void {
-    const slugs = this.addProjectsForm.getRawValue().projects;
-    const ws = this.selectedWorkspaceId();
-    const existing = new Set([...(this.response()?.projects ?? []), ...(this.addedByWorkspace()[ws] ?? [])].map((p) => p.slug));
-    const additions = this.projectsService.buildAddedProjects(slugs).filter((p) => !existing.has(p.slug));
-    if (additions.length) {
-      this.addedByWorkspace.update((map) => ({ ...map, [ws]: [...(map[ws] ?? []), ...additions] }));
+  protected handleEmptyStateAction(action: OrgProjectsEmptyAction | undefined): void {
+    if (action === 'addProject') {
+      this.openAddProjects();
+    } else if (action === 'resetFilters') {
+      this.resetFilters();
+    } else if (action === 'retry') {
+      this.retry();
     }
-    this.addProjectsDialogOpen.set(false);
+  }
+
+  protected retryAddableProjectsSearch(): void {
+    void this.searchAddableProjects(this.addProjectsSearchQuery());
+  }
+
+  protected async confirmAddProjects(): Promise<void> {
+    const slugs = this.addProjectsForm.getRawValue().projects;
+    const account = this.accountContext.selectedAccount();
+    const workspace = this.selectedWorkspace();
+    if (!account?.uid || !workspace || !slugs.length) {
+      this.addProjectsDialogOpen.set(false);
+      return;
+    }
+    this.addProjectsSaving.set(true);
+    this.addProjectsSaveError.set(false);
+    try {
+      const { workspace: updated } = await firstValueFrom(this.projectsService.addProjectsToWorkspace(account.uid, workspace.id, slugs));
+      this.mergeWorkspace({ ...updated, name: updated.name || workspace.name });
+      this.reload.update((n) => n + 1);
+      this.addProjectsDialogOpen.set(false);
+    } catch {
+      this.addProjectsSaveError.set(true);
+      this.workspaceReload.update((n) => n + 1);
+      this.reload.update((n) => n + 1);
+    } finally {
+      this.addProjectsSaving.set(false);
+    }
   }
 
   protected selectWorkspace(id: OrgProjectsWorkspaceId): void {
@@ -279,56 +347,97 @@ export class OrgProjectsComponent {
   protected openAddWorkspace(): void {
     this.editingWorkspace.set(null);
     this.workspaceForm.setValue({ name: '' });
+    this.workspaceNameError.set(null);
+    this.workspaceDialogError.set(null);
     this.workspaceDialogOpen.set(true);
   }
 
   protected openWorkspaceSettings(workspace: OrgProjectsWorkspace): void {
     this.editingWorkspace.set(workspace);
     this.workspaceForm.setValue({ name: workspace.name });
+    this.workspaceNameError.set(null);
+    this.workspaceDialogError.set(null);
     this.workspaceDialogOpen.set(true);
   }
 
-  protected saveWorkspace(): void {
+  protected async saveWorkspace(): Promise<void> {
+    if (this.workspaceDialogPending()) {
+      return;
+    }
     const name = this.workspaceForm.getRawValue().name.trim();
     if (!name) {
+      this.workspaceNameError.set('Workspace name is required.');
+      return;
+    }
+    const account = this.accountContext.selectedAccount();
+    if (!account?.uid) {
       return;
     }
     const editing = this.editingWorkspace();
-    if (editing) {
-      this.workspaces.update((list) => list.map((w) => (w.id === editing.id ? { ...w, name } : w)));
-    } else {
-      const id = this.uniqueWorkspaceId(name);
-      this.workspaces.update((list) => [...list, { id, name }]);
-      this.selectWorkspace(id);
+    this.workspaceDialogAction.set('save');
+    this.workspaceNameError.set(null);
+    this.workspaceDialogError.set(null);
+    try {
+      if (editing) {
+        const { workspace } = await firstValueFrom(this.projectsService.renameWorkspace(account.uid, editing.id, name));
+        this.mergeWorkspace({
+          ...workspace,
+          name,
+          projectSlugs: workspace.projectSlugs.length ? workspace.projectSlugs : editing.projectSlugs,
+        });
+      } else {
+        const { workspace } = await firstValueFrom(this.projectsService.createWorkspace(account.uid, name));
+        this.workspaces.update((list) => [...list, workspace]);
+        this.selectWorkspace(workspace.id);
+      }
+      this.workspaceDialogOpen.set(false);
+    } catch {
+      this.workspaceDialogError.set('save');
+    } finally {
+      this.workspaceDialogAction.set(null);
     }
-    this.workspaceDialogOpen.set(false);
   }
 
-  protected deleteWorkspace(): void {
-    const editing = this.editingWorkspace();
-    if (!editing) {
+  protected async deleteWorkspace(): Promise<void> {
+    if (this.workspaceDialogPending()) {
       return;
     }
-    // Capture before mutating: once removed, selectedWorkspaceId() already falls back, hiding the stale `?workspace=`.
-    const wasActive = this.selectedWorkspaceId() === editing.id;
-    // Re-seed the default if the last workspace is removed so the company is never left with none.
-    const remaining = this.workspaces().filter((w) => w.id !== editing.id);
-    const next = remaining.length > 0 ? remaining : [...DEFAULT_ORG_PROJECTS_WORKSPACES];
-    this.workspaces.set(next);
-    if (wasActive) {
-      this.selectWorkspace(next[0].id);
+    const editing = this.editingWorkspace();
+    const account = this.accountContext.selectedAccount();
+    if (!editing || !account?.uid) {
+      return;
     }
-    this.workspaceDialogOpen.set(false);
+    this.workspaceDialogAction.set('delete');
+    this.workspaceDialogError.set(null);
+    try {
+      await firstValueFrom(this.projectsService.deleteWorkspace(account.uid, editing.id));
+      const wasActive = this.selectedWorkspaceId() === editing.id;
+      const remaining = this.workspaces().filter((w) => w.id !== editing.id);
+      this.workspaceLoading.set(true);
+      this.workspaces.set(remaining.length > 0 ? remaining : [...DEFAULT_ORG_PROJECTS_WORKSPACES]);
+      this.workspaceReload.update((n) => n + 1);
+      if (wasActive && remaining.length > 0) {
+        this.selectWorkspace(remaining[0].id);
+      } else if (wasActive) {
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { workspace: null, page: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      }
+      this.workspaceDialogOpen.set(false);
+      this.reload.update((n) => n + 1);
+    } catch {
+      this.workspaceDialogError.set('delete');
+    } finally {
+      this.workspaceDialogAction.set(null);
+    }
   }
 
   protected openRowMenu(menu: MenuComponent, project: OrgLensProject, event: Event): void {
     this.rowMenuItems = this.buildRowMenu(project);
     menu.toggle(event);
-  }
-
-  protected openDetail(project: OrgLensProject): void {
-    // Project Detail sub-page is delivered in LFXV2-1885; navigation target wired there.
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { project: project.slug }, queryParamsHandling: 'merge' });
   }
 
   protected exportCsv(): void {
@@ -391,7 +500,7 @@ export class OrgProjectsComponent {
   }
   protected trendTooltipRow(label: string, value: number): string {
     const sign = value > 0 ? '+' : '';
-    return `<div class="flex items-center justify-between gap-6 whitespace-nowrap"><span class="text-gray-200">${label}</span><span class="font-semibold ${this.pctColorClass(value)}">${sign}${value}%</span></div>`;
+    return `<div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"><span class="truncate text-gray-200">${label}</span><span class="font-semibold ${this.pctColorClass(value)}">${sign}${value}%</span></div>`;
   }
   protected pctColorClass(value: number): string {
     if (value > 1) {
@@ -402,6 +511,7 @@ export class OrgProjectsComponent {
     }
     return 'text-gray-300';
   }
+
   // Plain-text trend summary for screen readers / keyboard focus on the sparkline.
   protected trendAriaLabel(project: OrgLensProject): string {
     const t = project.trend;
@@ -413,23 +523,130 @@ export class OrgProjectsComponent {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
     return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
   }
+  protected onAddProjectsSearchInput(event: Event): void {
+    this.searchAddableProjects((event.target as HTMLInputElement).value);
+  }
+
+  protected searchAddableProjects(query: string): void {
+    this.addProjectsSearchQuery.set(query);
+    if (this.addableProjectsSearchDebounceTimer) {
+      clearTimeout(this.addableProjectsSearchDebounceTimer);
+    }
+    this.addableProjectsSearchDebounceTimer = setTimeout(() => {
+      void this.runAddableProjectsSearch(query);
+    }, 300);
+  }
+
+  private formatTrendDeltaPct(value: number): string {
+    const rounded = Math.round(value * 10) / 10;
+    if (Math.abs(rounded) <= 1) {
+      return `${rounded}%`;
+    }
+    const sign = rounded > 0 ? '+' : '−';
+    const abs = Math.abs(rounded);
+    const body = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
+    return `${sign}${body}%`;
+  }
+
+  private async runAddableProjectsSearch(query: string): Promise<void> {
+    const account = this.accountContext.selectedAccount();
+    const trimmed = query.trim();
+    const requestId = ++this.addableProjectsSearchRequestId;
+    if (!account?.uid || (trimmed.length > 0 && trimmed.length < 2)) {
+      this.addableProjectOptions.set([]);
+      this.addProjectsSearchError.set(false);
+      this.addProjectsSearchLoading.set(false);
+      return;
+    }
+
+    this.addProjectsSearchLoading.set(true);
+    this.addProjectsSearchError.set(false);
+    try {
+      const excludeSlugs = [...new Set(this.selectedWorkspace()?.projectSlugs ?? [])];
+      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, trimmed, excludeSlugs));
+      if (requestId !== this.addableProjectsSearchRequestId) {
+        return;
+      }
+      this.addableProjectOptions.set(this.mapAddableOptions(results));
+    } catch {
+      if (requestId !== this.addableProjectsSearchRequestId) {
+        return;
+      }
+      this.addableProjectOptions.set([]);
+      this.addProjectsSearchError.set(true);
+    } finally {
+      if (requestId === this.addableProjectsSearchRequestId) {
+        this.addProjectsSearchLoading.set(false);
+      }
+    }
+  }
+
   // Private initializers
-  private initResponse(): Signal<OrgLensProjectsResponse | null> {
-    const account$ = toObservable(computed(() => ({ account: this.accountContext.selectedAccount(), _reload: this.reload() })));
+  private initWorkspaces(): Signal<unknown> {
+    const account$ = toObservable(computed(() => ({ account: this.accountContext.selectedAccount(), _reload: this.workspaceReload() })));
     return toSignal(
       account$.pipe(
         switchMap(({ account }) => {
-          // Demo data is not tied to a real org, so it renders even before an org is selected
-          // (local dev / no impersonation). The real integration will key off `account.uid`.
-          const uid = account?.uid ?? 'demo-org';
-          this.loading.set(true);
-          this.error.set(false);
-          return this.projectsService.getProjects(uid, account?.accountName ?? '').pipe(
-            catchError(() => {
-              this.error.set(true);
-              return of(null);
+          if (!account?.uid) {
+            this.workspaces.set([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
+            this.workspaceError.set(false);
+            return of(null);
+          }
+          this.workspaceLoading.set(true);
+          this.workspaceError.set(false);
+          return this.projectsService.getWorkspaces(account.uid).pipe(
+            tap((response) => {
+              this.workspaces.set(response.workspaces.length ? response.workspaces : [...DEFAULT_ORG_PROJECTS_WORKSPACES]);
+              this.workspaceLoading.set(false);
             }),
-            finalize(() => this.loading.set(false))
+            catchError(() => {
+              this.workspaceError.set(true);
+              this.workspaces.set([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
+              this.workspaceLoading.set(false);
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initResponse(): Signal<OrgLensProjectsResponse | null> {
+    const account$ = toObservable(
+      computed(() => ({
+        account: this.accountContext.selectedAccount(),
+        workspace: this.selectedWorkspace(),
+        workspaceError: this.workspaceError(),
+        workspaceLoading: this.workspaceLoading(),
+        _workspaces: this.workspacesResponse(),
+        _reload: this.reload(),
+      }))
+    );
+    return toSignal(
+      account$.pipe(
+        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces }) => {
+          if (!account?.uid || !workspace || workspaceError || workspaceLoading || _workspaces === null) {
+            this.projectsLoading.set(false);
+            return of(null);
+          }
+          if (workspace.projectSlugs.length === 0) {
+            this.projectsLoading.set(false);
+            this.projectsError.set(false);
+            return of(this.emptyProjectsResponse(account.accountName ?? '', account.uid));
+          }
+          this.projectsLoading.set(true);
+          this.projectsError.set(false);
+          return concat(
+            of(null),
+            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
+              tap(() => this.projectsLoading.set(false)),
+              catchError(() => {
+                this.projectsError.set(true);
+                this.projectsLoading.set(false);
+                return of(null);
+              })
+            )
           );
         })
       ),
@@ -438,55 +655,19 @@ export class OrgProjectsComponent {
   }
 
   private initFoundationOptions(): Signal<{ label: string; value: string }[]> {
-    return computed(() => {
-      const projects = this.response()?.projects ?? [];
-      const bySlug = new Map<string, string>();
-      for (const project of projects) {
-        bySlug.set(project.foundation.slug, project.foundation.name);
-      }
-      const options = [...bySlug.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
-      return [{ label: 'All Foundations', value: ALL_FOUNDATIONS }, ...options];
-    });
+    return computed(() => this.buildFoundationOptions());
   }
 
   private initEmployeeOptions(): Signal<{ label: string; value: string }[]> {
-    return computed(() => {
-      const projects = this.response()?.projects ?? [];
-      const byId = new Map<string, string>();
-      for (const project of projects) {
-        for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
-          byId.set(person.id, person.name);
-        }
-      }
-      return [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
-    });
+    return computed(() => this.buildEmployeeOptions());
   }
 
   private initFilteredProjects(): Signal<OrgLensProject[]> {
-    return computed(() => {
-      const workspace = this.selectedWorkspaceId();
-      const all = [...(this.response()?.projects ?? []), ...(this.addedByWorkspace()[workspace] ?? [])];
-      const foundation = this.formValue().foundation ?? ALL_FOUNDATIONS;
-      // Ignore stale/unknown employee ids when filtering; URL query params are left unchanged.
-      const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
-      const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
-      const hidden = this.hiddenByWorkspace()[workspace] ?? new Set<string>();
-      return all
-        .filter((p) => !hidden.has(p.slug))
-        .filter((p) => this.matchesWorkspace(p, workspace))
-        .filter((p) => foundation === ALL_FOUNDATIONS || p.foundation.slug === foundation)
-        .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
-    });
+    return computed(() => this.buildFilteredProjects());
   }
 
   private initSortedProjects(): Signal<OrgLensProject[]> {
-    return computed(() => {
-      const projects = [...this.filteredProjects()];
-      const field = this.sortField();
-      const dir = this.sortDir();
-      projects.sort((a, b) => this.compareProjects(a, b, field, dir));
-      return projects;
-    });
+    return computed(() => this.buildSortedProjects());
   }
 
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
@@ -494,6 +675,7 @@ export class OrgProjectsComponent {
     return computed(() =>
       this.sortedProjects().map((project) => ({
         ...project,
+        insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
         technicalBars: this.bandBars(project.technicalInfluence),
         ecosystemBars: this.bandBars(project.ecosystemInfluence),
         technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
@@ -506,9 +688,178 @@ export class OrgProjectsComponent {
         },
         trendTooltipHtml: this.trendTooltip(project),
         trendAriaLabel: this.trendAriaLabel(project),
+        trendDeltaLabel: this.formatTrendDeltaPct(project.trend.deltaPct),
+        showTrendArrow: Math.abs(project.trend.deltaPct) > 1,
+        trendArrowIcon: INFLUENCE_TREND_ARROW_ICON[project.trend.direction],
+        trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
+        trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
         healthAriaLabel: this.healthAriaLabel(project),
       }))
     );
+  }
+
+  private initWorkspaceDialogErrorMessage(): string | null {
+    const error = this.workspaceDialogError();
+    if (error === 'delete') {
+      return 'Could not delete this workspace. Try again.';
+    }
+    if (error === 'save') {
+      return this.editingWorkspace() ? 'Could not save workspace changes. Try again.' : 'Could not create this workspace. Try again.';
+    }
+    return null;
+  }
+
+  private initSortField(): OrgProjectsSortField {
+    const raw = this.queryParamMap().get('sort');
+    return raw && VALID_ORG_PROJECTS_SORT_FIELDS.has(raw as OrgProjectsSortField) ? (raw as OrgProjectsSortField) : DEFAULT_ORG_PROJECTS_SORT_FIELD;
+  }
+
+  private initSortIconMap(): Record<OrgProjectsSortField, string> {
+    const field = this.sortField();
+    const active = this.sortDir() === 'asc' ? 'fa-solid fa-sort-up text-blue-500' : 'fa-solid fa-sort-down text-blue-500';
+    const inactive = 'fa-light fa-sort text-gray-300';
+    return {
+      name: field === 'name' ? active : inactive,
+      health: field === 'health' ? active : inactive,
+      technicalInfluence: field === 'technicalInfluence' ? active : inactive,
+      ecosystemInfluence: field === 'ecosystemInfluence' ? active : inactive,
+      influenceTrend: field === 'influenceTrend' ? active : inactive,
+      contributors: field === 'contributors' ? active : inactive,
+      participants: field === 'participants' ? active : inactive,
+    };
+  }
+
+  private initAriaSortMap(): Record<OrgProjectsSortField, OrgProjectsAriaSort> {
+    const field = this.sortField();
+    const active: OrgProjectsAriaSort = this.sortDir() === 'asc' ? 'ascending' : 'descending';
+    return {
+      name: field === 'name' ? active : 'none',
+      health: field === 'health' ? active : 'none',
+      technicalInfluence: field === 'technicalInfluence' ? active : 'none',
+      ecosystemInfluence: field === 'ecosystemInfluence' ? active : 'none',
+      influenceTrend: field === 'influenceTrend' ? active : 'none',
+      contributors: field === 'contributors' ? active : 'none',
+      participants: field === 'participants' ? active : 'none',
+    };
+  }
+
+  private initPageSize(): number {
+    const raw = Number(this.queryParamMap().get('size'));
+    return ORG_PROJECTS_PAGE_SIZE_OPTIONS.includes(raw) ? raw : DEFAULT_ORG_PROJECTS_PAGE_SIZE;
+  }
+
+  private initPageFirst(): number {
+    const page = Math.max(1, Number(this.queryParamMap().get('page')) || 1);
+    return (page - 1) * this.pageSize();
+  }
+
+  private initSelectedWorkspaceId(): OrgProjectsWorkspaceId {
+    const list = this.workspaces();
+    const raw = this.queryParamMap().get('workspace');
+    if (raw && list.some((w) => w.id === raw)) {
+      return raw;
+    }
+    const defaultWorkspace = list.find((w) => w.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID || w.name === DEFAULT_ORG_PROJECTS_WORKSPACE_NAME);
+    if (defaultWorkspace) {
+      return defaultWorkspace.id;
+    }
+    return list[0]?.id ?? DEFAULT_ORG_PROJECTS_WORKSPACE_ID;
+  }
+
+  private initAddProjectDisabledReason(): string | undefined {
+    if (!this.hasCompany()) return 'Select an organization first';
+    if (this.loading()) return 'Projects are still loading';
+    if (this.error()) return 'Resolve the loading error first';
+    if (!this.selectedWorkspace()) return 'No workspace is selected';
+    return undefined;
+  }
+
+  private initAddProjectsSearchEmptyTitle(): string {
+    const query = this.addProjectsSearchQuery().trim();
+    if (query.length === 1) {
+      return 'Type at least 2 characters to search projects.';
+    }
+    return query ? 'No projects match your search.' : 'No projects available to add.';
+  }
+
+  private initTableEmptyState(): OrgProjectsEmptyState {
+    const workspace = this.selectedWorkspace();
+    if (workspace && !this.isCanonicalDefaultWorkspace(workspace) && workspace.projectSlugs.length === 0) {
+      return {
+        icon: 'fa-light fa-folder-plus',
+        title: 'No projects in this workspace yet',
+        subtitle: 'Add projects from your organization catalog to start tracking this workspace.',
+        ctaLabel: 'Add Project',
+        ctaIcon: 'fa-light fa-plus',
+        action: 'addProject',
+      };
+    }
+
+    if ((this.response()?.projects.length ?? 0) === 0) {
+      if (workspace && workspace.projectSlugs.length > 0) {
+        return {
+          icon: 'fa-light fa-triangle-exclamation',
+          title: 'Could not load projects for this workspace',
+          subtitle: 'Your saved project list did not match any catalog rows. Retry or add projects again.',
+          ctaLabel: 'Retry',
+          ctaIcon: 'fa-light fa-rotate-right',
+          action: 'retry',
+        };
+      }
+      return {
+        icon: 'fa-light fa-folder-open',
+        title: 'No projects with activity yet',
+        subtitle: 'Projects will appear here once this organization has activity in the catalog.',
+      };
+    }
+
+    return {
+      icon: 'fa-light fa-filter-slash',
+      title: 'No results for filters',
+      subtitle: 'Try a different workspace or clear your filters.',
+      ctaLabel: 'Reset filters',
+      ctaIcon: 'fa-light fa-rotate-left',
+      action: 'resetFilters',
+    };
+  }
+
+  private isCanonicalDefaultWorkspace(workspace: Pick<OrgProjectsWorkspace, 'id' | 'name'>): boolean {
+    return workspace.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID || workspace.name === DEFAULT_ORG_PROJECTS_WORKSPACE_NAME;
+  }
+
+  private buildFoundationOptions(): { label: string; value: string }[] {
+    const bySlug = new Map<string, string>();
+    for (const project of this.response()?.projects ?? []) {
+      bySlug.set(project.foundation.slug, project.foundation.name);
+    }
+    const options = [...bySlug.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    return [{ label: 'All Foundations', value: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER }, ...options];
+  }
+
+  private buildEmployeeOptions(): { label: string; value: string }[] {
+    const byId = new Map<string, string>();
+    for (const project of this.response()?.projects ?? []) {
+      for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+        byId.set(person.id, person.name);
+      }
+    }
+    return [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  private buildFilteredProjects(): OrgLensProject[] {
+    const all = this.response()?.projects ?? [];
+    const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
+    const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
+    const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
+    return all
+      .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
+      .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
+  }
+
+  private buildSortedProjects(): OrgLensProject[] {
+    const projects = [...this.filteredProjects()];
+    projects.sort((a, b) => this.compareProjects(a, b, this.sortField(), this.sortDir()));
+    return projects;
   }
 
   private compareProjects(a: OrgLensProject, b: OrgLensProject, field: OrgProjectsSortField, dir: SortDirection): number {
@@ -547,52 +898,74 @@ export class OrgProjectsComponent {
     if (health === 'excellent') {
       return 2;
     }
-    return health === 'healthy' ? 1 : 0;
-  }
-
-  private matchesWorkspace(project: OrgLensProject, workspace: OrgProjectsWorkspaceId): boolean {
-    switch (workspace) {
-      case 'most-active':
-        // Active = not archived (excludes the demo "Jenkins" archived row with score 0).
-        return project.influenceScore > 0;
-      case 'key-projects':
-        // "Key" = projects we lead or actively contribute to.
-        return project.technicalInfluence === 'leading' || project.technicalInfluence === 'contributing';
-      case 'finos':
-      case 'cncf':
-        // Foundation-scoped workspaces match by foundation slug.
-        return project.foundation.slug === workspace;
-      case DEFAULT_ORG_PROJECTS_WORKSPACE_ID:
-      default:
-        // "All Projects with Activities" (and any custom workspace) shows every project with activity.
-        return true;
+    if (health === 'healthy') {
+      return 1;
     }
+    if (health === 'at-risk') {
+      return 0;
+    }
+    return -1;
   }
 
   private buildRowMenu(project: OrgLensProject): MenuItem[] {
     return [{ label: 'Hide project from workspace', icon: 'fa-light fa-eye-slash', command: () => this.hideFromWorkspace(project.slug) }];
   }
 
-  private hideFromWorkspace(slug: string): void {
-    const ws = this.selectedWorkspaceId();
-    this.hiddenByWorkspace.update((map) => ({ ...map, [ws]: new Set(map[ws] ?? []).add(slug) }));
+  private async hideFromWorkspace(slug: string): Promise<void> {
+    const account = this.accountContext.selectedAccount();
+    const workspace = this.selectedWorkspace();
+    if (!account?.uid || !workspace) {
+      return;
+    }
+    try {
+      const { workspace: updated } = await firstValueFrom(this.projectsService.removeProjectFromWorkspace(account.uid, workspace.id, slug));
+      this.mergeWorkspace({ ...updated, name: updated.name || workspace.name });
+      this.reload.update((n) => n + 1);
+    } catch {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Could not update workspace',
+        detail: 'The project was not hidden from this workspace. Please try again.',
+      });
+    }
   }
 
-  private uniqueWorkspaceId(name: string): string {
-    const base =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '') || 'workspace';
-    const existing = new Set(this.workspaces().map((w) => w.id));
-    if (!existing.has(base)) {
-      return base;
+  private mergeWorkspace(workspace: OrgProjectsWorkspace): void {
+    this.workspaces.update((list) => list.map((item) => (item.id === workspace.id ? workspace : item)));
+  }
+
+  private mapAddableOptions(results: OrgLensProjectSearchResult[]): AddableProjectOption[] {
+    const inWorkspace = new Set(this.selectedWorkspace()?.projectSlugs ?? []);
+    return results
+      .filter((project) => !inWorkspace.has(project.slug))
+      .map((project) => ({ value: project.slug, label: project.name, logoUrl: project.logoUrl }));
+  }
+
+  private syncSelectedAddableProjectOptions(): void {
+    const selected = new Set(this.addProjectsForm.getRawValue().projects);
+    const options = this.mergeAddableOptions([...this.selectedAddableProjectOptions(), ...this.addableProjectOptions()]);
+    this.selectedAddableProjectOptions.set(options.filter((option) => selected.has(option.value)));
+  }
+
+  private mergeAddableOptions(options: AddableProjectOption[]): AddableProjectOption[] {
+    const byValue = new Map<string, AddableProjectOption>();
+    for (const option of options) {
+      byValue.set(option.value, option);
     }
-    let suffix = 2;
-    while (existing.has(`${base}-${suffix}`)) {
-      suffix += 1;
-    }
-    return `${base}-${suffix}`;
+    return [...byValue.values()];
+  }
+
+  private emptyProjectsResponse(orgName: string, orgUid: string): OrgLensProjectsResponse {
+    return {
+      orgSlug:
+        orgName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') || orgUid,
+      orgName,
+      dataUpdatedAt: new Date().toISOString(),
+      projects: [],
+    };
   }
 
   private readEmployeesFromUrl(): string[] {

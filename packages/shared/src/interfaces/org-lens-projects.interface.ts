@@ -1,23 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Org Lens — Projects page contracts (LFXV2-1883 / LFXV2-1884).
- *
- * The wire contracts (OrgLensProject, OrgLensProjectsResponse, etc.) are what the API returns;
- * the current implementation is fed by a demo-data fixture through `OrgLensProjectsService`, and the
- * live Snowflake / LFX Insights integration (a separate story) will populate the same shapes without
- * any component changes. The "Client-only view models" section at the bottom is NOT on the wire —
- * it is built in the component and must never be populated from API data.
- */
-
 import { TagSeverity } from './components.interface';
 
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
 export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
 /** CHAOSS-derived project health classification (via LFX Insights). */
-export type HealthScore = 'excellent' | 'healthy' | 'at-risk';
+export type HealthScore = 'excellent' | 'healthy' | 'at-risk' | 'unavailable';
 
 /** Direction of a one-year influence trend, used for color-coding the sparkline + delta. */
 export type InfluenceTrendDirection = 'up' | 'down' | 'flat';
@@ -122,13 +112,33 @@ export interface OrgLensProjectsResponse {
   projects: OrgLensProject[];
 }
 
-/** Workspace identifier (`?workspace=`). The default uses a stable slug; user-created workspaces get generated slugs. */
+export interface OrgLensProjectSearchResult {
+  slug: string;
+  name: string;
+  logoUrl: string;
+  foundation: OrgLensProjectFoundation;
+}
+
+export interface OrgLensProjectSearchResponse {
+  results: OrgLensProjectSearchResult[];
+}
+
+export interface AddableProjectOption {
+  value: string;
+  label: string;
+  logoUrl: string;
+}
+
 export type OrgProjectsWorkspaceId = string;
 
-/** A saved Org Lens workspace (filter preset). Each company is seeded with the default; users add/rename/delete their own. */
 export interface OrgProjectsWorkspace {
   id: OrgProjectsWorkspaceId;
   name: string;
+  projectSlugs: string[];
+}
+
+export interface OrgProjectsWorkspacesResponse {
+  workspaces: OrgProjectsWorkspace[];
 }
 
 /** Sortable Projects-table column keys (`?sort=`). */
@@ -137,12 +147,18 @@ export type OrgProjectsSortField = 'name' | 'health' | 'technicalInfluence' | 'e
 /** Sort direction (`?dir=`). */
 export type SortDirection = 'asc' | 'desc';
 
-/*
- * ── Client-only view models (NOT API wire contracts) ─────────────────────────
- * Built in the component off the wire types above; never populated from API data.
- * `trendTooltipHtml` is component-authored markup rendered with `[escape]="false"`,
- * so it must never be sourced from the wire — keep these types out of any API mapping.
- */
+export type OrgProjectsAriaSort = 'ascending' | 'descending' | 'none';
+
+export type OrgProjectsEmptyAction = 'addProject' | 'resetFilters' | 'retry';
+
+export interface OrgProjectsEmptyState {
+  icon: string;
+  title: string;
+  subtitle: string;
+  ctaLabel?: string;
+  ctaIcon?: string;
+  action?: OrgProjectsEmptyAction;
+}
 
 /** A single rounded bar in the influence signal-strength icon (precomputed for the table view-model). */
 export interface OrgProjectsSignalBar {
@@ -156,6 +172,7 @@ export interface OrgProjectsSignalBar {
 
 /** Projects-table row: the project plus presentation values precomputed off the template hot path. */
 export interface OrgProjectsTableRow extends OrgLensProject {
+  insightsUrl: string;
   technicalBars: OrgProjectsSignalBar[];
   ecosystemBars: OrgProjectsSignalBar[];
   /** Display label for the technical influence band (e.g. "Leading"). */
@@ -172,6 +189,80 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   trendTooltipHtml: string;
   /** Plain-text trend summary for screen readers / keyboard focus. */
   trendAriaLabel: string;
+  trendDeltaLabel: string;
+  showTrendArrow: boolean;
+  trendArrowIcon: string;
+  trendDeltaTextClass: string;
+  trendArrowBadgeClass: string;
   /** Plain-text health summary (rating + sub-scores) for screen readers / keyboard focus. */
   healthAriaLabel: string;
+}
+
+export interface OrgLensProjectRow {
+  ACCOUNT_ID: string;
+  PROJECT_ID: string;
+  PROJECT_SLUG: string;
+  PROJECT_NAME: string;
+  PROJECT_LOGO_URL: string | null;
+  FOUNDATION_ID: string | null;
+  FOUNDATION_SLUG: string | null;
+  FOUNDATION_NAME: string | null;
+  FOUNDATION_LOGO_URL: string | null;
+  TECHNICAL_INFLUENCE: string | null;
+  ECOSYSTEM_INFLUENCE: string | null;
+  INFLUENCE_SCORE: number | null;
+  PRIOR_YEAR_SCORE: number | null;
+  DELTA_PCT: number | null;
+  TECHNICAL_DELTA_PCT: number | null;
+  ECOSYSTEM_DELTA_PCT: number | null;
+  TREND_DIRECTION: string | null;
+  COMBINED_SCORE_SERIES: unknown;
+  DBT_RUN_AT: string | Date | null;
+}
+
+export interface OrgLensProjectPersonRow {
+  PROJECT_SLUG: string;
+  PARTICIPANT_ID: string;
+  INVOLVEMENT_ROLE: 'maintainer' | 'contributor' | 'participant';
+  PARTICIPANT_NAME: string | null;
+  PARTICIPANT_AVATAR_URL: string | null;
+}
+
+export interface OrgProjectsWorkspaceResource {
+  uid?: string;
+  id?: string;
+  name?: string;
+}
+
+export interface OrgProjectsWorkspaceProjectResource {
+  b2b_org_workspace_uid?: string;
+  project_uid?: string;
+  project_slug?: string;
+  project_name?: string;
+}
+
+export interface OrgProjectsMemberServiceWorkspaceProject {
+  project_uid?: string;
+  project_slug?: string;
+}
+
+export interface OrgProjectsCdpProject {
+  slug?: string;
+  name?: string;
+  description?: string;
+  logo?: string;
+  logoUrl?: string;
+  healthScore?: OrgProjectsCdpHealthScore | number;
+}
+
+export interface OrgProjectsCdpHealthScore {
+  overallScore?: number;
+  contributorPercentage?: number;
+  popularityPercentage?: number;
+  developmentPercentage?: number;
+  securityPercentage?: number;
+}
+
+export interface OrgProjectsCdpProjectListResponse {
+  data?: OrgProjectsCdpProject[];
 }
