@@ -46,6 +46,27 @@
                 <i class="fa-brands fa-golang text-[#00ADD8] text-sm flex-shrink-0" aria-hidden="true"></i>
                 Go
               }
+              @case ('cargo') {
+                <i class="fa-brands fa-rust text-[#CE422B] text-sm flex-shrink-0" aria-hidden="true"></i>
+                Cargo
+              }
+              @case ('nuget') {
+                <span
+                  class="inline-flex items-center justify-center bg-[#004880] text-white font-bold rounded px-1 py-0.5 leading-none tracking-tight flex-shrink-0"
+                  style="font-size: 9px"
+                  aria-hidden="true"
+                  >Nu</span
+                >
+                NuGet
+              }
+              @case ('packagist') {
+                <i class="fa-brands fa-php text-[#f28d1a] text-sm flex-shrink-0" aria-hidden="true"></i>
+                Packagist
+              }
+              @case ('rubygems') {
+                <i class="fa-solid fa-gem text-[#c00] text-sm flex-shrink-0" aria-hidden="true"></i>
+                RubyGems
+              }
               @default {
                 <i class="fa-light fa-cube text-gray-400 text-sm flex-shrink-0" aria-hidden="true"></i>
                 {{ pkg.ecosystem }}
