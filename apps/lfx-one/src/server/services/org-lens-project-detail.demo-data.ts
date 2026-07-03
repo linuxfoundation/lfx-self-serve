@@ -438,7 +438,7 @@ function leaderboard(seed: ProjectDetailSeed, orgName: string): OrgLensProjectLe
 
   const viewingSpark = ramp(seed.influence.combined, 0.82, 1);
   rows.push({
-    orgName: orgName || 'Your organization',
+    orgName: orgName || 'Your Organization',
     orgLogoUrl: '',
     scores: { combined: round1(seed.influence.combined), technical: round1(seed.influence.technical), ecosystem: round1(seed.influence.ecosystem) },
     activityCount: Math.round(seed.influence.combined * 46),
