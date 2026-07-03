@@ -270,7 +270,7 @@ export class OrgProjectDetailComponent {
     el.scrollBy({ left: direction * 336, behavior: 'smooth' });
   }
 
-  /** Updates left/right arrow visibility from the track's scroll position. */
+  /** Builds a stable `@for` track key from a detail row's cells. */
   protected rowKey(row: OrgLensCardDetailRow): string {
     return row.cells.map((cell) => cell.person?.name ?? cell.text ?? '').join('|');
   }
