@@ -11,6 +11,7 @@ import { OrgLensDocumentsController } from '../controllers/org-lens-documents.co
 import { OrgLensEventsController } from '../controllers/org-lens-events.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
 import { OrgLensKeyContactsController } from '../controllers/org-lens-key-contacts.controller';
+import { OrgLensMeetingsController } from '../controllers/org-lens-meetings.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
@@ -19,6 +20,7 @@ function buildOrgsRouter(): Router {
   const router = Router();
   const orgLensFoundationsController = new OrgLensFoundationsController();
   const orgLensEventsController = new OrgLensEventsController();
+  const orgLensMeetingsController = new OrgLensMeetingsController();
   const orgLensMembershipsController = new OrgLensMembershipsController();
   const orgLensBoardCommitteeController = new OrgLensBoardCommitteeController();
   const orgLensDocumentsController = new OrgLensDocumentsController();
@@ -45,6 +47,9 @@ function buildOrgsRouter(): Router {
   router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
   router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
+  router.get('/:accountId/lens/meetings/summary', (req, res, next) => orgLensMeetingsController.getOrgMeetingsSummary(req, res, next));
+  router.get('/:accountId/lens/meetings/projects', (req, res, next) => orgLensMeetingsController.getMeetingProjects(req, res, next));
+  router.get('/:accountId/lens/meetings', (req, res, next) => orgLensMeetingsController.getOrgUpcomingMeetings(req, res, next));
   router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));

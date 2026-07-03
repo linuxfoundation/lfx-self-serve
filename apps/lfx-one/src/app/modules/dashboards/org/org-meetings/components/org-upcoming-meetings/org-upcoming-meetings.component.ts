@@ -3,7 +3,7 @@
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { Component, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingRsvpTally } from '@lfx-one/shared/interfaces';
@@ -19,6 +19,13 @@ export class OrgUpcomingMeetingsComponent {
 
   public readonly meetings = input.required<readonly OrgMeeting[]>();
   public readonly loading = input<boolean>(false);
+  public readonly loadingMore = input<boolean>(false);
+  public readonly loadMoreError = input<boolean>(false);
+  public readonly error = input<boolean>(false);
+  public readonly orgName = input<string>('');
+  public readonly hasMore = input<boolean>(false);
+  public readonly retry = output<void>();
+  public readonly loadMore = output<void>();
 
   protected readonly expandedIds = signal<ReadonlySet<string>>(new Set());
 

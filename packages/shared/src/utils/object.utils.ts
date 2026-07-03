@@ -42,3 +42,13 @@ export function nullifyEmptyStrings<T>(value: T): NullifyEmptyStrings<T> {
   }
   return value as NullifyEmptyStrings<T>;
 }
+
+/** Type guard: a non-null, non-array object (one Snowflake result row). */
+export function isObjectRow(el: unknown): el is Record<string, unknown> {
+  return el !== null && typeof el === 'object' && !Array.isArray(el);
+}
+
+/** Shallow accept-guard for a read-through cache of object rows; a corrupt/foreign entry degrades to a miss, so callers reading a required contract key must validate it on top of this shape check. */
+export function isObjectRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isObjectRow);
+}
