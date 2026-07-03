@@ -200,12 +200,8 @@ export class OrgProjectDetailComponent {
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
 
   constructor() {
-    this.searchForm.controls.technical.valueChanges
-      .pipe(debounceTime(250), takeUntilDestroyed())
-      .subscribe((value) => this.techSearch.set(value));
-    this.searchForm.controls.ecosystem.valueChanges
-      .pipe(debounceTime(250), takeUntilDestroyed())
-      .subscribe((value) => this.ecoSearch.set(value));
+    this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
+    this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
 
     // React when tab or card counts change to refresh horizontal scroll arrows.
     toObservable(
