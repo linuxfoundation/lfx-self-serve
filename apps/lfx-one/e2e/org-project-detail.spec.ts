@@ -115,7 +115,7 @@ test.describe('Org Project Detail — leaderboards', () => {
   });
 
   test('search filters a board to matching organizations', async ({ page }) => {
-    await page.getByTestId('project-detail-search-technical').fill('Google');
+    await page.locator('[data-test="project-detail-search-technical"]').fill('Google');
     const rows = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Google');

@@ -4,12 +4,14 @@
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, ElementRef, inject, PLATFORM_ID, signal, type Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { OrgProjectDetailTabBarComponent } from './org-project-detail-tab-bar.component';
@@ -35,6 +37,7 @@ import {
 import type {
   InfluenceCardVm,
   LeaderboardDimension,
+  OrgLensCardDetailRow,
   OrgLensCardDetailSection,
   OrgLensLeaderboardMetric,
   OrgLensLeaderboardTimeRange,
@@ -51,7 +54,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
-import { catchError, combineLatest, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
 
 /** Band thresholds per Boysel et al. markup-mu (Leading / Contributing / Participating / Non-LF). */
 function bandForScore(score: number): OrgLensProjectBand {
@@ -72,9 +75,11 @@ function bandForScore(score: number): OrgLensProjectBand {
   selector: 'lfx-org-project-detail',
   imports: [
     NgTemplateOutlet,
+    ReactiveFormsModule,
     BreadcrumbComponent,
     ChartComponent,
     EmptyStateComponent,
+    InputTextComponent,
     OrgProjectDetailTabBarComponent,
     TableComponent,
     TagComponent,
@@ -119,9 +124,7 @@ export class OrgProjectDetailComponent {
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly pageState: Signal<OrgLensProjectDetailPageState> = computed(() => this.initPageState());
-
-  /** The viewing org's display name — falls back to a demo placeholder when no org is selected. */
-  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? 'Acme Corp');
+  protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
 
   // Hero presentation — derived from the loaded payload.
   protected readonly hero = computed(() => this.detail()?.hero ?? null);
@@ -177,6 +180,10 @@ export class OrgProjectDetailComponent {
     return `Activity (${PD_TIME_RANGE_MONTHS[this.timeRange()]}mo)`;
   });
   protected readonly drawerTimeRangeLabel = computed(() => `Last ${PD_TIME_RANGE_MONTHS[this.timeRange()]} months`);
+  protected readonly searchForm = new FormGroup({
+    technical: new FormControl('', { nonNullable: true }),
+    ecosystem: new FormControl('', { nonNullable: true }),
+  });
   protected readonly techSearch = signal('');
   protected readonly ecoSearch = signal('');
   protected readonly techSearchHasQuery = computed(() => this.techSearch().trim().length > 0);
@@ -193,6 +200,13 @@ export class OrgProjectDetailComponent {
   protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
 
   constructor() {
+    this.searchForm.controls.technical.valueChanges
+      .pipe(debounceTime(250), takeUntilDestroyed())
+      .subscribe((value) => this.techSearch.set(value));
+    this.searchForm.controls.ecosystem.valueChanges
+      .pipe(debounceTime(250), takeUntilDestroyed())
+      .subscribe((value) => this.ecoSearch.set(value));
+
     // React when tab or card counts change to refresh horizontal scroll arrows.
     toObservable(
       computed(() => ({
@@ -246,11 +260,6 @@ export class OrgProjectDetailComponent {
     });
   }
 
-  protected onSearch(dimension: LeaderboardDimension, event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    (dimension === 'technical' ? this.techSearch : this.ecoSearch).set(value);
-  }
-
   protected openCardDetail(card: InfluenceCardVm): void {
     this.selectedCard.set(card);
     this.drawerOpen.set(true);
@@ -266,6 +275,10 @@ export class OrgProjectDetailComponent {
   }
 
   /** Updates left/right arrow visibility from the track's scroll position. */
+  protected rowKey(row: OrgLensCardDetailRow): string {
+    return row.cells.map((cell) => cell.person?.name ?? cell.text ?? '').join('|');
+  }
+
   protected onTrackScroll(el: HTMLElement, track: 'tech' | 'eco'): void {
     this.refreshArrows(el, track === 'tech');
   }
@@ -337,6 +350,7 @@ export class OrgProjectDetailComponent {
       }),
       tap((response) => {
         this.detail.set(response);
+        this.searchForm.reset({ technical: '', ecosystem: '' });
         this.techSearch.set('');
         this.ecoSearch.set('');
         if (!this.fetchError()) this.fetchLoading.set(false);
@@ -424,25 +438,34 @@ export class OrgProjectDetailComponent {
       tip.style.top = `${rect.top + tooltip.caretY}px`;
       tip.style.transform = 'translateY(-100%)';
 
-      const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] ?? ch);
+      tip.replaceChildren();
 
-      const title = esc(tooltip.title?.[0] ?? '');
-      const rows = (tooltip.dataPoints ?? [])
-        .map((p) => {
-          const label = esc(p.dataset.label ?? '');
-          const formatted = esc(`${p.formattedValue}${valueSuffix}`);
-          const dotColor = esc(p.dataset.borderColor ?? '');
-          return (
-            '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
-            `<span style="width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${dotColor}"></span>` +
-            `<span style="font-size:12px;color:#6B7280;white-space:nowrap">${label}: ` +
-            `<strong style="color:#111827;font-weight:600">${formatted}</strong></span>` +
-            '</div>'
-          );
-        })
-        .join('');
+      const titleEl = document.createElement('p');
+      titleEl.style.cssText = 'font-size:12px;font-weight:600;color:#111827;white-space:nowrap';
+      titleEl.textContent = tooltip.title?.[0] ?? '';
+      tip.appendChild(titleEl);
 
-      tip.innerHTML = `<p style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap">${title}</p>${rows}`;
+      for (const p of tooltip.dataPoints ?? []) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px';
+
+        const dot = document.createElement('span');
+        dot.style.cssText = `width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor ?? ''}`;
+        row.appendChild(dot);
+
+        const labelEl = document.createElement('span');
+        labelEl.style.cssText = 'font-size:12px;color:#6B7280;white-space:nowrap';
+        labelEl.textContent = `${p.dataset.label ?? ''}: `;
+
+        const valueEl = document.createElement('strong');
+        valueEl.style.cssText = 'color:#111827;font-weight:600';
+        valueEl.textContent = `${p.formattedValue}${valueSuffix}`;
+        labelEl.appendChild(valueEl);
+        row.appendChild(labelEl);
+
+        tip.appendChild(row);
+      }
+
       tip.style.display = 'block';
     };
   }
