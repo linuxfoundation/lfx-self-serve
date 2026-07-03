@@ -614,7 +614,7 @@ export class OrgLensProjectsService {
 
     try {
       const probeSlug = seedSlugs[0]!.trim().toLowerCase();
-      const memberSlugs = await this.fetchMemberServiceWorkspaceSlugs(req, accountId, workspace.id, probeSlug);
+      const memberSlugs = await this.probeWorkspaceMembershipViaBulkUpsert(req, accountId, workspace.id, probeSlug);
       const probeOnlyMembership = memberSlugs.length === 1 && memberSlugs[0]?.trim().toLowerCase() === probeSlug;
 
       if (memberSlugs.length > 0 && !probeOnlyMembership) {
@@ -636,7 +636,7 @@ export class OrgLensProjectsService {
         }
       );
       try {
-        const memberSlugs = await this.fetchMemberServiceWorkspaceSlugs(req, accountId, workspace.id, seedSlugs[0]!.trim().toLowerCase());
+        const memberSlugs = await this.probeWorkspaceMembershipViaBulkUpsert(req, accountId, workspace.id, seedSlugs[0]!.trim().toLowerCase());
         return { ...workspace, projectSlugs: memberSlugs };
       } catch {
         return { ...workspace, projectSlugs: [] };
@@ -644,7 +644,12 @@ export class OrgLensProjectsService {
     }
   }
 
-  private async fetchMemberServiceWorkspaceSlugs(req: Request, accountId: string, workspaceId: string, probeSlug: string): Promise<string[]> {
+  /**
+   * Probe workspace membership via member-service bulk upsert.
+   * Query-service project reads can lag behind writes; posting the probe slug is an
+   * intentional idempotent write that returns the current membership list.
+   */
+  private async probeWorkspaceMembershipViaBulkUpsert(req: Request, accountId: string, workspaceId: string, probeSlug: string): Promise<string[]> {
     const response = await this.microserviceProxy.proxyRequest<unknown>(
       req,
       'LFX_V2_MEMBER_SERVICE',
