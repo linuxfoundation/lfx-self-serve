@@ -199,7 +199,7 @@ export class OrgLensProjectsController {
           .map((slug) => slug.trim().toLowerCase())
           .filter(Boolean)
       ),
-    ];
+    ].sort();
     return slugs.length ? slugs : null;
   }
 

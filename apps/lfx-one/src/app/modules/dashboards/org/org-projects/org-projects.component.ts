@@ -24,6 +24,7 @@ import {
   INFLUENCE_TREND_TEXT_CLASS,
   ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
+  ORG_PROJECTS_SEARCH_MIN_LENGTH,
   VALID_ORG_PROJECTS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -552,7 +553,7 @@ export class OrgProjectsComponent {
     const account = this.accountContext.selectedAccount();
     const trimmed = query.trim();
     const requestId = ++this.addableProjectsSearchRequestId;
-    if (!account?.uid || (trimmed.length > 0 && trimmed.length < 2)) {
+    if (!account?.uid || (trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH)) {
       this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(false);
       this.addProjectsSearchLoading.set(false);
@@ -776,8 +777,8 @@ export class OrgProjectsComponent {
 
   private initAddProjectsSearchEmptyTitle(): string {
     const query = this.addProjectsSearchQuery().trim();
-    if (query.length === 1) {
-      return 'Type at least 2 characters to search projects.';
+    if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
+      return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
     }
     return query ? 'No projects match your search.' : 'No projects available to add.';
   }
