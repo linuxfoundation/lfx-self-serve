@@ -24,6 +24,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
+import { AkritesEcosystemBadgeComponent } from '../akrites-ecosystem-badge/akrites-ecosystem-badge.component';
 import { AkritesEscalateModalComponent } from '../akrites-escalate-modal/akrites-escalate-modal.component';
 import { AkritesStatusModalComponent } from '../akrites-status-modal/akrites-status-modal.component';
 import {
@@ -42,6 +43,7 @@ type DrawerTab = 'overview' | 'assessment' | 'security' | 'provenance' | 'histor
   selector: 'lfx-akrites-package-drawer',
   imports: [
     DrawerModule,
+    AkritesEcosystemBadgeComponent,
     ButtonComponent,
     EmptyStateComponent,
     TagComponent,
