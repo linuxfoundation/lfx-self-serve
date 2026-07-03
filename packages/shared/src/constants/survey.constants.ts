@@ -3,6 +3,7 @@
 
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
 import { TagSeverity } from '../interfaces/components.interface';
+import type { CombinedSurveyStatus } from '../interfaces/survey.interface';
 
 /**
  * Configurable labels for surveys displayed throughout the UI
@@ -60,12 +61,6 @@ export const SURVEY_RESPONSE_STATUS_SEVERITY: Record<SurveyResponseStatus, TagSe
   [SurveyResponseStatus.RESPONDED]: 'success',
   [SurveyResponseStatus.NOT_RESPONDED]: 'info',
 } as const;
-
-/**
- * Combined survey status type
- * @description Represents the combined state of survey status and response status
- */
-export type CombinedSurveyStatus = 'open' | 'submitted' | 'closed';
 
 /**
  * Combined survey status values

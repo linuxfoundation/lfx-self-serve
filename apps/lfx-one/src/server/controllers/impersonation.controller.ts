@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PersonaType, VALID_PERSONAS } from '@lfx-one/shared/interfaces';
+import { VALID_PERSONAS } from '@lfx-one/shared/constants';
+import { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';

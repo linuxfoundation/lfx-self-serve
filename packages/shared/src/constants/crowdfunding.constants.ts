@@ -3,6 +3,7 @@
 
 import { FundType } from '../enums/crowdfunding.enum';
 import {
+  AllowedLogoMimeType,
   CrowdfundingInitiativesStats,
   CrowdfundingTransaction,
   CrowdfundingTransactionList,
@@ -104,7 +105,6 @@ export const EMPTY_DONATION_STATS: DonationStats = {
   activeRecurringCount: 0,
 };
 
-export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 
