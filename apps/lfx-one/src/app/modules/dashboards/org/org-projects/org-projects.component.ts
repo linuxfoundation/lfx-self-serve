@@ -88,6 +88,7 @@ import { PersonaService } from '@shared/services/persona.service';
     TooltipModule,
   ],
   templateUrl: './org-projects.component.html',
+  styleUrl: './org-projects.component.scss',
 })
 export class OrgProjectsComponent {
   // Private injections
@@ -124,9 +125,10 @@ export class OrgProjectsComponent {
   protected readonly workspaceForm = new FormGroup({
     name: new FormControl<string>('', { nonNullable: true }),
   });
-  /** Selected project slugs for the "Add project(s)" dialog. */
+  /** Selected project slugs and search query for the "Add project(s)" dialog. */
   protected readonly addProjectsForm = new FormGroup({
     projects: new FormControl<string[]>([], { nonNullable: true }),
+    search: new FormControl<string>('', { nonNullable: true }),
   });
   protected readonly addableProjectOptions = signal<AddableProjectOption[]>([]);
   private readonly selectedAddableProjectOptions = signal<AddableProjectOption[]>([]);
@@ -140,7 +142,6 @@ export class OrgProjectsComponent {
   protected readonly error = computed(() => this.workspaceError() || this.projectsError());
   protected readonly addProjectsSearchLoading = signal(false);
   protected readonly addProjectsSearchError = signal(false);
-  protected readonly addProjectsSearchQuery = signal('');
   protected readonly addProjectsSaving = signal(false);
   protected readonly addProjectsSaveError = signal(false);
   protected readonly workspaceNameError = signal<string | null>(null);
@@ -230,6 +231,10 @@ export class OrgProjectsComponent {
       this.syncSelectedAddableProjectOptions();
     });
 
+    this.addProjectsForm.controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe((query) => {
+      this.searchAddableProjects(query);
+    });
+
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value.name?.trim()) {
         this.workspaceNameError.set(null);
@@ -288,14 +293,13 @@ export class OrgProjectsComponent {
     if (!this.canAddProjects()) {
       return;
     }
-    this.addProjectsForm.setValue({ projects: [] });
+    this.addProjectsForm.setValue({ projects: [], search: '' }, { emitEvent: false });
     this.addableProjectOptions.set([]);
     this.selectedAddableProjectOptions.set([]);
     this.addProjectsSearchError.set(false);
     this.addProjectsSaveError.set(false);
-    this.addProjectsSearchQuery.set('');
     this.addProjectsDialogOpen.set(true);
-    void this.searchAddableProjects('');
+    void this.runAddableProjectsSearch('');
   }
 
   protected handleEmptyStateAction(action: OrgProjectsEmptyAction | undefined): void {
@@ -309,7 +313,7 @@ export class OrgProjectsComponent {
   }
 
   protected retryAddableProjectsSearch(): void {
-    void this.searchAddableProjects(this.addProjectsSearchQuery());
+    void this.runAddableProjectsSearch(this.addProjectsForm.controls.search.value);
   }
 
   protected async confirmAddProjects(): Promise<void> {
@@ -524,12 +528,7 @@ export class OrgProjectsComponent {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
     return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
   }
-  protected onAddProjectsSearchInput(event: Event): void {
-    this.searchAddableProjects((event.target as HTMLInputElement).value);
-  }
-
   protected searchAddableProjects(query: string): void {
-    this.addProjectsSearchQuery.set(query);
     if (this.addableProjectsSearchDebounceTimer) {
       clearTimeout(this.addableProjectsSearchDebounceTimer);
     }
@@ -569,10 +568,11 @@ export class OrgProjectsComponent {
         return;
       }
       this.addableProjectOptions.set(this.mapAddableOptions(results));
-    } catch {
+    } catch (err) {
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }
+      console.error('Failed to search addable org projects', err);
       this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(true);
     } finally {
@@ -600,7 +600,8 @@ export class OrgProjectsComponent {
               this.workspaces.set(response.workspaces.length ? response.workspaces : [...DEFAULT_ORG_PROJECTS_WORKSPACES]);
               this.workspaceLoading.set(false);
             }),
-            catchError(() => {
+            catchError((err) => {
+              console.error('Failed to load org project workspaces', err);
               this.workspaceError.set(true);
               this.workspaces.set([...DEFAULT_ORG_PROJECTS_WORKSPACES]);
               this.workspaceLoading.set(false);
@@ -642,7 +643,8 @@ export class OrgProjectsComponent {
             of(null),
             this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
               tap(() => this.projectsLoading.set(false)),
-              catchError(() => {
+              catchError((err) => {
+                console.error('Failed to load org projects', err);
                 this.projectsError.set(true);
                 this.projectsLoading.set(false);
                 return of(null);
@@ -776,7 +778,7 @@ export class OrgProjectsComponent {
   }
 
   private initAddProjectsSearchEmptyTitle(): string {
-    const query = this.addProjectsSearchQuery().trim();
+    const query = this.addProjectsForm.controls.search.value.trim();
     if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
       return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
     }

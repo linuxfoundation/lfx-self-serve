@@ -6,7 +6,6 @@ import {
   DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
-  DEFAULT_ORG_PROJECTS_WORKSPACES,
   ORG_PROJECTS_CDP_PROJECT_API_URL,
   ORG_PROJECTS_CDP_PROJECT_BATCH_SIZE,
   ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE,
@@ -46,8 +45,6 @@ import { SnowflakeService } from './snowflake.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 
 export class OrgLensProjectsService {
-  private static readonly defaultOrgProjectsWorkspace = DEFAULT_ORG_PROJECTS_WORKSPACES[0];
-
   private readonly snowflakeService = SnowflakeService.getInstance();
   private readonly microserviceProxy = new MicroserviceProxyService();
 
@@ -397,12 +394,20 @@ export class OrgLensProjectsService {
         try {
           const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
           if (!response.ok) {
+            logger.warning(undefined, 'fetch_cdp_projects', 'Insights project enrichment failed; continuing without health scores', {
+              slugs: batch,
+              status: response.status,
+            });
             enrichmentFailed = true;
             return [] as OrgProjectsCdpProject[];
           }
           const body = (await response.json()) as OrgProjectsCdpProjectListResponse;
           return body.data ?? [];
-        } catch {
+        } catch (error: unknown) {
+          logger.warning(undefined, 'fetch_cdp_projects', 'Insights project enrichment failed; continuing without health scores', {
+            slugs: batch,
+            err: error,
+          });
           enrichmentFailed = true;
           return [] as OrgProjectsCdpProject[];
         }
@@ -436,6 +441,7 @@ export class OrgLensProjectsService {
       maintainers: this.mapPeople(people, 'maintainer'),
       contributors: this.mapPeople(people, 'contributor'),
       participants: this.mapPeople(people, 'participant'),
+      // Wire-contract placeholders until warehouse supplies commits1y / changeDriver.
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: cdp?.description ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,

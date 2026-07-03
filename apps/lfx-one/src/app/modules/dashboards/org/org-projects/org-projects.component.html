@@ -281,7 +281,7 @@
                 <td>
                   <span class="inline-flex items-center gap-2">
                     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
-                      @for (bar of project.technicalBars; track $index) {
+                      @for (bar of project.technicalBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
                       @if (project.technicalInfluence === 'non-lf') {
@@ -295,7 +295,7 @@
                 <td>
                   <span class="inline-flex items-center gap-2">
                     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="shrink-0">
-                      @for (bar of project.ecosystemBars; track $index) {
+                      @for (bar of project.ecosystemBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
                       @if (project.ecosystemInfluence === 'non-lf') {
@@ -508,14 +508,14 @@
       <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
       <span>This will be shared across all users in your company.</span>
     </div>
-    <input
+    <lfx-input-text
+      [form]="addProjectsForm"
+      control="search"
       type="search"
-      class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400"
       placeholder="Search and select projects"
-      aria-label="Search and select projects"
-      [value]="addProjectsSearchQuery()"
-      (input)="onAddProjectsSearchInput($event)"
-      data-testid="org-projects-add-projects-search" />
+      size="small"
+      styleClass="w-full"
+      [dataTest]="'org-projects-add-projects-search'" />
     <lfx-multi-select
       [form]="addProjectsForm"
       control="projects"

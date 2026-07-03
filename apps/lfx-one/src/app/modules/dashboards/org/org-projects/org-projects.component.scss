@@ -2,11 +2,9 @@
 /* SPDX-License-Identifier: MIT */
 
 ::ng-deep {
-  .p-multiselect-overlay {
+  .p-multiselect-overlay.org-projects-add-projects-select-panel {
     .p-multiselect-list-container {
-      .p-multiselect-option {
-        @apply text-sm;
-      }
+      height: 16rem;
     }
   }
 }
