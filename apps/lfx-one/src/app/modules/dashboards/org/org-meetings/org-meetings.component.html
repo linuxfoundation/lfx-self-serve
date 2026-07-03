@@ -1,0 +1,105 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<main class="flex flex-col gap-6 p-6" data-testid="org-meetings-page">
+  <!-- Page header -->
+  <header class="flex flex-col gap-1">
+    <h1 class="text-2xl font-bold text-gray-900">Meetings</h1>
+    <p class="text-sm text-gray-500">Coordinate decisions, align stakeholders, and maintain transparent governance across your foundations.</p>
+  </header>
+
+  <!-- KPI strip -->
+  <lfx-stat-card-grid [cards]="kpiCards()" [loading]="loading()" [columns]="2" data-testid="org-meetings-kpi-strip" />
+
+  <!-- Filter bar — matches app.lfx.dev/meetings top-bar structure -->
+  <div class="bg-white rounded-lg border border-gray-200 p-4 mb-8" data-testid="org-meetings-filter-bar">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <!-- Tab pills (no counts — matches live site) -->
+      <div class="flex flex-wrap items-center gap-2" data-testid="org-meetings-tab-bar">
+        @for (tab of tabs; track tab.id) {
+          <button
+            type="button"
+            [class]="
+              activeTab() === tab.id
+                ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
+                : 'px-3 py-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
+            "
+            [attr.aria-pressed]="activeTab() === tab.id"
+            [attr.data-testid]="'org-meetings-tab-' + tab.id"
+            (click)="switchTab(tab.id)">
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+
+      <!-- Pending RSVP toggle pill (Upcoming tab only) -->
+      @if (activeTab() === 'upcoming') {
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            [class]="
+              pendingRsvpOnly()
+                ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
+                : 'px-3 py-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
+            "
+            [attr.aria-pressed]="pendingRsvpOnly()"
+            data-testid="org-meetings-pending-rsvp-toggle"
+            (click)="togglePendingRsvpOnly()">
+            Pending RSVP
+          </button>
+        </div>
+      }
+
+      <!-- Search fills center, pushing filters to the right -->
+      <div class="flex-1">
+        <label for="org-meetings-search-id" class="sr-only">Search meetings</label>
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          id="org-meetings-search-id"
+          placeholder="Search meetings..."
+          icon="fa-light fa-search"
+          size="small"
+          styleClass="w-full"
+          data-testid="org-meetings-search" />
+      </div>
+
+      <!-- All Projects — right-aligned -->
+      <div class="w-full sm:w-48">
+        <label for="org-meetings-project-filter-id" class="sr-only">Filter by project</label>
+        <lfx-select
+          [form]="filterForm"
+          control="project"
+          [options]="projectOptions"
+          placeholder="All Projects"
+          inputId="org-meetings-project-filter-id"
+          ariaLabel="Filter by project"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="org-meetings-project-filter" />
+      </div>
+
+      <!-- All Types — right-aligned -->
+      <div class="w-full sm:w-64">
+        <label for="org-meetings-type-filter-id" class="sr-only">Filter by meeting type</label>
+        <lfx-select
+          [form]="filterForm"
+          control="type"
+          [options]="typeOptions"
+          placeholder="All Types"
+          inputId="org-meetings-type-filter-id"
+          ariaLabel="Filter by meeting type"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="org-meetings-type-filter" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab content — each sub-component renders its own bordered cards with gap -->
+  @if (activeTab() === 'upcoming') {
+    <lfx-org-upcoming-meetings [meetings]="filteredUpcoming()" [loading]="loading()" data-testid="org-meetings-upcoming-tab" />
+  }
+  @if (activeTab() === 'past') {
+    <lfx-org-past-meetings [meetings]="filteredPast()" [loading]="loading()" data-testid="org-meetings-past-tab" />
+  }
+</main>

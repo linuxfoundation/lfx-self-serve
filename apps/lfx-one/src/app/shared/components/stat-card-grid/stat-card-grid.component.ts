@@ -14,4 +14,5 @@ import { StatCardItem } from '@lfx-one/shared/interfaces';
 export class StatCardGridComponent {
   public readonly cards = input.required<StatCardItem[]>();
   public readonly loading = input<boolean>(false);
+  public readonly columns = input<2 | 3>(3);
 }

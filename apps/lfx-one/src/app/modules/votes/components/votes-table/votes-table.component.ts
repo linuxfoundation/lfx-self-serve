@@ -271,8 +271,8 @@ export class VotesTableComponent {
   private toVoteTableRow(vote: Vote): VoteTableRow {
     let endedEarlyTooltip: string | null = null;
 
-    if (isVoteEndedEarly(vote) && vote.early_end_time) {
-      const formattedEarlyClose = formatDate(vote.early_end_time, 'MMM d, y', 'en-US');
+    if (isVoteEndedEarly(vote)) {
+      const formattedEarlyClose = formatDate(vote.early_end_time!, 'MMM d, y', 'en-US');
       endedEarlyTooltip = getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
     }
 

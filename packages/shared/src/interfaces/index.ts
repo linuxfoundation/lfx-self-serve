@@ -263,3 +263,6 @@ export * from './donut-chart.interface';
 
 // Entity project context interfaces
 export * from './entity-project-context.interface';
+
+// Org Meetings interfaces (LFXV2 Meetings page)
+export * from './org-meetings.interface';
