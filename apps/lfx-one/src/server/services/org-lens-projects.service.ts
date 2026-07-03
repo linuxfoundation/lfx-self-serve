@@ -291,7 +291,10 @@ export class OrgLensProjectsService {
       req,
       'LFX_V2_MEMBER_SERVICE',
       `/b2b_orgs/${encodeURIComponent(accountId)}/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectKey)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      undefined,
+      OrgLensProjectsService.memberServiceWriteHeaders
     );
 
     const indexedSlugs = (await this.fetchWorkspaceProjectSlugs(req, workspaceId).catch(() => undefined))?.filter((item) => item !== normalizedSlug) ?? [];
