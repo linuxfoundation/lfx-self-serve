@@ -128,5 +128,3 @@ export const ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG = 'outside-lf';
 export const ORG_PROJECTS_SEARCH_MIN_LENGTH = 2;
 export const ORG_PROJECTS_SEARCH_LIMIT = 20;
 export const ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE = 100;
-export const ORG_PROJECTS_CDP_PROJECT_BATCH_SIZE = 50;
-export const ORG_PROJECTS_CDP_PROJECT_API_URL = 'https://insights.linuxfoundation.org/api/project';

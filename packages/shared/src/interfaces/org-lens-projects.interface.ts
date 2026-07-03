@@ -221,6 +221,12 @@ export interface OrgLensProjectRow {
   TREND_DIRECTION: string | null;
   COMBINED_SCORE_SERIES: unknown;
   DBT_RUN_AT: string | Date | null;
+  HEALTH_OVERALL_SCORE: number | null;
+  HEALTH_CONTRIBUTOR_PERCENTAGE: number | null;
+  HEALTH_POPULARITY_PERCENTAGE: number | null;
+  HEALTH_DEVELOPMENT_PERCENTAGE: number | null;
+  HEALTH_SECURITY_PERCENTAGE: number | null;
+  DESCRIPTION: string | null;
 }
 
 export interface OrgLensProjectPersonRow {
@@ -247,25 +253,4 @@ export interface OrgProjectsWorkspaceProjectResource {
 export interface OrgProjectsMemberServiceWorkspaceProject {
   project_uid?: string;
   project_slug?: string;
-}
-
-export interface OrgProjectsCdpProject {
-  slug?: string;
-  name?: string;
-  description?: string;
-  logo?: string;
-  logoUrl?: string;
-  healthScore?: OrgProjectsCdpHealthScore | number;
-}
-
-export interface OrgProjectsCdpHealthScore {
-  overallScore?: number;
-  contributorPercentage?: number;
-  popularityPercentage?: number;
-  developmentPercentage?: number;
-  securityPercentage?: number;
-}
-
-export interface OrgProjectsCdpProjectListResponse {
-  data?: OrgProjectsCdpProject[];
 }

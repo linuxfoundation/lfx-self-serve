@@ -6,8 +6,6 @@ import {
   DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
-  ORG_PROJECTS_CDP_PROJECT_API_URL,
-  ORG_PROJECTS_CDP_PROJECT_BATCH_SIZE,
   ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE,
   ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG,
   ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG,
@@ -26,8 +24,6 @@ import type {
   OrgLensProjectPerson,
   OrgLensProjectSearchResponse,
   OrgLensProjectsResponse,
-  OrgProjectsCdpProject,
-  OrgProjectsCdpProjectListResponse,
   OrgProjectsMemberServiceWorkspaceProject,
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceProjectResource,
@@ -59,8 +55,8 @@ export class OrgLensProjectsService {
       }
     }
 
-    const { response, cdpEnrichmentFailed } = await this.fetchProjects(accountId, orgName, slugs);
-    if (key !== null && !cdpEnrichmentFailed) {
+    const response = await this.fetchProjects(accountId, orgName, slugs);
+    if (key !== null) {
       await valkeyService.setJson(key, response, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return response;
@@ -306,26 +302,17 @@ export class OrgLensProjectsService {
     };
   }
 
-  private async fetchProjects(
-    accountId: string,
-    orgName: string,
-    slugs: string[] | null
-  ): Promise<{ response: OrgLensProjectsResponse; cdpEnrichmentFailed: boolean }> {
+  private async fetchProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
     const peopleRows = projectSlugs.length ? await this.fetchPeopleRows(accountId, projectSlugs) : [];
-    const { projects: cdpProjects, enrichmentFailed: cdpEnrichmentFailed } = await this.fetchCdpProjects(projectSlugs);
-    const cdpBySlug = new Map(cdpProjects.map((project) => [project.slug?.toLowerCase(), project]));
 
     return {
-      cdpEnrichmentFailed,
-      response: {
-        orgSlug: this.slugify(orgName) || accountId,
-        orgName: orgName || 'Your organization',
-        dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-        projects: projectRows.map((row) => this.mapProject(row, peopleRows, cdpBySlug.get(row.PROJECT_SLUG.toLowerCase()))),
-      },
+      orgSlug: this.slugify(orgName) || accountId,
+      orgName: orgName || 'Your organization',
+      dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
+      projects: projectRows.map((row) => this.mapProject(row, peopleRows)),
     };
   }
 
@@ -352,7 +339,13 @@ export class OrgLensProjectsService {
         ECOSYSTEM_DELTA_PCT,
         TREND_DIRECTION,
         COMBINED_SCORE_SERIES,
-        DBT_RUN_AT
+        DBT_RUN_AT,
+        HEALTH_OVERALL_SCORE,
+        HEALTH_CONTRIBUTOR_PERCENTAGE,
+        HEALTH_POPULARITY_PERCENTAGE,
+        HEALTH_DEVELOPMENT_PERCENTAGE,
+        HEALTH_SECURITY_PERCENTAGE,
+        DESCRIPTION
       FROM ${this.projectsTable()}
       WHERE ACCOUNT_ID = ?
         ${slugFilter}
@@ -382,61 +375,16 @@ export class OrgLensProjectsService {
     return result.rows;
   }
 
-  private async fetchCdpProjects(slugs: string[]): Promise<{ projects: OrgProjectsCdpProject[]; enrichmentFailed: boolean }> {
-    if (!slugs.length) {
-      return { projects: [], enrichmentFailed: false };
-    }
-
-    const batches: string[][] = [];
-    for (let i = 0; i < slugs.length; i += ORG_PROJECTS_CDP_PROJECT_BATCH_SIZE) {
-      batches.push(slugs.slice(i, i + ORG_PROJECTS_CDP_PROJECT_BATCH_SIZE));
-    }
-
-    let enrichmentFailed = false;
-    const responses = await Promise.all(
-      batches.map(async (batch) => {
-        const url = new URL(ORG_PROJECTS_CDP_PROJECT_API_URL);
-        url.searchParams.set('page', '0');
-        url.searchParams.set('pageSize', String(batch.length));
-        url.searchParams.set('slugs', batch.join(','));
-        url.searchParams.set('healthScore', 'true');
-
-        try {
-          const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
-          if (!response.ok) {
-            logger.warning(undefined, 'fetch_cdp_projects', 'Insights project enrichment failed; continuing without health scores', {
-              slugs: batch,
-              status: response.status,
-            });
-            enrichmentFailed = true;
-            return [] as OrgProjectsCdpProject[];
-          }
-          const body = (await response.json()) as OrgProjectsCdpProjectListResponse;
-          return body.data ?? [];
-        } catch (error: unknown) {
-          logger.warning(undefined, 'fetch_cdp_projects', 'Insights project enrichment failed; continuing without health scores', {
-            slugs: batch,
-            err: error,
-          });
-          enrichmentFailed = true;
-          return [] as OrgProjectsCdpProject[];
-        }
-      })
-    );
-
-    return { projects: responses.flat(), enrichmentFailed };
-  }
-
-  private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[], cdp: OrgProjectsCdpProject | undefined): OrgLensProject {
+  private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
-    const hasHealthScore = this.hasUsableHealthScore(cdp?.healthScore);
-    const healthScore = hasHealthScore ? this.extractOverallHealthScore(cdp!.healthScore) : null;
+    const healthScore = row.HEALTH_OVERALL_SCORE;
+    const hasHealthScore = healthScore !== null && healthScore !== undefined;
     return {
       slug: row.PROJECT_SLUG,
       name: row.PROJECT_NAME,
-      logoUrl: cdp?.logoUrl ?? cdp?.logo ?? row.PROJECT_LOGO_URL ?? '',
+      logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
-      health: healthScore === null ? 'unavailable' : this.mapHealthScore(healthScore),
+      health: hasHealthScore ? this.mapHealthScore(healthScore) : 'unavailable',
       technicalInfluence: this.mapInfluence(row.TECHNICAL_INFLUENCE, 'silent'),
       ecosystemInfluence: this.mapInfluence(row.ECOSYSTEM_INFLUENCE, 'non-lf'),
       influenceScore: this.round1(row.INFLUENCE_SCORE ?? 0),
@@ -454,8 +402,8 @@ export class OrgLensProjectsService {
       // Wire-contract placeholders until warehouse supplies commits1y / changeDriver.
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
-      description: cdp?.description ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
-      healthMetrics: hasHealthScore ? this.mapHealthMetrics(cdp!.healthScore) : [],
+      description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
+      healthMetrics: hasHealthScore ? this.mapHealthMetrics(row) : [],
     };
   }
 
@@ -505,30 +453,12 @@ export class OrgLensProjectsService {
     return score >= 60 ? 'healthy' : 'at-risk';
   }
 
-  private hasUsableHealthScore(healthScore: OrgProjectsCdpProject['healthScore'] | undefined): healthScore is OrgProjectsCdpProject['healthScore'] {
-    if (healthScore === undefined || healthScore === null) {
-      return false;
-    }
-    if (typeof healthScore === 'number') {
-      return true;
-    }
-    return healthScore.overallScore != null;
-  }
-
-  private extractOverallHealthScore(healthScore: OrgProjectsCdpProject['healthScore']): number {
-    if (typeof healthScore === 'number') {
-      return healthScore;
-    }
-    return healthScore?.overallScore ?? 0;
-  }
-
-  private mapHealthMetrics(healthScore: OrgProjectsCdpProject['healthScore']): OrgLensProject['healthMetrics'] {
-    const score = typeof healthScore === 'object' && healthScore !== null ? healthScore : {};
+  private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {
     return [
-      { label: 'Contributors', value: this.roundMetric(score.contributorPercentage) },
-      { label: 'Popularity', value: this.roundMetric(score.popularityPercentage) },
-      { label: 'Development', value: this.roundMetric(score.developmentPercentage) },
-      { label: 'Security', value: this.roundMetric(score.securityPercentage) },
+      { label: 'Contributors', value: this.roundMetric(row.HEALTH_CONTRIBUTOR_PERCENTAGE) },
+      { label: 'Popularity', value: this.roundMetric(row.HEALTH_POPULARITY_PERCENTAGE) },
+      { label: 'Development', value: this.roundMetric(row.HEALTH_DEVELOPMENT_PERCENTAGE) },
+      { label: 'Security', value: this.roundMetric(row.HEALTH_SECURITY_PERCENTAGE) },
     ];
   }
 
@@ -855,7 +785,7 @@ export class OrgLensProjectsService {
     return Math.round(value * 10) / 10;
   }
 
-  private roundMetric(value: number | undefined): number {
+  private roundMetric(value: number | null | undefined): number {
     return Math.max(0, Math.min(100, Math.round(value ?? 0)));
   }
 
