@@ -250,7 +250,7 @@ export class OrgLensProjectsService {
           errorBody: { response: latestResponse, partialSlugs },
         });
       }
-      throw new MicroserviceError('None of the selected projects could not be added to this workspace.', 400, 'WORKSPACE_PROJECTS_ADD_FAILED', {
+      throw new MicroserviceError('None of the selected projects could be added to this workspace.', 400, 'WORKSPACE_PROJECTS_ADD_FAILED', {
         operation: 'add_org_lens_workspace_projects',
         service: 'LFX_V2_MEMBER_SERVICE',
         path: `/b2b_orgs/${accountId}/workspaces/${workspaceId}/projects/bulk`,

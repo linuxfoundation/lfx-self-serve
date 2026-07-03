@@ -185,7 +185,10 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   healthSeverity: TagSeverity;
   /** Pre-built Chart.js dataset for the sparkline; stable reference avoids re-allocation on recompute. */
   sparklineDataset: { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] };
-  /** Pre-rendered HTML for the Influence Trend hover tooltip. */
+  /**
+   * Pre-rendered HTML for the Influence Trend hover tooltip.
+   * Rendered with `[escape]="false"` — must stay component-authored only; never map from server/API input.
+   */
   trendTooltipHtml: string;
   /** Plain-text trend summary for screen readers / keyboard focus. */
   trendAriaLabel: string;

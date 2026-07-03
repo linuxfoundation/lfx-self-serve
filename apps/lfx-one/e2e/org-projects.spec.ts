@@ -7,7 +7,7 @@ const ORG_PROJECTS_URL = '/org/projects';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const TEST_ORG_UID = TEST_ACCOUNT_ID;
-const DEFAULT_WORKSPACE = { id: 'all-activities', name: 'All Projects with Activities', projectSlugs: [] };
+const DEFAULT_WORKSPACE = { id: 'all-activities', name: 'All Projects with Activities', projectSlugs: ['kubernetes'] };
 const CUSTOM_EMPTY_WORKSPACE = { id: 'focus', name: 'Focus Workspace', projectSlugs: [] };
 
 test.setTimeout(120_000);
