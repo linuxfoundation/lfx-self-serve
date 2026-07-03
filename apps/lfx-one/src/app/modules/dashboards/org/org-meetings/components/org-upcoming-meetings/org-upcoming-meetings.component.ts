@@ -8,10 +8,11 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 import { ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingRsvpTally } from '@lfx-one/shared/interfaces';
 import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
   selector: 'lfx-org-upcoming-meetings',
-  imports: [DatePipe, PersonAvatarComponent, ClipboardModule],
+  imports: [DatePipe, PersonAvatarComponent, ClipboardModule, LinkifyPipe],
   templateUrl: './org-upcoming-meetings.component.html',
 })
 export class OrgUpcomingMeetingsComponent {

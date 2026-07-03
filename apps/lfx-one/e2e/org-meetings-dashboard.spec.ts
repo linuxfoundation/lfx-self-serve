@@ -143,6 +143,19 @@ test.describe('Org Meetings Dashboard', () => {
     await expect(list).toContainText('Governing Board Meeting 1');
   });
 
+  test('renders URLs in the agenda as clickable links', async ({ page }) => {
+    const agenda = 'Planning doc: https://docs.google.com/document/d/abc123/edit';
+    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1, { agenda })], total: 1, pageSize: 10, offset: 0 }));
+    await gotoOrgMeetingsPage(page);
+
+    const card = page.getByTestId('org-upcoming-meeting-card-mtg-1');
+    await expect(card).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const link = card.locator('#org-upcoming-meeting-agenda-mtg-1 a[href="https://docs.google.com/document/d/abc123/edit"]');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
   test('KPI strip renders the Snowflake-backed summary counts', async ({ page }) => {
     await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1)], total: 1, pageSize: 10, offset: 0 }));
     await gotoOrgMeetingsPage(page);
