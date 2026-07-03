@@ -759,8 +759,9 @@ export class ProfileController {
 
     try {
       // During impersonation, req.bearerToken is the target user's live access token. Never surface
-      // it to the impersonator — suppress the developer-token endpoint entirely (the UI also hides
-      // the tab). This is a read, but the payload is a live credential, so it is treated like a write.
+      // it to the impersonator — suppress the developer-token endpoint entirely (the UI skips the
+      // fetch and shows an "API token unavailable" state). This is a read, but the payload is a live
+      // credential, so it is treated like a write.
       if (isImpersonating(req)) {
         return next(
           new AuthorizationError('Developer tokens are not available while impersonating', {

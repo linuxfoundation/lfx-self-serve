@@ -60,7 +60,7 @@ export function usernameMatches(authUsername: string, storedUsername: string): b
  * Otherwise returns the OIDC session user's email.
  */
 export function getEffectiveEmail(req: Request): string | null {
-  if (req.appSession?.['impersonationUser']?.email) {
+  if (isImpersonating(req) && req.appSession?.['impersonationUser']?.email) {
     return (req.appSession['impersonationUser'].email as string).toLowerCase();
   }
   return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
@@ -72,7 +72,7 @@ export function getEffectiveEmail(req: Request): string | null {
  * Otherwise returns the OIDC session user's username/nickname.
  */
 export function getEffectiveUsername(req: Request): string | null {
-  if (req.appSession?.['impersonationUser']?.username) {
+  if (isImpersonating(req) && req.appSession?.['impersonationUser']?.username) {
     return req.appSession['impersonationUser'].username as string;
   }
   // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
@@ -91,7 +91,7 @@ export function getEffectiveUsername(req: Request): string | null {
  * been migrated to accept a username.
  */
 export function getEffectiveSub(req: Request): string | null {
-  if (req.appSession?.['impersonationUser']?.sub) {
+  if (isImpersonating(req) && req.appSession?.['impersonationUser']?.sub) {
     return req.appSession['impersonationUser'].sub as string;
   }
   return (req.oidc?.user?.['sub'] as string) || null;
@@ -103,8 +103,8 @@ export function getEffectiveSub(req: Request): string | null {
  * Otherwise returns the OIDC session user's name.
  */
 export function getEffectiveName(req: Request): string | null {
-  if (req.appSession?.['impersonationUser']) {
-    return (req.appSession['impersonationUser'].name as string) || (req.appSession['impersonationUser'].username as string) || null;
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.name as string) || (req.appSession?.['impersonationUser']?.username as string) || null;
   }
   return (req.oidc?.user?.['name'] as string) || null;
 }
