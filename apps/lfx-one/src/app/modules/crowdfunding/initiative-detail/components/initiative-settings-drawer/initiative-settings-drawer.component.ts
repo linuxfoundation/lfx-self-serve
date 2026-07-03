@@ -82,11 +82,13 @@ export class InitiativeSettingsDrawerComponent {
     const branding = this.brandingTab();
     const beneficiaries = this.beneficiariesTab();
     const funding = this.fundingTab();
+    const sponsorshipTiersTab = this.sponsorshipTiersTab();
 
     const invalidBeneficiary = beneficiaries.beneficiaryGroups().some((g) => g.invalid);
-    if (details.form.invalid || funding.form.invalid || invalidBeneficiary) {
+    if (details.form.invalid || funding.form.invalid || sponsorshipTiersTab?.form.invalid || invalidBeneficiary) {
       details.form.markAllAsTouched();
       funding.form.markAllAsTouched();
+      sponsorshipTiersTab?.form.markAllAsTouched();
       beneficiaries.beneficiaryGroups().forEach((g) => g.markAllAsTouched());
       return;
     }
@@ -148,7 +150,7 @@ export class InitiativeSettingsDrawerComponent {
         }))
         .filter((b) => b.name || b.email);
 
-      const sponsorshipTiers = this.sponsorshipTiersTab()?.getValue();
+      const sponsorshipTiers = sponsorshipTiersTab?.getValue();
       if (sponsorshipTiers) {
         input.donationMode = sponsorshipTiers.donationMode;
         input.sponsorshipTiers = sponsorshipTiers.sponsorshipTiers;

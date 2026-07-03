@@ -300,14 +300,19 @@ export class CrowdfundingController {
       }
 
       if (Array.isArray(body['sponsorshipTiers'])) {
-        const rawTiers = body['sponsorshipTiers'] as Record<string, unknown>[];
-        const invalidTier = rawTiers.find((t) => !SPONSORSHIP_TIER_NAMES.includes(t['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number]));
+        const rawTiers = body['sponsorshipTiers'] as unknown[];
+        const invalidTier = rawTiers.find(
+          (t) =>
+            !t ||
+            typeof t !== 'object' ||
+            !SPONSORSHIP_TIER_NAMES.includes((t as Record<string, unknown>)['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number])
+        );
         if (invalidTier) {
           throw ServiceValidationError.forField('sponsorshipTiers', `tier name must be one of: ${SPONSORSHIP_TIER_NAMES.join(', ')}`, {
             operation: 'update_initiative',
           });
         }
-        input.sponsorshipTiers = rawTiers.map((t) => ({
+        input.sponsorshipTiers = (rawTiers as Record<string, unknown>[]).map((t) => ({
           name: t['name'] as SponsorshipTierName,
           enabled: t['enabled'] === true,
           goalCents: parseNonNegativeInt(t['goalCents']),

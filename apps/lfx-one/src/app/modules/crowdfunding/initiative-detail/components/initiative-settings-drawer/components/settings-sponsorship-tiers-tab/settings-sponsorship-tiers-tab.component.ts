@@ -3,7 +3,7 @@
 
 import { Component, computed, input, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { filter } from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonComponent } from '@components/button/button.component';
@@ -65,6 +65,7 @@ export class SettingsSponsorshipTiersTabComponent {
       });
   }
 
+  // By design, both donation modes ship the full tier set (including disabled/hidden tiers) for forward-compat pass-through.
   public getValue(): Pick<UpdateInitiativeInput, 'donationMode' | 'sponsorshipTiers'> {
     const value = this.form.getRawValue();
     return {
@@ -96,7 +97,7 @@ export class SettingsSponsorshipTiersTabComponent {
   private makeTierGroup(tier: SponsorshipTier): FormGroup {
     return new FormGroup({
       enabled: new FormControl<boolean>(tier.enabled, { nonNullable: true }),
-      goal: new FormControl<number | null>(null),
+      goal: new FormControl<number | null>(null, [Validators.min(0)]),
       benefits: new FormArray<FormControl<string>>([new FormControl('', { nonNullable: true })]),
     });
   }
