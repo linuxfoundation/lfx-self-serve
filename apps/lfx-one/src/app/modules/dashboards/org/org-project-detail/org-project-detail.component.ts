@@ -161,12 +161,10 @@ export class OrgProjectDetailComponent {
   // Our Influence tab — Technical + Ecosystem cards (per-card chart type and data).
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly technicalCards = computed(() => {
-    const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
+    return (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical'));
   });
   protected readonly ecosystemCards = computed(() => {
-    const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
+    return (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem'));
   });
 
   // Leaderboards tab — URL-persisted metric toggle + time range + two side-by-side boards + stacked trend.
@@ -177,9 +175,10 @@ export class OrgProjectDetailComponent {
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
   protected readonly scoreColumnLabel = computed(() => {
     if (!this.isActivityMode()) return 'Influence Score';
+    if (this.timeRange() === 'all') return 'Activity (All time)';
     return `Activity (${PD_TIME_RANGE_MONTHS[this.timeRange()]}mo)`;
   });
-  protected readonly drawerTimeRangeLabel = computed(() => `Last ${PD_TIME_RANGE_MONTHS[this.timeRange()]} months`);
+  protected readonly drawerTimeRangeLabel = computed(() => (this.timeRange() === 'all' ? 'All time' : `Last ${PD_TIME_RANGE_MONTHS[this.timeRange()]} months`));
   protected readonly searchForm = new FormGroup({
     technical: new FormControl('', { nonNullable: true }),
     ecosystem: new FormControl('', { nonNullable: true }),

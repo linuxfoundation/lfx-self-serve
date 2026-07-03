@@ -227,6 +227,10 @@ function shareOf(n: number, total: number): number {
   return total === 0 ? 0 : n / total;
 }
 
+function plural(n: number, singular: string, pluralForm: string): string {
+  return n === 1 ? singular : pluralForm;
+}
+
 interface Caption {
   prefix: string;
   emphasis: string;
@@ -269,7 +273,7 @@ function technicalCards(seed: ProjectDetailSeed): OrgLensProjectInfluenceCard[] 
         : {
             prefix: 'Our company employs ',
             emphasis: `${org.maintainers}`,
-            suffix: ` ${org.maintainers === 1 ? 'maintainer' : 'maintainers'} for this project.`,
+            suffix: ` ${plural(org.maintainers, 'maintainer', 'maintainers')} for this project.`,
           }
     ),
     card('contributors', 'Contributors', null, ramp(org.contributors, 0.55), projContributors, {
@@ -333,7 +337,11 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
       projMeetingAvg,
       eco.meetingAttendance === 0
         ? { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }
-        : { prefix: 'Org reps attended ', emphasis: `${eco.meetingAttendance}`, suffix: ` project ${eco.meetingAttendance === 1 ? 'meeting' : 'meetings'}.` }
+        : {
+            prefix: 'Org reps attended ',
+            emphasis: `${eco.meetingAttendance}`,
+            suffix: ` project ${plural(eco.meetingAttendance, 'meeting', 'meetings')}.`,
+          }
     ),
     card(
       'board-members',
@@ -345,7 +353,7 @@ function ecosystemCards(seed: ProjectDetailSeed, projectName: string, foundation
         ? { prefix: `Your organization holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }
         : {
             prefix: 'Our company employs ',
-            emphasis: `${eco.boardMembers} board ${eco.boardMembers === 1 ? 'member' : 'members'}`,
+            emphasis: `${eco.boardMembers} board ${plural(eco.boardMembers, 'member', 'members')}`,
             suffix: ` for ${foundation}.`,
           }
     ),
