@@ -79,6 +79,7 @@ export class OrgLensMeetingsService {
     return summary;
   }
 
+  /** GET /api/orgs/:accountId/lens/meetings — paginated upcoming-meeting list (search/project/type/pending filters); surfaces errors so the client renders its "couldn't load" state. */
   public async getOrgUpcomingMeetings(req: Request, accountId: string, options: GetOrgUpcomingMeetingsOptions): Promise<OrgUpcomingMeetingsResponse> {
     const { searchQuery, project, type, pendingRsvpOnly, pageSize, offset } = options;
 
@@ -151,6 +152,7 @@ export class OrgLensMeetingsService {
     return { data, total, pageSize, offset };
   }
 
+  /** GET /api/orgs/:accountId/lens/meetings/projects — distinct foundation/project names for the meetings filter dropdown; fail-soft to empty. */
   public async getOrgMeetingProjects(req: Request, accountId: string): Promise<OrgMeetingsProjectsResponse> {
     logger.debug(req, 'get_org_lens_meeting_projects', 'Building org meeting projects query', { account_id: accountId });
 

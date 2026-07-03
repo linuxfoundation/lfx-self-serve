@@ -90,6 +90,7 @@ export class OrgMeetingsComponent {
 
   public constructor() {
     this.initProjectOptions();
+    this.initResetFiltersOnAccountChange();
     this.initResetOnFilterChange();
     this.initUpcomingFetch();
   }
@@ -210,6 +211,16 @@ export class OrgMeetingsComponent {
         takeUntilDestroyed()
       )
       .subscribe((res) => this.projectOptions.set([{ label: 'All Projects', value: null }, ...res.projects.map((p) => ({ label: p, value: p }))]));
+  }
+
+  private initResetFiltersOnAccountChange(): void {
+    // Filters are org-scoped: a leftover project/type/search or pending-RSVP toggle would hide the new org's meetings.
+    toObservable(this.accountId)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.filterForm.reset({ search: '', type: null, project: null });
+        this.pendingRsvpOnly.set(false);
+      });
   }
 
   private initResetOnFilterChange(): void {

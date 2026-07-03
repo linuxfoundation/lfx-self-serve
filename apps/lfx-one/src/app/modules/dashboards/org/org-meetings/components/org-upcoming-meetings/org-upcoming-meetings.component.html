@@ -11,7 +11,7 @@
   } @else if (error()) {
     <div class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-upcoming-meetings-error">
       <i class="fa-light fa-triangle-exclamation text-4xl text-amber-400" aria-hidden="true"></i>
-      <p class="text-sm text-gray-500">We couldn't load meetings. Please try again.</p>
+      <p class="text-sm text-gray-500" role="alert">We couldn't load meetings. Please try again.</p>
       <button
         type="button"
         class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
@@ -158,7 +158,7 @@
               <div class="flex flex-col gap-3 rounded-lg border border-gray-100 bg-white p-3">
                 <p class="text-xs font-semibold tracking-wide text-gray-500 uppercase">{{ orgName() }} Invitees ({{ meeting.orgInvitees.length }})</p>
                 <div class="flex flex-col divide-y divide-gray-100">
-                  @for (invitee of meeting.orgInvitees; track invitee.name + '|' + invitee.title; let i = $index) {
+                  @for (invitee of meeting.orgInvitees; track $index; let i = $index) {
                     <div class="flex items-center gap-3 py-2 first:pt-0 last:pb-0" [attr.data-testid]="'org-upcoming-meeting-invitee-' + meeting.id + '-' + i">
                       <lfx-person-avatar [avatarUrl]="invitee.avatarUrl" [name]="invitee.name" [identity]="invitee.name" />
                       <div class="flex-1 min-w-0">
@@ -201,7 +201,7 @@
     @if (hasMore()) {
       <div class="flex flex-col items-center gap-2 pt-2">
         @if (loadMoreError()) {
-          <p class="text-sm text-red-500" role="alert" aria-live="polite" data-testid="org-upcoming-meetings-load-more-error">Couldn't load more meetings.</p>
+          <p class="text-sm text-red-500" role="status" data-testid="org-upcoming-meetings-load-more-error">Couldn't load more meetings.</p>
         }
         <button
           type="button"
