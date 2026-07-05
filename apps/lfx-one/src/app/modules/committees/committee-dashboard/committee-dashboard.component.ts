@@ -334,10 +334,7 @@ export class CommitteeDashboardComponent {
           if (isMeLens) {
             return fromFull$;
           }
-          return this.committeeService.getMyCommitteeUids().pipe(
-            map((uids) => new Set(uids)),
-            catchError(() => of(new Set<string>()))
-          );
+          return this.committeeService.getMyCommitteeUids().pipe(map((uids) => new Set(uids)));
         })
       ),
       { initialValue: new Set<string>() }

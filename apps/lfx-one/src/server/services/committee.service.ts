@@ -167,7 +167,7 @@ export class CommitteeService {
       })
     );
 
-    // Enrich with mailing-list presence via a single batched query (OR-tag semantics).
+    // Enrich with mailing-list presence via batched queries (OR-tag semantics, chunked at 100 UIDs).
     // total_members is already indexed by the committee-service as part of
     // CommitteeBaseWithReadonlyAttributes — no separate per-committee count call needed.
     const committeeUids = committees.map((c) => c.uid).filter(Boolean);
@@ -1653,10 +1653,10 @@ export class CommitteeService {
 
   /**
    * Returns the subset of the provided committee UIDs that have at least one associated
-   * `groupsio_mailing_list` resource. Uses a single batched query with OR-tag semantics
-   * (the query service `tags` parameter is ArrayOf(String) with OR logic) instead of one
-   * count call per committee — cost is O(1) upstream requests regardless of list size,
-   * chunked at 100 UIDs per request for URL-length safety.
+   * `groupsio_mailing_list` resource. Uses OR-tag semantics (the query service `tags`
+   * parameter is ArrayOf(String) with OR logic) instead of one count call per committee.
+   * UIDs are chunked at 100 per request for URL-length safety; batches run concurrently
+   * via Promise.allSettled so a single chunk failure does not suppress the others.
    */
   private async getCommitteesWithMailingList(req: Request, committeeUids: string[]): Promise<Set<string>> {
     const unique = [...new Set(committeeUids)].filter(Boolean);
