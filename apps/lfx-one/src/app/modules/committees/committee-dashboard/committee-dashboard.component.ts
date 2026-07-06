@@ -282,10 +282,10 @@ export class CommitteeDashboardComponent {
     const isFoundationContext$ = toObservable(this.isFoundationContext);
     const isMeLens$ = toObservable(this.isMeLens);
 
-    // Resolve the active scope for "my committees":
-    // - Me lens → fetch across all foundations and projects; in-page dropdowns narrow the view.
-    // - Project lens → scope to the active foundation or project.
-    // Reset per-page filters only when the actual scope changes (mode flip or UID change).
+    // Resolve the active scope key so per-page filters reset on scope changes (mode flip or UID change).
+    // - Me lens → full fetch; in-page dropdowns narrow the view.
+    // - Non-me lens → myCommittees returns [] immediately; member-badge UIDs are fetched
+    //   separately via getMyCommitteeUids (see initializeMyCommitteeUids).
     const scope$ = combineLatest([project$, isFoundationContext$, isMeLens$]).pipe(
       map(([project, isFoundation, isMeLens]) => {
         if (isMeLens) {

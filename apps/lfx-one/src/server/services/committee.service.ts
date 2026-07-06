@@ -1667,7 +1667,7 @@ export class CommitteeService {
     );
 
     const found = new Set<string>();
-    for (const result of results) {
+    for (const [i, result] of results.entries()) {
       if (result.status === 'fulfilled') {
         for (const ml of result.value) {
           for (const ref of ml.committees ?? []) {
@@ -1676,6 +1676,9 @@ export class CommitteeService {
         }
       } else {
         logger.warning(req, 'get_committees_with_mailing_list', 'Batch mailing-list fetch failed, affected committees default to false', {
+          batch_index: i,
+          batch_size: batches[i].length,
+          sample_uids: batches[i].slice(0, 3),
           err: result.reason,
         });
       }

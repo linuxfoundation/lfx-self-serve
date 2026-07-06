@@ -115,7 +115,7 @@ export class CommitteeController {
       const uids = await this.committeeService.getMyCommitteeUids(req, projectUid);
 
       logger.success(req, 'get_my_committee_uids', startTime, { uid_count: uids.size });
-      res.json([...uids]);
+      res.json([...uids].sort());
     } catch (error) {
       next(error);
     }
