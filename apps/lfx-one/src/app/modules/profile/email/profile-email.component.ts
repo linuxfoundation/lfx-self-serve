@@ -37,6 +37,8 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
 })
 export class ProfileEmailComponent {
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — email mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
 

@@ -19,6 +19,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { EnrollmentService } from '@services/enrollment.service';
+import { UserService } from '@services/user.service';
 
 @Component({
   selector: 'lfx-profile-individual-enrollment',
@@ -32,6 +33,12 @@ export class ProfileIndividualEnrollmentComponent {
   private readonly enrollmentService = inject(EnrollmentService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly userService = inject(UserService);
+
+  // Read-only during impersonation: the server resolves the target's enrollment (via their bearer
+  // token), so the real status is shown, but the enroll/renew CTAs and the auto-renew toggle are
+  // disabled and the auto-renew write is blocked server-side.
+  protected readonly impersonating = this.userService.impersonating;
 
   protected readonly enrollments = signal<DisplayEnrollment[] | null | undefined>(undefined);
   protected readonly enrollmentError = signal<string | null>(null);

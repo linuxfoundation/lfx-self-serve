@@ -169,9 +169,21 @@ Many controllers and services read the user's email/username from `req.oidc.user
 
 For the full `username` vs `sub` distinction and the `sub` → `username` migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 
-These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
+These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. `isImpersonating(req)` (active-session predicate) rounds out the set. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
 
-**Profile controller — partially impersonation-aware.** The profile controller resolves identity through `getUsernameFromAuth()`, which falls back to the impersonation-aware `getEffectiveUsername`. So most profile operations (get/update metadata, identities, work experiences, project affiliations, email verify/link) follow the **effective** identity and act on the **target** user during impersonation. The exception is password change and reset: they go through the separate `/api/profile/auth/start` management-token flow, which identifies the user by the management token itself (tied to the real user's re-authenticated session) and is not impersonation-aware.
+**Profile & account settings — read-only during impersonation (LFXV2-2572):** The profile controller's **read** endpoints resolve identity through the effective helpers, so Profile pages and Account Settings show the _target_ user's data:
+
+- `GET /api/profile`, `GET /api/profile/emails`, `GET /api/profile/linux-email` use `getEffectiveSub` / `getEffectiveEmail` / `getEffectiveUsername`.
+- `GET /api/profile/identities`, `/work-experiences`, `/project-affiliations` resolve the target's `lfid` (via `resolveEffectiveLfid`). CDP **reads are preserved** — work history and CDP-listed / non-verified identities still display.
+- **Individual enrollment & Linux.com add-on** (`EnrollmentService.getIndividualEnrollments` / `hasLinuxComAddon`) call the member-service `/me/memberships` through the API gateway. `req.apiGatewayToken` is the impersonator's (no CTE for the API-gateway audience), so during impersonation these reads pass `bearerToken: req.bearerToken` (the target's CTE token) to `gatewayFetch` — the same override `updateAutoRenew` uses — and `/me` resolves to the target. If that fetch fails, `getIndividualEnrollments` degrades to the standard (unenrolled) product card. The auto-renew write stays blocked; the enroll/renew CTAs and toggle render disabled.
+- `GET /api/profile/developer` is **suppressed** (403) while impersonating — `req.bearerToken` is the target's live token and must never be surfaced to the impersonator.
+- The Linux.com **forward target** still can't be read during impersonation (needs the impersonator's Flow-C management token); the claimed alias itself is shown from the target's `user_emails.read`.
+
+Profile **writes** cannot act on the target (there is no CTE equivalent for the Auth0 Management API — they use the impersonator's Flow C management token), so they are blocked:
+
+- Every mutating / Flow-C-initiating profile route is guarded by `blockDuringImpersonation` (`middleware/impersonation-readonly.middleware.ts`), returning **403 `IMPERSONATION_READ_ONLY`**.
+- `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `skipCdpMutations` flag (derived from `isImpersonating(req)` inside `reconcileIdentities`), so viewing a target's identities never mutates their CDP records.
+- The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings.
 
 ### 6. SSR Handler
 
@@ -252,7 +264,7 @@ impersonation_stopped: Impersonation session ended
 
 ## Limitations
 
-1. **Most profile operations follow the impersonated identity** — the profile controller resolves the user via `getUsernameFromAuth()` → `getEffectiveUsername` (impersonation-aware), so viewing and updating profile metadata, identities, work experiences, and project affiliations during impersonation acts on the **target** user, not the real user. Password change and reset are the exception: they use the management-token profile-auth flow tied to the real user's re-authenticated session.
+1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history/identities and the target's individual-enrollment + Linux.com add-on status, fetched with the target's bearer token). All profile writes are blocked (`403 IMPERSONATION_READ_ONLY`), the developer API token is suppressed, and CDP writes (including the `getIdentities` reconciliation create) are suppressed. Edit affordances render visible-but-disabled; editing would act on the real user's account, so it is disabled rather than allowed. The Linux.com forward target is the one datum that can't be shown (needs the impersonator's Flow-C token).
 
 2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name).
 
@@ -266,7 +278,6 @@ impersonation_stopped: Impersonation session ended
 
 ## Future Work
 
-- **Read-only profile during impersonation** — profile reads already follow the target user, but writes (metadata, identity linking) do too; gate profile writes so impersonators can view the target's profile without modifying the account
 - **Impersonation audit dashboard** — a dedicated UI for reviewing impersonation logs
 - **Session duration controls** — configurable max impersonation duration, auto-expiry notifications
 - **Impersonation notifications** — optionally notify the target user when they are being impersonated
