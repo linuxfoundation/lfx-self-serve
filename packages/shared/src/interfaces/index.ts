@@ -81,6 +81,9 @@ export * from './org-lens.interface';
 // Org Lens Projects page (influence + health) interfaces
 export * from './org-lens-projects.interface';
 
+// Org Lens · Project Detail sub-page (LFXV2-1885) interfaces
+export * from './org-lens-project-detail.interface';
+
 // Mailing list interfaces
 export * from './mailing-list.interface';
 
@@ -232,6 +235,9 @@ export * from './org-events.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
+
+// Org Meetings internal backend query-row shapes
+export * from './org-meetings-internal.interface';
 
 // Newsletter interfaces
 export * from './newsletter.interface';
