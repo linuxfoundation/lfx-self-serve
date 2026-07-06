@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
@@ -25,7 +25,7 @@ import {
   AkritesEscalateRequest,
   AkritesDashboardTab,
 } from '@lfx-one/shared/interfaces';
-import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter } from 'rxjs';
+import { switchMap, catchError, of, map, debounceTime, tap, forkJoin, take, filter, startWith } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AkritesService } from '@shared/services/akrites.service';
 import { AkritesPackageDrawerComponent } from '../components/akrites-package-drawer/akrites-package-drawer.component';
@@ -82,11 +82,17 @@ export class AkritesDashboardComponent {
     pageSize: 25,
   });
 
+  // Set synchronously (before the debounce) whenever filters/reload change, and cleared once the debounced
+  // fetch's response (success or error) arrives. Combined with loadResult()'s own `loading` flag so the mask
+  // stays on for the entire window — from the discrete filter/page/sort change through to the response
+  // arriving — with no unmasked gap.
+  private readonly pendingFilterChange = signal(false);
+
   private readonly loadResult = this.initLoadResult();
   private readonly metricsResult = this.initMetrics();
   private readonly scatterResult = this.initScatterResult();
 
-  protected readonly tableLoading = signal(true);
+  protected readonly tableLoading = computed(() => this.pendingFilterChange() || (this.loadResult()?.loading ?? true));
   protected readonly metricsLoading = signal(true);
   protected readonly scatterLoading = signal(false);
   protected readonly riskMatrixVisibleStatuses = signal<AkritesStatus[]>(AKRITES_DEFAULT_VISIBLE_STATUSES);
@@ -441,12 +447,14 @@ export class AkritesDashboardComponent {
     );
   }
 
-  private initLoadResult() {
+  private initLoadResult(): Signal<AkritesLoadResult | undefined> {
     // Combine filters with the reload trigger so a steward action re-fetches the list even when filters are unchanged.
     const source = computed(() => ({ f: this.filters(), reload: this.reloadTrigger() }));
     return toSignal<AkritesLoadResult | undefined>(
       toObservable(source).pipe(
-        tap(() => this.tableLoading.set(true)),
+        // Flip the mask on immediately (before the debounce) so discrete filter/page/sort changes are masked
+        // without an unmasked window while the debounce is pending.
+        tap(() => this.pendingFilterChange.set(true)),
         debounceTime(300),
         switchMap(({ f }) => {
           const params: AkritesListParams = {
@@ -464,11 +472,29 @@ export class AkritesDashboardComponent {
             unstewardedOnly: f.unstewardedOnly || undefined,
           };
           return this.akritesService.getPackages(params).pipe(
-            map((res): AkritesLoadResult => ({ packages: res.packages ?? [], total: res.total ?? null, error: false, statusCounts: res.statusCounts ?? null })),
-            catchError(() => of<AkritesLoadResult>({ packages: [], total: null, error: true, statusCounts: null }))
+            map(
+              (res): AkritesLoadResult => ({
+                packages: res.packages ?? [],
+                total: res.total ?? null,
+                error: false,
+                statusCounts: res.statusCounts ?? null,
+                loading: false,
+              })
+            ),
+            catchError(() => of<AkritesLoadResult>({ packages: [], total: null, error: true, statusCounts: null, loading: false })),
+            tap(() => this.pendingFilterChange.set(false)),
+            // Carry the previous total/statusCounts/packages forward so the status pills and pagination don't
+            // blink to zero while the reload is in flight — only `packages` needs to go blank (the table itself
+            // is masked by tableLoading/the skeleton).
+            startWith<AkritesLoadResult>({
+              packages: [],
+              total: this.loadResult?.()?.total ?? null,
+              error: false,
+              statusCounts: this.loadResult?.()?.statusCounts ?? null,
+              loading: true,
+            })
           );
-        }),
-        tap(() => this.tableLoading.set(false))
+        })
       )
     );
   }
