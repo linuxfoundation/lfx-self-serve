@@ -82,9 +82,10 @@ export class AkritesDashboardComponent {
     pageSize: 25,
   });
 
-  // Set synchronously (before the debounce) whenever filters/reload change, and cleared once the debounced fetch
-  // actually starts. Combined with loadResult()'s own `loading` flag so the mask stays on for the entire window —
-  // from the discrete filter/page/sort change through to the response arriving — with no unmasked gap.
+  // Set synchronously (before the debounce) whenever filters/reload change, and cleared once the debounced
+  // fetch's response (success or error) arrives. Combined with loadResult()'s own `loading` flag so the mask
+  // stays on for the entire window — from the discrete filter/page/sort change through to the response
+  // arriving — with no unmasked gap.
   private readonly pendingFilterChange = signal(false);
 
   private readonly loadResult = this.initLoadResult();
