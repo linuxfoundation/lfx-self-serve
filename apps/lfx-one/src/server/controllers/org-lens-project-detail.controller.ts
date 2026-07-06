@@ -3,6 +3,9 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+
+import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensProjectDetailService } from '../services/org-lens-project-detail.service';
@@ -29,8 +32,9 @@ export class OrgLensProjectDetailController {
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_detail');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail');
 
-      const response = this.service.getProjectDetail(orgUid, orgName, projectSlug ?? '');
+      const response = this.service.getProjectDetail(orgUid, orgName, projectSlug);
 
       if (response === null) {
         logger.success(req, 'get_org_lens_project_detail', startTime, {
@@ -53,6 +57,17 @@ export class OrgLensProjectDetailController {
       res.json(response);
     } catch (error) {
       next(error);
+    }
+  }
+
+  // FOUNDATION_ID_PATTERN is the general SSR path-param validator (`[A-Za-z0-9-]{1,64}`); it also
+  // covers the project slug shape, so it is reused here for the slug-keyed detail route.
+  private assertProjectSlug(projectSlug: string | undefined, operation: string): asserts projectSlug is string {
+    if (!projectSlug || typeof projectSlug !== 'string') {
+      throw ServiceValidationError.forField('projectSlug', 'projectSlug path parameter is required', { operation });
+    }
+    if (!FOUNDATION_ID_PATTERN.test(projectSlug)) {
+      throw ServiceValidationError.forField('projectSlug', 'Invalid projectSlug format', { operation });
     }
   }
 }

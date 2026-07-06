@@ -20,10 +20,10 @@ export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardM
 export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '1y';
 export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
-/** Hero health badge → lfx-tag severity (green Excellent / amber Healthy / red At Risk). */
+/** Hero health badge → lfx-tag severity (green Excellent / blue Healthy / red At Risk), matching HEALTH_SCORE_SEVERITY on the Org Lens Projects page. */
 export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
   excellent: { label: 'Excellent', severity: 'success' },
-  healthy: { label: 'Healthy', severity: 'warn' },
+  healthy: { label: 'Healthy', severity: 'info' },
   'at-risk': { label: 'At Risk', severity: 'danger' },
 };
 
