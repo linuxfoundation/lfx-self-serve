@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -38,6 +39,7 @@ import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-pas
 @Component({
   selector: 'lfx-org-meetings',
   imports: [ReactiveFormsModule, StatCardGridComponent, InputTextComponent, SelectComponent, OrgUpcomingMeetingsComponent, OrgPastMeetingsComponent],
+  providers: [DatePipe],
   templateUrl: './org-meetings.component.html',
 })
 export class OrgMeetingsComponent {
@@ -46,6 +48,7 @@ export class OrgMeetingsComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly meetingService = inject(MeetingService);
+  private readonly datePipe = inject(DatePipe);
 
   // === Template constants ===
   protected readonly tabs = ORG_MEETINGS_TABS;
@@ -160,6 +163,7 @@ export class OrgMeetingsComponent {
       const nextDate = this.nextUpcomingMeetingDate();
       const summary = this.summary();
       const recurringProjects = summary?.recurringFoundations ?? 0;
+      const recurringProjectsLabel = recurringProjects === 1 ? 'project' : 'projects';
       return [
         {
           value: (summary?.upcomingMeetings ?? 0).toLocaleString(),
@@ -171,7 +175,7 @@ export class OrgMeetingsComponent {
         {
           value: (summary?.recurringSeries ?? 0).toLocaleString(),
           label: 'Recurring Series',
-          subLine: recurringProjects > 0 ? `Across ${recurringProjects} ${recurringProjects === 1 ? 'project' : 'projects'}` : undefined,
+          subLine: recurringProjects > 0 ? `Across ${recurringProjects} ${recurringProjectsLabel}` : undefined,
           icon: 'fa-light fa-repeat',
           iconContainerClass: 'bg-purple-100 text-purple-600',
         },
@@ -199,7 +203,8 @@ export class OrgMeetingsComponent {
     return computed(() => {
       const next = this.summary()?.nextMeeting;
       if (!next) return '';
-      return new Date(next).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      // Format via DatePipe (same engine as the meeting-card `| date` bindings) so the KPI date stays consistent with the cards.
+      return this.datePipe.transform(next, 'MMM d') ?? '';
     });
   }
 

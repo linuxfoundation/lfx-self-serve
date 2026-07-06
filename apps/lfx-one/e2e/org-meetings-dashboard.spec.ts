@@ -130,9 +130,14 @@ async function gotoOrgMeetingsPage(page: Page): Promise<void> {
   }
 }
 
+/** Stub a single-page meetings response (total = the given list length). */
+async function stubSinglePage(page: Page, meetings: StubMeeting[]): Promise<void> {
+  await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: meetings, total: meetings.length, pageSize: 10, offset: 0 }));
+}
+
 test.describe('Org Meetings Dashboard', () => {
   test('renders KPI strip and real upcoming cards by default', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1), makeMeeting(2)], total: 2, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, [makeMeeting(1), makeMeeting(2)]);
     await gotoOrgMeetingsPage(page);
 
     await expect(page.getByTestId('org-meetings-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -145,7 +150,7 @@ test.describe('Org Meetings Dashboard', () => {
 
   test('renders URLs in the agenda as clickable links', async ({ page }) => {
     const agenda = 'Planning doc: https://docs.google.com/document/d/abc123/edit';
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1, { agenda })], total: 1, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, [makeMeeting(1, { agenda })]);
     await gotoOrgMeetingsPage(page);
 
     const card = page.getByTestId('org-upcoming-meeting-card-mtg-1');
@@ -157,7 +162,7 @@ test.describe('Org Meetings Dashboard', () => {
   });
 
   test('KPI strip renders the Snowflake-backed summary counts', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1)], total: 1, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, [makeMeeting(1)]);
     await gotoOrgMeetingsPage(page);
     const strip = page.getByTestId('org-meetings-kpi-strip');
     await expect(strip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -167,7 +172,7 @@ test.describe('Org Meetings Dashboard', () => {
   });
 
   test('card date/time shows a timezone abbreviation', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1)], total: 1, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, [makeMeeting(1)]);
     await gotoOrgMeetingsPage(page);
     const card = page.getByTestId('org-upcoming-meeting-card-mtg-1');
     await expect(card).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -175,7 +180,7 @@ test.describe('Org Meetings Dashboard', () => {
   });
 
   test('shows the empty state when the org has no upcoming meetings', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [], total: 0, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, []);
     await gotoOrgMeetingsPage(page);
     await expect(page.getByTestId('org-upcoming-meetings-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-upcoming-meetings-error')).toHaveCount(0);
@@ -245,7 +250,7 @@ test.describe('Org Meetings Dashboard', () => {
   });
 
   test('renders org invitee rows and the reconciling attendance tally', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1)], total: 1, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, [makeMeeting(1)]);
     await gotoOrgMeetingsPage(page);
 
     const panel = page.getByTestId('org-upcoming-meeting-people-invited-mtg-1');
@@ -296,7 +301,7 @@ test.describe('Org Meetings Dashboard', () => {
   });
 
   test('switches to the past tab and back, clearing the tab query param', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [makeMeeting(1)], total: 1, pageSize: 10, offset: 0 }));
+    await stubSinglePage(page, [makeMeeting(1)]);
     await gotoOrgMeetingsPage(page);
     await expect(page.getByTestId('org-meetings-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
