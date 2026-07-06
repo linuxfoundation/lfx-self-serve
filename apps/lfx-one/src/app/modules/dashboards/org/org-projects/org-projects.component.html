@@ -132,14 +132,15 @@
             <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" severity="secondary" [outlined]="true" (onClick)="retry()" />
           </div>
         } @else if (!loading() && totalRecords() === 0) {
+          @let emptyState = tableEmptyState();
           <lfx-empty-state
             [withCard]="false"
-            [icon]="tableEmptyState().icon"
-            [title]="tableEmptyState().title"
-            [subtitle]="tableEmptyState().subtitle"
-            [ctaLabel]="tableEmptyState().ctaLabel"
-            [ctaIcon]="tableEmptyState().ctaIcon"
-            (ctaClick)="handleEmptyStateAction(tableEmptyState().action)"
+            [icon]="emptyState.icon"
+            [title]="emptyState.title"
+            [subtitle]="emptyState.subtitle"
+            [ctaLabel]="emptyState.ctaLabel"
+            [ctaIcon]="emptyState.ctaIcon"
+            (ctaClick)="handleEmptyStateAction(emptyState.action)"
             data-testid="org-projects-empty-state" />
         } @else {
           <lfx-table
