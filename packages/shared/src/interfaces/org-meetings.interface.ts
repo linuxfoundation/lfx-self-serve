@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OffsetPaginatedResponse } from './api.interface';
+
 /** Tab identifier for the Org Meetings page tab strip. */
 export type OrgMeetingsTabId = 'upcoming' | 'past';
 
@@ -92,10 +94,58 @@ export interface OrgMeeting extends OrgMeetingBase {
   readonly statusFlags: OrgMeetingStatusFlags;
 }
 
+/** RSVP badge label + style for an invitee row. */
+export interface OrgMeetingRsvpBadge {
+  readonly label: string;
+  readonly badgeClass: string;
+}
+
+/** Org invitee with its RSVP badge pre-derived (avoids method calls in the template). */
+export interface OrgMeetingInviteeVm extends OrgMeetingInvitee {
+  readonly badge: OrgMeetingRsvpBadge;
+}
+
+/** Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`). */
+export interface OrgMeetingVm extends OrgMeeting {
+  readonly linkUrl: string;
+  readonly totalInvited: number;
+  readonly attendingPercent: number;
+  readonly yesPercent: number;
+  readonly maybePercent: number;
+  readonly noPercent: number;
+  readonly inviteeVms: readonly OrgMeetingInviteeVm[];
+}
+
 /** A past meeting in the Org Lens Meetings list. */
 export interface OrgPastMeeting extends OrgMeetingBase {
   readonly attendanceTally: OrgMeetingAttendanceTally;
   readonly artifact: OrgMeetingArtifact;
   readonly minutesUploaded: boolean;
   readonly orgPastInvitees: readonly OrgPastMeetingInvitee[];
+}
+
+/** Summary counts for the Org Meetings stat strip (Snowflake ORG_UPCOMING_MEETINGS; nextMeeting is ISO or null; foundation counts drive "Across N"). */
+export interface OrgMeetingsSummary {
+  readonly upcomingMeetings: number;
+  readonly recurringSeries: number;
+  readonly recurringFoundations: number;
+  readonly nextMeeting: string | null;
+}
+
+/** Server-side filter/pagination options for the Org Lens Upcoming Meetings list. */
+export interface GetOrgUpcomingMeetingsOptions {
+  readonly searchQuery: string | null;
+  readonly project: string | null;
+  readonly type: OrgMeetingType | null;
+  readonly pendingRsvpOnly: boolean;
+  readonly pageSize: number;
+  readonly offset: number;
+}
+
+/** Paginated response for the Org Lens Upcoming Meetings list. */
+export type OrgUpcomingMeetingsResponse = OffsetPaginatedResponse<OrgMeeting>;
+
+/** Distinct foundation/project names the selected org has upcoming meetings in (Project filter options). */
+export interface OrgMeetingsProjectsResponse {
+  readonly projects: readonly string[];
 }

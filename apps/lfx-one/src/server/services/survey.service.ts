@@ -295,6 +295,7 @@ export class SurveyService {
         survey_status: r.survey_status || '',
         // Keep null (not empty string) when absent so Angular's DatePipe doesn't choke.
         survey_cutoff_date: r.survey_cutoff_date || null,
+        survey_send_date: r.survey_send_date || null,
         is_nps_survey: r.is_nps_survey ?? false,
         is_project_survey: r.is_project_survey ?? false,
         committees: r.committee_name

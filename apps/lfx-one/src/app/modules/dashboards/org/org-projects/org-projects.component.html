@@ -1,10 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<main class="flex flex-col gap-6 p-6" data-testid="org-projects-page">
+<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-projects-page">
   <!-- Page Header -->
   <header class="flex flex-col gap-2" data-testid="org-projects-header">
-    <h1 class="text-2xl font-semibold text-gray-900" data-testid="org-projects-title">
+    <h1 class="font-display font-light text-2xl" data-testid="org-projects-title">
       @if (companyName()) {
         Projects &mdash; {{ companyName() }}
       } @else {
