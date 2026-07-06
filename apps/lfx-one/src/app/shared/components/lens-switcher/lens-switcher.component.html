@@ -3,17 +3,19 @@
 
 @if (mobile()) {
   <div class="flex items-center gap-1 px-3 py-2" data-testid="lens-switcher-mobile">
-    @for (lens of lenses(); track lens.id) {
-      @let isActive = !isDocsActive() && activeLensId() === lens.id;
-      <button
-        type="button"
-        (click)="setLens(lens.id)"
-        [attr.data-testid]="lens.testId + '-mobile'"
-        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-        [ngClass]="isActive ? 'bg-indigo-900 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'">
-        <i [ngClass]="isActive ? lens.activeIcon : lens.icon" class="text-sm"></i>
-        <span>{{ lens.shortLabel }}</span>
-      </button>
+    @if (showLensButtons()) {
+      @for (lens of lenses(); track lens.id) {
+        @let isActive = !isDocsActive() && activeLensId() === lens.id;
+        <button
+          type="button"
+          (click)="setLens(lens.id)"
+          [attr.data-testid]="lens.testId + '-mobile'"
+          class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          [ngClass]="isActive ? 'bg-indigo-900 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'">
+          <i [ngClass]="isActive ? lens.activeIcon : lens.icon" class="text-sm"></i>
+          <span>{{ lens.shortLabel }}</span>
+        </button>
+      }
     }
 
     <!-- Mobile account actions -->
@@ -57,7 +59,7 @@
     </div>
   </div>
 } @else {
-  <div class="flex flex-col items-center h-full bg-blue-900 py-6" data-testid="lens-switcher">
+  <div class="flex flex-col items-center h-full bg-blue-900 py-[18px]" data-testid="lens-switcher">
     <!-- LF Logo -->
     <button
       (click)="setLens('me')"
@@ -67,45 +69,58 @@
       <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="w-6 h-6" />
     </button>
 
-    <!-- Divider -->
-    <hr class="w-6 border-white/35 mb-3" />
+    <!-- Lens Buttons — hidden by every current caller (lenses live in the sidebar tabs); the `showLensButtons` default is only a standalone-reuse fallback. -->
+    @if (showLensButtons()) {
+      <!-- Divider — only meaningful when it separates the logo from the lens buttons below. -->
+      <hr class="w-6 border-white/35 mb-3" />
 
-    <!-- Lens Buttons -->
-    <div class="flex flex-col items-center gap-3 flex-1">
-      @for (lens of lenses(); track lens.id) {
-        @let isActive = !isDocsActive() && activeLensId() === lens.id;
+      <div class="flex flex-col items-center gap-3 flex-1">
+        @for (lens of lenses(); track lens.id) {
+          @let isActive = !isDocsActive() && activeLensId() === lens.id;
+          <button
+            type="button"
+            (click)="setLens(lens.id)"
+            [attr.data-testid]="lens.testId"
+            [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
+            [pTooltip]="lens.label"
+            tooltipPosition="right"
+            class="group flex flex-col items-center gap-1 w-full transition-colors"
+            [ngClass]="isActive ? 'text-white' : 'text-blue-200/75 hover:text-white'">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
+              [ngClass]="{
+                'bg-blue-500': isActive,
+                'group-hover:bg-white/10': !isActive,
+              }">
+              <i [ngClass]="isActive ? lens.activeIcon : lens.icon" class="text-lg"></i>
+            </div>
+            <span class="text-[10px] font-medium leading-none">{{ lens.shortLabel }}</span>
+          </button>
+        }
+      </div>
+    } @else {
+      <!-- Keep the footer pinned to the bottom when the lens buttons are absent. -->
+      <div class="flex-1"></div>
+    }
+
+    <!-- Footer — ordered bottom-up: avatar, divider, LFX Apps, What's New, Docs, then the impersonation button on top (no divider before it). -->
+    <div class="flex flex-col items-center gap-3 mt-auto">
+      <!-- Impersonation Button (only for authorized users) -->
+      @if (canImpersonate() && !isImpersonating()) {
         <button
           type="button"
-          (click)="setLens(lens.id)"
-          [attr.data-testid]="lens.testId"
-          [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
-          [pTooltip]="lens.label"
+          (click)="openImpersonationDialog()"
+          data-testid="lens-impersonate-button"
+          aria-label="Impersonate user"
+          pTooltip="Impersonate User"
           tooltipPosition="right"
-          class="group flex flex-col items-center gap-1 w-full transition-colors"
-          [ngClass]="isActive ? 'text-white' : 'text-blue-200/75 hover:text-white'">
-          <div
-            class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
-            [ngClass]="{
-              'bg-blue-500': isActive,
-              'group-hover:bg-white/10': !isActive,
-            }">
-            <i [ngClass]="isActive ? lens.activeIcon : lens.icon" class="text-xl"></i>
+          class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/75 hover:text-white">
+          <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
+            <i class="fa-light fa-user-secret text-lg"></i>
           </div>
-          <span class="text-[10px] font-medium leading-none">{{ lens.shortLabel }}</span>
         </button>
       }
-    </div>
 
-    <!-- Insights tooltip template -->
-    <ng-template #insightsTooltip>
-      <span class="flex items-center gap-2">
-        LFX Insights
-        <i class="fa-light fa-arrow-up-right-from-square text-gray-400 text-[11px]"></i>
-      </span>
-    </ng-template>
-
-    <!-- Footer -->
-    <div class="flex flex-col items-center gap-3 mt-auto">
       <!-- Documentation (LFXV2-2001) -->
       <a
         routerLink="/docs"
@@ -121,7 +136,7 @@
             'bg-blue-500': isDocsActive(),
             'group-hover:bg-white/10': !isDocsActive(),
           }">
-          <i [ngClass]="isDocsActive() ? 'fa-solid fa-book' : 'fa-light fa-book'" class="text-xl"></i>
+          <i [ngClass]="isDocsActive() ? 'fa-solid fa-book' : 'fa-light fa-book'" class="text-lg"></i>
         </div>
       </a>
 
@@ -135,43 +150,26 @@
         tooltipPosition="right"
         class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/75 hover:text-white">
         <div class="relative flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
-          <i class="fa-light fa-bullhorn text-xl"></i>
+          <i class="fa-light fa-bullhorn text-lg"></i>
           @if (unseenChangelogCount() > 0) {
             <span aria-hidden="true" class="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-blue-500" data-testid="lens-changelog-badge"></span>
           }
         </div>
       </button>
 
-      <!-- LFX Insights -->
-      <a
-        [href]="insightsUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-        data-testid="lens-insights"
-        aria-label="LFX Insights"
-        [pTooltip]="insightsTooltip"
+      <!-- LFX Apps (opens a menu of external LFX apps) -->
+      <button
+        type="button"
+        (click)="toggleAppsMenu($event)"
+        data-testid="lens-apps-button"
+        aria-label="LFX Apps"
+        pTooltip="LFX Apps"
         tooltipPosition="right"
         class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/75 hover:text-white">
         <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
-          <i class="fa-light fa-chart-simple text-xl"></i>
+          <i class="fa-solid fa-grid-round text-lg"></i>
         </div>
-      </a>
-
-      <!-- Impersonation Button (only for authorized users) -->
-      @if (canImpersonate() && !isImpersonating()) {
-        <button
-          type="button"
-          (click)="openImpersonationDialog()"
-          data-testid="lens-impersonate-button"
-          aria-label="Impersonate user"
-          pTooltip="Impersonate User"
-          tooltipPosition="right"
-          class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/75 hover:text-white">
-          <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
-            <i class="fa-light fa-user-secret text-xl"></i>
-          </div>
-        </button>
-      }
+      </button>
 
       <!-- Divider -->
       <hr class="w-6 border-white/35" />
@@ -187,6 +185,56 @@
       </button>
     </div>
   </div>
+
+  <!-- LFX Apps Popover -->
+  <p-popover #appsMenu appendTo="body" styleClass="w-72 lfx-apps-popover">
+    <ng-template #content>
+      <div class="py-1">
+        <a
+          [href]="insightsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          (click)="appsMenu.hide()"
+          data-testid="lens-apps-insights"
+          class="group flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-chart-simple fa-fw text-base text-gray-400 mt-0.5"></i>
+          <span class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-gray-900">LFX Insights</span>
+            <span class="text-xs text-gray-500">Analytics and health metrics for open source projects.</span>
+          </span>
+          <i class="fa-light fa-arrow-up-right-from-square mt-1 text-gray-400 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"></i>
+        </a>
+        <a
+          [href]="crowdfundingUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          (click)="appsMenu.hide()"
+          data-testid="lens-apps-crowdfunding"
+          class="group flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-hand-heart fa-fw text-base text-gray-400 mt-0.5"></i>
+          <span class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-gray-900">LFX Crowdfunding</span>
+            <span class="text-xs text-gray-500">Raise and contribute funds to support projects.</span>
+          </span>
+          <i class="fa-light fa-arrow-up-right-from-square mt-1 text-gray-400 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"></i>
+        </a>
+        <a
+          [href]="mentorshipUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          (click)="appsMenu.hide()"
+          data-testid="lens-apps-mentorship"
+          class="group flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-chalkboard-user fa-fw text-base text-gray-400 mt-0.5"></i>
+          <span class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-gray-900">LFX Mentorship</span>
+            <span class="text-xs text-gray-500">Connect mentors with mentees across the community.</span>
+          </span>
+          <i class="fa-light fa-arrow-up-right-from-square mt-1 text-gray-400 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"></i>
+        </a>
+      </div>
+    </ng-template>
+  </p-popover>
 
   <!-- User Menu Popover -->
   <p-popover #userMenu appendTo="body" styleClass="w-64 user-menu-popover">

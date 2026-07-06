@@ -2,19 +2,32 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex min-h-screen bg-white">
-  <!-- Auth-aware left rail: existing lens-switcher when signed in, public minimal nav otherwise.
-       Hidden under `lg:` to keep the desktop visual identical; below the breakpoint we render a
-       compact top bar (see below) so the docs nav and sign-in CTA remain reachable on phones / tablets. -->
-  <div class="hidden lg:block flex-shrink-0 fixed left-0 top-0 bottom-0 z-40 w-16">
-    @if (isAuthenticated()) {
-      <lfx-lens-switcher data-testid="docs-shell-authed" />
-    } @else {
+  <!-- Auth-aware left rail. Hidden under `lg:`; below the breakpoint a compact top bar (see below)
+       keeps the docs nav and sign-in CTA reachable on phones / tablets. -->
+  @if (isAuthenticated()) {
+    <!-- Authed: new rail (no lens buttons) + the lens sidebar. The previously-active lens tab stays
+         selected; no menu item is active on a /docs route, giving the user a way back to their lens. -->
+    <div class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 top-0 bottom-0 z-40">
+      <div class="w-[48px] flex-shrink-0" data-testid="docs-shell-authed">
+        <lfx-lens-switcher [showLensButtons]="false" />
+      </div>
+      <div class="w-[300px] flex-shrink-0">
+        <lfx-sidebar
+          [items]="sidebarItems()"
+          [showMeSelector]="activeLens() === 'me'"
+          [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+          [showOrgSelector]="activeLens() === 'org'" />
+      </div>
+    </div>
+  } @else {
+    <!-- Public: minimal docs rail (docs icon + What's new + sign-in CTA). -->
+    <div class="hidden lg:block flex-shrink-0 fixed left-0 top-0 bottom-0 z-40 w-16">
       <lfx-docs-sidebar-nav data-testid="docs-shell-public" />
-    }
-  </div>
+    </div>
+  }
 
   <!-- Main content -->
-  <main class="flex flex-1 flex-col lg:ml-16" data-testid="docs-content">
+  <main class="flex flex-1 flex-col" [ngClass]="isAuthenticated() ? 'lg:ml-[348px]' : 'lg:ml-16'" data-testid="docs-content">
     <!-- Mobile / tablet top bar — surfaces the same docs and sign-in/account affordances
          that the lg+ left rail provides. Hidden at lg+ where the rail does the same job. -->
     <div class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden" data-testid="docs-shell-mobile">
