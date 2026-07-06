@@ -64,8 +64,8 @@ export class ValkeyService implements CachePort {
   public async getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null> {
     if (!this.client) return null;
     try {
-      const raw = await this.withTimeout(this.client.get(key));
-      if (raw === null) return null;
+      const raw = (await this.withTimeout(this.client.get(key))) as string | null;
+      if (raw == null) return null;
       // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
       // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
       if (Buffer.byteLength(raw, 'utf8') > VALKEY_CACHE.MAX_VALUE_BYTES) {

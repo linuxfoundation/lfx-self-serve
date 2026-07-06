@@ -80,5 +80,5 @@ export * from './mktg-os-agents.constants';
 
 export * from './project-context.constants';
 export * from './project-staff.constants';
-
+export * from './org-lens-project-detail.constants';
 export * from './org-meetings.constants';
