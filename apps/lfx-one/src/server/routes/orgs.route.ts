@@ -13,6 +13,7 @@ import { OrgLensFoundationsController } from '../controllers/org-lens-foundation
 import { OrgLensKeyContactsController } from '../controllers/org-lens-key-contacts.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
+import { OrgLensProjectDetailController } from '../controllers/org-lens-project-detail.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 
 function buildOrgsRouter(): Router {
@@ -27,6 +28,7 @@ function buildOrgsRouter(): Router {
   const orgLensAccessController = new OrgLensAccessController();
   const orgLensTrainingController = new OrgLensTrainingController();
   const orgLensContributionsController = new OrgLensContributionsController();
+  const orgLensProjectDetailController = new OrgLensProjectDetailController();
   const orgIdentityController = new OrgIdentityController();
 
   // Spec 020 — org-selector identity & role-grants endpoints.
@@ -115,6 +117,9 @@ function buildOrgsRouter(): Router {
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));
+
+  // LFXV2-1885 — Org Lens Project Detail sub-page.
+  router.get('/:orgUid/lens/projects/:projectSlug', (req, res, next) => orgLensProjectDetailController.getProjectDetail(req, res, next));
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
