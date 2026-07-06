@@ -161,6 +161,18 @@ export class SurveysTableComponent {
     return `${responses} of ${total} responses (${percentage}%)`;
   }
 
+  protected getScheduledSendTooltip(survey: Survey): string {
+    if (!survey.survey_send_date) {
+      return '';
+    }
+    const sendDate = new Date(survey.survey_send_date);
+    if (Number.isNaN(sendDate.getTime())) {
+      return '';
+    }
+    const formatted = sendDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `Sends on ${formatted}`;
+  }
+
   // === Private Initializers ===
   private initSearchTerm(): Signal<string> {
     const control = this.searchForm.controls.search;
