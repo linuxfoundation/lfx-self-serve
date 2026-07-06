@@ -35,7 +35,7 @@ export class ScheduledSendTooltipPipe implements PipeTransform {
   pure: true,
 })
 export class ScheduledSendAriaLabelPipe implements PipeTransform {
-  public transform(survey: Survey, openResponded: boolean): string | null {
+  public transform(survey: Survey): string | null {
     if (getSurveyDisplayStatus(survey) !== SurveyStatus.SCHEDULED) {
       return null;
     }
@@ -43,7 +43,8 @@ export class ScheduledSendAriaLabelPipe implements PipeTransform {
     if (!tooltip) {
       return null;
     }
-    const statusLabel = openResponded ? 'Submitted' : (SURVEY_STATUS_LABELS[getSurveyDisplayStatus(survey)] ?? getSurveyDisplayStatus(survey));
+    const displayStatus = getSurveyDisplayStatus(survey);
+    const statusLabel = SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus;
     return `${statusLabel}. ${tooltip}`;
   }
 }
