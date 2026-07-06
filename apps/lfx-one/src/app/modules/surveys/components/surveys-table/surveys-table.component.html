@@ -171,14 +171,13 @@
                 @let isResponded = survey.response_status?.toLowerCase() === 'responded';
                 @let openResponded = survey.displayStatus === SurveyStatus.OPEN && isResponded;
                 @let openUnresponded = survey.displayStatus === SurveyStatus.OPEN && !isResponded;
-                @let scheduledSendTooltip = survey.displayStatus === SurveyStatus.SCHEDULED ? getScheduledSendTooltip(survey) : '';
                 <span
                   class="inline-flex"
-                  [pTooltip]="scheduledSendTooltip"
-                  [tooltipDisabled]="!scheduledSendTooltip"
+                  [pTooltip]="survey | scheduledSendTooltip"
+                  [tooltipDisabled]="!(survey | scheduledSendTooltip)"
                   tooltipPosition="top"
-                  [attr.tabindex]="scheduledSendTooltip ? 0 : null"
-                  [attr.aria-label]="getScheduledStatusAriaLabel(survey, openResponded)">
+                  [attr.tabindex]="(survey | scheduledSendTooltip) ? 0 : null"
+                  [attr.aria-label]="survey | scheduledSendAriaLabel: openResponded">
                   <lfx-tag
                     [value]="openResponded ? 'Submitted' : (survey | surveyStatusLabel)"
                     [severity]="openResponded ? 'success' : openUnresponded ? 'warn' : (survey | surveyStatusSeverity)"></lfx-tag>
