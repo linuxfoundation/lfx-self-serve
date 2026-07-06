@@ -214,4 +214,13 @@ export class CommitteeService {
       })
     );
   }
+
+  /** Lightweight alternative to {@link getMyCommittees} — returns only UIDs. Use when only set-membership checks (e.g. member badges) are needed. */
+  public getMyCommitteeUids(projectUid?: string): Observable<string[]> {
+    let params = new HttpParams();
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    }
+    return this.http.get<string[]>('/api/committees/my-committee-uids', { params }).pipe(catchError(() => of([])));
+  }
 }
