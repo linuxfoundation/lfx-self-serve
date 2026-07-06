@@ -448,26 +448,6 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches count of all members for a specific committee
-   */
-  public async getCommitteeMembersCount(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<number> {
-    logger.debug(req, 'get_committee_members_count', 'Fetching committee members count', {
-      committee_uid: committeeId,
-      query,
-    });
-
-    const params = {
-      ...query,
-      type: 'committee_member',
-      tags: `committee_uid:${committeeId}`,
-    };
-
-    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', `/query/resources/count`, 'GET', params);
-
-    return count;
-  }
-
-  /**
    * Fetches a single committee member by ID
    */
   public async getCommitteeMemberById(req: Request, committeeId: string, memberId: string): Promise<CommitteeMember> {
@@ -1699,22 +1679,6 @@ export class CommitteeService {
     }
 
     return found;
-  }
-
-  private async getMailingListCountByCommittee(req: Request, committeeId: string): Promise<number> {
-    try {
-      const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
-        type: 'groupsio_mailing_list',
-        tags: `committee_uid:${committeeId}`,
-      });
-      return count;
-    } catch (error) {
-      logger.debug(req, 'get_mailing_list_count_by_committee', 'Failed to fetch mailing list count, defaulting to 0', {
-        committee_uid: committeeId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      return 0;
-    }
   }
 
   /**
