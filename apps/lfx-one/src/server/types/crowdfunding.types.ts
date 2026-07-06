@@ -170,3 +170,13 @@ export interface PresignedURLWire {
   destination_url: string;
   required_headers: Record<string, string>;
 }
+
+export interface BackendAnnouncement {
+  id: string;
+  initiative_id: string;
+  created_by: string;
+  title: string;
+  description: string;
+  created_on: string;
+  updated_on: string;
+}

@@ -28,7 +28,7 @@
   <div class="flex flex-col gap-6 pb-2 overflow-x-hidden" data-testid="initiative-settings-drawer-content">
     <!-- Tab bar -->
     <div role="tablist" class="flex items-center border-b border-gray-200 -mx-6 px-6 -mt-2" data-testid="initiative-settings-tabs">
-      @for (tab of settingsTabs; track tab.value) {
+      @for (tab of settingsTabs(); track tab.value) {
         <button
           type="button"
           class="relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
@@ -76,17 +76,28 @@
       [class.hidden]="activeSettingsTab() !== 'funding'"
       [visible]="visible()"
       [initiative]="initiative()" />
+    @if (announcementsEnabled()) {
+      <lfx-settings-announcements-tab
+        id="settings-panel-announcements"
+        role="tabpanel"
+        aria-labelledby="settings-tab-announcements"
+        [class.hidden]="activeSettingsTab() !== 'announcements'"
+        [visible]="visible()"
+        [initiative]="initiative()" />
+    }
 
-    <!-- Footer actions -->
-    <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">
-      <lfx-button label="Cancel" severity="secondary" [disabled]="saving()" (onClick)="onClose()" data-testid="initiative-settings-cancel-btn" />
-      <lfx-button
-        label="Save changes"
-        severity="primary"
-        [loading]="saving()"
-        [disabled]="saving()"
-        (onClick)="onSave()"
-        data-testid="initiative-settings-save-btn" />
-    </div>
+    <!-- Footer actions — hidden on tabs that manage their own inline save flow -->
+    @if (!activeTab()?.savesInline) {
+      <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 mt-auto" data-testid="initiative-settings-footer">
+        <lfx-button label="Cancel" severity="secondary" [disabled]="saving()" (onClick)="onClose()" data-testid="initiative-settings-cancel-btn" />
+        <lfx-button
+          label="Save changes"
+          severity="primary"
+          [loading]="saving()"
+          [disabled]="saving()"
+          (onClick)="onSave()"
+          data-testid="initiative-settings-save-btn" />
+      </div>
+    }
   </div>
 </p-drawer>

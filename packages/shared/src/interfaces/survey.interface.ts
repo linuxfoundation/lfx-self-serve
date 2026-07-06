@@ -554,3 +554,9 @@ export interface SurveyReviewData {
   /** Email body preview */
   emailBodyPreview: string;
 }
+
+/**
+ * Combined survey status type
+ * @description Represents the combined state of survey status and response status
+ */
+export type CombinedSurveyStatus = 'open' | 'submitted' | 'closed';

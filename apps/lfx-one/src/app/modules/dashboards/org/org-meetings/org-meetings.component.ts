@@ -1,0 +1,190 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
+
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
+import {
+  DEFAULT_ORG_MEETINGS_TAB_ID,
+  DEMO_PAST_MEETINGS,
+  DEMO_UPCOMING_MEETINGS,
+  ORG_MEETINGS_KPI_RECORDINGS_COUNT,
+  ORG_MEETINGS_KPI_RECURRING_COUNT,
+  ORG_MEETINGS_KPI_RECURRING_PROJECTS,
+  ORG_MEETINGS_PROJECT_OPTIONS,
+  ORG_MEETINGS_TABS,
+  ORG_MEETINGS_TYPE_OPTIONS,
+  VALID_ORG_MEETINGS_TAB_IDS,
+} from '@lfx-one/shared/constants';
+import type { FilterOption, OrgMeeting, OrgMeetingBase, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting, StatCardItem } from '@lfx-one/shared/interfaces';
+
+import { OrgUpcomingMeetingsComponent } from './components/org-upcoming-meetings/org-upcoming-meetings.component';
+import { OrgPastMeetingsComponent } from './components/org-past-meetings/org-past-meetings.component';
+
+@Component({
+  selector: 'lfx-org-meetings',
+  imports: [ReactiveFormsModule, StatCardGridComponent, InputTextComponent, SelectComponent, OrgUpcomingMeetingsComponent, OrgPastMeetingsComponent],
+  templateUrl: './org-meetings.component.html',
+})
+export class OrgMeetingsComponent {
+  // === Private injections ===
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  // === Template constants ===
+  protected readonly tabs = ORG_MEETINGS_TABS;
+  protected readonly typeOptions: FilterOption<OrgMeetingType | null>[] = ORG_MEETINGS_TYPE_OPTIONS;
+  protected readonly projectOptions: FilterOption[] = ORG_MEETINGS_PROJECT_OPTIONS;
+
+  // === Forms ===
+  protected readonly filterForm = new FormGroup({
+    search: new FormControl('', { nonNullable: true }),
+    type: new FormControl<OrgMeetingType | null>(null),
+    project: new FormControl<string | null>(null),
+  });
+
+  // === WritableSignals ===
+  protected readonly loading = signal(false);
+  protected readonly pendingRsvpOnly = signal(false);
+  protected readonly upcomingMeetings = signal<readonly OrgMeeting[]>(DEMO_UPCOMING_MEETINGS);
+  protected readonly pastMeetings = signal<readonly OrgPastMeeting[]>(DEMO_PAST_MEETINGS);
+
+  // === Computed signals ===
+  protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
+  protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
+  protected readonly nextUpcomingMeetingDate: Signal<string> = this.initNextUpcomingMeetingDate();
+  protected readonly filterSearch: Signal<string> = this.initFilterSearch();
+  protected readonly filterType: Signal<OrgMeetingType | null> = this.initFilterType();
+  protected readonly filterProject: Signal<string | null> = this.initFilterProject();
+  protected readonly filteredUpcoming: Signal<readonly OrgMeeting[]> = this.initFilteredUpcoming();
+  protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
+
+  // === Protected methods ===
+  protected switchTab(tabId: OrgMeetingsTabId): void {
+    if (tabId === this.activeTab()) return;
+    if (tabId !== 'upcoming') {
+      this.pendingRsvpOnly.set(false);
+    }
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: tabId === DEFAULT_ORG_MEETINGS_TAB_ID ? null : tabId },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected togglePendingRsvpOnly(): void {
+    this.pendingRsvpOnly.update((value) => !value);
+  }
+
+  // === Private initializers ===
+  private initActiveTab(): Signal<OrgMeetingsTabId> {
+    return toSignal(
+      this.route.queryParamMap.pipe(
+        map((params) => {
+          const tab = params.get('tab') as OrgMeetingsTabId | null;
+          return tab && VALID_ORG_MEETINGS_TAB_IDS.has(tab) ? tab : DEFAULT_ORG_MEETINGS_TAB_ID;
+        })
+      ),
+      { initialValue: DEFAULT_ORG_MEETINGS_TAB_ID }
+    );
+  }
+
+  private initKpiCards(): Signal<StatCardItem[]> {
+    return computed<StatCardItem[]>(() => {
+      if (this.activeTab() === 'past') {
+        return [
+          {
+            value: String(this.filteredPast().length),
+            label: 'Past Meetings',
+            icon: 'fa-light fa-clock-rotate-left',
+            iconContainerClass: 'bg-gray-200 text-gray-500',
+          },
+          {
+            value: String(ORG_MEETINGS_KPI_RECORDINGS_COUNT),
+            label: 'Recordings Available',
+            icon: 'fa-light fa-video',
+            iconContainerClass: 'bg-red-100 text-red-600',
+          },
+        ];
+      }
+      const nextDate = this.nextUpcomingMeetingDate();
+      return [
+        {
+          value: String(this.filteredUpcoming().length),
+          label: 'Upcoming Meetings',
+          subLine: nextDate ? `Next: ${nextDate}` : undefined,
+          icon: 'fa-light fa-calendar',
+          iconContainerClass: 'bg-blue-100 text-blue-600',
+        },
+        {
+          value: String(ORG_MEETINGS_KPI_RECURRING_COUNT),
+          label: 'Recurring Series',
+          subLine: `Across ${ORG_MEETINGS_KPI_RECURRING_PROJECTS} projects`,
+          icon: 'fa-light fa-repeat',
+          iconContainerClass: 'bg-purple-100 text-purple-600',
+        },
+      ];
+    });
+  }
+
+  private initNextUpcomingMeetingDate(): Signal<string> {
+    return computed(() => {
+      const now = Date.now();
+      const sorted = [...this.upcomingMeetings()]
+        .filter((m) => new Date(m.startTime).getTime() >= now)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      const first = sorted[0];
+      if (!first) return '';
+      return new Date(first.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+  }
+
+  private initFilterSearch(): Signal<string> {
+    return toSignal(this.filterForm.controls.search.valueChanges, { initialValue: '' });
+  }
+
+  private initFilterType(): Signal<OrgMeetingType | null> {
+    return toSignal(this.filterForm.controls.type.valueChanges, { initialValue: null });
+  }
+
+  private initFilterProject(): Signal<string | null> {
+    return toSignal(this.filterForm.controls.project.valueChanges, { initialValue: null });
+  }
+
+  private initFilteredUpcoming(): Signal<readonly OrgMeeting[]> {
+    return computed(() => {
+      const pendingRsvpOnly = this.pendingRsvpOnly();
+      const now = Date.now();
+      return this.upcomingMeetings()
+        .filter((m) => new Date(m.startTime).getTime() >= now)
+        .filter((m) => this.matchesFilters(m))
+        .filter((m) => !pendingRsvpOnly || m.orgInvitees.some((invitee) => invitee.rsvpStatus === null));
+    });
+  }
+
+  private initFilteredPast(): Signal<readonly OrgPastMeeting[]> {
+    return computed(() => {
+      const now = Date.now();
+      return this.pastMeetings()
+        .filter((m) => new Date(m.startTime).getTime() < now)
+        .filter((m) => this.matchesFilters(m));
+    });
+  }
+
+  private matchesFilters(meeting: OrgMeetingBase): boolean {
+    const search = this.filterSearch().toLowerCase();
+    const type = this.filterType();
+    const project = this.filterProject();
+    const matchesSearch = !search || meeting.title.toLowerCase().includes(search) || (meeting.agenda ?? '').toLowerCase().includes(search);
+    const matchesType = !type || meeting.type === type;
+    const matchesProject = !project || meeting.project === project;
+    return matchesSearch && matchesType && matchesProject;
+  }
+}

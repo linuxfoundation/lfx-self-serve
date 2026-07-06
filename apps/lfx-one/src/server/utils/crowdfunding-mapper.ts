@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  Announcement,
   Beneficiary,
   CrowdfundingTransaction,
   FinancialSummary,
@@ -19,6 +20,7 @@ import {
 import { FundType } from '@lfx-one/shared/enums';
 
 import {
+  BackendAnnouncement,
   BackendBeneficiary,
   BackendDonation,
   BackendGoal,
@@ -170,6 +172,18 @@ const VALID_RECURRING_STATUSES: RecurringDonationStatus[] = ['active', 'paused',
 
 function toValidRecurringStatus(value: unknown): RecurringDonationStatus {
   return VALID_RECURRING_STATUSES.includes(value as RecurringDonationStatus) ? (value as RecurringDonationStatus) : 'active';
+}
+
+export function mapAnnouncementWire(b: BackendAnnouncement): Announcement {
+  return {
+    id: b.id,
+    initiativeId: b.initiative_id,
+    createdBy: b.created_by,
+    title: b.title,
+    description: b.description,
+    createdOn: b.created_on,
+    updatedOn: b.updated_on,
+  };
 }
 
 /** Maps a CF API Subscription (from GET /v1/me/subscriptions) to the RecurringDonation shape. */
