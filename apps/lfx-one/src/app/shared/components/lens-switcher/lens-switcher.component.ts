@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, inject, input, signal, Signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, inject, input, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
-import { LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
+import { environment } from '@environments/environment';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, isDocsPath } from '@lfx-one/shared/utils';
 import { ChangelogService } from '@services/changelog.service';
@@ -36,18 +36,18 @@ export class LensSwitcherComponent {
   private readonly changelogService = inject(ChangelogService);
 
   public readonly mobile = input<boolean>(false);
+  /** Render the vertical lens buttons in the rail. Every current caller (main layout desktop + mobile, docs shell) passes `false` since lenses live in the sidebar tabs; the `true` default is only a standalone-reuse fallback. */
+  public readonly showLensButtons = input<boolean>(true);
 
-  protected readonly activeLens = this.lensService.activeLens;
   protected readonly lenses = this.lensService.displayLenses;
-  protected readonly isHybrid = this.lensService.isHybridPersona;
   // Hybrid personas merge the 'project' button with the 'foundation' lens state — both map to 'project' for highlighting.
-  protected readonly activeLensId: Signal<Lens> = computed(() => {
-    const active = this.activeLens();
-    return this.isHybrid() && active === 'foundation' ? 'project' : active;
-  });
+  protected readonly activeLensId = this.lensService.displayActiveLens;
   protected readonly user = this.userService.user;
   protected readonly insightsUrl = buildInsightsUrl();
+  protected readonly crowdfundingUrl = environment.urls.crowdfunding;
+  protected readonly mentorshipUrl = environment.urls.mentorship;
   protected readonly userMenu = viewChild<Popover>('userMenu');
+  protected readonly appsMenu = viewChild<Popover>('appsMenu');
 
   /**
    * Tracks whether the active route is anywhere under `/docs/*` so the docs
@@ -80,15 +80,15 @@ export class LensSwitcherComponent {
 
   protected setLens(lens: Lens): void {
     this.userMenu()?.hide();
-    // Hybrid personas merge foundation + project into the 'Projects' button — return to the last
-    // viewed nav lens so a previously selected foundation isn't reset to the project lens.
-    const target = this.isHybrid() && lens === 'project' ? this.lensService.lastNavLens() : lens;
-    this.lensService.setLens(target);
-    this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
+    this.lensService.switchLens(lens);
   }
 
   protected toggleUserMenu(event: Event): void {
     this.userMenu()?.toggle(event);
+  }
+
+  protected toggleAppsMenu(event: Event): void {
+    this.appsMenu()?.toggle(event);
   }
 
   protected navigateToProfile(): void {
