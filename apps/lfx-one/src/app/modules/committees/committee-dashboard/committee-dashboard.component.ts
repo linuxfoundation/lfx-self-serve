@@ -327,14 +327,15 @@ export class CommitteeDashboardComponent {
     const fromFull$ = toObservable(computed(() => new Set(this.myCommittees().map((c) => c.uid))));
     const isMeLens$ = toObservable(this.isMeLens);
     const refresh$ = toObservable(this.refresh);
+    const project$ = toObservable(this.project);
 
     return toSignal(
-      combineLatest([isMeLens$, refresh$]).pipe(
-        switchMap(([isMeLens]) => {
+      combineLatest([isMeLens$, refresh$, project$]).pipe(
+        switchMap(([isMeLens, , project]) => {
           if (isMeLens) {
             return fromFull$;
           }
-          return this.committeeService.getMyCommitteeUids().pipe(map((uids) => new Set(uids)));
+          return this.committeeService.getMyCommitteeUids(project?.uid).pipe(map((uids) => new Set(uids)));
         })
       ),
       { initialValue: new Set<string>() }
