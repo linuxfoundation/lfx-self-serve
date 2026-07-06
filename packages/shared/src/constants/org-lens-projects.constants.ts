@@ -15,11 +15,15 @@ import { lfxColors } from './colors.constants';
 
 /** The default workspace for every company: all projects with any activity. */
 export const DEFAULT_ORG_PROJECTS_WORKSPACE_ID: OrgProjectsWorkspaceId = 'all-activities';
+export const DEFAULT_ORG_PROJECTS_WORKSPACE_NAME = 'All Projects with Activities';
+export const ORG_PROJECTS_ALL_FOUNDATIONS_FILTER = 'all';
 
 // Every company starts with only the default workspace; users add/rename/delete their own on top.
 export const DEFAULT_ORG_PROJECTS_WORKSPACES: ReadonlyArray<OrgProjectsWorkspace> = [
-  { id: DEFAULT_ORG_PROJECTS_WORKSPACE_ID, name: 'All Projects with Activities' },
+  { id: DEFAULT_ORG_PROJECTS_WORKSPACE_ID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, projectSlugs: [] },
 ];
+
+export const DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT = 50;
 
 /** Display labels for influence bands. */
 export const INFLUENCE_BAND_LABELS: Record<InfluenceBand, string> = {
@@ -35,6 +39,24 @@ export const INFLUENCE_TREND_COLOR: Record<InfluenceTrendDirection, string> = {
   up: lfxColors.emerald[500],
   down: lfxColors.red[500],
   flat: lfxColors.gray[400],
+};
+
+export const INFLUENCE_TREND_TEXT_CLASS: Record<InfluenceTrendDirection, string> = {
+  up: 'text-emerald-600',
+  down: 'text-red-600',
+  flat: 'text-gray-500',
+};
+
+export const INFLUENCE_TREND_ARROW_BADGE_CLASS: Record<InfluenceTrendDirection, string> = {
+  up: 'bg-emerald-100 text-emerald-600',
+  down: 'bg-red-100 text-red-600',
+  flat: 'bg-gray-100 text-gray-500',
+};
+
+export const INFLUENCE_TREND_ARROW_ICON: Record<InfluenceTrendDirection, string> = {
+  up: 'fa-solid fa-arrow-up text-[9px]',
+  down: 'fa-solid fa-arrow-down text-[9px]',
+  flat: 'fa-solid fa-minus text-[9px]',
 };
 
 /** Sort rank for influence bands (strongest highest); also the number of filled signal bars (0–4). */
@@ -69,6 +91,7 @@ export const HEALTH_SCORE_LABELS: Record<HealthScore, string> = {
   excellent: 'Excellent',
   healthy: 'Healthy',
   'at-risk': 'At Risk',
+  unavailable: 'Unavailable',
 };
 
 /** Tag/badge severity per health score (drives health-badge color). */
@@ -76,6 +99,7 @@ export const HEALTH_SCORE_SEVERITY: Record<HealthScore, TagSeverity> = {
   excellent: 'success',
   healthy: 'info',
   'at-risk': 'danger',
+  unavailable: 'secondary',
 };
 
 /** Projects-table page sizes; 25 is the default. */
@@ -97,3 +121,10 @@ export const VALID_ORG_PROJECTS_SORT_FIELDS = new Set<OrgProjectsSortField>([
   'contributors',
   'participants',
 ]);
+
+export const DEFAULT_LFX_ONE_PLATINUM_SCHEMA = 'ANALYTICS.PLATINUM_LFX_ONE';
+export const ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG = '__outside_lf__';
+export const ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG = 'outside-lf';
+export const ORG_PROJECTS_SEARCH_MIN_LENGTH = 2;
+export const ORG_PROJECTS_SEARCH_LIMIT = 20;
+export const ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE = 100;

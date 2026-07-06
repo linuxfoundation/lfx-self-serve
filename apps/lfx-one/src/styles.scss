@@ -376,6 +376,13 @@ html {
   white-space: normal !important;
 }
 
-.p-tooltip.lfx-tooltip-nowrap .p-tooltip-text {
-  max-width: none !important;
+.p-tooltip.lfx-tooltip-trend {
+  width: 13.5rem !important;
+  max-width: calc(100vw - 2rem) !important;
+}
+
+.p-tooltip.lfx-tooltip-trend .p-tooltip-text {
+  width: 100% !important;
+  max-width: 100% !important;
+  white-space: normal !important;
 }
