@@ -301,11 +301,11 @@ export class CrowdfundingController {
 
       if (Array.isArray(body['sponsorshipTiers'])) {
         const rawTiers = body['sponsorshipTiers'] as unknown[];
-        const invalidTier = rawTiers.find(
+        const hasInvalidTier = rawTiers.some(
           (t) =>
             !t || typeof t !== 'object' || !SPONSORSHIP_TIER_NAMES.includes((t as Record<string, unknown>)['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number])
         );
-        if (invalidTier) {
+        if (hasInvalidTier) {
           throw ServiceValidationError.forField('sponsorshipTiers', `tier name must be one of: ${SPONSORSHIP_TIER_NAMES.join(', ')}`, {
             operation: 'update_initiative',
           });
