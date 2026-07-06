@@ -84,6 +84,11 @@ export class ProfileLayoutComponent {
   // Loading state
   public readonly loading = signal<boolean>(true);
 
+  // When impersonating, the profile is shown read-only: the profile GET reflects the target user,
+  // but all profile mutations act on the real user's account server-side and are blocked. The edit
+  // affordances render visible-but-disabled and a banner surfaces the read-only state.
+  public readonly impersonating = this.userService.impersonating;
+
   // Tracks failed avatar image loads so we can fall back to initials
   public readonly avatarLoadError = signal<boolean>(false);
 

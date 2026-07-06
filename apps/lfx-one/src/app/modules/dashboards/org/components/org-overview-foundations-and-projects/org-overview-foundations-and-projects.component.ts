@@ -4,7 +4,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { SkeletonModule } from 'primeng/skeleton';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensFoundationsService } from '@services/org-lens-foundations.service';
@@ -28,6 +28,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly foundationsService = inject(OrgLensFoundationsService);
   private readonly plausibleService = inject(PlausibleService);
+  private readonly router = inject(Router);
 
   private readonly retryTrigger = signal(0);
   private readonly expansionState = signal<Record<string, boolean>>({});
@@ -115,9 +116,27 @@ export class OrgOverviewFoundationsAndProjectsComponent {
     });
   }
 
-  // INFO: Future Epic implementation — project-row click/keydown handlers and their
-  // `mfp_project_row_click` telemetry were removed with the hidden /org/projects drilldown.
-  // Restore them alongside the row's interactive affordances when the drilldown is built.
+  protected onProjectClick(payload: { projectId: string; projectName: string }): void {
+    const orgId = this.accountContextService.selectedAccount().accountId;
+    this.plausibleService.trackEvent('mfp_project_row_click', {
+      orgId,
+      projectId: payload.projectId,
+      projectName: payload.projectName,
+    });
+  }
+
+  protected onProjectRowClick(project: OrgLensFoundationRow['projects'][number]): void {
+    if (!project.isLfProject) return;
+    this.onProjectClick({ projectId: project.projectId, projectName: project.projectName });
+    void this.router.navigate(['/org/projects', project.projectSlug || project.projectId]);
+  }
+
+  protected onProjectRowKeydown(event: KeyboardEvent, project: OrgLensFoundationRow['projects'][number]): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!project.isLfProject) return;
+    event.preventDefault();
+    this.onProjectRowClick(project);
+  }
 
   private emitOverviewViewOnce(orgUid: string): void {
     if (this.viewedOrgs.has(orgUid)) return;

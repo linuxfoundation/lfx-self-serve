@@ -114,6 +114,16 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
           },
           {
+            path: 'projects/:projectSlug',
+            data: {
+              lens: 'org',
+              title: 'Project Detail',
+              description: "Your organization's involvement and competitive standing on a project.",
+              icon: 'fa-light fa-folder',
+            },
+            loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+          },
+          {
             // INFO: Future Epic implementation — the ROI page is hidden; deep links fall
             // back to the org overview until the org ROI feature is built.
             path: 'roi',

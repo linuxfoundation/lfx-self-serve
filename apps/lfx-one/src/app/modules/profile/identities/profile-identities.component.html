@@ -33,7 +33,14 @@
           <h2>Identities</h2>
           <p class="text-sm text-slate-500">Manage the accounts used to identify you and attribute contributions.</p>
         </div>
-        <lfx-button severity="primary" [text]="true" size="small" (onClick)="onAdd()" data-testid="add-identity-btn">
+        <lfx-button
+          severity="primary"
+          [text]="true"
+          size="small"
+          [disabled]="impersonating()"
+          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+          (onClick)="onAdd()"
+          data-testid="add-identity-btn">
           <i class="fa-light fa-plus mr-1.5"></i>
           Add identity
         </lfx-button>
@@ -95,11 +102,20 @@
                       severity="primary"
                       [outlined]="true"
                       size="small"
+                      [disabled]="impersonating()"
+                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                       (onClick)="onVerify(identity)"
                       [attr.data-testid]="'verify-btn-' + identity.id">
                       Verify
                     </lfx-button>
-                    <lfx-button severity="secondary" [outlined]="true" size="small" (onClick)="onRemove(identity)" data-testid="reject-identity-btn">
+                    <lfx-button
+                      severity="secondary"
+                      [outlined]="true"
+                      size="small"
+                      [disabled]="impersonating()"
+                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                      (onClick)="onRemove(identity)"
+                      data-testid="reject-identity-btn">
                       This is not me
                     </lfx-button>
                   </div>
@@ -140,6 +156,8 @@
                         [text]="true"
                         [rounded]="true"
                         size="small"
+                        [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                         styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
                         (onClick)="actionMenu.toggle($event)"
                         [attr.data-testid]="'identity-menu-' + identity.id" />

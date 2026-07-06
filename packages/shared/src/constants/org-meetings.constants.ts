@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FilterOption, OrgMeeting, OrgMeetingRsvpStatus, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting } from '../interfaces';
+import type { FilterOption, OrgMeetingRsvpStatus, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting } from '../interfaces';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
@@ -15,17 +15,12 @@ export const DEFAULT_ORG_MEETINGS_TAB_ID: OrgMeetingsTabId = 'upcoming';
 /** Derived from ORG_MEETINGS_TABS; used to validate `?tab=` query-param input. */
 export const VALID_ORG_MEETINGS_TAB_IDS: ReadonlySet<OrgMeetingsTabId> = new Set(ORG_MEETINGS_TABS.map((t) => t.id));
 
-/** KPI: total upcoming meetings count (demo). */
-export const ORG_MEETINGS_KPI_UPCOMING_COUNT = 12;
+/** Default / max page size for the server-paginated Upcoming meetings list. */
+export const DEFAULT_MEETINGS_PAGE_SIZE = 10;
+export const MAX_MEETINGS_PAGE_SIZE = 100;
 
-/** KPI: recurring series count (demo). */
-export const ORG_MEETINGS_KPI_RECURRING_COUNT = 4;
-
-/** KPI: recurring series project span (demo). */
-export const ORG_MEETINGS_KPI_RECURRING_PROJECTS = 3;
-
-/** KPI: total past meetings count (demo). */
-export const ORG_MEETINGS_KPI_PAST_COUNT = 15;
+/** Valid meeting-type filter values for server-side validation. */
+export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'working-group', 'other']);
 
 /** KPI: recordings available from past 30 days (demo). */
 export const ORG_MEETINGS_KPI_RECORDINGS_COUNT = 3;
@@ -39,16 +34,6 @@ export const ORG_MEETINGS_RSVP_BADGES: Record<Exclude<OrgMeetingRsvpStatus, null
 
 /** RSVP badge shown when an invitee has not responded. */
 export const ORG_MEETINGS_NO_RESPONSE_BADGE = { label: 'No Response', badgeClass: 'bg-gray-100 text-gray-500' };
-
-/** Project filter options for the Org Meetings filter bar. */
-export const ORG_MEETINGS_PROJECT_OPTIONS: FilterOption[] = [
-  { label: 'All Projects', value: null },
-  { label: 'CNCF', value: 'CNCF' },
-  { label: 'Kubernetes', value: 'Kubernetes' },
-  { label: 'LF AI & Data Foundation', value: 'LF AI & Data Foundation' },
-  { label: 'OpenSSF', value: 'OpenSSF' },
-  { label: 'Security TAG', value: 'Security TAG' },
-];
 
 /** Type filter options for the Org Meetings filter bar. */
 export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption<OrgMeetingType | null>[] = [
@@ -70,71 +55,6 @@ function demoMeetingTimes(offsetDays: number, hour: number, minute: number, dura
   const end = new Date(start.getTime() + durationMinutes * 60_000);
   return { startTime: start.toISOString(), endTime: end.toISOString() };
 }
-
-/** Demo upcoming meetings (3 records). */
-export const DEMO_UPCOMING_MEETINGS: readonly OrgMeeting[] = [
-  {
-    id: 'um-1',
-    title: 'CNCF Governing Board',
-    privacy: 'private',
-    type: 'board',
-    recurrenceLabel: 'Every week on Thu',
-    ...demoMeetingTimes(2, 1, 54, 60),
-    foundation: 'Cloud Native Computing Foundation',
-    orgName: 'CoreOS',
-    project: 'CNCF',
-    agenda: 'Review Q3 budget proposal. Approve new project sandbox applications. Open floor for governing board motions.',
-    resources: ['Q3 Budget Proposal.pdf', 'Board Meeting Agenda.docx'],
-    rsvpTally: { yes: 12, maybe: 2, no: 1, noResponse: 3 },
-    orgInvitees: [
-      { name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, rsvpStatus: 'yes' },
-      { name: 'Marcus Williams', title: 'CTO', avatarUrl: null, rsvpStatus: 'yes' },
-      { name: 'Priya Sharma', title: 'Director of Open Source', avatarUrl: null, rsvpStatus: 'maybe' },
-    ],
-    guestCount: 8,
-    joinUrl: 'https://zoom.us/j/demo-cncf-board',
-    statusFlags: { recording: true, transcripts: true, aiSummary: true },
-  },
-  {
-    id: 'um-2',
-    title: 'Security TAG Monthly',
-    privacy: 'public',
-    type: 'working-group',
-    recurrenceLabel: 'Every month on the 3rd Wed',
-    ...demoMeetingTimes(17, 17, 0, 60),
-    foundation: 'Cloud Native Computing Foundation',
-    orgName: 'CoreOS',
-    project: 'Security TAG',
-    agenda: 'Security posture review. Vulnerability disclosure process update. New TAG member introductions.',
-    resources: ['Security TAG Charter.pdf'],
-    rsvpTally: { yes: 22, maybe: 5, no: 2, noResponse: 8 },
-    orgInvitees: [
-      { name: 'Marcus Williams', title: 'CTO', avatarUrl: null, rsvpStatus: 'yes' },
-      { name: 'Aisha Johnson', title: 'Security Architect', avatarUrl: null, rsvpStatus: null },
-    ],
-    guestCount: 15,
-    joinUrl: 'https://zoom.us/j/demo-security-tag',
-    statusFlags: { recording: true, transcripts: false, aiSummary: false },
-  },
-  {
-    id: 'um-3',
-    title: 'LF AI & Data Summit Planning',
-    privacy: 'public',
-    type: 'other',
-    recurrenceLabel: null,
-    ...demoMeetingTimes(34, 15, 0, 90),
-    foundation: 'LF AI & Data',
-    orgName: 'CoreOS',
-    project: 'LF AI & Data Foundation',
-    agenda: 'Summit logistics. Keynote speaker lineup. Sponsorship tier discussion.',
-    resources: [],
-    rsvpTally: { yes: 6, maybe: 1, no: 0, noResponse: 2 },
-    orgInvitees: [{ name: 'Sarah Chen', title: 'VP Engineering', avatarUrl: null, rsvpStatus: 'yes' }],
-    guestCount: 4,
-    joinUrl: 'https://zoom.us/j/demo-lfai-summit',
-    statusFlags: { recording: false, transcripts: false, aiSummary: false },
-  },
-];
 
 /** Demo past meetings (3 records). */
 export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
