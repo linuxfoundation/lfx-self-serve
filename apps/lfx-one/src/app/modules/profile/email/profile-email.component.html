@@ -61,7 +61,7 @@
                     </div>
                   </div>
 
-                  <!-- Action Buttons -->
+                  <!-- Action Buttons (visible but disabled while impersonating — email edits act on the real account) -->
                   <div class="flex items-center gap-2 ml-3 shrink-0">
                     @if (emailItem.canSetPrimary) {
                       <lfx-button
@@ -69,6 +69,8 @@
                         label="Make Primary"
                         severity="secondary"
                         variant="outlined"
+                        [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                         (onClick)="setPrimary(emailItem)"
                         [attr.data-testid]="'set-primary-' + emailItem.email">
                       </lfx-button>
@@ -79,6 +81,8 @@
                         icon="fa-light fa-trash"
                         severity="danger"
                         variant="outlined"
+                        [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                         (onClick)="deleteEmail(emailItem)"
                         [attr.data-testid]="'delete-button-' + emailItem.email">
                       </lfx-button>
@@ -91,7 +95,7 @@
             <p class="text-sm text-gray-500 text-center py-4" data-testid="no-emails-message">No email addresses found.</p>
           }
 
-          <!-- Add Email Section (OTP Flow) -->
+          <!-- Add Email Section (OTP Flow) — visible read-only while impersonating (submit disabled) -->
           <div class="mt-4 pt-4 border-t border-gray-200">
             @if (!otpStep()) {
               <!-- Step 1: Enter email -->
@@ -117,7 +121,8 @@
                   label="Send Code"
                   icon="fa-light fa-envelope"
                   severity="info"
-                  [disabled]="addEmailForm.invalid || sendingCode()"
+                  [disabled]="addEmailForm.invalid || sendingCode() || impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   [loading]="sendingCode()"
                   data-testid="send-code-button">
                 </lfx-button>
@@ -151,7 +156,8 @@
                     label="Verify"
                     icon="fa-light fa-check"
                     severity="info"
-                    [disabled]="otpForm.invalid || verifyingOtp()"
+                    [disabled]="otpForm.invalid || verifyingOtp() || impersonating()"
+                    [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                     [loading]="verifyingOtp()"
                     data-testid="verify-otp-button">
                   </lfx-button>
@@ -168,7 +174,8 @@
                 <button
                   type="button"
                   class="text-xs text-blue-500 hover:underline self-start"
-                  [disabled]="sendingCode()"
+                  [disabled]="sendingCode() || impersonating()"
+                  [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
                   (click)="sendVerificationCode()"
                   data-testid="resend-code-link">
                   {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}

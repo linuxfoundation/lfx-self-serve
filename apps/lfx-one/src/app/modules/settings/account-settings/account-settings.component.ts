@@ -8,12 +8,14 @@ import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModu
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -22,15 +24,28 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
 @Component({
   selector: 'lfx-account-settings',
   host: { class: 'block' },
-  imports: [NgClass, ReactiveFormsModule, BadgeComponent, ButtonComponent, InputTextComponent, ConfirmDialogModule, ToastModule, TooltipModule],
-  providers: [ConfirmationService, MessageService],
+  imports: [
+    NgClass,
+    ReactiveFormsModule,
+    BadgeComponent,
+    ButtonComponent,
+    InputTextComponent,
+    ConfirmDialogModule,
+    ToastModule,
+    TooltipModule,
+    DynamicDialogModule,
+  ],
+  providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',
 })
 export class AccountSettingsComponent {
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — account mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -92,16 +107,16 @@ export class AccountSettingsComponent {
   // DEVELOPER SETTINGS
   // ══════════════════════════════════════════
 
+  // v2 OIDC session token (audience PCC_AUTH0_AUDIENCE)
   public developerToken = signal('');
-  public showToken = signal(false);
+  // v1 API Gateway token (audience api-gw.*) — empty when the server did not return one
+  public developerV1Token = signal('');
   public loadingToken = signal(true);
-  public tokenCopied = signal(false);
+  // Tracks which token's Copy button most recently succeeded, so only that button shows "Copied!"
+  public tokenCopied = signal<'v2' | 'v1' | null>(null);
 
-  public maskedToken = computed(() => {
-    const token = this.developerToken();
-    if (!token || token.length <= 8) return token;
-    return `${token.slice(0, 4)}${'*'.repeat(11)}${token.slice(-4)}`;
-  });
+  public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
+  public maskedV1Token = computed(() => this.maskTokenValue(this.developerV1Token()));
 
   // ══════════════════════════════════════════
   // PASSWORD
@@ -141,7 +156,14 @@ export class AccountSettingsComponent {
         this.newPasswordSignal.set(value || '');
       });
 
-    this.loadDeveloperToken();
+    // Skip the developer-token fetch while impersonating — the server suppresses it (403) so the
+    // impersonator can't read the target's live bearer token. Clear the loading flag so the UI
+    // shows the read-only state instead of an indefinite spinner.
+    if (this.impersonating()) {
+      this.loadingToken.set(false);
+    } else {
+      this.loadDeveloperToken();
+    }
 
     afterNextRender(() => {
       this.setupScrollSpy();
@@ -384,19 +406,33 @@ export class AccountSettingsComponent {
   // DEVELOPER SETTINGS PUBLIC METHODS
   // ══════════════════════════════════════════
 
-  public toggleTokenVisibility(): void {
-    this.showToken.set(!this.showToken());
+  public openTokenPopup(title: string, token: string): void {
+    if (!token) return;
+    this.dialogService.open(TokenRevealDialogComponent, {
+      header: title,
+      width: '40rem',
+      modal: true,
+      draggable: false,
+      resizable: false,
+      dismissableMask: true,
+      style: { maxWidth: '90vw' },
+      data: { token },
+    });
   }
 
-  public copyToken(): void {
-    const token = this.developerToken();
+  public copyToken(token: string, kind: 'v2' | 'v1'): void {
     if (!token || !isPlatformBrowser(this.platformId)) return;
 
-    navigator.clipboard.writeText(token).then(() => {
-      this.tokenCopied.set(true);
-      this.messageService.add({ severity: 'success', summary: 'Copied', detail: 'Token copied to clipboard' });
-      setTimeout(() => this.tokenCopied.set(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(token)
+      .then(() => {
+        this.tokenCopied.set(kind);
+        this.messageService.add({ severity: 'success', summary: 'Copied', detail: 'Token copied to clipboard' });
+        setTimeout(() => this.tokenCopied.set(null), 2000);
+      })
+      .catch(() => {
+        this.messageService.add({ severity: 'error', summary: 'Copy Failed', detail: 'Failed to copy token to clipboard. Please try again.' });
+      });
   }
 
   // ══════════════════════════════════════════
@@ -424,9 +460,22 @@ export class AccountSettingsComponent {
       .getDeveloperTokenInfo()
       .pipe(finalize(() => this.loadingToken.set(false)))
       .subscribe({
-        next: (info) => this.developerToken.set(info.token),
-        error: () => this.developerToken.set(''),
+        next: (info) => {
+          // Guard the shape at runtime: a non-string (e.g. null on a transient error path) resets
+          // to empty rather than leaking a raw value through maskTokenValue.
+          this.developerToken.set(typeof info.token === 'string' ? info.token : '');
+          this.developerV1Token.set(typeof info.v1Token === 'string' ? info.v1Token : '');
+        },
+        error: () => {
+          this.developerToken.set('');
+          this.developerV1Token.set('');
+        },
       });
+  }
+
+  private maskTokenValue(token: string): string {
+    if (!token || token.length <= 8) return token;
+    return `${token.slice(0, 4)}${'*'.repeat(11)}${token.slice(-4)}`;
   }
 
   private calculatePasswordStrength(password: string): PasswordStrength {

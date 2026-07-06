@@ -348,7 +348,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
           'https://sso.linuxfoundation.org/claims/username': targetClaims['http://lfx.dev/claims/username'] || '',
           name: impersonationUser?.name || targetClaims['http://lfx.dev/claims/username'] || '',
           nickname: targetClaims['http://lfx.dev/claims/username'] || '',
-          picture: impersonationUser?.picture || auth.user?.picture || '',
+          // Do NOT fall back to the impersonator's picture — when the target has no picture, leave it
+          // empty so the avatar renders the target's initials instead of the impersonator's photo.
+          picture: impersonationUser?.picture || '',
         });
         auth.impersonating = true;
         auth.impersonator = req.appSession['impersonator'];

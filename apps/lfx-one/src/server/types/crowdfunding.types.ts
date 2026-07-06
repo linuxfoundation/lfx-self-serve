@@ -55,6 +55,8 @@ export interface BackendInitiative {
     total_disbursed_cents: number;
     available_cents: number;
   };
+  sponsorship_tiers?: BackendSponsorshipTierInput[];
+  donation_mode?: string;
 }
 
 export interface BackendCrowdfundingResponse {
@@ -152,6 +154,14 @@ export interface BackendBeneficiaryInput {
   email?: string;
 }
 
+/** Not yet processed upstream — sent as-is for forward compatibility. */
+export interface BackendSponsorshipTierInput {
+  name: string;
+  enabled: boolean;
+  goal_amount_cents?: number;
+  benefits: string[];
+}
+
 /** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{id} on the upstream crowdfunding service. */
 export interface BackendUpdateInitiativeInput {
   name?: string;
@@ -162,6 +172,8 @@ export interface BackendUpdateInitiativeInput {
   status?: string;
   goals?: BackendGoalInput[];
   beneficiaries?: BackendBeneficiaryInput[];
+  sponsorship_tiers?: BackendSponsorshipTierInput[];
+  donation_mode?: string;
 }
 
 /** Raw snake_case presigned-URL response from POST /v1/me/presigned-url. */
@@ -169,4 +181,14 @@ export interface PresignedURLWire {
   upload_url: string;
   destination_url: string;
   required_headers: Record<string, string>;
+}
+
+export interface BackendAnnouncement {
+  id: string;
+  initiative_id: string;
+  created_by: string;
+  title: string;
+  description: string;
+  created_on: string;
+  updated_on: string;
 }

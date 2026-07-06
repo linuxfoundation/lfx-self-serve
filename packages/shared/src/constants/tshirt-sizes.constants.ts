@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { TShirtSize } from '../interfaces/tshirt-sizes.interface';
+
 /**
  * T-shirt size options for profile forms and swag distribution.
  * Values mirror the v1 Salesforce picklist so v2→v1 sync round-trips cleanly.
@@ -18,11 +20,6 @@ export const TSHIRT_SIZES = [
   { label: 'Straight-Cut 2XL', value: 'Straight-Cut 2XL' },
   { label: 'Straight-Cut 3XL', value: 'Straight-Cut 3XL' },
 ] as const;
-
-/**
- * Type for T-shirt size values
- */
-export type TShirtSize = (typeof TSHIRT_SIZES)[number]['value'];
 
 /**
  * Coerce a stored t-shirt size into one of the current valid options.

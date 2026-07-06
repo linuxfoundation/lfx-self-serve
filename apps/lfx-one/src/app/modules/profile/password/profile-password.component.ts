@@ -28,6 +28,8 @@ export class ProfilePasswordComponent {
   private readonly accountRecovery = viewChild<ElementRef>('accountRecovery');
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — password changes act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly messageService = inject(MessageService);
 
   // State signals

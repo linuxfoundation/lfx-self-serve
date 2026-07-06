@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex min-w-0 flex-col gap-4" data-testid="token-reveal-dialog">
+  <p class="text-sm text-gray-500">Copy your full token below. Keep it secure and never share it publicly.</p>
+  <div
+    class="max-h-48 w-full min-w-0 max-w-full overflow-y-auto break-all rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-sm text-gray-800"
+    data-testid="token-reveal-value">
+    {{ token }}
+  </div>
+
+  <!-- Footer -->
+  <div class="mt-1 flex items-center justify-end gap-2">
+    <lfx-button type="button" size="small" icon="fa-light fa-xmark" severity="secondary" label="Close" (onClick)="close()" data-testid="token-reveal-close">
+    </lfx-button>
+    <lfx-button type="button" size="small" icon="fa-light fa-copy" severity="info" label="Copy" (onClick)="copy()" data-testid="token-reveal-copy">
+    </lfx-button>
+  </div>
+</div>

@@ -18,6 +18,7 @@ import { FilterPillOption, Survey } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
+import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/scheduled-send-tooltip.pipe';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
 import { ConfirmationService } from 'primeng/api';
@@ -41,6 +42,8 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     SurveyStatusSeverityPipe,
     DueDateLabelPipe,
     DueDateLabelColorPipe,
+    ScheduledSendTooltipPipe,
+    ScheduledSendAriaLabelPipe,
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
@@ -70,6 +73,7 @@ export class SurveysTableComponent {
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
+  public readonly editQueryParams = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewResults = output<Survey>();

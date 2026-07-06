@@ -27,6 +27,8 @@ import { BehaviorSubject, catchError, finalize, forkJoin, map, of, switchMap, ta
 })
 export class ProfileLinuxEmailComponent {
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — Linux.com alias mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 

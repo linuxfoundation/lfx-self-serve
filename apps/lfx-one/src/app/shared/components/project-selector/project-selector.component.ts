@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { BOARD_SCOPED_PERSONA_PRIORITY, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
@@ -10,7 +10,6 @@ import { DisplayLensItem, LensItem, NavLens, PersonaType, ProjectContext, Select
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
-import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
@@ -24,10 +23,13 @@ import { TooltipModule } from 'primeng/tooltip';
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
-  private readonly userService = inject(UserService);
   private readonly navigationService = inject(NavigationService);
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  private readonly popoverRef = viewChild<Popover>('popover');
+  private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
 
   public readonly lens = input.required<NavLens>();
   public readonly selectedProject = input<ProjectContext | null>(null);
@@ -42,7 +44,7 @@ export class ProjectSelectorComponent {
   protected readonly selectorTabs: readonly SelectorTab[] = ['all', 'foundations', 'projects'];
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
-  protected readonly panelStyleClass: Signal<string> = this.initPanelStyleClass();
+  protected readonly panelStyleClass = 'project-selector-panel';
   protected readonly lensTypeLabel: Signal<string> = this.initLensTypeLabel();
   protected readonly displayName: Signal<string> = this.initDisplayName();
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedProject()?.logoUrl || '');
@@ -86,6 +88,7 @@ export class ProjectSelectorComponent {
 
   protected onPopoverShow(): void {
     this.isPanelOpen.set(true);
+    this.alignPanelTop();
   }
 
   protected onPopoverHide(): void {
@@ -122,8 +125,20 @@ export class ProjectSelectorComponent {
     }
   }
 
-  private initPanelStyleClass(): Signal<string> {
-    return computed(() => (this.userService.impersonating() ? 'project-selector-panel project-selector-panel--with-banner' : 'project-selector-panel'));
+  /**
+   * Align the panel's top edge with the selector trigger. Only applies at lg+, where the SCSS sets
+   * `position: fixed` (viewport-relative). Below that PrimeNG uses absolute (document-relative)
+   * positioning, so a viewport-relative top would mis-place the panel on scroll.
+   */
+  private alignPanelTop(): void {
+    if (!isPlatformBrowser(this.platformId) || !window.matchMedia('(min-width: 1024px)').matches) {
+      return;
+    }
+    const trigger = this.triggerRef()?.nativeElement;
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (trigger && container) {
+      container.style.top = `${Math.round(trigger.getBoundingClientRect().top)}px`;
+    }
   }
 
   private initLensTypeLabel(): Signal<string> {

@@ -137,7 +137,7 @@ export class CommitteeService {
     return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(take(1));
   }
 
-  /** Submit a join application for a group with join_mode 'application' or 'invite_only' */
+  /** Submit a join application for a group with join_mode 'application' */
   public submitApplication(committeeId: string, message?: string): Observable<CommitteeJoinApplication> {
     const body: CreateCommitteeJoinApplicationRequest = { message: message || '' };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));

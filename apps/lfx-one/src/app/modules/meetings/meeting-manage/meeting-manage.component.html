@@ -183,7 +183,7 @@
 
             <p-step-panel [value]="3" data-testid="meeting-manage-panel-2">
               <ng-template #content let-activateCallback="activateCallback">
-                <lfx-meeting-platform-features [form]="form()"></lfx-meeting-platform-features>
+                <lfx-meeting-platform-features [form]="form()" (goToStep)="goToStep($event)"></lfx-meeting-platform-features>
               </ng-template>
             </p-step-panel>
 

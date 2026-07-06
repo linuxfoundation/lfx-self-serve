@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FundType } from '../enums/crowdfunding.enum';
+import type { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_DONATION_MODES } from '../constants/crowdfunding.constants';
 import { OffsetPaginatedResponse } from './api.interface';
 import { DonutRing } from './donut-chart.interface';
 
@@ -150,9 +151,11 @@ export interface InitiativeDetail extends InitiativeBase {
   financialSummary?: FinancialSummary;
 
   beneficiaries?: Beneficiary[];
+  sponsorshipTiers?: SponsorshipTier[];
+  donationMode?: SponsorshipDonationMode;
 }
 
-export type CrowdfundingInitiativeStatus = 'submitted' | 'pending' | 'published' | 'declined' | 'hidden';
+export type CrowdfundingInitiativeStatus = (typeof CROWDFUNDING_INITIATIVE_STATUSES)[number];
 
 export interface CrowdfundingInitiative {
   id: string;
@@ -300,6 +303,19 @@ export interface UpdateBeneficiaryInput {
   email?: string;
 }
 
+export type SponsorshipTierName = (typeof SPONSORSHIP_TIER_NAMES)[number];
+
+/** A configurable sponsorship level a project can offer sponsors. Not yet processed upstream — sent as-is for forward compatibility. */
+export interface SponsorshipTier {
+  name: SponsorshipTierName;
+  enabled: boolean;
+  goalCents?: number;
+  benefits: string[];
+}
+
+/** Whether sponsors pick from fixed tiers or choose their own amount. */
+export type SponsorshipDonationMode = (typeof SPONSORSHIP_DONATION_MODES)[number];
+
 export interface UpdateInitiativeInput {
   name?: string;
   description?: string;
@@ -309,12 +325,39 @@ export interface UpdateInitiativeInput {
   status?: CrowdfundingInitiativeStatus;
   goals?: UpdateGoalInput[];
   beneficiaries?: UpdateBeneficiaryInput[];
+  sponsorshipTiers?: SponsorshipTier[];
+  donationMode?: SponsorshipDonationMode;
 }
 
 export interface PresignedURLResult {
   uploadUrl: string;
   destinationUrl: string;
   requiredHeaders: Record<string, string>;
+}
+
+export interface Announcement {
+  id: string;
+  initiativeId: string;
+  createdBy: string;
+  title: string;
+  description: string;
+  createdOn: string;
+  updatedOn: string;
+}
+
+export interface AnnouncementList {
+  data: Announcement[];
+  totalCount: number;
+}
+
+export interface CreateAnnouncementInput {
+  title: string;
+  description: string;
+}
+
+export interface UpdateAnnouncementInput {
+  title: string;
+  description: string;
 }
 
 export type FundCategory = 'development' | 'marketing' | 'meetups' | 'bug_bounty' | 'travel' | 'documentation';
@@ -334,3 +377,5 @@ export interface InitiativeMenuItem {
   danger?: boolean;
   command?: (event: unknown) => void;
 }
+
+export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';

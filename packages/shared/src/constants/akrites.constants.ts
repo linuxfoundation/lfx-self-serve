@@ -45,6 +45,9 @@ export const AKRITES_ECOSYSTEM_OPTIONS: Array<{ value: AkritesEcosystem | ''; la
   { value: 'pypi', label: 'PyPI' },
   { value: 'go', label: 'Go' },
   { value: 'cargo', label: 'Cargo' },
+  { value: 'nuget', label: 'NuGet' },
+  { value: 'packagist', label: 'Packagist' },
+  { value: 'rubygems', label: 'RubyGems' },
 ];
 
 /** Lifecycle options for the Akrites filter panel. */

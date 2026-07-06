@@ -8,6 +8,17 @@
     <p class="mt-1 text-sm text-gray-500">Manage your account preferences, email addresses, and security settings.</p>
   </div>
 
+  <!-- Read-only notice while impersonating — account changes act on the real account and are disabled -->
+  @if (impersonating()) {
+    <div
+      class="mb-6 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+      role="status"
+      data-testid="account-settings-readonly-notice">
+      <i class="fa-light fa-eye"></i>
+      <span>You are viewing these settings while impersonating another user. Editing is disabled.</span>
+    </div>
+  }
+
   <!-- Two Column Layout: TOC + Content -->
   <div class="flex gap-8">
     <!-- LEFT: Table of Contents (outer stretches to row height, inner sticks) -->
@@ -100,6 +111,8 @@
                           label="Make Primary"
                           severity="secondary"
                           variant="outlined"
+                          [disabled]="impersonating()"
+                          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                           (onClick)="setPrimary(emailItem)"
                           [attr.data-testid]="'set-primary-' + emailItem.email">
                         </lfx-button>
@@ -110,6 +123,8 @@
                           icon="fa-light fa-trash"
                           severity="danger"
                           variant="outlined"
+                          [disabled]="impersonating()"
+                          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                           (onClick)="deleteEmail(emailItem)"
                           [attr.data-testid]="'delete-email-' + emailItem.email">
                         </lfx-button>
@@ -123,7 +138,7 @@
                 }
               </div>
 
-              <!-- Add Email (OTP Flow) -->
+              <!-- Add Email (OTP Flow) — visible read-only while impersonating (submit disabled) -->
               <div class="mt-4 pt-4 border-t border-slate-200">
                 @if (!otpStep()) {
                   <!-- Step 1: Enter email -->
@@ -149,7 +164,8 @@
                       label="Send Code"
                       icon="fa-light fa-envelope"
                       severity="info"
-                      [disabled]="addEmailForm.invalid || sendingCode()"
+                      [disabled]="addEmailForm.invalid || sendingCode() || impersonating()"
+                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                       [loading]="sendingCode()"
                       data-testid="send-code-button">
                     </lfx-button>
@@ -183,7 +199,8 @@
                         label="Verify"
                         icon="fa-light fa-check"
                         severity="info"
-                        [disabled]="otpForm.invalid || verifyingOtp()"
+                        [disabled]="otpForm.invalid || verifyingOtp() || impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                         [loading]="verifyingOtp()"
                         data-testid="verify-otp-button">
                       </lfx-button>
@@ -203,7 +220,8 @@
                       <button
                         type="button"
                         class="text-xs text-blue-500 hover:underline self-start"
-                        [disabled]="sendingCode()"
+                        [disabled]="sendingCode() || impersonating()"
+                        [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
                         (click)="sendVerificationCode()"
                         data-testid="resend-code-link">
                         {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}
@@ -260,7 +278,8 @@
                   <button
                     type="button"
                     (click)="onSendPasswordReset()"
-                    [disabled]="sendingReset()"
+                    [disabled]="sendingReset() || impersonating()"
+                    [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
                     class="text-xs text-blue-500 hover:underline mt-1 disabled:opacity-50"
                     data-testid="forgot-password-link">
                     {{ sendingReset() ? 'Sending reset link...' : 'Forgot your password? Start the account recovery process.' }}
@@ -382,7 +401,7 @@
                 </div>
               </div>
 
-              <!-- Form Actions -->
+              <!-- Form Actions (visible but disabled while impersonating — password changes act on the real account) -->
               <div class="flex justify-end gap-3">
                 <lfx-button type="button" variant="outlined" label="Reset" size="small" (onClick)="clearPasswordForm()" data-testid="password-reset-button">
                 </lfx-button>
@@ -391,7 +410,8 @@
                   severity="info"
                   label="Change Password"
                   [loading]="changingPassword()"
-                  [disabled]="passwordForm.invalid || changingPassword()"
+                  [disabled]="passwordForm.invalid || changingPassword() || impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   size="small"
                   data-testid="password-submit-button">
                 </lfx-button>
@@ -414,7 +434,8 @@
                     icon="fa-light fa-envelope"
                     [label]="sendingReset() ? 'Sending...' : 'Send Reset Link'"
                     [loading]="sendingReset()"
-                    [disabled]="sendingReset()"
+                    [disabled]="sendingReset() || impersonating()"
+                    [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                     (onClick)="onSendPasswordReset()"
                     data-testid="send-reset-link-button">
                   </lfx-button>
@@ -490,37 +511,77 @@
               <span class="ml-3 text-gray-600">Loading token...</span>
             </div>
           } @else if (developerToken()) {
-            <div class="border border-slate-200 rounded-lg p-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3 flex-1 min-w-0">
-                  <i class="fa-light fa-key text-slate-500 flex-shrink-0"></i>
-                  <div class="flex-1 min-w-0">
-                    <h4 class="text-sm text-slate-900 mb-0.5">Personal Access Token</h4>
-                    <p class="text-[13px] text-slate-500 font-mono truncate" data-testid="developer-token-value">
-                      {{ showToken() ? developerToken() : maskedToken() }}
-                    </p>
+            <div class="flex flex-col gap-4">
+              <!-- v2 OIDC session token -->
+              <div class="border border-slate-200 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <i class="fa-light fa-key text-slate-500 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                      <h4 class="text-sm text-slate-900 mb-0.5">Personal Access Token</h4>
+                      <p class="text-[13px] text-slate-500 font-mono truncate" data-testid="developer-token-value">
+                        {{ maskedToken() }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 ml-4 flex-shrink-0">
+                    <lfx-button
+                      type="button"
+                      severity="secondary"
+                      variant="outlined"
+                      size="small"
+                      label="Show"
+                      (onClick)="openTokenPopup('API Token', developerToken())"
+                      data-testid="developer-token-show-button">
+                    </lfx-button>
+                    <lfx-button
+                      type="button"
+                      severity="info"
+                      size="small"
+                      [label]="tokenCopied() === 'v2' ? 'Copied!' : 'Copy'"
+                      (onClick)="copyToken(developerToken(), 'v2')"
+                      data-testid="developer-token-copy-button">
+                    </lfx-button>
                   </div>
                 </div>
-                <div class="flex gap-2 ml-4 flex-shrink-0">
-                  <lfx-button
-                    type="button"
-                    severity="secondary"
-                    variant="outlined"
-                    size="small"
-                    [label]="showToken() ? 'Hide' : 'Show'"
-                    (onClick)="toggleTokenVisibility()"
-                    data-testid="developer-token-show-button">
-                  </lfx-button>
-                  <lfx-button
-                    type="button"
-                    severity="info"
-                    size="small"
-                    [label]="tokenCopied() ? 'Copied!' : 'Copy'"
-                    (onClick)="copyToken()"
-                    data-testid="developer-token-copy-button">
-                  </lfx-button>
-                </div>
               </div>
+
+              <!-- v1 API Gateway token (only when available) -->
+              @if (developerV1Token()) {
+                <div class="border border-slate-200 rounded-lg p-4" data-testid="developer-token-v1">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                      <i class="fa-light fa-key text-slate-500 flex-shrink-0"></i>
+                      <div class="flex-1 min-w-0">
+                        <h4 class="text-sm text-slate-900 mb-0.5">API Token (v1)</h4>
+                        <p class="text-[13px] text-slate-500 mb-0.5">For legacy v1 APIs (<span class="font-mono">api-gw.platform.linuxfoundation.org</span>)</p>
+                        <p class="text-[13px] text-slate-500 font-mono truncate" data-testid="developer-token-v1-value">
+                          {{ maskedV1Token() }}
+                        </p>
+                      </div>
+                    </div>
+                    <div class="flex gap-2 ml-4 flex-shrink-0">
+                      <lfx-button
+                        type="button"
+                        severity="secondary"
+                        variant="outlined"
+                        size="small"
+                        label="Show"
+                        (onClick)="openTokenPopup('API Token (v1)', developerV1Token())"
+                        data-testid="developer-token-v1-show-button">
+                      </lfx-button>
+                      <lfx-button
+                        type="button"
+                        severity="info"
+                        size="small"
+                        [label]="tokenCopied() === 'v1' ? 'Copied!' : 'Copy'"
+                        (onClick)="copyToken(developerV1Token(), 'v1')"
+                        data-testid="developer-token-v1-copy-button">
+                      </lfx-button>
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
           } @else {
             <div class="text-center py-4" data-testid="developer-token-unavailable">
