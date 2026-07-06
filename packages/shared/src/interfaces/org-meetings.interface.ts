@@ -94,6 +94,28 @@ export interface OrgMeeting extends OrgMeetingBase {
   readonly statusFlags: OrgMeetingStatusFlags;
 }
 
+/** RSVP badge label + style for an invitee row. */
+export interface OrgMeetingRsvpBadge {
+  readonly label: string;
+  readonly badgeClass: string;
+}
+
+/** Org invitee with its RSVP badge pre-derived (avoids method calls in the template). */
+export interface OrgMeetingInviteeVm extends OrgMeetingInvitee {
+  readonly badge: OrgMeetingRsvpBadge;
+}
+
+/** Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`). */
+export interface OrgMeetingVm extends OrgMeeting {
+  readonly linkUrl: string;
+  readonly totalInvited: number;
+  readonly attendingPercent: number;
+  readonly yesPercent: number;
+  readonly maybePercent: number;
+  readonly noPercent: number;
+  readonly inviteeVms: readonly OrgMeetingInviteeVm[];
+}
+
 /** A past meeting in the Org Lens Meetings list. */
 export interface OrgPastMeeting extends OrgMeetingBase {
   readonly attendanceTally: OrgMeetingAttendanceTally;
