@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { SURVEY_LABEL, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
+import { SURVEY_LABEL, SURVEY_STATUS_LABELS, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
 import { FilterPillOption, Survey } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
@@ -171,6 +171,20 @@ export class SurveysTableComponent {
     }
     const formatted = sendDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     return `Sends on ${formatted}`;
+  }
+
+  protected getScheduledStatusAriaLabel(survey: Survey, openResponded: boolean): string | null {
+    const tooltip = this.getScheduledSendTooltip(survey);
+    if (!tooltip) {
+      return null;
+    }
+    const statusLabel = openResponded ? 'Submitted' : this.getStatusLabel(survey);
+    return `${statusLabel}. ${tooltip}`;
+  }
+
+  private getStatusLabel(survey: Survey): string {
+    const displayStatus = getSurveyDisplayStatus(survey);
+    return SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus;
   }
 
   // === Private Initializers ===
