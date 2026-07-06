@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FundType } from '../enums/crowdfunding.enum';
-import {
+import type {
   AllowedLogoMimeType,
   CrowdfundingInitiativesStats,
   CrowdfundingTransaction,
@@ -109,15 +109,12 @@ export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'ima
 export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 
 // Runtime-checkable tuple of every valid initiative status value — used for server-side input validation.
-// Must stay in sync with CrowdfundingInitiativeStatus in crowdfunding.interface.ts.
 export const CROWDFUNDING_INITIATIVE_STATUSES = ['submitted', 'pending', 'published', 'declined', 'hidden'] as const;
 
 // Runtime-checkable tuple of every valid sponsorship tier name — used for server-side input validation.
-// Must stay in sync with SponsorshipTierName in crowdfunding.interface.ts.
 export const SPONSORSHIP_TIER_NAMES = ['platinum', 'gold', 'silver', 'bronze'] as const;
 
 // Runtime-checkable tuple of every valid donation mode — used for server-side input validation.
-// Must stay in sync with SponsorshipDonationMode in crowdfunding.interface.ts.
 export const SPONSORSHIP_DONATION_MODES = ['tier', 'open'] as const;
 
 export const SPONSORSHIP_DONATION_MODE_OPTIONS: { label: string; value: SponsorshipDonationMode }[] = [

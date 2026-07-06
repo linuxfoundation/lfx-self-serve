@@ -55,6 +55,8 @@ export interface BackendInitiative {
     total_disbursed_cents: number;
     available_cents: number;
   };
+  sponsorship_tiers?: BackendSponsorshipTierInput[];
+  donation_mode?: string;
 }
 
 export interface BackendCrowdfundingResponse {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FundType } from '../enums/crowdfunding.enum';
+import type { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_DONATION_MODES } from '../constants/crowdfunding.constants';
 import { OffsetPaginatedResponse } from './api.interface';
 import { DonutRing } from './donut-chart.interface';
 
@@ -154,7 +155,7 @@ export interface InitiativeDetail extends InitiativeBase {
   donationMode?: SponsorshipDonationMode;
 }
 
-export type CrowdfundingInitiativeStatus = 'submitted' | 'pending' | 'published' | 'declined' | 'hidden';
+export type CrowdfundingInitiativeStatus = (typeof CROWDFUNDING_INITIATIVE_STATUSES)[number];
 
 export interface CrowdfundingInitiative {
   id: string;
@@ -302,7 +303,7 @@ export interface UpdateBeneficiaryInput {
   email?: string;
 }
 
-export type SponsorshipTierName = 'platinum' | 'gold' | 'silver' | 'bronze';
+export type SponsorshipTierName = (typeof SPONSORSHIP_TIER_NAMES)[number];
 
 /** A configurable sponsorship level a project can offer sponsors. Not yet processed upstream — sent as-is for forward compatibility. */
 export interface SponsorshipTier {
@@ -313,7 +314,7 @@ export interface SponsorshipTier {
 }
 
 /** Whether sponsors pick from fixed tiers or choose their own amount. */
-export type SponsorshipDonationMode = 'tier' | 'open';
+export type SponsorshipDonationMode = (typeof SPONSORSHIP_DONATION_MODES)[number];
 
 export interface UpdateInitiativeInput {
   name?: string;

@@ -17,7 +17,7 @@
       data-testid="settings-donation-mode" />
   </div>
 
-  @if (form.get('donationMode')?.value === 'tier') {
+  @if (donationMode() === 'tier') {
     <div class="flex flex-col" formArrayName="tiers" data-testid="settings-sponsorship-tiers-list">
       @for (tierData of tiersData(); track $index; let i = $index; let last = $last) {
         <div
@@ -32,7 +32,7 @@
             [label]="tierLabels[tierNames[i]]"
             labelClass="text-sm font-medium text-gray-900 cursor-pointer"
             [attr.data-testid]="'settings-tier-toggle-' + i" />
-          @if (tierData.group.get('enabled')?.value) {
+          @if (tierData.enabled) {
             <div class="flex flex-col gap-3 pl-6" [attr.data-testid]="'settings-tier-fields-' + i">
               <div class="flex flex-col gap-1.5 max-w-[240px]">
                 <label [for]="'tier-goal-' + i" class="text-sm font-medium text-gray-700">Sponsorship Goal</label>

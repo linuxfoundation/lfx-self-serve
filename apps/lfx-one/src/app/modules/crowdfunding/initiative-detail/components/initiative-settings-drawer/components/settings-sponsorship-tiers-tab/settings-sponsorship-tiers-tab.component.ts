@@ -33,11 +33,14 @@ export class SettingsSponsorshipTiersTabComponent {
 
   private readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
 
-  protected readonly tiersData: Signal<{ group: FormGroup; benefits: FormArray<FormControl<string>> }[]> = computed(() => {
+  protected readonly donationMode = computed(() => this.formValue().donationMode as SponsorshipDonationMode);
+
+  protected readonly tiersData: Signal<{ group: FormGroup; benefits: FormArray<FormControl<string>>; enabled: boolean }[]> = computed(() => {
     this.formValue();
     return (this.form.get('tiers') as FormArray<FormGroup>).controls.map((group) => ({
       group,
       benefits: group.get('benefits') as FormArray<FormControl<string>>,
+      enabled: group.get('enabled')?.value as boolean,
     }));
   });
 
