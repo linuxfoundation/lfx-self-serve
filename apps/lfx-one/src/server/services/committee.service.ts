@@ -1653,12 +1653,15 @@ export class CommitteeService {
     // Committee UIDs are in ml.committees[].uid — not a top-level committee_uid field.
     const results = await Promise.allSettled(
       batches.map((batch) =>
-        fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'groupsio_mailing_list',
-            tags: batch.map((uid) => `committee_uid:${uid}`),
-            ...(pageToken && { page_token: pageToken }),
-          })
+        fetchAllQueryResources<GroupsIOMailingList>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'groupsio_mailing_list',
+              tags: batch.map((uid) => `committee_uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
         )
       )
     );

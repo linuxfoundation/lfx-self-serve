@@ -328,14 +328,19 @@ export class CommitteeDashboardComponent {
     const isMeLens$ = toObservable(this.isMeLens);
     const refresh$ = toObservable(this.refresh);
     const project$ = toObservable(this.project);
+    const isFoundationContext$ = toObservable(this.isFoundationContext);
 
     return toSignal(
-      combineLatest([isMeLens$, refresh$, project$]).pipe(
-        switchMap(([isMeLens, , project]) => {
+      combineLatest([isMeLens$, refresh$, project$, isFoundationContext$]).pipe(
+        switchMap(([isMeLens, , project, isFoundation]) => {
           if (isMeLens) {
             return fromFull$;
           }
-          return this.committeeService.getMyCommitteeUids(project?.uid).pipe(map((uids) => new Set(uids)));
+          // In foundation context, committee_member records are tagged with the sub-project's
+          // project_uid, not the foundation UID — passing the foundation UID returns an empty set.
+          // Fetch unscoped to cover all committees across the foundation's sub-projects.
+          const scopeUid = isFoundation ? undefined : project?.uid;
+          return this.committeeService.getMyCommitteeUids(scopeUid).pipe(map((uids) => new Set(uids)));
         })
       ),
       { initialValue: new Set<string>() }
