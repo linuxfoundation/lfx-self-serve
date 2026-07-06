@@ -6,6 +6,17 @@
     <!-- Page Title -->
     <h1 class="font-display font-light text-2xl mt-3" data-testid="profile-page-title">Profile</h1>
 
+    <!-- Read-only notice while impersonating — editing acts on the real account and is disabled -->
+    @if (impersonating()) {
+      <div
+        class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="status"
+        data-testid="profile-readonly-notice">
+        <i class="fa-light fa-eye"></i>
+        <span>You are viewing this profile while impersonating another user. Profile editing is disabled.</span>
+      </div>
+    }
+
     <!-- Profile Header Card + Tabs -->
     <div class="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" data-testid="profile-header-card">
       <!-- Profile Info Section -->
@@ -15,10 +26,12 @@
             <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400"></i>
           </div>
         } @else {
-          <!-- Edit Button -->
+          <!-- Edit Button (visible but disabled while impersonating — profile edits act on the real account) -->
           <button
             (click)="openEditDialog()"
-            class="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-500"
+            [disabled]="impersonating()"
+            [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+            class="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors enabled:hover:bg-blue-50 enabled:hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
             data-testid="profile-edit-button">
             <i class="fa-light fa-pencil text-sm"></i>
           </button>

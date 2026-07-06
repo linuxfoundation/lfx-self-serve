@@ -41,6 +41,8 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
 export class AccountSettingsComponent {
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — account mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
@@ -154,7 +156,14 @@ export class AccountSettingsComponent {
         this.newPasswordSignal.set(value || '');
       });
 
-    this.loadDeveloperToken();
+    // Skip the developer-token fetch while impersonating — the server suppresses it (403) so the
+    // impersonator can't read the target's live bearer token. Clear the loading flag so the UI
+    // shows the read-only state instead of an indefinite spinner.
+    if (this.impersonating()) {
+      this.loadingToken.set(false);
+    } else {
+      this.loadDeveloperToken();
+    }
 
     afterNextRender(() => {
       this.setupScrollSpy();

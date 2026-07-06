@@ -43,6 +43,8 @@ interface IdentitiesState {
 })
 export class ProfileIdentitiesComponent implements OnInit {
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — identity mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);

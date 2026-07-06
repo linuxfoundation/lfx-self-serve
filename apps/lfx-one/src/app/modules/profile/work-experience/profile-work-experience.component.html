@@ -26,6 +26,8 @@
           icon="fa-light fa-plus"
           severity="primary"
           size="small"
+          [disabled]="impersonating()"
+          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
           (onClick)="onAdd()"
           data-testid="add-work-experience-empty-btn" />
       </div>
@@ -53,6 +55,8 @@
                   severity="secondary"
                   [outlined]="true"
                   size="small"
+                  [disabled]="impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   (onClick)="onAdd()"
                   data-testid="add-work-experience-btn" />
               }
@@ -101,7 +105,7 @@
               <span class="text-sm text-slate-500">{{ item.startDate }} – {{ item.endDate || 'Present' }}</span>
             </td>
 
-            <!-- Actions -->
+            <!-- Actions (visible but disabled while impersonating — edits act on the real account) -->
             <td class="px-5 py-3.5 text-right">
               <div class="relative inline-block">
                 <lfx-button
@@ -109,6 +113,8 @@
                   [text]="true"
                   [rounded]="true"
                   size="small"
+                  [disabled]="impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
                   (onClick)="actionMenu.toggle($event)"
                   [attr.data-testid]="'work-experience-menu-' + item.id" />
