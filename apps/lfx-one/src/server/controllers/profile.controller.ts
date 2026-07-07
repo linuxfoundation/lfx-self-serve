@@ -591,7 +591,8 @@ export class ProfileController {
         );
       }
 
-      logger.success(req, 'set_meeting_invite_email', startTime, { email: emailAddress });
+      // success() emits at INFO in production for writes; omit the raw email to avoid persisting PII.
+      logger.success(req, 'set_meeting_invite_email', startTime);
 
       res.status(200).json(result.data);
     } catch (error) {
