@@ -19,7 +19,7 @@ export interface ApiClientConfig {
  * @description Overrides applied to a single upstream request
  */
 export interface ApiRequestOptions {
-  /** Per-request timeout in milliseconds; falls back to the client's configured default (30s) */
+  /** Per-request timeout in milliseconds; falls back to the client's configured default (`ApiClientConfig.timeout`, default 30s) */
   timeoutMs?: number;
 }
 
