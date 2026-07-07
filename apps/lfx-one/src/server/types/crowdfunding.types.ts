@@ -55,7 +55,7 @@ export interface BackendInitiative {
     total_disbursed_cents: number;
     available_cents: number;
   };
-  sponsorship_tiers?: BackendSponsorshipTierInput[];
+  sponsorship_tiers?: BackendSponsorshipTier[];
   donation_mode?: string;
 }
 
@@ -154,7 +154,15 @@ export interface BackendBeneficiaryInput {
   email?: string;
 }
 
-/** Not yet processed upstream — sent as-is for forward compatibility. */
+/** Sponsorship tier as returned by the upstream crowdfunding service (GET). */
+export interface BackendSponsorshipTier {
+  name: string;
+  enabled: boolean;
+  minimum?: number;
+  benefits: string[];
+}
+
+/** Sponsorship tier as sent to the upstream crowdfunding service (PATCH) — same fields, aliased key. */
 export interface BackendSponsorshipTierInput {
   name: string;
   enabled: boolean;

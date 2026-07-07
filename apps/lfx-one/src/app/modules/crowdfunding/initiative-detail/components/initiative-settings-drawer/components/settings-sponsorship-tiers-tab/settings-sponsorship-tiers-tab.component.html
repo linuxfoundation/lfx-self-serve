@@ -17,7 +17,7 @@
       data-testid="settings-donation-mode" />
   </div>
 
-  @if (donationMode() === 'tier') {
+  @if (donationMode() === 'tiers') {
     <div class="flex flex-col" formArrayName="tiers" data-testid="settings-sponsorship-tiers-list">
       @for (tierData of tiersData(); track $index; let i = $index; let last = $last) {
         <div
