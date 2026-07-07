@@ -46,8 +46,10 @@ router.put('/emails/:emailId/primary', blockDuringImpersonation, (req, res, next
 
 // Meeting-invitation email preference routes (backed by meeting-service via NATS)
 
-// GET /api/profile/emails/meeting-invite - Resolve the user's preferred meeting-invitation email
-router.get('/emails/meeting-invite', (req, res, next) => profileController.getMeetingInviteEmail(req, res, next));
+// GET /api/profile/emails/meeting-invite - Resolve the user's preferred meeting-invitation email.
+// Blocked while impersonating: req.apiGatewayToken is session-scoped (the impersonator's), so the
+// meeting-service /v1/me lookup would resolve the impersonator's preference, not the target's.
+router.get('/emails/meeting-invite', blockDuringImpersonation, (req, res, next) => profileController.getMeetingInviteEmail(req, res, next));
 
 // PUT /api/profile/emails/meeting-invite - Set the user's preferred meeting-invitation email
 router.put('/emails/meeting-invite', blockDuringImpersonation, (req, res, next) => profileController.setMeetingInviteEmail(req, res, next));
