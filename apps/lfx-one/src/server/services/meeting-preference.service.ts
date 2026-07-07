@@ -86,8 +86,8 @@ export class MeetingPreferenceService {
       const parsed = JSON.parse(codec.decode(response.data));
 
       if (parsed.error) {
+        // Warning-level logs are emitted in production; omit the raw email to avoid persisting PII.
         logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
-          email,
           error: parsed.error,
         });
         return { success: false, error: parsed.error, message: 'Failed to update meeting invitation email. Please try again.' };
@@ -95,8 +95,8 @@ export class MeetingPreferenceService {
 
       return { success: true, data: { email_id: parsed.email_id ?? null, email: parsed.email ?? null } };
     } catch (error) {
+      // Warning-level logs are emitted in production; omit the raw email to avoid persisting PII.
       logger.warning(req, 'set_meeting_invite_email', 'NATS set meeting-invite email failed', {
-        email,
         err: error,
       });
 
