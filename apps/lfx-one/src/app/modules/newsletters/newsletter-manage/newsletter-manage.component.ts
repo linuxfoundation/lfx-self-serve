@@ -152,7 +152,9 @@ export class NewsletterManageComponent {
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
   public readonly bodyFilled = computed(() => stripHtml(this.bodyValue() ?? '').length > 0);
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
-  public readonly canSend = computed(() => this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.hasContext() && !this.submitting());
+  public readonly canSend = computed(
+    () => this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.hasContext() && !this.submitting() && !this.resolvingSend()
+  );
   public readonly canSendTest = computed(
     () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
   );
