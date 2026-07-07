@@ -95,6 +95,10 @@ export class NewsletterManageComponent {
   public readonly isEditMode = computed(() => this.newsletterId() !== null);
   public readonly draftLoading = signal<boolean>(false);
   public readonly submitting = signal<boolean>(false);
+  // True while a failed send's status refetch is in flight — keeps autosave
+  // suppressed across the gap between finalize() resetting `submitting` and
+  // handleSendError resolving the newsletter's real status.
+  private readonly resolvingSend = signal<boolean>(false);
   public readonly testSending = signal<boolean>(false);
   public readonly savedAt = signal<Date | null>(null);
   public readonly savingDraft = signal<boolean>(false);
@@ -431,9 +435,14 @@ export class NewsletterManageComponent {
    * latter, inviting the duplicate delivery in LFXV2-2604.
    */
   private handleSendError(err: HttpErrorResponse, id: string): void {
+    this.resolvingSend.set(true);
     this.newsletterService
       .getNewsletter(this.projectUid(), id)
-      .pipe(take(1))
+      .pipe(
+        take(1),
+        finalize(() => this.resolvingSend.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (newsletter) => {
           if (newsletter.status === 'sent' || newsletter.status === 'sending') {
@@ -622,7 +631,7 @@ export class NewsletterManageComponent {
         // incident). The upstream also rejects edits while status='sending',
         // but suppressing the write here avoids surfacing that 409 as a
         // spurious save-error toast.
-        filter(([, email]) => !this.submitting() && this.hasContext() && this.hasAnythingToSave() && email.length > 0),
+        filter(([, email]) => !this.submitting() && !this.resolvingSend() && this.hasContext() && this.hasAnythingToSave() && email.length > 0),
         filter(() => !this.snapshotMatchesLastSaved()),
         takeUntilDestroyed(this.destroyRef)
       )
