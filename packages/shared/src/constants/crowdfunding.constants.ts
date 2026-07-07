@@ -115,10 +115,11 @@ export const CROWDFUNDING_INITIATIVE_STATUSES = ['submitted', 'pending', 'publis
 export const SPONSORSHIP_TIER_NAMES = ['platinum', 'gold', 'silver', 'bronze'] as const;
 
 // Runtime-checkable tuple of every valid donation mode — used for server-side input validation.
-export const SPONSORSHIP_DONATION_MODES = ['tier', 'open'] as const;
+// Matches the upstream crowdfunding service's donation_mode enum ('tiers', not 'tier').
+export const SPONSORSHIP_DONATION_MODES = ['tiers', 'open'] as const;
 
 export const SPONSORSHIP_DONATION_MODE_OPTIONS: { label: string; value: SponsorshipDonationMode }[] = [
-  { label: 'Sponsorship Tiers', value: 'tier' },
+  { label: 'Sponsorship Tiers', value: 'tiers' },
   { label: 'Open Donation', value: 'open' },
 ];
 

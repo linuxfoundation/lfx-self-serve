@@ -305,7 +305,7 @@ export interface UpdateBeneficiaryInput {
 
 export type SponsorshipTierName = (typeof SPONSORSHIP_TIER_NAMES)[number];
 
-/** A configurable sponsorship level a project can offer sponsors. Not yet processed upstream — sent as-is for forward compatibility. */
+/** A configurable sponsorship level a project can offer sponsors. */
 export interface SponsorshipTier {
   name: SponsorshipTierName;
   enabled: boolean;
