@@ -44,6 +44,14 @@ router.get('/emails', (req, res, next) => profileController.getUserEmails(req, r
 // PUT /api/profile/emails/:emailId/primary - Set email as primary; :emailId is the email address
 router.put('/emails/:emailId/primary', blockDuringImpersonation, (req, res, next) => profileController.setPrimaryEmail(req, res, next));
 
+// Meeting-invitation email preference routes (backed by meeting-service via NATS)
+
+// GET /api/profile/emails/meeting-invite - Resolve the user's preferred meeting-invitation email
+router.get('/emails/meeting-invite', (req, res, next) => profileController.getMeetingInviteEmail(req, res, next));
+
+// PUT /api/profile/emails/meeting-invite - Set the user's preferred meeting-invitation email
+router.put('/emails/meeting-invite', blockDuringImpersonation, (req, res, next) => profileController.setMeetingInviteEmail(req, res, next));
+
 // GET /api/profile/developer - Get current user's developer token information
 router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
 

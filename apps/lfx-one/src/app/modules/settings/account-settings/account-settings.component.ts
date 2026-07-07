@@ -8,12 +8,13 @@ import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModu
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
-import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import { ChangePasswordRequest, EmailManagementData, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
@@ -30,6 +31,7 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
     BadgeComponent,
     ButtonComponent,
     InputTextComponent,
+    MenuComponent,
     ConfirmDialogModule,
     ToastModule,
     TooltipModule,
@@ -86,6 +88,10 @@ export class AccountSettingsComponent {
   // Data signals
   public emailData: Signal<EmailManagementData | null> = this.initEmailData();
 
+  // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
+  public meetingInviteData: Signal<MeetingInviteEmail | null> = this.initMeetingInviteData();
+  public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
+
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
     if (!data) return [];
@@ -94,14 +100,20 @@ export class AccountSettingsComponent {
     return [primary, ...alternates];
   });
 
-  public emailsWithMetadata = computed(() =>
-    this.allEmails().map((email) => ({
+  public emailsWithMetadata = computed(() => {
+    const inviteEmail = this.meetingInviteEmail();
+    return this.allEmails().map((email) => ({
       ...email,
       isPrimary: email.email === this.emailData()?.primary_email,
+      isMeetingInvite: !!inviteEmail && email.email === inviteEmail,
       canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id,
       canSetPrimary: email.email !== this.emailData()?.primary_email && email.verified,
-    }))
-  );
+      canSetMeetingInvite: email.verified && email.email !== inviteEmail,
+    }));
+  });
+
+  // Per-row action menu (kebab). Keyed by email address so each row resolves its own items.
+  public menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   // ══════════════════════════════════════════
   // DEVELOPER SETTINGS
@@ -271,6 +283,22 @@ export class AccountSettingsComponent {
           return;
         }
         this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update primary email' });
+      },
+    });
+  }
+
+  public setMeetingInvite(email: UserEmail): void {
+    if (!email.verified || email.email === this.meetingInviteEmail()) {
+      return;
+    }
+
+    this.userService.setMeetingInviteEmail(email.email).subscribe({
+      next: () => {
+        this.emailRefresh.next();
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Meeting invitation email updated successfully' });
+      },
+      error: (err: HttpErrorResponse) => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update meeting invitation email' });
       },
     });
   }
@@ -452,6 +480,31 @@ export class AccountSettingsComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initMeetingInviteData(): Signal<MeetingInviteEmail | null> {
+    // Reloads in lockstep with the email list so the badge reflects the latest selection.
+    return toSignal(this.emailRefresh.pipe(switchMap(() => this.userService.getMeetingInviteEmail().pipe(catchError(() => of(null))))), { initialValue: null });
+  }
+
+  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const email of this.emailsWithMetadata()) {
+        const items: MenuItem[] = [];
+        if (email.canSetPrimary) {
+          items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
+        }
+        if (email.canSetMeetingInvite) {
+          items.push({ label: 'Meeting Invitations', icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
+        }
+        if (email.canDelete) {
+          items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.deleteEmail(email) });
+        }
+        map.set(email.email, items);
+      }
+      return map;
+    });
   }
 
   private loadDeveloperToken(): void {

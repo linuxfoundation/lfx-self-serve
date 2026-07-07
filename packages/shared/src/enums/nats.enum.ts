@@ -24,6 +24,11 @@ export enum NatsSubjects {
   LOOKUP_V1_MAPPING = 'lfx.lookup_v1_mapping',
   PERSONAS_GET = 'lfx.personas-api.get',
   IMPERSONATION_TOKEN_EXCHANGE = 'lfx.auth-service.impersonation.token_exchange',
+  // Preferred meeting-invitation email (meeting-service) — request carries the user's v1
+  // API-gateway token in the `token` field (forwarded to v1 /v1/me), not the auth-service
+  // { user: { auth_token } } wrapper used by the subjects above.
+  MEETING_PREFERRED_EMAIL_GET = 'lfx.meeting-service.preferred_email.get',
+  MEETING_PREFERRED_EMAIL_SET = 'lfx.meeting-service.preferred_email.set',
   INVITE_ACCEPTED = 'lfx.invite.accepted',
   // Alias claim (auth-service) — claims <alias>@<domain> as a system-managed linked identity
   ADD_ALIAS = 'lfx.auth-service.add_alias',
