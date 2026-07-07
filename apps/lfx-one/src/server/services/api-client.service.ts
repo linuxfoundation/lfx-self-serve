@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApiClientConfig, ApiResponse } from '@lfx-one/shared/interfaces';
+import { ApiClientConfig, ApiRequestOptions, ApiResponse } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors';
 import { getHttpErrorCode } from '../helpers/http-status.helper';
@@ -23,15 +23,16 @@ export class ApiClientService {
     bearerToken?: string,
     query?: Record<string, any>,
     data?: any,
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
+    options?: ApiRequestOptions
   ): Promise<ApiResponse<T>> {
     const fullUrl = this.getFullUrl(url, query);
 
     if (['GET', 'DELETE'].includes(type)) {
-      return this.makeRequest<T>(type, fullUrl, bearerToken, undefined, customHeaders);
+      return this.makeRequest<T>(type, fullUrl, bearerToken, undefined, customHeaders, options);
     }
 
-    return this.makeRequest<T>(type, fullUrl, bearerToken, data, customHeaders);
+    return this.makeRequest<T>(type, fullUrl, bearerToken, data, customHeaders, options);
   }
 
   /**
@@ -177,7 +178,14 @@ export class ApiClientService {
     return response;
   }
 
-  private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+  private async makeRequest<T>(
+    method: string,
+    url: string,
+    bearerToken?: string,
+    data?: any,
+    customHeaders?: Record<string, string>,
+    options?: ApiRequestOptions
+  ): Promise<ApiResponse<T>> {
     // Check if data is FormData (from form-data package for Node.js)
     const isFormData = data && typeof data === 'object' && typeof data.append === 'function' && typeof data.getHeaders === 'function';
 
@@ -203,10 +211,11 @@ export class ApiClientService {
       Object.assign(headers, customHeaders);
     }
 
+    const timeoutMs = options?.timeoutMs ?? this.config.timeout;
     const requestInit: RequestInit = {
       method,
       headers,
-      signal: AbortSignal.timeout(this.config.timeout),
+      signal: AbortSignal.timeout(timeoutMs),
     };
 
     if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
@@ -238,10 +247,14 @@ export class ApiClientService {
       }
     }
 
-    return this.executeRequest<T>(url, requestInit);
+    return this.executeRequest<T>(url, requestInit, { binary: false, timeoutMs });
   }
 
-  private async executeRequest<T>(url: string, requestInit: RequestInit, options: { binary: boolean } = { binary: false }): Promise<ApiResponse<T>> {
+  private async executeRequest<T>(
+    url: string,
+    requestInit: RequestInit,
+    options: { binary: boolean; timeoutMs?: number } = { binary: false }
+  ): Promise<ApiResponse<T>> {
     try {
       const response = await fetch(url, requestInit);
 
@@ -290,7 +303,7 @@ export class ApiClientService {
     } catch (error: unknown) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
+          throw new MicroserviceError(`Request timeout after ${options.timeoutMs ?? this.config.timeout}ms`, 408, 'TIMEOUT', {
             operation: options.binary ? 'api_client_binary_timeout' : 'api_client_timeout',
             service: 'api_client_service',
             path: url,

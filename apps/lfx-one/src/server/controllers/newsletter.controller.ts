@@ -114,8 +114,8 @@ export class NewsletterController {
       const statusParam = req.query['status'] ? String(req.query['status']) : undefined;
       const pageToken = req.query['page_token'] ? String(req.query['page_token']) : undefined;
 
-      if (statusParam && statusParam !== 'draft' && statusParam !== 'sent') {
-        throw ServiceValidationError.forField('status', "status must be 'draft' or 'sent'", {
+      if (statusParam && statusParam !== 'draft' && statusParam !== 'sending' && statusParam !== 'sent') {
+        throw ServiceValidationError.forField('status', "status must be 'draft', 'sending', or 'sent'", {
           operation: 'newsletter_list',
           service: 'newsletter_controller',
           path: req.path,

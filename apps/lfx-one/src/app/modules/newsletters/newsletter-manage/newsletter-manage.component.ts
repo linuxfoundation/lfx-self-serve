@@ -383,28 +383,84 @@ export class NewsletterManageComponent {
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
-        next: (result: NewsletterSendResult) => {
-          if (result.failed > 0) {
+        next: (result: NewsletterSendResult) => this.handleSendResponse(result),
+        error: (err: HttpErrorResponse) => this.handleSendError(err, id),
+      });
+  }
+
+  /**
+   * The upstream send is asynchronous: acceptance returns the newsletter in
+   * status='sending' (fan-out completes in a background job), while
+   * status='sent' means it settled synchronously (zero-recipient edge case, or
+   * a pre-async upstream deployment). Both land on the Sent tab — there is
+   * deliberately no in-app progress indicator.
+   */
+  private handleSendResponse(result: NewsletterSendResult): void {
+    if (result.newsletter.status === 'sending') {
+      const total = result.total_recipients;
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Sending newsletter',
+        detail: `Your newsletter is being sent to ${total} ${total === 1 ? 'recipient' : 'recipients'}.`,
+      });
+      this.goToList('sent');
+      return;
+    }
+    if (result.failed > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Sent with errors',
+        detail: `Delivered ${result.sent} of ${result.total_recipients}. ${result.failed} failed.`,
+        life: 8000,
+      });
+    } else {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Newsletter sent',
+        detail: `Delivered to ${result.sent} ${result.sent === 1 ? 'recipient' : 'recipients'}.`,
+      });
+    }
+    this.goToList('sent');
+  }
+
+  /**
+   * A send error is ambiguous: a timeout or 5xx may have raced a send the
+   * upstream actually accepted (or even completed), and a 409 means one is
+   * definitely in flight. Refetch the newsletter and branch on its real status
+   * instead of unconditionally re-arming Send — the previous handler did the
+   * latter, inviting the duplicate delivery in LFXV2-2604.
+   */
+  private handleSendError(err: HttpErrorResponse, id: string): void {
+    this.newsletterService
+      .getNewsletter(this.projectUid(), id)
+      .pipe(take(1))
+      .subscribe({
+        next: (newsletter) => {
+          if (newsletter.status === 'sent' || newsletter.status === 'sending') {
             this.messageService.add({
-              severity: 'warn',
-              summary: 'Sent with errors',
-              detail: `Delivered ${result.sent} of ${result.total_recipients}. ${result.failed} failed.`,
-              life: 8000,
+              severity: 'info',
+              summary: newsletter.status === 'sent' ? 'Newsletter sent' : 'Sending newsletter',
+              detail: newsletter.status === 'sent' ? 'Your newsletter was sent.' : 'Your newsletter is being sent.',
             });
-          } else {
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Newsletter sent',
-              detail: `Delivered to ${result.sent} ${result.sent === 1 ? 'recipient' : 'recipients'}.`,
-            });
+            this.goToList('sent');
+            return;
           }
-          this.goToList('sent');
-        },
-        error: (err: HttpErrorResponse) => {
+          // Genuinely still a draft — the send did not go through. Refresh the
+          // version (the failed attempt or an earlier save may have bumped it)
+          // so the next attempt doesn't fail on a stale If-Match.
+          this.version.set(newsletter.version);
           this.messageService.add({
             severity: 'error',
             summary: 'Send failed',
             detail: err?.error?.message || err?.message || 'Could not send newsletter. Please try again.',
+          });
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Send failed',
+            detail: 'Could not confirm the send status. Check the Sent tab before trying again.',
+            life: 8000,
           });
         },
       });
@@ -560,7 +616,13 @@ export class NewsletterManageComponent {
     combineLatest([this.form.valueChanges, toObservable(this.edEmail)])
       .pipe(
         debounceTime(1000),
-        filter(([, email]) => this.hasContext() && this.hasAnythingToSave() && email.length > 0),
+        // Never autosave while a send is in flight: the PUT would bump the
+        // newsletter's version mid-send and race the upstream status
+        // transition (the direct cause of the LFXV2-2604 duplicate-send
+        // incident). The upstream also rejects edits while status='sending',
+        // but suppressing the write here avoids surfacing that 409 as a
+        // spurious save-error toast.
+        filter(([, email]) => !this.submitting() && this.hasContext() && this.hasAnythingToSave() && email.length > 0),
         filter(() => !this.snapshotMatchesLastSaved()),
         takeUntilDestroyed(this.destroyRef)
       )
