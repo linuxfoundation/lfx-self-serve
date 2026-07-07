@@ -29,7 +29,7 @@ import {
   BackendGoal,
   BackendInitiative,
   BackendSponsor,
-  BackendSponsorshipTierInput,
+  BackendSponsorshipTier,
   BackendSubscription,
   BackendTransaction,
   PaymentMethodWire,
@@ -43,9 +43,9 @@ function toValidDonationMode(value: unknown): SponsorshipDonationMode | undefine
   return SPONSORSHIP_DONATION_MODES.includes(value as SponsorshipDonationMode) ? (value as SponsorshipDonationMode) : undefined;
 }
 
-function mapSponsorshipTier(t: BackendSponsorshipTierInput): SponsorshipTier | undefined {
+function mapSponsorshipTier(t: BackendSponsorshipTier): SponsorshipTier | undefined {
   if (!SPONSORSHIP_TIER_NAMES.includes(t.name as SponsorshipTier['name'])) return undefined;
-  return { name: t.name as SponsorshipTier['name'], enabled: t.enabled, goalCents: t.goal_amount_cents, benefits: t.benefits };
+  return { name: t.name as SponsorshipTier['name'], enabled: t.enabled, goalCents: t.minimum, benefits: t.benefits };
 }
 
 function toValidFundType(value: unknown): FundType {

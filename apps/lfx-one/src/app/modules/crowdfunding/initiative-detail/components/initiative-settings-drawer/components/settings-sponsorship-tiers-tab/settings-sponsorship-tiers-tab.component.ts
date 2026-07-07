@@ -27,7 +27,7 @@ export class SettingsSponsorshipTiersTabComponent {
   protected readonly donationModeOptions = SPONSORSHIP_DONATION_MODE_OPTIONS;
 
   public readonly form: FormGroup = new FormGroup({
-    donationMode: new FormControl<SponsorshipDonationMode>('tier', { nonNullable: true }),
+    donationMode: new FormControl<SponsorshipDonationMode>('tiers', { nonNullable: true }),
     tiers: new FormArray<FormGroup>(DEFAULT_SPONSORSHIP_TIERS.map((t) => this.makeTierGroup(t))),
   });
 
@@ -49,7 +49,7 @@ export class SettingsSponsorshipTiersTabComponent {
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => {
         const init = this.initiative();
-        this.form.patchValue({ donationMode: init.donationMode ?? 'tier' }, { emitEvent: false });
+        this.form.patchValue({ donationMode: init.donationMode ?? 'tiers' }, { emitEvent: false });
 
         const tiersArray = this.form.get('tiers') as FormArray<FormGroup>;
         DEFAULT_SPONSORSHIP_TIERS.forEach((defaultTier, i) => {
@@ -65,10 +65,13 @@ export class SettingsSponsorshipTiersTabComponent {
           benefits.clear({ emitEvent: false });
           (saved?.benefits.length ? saved.benefits : ['']).forEach((b) => benefits.push(new FormControl(b, { nonNullable: true }), { emitEvent: false }));
         });
+
+        // Patches above are silent (emitEvent: false); force one emission so the valueChanges-driven signal picks up the loaded data.
+        this.form.updateValueAndValidity({ emitEvent: true });
       });
   }
 
-  // By design, both donation modes ship the full tier set (including disabled/hidden tiers) for forward-compat pass-through.
+  // By design, both donation modes ship the full tier set (including disabled/hidden tiers) — the backend discards tiers when mode is 'open'.
   public getValue(): Pick<UpdateInitiativeInput, 'donationMode' | 'sponsorshipTiers'> {
     const value = this.form.getRawValue();
     return {
