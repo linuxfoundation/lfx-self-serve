@@ -29,6 +29,7 @@ import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dy
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
 
+import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
@@ -127,6 +128,28 @@ export class CommitteeMembersManagerComponent implements OnInit {
         this.initializeMembers();
         this.loadCommittee();
       });
+  }
+
+  public openInviteByEmailDialog(): void {
+    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
+      header: 'Invite by Email',
+      width: '540px',
+      modal: true,
+      closable: true,
+      data: {
+        committee: this.committee(),
+        existingMembers: this.visibleMembers(),
+        existingInvites: [],
+      },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+      // Invites are sent immediately (POST /invites) and become pending invites, not members,
+      // so they won't appear in this list. Reload anyway to reflect any backend auto-add.
+      if (result === true) {
+        this.initializeMembers();
+      }
+    });
   }
 
   public openAddMemberDialog(): void {
