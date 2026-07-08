@@ -54,6 +54,24 @@ export class PastMeetingController {
   }
 
   /**
+   * GET /past-meetings/count
+   */
+  public async getPastMeetingsCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_past_meetings_count', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const count = await this.meetingService.getMeetingsCount(req, req.query as Record<string, any>, 'v1_past_meeting');
+
+      logger.success(req, 'get_past_meetings_count', startTime, { count });
+      res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /past-meetings/:uid
    */
   public async getPastMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {

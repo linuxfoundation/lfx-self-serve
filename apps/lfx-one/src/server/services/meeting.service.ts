@@ -5,6 +5,7 @@ import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
   AttachmentDownloadUrlResponse,
+  Committee,
   CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
@@ -1441,22 +1442,21 @@ export class MeetingService {
       unique_committees: uniqueCommitteeUids.length,
     });
 
-    const results = await Promise.all(
-      uniqueCommitteeUids.map(async (uid) => {
-        try {
-          const committee = await this.committeeService.getCommitteeById(req, uid);
-          return { uid, name: committee.name };
-        } catch (error) {
-          logger.warning(req, 'get_meeting_committees', 'Committee enrichment failed; continuing without name', { committee_uid: uid, err: error });
-          return { uid, name: undefined };
-        }
-      })
-    );
+    let committeeMap: Map<string, Committee>;
+    try {
+      committeeMap = await this.committeeService.getCommitteesByIds(req, uniqueCommitteeUids);
+    } catch (error) {
+      logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; meetings will have no committee names', {
+        unique_committees: uniqueCommitteeUids.length,
+        err: error,
+      });
+      committeeMap = new Map();
+    }
 
     const nameMap = new Map<string, string>();
-    for (const { uid, name } of results) {
-      if (name) {
-        nameMap.set(uid, name);
+    for (const [uid, committee] of committeeMap) {
+      if (committee.name) {
+        nameMap.set(uid, committee.name);
       }
     }
 

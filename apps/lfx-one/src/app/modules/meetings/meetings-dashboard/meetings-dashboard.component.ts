@@ -132,6 +132,8 @@ export class MeetingsDashboardComponent {
   // Per-lens loading flags so Me/FP recording-count pipelines cannot clobber each other on lens switch.
   protected readonly meRecordingsCountLoading = signal(false);
   protected readonly fpRecordingsCountLoading = signal(false);
+  protected fpUpcomingCountLoading = signal(false);
+  protected fpPastCountLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
@@ -228,11 +230,12 @@ export class MeetingsDashboardComponent {
     this.rawFpUpcomingMeetings = this.initializeRawFpUpcomingMeetings();
     this.rawFpPastMeetings = this.initializeRawFpPastMeetings();
 
-    // Foundation/Project lens stat cards (computed from raw FP signals, not paginated)
-    // Only look at the active tab's loading signal — inactive tab fetches are gated off.
+    // Foundation/Project lens stat cards
+    // fpStatsLoading gates recurring/recordings cards (backed by raw full-page fetches).
+    // fpUpcomingCount/fpPastCount use the count API directly — they resolve independently.
     this.fpStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()));
-    this.fpUpcomingCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().length : 0));
-    this.fpPastCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpPastMeetings().length : 0));
+    this.fpUpcomingCount = this.initFpUpcomingCount();
+    this.fpPastCount = this.initFpPastCount();
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
     this.fpRecordingsAvailableCount = this.initFpRecordingsAvailableCount();
 
@@ -777,6 +780,50 @@ export class MeetingsDashboardComponent {
       const projectWord = count === 1 ? 'project' : 'projects';
       return count > 0 ? `Across ${count} ${projectWord}` : '';
     });
+  }
+
+  private initFpUpcomingCount(): Signal<number> {
+    const project$ = toObservable(this.project);
+    const lens$ = toObservable(this.activeLens);
+
+    return toSignal(
+      combineLatest([project$, lens$, this.refresh$]).pipe(
+        switchMap(([project, lens]) => {
+          if (lens === 'me' || !project?.uid) {
+            return of(0);
+          }
+          if (!isPlatformBrowser(this.platformId)) {
+            this.fpUpcomingCountLoading.set(true);
+            return of(0);
+          }
+          this.fpUpcomingCountLoading.set(true);
+          return this.meetingService.getMeetingsCountByProject(project.uid).pipe(finalize(() => this.fpUpcomingCountLoading.set(false)));
+        })
+      ),
+      { initialValue: 0 }
+    );
+  }
+
+  private initFpPastCount(): Signal<number> {
+    const project$ = toObservable(this.project);
+    const lens$ = toObservable(this.activeLens);
+
+    return toSignal(
+      combineLatest([project$, lens$, this.refresh$]).pipe(
+        switchMap(([project, lens]) => {
+          if (lens === 'me' || !project?.uid) {
+            return of(0);
+          }
+          if (!isPlatformBrowser(this.platformId)) {
+            this.fpPastCountLoading.set(true);
+            return of(0);
+          }
+          this.fpPastCountLoading.set(true);
+          return this.meetingService.getPastMeetingsCountByProject(project.uid).pipe(finalize(() => this.fpPastCountLoading.set(false)));
+        })
+      ),
+      { initialValue: 0 }
+    );
   }
 
   private initFpRecordingsAvailableCount(): Signal<number> {
