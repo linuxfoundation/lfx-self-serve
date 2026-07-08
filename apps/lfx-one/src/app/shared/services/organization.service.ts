@@ -24,6 +24,9 @@ export class OrganizationService {
    */
   private readonly sessionOrgs: OrganizationSuggestion[] = [];
 
+  /** Cap the session list so a long editing session can't grow it without bound. Most-recent-first, so older entries drop off. */
+  private readonly maxSessionOrgs = 25;
+
   /**
    * Search for organizations by name
    * @param searchTerm - The search term to look for
@@ -68,6 +71,9 @@ export class OrganizationService {
       this.sessionOrgs.splice(existingIndex, 1);
     }
     this.sessionOrgs.unshift(org);
+    if (this.sessionOrgs.length > this.maxSessionOrgs) {
+      this.sessionOrgs.length = this.maxSessionOrgs;
+    }
   }
 
   /**

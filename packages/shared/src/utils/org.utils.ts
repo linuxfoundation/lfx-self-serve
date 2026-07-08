@@ -21,7 +21,9 @@ export function normalizeOrgKey(org: Pick<OrganizationSuggestion, 'name' | 'doma
   const domain = normalize(org.domain);
   if (domain) {
     const host = domain.includes('://') ? safeHost(domain) : domain;
-    return `domain:${host.replace(/^www\./, '').replace(/\/+$/, '')}`;
+    // Strip a leading www. and anything from the first slash so a bare host,
+    // a host with a trailing slash, and a host with a path all key the same.
+    return `domain:${host.replace(/^www\./, '').replace(/\/.*$/, '')}`;
   }
   return `name:${normalize(org.name)}`;
 }
@@ -49,12 +51,27 @@ export function matchesOrgQuery(org: Pick<OrganizationSuggestion, 'name'>, query
  * would otherwise vanish from search. Merging the session's remembered orgs in
  * front of the upstream results keeps them one click away. Local entries win on
  * a key collision so the user's chosen name casing and logo are preserved.
+ *
+ * A free-text session org (no domain, e.g. "Google" typed inline) and the
+ * canonical upstream org for the same name (domain + logo) key differently and
+ * would otherwise both show, with the poorer free-text row on top. When a
+ * domained entry exists for a name, the domainless one is dropped in favor of
+ * the richer record.
  */
 export function mergeOrgSuggestions(local: OrganizationSuggestion[], remote: OrganizationSuggestion[]): OrganizationSuggestion[] {
+  const combined = [...local, ...remote];
+
+  // Names that appear anywhere with a real domain: a canonical record exists,
+  // so a domainless (free-text) entry for the same name is redundant.
+  const domainedNames = new Set(combined.filter((org) => normalize(org.domain)).map((org) => normalize(org.name)));
+
   const seen = new Set<string>();
   const merged: OrganizationSuggestion[] = [];
 
-  for (const org of [...local, ...remote]) {
+  for (const org of combined) {
+    if (!normalize(org.domain) && domainedNames.has(normalize(org.name))) {
+      continue;
+    }
     const key = normalizeOrgKey(org);
     if (seen.has(key)) {
       continue;

@@ -28,6 +28,16 @@ describe('normalizeOrgKey', () => {
   it('never collides a name key with a domain key', () => {
     expect(normalizeOrgKey(org({ name: 'example.com', domain: '' }))).not.toBe(normalizeOrgKey(org({ name: 'x', domain: 'example.com' })));
   });
+
+  it('keys a scheme-less host with a path the same as the bare host', () => {
+    expect(normalizeOrgKey(org({ name: 'x', domain: 'example.com/path' }))).toBe(normalizeOrgKey(org({ name: 'y', domain: 'example.com' })));
+  });
+
+  it('returns a deterministic key without throwing on an unparseable scheme value', () => {
+    const key = normalizeOrgKey(org({ name: 'x', domain: 'https://[' }));
+    expect(typeof key).toBe('string');
+    expect(normalizeOrgKey(org({ name: 'x', domain: 'https://[' }))).toBe(key);
+  });
 });
 
 describe('matchesOrgQuery', () => {
@@ -75,6 +85,15 @@ describe('mergeOrgSuggestions', () => {
   it('returns local when remote is empty', () => {
     const local = [org({ name: 'VelocityEngine' })];
     expect(mergeOrgSuggestions(local, [])).toEqual(local);
+  });
+
+  it('collapses a domainless session org into the canonical domained one with the same name', () => {
+    const local = [org({ name: 'Google', domain: '' })];
+    const remote = [org({ name: 'google', domain: 'google.com', logo: 'https://logo/google.png' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].domain).toBe('google.com');
+    expect(merged[0].logo).toBe('https://logo/google.png');
   });
 
   it('dedupes within the local list itself', () => {
