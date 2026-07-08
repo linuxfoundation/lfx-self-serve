@@ -783,28 +783,14 @@ export class MeetingsDashboardComponent {
   }
 
   private initFpUpcomingCount(): Signal<number> {
-    const project$ = toObservable(this.project);
-    const lens$ = toObservable(this.activeLens);
-
-    return toSignal(
-      combineLatest([project$, lens$, this.refresh$]).pipe(
-        switchMap(([project, lens]) => {
-          if (lens === 'me' || !project?.uid) {
-            return of(0);
-          }
-          if (!isPlatformBrowser(this.platformId)) {
-            this.fpUpcomingCountLoading.set(true);
-            return of(0);
-          }
-          this.fpUpcomingCountLoading.set(true);
-          return this.meetingService.getMeetingsCountByProject(project.uid).pipe(finalize(() => this.fpUpcomingCountLoading.set(false)));
-        })
-      ),
-      { initialValue: 0 }
-    );
+    return this.initFpCount(this.fpUpcomingCountLoading, (uid) => this.meetingService.getMeetingsCountByProject(uid));
   }
 
   private initFpPastCount(): Signal<number> {
+    return this.initFpCount(this.fpPastCountLoading, (uid) => this.meetingService.getPastMeetingsCountByProject(uid));
+  }
+
+  private initFpCount(loadingSignal: WritableSignal<boolean>, fetchFn: (uid: string) => Observable<number>): Signal<number> {
     const project$ = toObservable(this.project);
     const lens$ = toObservable(this.activeLens);
 
@@ -812,14 +798,15 @@ export class MeetingsDashboardComponent {
       combineLatest([project$, lens$, this.refresh$]).pipe(
         switchMap(([project, lens]) => {
           if (lens === 'me' || !project?.uid) {
+            loadingSignal.set(false);
             return of(0);
           }
           if (!isPlatformBrowser(this.platformId)) {
-            this.fpPastCountLoading.set(true);
+            loadingSignal.set(true);
             return of(0);
           }
-          this.fpPastCountLoading.set(true);
-          return this.meetingService.getPastMeetingsCountByProject(project.uid).pipe(finalize(() => this.fpPastCountLoading.set(false)));
+          loadingSignal.set(true);
+          return fetchFn(project.uid).pipe(finalize(() => loadingSignal.set(false)));
         })
       ),
       { initialValue: 0 }

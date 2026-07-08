@@ -1442,21 +1442,45 @@ export class MeetingService {
       unique_committees: uniqueCommitteeUids.length,
     });
 
-    let committeeMap: Map<string, Committee>;
-    try {
-      committeeMap = await this.committeeService.getCommitteesByIds(req, uniqueCommitteeUids);
-    } catch (error) {
-      logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; meetings will have no committee names', {
-        unique_committees: uniqueCommitteeUids.length,
-        err: error,
-      });
-      committeeMap = new Map();
+    const unique = [...new Set(uniqueCommitteeUids)].filter(Boolean);
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
     }
 
+    // Use Promise.allSettled so one transient batch failure doesn't wipe names resolved by other
+    // batches — mirrors the pattern in getCommitteesWithMailingList.
+    const results = await Promise.allSettled(
+      batches.map((batch) =>
+        fetchAllQueryResources<Committee>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+
     const nameMap = new Map<string, string>();
-    for (const [uid, committee] of committeeMap) {
-      if (committee.name) {
-        nameMap.set(uid, committee.name);
+    for (const [i, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        for (const committee of result.value) {
+          if (committee?.uid && committee.name) {
+            nameMap.set(committee.uid, committee.name);
+          }
+        }
+      } else {
+        logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; affected meetings will have no committee name', {
+          batch_index: i,
+          batch_size: batches[i].length,
+          sample_uids: batches[i].slice(0, 3),
+          err: result.reason,
+        });
       }
     }
 
