@@ -102,12 +102,16 @@ export class OrganizationController {
 
       const org = await this.cdpService.resolveOrganization(req, name, domain || '', logo);
 
+      // Look up the b2b Salesforce SFID by domain so committee-service payloads carry a valid
+      // v1 organization ID. Failures are soft — null falls back to name+website-only resolution.
+      const b2bSfid = await this.organizationService.resolveB2bSfidByDomain(req, domain || '');
+
       logger.success(req, 'resolve_organization', startTime, {
-        organization_id: org.id,
+        has_b2b_sfid: Boolean(b2bSfid),
         organization_name: org.name,
       });
 
-      res.json(org);
+      res.json({ id: b2bSfid, name: org.name, logo: org.logo });
     } catch (error) {
       next(error);
     }

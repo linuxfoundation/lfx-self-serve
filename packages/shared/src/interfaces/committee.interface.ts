@@ -46,7 +46,7 @@ export interface BehavioralClassDisplayConfig {
  * Mirrors the committee-service organization object: `id`, `name`, and `website`.
  */
 export interface CommitteeOrganizationReference {
-  /** CDP organization ID */
+  /** b2b Salesforce Account SFID (18-char); null/omit when the org has no LF member account */
   id?: string | null;
   /** Organization display name */
   name?: string | null;

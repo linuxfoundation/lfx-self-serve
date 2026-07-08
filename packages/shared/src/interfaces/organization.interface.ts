@@ -28,8 +28,12 @@ export interface OrganizationSuggestionsResponse {
  * @description Returned when finding or creating an organization via CDP API
  */
 export interface CdpOrganization {
-  /** CDP organization ID */
-  id: string;
+  /**
+   * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
+   * Never a CDP org ID — the resolve endpoint now returns the b2b SFID so committee-service
+   * can forward it to v1-sync-helper without triggering "some organization IDs do not exist".
+   */
+  id: string | null;
   /** Organization display name */
   name: string;
   /** Organization logo URL */
@@ -41,8 +45,12 @@ export interface CdpOrganization {
  * @description Contains the resolved organization details and whether the display name changed
  */
 export interface OrganizationResolveResult {
-  /** CDP organization ID */
-  id: string;
+  /**
+   * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
+   * Never a CDP org ID — callers that use this as organization.id in committee-service payloads
+   * must treat null as "omit id" so v1-sync-helper falls back to resolveV1OrgID(name, website).
+   */
+  id: string | null;
   /** CDP display name (may differ from what the user searched) */
   name: string;
   /** Organization logo URL */

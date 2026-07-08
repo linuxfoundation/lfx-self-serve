@@ -37,8 +37,10 @@ import {
   OrganizationEventAttendanceMonthlyRow,
   OrganizationMaintainersMonthlyRow,
   OrganizationMaintainersResponse,
+  B2bOrgIndexedDoc,
   OrganizationSuggestion,
   OrganizationSuggestionsResponse,
+  QueryServiceResponse,
   TrainingEnrollmentDailyRow,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
@@ -96,6 +98,65 @@ export class OrganizationService {
     const response = await this.microserviceProxy.proxyRequest<OrganizationSuggestionsResponse>(req, 'LFX_V2_SERVICE', '/query/orgs/suggest', 'GET', params);
 
     return response.suggestions || [];
+  }
+
+  /**
+   * Try to resolve the b2b Salesforce Account SFID for an organization by its primary domain.
+   * Returns the SFID (b2b_org uid) when the org is found in the member-service index, null otherwise.
+   * All failures are caught and return null — callers fall back to name+website-only payloads.
+   */
+  public async resolveB2bSfidByDomain(req: Request, domain: string): Promise<string | null> {
+    const normalizedDomain = domain.includes('://') ? new URL(domain).hostname : domain;
+
+    // Only query when the domain is a syntactically valid hostname (no colons or other characters
+    // that would corrupt the filters_all field:value grammar).
+    if (!normalizedDomain || normalizedDomain.length > 253 || !/^[a-zA-Z0-9][a-zA-Z0-9-_.]*\.[a-zA-Z]{2,}$/.test(normalizedDomain)) {
+      logger.debug(req, 'resolve_b2b_sfid_by_domain', 'Skipping b2b SFID lookup for invalid domain', { domain });
+      return null;
+    }
+
+    try {
+      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'b2b_org',
+        filters_all: `primary_domain:${normalizedDomain}`,
+        per_page: 2,
+      });
+
+      const resources = response.resources ?? [];
+      if (resources.length === 0) {
+        logger.debug(req, 'resolve_b2b_sfid_by_domain', 'No b2b_org found for domain', { domain: normalizedDomain });
+        return null;
+      }
+
+      if (resources.length > 1) {
+        logger.warning(req, 'resolve_b2b_sfid_by_domain', 'Multiple b2b_orgs found for domain; using first', {
+          domain: normalizedDomain,
+          count: resources.length,
+        });
+      }
+
+      // resource.id is in the format "b2b_org:<sfid>"; strip the type prefix.
+      const resourceId = resources[0].id;
+      const colonIndex = resourceId.indexOf(':');
+      const sfid = colonIndex >= 0 ? resourceId.slice(colonIndex + 1) : resourceId;
+
+      if (!sfid) {
+        logger.warning(req, 'resolve_b2b_sfid_by_domain', 'b2b_org found but could not extract SFID', {
+          domain: normalizedDomain,
+          resource_id: resourceId,
+        });
+        return null;
+      }
+
+      logger.debug(req, 'resolve_b2b_sfid_by_domain', 'Resolved b2b SFID for domain', { domain: normalizedDomain, sfid });
+      return sfid;
+    } catch (error) {
+      logger.warning(req, 'resolve_b2b_sfid_by_domain', 'b2b SFID lookup failed; returning null', {
+        domain: normalizedDomain,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
   }
 
   /**
