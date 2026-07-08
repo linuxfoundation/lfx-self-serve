@@ -55,7 +55,7 @@ export class CommitteeManageComponent {
   public project = computed(() => this.projectContextService.activeContext());
 
   // Member management state
-  public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [] });
+  public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
   public memberUpdatesRefresh$ = new BehaviorSubject<void>(undefined);
 
   // Stepper state
@@ -82,7 +82,11 @@ export class CommitteeManageComponent {
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => this.getStepTitle(this.currentStep()));
   public readonly hasMemberUpdates = computed(
-    () => this.memberUpdates().toAdd.length > 0 || this.memberUpdates().toUpdate.length > 0 || this.memberUpdates().toDelete.length > 0
+    () =>
+      this.memberUpdates().toAdd.length > 0 ||
+      this.memberUpdates().toUpdate.length > 0 ||
+      this.memberUpdates().toDelete.length > 0 ||
+      this.memberUpdates().toInvite.length > 0
   );
 
   // UI labels
@@ -548,6 +552,13 @@ export class CommitteeManageComponent {
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
         operations.push(this.createMemberOperation('add', () => this.committeeService.createCommitteeMember(committeeId, member)));
+      }
+    }
+
+    // Send staged bulk email invites — deferred here so they only fire on wizard completion (LFXV2-2606)
+    if (memberUpdates.toInvite.length > 0) {
+      for (const invite of memberUpdates.toInvite) {
+        operations.push(this.createMemberOperation('invite', () => this.committeeService.createCommitteeInvite(committeeId, invite)));
       }
     }
 
