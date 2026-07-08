@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize, map, of, switchMap, take } from 'rxjs';
+import { finalize, forkJoin, map, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-edit-dialog',
@@ -32,6 +32,7 @@ export class ProfileEditDialogComponent {
   private readonly messageService = inject(MessageService);
   private readonly ref = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Config data
   public readonly combinedProfile: CombinedProfile = this.config.data.combinedProfile;
@@ -53,6 +54,10 @@ export class ProfileEditDialogComponent {
   // Organization (work-history-derived) signals
   public readonly loadingWorkExperiences = signal(true);
   private readonly workExperiences = signal<WorkExperienceEntry[]>([]);
+  // Canonical CDP domain per work-history org, prefetched once the options load, keyed by
+  // lowercased org name. An empty-string value means CDP has no domain for that org (used to
+  // clear a stale organization_domain on save). Orgs absent from the map leave it untouched.
+  private readonly organizationDomains = signal<Map<string, string>>(new Map());
   public readonly organizationOptions: Signal<{ label: string; value: string }[]> = this.initOrganizationOptions();
   public readonly hasOrganizationOptions: Signal<boolean> = computed(() => this.organizationOptions().length > 0);
 
@@ -147,6 +152,7 @@ export class ProfileEditDialogComponent {
       .subscribe((experiences) => {
         this.workExperiences.set(experiences);
         this.syncOrganizationControl();
+        this.prefetchOrganizationDomains(experiences);
       });
   }
 
@@ -160,42 +166,41 @@ export class ProfileEditDialogComponent {
     const formValue = this.profileForm.value;
     const organizationName = (formValue.organization || '').trim();
 
-    // Resolve the selected organization's canonical domain from CDP so we can persist
-    // user_metadata.organization_domain alongside the name. The lookup degrades to null
-    // (no match / CDP error) and never blocks the profile save.
-    const domain$ = organizationName
-      ? this.organizationService.lookupOrganizationByName(organizationName).pipe(map((org) => org?.domain || undefined))
-      : of(undefined);
+    // Resolve the selected org's canonical domain from the prefetched work-history map (no
+    // save-time network call). A mapped empty string clears any stale organization_domain when
+    // CDP has no domain for the org; an org missing from the map (e.g. a legacy saved org not in
+    // work history, or a prefetch still in flight) leaves organization_domain untouched.
+    const orgKey = organizationName.toLowerCase();
+    const domains = this.organizationDomains();
+    const organizationDomain = organizationName && domains.has(orgKey) ? domains.get(orgKey) : undefined;
 
-    domain$
+    const userMetadata: Partial<UserMetadata> = {
+      given_name: formValue.given_name || undefined,
+      family_name: formValue.family_name || undefined,
+      job_title: formValue.job_title || undefined,
+      organization: formValue.organization || undefined,
+      organization_domain: organizationDomain,
+      country: formValue.country || undefined,
+      state_province: formValue.state_province || undefined,
+      city: formValue.city || undefined,
+      address: formValue.address || undefined,
+      postal_code: formValue.postal_code || undefined,
+      phone_number: formValue.phone_number || undefined,
+      t_shirt_size: formValue.t_shirt_size || undefined,
+    };
+
+    const updateData: ProfileUpdateRequest = {
+      user_metadata: userMetadata as UserMetadata,
+    };
+
+    this.userService
+      .updateUserProfile(updateData)
       .pipe(
-        switchMap((organizationDomain) => {
-          const userMetadata: Partial<UserMetadata> = {
-            given_name: formValue.given_name || undefined,
-            family_name: formValue.family_name || undefined,
-            job_title: formValue.job_title || undefined,
-            organization: formValue.organization || undefined,
-            organization_domain: organizationDomain,
-            country: formValue.country || undefined,
-            state_province: formValue.state_province || undefined,
-            city: formValue.city || undefined,
-            address: formValue.address || undefined,
-            postal_code: formValue.postal_code || undefined,
-            phone_number: formValue.phone_number || undefined,
-            t_shirt_size: formValue.t_shirt_size || undefined,
-          };
-
-          const updateData: ProfileUpdateRequest = {
-            user_metadata: userMetadata as UserMetadata,
-          };
-
-          return this.userService.updateUserProfile(updateData).pipe(map(() => userMetadata));
-        }),
         take(1),
         finalize(() => this.saving.set(false))
       )
       .subscribe({
-        next: (userMetadata) => {
+        next: () => {
           this.messageService.add({
             severity: 'success',
             summary: 'Success',
@@ -282,6 +287,28 @@ export class ProfileEditDialogComponent {
 
   private initVerifiedEmails(): Signal<UserEmail[]> {
     return computed(() => this.emails().filter((e) => e.verified));
+  }
+
+  /**
+   * Prefetch the canonical CDP domain for every unique work-history org so the save flow can read
+   * it synchronously (no lookup between selection and the auth-service update). Runs in parallel
+   * across the deduplicated org names; each lookup degrades to '' on miss/error (via the service's
+   * own catchError), which doubles as the explicit clear value for orgs CDP has no domain for.
+   */
+  private prefetchOrganizationDomains(experiences: WorkExperienceEntry[]): void {
+    const uniqueNames = Array.from(new Set(experiences.map((entry) => entry.organization?.trim()).filter((name): name is string => !!name)));
+
+    if (uniqueNames.length === 0) {
+      return;
+    }
+
+    forkJoin(
+      uniqueNames.map((name) => this.organizationService.lookupOrganizationByName(name).pipe(map((org) => [name.toLowerCase(), org?.domain || ''] as const)))
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((entries) => {
+        this.organizationDomains.set(new Map(entries));
+      });
   }
 
   /**
