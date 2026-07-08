@@ -239,11 +239,6 @@ export class UserService {
       throw new Error('Organization name is too long');
     }
 
-    // Validate organization domain if provided (max DNS name length)
-    if (metadata?.organization_domain && metadata.organization_domain.length > 253) {
-      throw new Error('Organization domain is too long');
-    }
-
     // Validate job title if provided (basic length check)
     if (metadata?.job_title && metadata.job_title.length > 200) {
       throw new Error('Job title is too long');
