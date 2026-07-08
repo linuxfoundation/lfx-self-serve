@@ -26,6 +26,8 @@ import {
   CreateCommitteeMemberRequest,
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
+  MeetingRegistrant,
+  MeetingSelectOption,
   OrganizationResolveResult,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
@@ -33,6 +35,7 @@ import {
   buildCommitteeOrganizationPayload,
   committeeOrganizationFormComplete,
   committeeRequiresOrganization,
+  extractRegistrantEmails,
   hasLfAccount,
   normalizeToUrl,
   parseEmailList,
@@ -41,6 +44,7 @@ import {
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
+import { MeetingService } from '@services/meeting.service';
 import { SearchService } from '@services/search.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
@@ -85,6 +89,7 @@ interface DirectAddResult {
 })
 export class AddMemberDialogComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly meetingService = inject(MeetingService);
   private readonly searchService = inject(SearchService);
   private readonly messageService = inject(MessageService);
   private readonly dialogRef = inject(DynamicDialogRef);
@@ -134,9 +139,14 @@ export class AddMemberDialogComponent {
     send_notification: new FormControl<boolean>(false, { nonNullable: true }),
   });
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
+  /** Picker for "import registrants from a meeting" (LFXV2-2607). */
+  public readonly importForm = new FormGroup({ meeting: new FormControl<string | null>(null) });
 
   public submitting = signal(false);
   public searchLoading = signal(false);
+  public importing = signal(false);
+  /** Human-readable outcome of the last import, shown under the picker. */
+  public importSummary = signal<string | null>(null);
   private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
@@ -196,6 +206,8 @@ export class AddMemberDialogComponent {
     { initialValue: '' }
   );
   public searchResults: Signal<DecoratedCommitteeSearchResult[]> = this.initSearchResults();
+  /** Meetings in the committee's project, for the import picker. Empty when none / no project. */
+  public readonly meetingOptions: Signal<MeetingSelectOption[]> = this.initMeetingOptions();
 
   public readonly roleOptions = MEMBER_ROLES;
 
@@ -265,6 +277,36 @@ export class AddMemberDialogComponent {
     // feedback. Guard that late close instead of re-disabling Cancel (see onSubmit's comment).
     this.cancelled = true;
     this.dialogRef.close(false);
+  }
+
+  /**
+   * Pull the selected meeting's registrant emails into the email list (LFXV2-2607).
+   * The BFF returns the full roster in one call (it auto-pages), so the imported
+   * emails just flow through the existing parse/dedupe/preview and invite fan-out —
+   * no invite logic is duplicated here.
+   */
+  public onImportFromMeeting(): void {
+    const meetingId = this.importForm.get('meeting')!.value;
+    if (!meetingId || this.importing()) {
+      return;
+    }
+
+    this.importing.set(true);
+    this.meetingService
+      .getMeetingRegistrants(meetingId, false)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (registrants) => this.applyImportedRegistrants(meetingId, registrants),
+        error: () => {
+          this.importing.set(false);
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Import Failed',
+            detail: 'Could not load registrants for that meeting. Please try again.',
+            life: 5000,
+          });
+        },
+      });
   }
 
   public onSubmit(): void {
@@ -591,6 +633,72 @@ export class AddMemberDialogComponent {
       organization_id: null,
       organization_url: normalizedUrl,
     });
+  }
+
+  /**
+   * Append imported emails not already listed to the emails textarea and report the outcome.
+   * Filters against `parsed().valid` (already lowercased) so re-imports don't re-add rows and
+   * the summary's "already listed" count is accurate.
+   */
+  private applyImportedRegistrants(meetingId: string, registrants: MeetingRegistrant[]): void {
+    const { emails, skippedNoEmail } = extractRegistrantEmails(registrants);
+    const meetingTitle = this.meetingOptions().find((option) => option.value === meetingId)?.title ?? 'the meeting';
+
+    const alreadyListed = new Set(this.parsed().valid);
+    const toAppend = emails.filter((email) => !alreadyListed.has(email.toLowerCase()));
+    if (toAppend.length > 0) {
+      const current = this.form.get('emails')!.value.trim();
+      const appended = toAppend.join('\n');
+      this.form.get('emails')!.setValue(current ? `${current}\n${appended}` : appended);
+    }
+
+    this.importSummary.set(this.buildImportSummary(meetingTitle, toAppend.length, emails.length - toAppend.length, skippedNoEmail));
+    this.importForm.get('meeting')!.setValue(null);
+    this.importing.set(false);
+  }
+
+  /** Compose the import result line: how many were added, already listed, and skipped for no email. */
+  private buildImportSummary(meetingTitle: string, added: number, alreadyListed: number, skippedNoEmail: number): string {
+    const parts: string[] = [added === 1 ? `Added 1 address from "${meetingTitle}"` : `Added ${added} addresses from "${meetingTitle}"`];
+    if (alreadyListed > 0) {
+      parts.push(`${alreadyListed} already listed`);
+    }
+    if (skippedNoEmail > 0) {
+      parts.push(skippedNoEmail === 1 ? '1 registrant had no email and was skipped' : `${skippedNoEmail} registrants had no email and were skipped`);
+    }
+    return `${parts.join(' — ')}.`;
+  }
+
+  private initMeetingOptions(): Signal<MeetingSelectOption[]> {
+    const projectUid = this.committee?.project_uid;
+    if (!projectUid) {
+      return signal<MeetingSelectOption[]>([]);
+    }
+
+    return toSignal(
+      this.meetingService.getMeetingsByProject(projectUid).pipe(
+        map((meetings) =>
+          [...meetings]
+            .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+            .map((meeting) => ({ value: meeting.id, label: this.buildMeetingLabel(meeting.title, meeting.start_time), title: meeting.title }))
+        ),
+        catchError(() => of([] as MeetingSelectOption[])),
+        take(1)
+      ),
+      { initialValue: [] as MeetingSelectOption[] }
+    );
+  }
+
+  /** "<title> — <Mon D, YYYY>", or just the title when start_time is missing/unparseable. */
+  private buildMeetingLabel(title: string, startTime: string | null | undefined): string {
+    if (!startTime) {
+      return title;
+    }
+    const date = new Date(startTime);
+    if (Number.isNaN(date.getTime())) {
+      return title;
+    }
+    return `${title} — ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
 
   private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {
