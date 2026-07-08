@@ -113,6 +113,14 @@ export class OrganizationSearchComponent {
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {
     const selectedOrganization = event.value as OrganizationSuggestion;
 
+    // Remember the pick so it stays selectable for the rest of the session,
+    // even for flows that store the org as free text (no CDP resolve).
+    this.organizationService.registerSessionOrg({
+      name: selectedOrganization.name,
+      domain: selectedOrganization.domain,
+      logo: selectedOrganization.logo,
+    });
+
     // Update form controls if they are specified
     const parentForm = this.form();
     const nameControlName = this.nameControl();
@@ -159,11 +167,16 @@ export class OrganizationSearchComponent {
     this.clearResolveState();
 
     const nameControlName = this.nameControl();
+    const typedName = (this.organizationForm.get('organizationSearch')?.value || this.searchTerm())?.trim();
 
     if (nameControlName && this.form().get(nameControlName)) {
-      this.form()
-        .get(nameControlName)
-        ?.setValue(this.organizationForm.get('organizationSearch')?.value || this.searchTerm());
+      this.form().get(nameControlName)?.setValue(typedName);
+    }
+
+    // Remember the just-created org (free text, no domain) so re-opening the
+    // field on the next guest surfaces it instead of forcing re-creation.
+    if (typedName) {
+      this.organizationService.registerSessionOrg({ name: typedName, domain: '' });
     }
 
     // Clear search field when switching to manual
@@ -203,6 +216,10 @@ export class OrganizationSearchComponent {
     if (!name && !domain) {
       return of(null);
     }
+
+    // Remember the final entry (the manual name may have been edited after switchToManualMode())
+    // so it stays selectable for the rest of the session. No-ops when the name is blank.
+    this.organizationService.registerSessionOrg({ name: (name || '').trim(), domain: (domain || '').trim() });
 
     this.resolvingOrg.set(true);
 

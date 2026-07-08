@@ -33,6 +33,7 @@ export * from './project-counts.utils';
 export * from './identity.utils';
 export * from './enrollment.utils';
 export * from './org-selector.utils';
+export * from './org.utils';
 export * from './search.utils';
 export * from './email.utils';
 export * from './invitation.utils';
