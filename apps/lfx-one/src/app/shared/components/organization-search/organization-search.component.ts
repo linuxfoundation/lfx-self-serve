@@ -217,6 +217,10 @@ export class OrganizationSearchComponent {
       return of(null);
     }
 
+    // Remember the final entry (the manual name may have been edited after switchToManualMode())
+    // so it stays selectable for the rest of the session. No-ops when the name is blank.
+    this.organizationService.registerSessionOrg({ name: (name || '').trim(), domain: (domain || '').trim() });
+
     this.resolvingOrg.set(true);
 
     return this.organizationService.resolveOrganization(name || '', domain || '').pipe(

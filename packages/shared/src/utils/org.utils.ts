@@ -20,10 +20,18 @@ function normalize(value: string | null | undefined): string {
 export function normalizeOrgKey(org: Pick<OrganizationSuggestion, 'name' | 'domain'>): string {
   const domain = normalize(org.domain);
   if (domain) {
-    const host = domain.includes('://') ? safeHost(domain) : domain;
-    // Strip a leading www. and anything from the first slash so a bare host,
-    // a host with a trailing slash, and a host with a path all key the same.
-    return `domain:${host.replace(/^www\./, '').replace(/\/.*$/, '')}`;
+    let host = domain.includes('://') ? safeHost(domain) : domain;
+    // Strip a leading www. and anything from the first slash so a bare host, a host with a
+    // trailing slash, and a host with a path all key the same. Plain string ops (not regex)
+    // to avoid a polynomial-backtracking pattern on slash-heavy input.
+    if (host.startsWith('www.')) {
+      host = host.slice(4);
+    }
+    const slashIndex = host.indexOf('/');
+    if (slashIndex !== -1) {
+      host = host.slice(0, slashIndex);
+    }
+    return `domain:${host}`;
   }
   return `name:${normalize(org.name)}`;
 }
