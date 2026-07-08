@@ -11,11 +11,12 @@ import { SelectComponent } from '@components/select/select.component';
 import { COUNTRIES, normalizeTShirtSize, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { OrganizationService } from '@services/organization.service';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize } from 'rxjs';
+import { finalize, map, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-edit-dialog',
@@ -27,6 +28,7 @@ export class ProfileEditDialogComponent {
   // Private injections
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
+  private readonly organizationService = inject(OrganizationService);
   private readonly messageService = inject(MessageService);
   private readonly ref = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
@@ -156,30 +158,43 @@ export class ProfileEditDialogComponent {
 
     this.saving.set(true);
     const formValue = this.profileForm.value;
+    const organizationName = (formValue.organization || '').trim();
 
-    const userMetadata: Partial<UserMetadata> = {
-      given_name: formValue.given_name || undefined,
-      family_name: formValue.family_name || undefined,
-      job_title: formValue.job_title || undefined,
-      organization: formValue.organization || undefined,
-      country: formValue.country || undefined,
-      state_province: formValue.state_province || undefined,
-      city: formValue.city || undefined,
-      address: formValue.address || undefined,
-      postal_code: formValue.postal_code || undefined,
-      phone_number: formValue.phone_number || undefined,
-      t_shirt_size: formValue.t_shirt_size || undefined,
-    };
+    // Resolve the selected organization's canonical domain from CDP so we can persist
+    // user_metadata.organization_domain alongside the name. The lookup degrades to null
+    // (no match / CDP error) and never blocks the profile save.
+    const domain$ = organizationName
+      ? this.organizationService.lookupOrganizationByName(organizationName).pipe(map((org) => org?.domain || undefined))
+      : of(undefined);
 
-    const updateData: ProfileUpdateRequest = {
-      user_metadata: userMetadata as UserMetadata,
-    };
+    domain$
+      .pipe(
+        switchMap((organizationDomain) => {
+          const userMetadata: Partial<UserMetadata> = {
+            given_name: formValue.given_name || undefined,
+            family_name: formValue.family_name || undefined,
+            job_title: formValue.job_title || undefined,
+            organization: formValue.organization || undefined,
+            organization_domain: organizationDomain,
+            country: formValue.country || undefined,
+            state_province: formValue.state_province || undefined,
+            city: formValue.city || undefined,
+            address: formValue.address || undefined,
+            postal_code: formValue.postal_code || undefined,
+            phone_number: formValue.phone_number || undefined,
+            t_shirt_size: formValue.t_shirt_size || undefined,
+          };
 
-    this.userService
-      .updateUserProfile(updateData)
-      .pipe(finalize(() => this.saving.set(false)))
+          const updateData: ProfileUpdateRequest = {
+            user_metadata: userMetadata as UserMetadata,
+          };
+
+          return this.userService.updateUserProfile(updateData).pipe(map(() => userMetadata));
+        }),
+        finalize(() => this.saving.set(false))
+      )
       .subscribe({
-        next: () => {
+        next: (userMetadata) => {
           this.messageService.add({
             severity: 'success',
             summary: 'Success',

@@ -92,6 +92,7 @@ export interface UserMetadata {
   family_name?: string;
   job_title?: string;
   organization?: string;
+  organization_domain?: string;
   country?: string;
   state_province?: string;
   city?: string;

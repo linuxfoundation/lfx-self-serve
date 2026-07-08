@@ -46,4 +46,25 @@ export class OrganizationService {
     // Drop empty-string logos — they're not meaningful URLs
     return this.http.post<CdpOrganization>(`${this.baseUrl}/resolve`, { name, domain, ...(logo ? { logo } : {}) });
   }
+
+  /**
+   * Look up a single organization in CDP by exact name.
+   * Used to resolve an organization's canonical domain. Resolves to null when the
+   * lookup fails or no match is found, so callers can degrade gracefully.
+   * @param name - Exact organization name
+   * @returns Observable of the CDP organization, or null
+   */
+  public lookupOrganizationByName(name: string): Observable<CdpOrganization | null> {
+    const trimmed = name?.trim();
+    if (!trimmed) {
+      return of(null);
+    }
+
+    return this.http.get<CdpOrganization | null>(`${this.baseUrl}/lookup`, { params: { name: trimmed } }).pipe(
+      catchError((error) => {
+        console.error('Error looking up organization by name:', error);
+        return of(null);
+      })
+    );
+  }
 }

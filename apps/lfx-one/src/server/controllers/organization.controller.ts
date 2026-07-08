@@ -112,4 +112,40 @@ export class OrganizationController {
       next(error);
     }
   }
+
+  /**
+   * GET /organizations/lookup?name=
+   * Find a single organization in CDP by exact name and return it (including its domain).
+   * Returns null when no matching organization is found.
+   */
+  public async getOrganizationByName(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { name } = req.query;
+    const startTime = logger.startOperation(req, 'lookup_organization_by_name', {
+      has_name: !!name,
+    });
+
+    try {
+      if (!name || typeof name !== 'string') {
+        const validationError = ServiceValidationError.forField('name', 'Organization name is required and must be a string', {
+          operation: 'lookup_organization_by_name',
+          service: 'organization_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const org = await this.cdpService.findOrganizationByName(req, name.trim());
+
+      logger.success(req, 'lookup_organization_by_name', startTime, {
+        found: !!org,
+        organization_id: org?.id,
+      });
+
+      res.json(org);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
