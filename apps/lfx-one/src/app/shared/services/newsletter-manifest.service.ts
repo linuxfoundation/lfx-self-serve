@@ -71,6 +71,9 @@ export class NewsletterManifestService {
     if (!projectUid) {
       // No project context yet — surface as a load failure the composer can
       // show; nothing is cached, so a later call retries once context exists.
+      // In the wizard flow this does not happen: routing resolves the project
+      // context before the composer mounts.
+      console.warn('NewsletterManifestService: no active project context; manifest load skipped', { templateKey });
       this.errorSignal.set(true);
       return of(null);
     }
@@ -82,7 +85,8 @@ export class NewsletterManifestService {
       .get<NewsletterTemplateManifest>(`/api/projects/${encodeURIComponent(projectUid)}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`)
       .pipe(
         tap((manifest) => this.manifestSignal.set(manifest)),
-        catchError(() => {
+        catchError((err: unknown) => {
+          console.error('NewsletterManifestService: manifest load failed', { templateKey, err });
           this.errorSignal.set(true);
           // Reset the cache so a later retry can re-issue the request.
           this.manifestStreams.delete(templateKey);
