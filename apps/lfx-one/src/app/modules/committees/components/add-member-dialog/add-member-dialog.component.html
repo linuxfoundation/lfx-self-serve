@@ -29,7 +29,7 @@
           label="Import"
           icon="fa-light fa-user-plus"
           [loading]="importing()"
-          [disabled]="!importForm.get('meeting')!.value || importing()"
+          [disabled]="!importForm.value.meeting || importing()"
           (onClick)="onImportFromMeeting()"
           size="small"
           type="button"
