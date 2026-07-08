@@ -98,7 +98,7 @@ export class OrganizationService {
    * @returns Observable of the CDP organization, or null when there is no match
    */
   public lookupOrganizationByName(name: string): Observable<CdpOrganization | null> {
-    const trimmed = name?.trim();
+    const trimmed = name.trim();
     if (!trimmed) {
       return of(null);
     }
