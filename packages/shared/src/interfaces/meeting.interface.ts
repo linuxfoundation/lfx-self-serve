@@ -402,10 +402,6 @@ export interface MeetingTemplateGroup {
 }
 
 /**
- * Meeting registrant information from microproxy service
- * @description Individual registrant/guest for a meeting
- */
-/**
  * Dropdown option for the "import registrants from a meeting" picker (LFXV2-2607).
  * `label` is the display string (title + date); `title` is kept separately so
  * import summaries can name the meeting cleanly.
@@ -431,6 +427,10 @@ export interface RegistrantEmailExtraction {
   skippedNoEmail: number;
 }
 
+/**
+ * Meeting registrant information from microproxy service
+ * @description Individual registrant/guest for a meeting
+ */
 export interface MeetingRegistrant {
   /** Unique identifier for the registrant (auto-generated) */
   uid: string;

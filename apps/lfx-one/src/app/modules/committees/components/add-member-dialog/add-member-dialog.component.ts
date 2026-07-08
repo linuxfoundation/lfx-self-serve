@@ -209,6 +209,7 @@ export class AddMemberDialogComponent {
         next: (registrants) => this.applyImportedRegistrants(meetingId, registrants),
         error: () => {
           this.importing.set(false);
+          this.importSummary.set(null);
           this.messageService.add({
             severity: 'warn',
             summary: 'Import Failed',
@@ -366,7 +367,7 @@ export class AddMemberDialogComponent {
       this.meetingService.getMeetingsByProject(projectUid).pipe(
         map((meetings) =>
           [...meetings]
-            .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+            .sort((a, b) => this.meetingStartMs(b.start_time) - this.meetingStartMs(a.start_time))
             .map((meeting) => ({ value: meeting.id, label: this.buildMeetingLabel(meeting.title, meeting.start_time), title: meeting.title }))
         ),
         catchError(() => of([] as MeetingSelectOption[])),
@@ -374,6 +375,15 @@ export class AddMemberDialogComponent {
       ),
       { initialValue: [] as MeetingSelectOption[] }
     );
+  }
+
+  /** Epoch ms for a meeting start, or 0 when missing/unparseable so the sort stays stable. */
+  private meetingStartMs(startTime: string | null | undefined): number {
+    if (!startTime) {
+      return 0;
+    }
+    const ms = new Date(startTime).getTime();
+    return Number.isNaN(ms) ? 0 : ms;
   }
 
   /** "<title> — <Mon D, YYYY>", or just the title when start_time is missing/unparseable. */
