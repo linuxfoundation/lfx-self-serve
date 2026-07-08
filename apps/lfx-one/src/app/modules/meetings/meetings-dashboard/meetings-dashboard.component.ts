@@ -694,8 +694,7 @@ export class MeetingsDashboardComponent {
   private initRecordingsAvailableCount(): Signal<number> {
     return computed(() => {
       const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      return this.rawUserPastMeetings().filter((m) => m.has_recording === true && new Date(m.scheduled_start_time ?? m.start_time).getTime() >= cutoff)
-        .length;
+      return this.rawUserPastMeetings().filter((m) => m.has_recording === true && new Date(m.scheduled_start_time ?? m.start_time).getTime() >= cutoff).length;
     });
   }
 
