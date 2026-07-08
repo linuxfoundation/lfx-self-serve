@@ -125,7 +125,7 @@ function buildDraft(overrides: Partial<Newsletter> = {}): Newsletter {
 }
 
 async function stubManifest(page: Page): Promise<void> {
-  await page.route('**/assets/newsletter-block-manifest.json', (route) =>
+  await page.route('**/api/projects/*/newsletters/templates/*/manifest', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_MANIFEST) })
   );
 }

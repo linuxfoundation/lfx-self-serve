@@ -262,6 +262,17 @@ export interface NewsletterTemplateSource {
   commit: string;
 }
 
+/** One entry in the newsletter service's embedded template catalog. */
+export interface NewsletterTemplateInfo {
+  key: string;
+  label: string;
+}
+
+/** Response of GET /projects/{uid}/newsletters/templates. */
+export interface NewsletterTemplatesResponse {
+  templates: NewsletterTemplateInfo[];
+}
+
 /** A category bucket of palette entries for the block-composer palette. */
 export interface NewsletterBlockPaletteGroup {
   category: string;

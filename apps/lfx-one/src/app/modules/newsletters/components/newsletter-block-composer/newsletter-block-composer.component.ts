@@ -6,7 +6,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, input, OnInit, output, PLATFORM_ID, signal, Signal, untracked, viewChild } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
-import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
+import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
@@ -72,6 +72,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // === Inputs ===
   // Optional initial layout to seed the canvas (e.g. editing an existing draft).
   public readonly initialLayout = input<NewsletterLayout | null>(null);
+  // Which embedded template set drives the palette. Defaults to the full AAIF
+  // set until per-newsletter template selection lands.
+  public readonly templateKey = input<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
 
   // === Outputs ===
   // Emits the current layout whenever the canvas changes.
@@ -190,7 +193,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
     // Browser-only: fetch the palette manifest.
     if (isPlatformBrowser(this.platformId)) {
-      this.manifestService.ensureLoaded().subscribe();
+      this.manifestService.ensureLoaded(this.templateKey()).subscribe();
     }
   }
 

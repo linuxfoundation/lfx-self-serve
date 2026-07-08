@@ -12,6 +12,8 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
   NewsletterSendResult,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -37,6 +39,19 @@ export class NewsletterServiceClient {
 
   public async getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
     return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/${newsletterUid}`, 'GET');
+  }
+
+  public async getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplatesResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/templates`, 'GET');
+  }
+
+  public async getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplateManifest>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`,
+      'GET'
+    );
   }
 
   public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {

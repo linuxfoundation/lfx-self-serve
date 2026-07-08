@@ -163,6 +163,39 @@ export class NewsletterController {
   }
 
   /**
+   * GET /api/projects/:projectUid/newsletters/templates
+   */
+  public async getTemplates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_templates_list', { project_uid: projectUid });
+
+    try {
+      const result = await this.newsletterService.getTemplates(req, projectUid);
+      logger.success(req, 'newsletter_templates_list', startTime, { count: result.templates.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/templates/:templateKey/manifest
+   */
+  public async getTemplateManifest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const templateKey = String(req.params['templateKey'] || '').trim();
+    const startTime = logger.startOperation(req, 'newsletter_template_manifest', { project_uid: projectUid, template_key: templateKey });
+
+    try {
+      const manifest = await this.newsletterService.getTemplateManifest(req, projectUid, templateKey);
+      logger.success(req, 'newsletter_template_manifest', startTime, { template_key: templateKey, block_count: manifest.blocks.length });
+      res.json(manifest);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/projects/:projectUid/newsletters/:newsletterUid
    */
   public async getNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {

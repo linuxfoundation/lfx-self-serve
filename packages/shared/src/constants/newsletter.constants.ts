@@ -51,3 +51,9 @@ export const NEWSLETTER_SPACING_PADDING_KEY = '_spacing_padding';
 export const NEWSLETTER_SPACING_MARGIN_KEY = '_spacing_margin';
 export const NEWSLETTER_SPACING_KEYS = [NEWSLETTER_SPACING_PADDING_KEY, NEWSLETTER_SPACING_MARGIN_KEY] as const;
 export const NEWSLETTER_SPACING_DEFAULT = '0px';
+
+// Default embedded template set the block composer loads when a newsletter
+// has no explicit template selection. Per-newsletter template_key selection
+// is the follow-up; until then the composer uses the full AAIF set (the
+// render superset in the newsletter service).
+export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-user-community';
