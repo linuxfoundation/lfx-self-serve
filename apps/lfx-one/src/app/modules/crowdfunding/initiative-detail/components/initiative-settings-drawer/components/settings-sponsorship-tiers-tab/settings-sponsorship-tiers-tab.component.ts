@@ -56,10 +56,7 @@ export class SettingsSponsorshipTiersTabComponent {
           const saved = init.sponsorshipTiers?.find((t) => t.name === defaultTier.name);
           tiersArray
             .at(i)
-            .patchValue(
-              { enabled: saved?.enabled ?? defaultTier.enabled, goal: saved?.goalCents != null ? saved.goalCents / 100 : null },
-              { emitEvent: false }
-            );
+            .patchValue({ enabled: saved?.enabled ?? defaultTier.enabled, goal: saved?.goalCents ? saved.goalCents / 100 : null }, { emitEvent: false });
 
           const benefits = tiersArray.at(i).get('benefits') as FormArray<FormControl<string>>;
           benefits.clear({ emitEvent: false });
