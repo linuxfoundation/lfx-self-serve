@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { FundType } from '../enums/crowdfunding.enum';
-import {
+import type {
+  AllowedLogoMimeType,
   CrowdfundingInitiativesStats,
   CrowdfundingTransaction,
   CrowdfundingTransactionList,
@@ -12,6 +13,9 @@ import {
   MyDonationsResponse,
   RecurringDonation,
   RecurringDonationsResponse,
+  SponsorshipDonationMode,
+  SponsorshipTier,
+  SponsorshipTierName,
   TopicOption,
 } from '../interfaces/crowdfunding.interface';
 
@@ -101,13 +105,23 @@ export const EMPTY_DONATION_STATS: DonationStats = {
   activeRecurringCount: 0,
 };
 
-export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 export const ALLOWED_LOGO_MIME_TYPES: AllowedLogoMimeType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 
 // Runtime-checkable tuple of every valid initiative status value — used for server-side input validation.
-// Must stay in sync with CrowdfundingInitiativeStatus in crowdfunding.interface.ts.
 export const CROWDFUNDING_INITIATIVE_STATUSES = ['submitted', 'pending', 'published', 'declined', 'hidden'] as const;
+
+// Runtime-checkable tuple of every valid sponsorship tier name — used for server-side input validation.
+export const SPONSORSHIP_TIER_NAMES = ['platinum', 'gold', 'silver', 'bronze'] as const;
+
+// Runtime-checkable tuple of every valid donation mode — used for server-side input validation.
+// Matches the upstream crowdfunding service's donation_mode enum ('tiers', not 'tier').
+export const SPONSORSHIP_DONATION_MODES = ['tiers', 'open'] as const;
+
+export const SPONSORSHIP_DONATION_MODE_OPTIONS: { label: string; value: SponsorshipDonationMode }[] = [
+  { label: 'Sponsorship Tiers', value: 'tiers' },
+  { label: 'Open Donation', value: 'open' },
+];
 
 export const DEFAULT_FUND_DISTRIBUTION: FundDistributionItem[] = [
   {
@@ -152,6 +166,20 @@ export const DEFAULT_FUND_DISTRIBUTION: FundDistributionItem[] = [
     enabled: false,
     percentage: 0,
   },
+];
+
+export const SPONSORSHIP_TIER_LABELS: Record<SponsorshipTierName, string> = {
+  platinum: 'Platinum',
+  gold: 'Gold',
+  silver: 'Silver',
+  bronze: 'Bronze',
+};
+
+export const DEFAULT_SPONSORSHIP_TIERS: SponsorshipTier[] = [
+  { name: 'platinum', enabled: false, benefits: [] },
+  { name: 'gold', enabled: false, benefits: [] },
+  { name: 'silver', enabled: false, benefits: [] },
+  { name: 'bronze', enabled: false, benefits: [] },
 ];
 
 export const CROWDFUNDING_TOPIC_OPTIONS: TopicOption[] = [

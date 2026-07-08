@@ -24,6 +24,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
+import { AkritesEcosystemBadgeComponent } from '../akrites-ecosystem-badge/akrites-ecosystem-badge.component';
 import { StewardInitialsPipe } from '../../pipes/steward-initials.pipe';
 import {
   formatStatus,
@@ -39,6 +40,7 @@ import {
   selector: 'lfx-akrites-packages-tab',
   imports: [
     AkritesAssignStewardModalComponent,
+    AkritesEcosystemBadgeComponent,
     ButtonComponent,
     CheckboxComponent,
     MenuComponent,

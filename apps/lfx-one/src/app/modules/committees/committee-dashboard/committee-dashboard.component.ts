@@ -125,7 +125,7 @@ export class CommitteeDashboardComponent {
     // Initialize data
     this.committees = this.initializeCommittees();
     this.myCommittees = this.initializeMyCommittees();
-    this.myCommitteeUids = computed(() => new Set(this.myCommittees().map((c) => c.uid)));
+    this.myCommitteeUids = this.initializeMyCommitteeUids();
     this.decoratedCommittees = this.initializeDecoratedCommittees();
     this.decoratedMyCommittees = this.initializeDecoratedMyCommittees();
 
@@ -282,10 +282,10 @@ export class CommitteeDashboardComponent {
     const isFoundationContext$ = toObservable(this.isFoundationContext);
     const isMeLens$ = toObservable(this.isMeLens);
 
-    // Resolve the active scope for "my committees":
-    // - Me lens → fetch across all foundations and projects; in-page dropdowns narrow the view.
-    // - Project lens → scope to the active foundation or project.
-    // Reset per-page filters only when the actual scope changes (mode flip or UID change).
+    // Resolve the active scope key so per-page filters reset on scope changes (mode flip or UID change).
+    // - Me lens → full fetch; in-page dropdowns narrow the view.
+    // - Non-me lens → myCommittees returns [] immediately; member-badge UIDs are fetched
+    //   separately via getMyCommitteeUids (see initializeMyCommitteeUids).
     const scope$ = combineLatest([project$, isFoundationContext$, isMeLens$]).pipe(
       map(([project, isFoundation, isMeLens]) => {
         if (isMeLens) {
@@ -302,18 +302,48 @@ export class CommitteeDashboardComponent {
     return toSignal(
       combineLatest([scope$, refresh$]).pipe(
         switchMap(([scope]) => {
-          if (scope.mode !== 'all' && !scope.uid) {
+          if (scope.mode !== 'all') {
+            // Non-me lens: full enrichment is not needed here; UIDs are fetched via getMyCommitteeUids.
             this.myCommitteesLoading.set(false);
             return of([] as MyCommittee[]);
           }
 
           this.myCommitteesLoading.set(true);
-          const projectUid = scope.mode === 'project' ? scope.uid : undefined;
-          const foundationUid = scope.mode === 'foundation' ? scope.uid : undefined;
-          return this.committeeService.getMyCommittees(projectUid, foundationUid).pipe(finalize(() => this.myCommitteesLoading.set(false)));
+          return this.committeeService.getMyCommittees().pipe(finalize(() => this.myCommitteesLoading.set(false)));
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Builds the `myCommitteeUids` signal:
+   * - Me lens: derives from the fully-enriched `myCommittees` signal (no extra HTTP call).
+   * - ED/project lens: fetches only membership UIDs via the lightweight endpoint, skipping
+   *   committee detail and project-enrichment fan-out. The result is only used for member-badge
+   *   rendering in the committee table — full enrichment is not needed.
+   */
+  private initializeMyCommitteeUids(): Signal<Set<string>> {
+    const fromFull$ = toObservable(computed(() => new Set(this.myCommittees().map((c) => c.uid))));
+    const isMeLens$ = toObservable(this.isMeLens);
+    const refresh$ = toObservable(this.refresh);
+    const project$ = toObservable(this.project);
+    const isFoundationContext$ = toObservable(this.isFoundationContext);
+
+    return toSignal(
+      combineLatest([isMeLens$, refresh$, project$, isFoundationContext$]).pipe(
+        switchMap(([isMeLens, , project, isFoundation]) => {
+          if (isMeLens) {
+            return fromFull$;
+          }
+          // In foundation context, committee_member records are tagged with the sub-project's
+          // project_uid, not the foundation UID — passing the foundation UID returns an empty set.
+          // Fetch unscoped to cover all committees across the foundation's sub-projects.
+          const scopeUid = isFoundation ? undefined : project?.uid;
+          return this.committeeService.getMyCommitteeUids(scopeUid).pipe(map((uids) => new Set(uids)));
+        })
+      ),
+      { initialValue: new Set<string>() }
     );
   }
 

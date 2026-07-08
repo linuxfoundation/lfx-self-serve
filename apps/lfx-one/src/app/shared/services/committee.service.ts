@@ -137,7 +137,7 @@ export class CommitteeService {
     return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(take(1));
   }
 
-  /** Submit a join application for a group with join_mode 'application' or 'invite_only' */
+  /** Submit a join application for a group with join_mode 'application' */
   public submitApplication(committeeId: string, message?: string): Observable<CommitteeJoinApplication> {
     const body: CreateCommitteeJoinApplicationRequest = { message: message || '' };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
@@ -213,5 +213,14 @@ export class CommitteeService {
         return of([]);
       })
     );
+  }
+
+  /** Lightweight alternative to {@link getMyCommittees} — returns only UIDs. Use when only set-membership checks (e.g. member badges) are needed. */
+  public getMyCommitteeUids(projectUid?: string): Observable<string[]> {
+    let params = new HttpParams();
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    }
+    return this.http.get<string[]>('/api/committees/my-committee-uids', { params }).pipe(catchError(() => of([])));
   }
 }

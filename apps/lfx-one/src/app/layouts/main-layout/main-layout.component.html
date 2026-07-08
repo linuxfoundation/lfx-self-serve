@@ -5,19 +5,19 @@
 <lfx-impersonation-banner />
 
 <div class="flex min-h-screen" [ngClass]="{ 'pt-12': userService.impersonating() }">
-  <!-- Sidebar - Desktop: lens switcher (64px) + nav panel (280px) = 344px -->
+  <!-- Sidebar - Desktop: lens switcher (48px) + nav panel (300px) = 348px -->
   <div
     class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 bottom-0 z-40"
     [ngClass]="{
       'top-12': userService.impersonating(),
       'top-0': !userService.impersonating(),
     }">
-    <!-- Lens Switcher Column (64px) -->
-    <div class="w-16 flex-shrink-0" data-testid="lens-switcher-column">
-      <lfx-lens-switcher></lfx-lens-switcher>
+    <!-- Lens Switcher Column (48px) -->
+    <div class="w-[48px] flex-shrink-0" data-testid="lens-switcher-column">
+      <lfx-lens-switcher [showLensButtons]="false"></lfx-lens-switcher>
     </div>
-    <!-- Nav Panel (280px) -->
-    <div class="w-[280px] flex-shrink-0">
+    <!-- Nav Panel (300px) -->
+    <div class="w-[300px] flex-shrink-0">
       <lfx-sidebar
         [items]="sidebarItems()"
         [showMeSelector]="activeLens() === 'me'"
@@ -47,7 +47,7 @@
     <!-- Mobile: lens switcher horizontal strip + nav -->
     <div class="flex flex-col h-full">
       <div class="border-b border-gray-100">
-        <lfx-lens-switcher [mobile]="true"></lfx-lens-switcher>
+        <lfx-lens-switcher [mobile]="true" [showLensButtons]="false"></lfx-lens-switcher>
       </div>
       <div class="flex-1 min-h-0">
         <lfx-sidebar
@@ -74,7 +74,7 @@
   }
 
   <!-- Main Content Area -->
-  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-[344px] flex flex-col" data-testid="main-content">
+  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-[348px] flex flex-col" data-testid="main-content">
     <!-- Mobile Menu Button -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"

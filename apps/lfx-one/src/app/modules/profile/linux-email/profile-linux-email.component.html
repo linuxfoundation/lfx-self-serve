@@ -51,6 +51,8 @@
               icon="fa-light fa-cart-shopping"
               severity="info"
               size="small"
+              [disabled]="impersonating()"
+              [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
               (onClick)="purchase()"
               data-testid="linux-email-purchase-button"></lfx-button>
           </div>
@@ -126,7 +128,8 @@
                 icon="fa-light fa-check"
                 severity="info"
                 size="small"
-                [disabled]="claimForm.invalid || claiming()"
+                [disabled]="claimForm.invalid || claiming() || impersonating()"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                 [loading]="claiming()"
                 data-testid="linux-email-claim-button"></lfx-button>
             </form>
@@ -180,7 +183,8 @@
                   icon="fa-light fa-check"
                   severity="info"
                   size="small"
-                  [disabled]="editForm.invalid || savingForward()"
+                  [disabled]="editForm.invalid || savingForward() || impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   [loading]="savingForward()"
                   data-testid="linux-email-forward-save-button"></lfx-button>
               }

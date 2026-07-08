@@ -10,8 +10,8 @@
     </div>
   }
 
-  <!-- Affiliation History Banner (hidden in compact mode) -->
-  @if (!compact() && !isAffiliationHistoryConfirmed()) {
+  <!-- Affiliation History Banner (hidden in compact mode and while impersonating — confirmation is a write) -->
+  @if (!compact() && !isAffiliationHistoryConfirmed() && !impersonating()) {
     <div class="rounded-xl border border-blue-200 bg-blue-50/30 p-6 shadow-sm" data-testid="affiliation-history-banner">
       <div class="flex items-start gap-4">
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
@@ -79,6 +79,8 @@
             severity="secondary"
             [outlined]="true"
             size="small"
+            [disabled]="impersonating()"
+            [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
             (onClick)="navigateToIdentities()"
             data-testid="verify-identities-btn" />
           <lfx-button
@@ -87,6 +89,8 @@
             severity="secondary"
             [outlined]="true"
             size="small"
+            [disabled]="impersonating()"
+            [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
             (onClick)="addWorkExperience.emit()"
             data-testid="add-work-exp-from-affiliations-btn" />
         </div>
@@ -116,7 +120,10 @@
 
                 <!-- Role pill (project-level) -->
                 @if (group.segments[0]; as seg) {
-                  @if (seg.needsConfirmation && seg.roleSource === 'cdp-detected') {
+                  @if (impersonating()) {
+                    <!-- Read-only role during impersonation — no confirm / role-change affordance -->
+                    <lfx-tag [value]="seg.role" severity="info" />
+                  } @else if (seg.needsConfirmation && seg.roleSource === 'cdp-detected') {
                     <button
                       class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-100"
                       (click)="openMaintainerConfirmation(group)"
@@ -153,13 +160,15 @@
                 }
               </div>
             </div>
-            <!-- 3-dot menu -->
+            <!-- 3-dot menu (visible but disabled while impersonating — actions mutate the real account) -->
             <div class="relative">
               <lfx-button
                 icon="fa-solid fa-ellipsis-vertical"
                 [text]="true"
                 [rounded]="true"
                 size="small"
+                [disabled]="impersonating()"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                 styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
                 (onClick)="projectMenu.toggle($event)"
                 [attr.data-testid]="'project-menu-' + group.id" />
@@ -171,7 +180,9 @@
           @if (group.segments.length === 0) {
             <div class="flex items-center pt-3" [attr.data-testid]="'compact-empty-' + group.id">
               <button
-                class="flex cursor-pointer items-center gap-2 text-sm text-slate-400 transition-colors hover:text-blue-600"
+                class="flex items-center gap-2 text-sm text-slate-400 transition-colors enabled:cursor-pointer enabled:hover:text-blue-600 disabled:opacity-50"
+                [disabled]="impersonating()"
+                [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
                 (click)="openSingleProjectTimeline(group)"
                 [attr.data-testid]="'compact-add-affiliation-' + group.id">
                 <i class="fa-light fa-plus-circle text-base"></i>
@@ -260,74 +271,79 @@
 
                     <!-- Role pill (project-level) -->
                     @if (row.group.segments[0]; as seg) {
-                      @switch (seg.roleSource) {
-                        @case ('repo-file') {
-                          <div class="flex items-center gap-1.5">
-                            @if (seg.role === 'Maintainer') {
-                              <div class="relative">
-                                <button
-                                  class="inline-flex w-fit cursor-pointer items-center gap-[2px] overflow-clip rounded-full bg-slate-100 px-1.5 py-0.5 transition-colors hover:bg-slate-200"
+                      @if (impersonating()) {
+                        <!-- Read-only role during impersonation — no confirm / role-change affordance -->
+                        <lfx-tag [value]="seg.role" severity="info" />
+                      } @else {
+                        @switch (seg.roleSource) {
+                          @case ('repo-file') {
+                            <div class="flex items-center gap-1.5">
+                              @if (seg.role === 'Maintainer') {
+                                <div class="relative">
+                                  <button
+                                    class="inline-flex w-fit cursor-pointer items-center gap-[2px] overflow-clip rounded-full bg-slate-100 px-1.5 py-0.5 transition-colors hover:bg-slate-200"
+                                    [pTooltip]="'Role defined in repository configuration file.'"
+                                    tooltipPosition="top"
+                                    (click)="roleMenu.toggle($event)"
+                                    [attr.data-testid]="'role-pill-' + row.group.id">
+                                    <span class="flex items-center gap-1.5">
+                                      <i class="fa-light fa-lock text-xs text-slate-500"></i>
+                                      <span class="shrink-0 text-xs font-semibold text-slate-500">{{ seg.role }}</span>
+                                    </span>
+                                    <i class="fa-light fa-chevron-down text-[8px] text-slate-400"></i>
+                                  </button>
+                                  <lfx-menu #roleMenu [model]="roleMenuItemsMap().get(row.group.id) ?? []" [popup]="true" appendTo="body" />
+                                </div>
+                              } @else {
+                                <div
+                                  class="inline-flex w-fit items-center gap-[2px] overflow-clip rounded-full bg-slate-100 px-1.5 py-0.5"
                                   [pTooltip]="'Role defined in repository configuration file.'"
-                                  tooltipPosition="top"
-                                  (click)="roleMenu.toggle($event)"
-                                  [attr.data-testid]="'role-pill-' + row.group.id">
+                                  tooltipPosition="top">
                                   <span class="flex items-center gap-1.5">
                                     <i class="fa-light fa-lock text-xs text-slate-500"></i>
                                     <span class="shrink-0 text-xs font-semibold text-slate-500">{{ seg.role }}</span>
                                   </span>
-                                  <i class="fa-light fa-chevron-down text-[8px] text-slate-400"></i>
+                                </div>
+                              }
+                              <a
+                                class="flex w-fit items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+                                href="#"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                [attr.data-testid]="'view-source-link-' + row.group.id">
+                                View source
+                                <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
+                              </a>
+                            </div>
+                          }
+                          @case ('cdp-detected') {
+                            @if (seg.needsConfirmation) {
+                              <button
+                                class="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                                (click)="openMaintainerConfirmation(row.group)"
+                                [attr.data-testid]="'confirm-role-' + row.group.id">
+                                <i class="fa-light fa-circle-question text-[10px]"></i>
+                                {{ seg.role }}
+                              </button>
+                            } @else {
+                              <lfx-tag [value]="seg.role" severity="info" />
+                            }
+                          }
+                          @default {
+                            @if (seg.role === 'Maintainer') {
+                              <div class="relative">
+                                <button
+                                  class="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+                                  (click)="roleMenu.toggle($event)"
+                                  [attr.data-testid]="'role-pill-' + row.group.id">
+                                  {{ seg.role }}
+                                  <i class="fa-light fa-chevron-down text-[8px]"></i>
                                 </button>
                                 <lfx-menu #roleMenu [model]="roleMenuItemsMap().get(row.group.id) ?? []" [popup]="true" appendTo="body" />
                               </div>
                             } @else {
-                              <div
-                                class="inline-flex w-fit items-center gap-[2px] overflow-clip rounded-full bg-slate-100 px-1.5 py-0.5"
-                                [pTooltip]="'Role defined in repository configuration file.'"
-                                tooltipPosition="top">
-                                <span class="flex items-center gap-1.5">
-                                  <i class="fa-light fa-lock text-xs text-slate-500"></i>
-                                  <span class="shrink-0 text-xs font-semibold text-slate-500">{{ seg.role }}</span>
-                                </span>
-                              </div>
+                              <lfx-tag [value]="seg.role" severity="info" />
                             }
-                            <a
-                              class="flex w-fit items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900"
-                              href="#"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              [attr.data-testid]="'view-source-link-' + row.group.id">
-                              View source
-                              <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
-                            </a>
-                          </div>
-                        }
-                        @case ('cdp-detected') {
-                          @if (seg.needsConfirmation) {
-                            <button
-                              class="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100"
-                              (click)="openMaintainerConfirmation(row.group)"
-                              [attr.data-testid]="'confirm-role-' + row.group.id">
-                              <i class="fa-light fa-circle-question text-[10px]"></i>
-                              {{ seg.role }}
-                            </button>
-                          } @else {
-                            <lfx-tag [value]="seg.role" severity="info" />
-                          }
-                        }
-                        @default {
-                          @if (seg.role === 'Maintainer') {
-                            <div class="relative">
-                              <button
-                                class="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
-                                (click)="roleMenu.toggle($event)"
-                                [attr.data-testid]="'role-pill-' + row.group.id">
-                                {{ seg.role }}
-                                <i class="fa-light fa-chevron-down text-[8px]"></i>
-                              </button>
-                              <lfx-menu #roleMenu [model]="roleMenuItemsMap().get(row.group.id) ?? []" [popup]="true" appendTo="body" />
-                            </div>
-                          } @else {
-                            <lfx-tag [value]="seg.role" severity="info" />
                           }
                         }
                       }
@@ -346,7 +362,9 @@
             <div class="flex items-center justify-between">
               @if (row.isPlaceholder) {
                 <button
-                  class="flex cursor-pointer items-center gap-2 text-sm text-slate-400 transition-colors hover:text-blue-600"
+                  class="flex items-center gap-2 text-sm text-slate-400 transition-colors enabled:cursor-pointer enabled:hover:text-blue-600 disabled:opacity-50"
+                  [disabled]="impersonating()"
+                  [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
                   (click)="openSingleProjectTimeline(row.group)"
                   [attr.data-testid]="'add-affiliation-' + row.group.id">
                   <i class="fa-light fa-plus-circle text-base"></i>
@@ -373,13 +391,15 @@
                 </div>
               }
 
-              <!-- 3-dot menu -->
+              <!-- 3-dot menu (visible but disabled while impersonating — actions mutate the real account) -->
               <div class="relative">
                 <lfx-button
                   icon="fa-solid fa-ellipsis-vertical"
                   [text]="true"
                   [rounded]="true"
                   size="small"
+                  [disabled]="impersonating()"
+                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                   styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
                   (onClick)="affiliationMenu.toggle($event)"
                   [attr.data-testid]="'affiliation-menu-' + row.segment.id" />

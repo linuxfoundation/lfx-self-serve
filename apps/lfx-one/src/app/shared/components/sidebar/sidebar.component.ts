@@ -6,6 +6,7 @@ import { Component, computed, inject, input, model, Signal, signal } from '@angu
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
+import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
@@ -37,6 +38,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
     RouterModule,
     AvatarComponent,
     BadgeComponent,
+    LensTabsComponent,
     OrgSelectorComponent,
     ProjectSelectorComponent,
     SkeletonModule,

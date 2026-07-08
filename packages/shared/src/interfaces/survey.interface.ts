@@ -88,6 +88,8 @@ export interface Survey {
   /** Survey deadline/cutoff date. May be null when the upstream detail fetch
    * fails and the row is rendered from a stub (see getMySurveys fallback). */
   survey_cutoff_date: string | null;
+  /** Scheduled send date (denormalized from survey_response in Me lens) */
+  survey_send_date?: string | null;
   /** Whether this is an NPS survey */
   is_nps_survey: boolean;
   /** Whether this is a project-level survey */
@@ -182,6 +184,7 @@ export interface SurveyResponseRecord {
   survey_link?: string;
   survey_title: string;
   survey_status: string;
+  survey_send_date?: string;
   survey_cutoff_date?: string;
   is_nps_survey: boolean;
   is_project_survey: boolean;
@@ -554,3 +557,9 @@ export interface SurveyReviewData {
   /** Email body preview */
   emailBodyPreview: string;
 }
+
+/**
+ * Combined survey status type
+ * @description Represents the combined state of survey status and response status
+ */
+export type CombinedSurveyStatus = 'open' | 'submitted' | 'closed';
