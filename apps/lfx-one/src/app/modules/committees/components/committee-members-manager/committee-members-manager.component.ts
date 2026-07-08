@@ -15,6 +15,7 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberState,
   CommitteeMemberWithState,
@@ -78,6 +79,11 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Committee data
   public committee = signal<Committee | null>(null);
 
+  // Invites seen during this wizard session, deduped by email. Used as a fallback source for the
+  // invite-by-email dialog's already-invited dedupe when the live invites fetch fails, so repeat
+  // opens still dedupe against people invited earlier in the session.
+  private sessionInvites: CommitteeInvite[] = [];
+
   // Simple computed signals
   public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted'));
   public readonly memberCount = computed(() => this.visibleMembers().length);
@@ -131,25 +137,29 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public openInviteByEmailDialog(): void {
-    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
-      header: 'Invite by Email',
-      width: '540px',
-      modal: true,
-      closable: true,
-      data: {
-        committee: this.committee(),
-        existingMembers: this.visibleMembers(),
-        existingInvites: [],
-      },
-    }) as DynamicDialogRef;
+    const committeeId = this.committeeId();
+    if (!committeeId) {
+      // No committee yet — nothing to fetch; open with whatever we've accumulated locally.
+      this.openInviteDialog();
+      return;
+    }
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
-      // Invites are sent immediately (POST /invites) and become pending invites, not members,
-      // so they won't appear in this list. Reload anyway to reflect any backend auto-add.
-      if (result === true) {
-        this.initializeMembers();
-      }
-    });
+    // Fetch the current invites so the dialog can dedupe against already-invited emails. On
+    // failure, fall back to the session-accumulated list so repeat opens still dedupe.
+    this.committeeService
+      .getCommitteeInvites(committeeId)
+      .pipe(
+        take(1),
+        catchError((error) => {
+          console.error('Failed to load existing invites, using session fallback:', error);
+          return of(this.sessionInvites);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((invites) => {
+        this.rememberInvites(invites);
+        this.openInviteDialog();
+      });
   }
 
   public openAddMemberDialog(): void {
@@ -244,6 +254,56 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public onSendMessage(member: CommitteeMemberWithState): void {
     if (member?.email) {
       window.open(`mailto:${member.email}`, '_blank');
+    }
+  }
+
+  private openInviteDialog(): void {
+    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
+      header: 'Invite by Email',
+      width: '540px',
+      modal: true,
+      closable: true,
+      data: {
+        committee: this.committee(),
+        existingMembers: this.visibleMembers(),
+        existingInvites: this.sessionInvites,
+      },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+      // Invites are sent immediately (POST /invites) and become pending invites, not members,
+      // so they won't appear in this list. Reload anyway to reflect any backend auto-add.
+      if (result === true) {
+        this.initializeMembers();
+        // Refresh the accumulated invites so a later open still dedupes if the live fetch fails.
+        this.refreshSessionInvites();
+      }
+    });
+  }
+
+  private refreshSessionInvites(): void {
+    const committeeId = this.committeeId();
+    if (!committeeId) return;
+
+    this.committeeService
+      .getCommitteeInvites(committeeId)
+      .pipe(
+        take(1),
+        catchError(() => of([] as CommitteeInvite[])),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((invites) => this.rememberInvites(invites));
+  }
+
+  /** Union new invites into the session list, deduped by normalized email. */
+  private rememberInvites(invites: CommitteeInvite[]): void {
+    const seen = new Set(this.sessionInvites.map((invite) => (invite.invitee_email ?? '').trim().toLowerCase()));
+    for (const invite of invites) {
+      const email = (invite.invitee_email ?? '').trim().toLowerCase();
+      if (email && !seen.has(email)) {
+        seen.add(email);
+        this.sessionInvites = [...this.sessionInvites, invite];
+      }
     }
   }
 
