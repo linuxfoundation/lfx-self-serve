@@ -25,15 +25,11 @@ export interface OrganizationSuggestionsResponse {
 
 /**
  * Organization record from the CDP (Community Data Platform)
- * @description Returned when finding or creating an organization via CDP API
+ * @description Raw shape returned by the CDP API when finding or creating an organization
  */
 export interface CdpOrganization {
-  /**
-   * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
-   * Never a CDP org ID — the resolve endpoint now returns the b2b SFID so committee-service
-   * can forward it to v1-sync-helper without triggering "some organization IDs do not exist".
-   */
-  id: string | null;
+  /** CDP internal organization ID (not a Salesforce SFID — never forward to v1 Project Service) */
+  id: string;
   /** Organization display name */
   name: string;
   /** Organization logo URL */
@@ -41,14 +37,31 @@ export interface CdpOrganization {
 }
 
 /**
+ * Response from the BFF POST /api/organizations/resolve endpoint
+ * @description Distinct from CdpOrganization — the BFF replaces the CDP org ID with the b2b SFID
+ * before returning to the client, so the id field has different semantics.
+ */
+export interface OrganizationResolveResponse {
+  /**
+   * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
+   * Callers that store this as organization.id in committee-service payloads must treat null
+   * as "omit id" so v1-sync-helper falls back to resolveV1OrgID(name, website).
+   */
+  id: string | null;
+  /** Organization display name (may differ from what the user searched) */
+  name: string;
+  /** Organization logo URL */
+  logo: string;
+}
+
+/**
  * Result of resolving an organization through CDP
- * @description Contains the resolved organization details and whether the display name changed
+ * @description Enriched form of OrganizationResolveResponse with name-change metadata
  */
 export interface OrganizationResolveResult {
   /**
    * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
-   * Never a CDP org ID — callers that use this as organization.id in committee-service payloads
-   * must treat null as "omit id" so v1-sync-helper falls back to resolveV1OrgID(name, website).
+   * Sourced from OrganizationResolveResponse.id — treat null as "omit id" in committee-service payloads.
    */
   id: string | null;
   /** CDP display name (may differ from what the user searched) */

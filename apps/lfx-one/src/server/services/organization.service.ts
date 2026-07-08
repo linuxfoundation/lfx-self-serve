@@ -106,7 +106,15 @@ export class OrganizationService {
    * All failures are caught and return null — callers fall back to name+website-only payloads.
    */
   public async resolveB2bSfidByDomain(req: Request, domain: string): Promise<string | null> {
-    const normalizedDomain = domain.includes('://') ? new URL(domain).hostname : domain;
+    let normalizedDomain = domain;
+    if (domain.includes('://')) {
+      try {
+        normalizedDomain = new URL(domain).hostname;
+      } catch {
+        logger.debug(req, 'resolve_b2b_sfid_by_domain', 'Skipping b2b SFID lookup for malformed URL', { domain });
+        return null;
+      }
+    }
 
     // Only query when the domain is a syntactically valid hostname (no colons or other characters
     // that would corrupt the filters_all field:value grammar).
