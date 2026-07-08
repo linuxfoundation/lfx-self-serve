@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize, map, of, switchMap } from 'rxjs';
+import { finalize, map, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-edit-dialog',
@@ -191,6 +191,7 @@ export class ProfileEditDialogComponent {
 
           return this.userService.updateUserProfile(updateData).pipe(map(() => userMetadata));
         }),
+        take(1),
         finalize(() => this.saving.set(false))
       )
       .subscribe({
