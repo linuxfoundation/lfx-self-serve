@@ -47,10 +47,11 @@ export class OrganizationService {
       .pipe(
         map((response) => mergeOrgSuggestions(localMatches, response.suggestions || [])),
         // Even if the upstream call fails, surface the session's remembered orgs
-        // so a just-created org stays selectable.
+        // so a just-created org stays selectable. Run them through the same merge
+        // so the collapse/dedupe applies on the error path too.
         catchError((error) => {
           console.error('Error searching organizations:', error);
-          return of(localMatches);
+          return of(mergeOrgSuggestions(localMatches, []));
         })
       );
   }
