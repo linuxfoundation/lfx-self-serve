@@ -49,10 +49,12 @@ export class OrganizationService {
 
   /**
    * Look up a single organization in CDP by exact name.
-   * Used to resolve an organization's canonical domain. Resolves to null when the
-   * lookup fails or no match is found, so callers can degrade gracefully.
+   * Used to resolve an organization's canonical domain. Emits the organization, or `null` when
+   * CDP confirms no match (the backend responds 200 with a null body on a CDP 404). HTTP/transport
+   * errors are intentionally NOT swallowed — they propagate so callers can distinguish a confirmed
+   * "no match" (safe to treat as no domain) from a failed lookup (must not be treated as a result).
    * @param name - Exact organization name
-   * @returns Observable of the CDP organization, or null
+   * @returns Observable of the CDP organization, or null when there is no match
    */
   public lookupOrganizationByName(name: string): Observable<CdpOrganization | null> {
     const trimmed = name?.trim();
@@ -60,11 +62,6 @@ export class OrganizationService {
       return of(null);
     }
 
-    return this.http.get<CdpOrganization | null>(`${this.baseUrl}/lookup`, { params: { name: trimmed } }).pipe(
-      catchError((error) => {
-        console.error('Error looking up organization by name:', error);
-        return of(null);
-      })
-    );
+    return this.http.get<CdpOrganization | null>(`${this.baseUrl}/lookup`, { params: { name: trimmed } });
   }
 }

@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize, forkJoin, map, take } from 'rxjs';
+import { catchError, finalize, forkJoin, map, of, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-edit-dialog',
@@ -55,8 +55,9 @@ export class ProfileEditDialogComponent {
   public readonly loadingWorkExperiences = signal(true);
   private readonly workExperiences = signal<WorkExperienceEntry[]>([]);
   // Canonical CDP domain per work-history org, prefetched once the options load, keyed by
-  // lowercased org name. An empty-string value means CDP has no domain for that org (used to
-  // clear a stale organization_domain on save). Orgs absent from the map leave it untouched.
+  // lowercased org name. An empty-string value means CDP confirmed no domain for that org
+  // (found-without-domain, or no match) and is used to clear a stale organization_domain on save.
+  // Orgs whose lookup errored are deliberately absent so the save leaves their domain untouched.
   private readonly organizationDomains = signal<Map<string, string>>(new Map());
   public readonly organizationOptions: Signal<{ label: string; value: string }[]> = this.initOrganizationOptions();
   public readonly hasOrganizationOptions: Signal<boolean> = computed(() => this.organizationOptions().length > 0);
@@ -292,8 +293,12 @@ export class ProfileEditDialogComponent {
   /**
    * Prefetch the canonical CDP domain for every unique work-history org so the save flow can read
    * it synchronously (no lookup between selection and the auth-service update). Runs in parallel
-   * across the deduplicated org names; each lookup degrades to '' on miss/error (via the service's
-   * own catchError), which doubles as the explicit clear value for orgs CDP has no domain for.
+   * across the deduplicated org names.
+   *
+   * A resolved lookup maps to the org's domain, or '' when CDP confirms no domain (found-without-
+   * domain or no match) — that '' is the explicit clear value on save. A lookup that errors maps to
+   * null and is filtered out entirely, so a transient CDP failure leaves organization_domain
+   * untouched rather than destructively clearing a previously-stored valid domain.
    */
   private prefetchOrganizationDomains(experiences: WorkExperienceEntry[]): void {
     const uniqueNames = Array.from(new Set(experiences.map((entry) => entry.organization?.trim()).filter((name): name is string => !!name)));
@@ -303,11 +308,16 @@ export class ProfileEditDialogComponent {
     }
 
     forkJoin(
-      uniqueNames.map((name) => this.organizationService.lookupOrganizationByName(name).pipe(map((org) => [name.toLowerCase(), org?.domain || ''] as const)))
+      uniqueNames.map((name) =>
+        this.organizationService.lookupOrganizationByName(name).pipe(
+          map((org) => [name.toLowerCase(), org?.domain || ''] as const),
+          catchError(() => of(null))
+        )
+      )
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((entries) => {
-        this.organizationDomains.set(new Map(entries));
+        this.organizationDomains.set(new Map(entries.filter((entry): entry is [string, string] => entry !== null)));
       });
   }
 
