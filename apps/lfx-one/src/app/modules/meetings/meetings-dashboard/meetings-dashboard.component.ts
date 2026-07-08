@@ -694,7 +694,7 @@ export class MeetingsDashboardComponent {
   private initRecordingsAvailableCount(): Signal<number> {
     return computed(() => {
       const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      return this.rawUserPastMeetings().filter((m) => m.recording_enabled === true && new Date(m.scheduled_start_time ?? m.start_time).getTime() >= cutoff)
+      return this.rawUserPastMeetings().filter((m) => m.has_recording === true && new Date(m.scheduled_start_time ?? m.start_time).getTime() >= cutoff)
         .length;
     });
   }
@@ -726,7 +726,7 @@ export class MeetingsDashboardComponent {
     return computed(() => {
       if (this.activeLens() === 'me') return 0;
       const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      return this.rawFpPastMeetings().filter((m) => m.recording_enabled === true && new Date(m.scheduled_start_time).getTime() >= cutoff).length;
+      return this.rawFpPastMeetings().filter((m) => m.has_recording === true && new Date(m.scheduled_start_time).getTime() >= cutoff).length;
     });
   }
 

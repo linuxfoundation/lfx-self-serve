@@ -286,6 +286,7 @@ export class PublicMeetingController {
             duration: meeting.duration,
             recurrence: meeting.recurrence,
             recording_enabled: meeting.recording_enabled,
+            has_recording: meeting.has_recording,
             transcript_enabled: meeting.transcript_enabled,
             youtube_upload_enabled: meeting.youtube_upload_enabled,
             show_meeting_attendees: meeting.show_meeting_attendees,

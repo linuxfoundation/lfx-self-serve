@@ -679,6 +679,8 @@ export interface PastMeeting extends Meeting {
   sessions: MeetingSession[];
   /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
   user_attended?: boolean;
+  /** Whether a real recording exists for this occurrence — distinct from `recording_enabled` (config flag). */
+  has_recording?: boolean;
 }
 
 /**
