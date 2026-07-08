@@ -100,20 +100,15 @@ export class OrganizationController {
         return;
       }
 
-      // CDP resolve and b2b SFID lookup are independent — run in parallel to halve latency.
-      // resolveB2bSfidByDomain swallows its own failures to null, so a SFID lookup error
-      // does not reject the Promise.all or affect the CDP result.
-      const [org, b2bSfid] = await Promise.all([
-        this.cdpService.resolveOrganization(req, name, domain || '', logo),
-        this.organizationService.resolveB2bSfidByDomain(req, domain || ''),
-      ]);
+      const org = await this.cdpService.resolveOrganization(req, name, domain || '', logo);
 
       logger.success(req, 'resolve_organization', startTime, {
-        has_b2b_sfid: Boolean(b2bSfid),
         organization_name: org.name,
       });
 
-      res.json({ id: b2bSfid, name: org.name, logo: org.logo });
+      // id is always null here — b2b SFID resolution requires committee-service
+      // to call member-service directly (b2b_org is not publicly queryable via query-service).
+      res.json({ id: null, name: org.name, logo: org.logo });
     } catch (error) {
       next(error);
     }
