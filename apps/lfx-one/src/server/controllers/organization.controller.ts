@@ -106,9 +106,10 @@ export class OrganizationController {
         organization_name: org.name,
       });
 
-      // id is always null here — b2b SFID resolution requires committee-service
-      // to call member-service directly (b2b_org is not publicly queryable via query-service).
-      res.json({ id: null, name: org.name, logo: org.logo });
+      // Return the raw CDP org ID so work-experience consumers can store it.
+      // Committee-service consumers must NOT forward this as organization.id —
+      // buildCommitteeOrganizationPayload strips it to null at the payload layer.
+      res.json({ id: org.id, name: org.name, logo: org.logo });
     } catch (error) {
       next(error);
     }

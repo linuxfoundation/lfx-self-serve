@@ -38,14 +38,11 @@ export interface CdpOrganization {
 
 /**
  * Response from the BFF POST /api/organizations/resolve endpoint
- * @description Distinct from CdpOrganization — the BFF replaces the CDP org ID with the b2b SFID
- * before returning to the client, so the id field has different semantics.
  */
 export interface OrganizationResolveResponse {
   /**
-   * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
-   * Callers that store this as organization.id in committee-service payloads must treat null
-   * as "omit id" so v1-sync-helper falls back to resolveV1OrgID(name, website).
+   * Raw CDP org ID. Work-experience consumers may store this; committee-service
+   * consumers must NOT forward it — buildCommitteeOrganizationPayload strips it to null.
    */
   id: string | null;
   /** Organization display name (may differ from what the user searched) */
@@ -60,8 +57,8 @@ export interface OrganizationResolveResponse {
  */
 export interface OrganizationResolveResult {
   /**
-   * b2b Salesforce Account SFID (18-char), or null when no LF member account was found.
-   * Sourced from OrganizationResolveResponse.id — treat null as "omit id" in committee-service payloads.
+   * Raw CDP org ID (sourced from OrganizationResolveResponse.id). Do not forward to
+   * committee-service — buildCommitteeOrganizationPayload strips it to null.
    */
   id: string | null;
   /** CDP display name (may differ from what the user searched) */
