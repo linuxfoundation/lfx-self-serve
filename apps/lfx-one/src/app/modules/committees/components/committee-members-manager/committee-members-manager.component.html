@@ -13,9 +13,11 @@
 
   <div class="flex items-center mb-4">
     <div class="flex items-center gap-3">
+      <lfx-button size="small" label="Invite by email" icon="fa-light fa-envelope" data-testid="invite-by-email-button" (click)="openInviteByEmailDialog()">
+      </lfx-button>
       <lfx-button
         size="small"
-        label="Add Member"
+        label="Add with details"
         icon="fa-light fa-user-plus"
         severity="secondary"
         data-testid="add-member-button"
@@ -32,22 +34,30 @@
       <span class="text-sm text-gray-500" data-testid="stats">{{ votingCount() }} voting</span>
     </div>
 
-    <!-- Search and filters -->
-    <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
-      <div class="flex-1">
-        <lfx-input-text
-          size="small"
+    <!-- Search and filters — only relevant once the group has members to filter -->
+    @if (memberCount() > 0) {
+      <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
+        <div class="flex-1">
+          <lfx-input-text
+            size="small"
+            [form]="searchForm"
+            control="search"
+            placeholder="Filter members…"
+            icon="fa-light fa-search"
+            styleClass="w-full"
+            dataTest="search-input">
+          </lfx-input-text>
+        </div>
+        <lfx-select
           [form]="searchForm"
-          control="search"
-          placeholder="Search members..."
-          icon="fa-light fa-search"
+          control="status"
+          [options]="statusOptions"
+          placeholder="Filter by status"
           styleClass="w-full"
-          dataTest="search-input">
-        </lfx-input-text>
+          data-testid="status-filter">
+        </lfx-select>
       </div>
-      <lfx-select [form]="searchForm" control="status" [options]="statusOptions" placeholder="Filter by status" styleClass="w-full" data-testid="status-filter">
-      </lfx-select>
-    </div>
+    }
 
     <!-- Loading state -->
     @if (loading()) {
