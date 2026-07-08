@@ -261,6 +261,11 @@ export class ProfileController {
         }
       }
 
+      // organization_domain is server-owned: strip any client-supplied value so it can only be
+      // set by the CDP resolution below (and never bypass it when organization is absent or the
+      // lookup fails).
+      delete user_metadata.organization_domain;
+
       // Resolve the organization's canonical CDP domain server-side so every save path — the
       // direct save and the Flow C management-token retry — persists organization_domain
       // consistently. Found → its domain; found-without-domain or no match → '' (which overwrites
