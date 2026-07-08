@@ -9,9 +9,19 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
+import {
+  CustomRecurrencePattern,
+  Meeting,
+  MeetingOccurrence,
+  MeetingRecurrence,
+  MeetingRegistrant,
+  PastMeeting,
+  PastMeetingSummary,
+  QueryServiceItem,
+} from '../interfaces';
 import {
   buildRecurrenceSummary,
+  extractRegistrantEmails,
   normalizeIndexedMeetingAiSummary,
   resolveOccurrenceRecurrence,
   selectPrimaryPastMeetingSummary,
@@ -284,5 +294,39 @@ describe('selectPrimaryPastMeetingSummary', () => {
     ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
+});
+
+/** Builds a minimal MeetingRegistrant fixture; extractRegistrantEmails only reads `email`. */
+function registrant(email: string): MeetingRegistrant {
+  return { email } as MeetingRegistrant;
+}
+
+describe('extractRegistrantEmails', () => {
+  it('returns trimmed emails and counts registrants with no email', () => {
+    const result = extractRegistrantEmails([registrant('a@example.com'), registrant('  b@example.com  '), registrant(''), registrant('   ')]);
+
+    expect(result.emails).toEqual(['a@example.com', 'b@example.com']);
+    expect(result.skippedNoEmail).toBe(2);
+  });
+
+  it('de-duplicates case-insensitively, preserving first-seen casing', () => {
+    const result = extractRegistrantEmails([registrant('Person@Example.com'), registrant('person@example.com'), registrant('PERSON@EXAMPLE.COM')]);
+
+    expect(result.emails).toEqual(['Person@Example.com']);
+    expect(result.skippedNoEmail).toBe(0);
+  });
+
+  it('handles an all-blank roster', () => {
+    const result = extractRegistrantEmails([registrant(''), registrant('  '), registrant(undefined as unknown as string)]);
+
+    expect(result.emails).toEqual([]);
+    expect(result.skippedNoEmail).toBe(3);
+  });
+
+  it('returns an empty result for empty or nullish input', () => {
+    expect(extractRegistrantEmails([])).toEqual({ emails: [], skippedNoEmail: 0 });
+    expect(extractRegistrantEmails(null)).toEqual({ emails: [], skippedNoEmail: 0 });
+    expect(extractRegistrantEmails(undefined)).toEqual({ emails: [], skippedNoEmail: 0 });
   });
 });

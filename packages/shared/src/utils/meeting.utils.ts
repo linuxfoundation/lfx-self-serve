@@ -9,11 +9,13 @@ import {
   Meeting,
   MeetingOccurrence,
   MeetingRecurrence,
+  MeetingRegistrant,
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
   QueryServiceItem,
   RecurrenceSummary,
+  RegistrantEmailExtraction,
   SummaryData,
   TranscriptCue,
   User,
@@ -48,6 +50,35 @@ export function isRecurrenceNeverEndSentinel(endDateTime: string | null | undefi
   const end = new Date(endDateTime).getTime();
   if (!Number.isFinite(end)) return false;
   return end - Date.now() >= FIFTY_YEARS_MS;
+}
+
+/**
+ * Pulls invite-ready emails off a meeting's registrant list (LFXV2-2607).
+ * Trims each email, drops blanks (counting them as skipped so the UI can report
+ * "N registrants had no email"), and de-duplicates case-insensitively while
+ * preserving the first-seen casing. The caller feeds `emails` into the existing
+ * invite dedupe/fan-out, so this deliberately does no member/invite matching.
+ */
+export function extractRegistrantEmails(registrants: MeetingRegistrant[] | null | undefined): RegistrantEmailExtraction {
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  let skippedNoEmail = 0;
+
+  for (const registrant of registrants ?? []) {
+    const email = (registrant?.email ?? '').trim();
+    if (!email) {
+      skippedNoEmail++;
+      continue;
+    }
+    const key = email.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    emails.push(email);
+  }
+
+  return { emails, skippedNoEmail };
 }
 
 /**
