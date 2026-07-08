@@ -1424,7 +1424,7 @@ export class CommitteeService {
    * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
    * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
    */
-  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+  public async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
     const unique = Array.from(new Set(uids)).filter(Boolean);
     if (unique.length === 0) return new Map();
 

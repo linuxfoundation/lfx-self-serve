@@ -11,6 +11,9 @@ const pastMeetingController = new PastMeetingController();
 // Past meeting routes
 router.get('/', (req, res, next) => pastMeetingController.getPastMeetings(req, res, next));
 
+// GET /past-meetings/count - get past meetings count
+router.get('/count', (req, res, next) => pastMeetingController.getPastMeetingsCount(req, res, next));
+
 // Get past meeting participants by UID
 router.get('/:uid/participants', (req, res, next) => pastMeetingController.getPastMeetingParticipants(req, res, next));
 

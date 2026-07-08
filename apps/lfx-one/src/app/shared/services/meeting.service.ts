@@ -160,6 +160,17 @@ export class MeetingService {
       );
   }
 
+  public getPastMeetingsCountByProject(uid: string): Observable<number> {
+    const params = new HttpParams().set('tags', `project_uid:${uid}`);
+    return this.http.get<QueryServiceCountResponse>('/api/past-meetings/count', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load past meetings count:', error);
+        return of({ count: 0 });
+      }),
+      map((response) => response.count)
+    );
+  }
+
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
     return this.getMeetingsByProject(uid, 'updated_at.desc');
   }
