@@ -173,8 +173,8 @@
       data-testid="add-member-cancel"></lfx-button>
 
     <lfx-button
-      label="Send Invites"
-      icon="fa-light fa-paper-plane"
+      [label]="collectOnly ? 'Add to invitations' : 'Send Invites'"
+      [icon]="collectOnly ? 'fa-light fa-list-check' : 'fa-light fa-paper-plane'"
       [loading]="submitting()"
       [disabled]="!canSubmit() || submitting()"
       (onClick)="onSubmit()"

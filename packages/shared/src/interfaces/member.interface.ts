@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
-import { CommitteePermissionLevel } from './committee.interface';
+import { CommitteePermissionLevel, CreateCommitteeInviteRequest } from './committee.interface';
 
 /**
  * Committee member entity with complete profile and role information
@@ -175,4 +175,10 @@ export interface MemberPendingChanges {
   toUpdate: { uid: string; changes: CreateCommitteeMemberRequest }[];
   /** Member UIDs to be deleted via API */
   toDelete: string[];
+  /**
+   * Bulk email invites staged during the create-group wizard. Collected client-side and
+   * flushed on wizard completion (POST /invites) — never sent immediately, so cancelling
+   * the wizard sends nothing (LFXV2-2606).
+   */
+  toInvite: CreateCommitteeInviteRequest[];
 }
