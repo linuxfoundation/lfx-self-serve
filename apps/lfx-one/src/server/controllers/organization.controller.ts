@@ -100,11 +100,13 @@ export class OrganizationController {
         return;
       }
 
-      const org = await this.cdpService.resolveOrganization(req, name, domain || '', logo);
-
-      // Look up the b2b Salesforce SFID by domain so committee-service payloads carry a valid
-      // v1 organization ID. Failures are soft — null falls back to name+website-only resolution.
-      const b2bSfid = await this.organizationService.resolveB2bSfidByDomain(req, domain || '');
+      // CDP resolve and b2b SFID lookup are independent — run in parallel to halve latency.
+      // resolveB2bSfidByDomain swallows its own failures to null, so a SFID lookup error
+      // does not reject the Promise.all or affect the CDP result.
+      const [org, b2bSfid] = await Promise.all([
+        this.cdpService.resolveOrganization(req, name, domain || '', logo),
+        this.organizationService.resolveB2bSfidByDomain(req, domain || ''),
+      ]);
 
       logger.success(req, 'resolve_organization', startTime, {
         has_b2b_sfid: Boolean(b2bSfid),
