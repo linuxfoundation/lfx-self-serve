@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PAST_MEETING_SORT } from '../constants/meeting.constants';
+import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import { TagSeverity } from './components.interface';
 
