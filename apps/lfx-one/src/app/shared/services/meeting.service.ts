@@ -42,7 +42,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -51,6 +51,7 @@ export class MeetingService {
   public meeting: WritableSignal<Meeting | null> = signal(null);
 
   private readonly http = inject(HttpClient);
+  private readonly pastMeetingRecordingCache = new Map<string, Observable<PastMeetingRecording>>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -411,7 +412,11 @@ export class MeetingService {
   }
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
-    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+    if (!this.pastMeetingRecordingCache.has(pastMeetingUid)) {
+      const recording$ = this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`).pipe(shareReplay(1));
+      this.pastMeetingRecordingCache.set(pastMeetingUid, recording$);
+    }
+    return this.pastMeetingRecordingCache.get(pastMeetingUid)!;
   }
 
   public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
