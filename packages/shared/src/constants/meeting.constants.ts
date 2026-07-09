@@ -521,6 +521,14 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
 
+/**
+ * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
+ */
+export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
+
+/** Session cache TTL for past-meeting recording fetches; balances dedupe vs post-processing staleness. */
+export const PAST_MEETING_RECORDING_CACHE_TTL_MS = 5 * 60 * 1000;
+
 // ============================================================================
 // Past Meeting Sort Values
 // ============================================================================

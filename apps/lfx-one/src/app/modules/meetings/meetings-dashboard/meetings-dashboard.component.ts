@@ -13,9 +13,17 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { CANCELLED_COLOR, MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import {
+  addMinutesToDate,
+  getCurrentOrNextOccurrence,
+  getLargestSessionShareUrl,
+  getPastMeetingResourceId,
+  getPastMeetingStartTimeMs,
+  hasMeetingEnded,
+  sortPastMeetingsDescending,
+} from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -34,8 +42,11 @@ import {
   EMPTY,
   expand,
   finalize,
+  from,
   map,
   merge,
+  mergeMap,
+  Observable,
   of,
   scan,
   Subject,
@@ -118,6 +129,9 @@ export class MeetingsDashboardComponent {
 
   private fpUpcomingLoading = signal(false);
   private fpPastLoading = signal(false);
+  // Per-lens loading flags so Me/FP recording-count pipelines cannot clobber each other on lens switch.
+  protected readonly meRecordingsCountLoading = signal(false);
+  protected readonly fpRecordingsCountLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
@@ -236,6 +250,7 @@ export class MeetingsDashboardComponent {
   public refreshMeetings(): void {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
+    this.meetingService.clearPastMeetingRecordingCache();
     this.refresh$.next();
   }
 
@@ -545,9 +560,14 @@ export class MeetingsDashboardComponent {
           }
           this.pastMeetingsLoading.set(true);
           return this.userService.getUserPastMeetings().pipe(
-            tap(() => this.pastMeetingsLoading.set(false)),
+            tap((meetings) => {
+              this.pastMeetingsLoading.set(false);
+              const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+              this.meRecordingsCountLoading.set(this.filterRecentPastMeetings(meetings, cutoff).length > 0);
+            }),
             catchError(() => {
               this.pastMeetingsLoading.set(false);
+              this.meRecordingsCountLoading.set(false);
               return of([] as PastMeeting[]);
             })
           );
@@ -691,12 +711,49 @@ export class MeetingsDashboardComponent {
     });
   }
 
-  private initRecordingsAvailableCount(): Signal<number> {
-    return computed(() => {
-      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      return this.rawUserPastMeetings().filter((m) => m.recording_enabled === true && new Date(m.scheduled_start_time ?? m.start_time).getTime() >= cutoff)
-        .length;
+  // Availability is derived live from the recording resource (the same source "See Recording"
+  // uses) rather than a stored flag, so the count can never disagree with the buttons. The
+  // 30-day window bounds the per-meeting recording fetches.
+  private countMeetingsWithRecording(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<number> {
+    const ids = meetings.map((m) => getPastMeetingResourceId(m));
+    if (ids.length === 0) {
+      loading.set(false);
+      return of(0);
+    }
+    loading.set(true);
+    return from(ids).pipe(
+      mergeMap(
+        (id) =>
+          this.meetingService.getPastMeetingRecording(id).pipe(
+            map((rec) => (getLargestSessionShareUrl(rec) ? 1 : 0)),
+            catchError(() => of(0))
+          ),
+        MEETING_RECORDING_COUNT_FETCH_CONCURRENCY
+      ),
+      toArray(),
+      map((flags) => flags.reduce((a, b) => a + b, 0)),
+      finalize(() => loading.set(false))
+    );
+  }
+
+  private filterRecentPastMeetings(past: PastMeeting[], cutoff: number): PastMeeting[] {
+    return past.filter((m) => {
+      const startMs = getPastMeetingStartTimeMs(m);
+      return startMs !== null && startMs >= cutoff;
     });
+  }
+
+  private initRecordingsAvailableCount(): Signal<number> {
+    return toSignal(
+      combineLatest([toObservable(this.activeLens), toObservable(this.rawUserPastMeetings)]).pipe(
+        switchMap(([lens, past]) => {
+          if (lens !== 'me') return of(0);
+          const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.meRecordingsCountLoading);
+        })
+      ),
+      { initialValue: 0 }
+    );
   }
 
   private initAttendanceRate(): Signal<number> {
@@ -723,11 +780,16 @@ export class MeetingsDashboardComponent {
   }
 
   private initFpRecordingsAvailableCount(): Signal<number> {
-    return computed(() => {
-      if (this.activeLens() === 'me') return 0;
-      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      return this.rawFpPastMeetings().filter((m) => m.recording_enabled === true && new Date(m.scheduled_start_time).getTime() >= cutoff).length;
-    });
+    return toSignal(
+      combineLatest([toObservable(this.activeLens), toObservable(this.rawFpPastMeetings)]).pipe(
+        switchMap(([lens, past]) => {
+          if (lens === 'me') return of(0);
+          const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.fpRecordingsCountLoading);
+        })
+      ),
+      { initialValue: 0 }
+    );
   }
 
   private initializeRawFpUpcomingMeetings(): Signal<Meeting[]> {
@@ -788,7 +850,14 @@ export class MeetingsDashboardComponent {
             take(10),
             toArray(),
             map((responses) => responses.flatMap((r) => r.data)),
-            catchError(() => of([] as PastMeeting[])),
+            tap((meetings) => {
+              const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+              this.fpRecordingsCountLoading.set(this.filterRecentPastMeetings(meetings, cutoff).length > 0);
+            }),
+            catchError(() => {
+              this.fpRecordingsCountLoading.set(false);
+              return of([] as PastMeeting[]);
+            }),
             finalize(() => this.fpPastLoading.set(false))
           );
         })
