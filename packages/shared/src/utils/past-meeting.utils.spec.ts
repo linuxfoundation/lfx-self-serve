@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { EnrichedPastMeetingParticipant } from '../interfaces';
-import { filterPastMeetingParticipants } from './past-meeting.utils';
+import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
+import { filterPastMeetingParticipants, getLargestSessionShareUrl } from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
 function participant(partial: Partial<EnrichedPastMeetingParticipant>): EnrichedPastMeetingParticipant {
@@ -143,5 +143,62 @@ describe('filterPastMeetingParticipants', () => {
 
   it('returns an empty list when given no participants', () => {
     expect(filterPastMeetingParticipants([], { search: 'ada' })).toEqual([]);
+  });
+});
+
+/** Builds a RecordingSession fixture; tests set only total_size / share_url. */
+function session(partial: Partial<RecordingSession>): RecordingSession {
+  return {
+    start_time: partial.start_time ?? '2024-01-01T00:00:00Z',
+    share_url: partial.share_url ?? '',
+    total_size: partial.total_size ?? 0,
+    uuid: partial.uuid ?? 'session-uuid',
+  };
+}
+
+/** Builds a PastMeetingRecording fixture around a given set of sessions. */
+function recording(sessions: RecordingSession[]): PastMeetingRecording {
+  return {
+    uid: 'rec-1',
+    past_meeting_id: 'past-1',
+    platform: 'Zoom',
+    platform_meeting_id: '123',
+    recording_count: sessions.length,
+    recording_files: [],
+    sessions,
+    total_size: sessions.reduce((sum, s) => sum + s.total_size, 0),
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  };
+}
+
+describe('getLargestSessionShareUrl', () => {
+  it('returns null for a null recording', () => {
+    expect(getLargestSessionShareUrl(null)).toBeNull();
+  });
+
+  it('returns null when there are no sessions', () => {
+    expect(getLargestSessionShareUrl(recording([]))).toBeNull();
+  });
+
+  it('returns null when no session has a share URL', () => {
+    expect(getLargestSessionShareUrl(recording([session({ total_size: 100 }), session({ total_size: 200 })]))).toBeNull();
+  });
+
+  it('returns the share URL of the largest session by total_size', () => {
+    const rec = recording([
+      session({ total_size: 100, share_url: 'https://small.example' }),
+      session({ total_size: 500, share_url: 'https://largest.example' }),
+      session({ total_size: 300, share_url: 'https://medium.example' }),
+    ]);
+    expect(getLargestSessionShareUrl(rec)).toBe('https://largest.example');
+  });
+
+  it('returns null when the largest session has an empty share URL, even if a smaller one has one', () => {
+    const rec = recording([
+      session({ total_size: 100, share_url: 'https://small.example' }),
+      session({ total_size: 500, share_url: '' }),
+    ]);
+    expect(getLargestSessionShareUrl(rec)).toBeNull();
   });
 });

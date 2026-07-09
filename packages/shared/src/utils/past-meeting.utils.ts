@@ -1,7 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EnrichedPastMeetingParticipant, PastParticipantFilters } from '../interfaces';
+import { EnrichedPastMeetingParticipant, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
+
+// Largest recording session (by total_size) is canonical; a recording "exists" only if that
+// session has a shareable URL. Single source of truth for recording availability.
+export function getLargestSessionShareUrl(recording: PastMeetingRecording | null): string | null {
+  if (!recording?.sessions?.length) {
+    return null;
+  }
+  const largest = recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
+  return largest.share_url || null;
+}
 
 /**
  * Filters past-meeting participants by search, attendance, invitation, and committee group.

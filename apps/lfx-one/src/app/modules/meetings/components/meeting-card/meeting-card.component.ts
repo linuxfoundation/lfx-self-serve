@@ -41,6 +41,7 @@ import {
   resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
+  getLargestSessionShareUrl,
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
@@ -443,18 +444,6 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private getLargestSessionShareUrl(recording: PastMeetingRecording): string | null {
-    if (!recording.sessions || recording.sessions.length === 0) {
-      return null;
-    }
-
-    const largestSession = recording.sessions.reduce((largest, current) => {
-      return current.total_size > largest.total_size ? current : largest;
-    });
-
-    return largestSession.share_url || null;
-  }
-
   private showCancelOccurrenceModal(meeting: Meeting): void {
     // Prefer the explicitly selected/current occurrence; fallback to next active
     const occurrenceToCancel = this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
@@ -693,7 +682,7 @@ export class MeetingCardComponent implements OnInit {
   private initRecordingShareUrl(): Signal<string | null> {
     return computed(() => {
       const recording = this.recording();
-      return recording ? this.getLargestSessionShareUrl(recording) : null;
+      return recording ? getLargestSessionShareUrl(recording) : null;
     });
   }
 

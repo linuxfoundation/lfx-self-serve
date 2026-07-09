@@ -203,7 +203,7 @@
                   <!-- Feature Badges Row -->
                   <div class="flex flex-wrap gap-2 items-center">
                     <!-- Recording Badge -->
-                    @if (meeting().recording_enabled) {
+                    @if (showRecordingBadge()) {
                       <lfx-tag
                         value="Recording"
                         severity="secondary"
