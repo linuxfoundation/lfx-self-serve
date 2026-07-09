@@ -481,7 +481,7 @@ export class MeetingJoinComponent implements OnInit {
 
   public openTranscriptModal(): void {
     const meeting = this.meeting();
-    if (!meeting?.id) return;
+    if (!meeting) return;
 
     this.dialogService.open(TranscriptModalComponent, {
       header: 'Transcript',
@@ -489,7 +489,7 @@ export class MeetingJoinComponent implements OnInit {
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: { pastMeetingUid: meeting.id, meetingTitle: meeting.title },
+      data: { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title },
     });
   }
 
