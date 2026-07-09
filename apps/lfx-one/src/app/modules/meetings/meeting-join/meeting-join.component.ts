@@ -29,6 +29,7 @@ import {
   Meeting,
   MEETING_TYPE_CONFIGS,
   getLargestSessionShareUrl,
+  getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   MeetingAttachment,
   MeetingOccurrence,
@@ -406,7 +407,7 @@ export class MeetingJoinComponent implements OnInit {
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
     const download$ = this.loadedViaPastMeetingId()
-      ? this.meetingService.getPastMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid)
+      ? this.meetingService.getPastMeetingAttachmentDownloadUrl(getPastMeetingResourceId(this.meeting()), attachment.uid)
       : this.meetingService.getMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid);
     download$.pipe(take(1)).subscribe({
       next: (res) => {
@@ -1064,8 +1065,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
-          return this.meetingService.getPastMeetingSummary(meeting.id).pipe(catchError(() => of(null)));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingSummary(id).pipe(catchError(() => of(null)));
         })
       ),
       { initialValue: null }
@@ -1076,8 +1078,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
-          return this.meetingService.getPastMeetingRecording(meeting.id).pipe(catchError(() => of(null)));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingRecording(id).pipe(catchError(() => of(null)));
         })
       ),
       { initialValue: null }
@@ -1088,8 +1091,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
-          return this.meetingService.getPastMeetingAttachments(meeting.id).pipe(catchError(() => of([] as PastMeetingAttachment[])));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
+          return this.meetingService.getPastMeetingAttachments(id).pipe(catchError(() => of([] as PastMeetingAttachment[])));
         })
       ),
       { initialValue: [] }
@@ -1100,8 +1104,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
-          return this.meetingService.getPastMeetingParticipants(meeting.id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
+          return this.meetingService.getPastMeetingParticipants(id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
         })
       ),
       { initialValue: [] }
@@ -1131,8 +1136,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
-          return this.meetingService.getPastMeetingTranscript(meeting.id).pipe(
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingTranscript(id).pipe(
             map((transcript) => getPastMeetingTranscriptUrl(transcript)),
             catchError(() => of(null))
           );

@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
-import { LINKEDIN_PROFILE_PATTERN } from '@lfx-one/shared/constants';
+import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_RECORDING_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
@@ -51,7 +51,7 @@ export class MeetingService {
   public meeting: WritableSignal<Meeting | null> = signal(null);
 
   private readonly http = inject(HttpClient);
-  private readonly pastMeetingRecordingCache = new Map<string, Observable<PastMeetingRecording>>();
+  private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -416,13 +416,18 @@ export class MeetingService {
   }
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
-    if (!this.pastMeetingRecordingCache.has(pastMeetingUid)) {
-      const recording$ = this.http
-        .get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`)
-        .pipe(tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }), shareReplay(1));
-      this.pastMeetingRecordingCache.set(pastMeetingUid, recording$);
+    const cached = this.pastMeetingRecordingCache.get(pastMeetingUid);
+    if (cached && Date.now() - cached.cachedAt < PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+      return cached.observable;
     }
-    return this.pastMeetingRecordingCache.get(pastMeetingUid)!;
+    if (cached) {
+      this.pastMeetingRecordingCache.delete(pastMeetingUid);
+    }
+    const recording$ = this.http
+      .get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`)
+      .pipe(tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }), shareReplay(1));
+    this.pastMeetingRecordingCache.set(pastMeetingUid, { observable: recording$, cachedAt: Date.now() });
+    return recording$;
   }
 
   public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
