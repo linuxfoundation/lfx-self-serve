@@ -25,3 +25,11 @@ export const NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH = 20_000;
 // caps bodyHtml at 100k chars, so we still have room before the schema
 // pushes back).
 export const NEWSLETTER_AI_MAX_TOKENS = 12_000;
+
+// Per-request timeout for the send endpoint, overriding the API client's 30s
+// default. The new upstream accepts sends in well under a second (202 +
+// background fan-out), but while a pre-async newsletter-service is deployed
+// the synchronous fan-out for large audiences can run several minutes — the
+// AAIF incident (LFXV2-2604) measured 37-41s for ~500 recipients, past the
+// 30s abort, so the UI reported failure for sends that actually delivered.
+export const NEWSLETTER_SEND_TIMEOUT_MS = 120_000;

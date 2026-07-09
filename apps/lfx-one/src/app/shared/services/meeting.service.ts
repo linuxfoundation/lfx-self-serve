@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
-import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_RECORDING_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_RECORDING_CACHE_TTL_MS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
@@ -29,6 +29,7 @@ import {
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
+  PastMeetingSort,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
   PastMeetingSummary,
@@ -135,7 +136,7 @@ export class MeetingService {
    * (e.g. `updated_desc`). The `order` param with dot-notation is only for `/api/meetings`
    * which proxies to the meeting service.
    */
-  public getPastMeetingsByCommittee(committeeId: string, sort?: string): Observable<PastMeeting[]> {
+  public getPastMeetingsByCommittee(committeeId: string, sort?: PastMeetingSort): Observable<PastMeeting[]> {
     let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
 
     if (sort) {
@@ -174,7 +175,7 @@ export class MeetingService {
   }
 
   public getPastMeetingsByProject(uid: string): Observable<PastMeeting[]> {
-    const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', 'name_desc');
+    const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
 
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
@@ -210,7 +211,7 @@ export class MeetingService {
     searchName?: string,
     filters?: string[]
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', 'name_desc');
+    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }

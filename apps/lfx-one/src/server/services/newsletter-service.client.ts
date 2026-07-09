@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NEWSLETTER_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
   Newsletter,
@@ -80,11 +81,14 @@ export class NewsletterServiceClient {
   }
 
   /**
-   * Send a previously-saved newsletter draft. The Go service mints group_id,
-   * resolves recipients, fans out to email-service, and persists the status
-   * transition. The sender's display name is resolved server-side from the
+   * Send a previously-saved newsletter draft. The Go service transitions the
+   * draft to status='sending' (202) and completes the per-recipient fan-out in
+   * a detached background job — callers branch on `newsletter.status` in the
+   * response body. The sender's display name is resolved server-side from the
    * signed JWT principal via the auth-service NATS lookup — Express forwards
-   * only the bearer token and the If-Match version.
+   * only the bearer token and the If-Match version. The extended per-request
+   * timeout covers pre-async upstream deployments whose synchronous fan-out
+   * can exceed the client's 30s default (LFXV2-2604).
    */
   public async sendNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterSendResult> {
     return this.microserviceProxy.proxyRequest<NewsletterSendResult>(
@@ -94,7 +98,8 @@ export class NewsletterServiceClient {
       'POST',
       undefined,
       {},
-      { 'If-Match': `"${ifMatchVersion}"` }
+      { 'If-Match': `"${ifMatchVersion}"` },
+      { timeoutMs: NEWSLETTER_SEND_TIMEOUT_MS }
     );
   }
 
