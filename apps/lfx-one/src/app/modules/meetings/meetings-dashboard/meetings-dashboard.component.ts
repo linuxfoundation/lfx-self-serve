@@ -129,8 +129,9 @@ export class MeetingsDashboardComponent {
 
   private fpUpcomingLoading = signal(false);
   private fpPastLoading = signal(false);
-  // True while per-meeting recording fetches for the "Recordings Available" stat are in flight.
-  protected readonly recordingsCountLoading = signal(false);
+  // Per-lens loading flags so Me/FP recording-count pipelines cannot clobber each other on lens switch.
+  protected readonly meRecordingsCountLoading = signal(false);
+  protected readonly fpRecordingsCountLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
@@ -708,13 +709,13 @@ export class MeetingsDashboardComponent {
   // Availability is derived live from the recording resource (the same source "See Recording"
   // uses) rather than a stored flag, so the count can never disagree with the buttons. The
   // 30-day window bounds the per-meeting recording fetches.
-  private countMeetingsWithRecording(meetings: PastMeeting[]): Observable<number> {
+  private countMeetingsWithRecording(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<number> {
     const ids = meetings.map((m) => getPastMeetingResourceId(m)).filter((id): id is string => !!id);
     if (ids.length === 0) {
-      this.recordingsCountLoading.set(false);
+      loading.set(false);
       return of(0);
     }
-    this.recordingsCountLoading.set(true);
+    loading.set(true);
     return from(ids).pipe(
       mergeMap(
         (id) =>
@@ -726,7 +727,7 @@ export class MeetingsDashboardComponent {
       ),
       toArray(),
       map((flags) => flags.reduce((a, b) => a + b, 0)),
-      finalize(() => this.recordingsCountLoading.set(false))
+      finalize(() => loading.set(false))
     );
   }
 
@@ -743,7 +744,7 @@ export class MeetingsDashboardComponent {
         switchMap(([lens, past]) => {
           if (lens !== 'me') return of(0);
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff));
+          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.meRecordingsCountLoading);
         })
       ),
       { initialValue: 0 }
@@ -779,7 +780,7 @@ export class MeetingsDashboardComponent {
         switchMap(([lens, past]) => {
           if (lens === 'me') return of(0);
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff));
+          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.fpRecordingsCountLoading);
         })
       ),
       { initialValue: 0 }
