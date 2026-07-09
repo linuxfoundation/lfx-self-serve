@@ -416,15 +416,6 @@ export class MeetingService {
     this.pastMeetingRecordingCache.clear();
   }
 
-  private pruneExpiredPastMeetingRecordingCache(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.pastMeetingRecordingCache) {
-      if (now - entry.cachedAt >= PAST_MEETING_RECORDING_CACHE_TTL_MS) {
-        this.pastMeetingRecordingCache.delete(key);
-      }
-    }
-  }
-
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
     this.pruneExpiredPastMeetingRecordingCache();
     const cached = this.pastMeetingRecordingCache.get(pastMeetingUid);
@@ -599,5 +590,14 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  private pruneExpiredPastMeetingRecordingCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.pastMeetingRecordingCache) {
+      if (now - entry.cachedAt >= PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+        this.pastMeetingRecordingCache.delete(key);
+      }
+    }
   }
 }
