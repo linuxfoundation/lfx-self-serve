@@ -261,31 +261,6 @@ export class ProfileController {
         }
       }
 
-      // organization_domain is server-owned: strip any client-supplied value so it can only be
-      // set by the CDP resolution below (and never bypass it when organization is absent or the
-      // lookup fails).
-      delete user_metadata.organization_domain;
-
-      // Resolve the organization's canonical CDP domain server-side so every save path — the
-      // direct save and the Flow C management-token retry — persists organization_domain
-      // consistently. Found → its domain; found-without-domain or no match → '' (which overwrites
-      // and thereby clears a stale value); a transient CDP lookup error leaves the field unset so
-      // we never clobber a previously-stored valid domain. The frontend no longer sends this field.
-      if (user_metadata.organization) {
-        const organizationName = user_metadata.organization.trim();
-        if (organizationName) {
-          try {
-            const organization = await this.cdpService.findOrganizationByName(req, organizationName);
-            user_metadata.organization_domain = organization?.domain || '';
-          } catch (error) {
-            logger.warning(req, 'resolve_organization_domain', 'CDP domain lookup failed; leaving organization_domain unchanged', {
-              organization: organizationName,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            });
-          }
-        }
-      }
-
       // Determine which token to use for the auth-service:
       // - Auth0 with Flow C configured: use user-scoped management token from session
       // - Authelia (local dev) or Flow C not configured: fall back to M2M token
@@ -315,6 +290,32 @@ export class ProfileController {
         // Authelia (local dev) or Flow C not configured: Keep M2M token fallback
         const authServiceAudience = new URL('api/v2/', issuerBaseUrl).toString();
         token = await generateM2MToken(req, { audience: authServiceAudience });
+      }
+
+      // organization_domain is server-owned: strip any client-supplied value so it can only be set
+      // by the CDP resolution below (and never bypass it when organization is absent or the lookup
+      // fails). Resolved after the token gate so the Flow C 403 challenge doesn't trigger a CDP
+      // lookup that would be discarded and re-run on the client's retry.
+      delete user_metadata.organization_domain;
+
+      // Resolve the organization's canonical CDP domain server-side so every save path — the
+      // direct save and the Flow C management-token retry — persists organization_domain
+      // consistently. Found → its domain; found-without-domain or no match → '' (which overwrites
+      // and thereby clears a stale value); a transient CDP lookup error leaves the field unset so
+      // we never clobber a previously-stored valid domain. The frontend no longer sends this field.
+      if (user_metadata.organization) {
+        const organizationName = user_metadata.organization.trim();
+        if (organizationName) {
+          try {
+            const organization = await this.cdpService.findOrganizationByName(req, organizationName);
+            user_metadata.organization_domain = organization?.domain || '';
+          } catch (error) {
+            logger.warning(req, 'resolve_organization_domain', 'CDP domain lookup failed; leaving organization_domain unchanged', {
+              organization: organizationName,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        }
       }
 
       const updateRequest: UserMetadataUpdateRequest = {
