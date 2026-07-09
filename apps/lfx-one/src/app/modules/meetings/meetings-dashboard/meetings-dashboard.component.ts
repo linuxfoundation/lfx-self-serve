@@ -209,9 +209,7 @@ export class MeetingsDashboardComponent {
     // Me lens stat cards (computed from shared sorted upcoming signal).
     // Only look at the active tab's loading signal — the inactive tab's raw fetch is gated off,
     // so its loading flag stays pinned at its initial `true` and would never resolve.
-    this.meLensStatsLoading = computed(() =>
-      this.timeFilter() === 'past' ? this.pastMeetingsLoading() : this.meetingsLoading()
-    );
+    this.meLensStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.pastMeetingsLoading() : this.meetingsLoading()));
     this.upcomingCount = computed(() => this.sortedUpcomingUserMeetings().length);
     this.nextMeetingDate = this.initNextMeetingDate();
     this.pastThisMonthCount = this.initPastThisMonthCount();
@@ -231,9 +229,7 @@ export class MeetingsDashboardComponent {
 
     // Foundation/Project lens stat cards (computed from raw FP signals, not paginated)
     // Only look at the active tab's loading signal — inactive tab fetches are gated off.
-    this.fpStatsLoading = computed(() =>
-      this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()
-    );
+    this.fpStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()));
     this.fpUpcomingCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().length : 0));
     this.fpPastCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpPastMeetings().length : 0));
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
