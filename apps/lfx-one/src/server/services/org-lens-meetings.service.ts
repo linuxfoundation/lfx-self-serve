@@ -306,6 +306,7 @@ function mapPrivacy(visibility: string | null): OrgMeetingPrivacy {
 
 function mapMeetingType(bucket: string | null): OrgMeetingType {
   if (bucket === 'board') return 'board';
+  if (bucket === 'marketing') return 'marketing';
   // Upstream Snowflake bucket is still named 'working-group'; the UI-facing type was renamed to 'technical' (LFXV2-1901).
   if (bucket === 'working-group') return 'technical';
   return 'other';

@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FilterOption, OrgMeetingRsvpStatus, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgMeetingTypeBadge, OrgPastMeeting } from '../interfaces';
+import type {
+  FilterOption,
+  OrgMeetingRsvpStatus,
+  OrgMeetingsTabConfig,
+  OrgMeetingsTabId,
+  OrgMeetingType,
+  OrgMeetingTypeBadge,
+  OrgPastMeeting,
+} from '../interfaces';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
