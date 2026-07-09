@@ -113,7 +113,7 @@ export interface CreateCommitteeMemberRequest {
   country?: string | null;
   /** Member's organization information */
   organization?: {
-    /** CDP organization ID */
+    /** b2b Salesforce Account SFID (18-char); null/omit when the org has no LF member account */
     id?: string | null;
     /** Organization name */
     name?: string | null;

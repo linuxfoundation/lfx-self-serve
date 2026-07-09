@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CdpOrganization, OrganizationSuggestion, OrganizationSuggestionsResponse } from '@lfx-one/shared';
+import { OrganizationResolveResponse, OrganizationSuggestion, OrganizationSuggestionsResponse } from '@lfx-one/shared';
 import { matchesOrgQuery, mergeOrgSuggestions, normalizeOrgKey } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of } from 'rxjs';
 
@@ -83,8 +83,8 @@ export class OrganizationService {
    * @param domain - Organization domain
    * @returns Observable of the resolved CDP organization
    */
-  public resolveOrganization(name: string, domain: string, logo?: string): Observable<CdpOrganization> {
+  public resolveOrganization(name: string, domain: string, logo?: string): Observable<OrganizationResolveResponse> {
     // Drop empty-string logos — they're not meaningful URLs
-    return this.http.post<CdpOrganization>(`${this.baseUrl}/resolve`, { name, domain, ...(logo ? { logo } : {}) });
+    return this.http.post<OrganizationResolveResponse>(`${this.baseUrl}/resolve`, { name, domain, ...(logo ? { logo } : {}) });
   }
 }
