@@ -367,7 +367,9 @@ export class MeetingService {
   // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
 
   public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
-    return this.http.get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${pastMeetingId}/attachments/${attachmentId}/download`).pipe(take(1));
+    return this.http
+      .get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/${encodeURIComponent(attachmentId)}/download`)
+      .pipe(take(1));
   }
 
   public generateAgenda(request: GenerateAgendaRequest): Observable<GenerateAgendaResponse> {
@@ -400,7 +402,7 @@ export class MeetingService {
   }
 
   public getPastMeetingById(pastMeetingUid: string): Observable<PastMeeting> {
-    return this.http.get<PastMeeting>(`/api/past-meetings/${pastMeetingUid}`).pipe(
+    return this.http.get<PastMeeting>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}`).pipe(
       catchError((error) => {
         console.error(`Failed to load past meeting ${pastMeetingUid}:`, error);
         return throwError(() => error);
@@ -409,7 +411,7 @@ export class MeetingService {
   }
 
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
-    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`);
+    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`);
   }
 
   public clearPastMeetingRecordingCache(): void {
@@ -426,30 +428,30 @@ export class MeetingService {
       this.pastMeetingRecordingCache.delete(pastMeetingUid);
     }
     const recording$ = this.http
-      .get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`)
+      .get<PastMeetingRecording>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/recording`)
       .pipe(tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }), shareReplay(1));
     this.pastMeetingRecordingCache.set(pastMeetingUid, { observable: recording$, cachedAt: Date.now() });
     return recording$;
   }
 
   public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
-    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${pastMeetingUid}/transcript`);
+    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/transcript`);
   }
 
   public getPastMeetingTranscriptContent(pastMeetingUid: string): Observable<PastMeetingTranscriptContent> {
-    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${pastMeetingUid}/transcript/content`);
+    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/transcript/content`);
   }
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
-    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
+    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary`);
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
-    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${pastMeetingUid}/attachments`);
+    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
   }
 
   public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {
-    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary/${summaryUid}`, updateData);
+    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary/${encodeURIComponent(summaryUid)}`, updateData);
   }
 
   public approvePastMeetingSummary(pastMeetingUid: string, summaryUid: string): Observable<PastMeetingSummary> {

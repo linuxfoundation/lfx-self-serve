@@ -710,7 +710,7 @@ export class MeetingsDashboardComponent {
   // uses) rather than a stored flag, so the count can never disagree with the buttons. The
   // 30-day window bounds the per-meeting recording fetches.
   private countMeetingsWithRecording(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<number> {
-    const ids = meetings.map((m) => getPastMeetingResourceId(m)).filter((id): id is string => !!id);
+    const ids = meetings.map((m) => getPastMeetingResourceId(m));
     if (ids.length === 0) {
       loading.set(false);
       return of(0);
