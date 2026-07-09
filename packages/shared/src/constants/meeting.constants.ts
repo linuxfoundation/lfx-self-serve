@@ -520,3 +520,19 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  * filter. Five is the row count surfaced by the dashboard Last Meeting / past-meetings card.
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
+
+// ============================================================================
+// Past Meeting Sort Values
+// ============================================================================
+
+/**
+ * Query-service `sort` values for the `v1_past_meeting` resource type.
+ * @description The meeting-service indexer populates `sort_name` with the meeting's RFC3339 UTC
+ * `start_time` (not the literal meeting title), so `NAME_DESC` sorts most-recent-first.
+ */
+export const PAST_MEETING_SORT = {
+  NAME_DESC: 'name_desc',
+  NAME_ASC: 'name_asc',
+  UPDATED_DESC: 'updated_desc',
+  UPDATED_ASC: 'updated_asc',
+} as const;

@@ -15,6 +15,15 @@ export interface ApiClientConfig {
 }
 
 /**
+ * Per-request options for the server-side API client
+ * @description Overrides applied to a single upstream request
+ */
+export interface ApiRequestOptions {
+  /** Per-request timeout in milliseconds; falls back to the client's configured default (`ApiClientConfig.timeout`, default 30s) */
+  timeoutMs?: number;
+}
+
+/**
  * Standardized API response wrapper
  * @description Generic response structure for all API endpoints
  */
