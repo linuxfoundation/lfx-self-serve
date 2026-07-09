@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PAST_MEETING_SORT } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import { TagSeverity } from './components.interface';
 
@@ -1193,3 +1194,9 @@ export interface MeetingTypeBadge {
   styleClass?: string;
   icon?: string;
 }
+
+/**
+ * Query-service `sort` value for the `v1_past_meeting` resource type.
+ * Derived from the {@link PAST_MEETING_SORT} constant so the union stays in sync with it.
+ */
+export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
