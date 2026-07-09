@@ -806,7 +806,10 @@ export class MeetingsDashboardComponent {
             return of(0);
           }
           loadingSignal.set(true);
-          return fetchFn(project.uid).pipe(finalize(() => loadingSignal.set(false)));
+          return fetchFn(project.uid).pipe(
+            catchError(() => of(0)),
+            finalize(() => loadingSignal.set(false))
+          );
         })
       ),
       { initialValue: 0 }

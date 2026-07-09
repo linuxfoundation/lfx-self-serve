@@ -1451,6 +1451,8 @@ export class MeetingService {
 
     // Use Promise.allSettled so one transient batch failure doesn't wipe names resolved by other
     // batches — mirrors the pattern in getCommitteesWithMailingList.
+    // In practice a project's displayed meetings touch ≤1 unique committee, so this is almost always
+    // a single concurrent request; batching guards only against pathological cardinality.
     const results = await Promise.allSettled(
       batches.map((batch) =>
         fetchAllQueryResources<Committee>(
