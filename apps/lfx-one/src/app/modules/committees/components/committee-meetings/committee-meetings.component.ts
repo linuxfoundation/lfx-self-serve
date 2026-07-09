@@ -107,8 +107,10 @@ export class CommitteeMeetingsComponent {
       filter(({ time, uid }) => time === 'past' && !!uid),
       distinctUntilChanged((a, b) => a.uid === b.uid),
       tap(() => this.pastMeetingsLoading.set(true)),
-      // Sort client-side: the query-service can't sort past meetings by start_time (only name/updated),
-      // so the descending date order must be applied here to render most-recent-first. (LFXV2-2053)
+      // NAME_DESC sorts by sort_name, which the meeting-service indexer populates with each
+      // occurrence's series-template start_time — not its actual scheduled_start_time. For a
+      // recurring committee's past occurrences those can diverge, so re-sort client-side by
+      // scheduled_start_time to guarantee true most-recent-first order. (LFXV2-2053)
       switchMap(({ uid }) =>
         this.meetingService.getPastMeetingsByCommittee(uid!, PAST_MEETING_SORT.NAME_DESC).pipe(
           map((meetings) => sortPastMeetingsDescending(meetings)),
