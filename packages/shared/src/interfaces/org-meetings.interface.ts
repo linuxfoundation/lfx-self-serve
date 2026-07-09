@@ -116,8 +116,11 @@ export interface OrgMeetingTypeBadge {
  * Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`).
  *
  * `demo*` fields are UI-only placeholders derived client-side (see `deriveDemoViewerInvited` /
- * `deriveDemoPassword` / `deriveDemoDetailsUrl` in `@lfx-one/shared/utils`) — LFXV2-1901 is scoped
- * to UI only; the real invite-membership/password data model lands in a follow-up ticket.
+ * `deriveDemoPassword` / `deriveDemoDetailsPath` / `deriveDemoDetailsQueryParams` in `@lfx-one/shared/utils`) —
+ * LFXV2-1901 is scoped to UI only; the real invite-membership/password data model lands in a follow-up ticket.
+ * `demoDetailsPath`/`demoDetailsQueryParams` are split (rather than one URL string) so templates bind
+ * `[routerLink]` and `[queryParams]` separately — `[routerLink]` treats a `?` in a single string as a
+ * literal path segment, not a query string.
  */
 export interface OrgMeetingVm extends OrgMeeting {
   readonly linkUrl: string;
@@ -130,7 +133,8 @@ export interface OrgMeetingVm extends OrgMeeting {
   readonly typeBadge: OrgMeetingTypeBadge;
   readonly demoIsViewerInvited: boolean;
   readonly demoPassword: string | null;
-  readonly demoDetailsUrl: string;
+  readonly demoDetailsPath: string;
+  readonly demoDetailsQueryParams: Record<string, string> | undefined;
 }
 
 /** Past meeting with the same `typeBadge` / `demo*` placeholder fields as `OrgMeetingVm` (see there for rationale). */
@@ -138,7 +142,8 @@ export interface OrgPastMeetingVm extends OrgPastMeeting {
   readonly typeBadge: OrgMeetingTypeBadge;
   readonly demoIsViewerInvited: boolean;
   readonly demoPassword: string | null;
-  readonly demoDetailsUrl: string;
+  readonly demoDetailsPath: string;
+  readonly demoDetailsQueryParams: Record<string, string> | undefined;
 }
 
 /** A past meeting in the Org Lens Meetings list. */

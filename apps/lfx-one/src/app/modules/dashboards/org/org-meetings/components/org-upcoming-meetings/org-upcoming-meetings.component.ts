@@ -8,7 +8,7 @@ import { RouterLink } from '@angular/router';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpTally, OrgMeetingVm } from '@lfx-one/shared/interfaces';
-import { deriveDemoDetailsUrl, deriveDemoPassword, deriveDemoViewerInvited, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoDetailsPath, deriveDemoDetailsQueryParams, deriveDemoPassword, deriveDemoViewerInvited, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
@@ -68,7 +68,8 @@ export class OrgUpcomingMeetingsComponent {
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
       demoIsViewerInvited: meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id),
       demoPassword,
-      demoDetailsUrl: deriveDemoDetailsUrl(meeting.id, demoPassword),
+      demoDetailsPath: deriveDemoDetailsPath(meeting.id),
+      demoDetailsQueryParams: deriveDemoDetailsQueryParams(demoPassword),
     };
   }
 

@@ -7,7 +7,7 @@ import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angula
 import { RouterLink } from '@angular/router';
 import { ORG_MEETING_TYPE_LABELS } from '@lfx-one/shared/constants';
 import type { OrgPastMeeting, OrgPastMeetingVm } from '@lfx-one/shared/interfaces';
-import { deriveDemoDetailsUrl, deriveDemoPassword, deriveDemoViewerInvited, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoDetailsPath, deriveDemoDetailsQueryParams, deriveDemoPassword, deriveDemoViewerInvited, toAbsoluteUrl } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-org-past-meetings',
@@ -35,7 +35,8 @@ export class OrgPastMeetingsComponent {
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
       demoIsViewerInvited: meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id),
       demoPassword,
-      demoDetailsUrl: deriveDemoDetailsUrl(meeting.id, demoPassword),
+      demoDetailsPath: deriveDemoDetailsPath(meeting.id),
+      demoDetailsQueryParams: deriveDemoDetailsQueryParams(demoPassword),
     };
   }
 }

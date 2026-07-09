@@ -22,7 +22,12 @@ export function deriveDemoPassword(meetingId: string, privacy: OrgMeetingPrivacy
   return privacy === 'private' ? `demo-${meetingId}` : null;
 }
 
-/** Builds the demo "See Details" route + query params for a meeting (real routing target, placeholder password param). */
-export function deriveDemoDetailsUrl(meetingId: string, password: string | null): string {
-  return password ? `/meetings/${meetingId}/details?password=${encodeURIComponent(password)}` : `/meetings/${meetingId}/details`;
+/** Demo "See Details" route path for a meeting (real routing target). */
+export function deriveDemoDetailsPath(meetingId: string): string {
+  return `/meetings/${meetingId}/details`;
+}
+
+/** Demo "See Details" query params for a meeting's placeholder password, for binding alongside `deriveDemoDetailsPath` via `[queryParams]` (not string-concatenated into the `[routerLink]` path). */
+export function deriveDemoDetailsQueryParams(password: string | null): Record<string, string> | undefined {
+  return password ? { password } : undefined;
 }
