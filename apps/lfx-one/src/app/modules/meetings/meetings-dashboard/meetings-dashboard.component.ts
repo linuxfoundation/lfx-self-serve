@@ -13,12 +13,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import {
-  CANCELLED_COLOR,
-  MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
-  MEETING_TYPE_COLORS,
-  MEETING_TYPE_CONFIGS,
-} from '@lfx-one/shared/constants';
+import { CANCELLED_COLOR, MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   addMinutesToDate,
