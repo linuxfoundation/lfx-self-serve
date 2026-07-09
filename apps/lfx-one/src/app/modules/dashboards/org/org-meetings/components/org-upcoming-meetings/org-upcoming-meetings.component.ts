@@ -67,7 +67,6 @@ export class OrgUpcomingMeetingsComponent {
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
       demoIsViewerInvited: meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id),
-      demoPassword,
       demoDetailsPath: deriveDemoDetailsPath(meeting.id),
       demoDetailsQueryParams: deriveDemoDetailsQueryParams(demoPassword),
     };

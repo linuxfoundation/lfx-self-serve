@@ -132,7 +132,6 @@ export interface OrgMeetingVm extends OrgMeeting {
   readonly inviteeVms: readonly OrgMeetingInviteeVm[];
   readonly typeBadge: OrgMeetingTypeBadge;
   readonly demoIsViewerInvited: boolean;
-  readonly demoPassword: string | null;
   readonly demoDetailsPath: string;
   readonly demoDetailsQueryParams: Record<string, string> | undefined;
 }
@@ -141,7 +140,6 @@ export interface OrgMeetingVm extends OrgMeeting {
 export interface OrgPastMeetingVm extends OrgPastMeeting {
   readonly typeBadge: OrgMeetingTypeBadge;
   readonly demoIsViewerInvited: boolean;
-  readonly demoPassword: string | null;
   readonly demoDetailsPath: string;
   readonly demoDetailsQueryParams: Record<string, string> | undefined;
 }
