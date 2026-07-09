@@ -28,6 +28,7 @@ import {
   isPastMeetingSummaryAwaitingApproval,
   Meeting,
   MEETING_TYPE_CONFIGS,
+  getLargestSessionShareUrl,
   getPastMeetingTranscriptUrl,
   MeetingAttachment,
   MeetingOccurrence,
@@ -1108,17 +1109,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializePrimaryRecordingUrl(): Signal<string | null> {
-    return computed(() => {
-      const recording = this.pastMeetingRecording();
-      if (!recording?.sessions?.length) return null;
-
-      const sessionsWithShareUrl = recording.sessions.filter((s) => !!s.share_url);
-      if (!sessionsWithShareUrl.length) return null;
-
-      const primary = sessionsWithShareUrl.reduce((largest, session) => (session.total_size > largest.total_size ? session : largest), sessionsWithShareUrl[0]);
-
-      return primary.share_url ?? null;
-    });
+    return computed(() => getLargestSessionShareUrl(this.pastMeetingRecording()));
   }
 
   private initializeHasSummaryContent(): Signal<boolean> {

@@ -520,3 +520,8 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  * filter. Five is the row count surfaced by the dashboard Last Meeting / past-meetings card.
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
+
+/**
+ * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
+ */
+export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;

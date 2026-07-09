@@ -13,7 +13,12 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import {
+  CANCELLED_COLOR,
+  MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
+  MEETING_TYPE_COLORS,
+  MEETING_TYPE_CONFIGS,
+} from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   addMinutesToDate,
@@ -41,9 +46,10 @@ import {
   EMPTY,
   expand,
   finalize,
-  forkJoin,
+  from,
   map,
   merge,
+  mergeMap,
   Observable,
   of,
   scan,
@@ -127,6 +133,8 @@ export class MeetingsDashboardComponent {
 
   private fpUpcomingLoading = signal(false);
   private fpPastLoading = signal(false);
+  // True while per-meeting recording fetches for the "Recordings Available" stat are in flight.
+  private recordingsCountLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
@@ -205,7 +213,10 @@ export class MeetingsDashboardComponent {
     // Me lens stat cards (computed from shared sorted upcoming signal).
     // Only look at the active tab's loading signal — the inactive tab's raw fetch is gated off,
     // so its loading flag stays pinned at its initial `true` and would never resolve.
-    this.meLensStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.pastMeetingsLoading() : this.meetingsLoading()));
+    this.meLensStatsLoading = computed(() => {
+      const base = this.timeFilter() === 'past' ? this.pastMeetingsLoading() : this.meetingsLoading();
+      return base || (this.timeFilter() === 'past' && this.recordingsCountLoading());
+    });
     this.upcomingCount = computed(() => this.sortedUpcomingUserMeetings().length);
     this.nextMeetingDate = this.initNextMeetingDate();
     this.pastThisMonthCount = this.initPastThisMonthCount();
@@ -225,7 +236,10 @@ export class MeetingsDashboardComponent {
 
     // Foundation/Project lens stat cards (computed from raw FP signals, not paginated)
     // Only look at the active tab's loading signal — inactive tab fetches are gated off.
-    this.fpStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()));
+    this.fpStatsLoading = computed(() => {
+      const base = this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading();
+      return base || (this.timeFilter() === 'past' && this.recordingsCountLoading());
+    });
     this.fpUpcomingCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().length : 0));
     this.fpPastCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpPastMeetings().length : 0));
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
@@ -705,15 +719,24 @@ export class MeetingsDashboardComponent {
   // 30-day window bounds the per-meeting recording fetches.
   private countMeetingsWithRecording(meetings: PastMeeting[]): Observable<number> {
     const ids = meetings.map((m) => m.meeting_and_occurrence_id ?? m.id).filter((id): id is string => !!id);
-    if (ids.length === 0) return of(0);
-    return forkJoin(
-      ids.map((id) =>
-        this.meetingService.getPastMeetingRecording(id).pipe(
-          map((rec) => (getLargestSessionShareUrl(rec) ? 1 : 0)),
-          catchError(() => of(0))
-        )
-      )
-    ).pipe(map((flags) => flags.reduce((a, b) => a + b, 0)));
+    if (ids.length === 0) {
+      this.recordingsCountLoading.set(false);
+      return of(0);
+    }
+    this.recordingsCountLoading.set(true);
+    return from(ids).pipe(
+      mergeMap(
+        (id) =>
+          this.meetingService.getPastMeetingRecording(id).pipe(
+            map((rec) => (getLargestSessionShareUrl(rec) ? 1 : 0)),
+            catchError(() => of(0))
+          ),
+        MEETING_RECORDING_COUNT_FETCH_CONCURRENCY
+      ),
+      toArray(),
+      map((flags) => flags.reduce((a, b) => a + b, 0)),
+      finalize(() => this.recordingsCountLoading.set(false))
+    );
   }
 
   private filterRecentPastMeetings(past: PastMeeting[], cutoff: number): PastMeeting[] {
