@@ -218,10 +218,7 @@ describe('getLargestSessionShareUrl', () => {
   });
 
   it('returns null when the largest session has an empty share URL, even if a smaller one has one', () => {
-    const rec = recording([
-      session({ total_size: 100, share_url: 'https://small.example' }),
-      session({ total_size: 500, share_url: '' }),
-    ]);
+    const rec = recording([session({ total_size: 100, share_url: 'https://small.example' }), session({ total_size: 500, share_url: '' })]);
     expect(getLargestSessionShareUrl(rec)).toBeNull();
   });
 });
