@@ -1,40 +1,65 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { inject, Injectable } from '@angular/core';
+import type { OrgLensProjectSearchResponse, OrgLensProjectsResponse, OrgProjectsWorkspace, OrgProjectsWorkspacesResponse } from '@lfx-one/shared/interfaces';
+import { Observable } from 'rxjs';
 
-import { Injectable } from '@angular/core';
-import type { OrgLensProject, OrgLensProjectsResponse } from '@lfx-one/shared/interfaces';
-import { delay, Observable, of } from 'rxjs';
-
-import { buildAddedProjects, getAddableProjectOptions, getDemoProjectsResponse } from './org-lens-projects.demo-data';
-
-/** Simulated network latency so the page exercises its loading skeletons. */
-const DEMO_LATENCY_MS = 450;
-
-/**
- * Data seam for the Org Lens Projects page (LFXV2-1883 / LFXV2-1884).
- *
- * Currently returns demo company fixtures. Wiring the real Snowflake / LFX Insights
- * backend (a separate story) only replaces this method body with an `HttpClient` call
- * to `/api/orgs/:orgUid/lens/projects` — the response shape and every consumer stay the
- * same. See `OrgLensTrainingService` for the eventual HTTP pattern.
- */
 @Injectable({
   providedIn: 'root',
 })
 export class OrgLensProjectsService {
-  public getProjects(orgUid: string, orgName: string): Observable<OrgLensProjectsResponse> {
-    return of(getDemoProjectsResponse(orgUid, orgName)).pipe(delay(DEMO_LATENCY_MS));
+  private readonly http = inject(HttpClient);
+
+  public getProjects(orgUid: string, orgName: string, slugs: readonly string[] = []): Observable<OrgLensProjectsResponse> {
+    let params = new HttpParams().set('orgName', orgName);
+    if (slugs.length) {
+      params = params.set('slugs', slugs.join(','));
+    }
+    return this.http.get<OrgLensProjectsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/projects`, { params });
   }
 
-  /** Catalog of projects that can be added to a workspace (`{ value, label, logoUrl }` for the multi-select). */
-  public getAddableProjectOptions(): { value: string; label: string; logoUrl: string }[] {
-    return getAddableProjectOptions();
+  public searchProjects(orgUid: string, query: string, excludeSlugs: readonly string[] = []): Observable<OrgLensProjectSearchResponse> {
+    let params = new HttpParams().set('q', query);
+    if (excludeSlugs.length) {
+      params = params.set('excludeSlugs', excludeSlugs.join(','));
+    }
+    return this.http.get<OrgLensProjectSearchResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/projects/search`, {
+      params,
+    });
   }
 
-  /** Build full project rows for the given catalog slugs (used when the user adds projects to a workspace). */
-  public buildAddedProjects(slugs: readonly string[]): OrgLensProject[] {
-    return buildAddedProjects(slugs);
+  public getWorkspaces(orgUid: string): Observable<OrgProjectsWorkspacesResponse> {
+    return this.http.get<OrgProjectsWorkspacesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/workspaces`);
+  }
+
+  public createWorkspace(orgUid: string, name: string): Observable<{ workspace: OrgProjectsWorkspace }> {
+    return this.http.post<{ workspace: OrgProjectsWorkspace }>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/workspaces`, { name });
+  }
+
+  public renameWorkspace(orgUid: string, workspaceId: string, name: string): Observable<{ workspace: OrgProjectsWorkspace }> {
+    return this.http.put<{ workspace: OrgProjectsWorkspace }>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/workspaces/${encodeURIComponent(workspaceId)}`, {
+      name,
+    });
+  }
+
+  public deleteWorkspace(orgUid: string, workspaceId: string): Observable<void> {
+    return this.http.delete<void>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/workspaces/${encodeURIComponent(workspaceId)}`);
+  }
+
+  public addProjectsToWorkspace(orgUid: string, workspaceId: string, slugs: readonly string[]): Observable<{ workspace: OrgProjectsWorkspace }> {
+    return this.http.post<{ workspace: OrgProjectsWorkspace }>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/workspaces/${encodeURIComponent(workspaceId)}/projects`,
+      {
+        slugs,
+      }
+    );
+  }
+
+  public removeProjectFromWorkspace(orgUid: string, workspaceId: string, slug: string): Observable<{ workspace: OrgProjectsWorkspace }> {
+    return this.http.delete<{ workspace: OrgProjectsWorkspace }>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(slug)}`
+    );
   }
 }

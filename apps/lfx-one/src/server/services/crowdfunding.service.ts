@@ -28,6 +28,7 @@ import {
   BackendDonation,
   BackendGoalInput,
   BackendInitiative,
+  BackendSponsorshipTierInput,
   BackendSubscription,
   BackendTransactionList,
   BackendUpdateInitiativeInput,
@@ -322,6 +323,12 @@ export class CrowdfundingService {
     if (input.beneficiaries !== undefined) {
       body.beneficiaries = input.beneficiaries.map((b): BackendBeneficiaryInput => ({ name: b.name, email: b.email }));
     }
+    if (input.sponsorshipTiers !== undefined) {
+      body.sponsorship_tiers = input.sponsorshipTiers.map(
+        (t): BackendSponsorshipTierInput => ({ name: t.name, enabled: t.enabled, goal_amount_cents: t.goalCents, benefits: t.benefits })
+      );
+    }
+    if (input.donationMode !== undefined) body.donation_mode = input.donationMode;
 
     const raw = await cfFetch<BackendInitiative>(req, 'updateInitiative', `/v1/me/initiatives/${encodeURIComponent(id)}`, {
       method: 'PATCH',

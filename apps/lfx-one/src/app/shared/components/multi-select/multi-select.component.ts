@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectModule } from 'primeng/multiselect';
 
@@ -17,18 +17,17 @@ export class MultiSelectComponent {
   public readonly options = input.required<any[]>();
   public readonly optionLabel = input<string>('label');
   public readonly optionValue = input<string>('value');
-  // Optional secondary label shown beneath the main label in the dropdown
-  // list. Selected chips still show only optionLabel. When undefined the
-  // dropdown renders default p-multiSelect items.
   public readonly optionSubLabel = input<string | undefined>(undefined);
-  // Optional key for a per-option logo/image URL shown before the label in the dropdown list.
-  // When undefined (and no optionSubLabel) the dropdown renders default p-multiSelect items.
   public readonly optionImage = input<string | undefined>(undefined);
   public readonly placeholder = input<string>('Select');
   public readonly showToggleAll = input<boolean>(true);
   public readonly appendTo = input<any>('body');
   public readonly filter = input<boolean>(true);
+  public readonly filterBy = input<string | undefined>(undefined);
   public readonly filterPlaceHolder = input<string>('Search');
   public readonly size = input<'small' | 'large'>('small');
   public readonly styleClass = input<string>('w-full');
+  public readonly panelStyleClass = input<string | undefined>(undefined);
+  public readonly scrollHeight = input<string>('14rem');
+  public readonly filterChange = output<string>();
 }

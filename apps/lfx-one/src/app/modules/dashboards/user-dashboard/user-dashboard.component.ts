@@ -3,7 +3,8 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { isBoardScopedPersona, PendingActionItem } from '@lfx-one/shared/interfaces';
+import { PendingActionItem } from '@lfx-one/shared/interfaces';
+import { isBoardScopedPersona } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, Page, test } from '@playwright/test';
+import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
 const EMPTY_EVENTS_RESPONSE = { data: [], total: 0, pageSize: 10, offset: 0 };
 const EMPTY_COUNTRIES_RESPONSE = { data: [] };
@@ -63,6 +64,13 @@ async function openDialogWithEmptyEvents(
 }
 
 test.describe('Event Selection — Robust Structural Tests', () => {
+  test.beforeEach(async ({ context, baseURL }) => {
+    // Ensure "me" lens is active so lensRedirectGuard doesn't redirect to /foundation/events.
+    // Derive domain from baseURL for portability across dev, CI, and preview environments.
+    const domain = baseURL ? new URL(baseURL).hostname : 'localhost';
+    await context.addCookies([{ name: LENS_COOKIE_KEY, value: DEFAULT_LENS, domain, path: '/' }]);
+  });
+
   test.describe('Container structure', () => {
     test('event-selection root container exists with correct testid', async ({ page }) => {
       await openDialogWithEmptyEvents(page);

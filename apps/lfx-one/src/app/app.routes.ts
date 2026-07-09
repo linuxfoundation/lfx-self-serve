@@ -114,6 +114,16 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
           },
           {
+            path: 'projects/:projectSlug',
+            data: {
+              lens: 'org',
+              title: 'Project Detail',
+              description: "Your organization's involvement and competitive standing on a project.",
+              icon: 'fa-light fa-folder',
+            },
+            loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+          },
+          {
             // INFO: Future Epic implementation — the ROI page is hidden; deep links fall
             // back to the org overview until the org ROI feature is built.
             path: 'roi',
@@ -158,11 +168,9 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
           },
           {
-            // INFO: Future Epic implementation — the Meetings page is hidden; deep links
-            // fall back to the org overview until the org meetings feature is built.
             path: 'meetings',
-            redirectTo: 'overview',
-            pathMatch: 'full',
+            data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in.', icon: 'fa-light fa-video' },
+            loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
           },
           {
             // INFO: Future Epic implementation — the Groups page is hidden; deep links fall
