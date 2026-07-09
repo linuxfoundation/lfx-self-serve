@@ -110,7 +110,7 @@ export class CommitteeMeetingsComponent {
       // Sort client-side: the query-service can't sort past meetings by start_time (only name/updated),
       // so the descending date order must be applied here to render most-recent-first. (LFXV2-2053)
       switchMap(({ uid }) =>
-        this.meetingService.getPastMeetingsByCommittee(uid!).pipe(
+        this.meetingService.getPastMeetingsByCommittee(uid!, 'name_desc').pipe(
           map((meetings) => sortPastMeetingsDescending(meetings)),
           finalize(() => this.pastMeetingsLoading.set(false))
         )
@@ -287,7 +287,7 @@ export class CommitteeMeetingsComponent {
           forkJoin({
             votes: this.voteService.getVotesByCommittee(committeeUid!).pipe(catchError(() => of([] as Vote[]))),
             surveys: this.surveyService.getSurveysByCommittee(committeeUid!).pipe(catchError(() => of([] as Survey[]))),
-            pastMeetings: this.meetingService.getPastMeetingsByCommittee(committeeUid!).pipe(catchError(() => of([] as PastMeeting[]))),
+            pastMeetings: this.meetingService.getPastMeetingsByCommittee(committeeUid!, 'name_desc').pipe(catchError(() => of([] as PastMeeting[]))),
           }).pipe(finalize(() => this.calendarLoading.set(false)))
         ),
         tap(() => this.calendarLoading.set(false))
