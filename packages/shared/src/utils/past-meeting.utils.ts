@@ -28,6 +28,12 @@ export function getLargestSessionShareUrl(recording: PastMeetingRecording | null
   return largest.share_url || null;
 }
 
+// Past-meeting sub-resources are keyed by meeting_and_occurrence_id; project-scoped lists may
+// still expose a distinct id while Me-lens rows normalize id to the composite value.
+export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meeting_and_occurrence_id'>): string {
+  return meeting.meeting_and_occurrence_id ?? meeting.id;
+}
+
 /**
  * Filters past-meeting participants by search, attendance, invitation, and committee group.
  *

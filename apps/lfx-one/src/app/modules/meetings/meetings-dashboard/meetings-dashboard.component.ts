@@ -19,6 +19,7 @@ import {
   addMinutesToDate,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
+  getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
   sortPastMeetingsDescending,
@@ -254,6 +255,7 @@ export class MeetingsDashboardComponent {
   public refreshMeetings(): void {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
+    this.meetingService.clearPastMeetingRecordingCache();
     this.refresh$.next();
   }
 
@@ -713,7 +715,7 @@ export class MeetingsDashboardComponent {
   // uses) rather than a stored flag, so the count can never disagree with the buttons. The
   // 30-day window bounds the per-meeting recording fetches.
   private countMeetingsWithRecording(meetings: PastMeeting[]): Observable<number> {
-    const ids = meetings.map((m) => m.meeting_and_occurrence_id ?? m.id).filter((id): id is string => !!id);
+    const ids = meetings.map((m) => getPastMeetingResourceId(m)).filter((id): id is string => !!id);
     if (ids.length === 0) {
       this.recordingsCountLoading.set(false);
       return of(0);

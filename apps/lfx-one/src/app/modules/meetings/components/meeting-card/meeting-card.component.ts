@@ -42,6 +42,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
+  getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
@@ -317,7 +318,7 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
-    const meetingId = this.meeting().id;
+    const meetingId = this.pastMeeting() ? getPastMeetingResourceId(this.meeting()) : this.meeting().id;
     const download$ = this.pastMeeting()
       ? this.meetingService.getPastMeetingAttachmentDownloadUrl(meetingId, attachment.uid)
       : this.meetingService.getMeetingAttachmentDownloadUrl(meetingId, attachment.uid);
@@ -376,7 +377,7 @@ export class MeetingCardComponent implements OnInit {
       data: {
         summaryContent: this.summaryContent(),
         summaryUid,
-        pastMeetingUid: this.meeting().id,
+        pastMeetingUid: getPastMeetingResourceId(this.meeting()),
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
         // Edit/Approve write back via the summary uid; without one the modal
@@ -522,7 +523,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initAttachments(): Signal<(MeetingAttachment | PastMeetingAttachment)[]> {
     return runInInjectionContext(this.injector, () => {
-      const id = this.meetingInput().id;
+      const id = this.pastMeeting() ? getPastMeetingResourceId(this.meetingInput()) : this.meetingInput().id;
       const attachments$ = this.pastMeeting() ? this.meetingService.getPastMeetingAttachments(id) : this.meetingService.getMeetingAttachments(id);
 
       return toSignal(
@@ -534,8 +535,9 @@ export class MeetingCardComponent implements OnInit {
 
   private initRecording(): void {
     runInInjectionContext(this.injector, () => {
+      const pastMeetingId = getPastMeetingResourceId(this.meetingInput());
       toSignal(
-        this.meetingService.getPastMeetingRecording(this.meetingInput().id).pipe(
+        this.meetingService.getPastMeetingRecording(pastMeetingId).pipe(
           catchError(() => of(null)),
           tap((recording) => this.recording.set(recording))
         ),
@@ -546,8 +548,9 @@ export class MeetingCardComponent implements OnInit {
 
   private initSummary(): void {
     runInInjectionContext(this.injector, () => {
+      const pastMeetingId = getPastMeetingResourceId(this.meetingInput());
       toSignal(
-        this.meetingService.getPastMeetingSummary(this.meetingInput().id).pipe(
+        this.meetingService.getPastMeetingSummary(pastMeetingId).pipe(
           catchError(() => of(null)),
           tap((summary) => this.summary.set(summary))
         ),
@@ -558,8 +561,9 @@ export class MeetingCardComponent implements OnInit {
 
   private initTranscript(): void {
     runInInjectionContext(this.injector, () => {
+      const pastMeetingId = getPastMeetingResourceId(this.meetingInput());
       toSignal(
-        this.meetingService.getPastMeetingTranscript(this.meetingInput().id).pipe(
+        this.meetingService.getPastMeetingTranscript(pastMeetingId).pipe(
           catchError(() => of(null)),
           tap((transcript) => this.transcript.set(transcript))
         ),
@@ -730,7 +734,7 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meetingInput();
 
       if (this.pastMeeting()) {
-        return `/meetings/${meeting.id}`;
+        return `/meetings/${getPastMeetingResourceId(meeting)}`;
       }
 
       const params = new URLSearchParams();

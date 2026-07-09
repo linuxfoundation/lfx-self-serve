@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
-import { filterPastMeetingParticipants, getLargestSessionShareUrl, getPastMeetingStartTimeMs } from './past-meeting.utils';
+import { filterPastMeetingParticipants, getLargestSessionShareUrl, getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
 function participant(partial: Partial<EnrichedPastMeetingParticipant>): EnrichedPastMeetingParticipant {
@@ -194,6 +194,18 @@ function recording(sessions: RecordingSession[]): PastMeetingRecording {
     updated_at: '2024-01-01T00:00:00Z',
   };
 }
+
+describe('getPastMeetingResourceId', () => {
+  it('prefers meeting_and_occurrence_id when present', () => {
+    expect(getPastMeetingResourceId({ id: 'row-id', meeting_and_occurrence_id: '99152950841-1630560600000' })).toBe(
+      '99152950841-1630560600000'
+    );
+  });
+
+  it('falls back to id when meeting_and_occurrence_id is absent', () => {
+    expect(getPastMeetingResourceId({ id: 'row-id' })).toBe('row-id');
+  });
+});
 
 describe('getLargestSessionShareUrl', () => {
   it('returns null for a null recording', () => {
