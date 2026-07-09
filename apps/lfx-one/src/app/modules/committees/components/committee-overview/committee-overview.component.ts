@@ -7,7 +7,13 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_EMPTY_GRACE_MS, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL, PENDING_ACTION_SEVERITY } from '@lfx-one/shared/constants';
+import {
+  PAST_MEETING_SORT,
+  PENDING_ACTION_EMPTY_GRACE_MS,
+  PENDING_ACTION_FADE_OUT_MS,
+  PENDING_ACTION_LABEL,
+  PENDING_ACTION_SEVERITY,
+} from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
@@ -398,7 +404,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.pastMeetingsLoading.set(true);
-          return this.meetingService.getPastMeetingsByCommittee(c.uid, 'updated_desc').pipe(
+          return this.meetingService.getPastMeetingsByCommittee(c.uid, PAST_MEETING_SORT.NAME_DESC).pipe(
             catchError(() => of([])),
             finalize(() => this.pastMeetingsLoading.set(false))
           );
