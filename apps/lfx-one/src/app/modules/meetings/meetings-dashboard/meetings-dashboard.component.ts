@@ -560,9 +560,14 @@ export class MeetingsDashboardComponent {
           }
           this.pastMeetingsLoading.set(true);
           return this.userService.getUserPastMeetings().pipe(
-            tap(() => this.pastMeetingsLoading.set(false)),
+            tap((meetings) => {
+              this.pastMeetingsLoading.set(false);
+              const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+              this.meRecordingsCountLoading.set(this.filterRecentPastMeetings(meetings, cutoff).length > 0);
+            }),
             catchError(() => {
               this.pastMeetingsLoading.set(false);
+              this.meRecordingsCountLoading.set(false);
               return of([] as PastMeeting[]);
             })
           );
@@ -845,7 +850,14 @@ export class MeetingsDashboardComponent {
             take(10),
             toArray(),
             map((responses) => responses.flatMap((r) => r.data)),
-            catchError(() => of([] as PastMeeting[])),
+            tap((meetings) => {
+              const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+              this.fpRecordingsCountLoading.set(this.filterRecentPastMeetings(meetings, cutoff).length > 0);
+            }),
+            catchError(() => {
+              this.fpRecordingsCountLoading.set(false);
+              return of([] as PastMeeting[]);
+            }),
             finalize(() => this.fpPastLoading.set(false))
           );
         })
