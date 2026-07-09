@@ -50,6 +50,12 @@
             <i class="fa-light fa-lock text-red-400" aria-hidden="true"></i>
             This is a private meeting. Contact the organizer for access to the recording and details.
           </div>
+          <span
+            class="inline-flex w-fit items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600"
+            [attr.data-testid]="'org-past-meeting-invited-count-' + meeting.id">
+            <i class="fa-light fa-people-group text-gray-400" aria-hidden="true"></i>
+            {{ meeting.orgPastInvitees.length }} {{ orgName() }} employee{{ meeting.orgPastInvitees.length === 1 ? '' : 's' }} invited
+          </span>
         }
 
         <!-- ── Date row + inline artifacts ── -->

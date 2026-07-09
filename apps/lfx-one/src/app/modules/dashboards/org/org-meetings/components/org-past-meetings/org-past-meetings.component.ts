@@ -19,6 +19,7 @@ export class OrgPastMeetingsComponent {
 
   public readonly meetings = input.required<readonly OrgPastMeeting[]>();
   public readonly loading = input<boolean>(false);
+  public readonly orgName = input<string>('');
 
   // Pre-bake per-meeting presentation fields once per list change so the template's `@for` binds plain values (no method calls per change-detection).
   protected readonly meetingVms: Signal<readonly OrgPastMeetingVm[]> = computed(() => this.meetings().map((meeting) => this.toVm(meeting)));

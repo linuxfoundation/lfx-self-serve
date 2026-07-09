@@ -131,7 +131,7 @@ export class OrgLensMeetingsService {
     const binds: (string | number)[] = [accountId];
     if (searchQuery) binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     if (project) binds.push(project);
-    if (type) binds.push(type);
+    if (type) binds.push(mapMeetingTypeToBucket(type));
     binds.push(pageSize, offset);
 
     // Surface list errors (no fail-soft) so the client renders its distinct "couldn't load" state instead of an empty list.
@@ -309,6 +309,12 @@ function mapMeetingType(bucket: string | null): OrgMeetingType {
   // Upstream Snowflake bucket is still named 'working-group'; the UI-facing type was renamed to 'technical' (LFXV2-1901).
   if (bucket === 'working-group') return 'technical';
   return 'other';
+}
+
+/** Inverse of `mapMeetingType` — converts a UI-facing type filter value back to the Snowflake bucket it's stored under. */
+function mapMeetingTypeToBucket(type: OrgMeetingType): string {
+  if (type === 'technical') return 'working-group';
+  return type;
 }
 
 function mapRsvpStatus(status: string): OrgMeetingRsvpStatus {

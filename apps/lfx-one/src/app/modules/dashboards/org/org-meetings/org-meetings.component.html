@@ -101,6 +101,6 @@
       data-testid="org-meetings-upcoming-tab" />
   }
   @if (activeTab() === 'past') {
-    <lfx-org-past-meetings [meetings]="filteredPast()" [loading]="false" data-testid="org-meetings-past-tab" />
+    <lfx-org-past-meetings [meetings]="filteredPast()" [loading]="false" [orgName]="orgName()" data-testid="org-meetings-past-tab" />
   }
 </main>
