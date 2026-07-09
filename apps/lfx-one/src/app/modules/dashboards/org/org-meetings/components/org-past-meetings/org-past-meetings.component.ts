@@ -3,13 +3,15 @@
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, inject, input, PLATFORM_ID } from '@angular/core';
-import type { OrgPastMeeting } from '@lfx-one/shared/interfaces';
-import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { ORG_MEETING_TYPE_LABELS } from '@lfx-one/shared/constants';
+import type { OrgPastMeeting, OrgPastMeetingVm } from '@lfx-one/shared/interfaces';
+import { deriveDemoDetailsUrl, deriveDemoPassword, deriveDemoViewerInvited, toAbsoluteUrl } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-org-past-meetings',
-  imports: [DatePipe, ClipboardModule],
+  imports: [DatePipe, ClipboardModule, RouterLink],
   templateUrl: './org-past-meetings.component.html',
 })
 export class OrgPastMeetingsComponent {
@@ -18,7 +20,21 @@ export class OrgPastMeetingsComponent {
   public readonly meetings = input.required<readonly OrgPastMeeting[]>();
   public readonly loading = input<boolean>(false);
 
+  // Pre-bake per-meeting presentation fields once per list change so the template's `@for` binds plain values (no method calls per change-detection).
+  protected readonly meetingVms: Signal<readonly OrgPastMeetingVm[]> = computed(() => this.meetings().map((meeting) => this.toVm(meeting)));
+
   protected meetingLinkUrl(meetingId: string): string {
     return toAbsoluteUrl(`/meetings/${meetingId}`, isPlatformBrowser(this.platformId));
+  }
+
+  private toVm(meeting: OrgPastMeeting): OrgPastMeetingVm {
+    const demoPassword = deriveDemoPassword(meeting.id, meeting.privacy);
+    return {
+      ...meeting,
+      typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
+      demoIsViewerInvited: meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id),
+      demoPassword,
+      demoDetailsUrl: deriveDemoDetailsUrl(meeting.id, demoPassword),
+    };
   }
 }

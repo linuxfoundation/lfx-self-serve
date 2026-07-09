@@ -4,15 +4,16 @@
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
-import { ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
+import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpTally, OrgMeetingVm } from '@lfx-one/shared/interfaces';
-import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoDetailsUrl, deriveDemoPassword, deriveDemoViewerInvited, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
   selector: 'lfx-org-upcoming-meetings',
-  imports: [DatePipe, PersonAvatarComponent, ClipboardModule, LinkifyPipe],
+  imports: [DatePipe, PersonAvatarComponent, ClipboardModule, LinkifyPipe, RouterLink],
   templateUrl: './org-upcoming-meetings.component.html',
 })
 export class OrgUpcomingMeetingsComponent {
@@ -51,6 +52,7 @@ export class OrgUpcomingMeetingsComponent {
   private toVm(meeting: OrgMeeting, isBrowser: boolean): OrgMeetingVm {
     const tally = meeting.rsvpTally;
     const total = this.totalInvited(tally);
+    const demoPassword = deriveDemoPassword(meeting.id, meeting.privacy);
     return {
       ...meeting,
       linkUrl: toAbsoluteUrl(`/meetings/${meeting.id}`, isBrowser),
@@ -63,6 +65,10 @@ export class OrgUpcomingMeetingsComponent {
         ...invitee,
         badge: invitee.rsvpStatus ? ORG_MEETINGS_RSVP_BADGES[invitee.rsvpStatus] : ORG_MEETINGS_NO_RESPONSE_BADGE,
       })),
+      typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
+      demoIsViewerInvited: meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id),
+      demoPassword,
+      demoDetailsUrl: deriveDemoDetailsUrl(meeting.id, demoPassword),
     };
   }
 

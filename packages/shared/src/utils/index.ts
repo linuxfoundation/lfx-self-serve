@@ -39,3 +39,4 @@ export * from './email.utils';
 export * from './invitation.utils';
 export * from './crowdfunding.utils';
 export * from './persona.utils';
+export * from './org-meetings.util';

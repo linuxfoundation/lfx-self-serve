@@ -305,7 +305,10 @@ function mapPrivacy(visibility: string | null): OrgMeetingPrivacy {
 }
 
 function mapMeetingType(bucket: string | null): OrgMeetingType {
-  return bucket === 'board' || bucket === 'working-group' ? bucket : 'other';
+  if (bucket === 'board') return 'board';
+  // Upstream Snowflake bucket is still named 'working-group'; the UI-facing type was renamed to 'technical' (LFXV2-1901).
+  if (bucket === 'working-group') return 'technical';
+  return 'other';
 }
 
 function mapRsvpStatus(status: string): OrgMeetingRsvpStatus {

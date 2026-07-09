@@ -14,7 +14,7 @@
       <p class="text-sm text-gray-500">No past meetings found in this window.</p>
     </div>
   } @else {
-    @for (meeting of meetings(); track meeting.id) {
+    @for (meeting of meetingVms(); track meeting.id) {
       <div class="flex flex-col gap-3 p-5 bg-white rounded-xl shadow-sm border border-gray-100" [attr.data-testid]="'org-past-meeting-card-' + meeting.id">
         <!-- ── Header: privacy/type badges | copy icon ── -->
         <div class="flex items-center justify-between gap-3">
@@ -24,19 +24,9 @@
                 <i class="fa-light fa-shield-heart text-xs" aria-hidden="true"></i> Private
               </span>
             }
-            @if (meeting.type === 'board') {
-              <span class="inline-flex items-center gap-1 rounded-full border border-blue-400 px-2.5 py-1 text-xs font-medium text-blue-600">
-                <i class="fa-light fa-people-group text-xs" aria-hidden="true"></i> Board
-              </span>
-            } @else if (meeting.type === 'working-group') {
-              <span class="inline-flex items-center gap-1 rounded-full border border-blue-400 px-2.5 py-1 text-xs font-medium text-blue-600">
-                <i class="fa-light fa-people-group text-xs" aria-hidden="true"></i> Working Group
-              </span>
-            } @else if (meeting.type === 'other') {
-              <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                <i class="fa-light fa-grid-2 text-xs" aria-hidden="true"></i> Other
-              </span>
-            }
+            <span [class]="'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ' + meeting.typeBadge.badgeClass">
+              <i [class]="meeting.typeBadge.icon + ' text-xs'" aria-hidden="true"></i> {{ meeting.typeBadge.label }}
+            </span>
           </div>
           @defer (on idle) {
             <button
@@ -51,6 +41,16 @@
 
         <!-- ── Title ── -->
         <h3 class="text-base font-semibold text-gray-900">{{ meeting.title }}</h3>
+
+        @if (meeting.privacy === 'private' && !meeting.demoIsViewerInvited) {
+          <!-- ── Private meeting, viewer not invited: restricted summary only ── -->
+          <div
+            class="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700"
+            [attr.data-testid]="'org-past-meeting-restricted-' + meeting.id">
+            <i class="fa-light fa-lock text-red-400" aria-hidden="true"></i>
+            This is a private meeting. Contact the organizer for access to the recording and details.
+          </div>
+        }
 
         <!-- ── Date row + inline artifacts ── -->
         <div class="flex flex-wrap items-center gap-2">
@@ -80,37 +80,38 @@
           }
         </div>
 
-        <!-- ── Two-column: Resources | See Meeting Details ── -->
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <!-- LEFT: Resources -->
-          <div class="flex flex-col gap-2 rounded-lg bg-gray-50 p-3">
-            <p class="flex items-center gap-1.5 text-sm font-medium text-gray-500"><i class="fa-light fa-paperclip" aria-hidden="true"></i> Resources</p>
-            @if (meeting.resources.length === 0) {
-              <p class="text-sm text-gray-400 italic">No resources available</p>
-            } @else {
-              <div class="flex flex-col gap-1">
-                @for (resource of meeting.resources; track resource) {
-                  <span class="inline-flex items-center gap-1 text-sm text-gray-600 truncate">
-                    <i class="fa-light fa-paperclip text-xs flex-shrink-0" aria-hidden="true"></i>
-                    <span class="truncate">{{ resource }}</span>
-                  </span>
-                }
-              </div>
-            }
-          </div>
+        @if (meeting.privacy !== 'private' || meeting.demoIsViewerInvited) {
+          <!-- ── Two-column: Resources | See Meeting Details ── -->
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <!-- LEFT: Resources -->
+            <div class="flex flex-col gap-2 rounded-lg bg-gray-50 p-3">
+              <p class="flex items-center gap-1.5 text-sm font-medium text-gray-500"><i class="fa-light fa-paperclip" aria-hidden="true"></i> Resources</p>
+              @if (meeting.resources.length === 0) {
+                <p class="text-sm text-gray-400 italic">No resources available</p>
+              } @else {
+                <div class="flex flex-col gap-1">
+                  @for (resource of meeting.resources; track resource) {
+                    <span class="inline-flex items-center gap-1 text-sm text-gray-600 truncate">
+                      <i class="fa-light fa-paperclip text-xs flex-shrink-0" aria-hidden="true"></i>
+                      <span class="truncate">{{ resource }}</span>
+                    </span>
+                  }
+                </div>
+              }
+            </div>
 
-          <!-- RIGHT: See Meeting Details -->
-          <div class="flex items-start">
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
-              [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
-              <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
-            </button>
+            <!-- RIGHT: See Meeting Details -->
+            <div class="flex items-start">
+              <a
+                [routerLink]="['/meetings', meeting.id, 'details']"
+                [queryParams]="meeting.demoPassword ? { password: meeting.demoPassword } : {}"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100 transition-colors"
+                [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
+              </a>
+            </div>
           </div>
-        </div>
+        }
       </div>
     }
 

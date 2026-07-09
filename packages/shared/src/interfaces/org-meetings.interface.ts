@@ -13,7 +13,7 @@ export interface OrgMeetingsTabConfig {
 }
 
 /** Meeting type for filtering. */
-export type OrgMeetingType = 'board' | 'working-group' | 'other';
+export type OrgMeetingType = 'board' | 'marketing' | 'technical' | 'other';
 
 /** Privacy level of a meeting. */
 export type OrgMeetingPrivacy = 'public' | 'private';
@@ -105,7 +105,20 @@ export interface OrgMeetingInviteeVm extends OrgMeetingInvitee {
   readonly badge: OrgMeetingRsvpBadge;
 }
 
-/** Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`). */
+/** Label/icon/style badge for a meeting's type, pre-derived from `ORG_MEETING_TYPE_LABELS` (avoids method calls in the template). */
+export interface OrgMeetingTypeBadge {
+  readonly label: string;
+  readonly icon: string;
+  readonly badgeClass: string;
+}
+
+/**
+ * Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`).
+ *
+ * `demo*` fields are UI-only placeholders derived client-side (see `deriveDemoViewerInvited` /
+ * `deriveDemoPassword` / `deriveDemoDetailsUrl` in `@lfx-one/shared/utils`) — LFXV2-1901 is scoped
+ * to UI only; the real invite-membership/password data model lands in a follow-up ticket.
+ */
 export interface OrgMeetingVm extends OrgMeeting {
   readonly linkUrl: string;
   readonly totalInvited: number;
@@ -114,6 +127,18 @@ export interface OrgMeetingVm extends OrgMeeting {
   readonly maybePercent: number;
   readonly noPercent: number;
   readonly inviteeVms: readonly OrgMeetingInviteeVm[];
+  readonly typeBadge: OrgMeetingTypeBadge;
+  readonly demoIsViewerInvited: boolean;
+  readonly demoPassword: string | null;
+  readonly demoDetailsUrl: string;
+}
+
+/** Past meeting with the same `typeBadge` / `demo*` placeholder fields as `OrgMeetingVm` (see there for rationale). */
+export interface OrgPastMeetingVm extends OrgPastMeeting {
+  readonly typeBadge: OrgMeetingTypeBadge;
+  readonly demoIsViewerInvited: boolean;
+  readonly demoPassword: string | null;
+  readonly demoDetailsUrl: string;
 }
 
 /** A past meeting in the Org Lens Meetings list. */

@@ -422,6 +422,12 @@ export const routes: Routes = [
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
+  // Placeholder target for the Org Lens "See Details" links (LFXV2-1901, UI only) — reuses the join
+  // page until the real meeting-details page ships in a follow-up ticket.
+  {
+    path: 'meetings/:id/details',
+    loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
+  },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',

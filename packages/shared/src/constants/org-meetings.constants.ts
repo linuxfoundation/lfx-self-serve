@@ -20,7 +20,15 @@ export const DEFAULT_MEETINGS_PAGE_SIZE = 10;
 export const MAX_MEETINGS_PAGE_SIZE = 100;
 
 /** Valid meeting-type filter values for server-side validation. */
-export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'working-group', 'other']);
+export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'marketing', 'technical', 'other']);
+
+/** Label + icon + badge style per meeting type, shared by the upcoming/past meeting-card type badges. */
+export const ORG_MEETING_TYPE_LABELS: Record<OrgMeetingType, { label: string; icon: string; badgeClass: string }> = {
+  board: { label: 'Board', icon: 'fa-light fa-people-group', badgeClass: 'border border-blue-400 text-blue-600' },
+  marketing: { label: 'Marketing', icon: 'fa-light fa-bullhorn', badgeClass: 'border border-violet-400 text-violet-600' },
+  technical: { label: 'Technical', icon: 'fa-light fa-code', badgeClass: 'border border-emerald-400 text-emerald-600' },
+  other: { label: 'Other', icon: 'fa-light fa-grid-2', badgeClass: 'bg-gray-100 text-gray-600' },
+};
 
 /** KPI: recordings available from past 30 days (demo). */
 export const ORG_MEETINGS_KPI_RECORDINGS_COUNT = 3;
@@ -39,7 +47,8 @@ export const ORG_MEETINGS_NO_RESPONSE_BADGE = { label: 'No Response', badgeClass
 export const ORG_MEETINGS_TYPE_OPTIONS: FilterOption<OrgMeetingType | null>[] = [
   { label: 'All Types', value: null },
   { label: 'Board', value: 'board' },
-  { label: 'Working Group', value: 'working-group' },
+  { label: 'Marketing', value: 'marketing' },
+  { label: 'Technical', value: 'technical' },
   { label: 'Other', value: 'other' },
 ];
 
@@ -87,7 +96,7 @@ export const DEMO_PAST_MEETINGS: readonly OrgPastMeeting[] = [
     id: 'pm-2',
     title: 'Kubernetes SIG Docs',
     privacy: 'public',
-    type: 'working-group',
+    type: 'technical',
     recurrenceLabel: 'Every 2 weeks on Tue',
     ...demoMeetingTimes(-22, 16, 0, 60),
     foundation: 'Cloud Native Computing Foundation',
