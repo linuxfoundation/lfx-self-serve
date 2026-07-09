@@ -15,7 +15,14 @@ import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, getCurrentOrNextOccurrence, getLargestSessionShareUrl, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import {
+  addMinutesToDate,
+  getCurrentOrNextOccurrence,
+  getLargestSessionShareUrl,
+  getPastMeetingStartTimeMs,
+  hasMeetingEnded,
+  sortPastMeetingsDescending,
+} from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -709,14 +716,20 @@ export class MeetingsDashboardComponent {
     ).pipe(map((flags) => flags.reduce((a, b) => a + b, 0)));
   }
 
+  private filterRecentPastMeetings(past: PastMeeting[], cutoff: number): PastMeeting[] {
+    return past.filter((m) => {
+      const startMs = getPastMeetingStartTimeMs(m);
+      return startMs !== null && startMs >= cutoff;
+    });
+  }
+
   private initRecordingsAvailableCount(): Signal<number> {
     return toSignal(
       combineLatest([toObservable(this.activeLens), toObservable(this.rawUserPastMeetings)]).pipe(
         switchMap(([lens, past]) => {
           if (lens !== 'me') return of(0);
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-          const recent = past.filter((m) => new Date(m.scheduled_start_time ?? m.start_time).getTime() >= cutoff);
-          return this.countMeetingsWithRecording(recent);
+          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff));
         })
       ),
       { initialValue: 0 }
@@ -752,8 +765,7 @@ export class MeetingsDashboardComponent {
         switchMap(([lens, past]) => {
           if (lens === 'me') return of(0);
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-          const recent = past.filter((m) => new Date(m.scheduled_start_time).getTime() >= cutoff);
-          return this.countMeetingsWithRecording(recent);
+          return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff));
         })
       ),
       { initialValue: 0 }

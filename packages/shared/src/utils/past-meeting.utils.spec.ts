@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
-import { filterPastMeetingParticipants, getLargestSessionShareUrl } from './past-meeting.utils';
+import { filterPastMeetingParticipants, getLargestSessionShareUrl, getPastMeetingStartTimeMs } from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
 function participant(partial: Partial<EnrichedPastMeetingParticipant>): EnrichedPastMeetingParticipant {
@@ -143,6 +143,29 @@ describe('filterPastMeetingParticipants', () => {
 
   it('returns an empty list when given no participants', () => {
     expect(filterPastMeetingParticipants([], { search: 'ada' })).toEqual([]);
+  });
+});
+
+describe('getPastMeetingStartTimeMs', () => {
+  it('prefers scheduled_start_time when both fields are valid', () => {
+    const ms = getPastMeetingStartTimeMs({
+      scheduled_start_time: '2026-07-09T12:30:00Z',
+      start_time: '2026-06-01T10:00:00Z',
+    });
+    expect(ms).toBe(new Date('2026-07-09T12:30:00Z').getTime());
+  });
+
+  it('falls back to start_time when scheduled_start_time is a Go zero-date', () => {
+    const ms = getPastMeetingStartTimeMs({
+      scheduled_start_time: '0001-01-01T00:00:00Z',
+      start_time: '2026-07-09T12:30:00Z',
+    });
+    expect(ms).toBe(new Date('2026-07-09T12:30:00Z').getTime());
+  });
+
+  it('returns null when both fields are missing or invalid', () => {
+    expect(getPastMeetingStartTimeMs({ scheduled_start_time: '0001-01-01T00:00:00Z', start_time: '0001-01-01T00:00:00Z' })).toBeNull();
+    expect(getPastMeetingStartTimeMs({ scheduled_start_time: '', start_time: '' } as never)).toBeNull();
   });
 });
 

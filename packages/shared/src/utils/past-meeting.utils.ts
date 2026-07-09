@@ -1,7 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EnrichedPastMeetingParticipant, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
+import { EnrichedPastMeetingParticipant, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
+
+const ZERO_DATE_PREFIX = '0001-01-01';
+
+function parsePastMeetingStartIso(iso: string | undefined): number | null {
+  if (!iso || iso.startsWith(ZERO_DATE_PREFIX)) {
+    return null;
+  }
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+// Zoom/ITX rows sometimes carry a Go zero-date on scheduled_start_time; fall back to start_time.
+export function getPastMeetingStartTimeMs(meeting: Pick<PastMeeting, 'scheduled_start_time' | 'start_time'>): number | null {
+  return parsePastMeetingStartIso(meeting.scheduled_start_time) ?? parsePastMeetingStartIso(meeting.start_time);
+}
 
 // Largest recording session (by total_size) is canonical; a recording "exists" only if that
 // session has a shareable URL. Single source of truth for recording availability.
