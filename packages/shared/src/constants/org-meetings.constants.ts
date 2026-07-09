@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FilterOption, OrgMeetingRsvpStatus, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgPastMeeting } from '../interfaces';
+import type { FilterOption, OrgMeetingRsvpStatus, OrgMeetingsTabConfig, OrgMeetingsTabId, OrgMeetingType, OrgMeetingTypeBadge, OrgPastMeeting } from '../interfaces';
 
 /** Org Meetings page tabs in visible order (`upcoming` is the default). */
 export const ORG_MEETINGS_TABS: readonly OrgMeetingsTabConfig[] = [
@@ -23,7 +23,7 @@ export const MAX_MEETINGS_PAGE_SIZE = 100;
 export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'marketing', 'technical', 'other']);
 
 /** Label + icon + badge style per meeting type, shared by the upcoming/past meeting-card type badges. */
-export const ORG_MEETING_TYPE_LABELS: Record<OrgMeetingType, { label: string; icon: string; badgeClass: string }> = {
+export const ORG_MEETING_TYPE_LABELS: Record<OrgMeetingType, OrgMeetingTypeBadge> = {
   board: { label: 'Board', icon: 'fa-light fa-people-group', badgeClass: 'border border-blue-400 text-blue-600' },
   marketing: { label: 'Marketing', icon: 'fa-light fa-bullhorn', badgeClass: 'border border-violet-400 text-violet-600' },
   technical: { label: 'Technical', icon: 'fa-light fa-code', badgeClass: 'border border-emerald-400 text-emerald-600' },

@@ -109,8 +109,7 @@
             <!-- RIGHT: See Meeting Details -->
             <div class="flex items-start">
               <a
-                [routerLink]="['/meetings', meeting.id, 'details']"
-                [queryParams]="meeting.demoPassword ? { password: meeting.demoPassword } : {}"
+                [routerLink]="meeting.demoDetailsUrl"
                 class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100 transition-colors"
                 [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
                 <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details

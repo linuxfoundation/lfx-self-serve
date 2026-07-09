@@ -45,6 +45,9 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
+    // Org Lens meeting type badges — border colors defined in ORG_MEETING_TYPE_LABELS (@lfx-one/shared), not scanned here
+    'border-violet-400',
+    'border-emerald-400',
   ],
   theme: {
     container: {
