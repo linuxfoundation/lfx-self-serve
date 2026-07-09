@@ -197,9 +197,7 @@ function recording(sessions: RecordingSession[]): PastMeetingRecording {
 
 describe('getPastMeetingResourceId', () => {
   it('prefers meeting_and_occurrence_id when present', () => {
-    expect(getPastMeetingResourceId({ id: 'row-id', meeting_and_occurrence_id: '99152950841-1630560600000' })).toBe(
-      '99152950841-1630560600000'
-    );
+    expect(getPastMeetingResourceId({ id: 'row-id', meeting_and_occurrence_id: '99152950841-1630560600000' })).toBe('99152950841-1630560600000');
   });
 
   it('falls back to id when meeting_and_occurrence_id is absent', () => {

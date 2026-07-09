@@ -417,10 +417,9 @@ export class MeetingService {
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
     if (!this.pastMeetingRecordingCache.has(pastMeetingUid)) {
-      const recording$ = this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`).pipe(
-        tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }),
-        shareReplay(1)
-      );
+      const recording$ = this.http
+        .get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`)
+        .pipe(tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }), shareReplay(1));
       this.pastMeetingRecordingCache.set(pastMeetingUid, recording$);
     }
     return this.pastMeetingRecordingCache.get(pastMeetingUid)!;
