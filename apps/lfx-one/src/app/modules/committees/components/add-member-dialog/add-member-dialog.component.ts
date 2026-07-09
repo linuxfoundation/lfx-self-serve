@@ -186,6 +186,9 @@ export class AddMemberDialogComponent {
       return;
     }
 
+    // Disable the submit button up front — org resolution below is async, and leaving it enabled
+    // during that window allows a double-click that fires a second resolve → invite chain.
+    this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
     const complete = (organization: CommitteeOrganizationReference | null | undefined): void => {
@@ -196,7 +199,6 @@ export class AddMemberDialogComponent {
         return;
       }
 
-      this.submitting.set(true);
       from(emails)
         .pipe(
           mergeMap(

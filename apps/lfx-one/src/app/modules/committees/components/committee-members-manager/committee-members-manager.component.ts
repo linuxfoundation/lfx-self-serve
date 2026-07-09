@@ -151,7 +151,12 @@ export class CommitteeMembersManagerComponent implements OnInit {
         )
       : of([] as CommitteeInvite[]);
 
-    existing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((serverInvites) => this.openCollectInviteDialog(serverInvites));
+    existing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((serverInvites) => {
+      // getCommitteeInvites returns every status; only pending ones should block re-inviting.
+      // Accepted invitees are already members; declined/revoked ones must be re-invitable.
+      const pending = serverInvites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending');
+      this.openCollectInviteDialog(pending);
+    });
   }
 
   /** Remove a staged (not-yet-sent) invite from the pending list. */
