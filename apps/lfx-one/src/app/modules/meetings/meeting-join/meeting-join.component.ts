@@ -217,8 +217,7 @@ export class MeetingJoinComponent implements OnInit {
     return name.substring(0, 2).toUpperCase();
   });
   protected isMobileViewport = signal(false);
-  // Null on the server and until hydration resolves the browser timezone — the date/time
-  // badge shows a skeleton while null so SSR never emits a UTC time (LFXV2-2540).
+  // Null on the server and until hydration resolves the browser timezone — the badge shows a skeleton while null.
   protected userTimezone = signal<string | null>(null);
   protected drawerPosition = computed(() => (this.isMobileViewport() ? 'bottom' : 'right') as 'bottom' | 'right');
   // Parent project (foundation) for context display
@@ -325,9 +324,7 @@ export class MeetingJoinComponent implements OnInit {
     this.initializeAutoJoin();
     this.initializePublicMeetingPageviewTracking();
 
-    // Runs only in the browser after the first render, so the SSR skeleton
-    // hydrates first and only then swaps to the timezone-formatted tag —
-    // avoids a hydration DOM mismatch (LFXV2-2540).
+    // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
     afterNextRender(() => {
       this.userTimezone.set(getUserTimezone());
     });
