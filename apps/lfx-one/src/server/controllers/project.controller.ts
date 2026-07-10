@@ -887,7 +887,7 @@ export class ProjectController {
     }
   }
 
-  /** GET /public/api/projects/:id/calendar.ics — PUBLIC non-restricted meetings; serves both foundation and project lenses. */
+  /** GET /public/api/projects/:id/calendar.ics — public-visibility meetings; join access remains gated by `restricted`. */
   public async getProjectCalendar(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const startTime = logger.startOperation(req, 'get_project_calendar', { project_id: id });

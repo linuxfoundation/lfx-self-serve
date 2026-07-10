@@ -56,6 +56,10 @@ export class CardSelectorComponent<T = string> {
 
   public onKeydown(event: KeyboardEvent, value: T): void {
     const options = this.options();
+    if (options.length === 0) {
+      return;
+    }
+
     const currentIndex = options.findIndex((option) => option.value === this.form().get(this.control())?.value);
 
     if (event.key === 'Enter' || event.key === ' ') {
