@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, ElementRef, input, output, QueryList, ViewChildren } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorOption } from '@lfx-one/shared/interfaces';
 
@@ -24,6 +24,9 @@ export class CardSelectorComponent<T = string> {
 
   // Output
   public readonly selectionChange = output<T>();
+
+  @ViewChildren('radioOption')
+  private readonly radioOptions!: QueryList<ElementRef<HTMLElement>>;
 
   public readonly labelId = computed(() => `${this.testIdPrefix()}-label`);
 
@@ -52,6 +55,7 @@ export class CardSelectorComponent<T = string> {
       event.preventDefault();
       const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
       this.onSelect(options[nextIndex].value);
+      this.focusOptionAt(nextIndex);
       return;
     }
 
@@ -59,6 +63,11 @@ export class CardSelectorComponent<T = string> {
       event.preventDefault();
       const nextIndex = currentIndex < 0 ? options.length - 1 : (currentIndex - 1 + options.length) % options.length;
       this.onSelect(options[nextIndex].value);
+      this.focusOptionAt(nextIndex);
     }
+  }
+
+  private focusOptionAt(index: number): void {
+    this.radioOptions.get(index)?.nativeElement.focus();
   }
 }

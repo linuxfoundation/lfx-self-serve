@@ -22,6 +22,7 @@
     }">
     @for (option of options(); track option.value) {
       <div
+        #radioOption
         role="radio"
         [attr.aria-checked]="isSelected(option.value)"
         [attr.tabindex]="isSelected(option.value) ? 0 : -1"
