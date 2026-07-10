@@ -331,8 +331,9 @@ export class PublicMeetingController {
         });
       }
 
-      // Check if the user has passed in a password, if so, check if it's correct
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
+      // Public unrestricted meetings are open to anyone with the link; other meetings keep the password gate.
+      const isPublicUnrestricted = meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted;
+      if (!isPublicUnrestricted && !this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
         return;
       }
 
