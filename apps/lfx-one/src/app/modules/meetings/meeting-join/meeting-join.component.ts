@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { DatePipe, isPlatformBrowser, isPlatformServer, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, isPlatformServer, NgClass } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -324,12 +324,16 @@ export class MeetingJoinComponent implements OnInit {
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
     this.initializePublicMeetingPageviewTracking();
+
+    // Runs only in the browser after the first render, so the SSR skeleton
+    // hydrates first and only then swaps to the timezone-formatted tag —
+    // avoids a hydration DOM mismatch (LFXV2-2540).
+    afterNextRender(() => {
+      this.userTimezone.set(getUserTimezone());
+    });
   }
 
   public ngOnInit(): void {
-    if (isPlatformBrowser(this.platformId)) {
-      this.userTimezone.set(getUserTimezone());
-    }
     if (typeof window !== 'undefined') {
       const mql = window.matchMedia('(max-width: 639px)'); // Matches Tailwind sm: breakpoint (640px)
       this.isMobileViewport.set(mql.matches);
