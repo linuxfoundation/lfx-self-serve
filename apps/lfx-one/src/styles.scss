@@ -263,9 +263,9 @@
     color: #fff;
   }
 
-  /* Restricted badge — solid fill */
+  /* Restricted badge — lfxColors.amber[700] for WCAG contrast with white text */
   &.tag-restricted {
-    background: #d97706;
+    background: #bb4d00;
     color: #fff;
   }
 

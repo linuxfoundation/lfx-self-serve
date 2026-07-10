@@ -11,9 +11,12 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
+  fieldsToPrivacyType,
+  lfxColors,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
+  MeetingPrivacyType,
   MeetingRecurrence,
   MeetingTypeBadge,
   PastMeetingRecording,
@@ -154,25 +157,29 @@ export class DashboardMeetingCardComponent {
   private initPrivacyDotInfo(): Signal<{ label: string; bgColor: string; icon: string }> {
     return computed(() => {
       const meeting = this.meeting();
-      if (meeting.restricted) {
-        return {
-          label: 'Restricted meeting',
-          bgColor: '#d97706',
-          icon: 'fa-solid fa-lock',
-        };
+      const privacyType = fieldsToPrivacyType(meeting.visibility, meeting.restricted);
+
+      switch (privacyType) {
+        case MeetingPrivacyType.RESTRICTED:
+          return {
+            label: 'Restricted meeting',
+            bgColor: lfxColors.amber[700],
+            icon: 'fa-solid fa-lock',
+          };
+        case MeetingPrivacyType.PUBLIC:
+          return {
+            label: 'Public meeting',
+            bgColor: lfxColors.emerald[700],
+            icon: 'fa-solid fa-globe',
+          };
+        case MeetingPrivacyType.PRIVATE:
+        default:
+          return {
+            label: 'Private meeting',
+            bgColor: lfxColors.red[600],
+            icon: 'fa-solid fa-shield-halved',
+          };
       }
-      if (meeting.visibility === 'private') {
-        return {
-          label: 'Private meeting',
-          bgColor: '#d4183d',
-          icon: 'fa-solid fa-shield-halved',
-        };
-      }
-      return {
-        label: 'Public meeting',
-        bgColor: '#00bc7d',
-        icon: 'fa-solid fa-globe',
-      };
     });
   }
 
