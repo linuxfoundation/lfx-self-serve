@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, ElementRef, inject, PLATFORM_ID, signal, type Signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, type Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -38,15 +38,18 @@ import {
 import type {
   InfluenceCardVm,
   LeaderboardDimension,
+  OrgLensBlockStatus,
   OrgLensCardDetailRow,
   OrgLensCardDetailSection,
+  OrgLensHeroBlock,
+  OrgLensInfluenceBlock,
+  OrgLensLeaderboardBlock,
   OrgLensLeaderboardMetric,
   OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
-  OrgLensProjectDetailPageState,
-  OrgLensProjectDetailResponse,
   OrgLensProjectDetailTab,
   OrgLensProjectInfluenceCard,
+  OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
@@ -55,13 +58,27 @@ import { InputTextModule } from 'primeng/inputtext';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
-import { catchError, combineLatest, debounceTime, filter, map, type Observable, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, type Observable, of, scan, skip, startWith, switchMap } from 'rxjs';
+
+/** Hero block state — the sole page-level gate; a null hero (404) is the whole-page not-found. */
+interface HeroState {
+  status: 'loading' | 'ready' | 'notFound' | 'error';
+  data: OrgLensHeroBlock | null;
+}
+/** Generic per-block lifecycle state for the tab-content blocks (B3/B4, B5, B6, B7, B8). */
+interface BlockState<T> {
+  status: OrgLensBlockStatus;
+  data: T | null;
+}
 
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885), routed at `/org/projects/:projectSlug`.
- * Opened from the Projects table (project name link) and the Org Overview Foundations &
- * Projects tab. Owns the fetch keyed on the selected org + slug, the page-state machine,
- * and the URL-persisted tab strip.
+ *
+ * The page is decomposed into the UX contract's independently-fetched data blocks (hero, the two
+ * Our-Influence card groups, the influence-trend chart, the two leaderboard boards, and the per-card
+ * drawer). Each block loads, renders, and fails on its own timeline; only the hero block gates the
+ * whole page. The hero is range-independent; the Our-Influence and Leaderboards blocks fetch lazily
+ * the first time their tab activates and re-fetch when the `?range=` toggle changes.
  */
 @Component({
   selector: 'lfx-org-project-detail',
@@ -91,21 +108,25 @@ export class OrgProjectDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly retryTrigger = signal(0);
-  protected readonly fetchLoading = signal(true);
-  protected readonly fetchError = signal(false);
-  protected readonly detail = signal<OrgLensProjectDetailResponse | null>(null);
+  // Per-block retry counters — bumping one re-runs only that block's fetch, so one failed block
+  // never forces a whole-page reload.
+  private readonly heroRetry = signal(0);
+  private readonly influenceRetry = signal(0);
+  private readonly trendRetry = signal(0);
+  private readonly techRetry = signal(0);
+  private readonly ecoRetry = signal(0);
+
   protected readonly techArrows = signal({ left: false, right: false });
   protected readonly ecoArrows = signal({ left: false, right: false });
   private readonly selectedCardKey = signal<string | null>(null);
   protected readonly drawerOpen = signal(false);
 
-  protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => {
-    const card = this.selectedCard();
-    if (!card) return null;
-    return this.detail()?.cardDetails?.[card.key] ?? null;
-  });
+  // B5 drawer state + per-(card, range) cache so re-opening the same card at the same range is
+  // instant (no spinner flash); a range change closes the drawer and its cache key differs.
+  protected readonly drawerState = signal<BlockState<OrgLensCardDetailSection>>({ status: 'loading', data: null });
+  private readonly drawerCache = new Map<string, OrgLensCardDetailSection | null>();
 
   protected readonly tabs: { id: OrgLensProjectDetailTab; label: string; icon: string }[] = [
     { id: 'pd-influence', label: 'Our Influence', icon: 'fa-light fa-chart-network' },
@@ -115,11 +136,58 @@ export class OrgProjectDetailComponent {
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
-  protected readonly pageState: Signal<OrgLensProjectDetailPageState> = computed(() => this.initPageState());
+  protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
+  protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
+  private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  protected readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), { initialValue: null });
 
-  // Hero presentation — derived from the loaded payload.
-  protected readonly hero = computed(() => this.detail()?.hero ?? null);
+  // Fetch triggers. Hero is range-independent (drops range$); the tab-scoped blocks gate on an
+  // "activated" flag that flips true the first time their tab is shown and stays true, so returning
+  // to a tab at the same range paints from cache while a range change re-fetches.
+  private readonly orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid ?? null)).pipe(
+    filter((uid): uid is string => !!uid),
+    distinctUntilChanged()
+  );
+  private readonly slug$ = this.route.paramMap.pipe(
+    map((params) => params.get('projectSlug')),
+    filter((slug): slug is string => !!slug),
+    distinctUntilChanged()
+  );
+  private readonly range$ = toObservable(this.timeRange).pipe(distinctUntilChanged());
+  private readonly influenceActivated$ = toObservable(this.activeTab).pipe(
+    map((tab) => tab === 'pd-influence'),
+    scan((seen, active) => seen || active, false),
+    distinctUntilChanged()
+  );
+  private readonly leaderboardsActivated$ = toObservable(this.activeTab).pipe(
+    map((tab) => tab === 'pd-leaderboards'),
+    scan((seen, active) => seen || active, false),
+    distinctUntilChanged()
+  );
+
+  // Per-block state signals, each driven by its own stream (see build*State).
+  protected readonly heroState = toSignal(this.buildHeroState(), { initialValue: { status: 'loading', data: null } as HeroState });
+  protected readonly influenceState = toSignal(this.buildInfluenceState(), {
+    initialValue: { status: 'loading', data: null } as BlockState<OrgLensInfluenceBlock>,
+  });
+  protected readonly trendState = toSignal(this.buildTrendState(), { initialValue: { status: 'loading', data: null } as BlockState<OrgLensTrendBlock> });
+  protected readonly techBoardState = toSignal(
+    this.buildBoardState((uid, name, slug, range) => this.detailService.getTechnicalBoard(uid, name, slug, range), this.techRetry),
+    {
+      initialValue: { status: 'loading', data: null } as BlockState<OrgLensLeaderboardBlock>,
+    }
+  );
+  protected readonly ecoBoardState = toSignal(
+    this.buildBoardState((uid, name, slug, range) => this.detailService.getEcosystemBoard(uid, name, slug, range), this.ecoRetry),
+    {
+      initialValue: { status: 'loading', data: null } as BlockState<OrgLensLeaderboardBlock>,
+    }
+  );
+
+  // Hero presentation — derived from the hero block.
+  protected readonly hero = computed(() => this.heroState().data?.hero ?? null);
+  protected readonly isNonLfProject = computed(() => this.heroState().data?.isNonLfProject ?? false);
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumb());
   protected readonly healthMeta = computed(() => {
     const health = this.hero()?.health;
@@ -129,31 +197,29 @@ export class OrgProjectDetailComponent {
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
   protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
 
-  // Org's own influence standing (from its leaderboard row) → section-title band badges.
-  // Bands are precomputed warehouse tiers read straight through — not derived from the score client-side.
-  private readonly viewingRow = computed(() => this.detail()?.leaderboard.find((row) => row.isViewingOrg) ?? null);
+  // Section-title band badges — read the viewing org's precomputed tiers carried inline on the
+  // Our-Influence block, so the Our-Influence tab never depends on (or waits for) the leaderboards.
   protected readonly technicalBandMeta = computed(() => {
-    const row = this.viewingRow();
-    return row ? this.bandMeta(row.levels.technical) : null;
+    const level = this.influenceState().data?.levels.technical ?? null;
+    return level ? this.bandMeta(level) : null;
   });
   protected readonly ecosystemBandMeta = computed(() => {
-    // Non-LF is a project-level classification, independent of whether the viewing org has a
-    // leaderboard row — surface the distinct Non-LF marker whenever the project is non-LF (bandMeta
-    // renders that marker for a null level). Otherwise show the viewing org's precomputed tier.
-    if (this.detail()?.isNonLfProject) return this.bandMeta(null);
-    const row = this.viewingRow();
-    return row ? this.bandMeta(row.levels.ecosystem) : null;
+    // Non-LF is a project-level classification: surface the distinct marker whenever the project is
+    // non-LF; otherwise show the viewing org's precomputed ecosystem tier.
+    if (this.isNonLfProject()) return this.bandMeta(null);
+    const level = this.influenceState().data?.levels.ecosystem ?? null;
+    return level ? this.bandMeta(level) : null;
   });
 
   // Our Influence tab — Technical + Ecosystem cards (per-card chart type and data).
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly technicalCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.detail()?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
+    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
   });
   protected readonly ecosystemCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.detail()?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
+    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
   });
   // Live VM for the open drawer card, re-derived from the current (range-scoped) cards so the drawer
   // hero stat/caption track the ?range= toggle instead of a stale open-time snapshot.
@@ -166,13 +232,11 @@ export class OrgProjectDetailComponent {
   // Leaderboards tab — URL-persisted metric toggle + time range + two side-by-side boards + stacked trend.
   protected readonly metricOptions = PD_METRIC_OPTIONS;
   protected readonly timeRangeOptions = PD_TIME_RANGE_OPTIONS;
-  protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
-  protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
   protected readonly technicalBoardTitle = computed(() => (this.isActivityMode() ? 'Contribution Activities Leaderboard' : 'Technical Influence Leaderboard'));
   protected readonly ecosystemBoardTitle = computed(() => (this.isActivityMode() ? 'Collaboration Activities Leaderboard' : 'Ecosystem Influence Leaderboard'));
   /** Project-level Non-LF marker for the ecosystem leaderboard when the project has no ecosystem influence. */
-  protected readonly ecosystemBoardNonLfMarker = computed(() => (this.detail()?.isNonLfProject ? PD_NON_LF_MARKER : null));
+  protected readonly ecosystemBoardNonLfMarker = computed(() => (this.isNonLfProject() ? PD_NON_LF_MARKER : null));
   protected readonly drawerTimeRangeLabel = computed(() => (this.timeRange() === 'all' ? 'All time' : `Last ${PD_TIME_RANGE_MONTHS[this.timeRange()]} months`));
   protected readonly searchForm = new FormGroup({
     technical: new FormControl('', { nonNullable: true }),
@@ -187,18 +251,24 @@ export class OrgProjectDetailComponent {
 
   // Stacked area trend chart — top-10 companies + "All others" stacked by combined influence score,
   // built from the real per-org monthly series on the wire.
-  protected readonly hasStackedTrend = computed(() => (this.detail()?.trend.length ?? 0) > 0);
+  protected readonly hasStackedTrend = computed(() => (this.trendState().data?.trend.length ?? 0) > 0);
   protected readonly stackedTrendData = computed<ChartData<ChartType>>(() => this.buildStackedTrend());
   protected readonly stackedTrendOptions: ChartOptions<ChartType> = this.buildStackedTrendOptions();
 
-  // Subscribe via toSignal so the fetch stream runs; results are mirrored into the signals read by the template.
-  protected readonly detailData = toSignal<OrgLensProjectDetailResponse | null>(this.initDetailStream(), { initialValue: null });
+  // Live drawer detail section for the open card.
+  protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => this.drawerState().data);
 
   public constructor() {
     this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
     this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
 
-    // React when tab or card counts change to refresh horizontal scroll arrows.
+    // A refetch driver (range / org / slug change) re-scopes every range-scoped block server-side.
+    // Close any open card drawer so it can never pair a new range label with a stale payload.
+    combineLatest([this.orgUid$, this.slug$, this.range$])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.closeCardDetail());
+
+    // Refresh horizontal scroll arrows when the Our-Influence cards change.
     toObservable(
       computed(() => ({
         tab: this.activeTab(),
@@ -227,8 +297,29 @@ export class OrgProjectDetailComponent {
     });
   }
 
-  protected retry(): void {
-    this.retryTrigger.update((v) => v + 1);
+  protected retryHero(): void {
+    this.heroRetry.update((v) => v + 1);
+  }
+
+  protected retryInfluence(): void {
+    this.influenceRetry.update((v) => v + 1);
+  }
+
+  protected retryTrend(): void {
+    this.trendRetry.update((v) => v + 1);
+  }
+
+  protected retryTechnicalBoard(): void {
+    this.techRetry.update((v) => v + 1);
+  }
+
+  protected retryEcosystemBoard(): void {
+    this.ecoRetry.update((v) => v + 1);
+  }
+
+  protected retryDrawer(): void {
+    const key = this.selectedCardKey();
+    if (key) this.loadDrawer(key, true);
   }
 
   protected setMetric(metric: OrgLensLeaderboardMetric): void {
@@ -254,10 +345,12 @@ export class OrgProjectDetailComponent {
   protected openCardDetail(card: InfluenceCardVm): void {
     this.selectedCardKey.set(card.key);
     this.drawerOpen.set(true);
+    this.loadDrawer(card.key);
   }
 
   protected closeCardDetail(): void {
     this.drawerOpen.set(false);
+    this.selectedCardKey.set(null);
   }
 
   /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
@@ -277,10 +370,45 @@ export class OrgProjectDetailComponent {
   /**
    * Right-hand column header for a leaderboard. Influence mode shows the band/score column;
    * Activity Count mode labels both boards "Total contributions" — org-dashboard parity (both the
-   * Contribution and Collaboration activity boards reuse this header; §DN7).
+   * Contribution and Collaboration activity boards reuse this header).
    */
   protected columnLabel(): string {
     return this.isActivityMode() ? 'Total contributions' : 'Influence Score';
+  }
+
+  /**
+   * B5 — Lazy-fetch the drawer section for one card, keyed by (card, active range). A cache hit
+   * paints instantly; a miss shows the in-drawer skeleton until the fetch resolves. `force` bypasses
+   * the cache for a retry after an error.
+   */
+  private loadDrawer(cardKey: string, force = false): void {
+    const uid = this.accountContext.selectedAccount()?.uid;
+    const slug = this.projectSlug();
+    if (!uid || !slug) return;
+    const range = this.timeRange();
+    const cacheKey = `${cardKey}|${range}`;
+
+    if (force) this.drawerCache.delete(cacheKey);
+    if (this.drawerCache.has(cacheKey)) {
+      const cached = this.drawerCache.get(cacheKey) ?? null;
+      this.drawerState.set({ status: cached ? 'ready' : 'empty', data: cached });
+      return;
+    }
+
+    this.drawerState.set({ status: 'loading', data: null });
+    this.detailService
+      .getCardDrawer(uid, this.orgName(), slug, cardKey, range)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (section) => {
+          this.drawerCache.set(cacheKey, section);
+          this.drawerState.set(section ? { status: 'ready', data: section } : { status: 'empty', data: null });
+        },
+        error: (err: unknown) => {
+          console.error('[OrgProjectDetail] failed to load card detail', err);
+          this.drawerState.set({ status: 'error', data: null });
+        },
+      });
   }
 
   private initMetric(): OrgLensLeaderboardMetric {
@@ -294,14 +422,14 @@ export class OrgProjectDetailComponent {
   }
 
   /**
-   * Rank the leaderboard for one dimension (technical / ecosystem), then apply the search filter.
-   * Returns all matching rows — the paginator handles slicing.
+   * Rank one board's dimension (technical / ecosystem), then apply the search filter. Reads from that
+   * board's own block so each board paints as soon as its own fetch resolves. Returns all matching
+   * rows — the paginator handles slicing.
    */
   private buildBoard(dimension: LeaderboardDimension, search: string) {
+    const block = dimension === 'technical' ? this.techBoardState().data : this.ecoBoardState().data;
     const isActivity = this.metric() === 'activity';
-    const sourceRows = isActivity
-      ? ((dimension === 'technical' ? this.detail()?.activityLeaderboards.contributions : this.detail()?.activityLeaderboards.collaborations) ?? [])
-      : (this.detail()?.leaderboard ?? []);
+    const sourceRows = isActivity ? (block?.activity ?? []) : (block?.influence ?? []);
 
     if (isActivity) {
       const ranked = [...sourceRows]
@@ -340,8 +468,8 @@ export class OrgProjectDetailComponent {
     valued.sort((a, b) => b.sortKey - a.sortKey || a.row.orgName.localeCompare(b.row.orgName));
     const ranked = valued.map((entry, i) => {
       // Bands are precomputed per-org warehouse tiers (Silent/Participating/Contributing/Leading).
-      // Non-LF is a project-level classification, not a per-org band (§DN8) — it is surfaced once at
-      // the board/section level (ecosystemBoardNonLfMarker), never stamped on an individual org chip.
+      // Non-LF is a project-level classification, not a per-org band — it is surfaced once at the
+      // board/section level (ecosystemBoardNonLfMarker), never stamped on an individual org chip.
       // A row with no mapped tier renders a blank chip.
       const bandMeta = entry.level ? PD_BAND_TAG[entry.level] : null;
       const activityLabel = isActivity ? `${entry.activity.toLocaleString()} - ${Math.round(entry.activityPct)}%` : entry.activity.toLocaleString();
@@ -365,48 +493,80 @@ export class OrgProjectDetailComponent {
     return raw && PD_VALID_TABS.has(raw) ? (raw as OrgLensProjectDetailTab) : PD_DEFAULT_TAB;
   }
 
-  private initDetailStream(): Observable<OrgLensProjectDetailResponse | null> {
-    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(filter((uid): uid is string => !!uid));
-    const orgName$ = toObservable(computed(() => this.accountContext.selectedAccount()?.accountName ?? ''));
-    const projectSlug$ = this.route.paramMap.pipe(map((params) => params.get('projectSlug')));
-    // The ?range= toggle re-scopes card headlines, leaderboard scores, and activity totals server-side.
-    const timeRange$ = toObservable(this.timeRange);
-    const retryTrigger$ = toObservable(this.retryTrigger);
-
-    return combineLatest([orgUid$, orgName$, projectSlug$.pipe(filter((slug): slug is string => !!slug)), timeRange$, retryTrigger$]).pipe(
-      tap(() => {
-        this.fetchLoading.set(true);
-        this.fetchError.set(false);
-        // A refetch (notably a ?range= change) re-scopes every headline/total server-side. Close any
-        // open card drawer so it can never pair the new range label with a stale, pre-refetch payload.
-        this.drawerOpen.set(false);
-        this.selectedCardKey.set(null);
-      }),
-      switchMap(([orgUid, orgName, projectSlug, range]) => {
-        return this.detailService.getProjectDetail(orgUid, orgName, projectSlug, range).pipe(
-          catchError((err: unknown) => {
-            console.error('[OrgProjectDetail] failed to load project detail', err);
-            this.fetchError.set(true);
-            this.fetchLoading.set(false);
-            return of<OrgLensProjectDetailResponse | null>(null);
+  /** B1 — Hero stream: range-independent, keyed on (org, slug); a null result is the page not-found. */
+  private buildHeroState(): Observable<HeroState> {
+    return combineLatest([this.orgUid$, this.slug$, toObservable(this.heroRetry)]).pipe(
+      switchMap(([uid, slug]) =>
+        this.detailService.getHero(uid, this.orgName(), slug).pipe(
+          map((block): HeroState => (block === null ? { status: 'notFound', data: null } : { status: 'ready', data: block })),
+          startWith<HeroState>({ status: 'loading', data: null }),
+          catchError((err: unknown): Observable<HeroState> => {
+            console.error('[OrgProjectDetail] failed to load hero', err);
+            return of<HeroState>({ status: 'error', data: null });
           })
-        );
-      }),
-      tap((response) => {
-        this.detail.set(response);
-        this.searchForm.reset({ technical: '', ecosystem: '' });
-        this.techSearch.set('');
-        this.ecoSearch.set('');
-        if (!this.fetchError()) this.fetchLoading.set(false);
-      })
+        )
+      )
     );
   }
 
-  private initPageState(): OrgLensProjectDetailPageState {
-    if (this.fetchLoading()) return 'loading';
-    if (this.fetchError()) return 'error';
-    if (!this.detail()) return 'notFound';
-    return 'ready';
+  /** B3/B4 — Our-Influence stream: lazy on first pd-influence activation, re-fetches on range change. */
+  private buildInfluenceState(): Observable<BlockState<OrgLensInfluenceBlock>> {
+    return combineLatest([this.orgUid$, this.slug$, this.range$, this.influenceActivated$, toObservable(this.influenceRetry)]).pipe(
+      filter(([, , , activated]) => activated),
+      switchMap(([uid, slug, range]) =>
+        this.detailService.getInfluenceBlock(uid, this.orgName(), slug, range).pipe(
+          map((block): BlockState<OrgLensInfluenceBlock> => (block ? { status: 'ready', data: block } : { status: 'empty', data: null })),
+          startWith<BlockState<OrgLensInfluenceBlock>>({ status: 'loading', data: null }),
+          catchError((err: unknown): Observable<BlockState<OrgLensInfluenceBlock>> => {
+            console.error('[OrgProjectDetail] failed to load influence cards', err);
+            return of<BlockState<OrgLensInfluenceBlock>>({ status: 'error', data: null });
+          })
+        )
+      )
+    );
+  }
+
+  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation, re-fetches on range change. */
+  private buildTrendState(): Observable<BlockState<OrgLensTrendBlock>> {
+    return combineLatest([this.orgUid$, this.slug$, this.range$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
+      filter(([, , , activated]) => activated),
+      switchMap(([uid, slug, range]) =>
+        this.detailService.getTrendBlock(uid, this.orgName(), slug, range).pipe(
+          map(
+            (block): BlockState<OrgLensTrendBlock> => (block && block.trend.length > 0 ? { status: 'ready', data: block } : { status: 'empty', data: block })
+          ),
+          startWith<BlockState<OrgLensTrendBlock>>({ status: 'loading', data: null }),
+          catchError((err: unknown): Observable<BlockState<OrgLensTrendBlock>> => {
+            console.error('[OrgProjectDetail] failed to load influence trend', err);
+            return of<BlockState<OrgLensTrendBlock>>({ status: 'error', data: null });
+          })
+        )
+      )
+    );
+  }
+
+  /**
+   * B7/B8 — Leaderboard board stream (one dimension). Lazy on first pd-leaderboards activation and
+   * re-fetches on range change. Both boards use this builder with their own fetch + retry, so they
+   * fetch independently and in parallel — whichever lands first paints first.
+   */
+  private buildBoardState(
+    fetch: (uid: string, name: string, slug: string, range: OrgLensLeaderboardTimeRange) => Observable<OrgLensLeaderboardBlock | null>,
+    retry: Signal<number>
+  ): Observable<BlockState<OrgLensLeaderboardBlock>> {
+    return combineLatest([this.orgUid$, this.slug$, this.range$, this.leaderboardsActivated$, toObservable(retry)]).pipe(
+      filter(([, , , activated]) => activated),
+      switchMap(([uid, slug, range]) =>
+        fetch(uid, this.orgName(), slug, range).pipe(
+          map((block): BlockState<OrgLensLeaderboardBlock> => (block ? { status: 'ready', data: block } : { status: 'empty', data: null })),
+          startWith<BlockState<OrgLensLeaderboardBlock>>({ status: 'loading', data: null }),
+          catchError((err: unknown): Observable<BlockState<OrgLensLeaderboardBlock>> => {
+            console.error('[OrgProjectDetail] failed to load leaderboard board', err);
+            return of<BlockState<OrgLensLeaderboardBlock>>({ status: 'error', data: null });
+          })
+        )
+      )
+    );
   }
 
   private initBreadcrumb(): MenuItem[] {
@@ -643,7 +803,7 @@ export class OrgProjectDetailComponent {
    * each month is normalized so all series sum to 100%.
    */
   private buildStackedTrend(): ChartData<ChartType> {
-    const trend = this.detail()?.trend ?? [];
+    const trend = this.trendState().data?.trend ?? [];
     if (trend.length === 0) return { labels: [], datasets: [] };
 
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];

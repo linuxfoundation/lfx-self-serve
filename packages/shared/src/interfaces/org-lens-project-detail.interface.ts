@@ -178,3 +178,50 @@ export interface OrgLensProjectDetailResponse {
 
 /** Page-level lifecycle state for the Project Detail component. */
 export type OrgLensProjectDetailPageState = 'loading' | 'error' | 'notFound' | 'ready';
+
+/**
+ * Lifecycle state for a single Project Detail data-fetching block (LFXV2-1885 UX contract).
+ * Each block loads, renders, and fails independently; only the hero block gates the whole page.
+ */
+export type OrgLensBlockStatus = 'loading' | 'ready' | 'empty' | 'error';
+
+/**
+ * B1 Hero block — project identity + stat tiles + the project-level non-LF classification.
+ * Range-independent: fetched once per (org, slug). A null hero block is the whole-page not-found.
+ */
+export interface OrgLensHeroBlock {
+  hero: OrgLensProjectHero;
+  isNonLfProject: boolean;
+}
+
+/**
+ * B3/B4 Our-Influence block — the Technical + Ecosystem card groups, plus the viewing org's own
+ * precomputed influence tiers carried inline so the Our-Influence tab never depends on (or waits
+ * for) the leaderboard blocks for its section-title band chips. Range-scoped.
+ */
+export interface OrgLensInfluenceBlock {
+  technical: OrgLensProjectInfluenceCard[];
+  ecosystem: OrgLensProjectInfluenceCard[];
+  isNonLfProject: boolean;
+  /** Viewing org's precomputed tiers for the section-title band chips; null when it has no leaderboard row. */
+  levels: { technical: OrgLensProjectBand | null; ecosystem: OrgLensProjectBand | null };
+}
+
+/** B6 Influence Trend block — the per-org monthly combined-influence series. Range-scoped (client slices). */
+export interface OrgLensTrendBlock {
+  trend: OrgLensProjectTrendSeries[];
+}
+
+/**
+ * B7/B8 Leaderboard block for one dimension (technical or ecosystem). Carries both the Calculated
+ * Influence rows and the dimension's Activity Count rows so switching the metric toggle is a
+ * client-side slice that never re-fetches. Range-scoped.
+ */
+export interface OrgLensLeaderboardBlock {
+  /** Calculated Influence rows (ranked client-side by this board's dimension). */
+  influence: OrgLensProjectLeaderboardRow[];
+  /** Activity Count rows for this board's dimension (contributions for technical, collaborations for ecosystem). */
+  activity: OrgLensProjectLeaderboardRow[];
+  /** Project-level non-LF marker (ecosystem board only surfaces it). */
+  isNonLfProject: boolean;
+}

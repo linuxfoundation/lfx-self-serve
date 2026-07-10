@@ -75,7 +75,9 @@ test.describe('Org Project Detail — tab strip', () => {
 
   test('deep-links to the Leaderboards tab via ?tab=', async ({ page }) => {
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The board is fetched lazily on first activation; wait for its table (data present), not just
+    // the wrapper that renders during the loading skeleton.
+    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('arrow keys move between tabs', async ({ page }) => {
@@ -88,7 +90,8 @@ test.describe('Org Project Detail — tab strip', () => {
 test.describe('Org Project Detail — leaderboards', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Gate on the rendered table so per-block lazy loading has resolved before the assertions below.
+    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('renders both side-by-side boards with the viewing-org row pinned', async ({ page }) => {
