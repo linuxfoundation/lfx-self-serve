@@ -152,7 +152,7 @@ export async function checkPastMeetingAccess(req: Request, meeting: PastMeeting,
 export function stripMeetingJoinCredentials(meeting: Meeting): Meeting {
   const sanitized = { ...meeting };
   delete sanitized.host_key;
-  delete sanitized.password;
+  sanitized.password = null;
   delete sanitized.passcode;
 
   if (sanitized.zoom_config) {

@@ -339,8 +339,10 @@ export class MeetingJoinComponent implements OnInit {
     const meeting = this.meeting();
     const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.id);
 
-    if (meeting.password) {
-      meetingUrl.searchParams.set('password', meeting.password);
+    const accessPassword = this.password() ?? meeting.password;
+
+    if (accessPassword) {
+      meetingUrl.searchParams.set('password', accessPassword);
     }
     this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
@@ -763,9 +765,10 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       const params = new URLSearchParams();
+      const accessPassword = this.password() ?? meeting.password;
 
-      if (meeting.password) {
-        params.set('password', meeting.password);
+      if (accessPassword) {
+        params.set('password', accessPassword);
       }
       const queryString = params.toString();
       return queryString ? `${environment.urls.home}/meetings/${meeting.id}?${queryString}` : `${environment.urls.home}/meetings/${meeting.id}`;
@@ -860,7 +863,9 @@ export class MeetingJoinComponent implements OnInit {
   private fetchJoinUrl(meeting: Meeting, email: string): Observable<string | undefined> {
     this.isLoadingJoinUrl.set(true);
 
-    return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email }).pipe(
+    const accessPassword = this.password() ?? meeting.password;
+
+    return this.meetingService.getPublicMeetingJoinUrl(meeting.id, accessPassword, { email }).pipe(
       map((res) => {
         this.isLoadingJoinUrl.set(false);
         if (res.link) {
