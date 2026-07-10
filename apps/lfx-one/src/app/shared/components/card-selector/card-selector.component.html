@@ -20,12 +20,12 @@
       'grid-cols-1 md:grid-cols-2': gridColumns() === 2,
       'grid-cols-1': gridColumns() === 1,
     }">
-    @for (option of options(); track option.value) {
+    @for (option of options(); track option.value; let i = $index) {
       <div
         #radioOption
         role="radio"
         [attr.aria-checked]="isSelected(option.value)"
-        [attr.tabindex]="isSelected(option.value) ? 0 : -1"
+        [attr.tabindex]="getTabIndex(i, option.value)"
         class="p-4 border-2 rounded-lg cursor-pointer transition-all text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         [ngClass]="{
           'border-gray-200 bg-white hover:border-gray-300': !isSelected(option.value),

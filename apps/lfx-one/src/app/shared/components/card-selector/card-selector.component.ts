@@ -34,6 +34,19 @@ export class CardSelectorComponent<T = string> {
     return this.form().get(this.control())?.value === value;
   }
 
+  public hasSelection(): boolean {
+    const value = this.form().get(this.control())?.value;
+    return this.options().some((option) => option.value === value);
+  }
+
+  public getTabIndex(index: number, value: T): number {
+    if (this.isSelected(value)) {
+      return 0;
+    }
+
+    return !this.hasSelection() && index === 0 ? 0 : -1;
+  }
+
   // Handle selection
   public onSelect(value: T): void {
     this.form().get(this.control())?.setValue(value);
@@ -68,6 +81,8 @@ export class CardSelectorComponent<T = string> {
   }
 
   private focusOptionAt(index: number): void {
-    this.radioOptions.get(index)?.nativeElement.focus();
+    queueMicrotask(() => {
+      this.radioOptions.get(index)?.nativeElement.focus();
+    });
   }
 }
