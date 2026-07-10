@@ -65,7 +65,7 @@ export class DashboardMeetingCardComponent {
   public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = this.initMeetingTypeInfo();
   public readonly meetingStartTime: Signal<string> = this.initMeetingStartTime();
   public readonly formattedTimeWithDuration: Signal<string> = this.initFormattedTimeWithDuration();
-  public readonly isPrivate: Signal<boolean> = this.initIsPrivate();
+  public readonly privacyDotInfo: Signal<{ label: string; bgColor: string; icon: string }> = this.initPrivacyDotInfo();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
@@ -87,7 +87,6 @@ export class DashboardMeetingCardComponent {
   public readonly meetingDuration: Signal<number> = this.initMeetingDuration();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly projectChipLabel: Signal<string | null> = this.initProjectChipLabel();
-  public readonly dateBadgeDotInfo: Signal<{ bgColor: string; icon: string }> = this.initDateBadgeDotInfo();
 
   public constructor() {
     const meeting$ = toObservable(this.meeting);
@@ -152,9 +151,28 @@ export class DashboardMeetingCardComponent {
     });
   }
 
-  private initIsPrivate(): Signal<boolean> {
+  private initPrivacyDotInfo(): Signal<{ label: string; bgColor: string; icon: string }> {
     return computed(() => {
-      return this.meeting().visibility === 'private';
+      const meeting = this.meeting();
+      if (meeting.restricted) {
+        return {
+          label: 'Restricted meeting',
+          bgColor: '#d97706',
+          icon: 'fa-solid fa-lock',
+        };
+      }
+      if (meeting.visibility === 'private') {
+        return {
+          label: 'Private meeting',
+          bgColor: '#d4183d',
+          icon: 'fa-solid fa-shield-halved',
+        };
+      }
+      return {
+        label: 'Public meeting',
+        bgColor: '#00bc7d',
+        icon: 'fa-solid fa-globe',
+      };
     });
   }
 
@@ -304,10 +322,4 @@ export class DashboardMeetingCardComponent {
     });
   }
 
-  private initDateBadgeDotInfo(): Signal<{ bgColor: string; icon: string }> {
-    return computed(() => ({
-      bgColor: this.isPrivate() ? '#d4183d' : '#00bc7d',
-      icon: this.isPrivate() ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe',
-    }));
-  }
 }
