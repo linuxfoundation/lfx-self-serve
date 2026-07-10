@@ -132,11 +132,7 @@ export class PublicMeetingController {
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
       if (meeting.visibility === MeetingVisibility.PUBLIC) {
-        if (!meeting.organizer) {
-          delete (meeting as Partial<Meeting>).host_key;
-        }
-
-        const meetingResponse = meeting.organizer || meeting.invited ? meeting : stripMeetingJoinCredentials(meeting);
+        const meetingResponse = meeting.organizer ? meeting : stripMeetingJoinCredentials(meeting);
         res.json({
           meeting: meetingResponse,
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
