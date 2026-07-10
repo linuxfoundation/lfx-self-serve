@@ -4,8 +4,8 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
-import { lfxColors } from '@lfx-one/shared/constants';
-import { MeetingType } from '@lfx-one/shared/enums';
+import { MEETING_PRIVACY_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
+import { MeetingPrivacyType, MeetingType } from '@lfx-one/shared/enums';
 import { CardSelectorOption, CardSelectorOptionInfo } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 
@@ -20,27 +20,12 @@ export class MeetingTypeSelectionComponent {
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
 
-  // Privacy options for Public/Restricted selection
-  public readonly privacyOptions: CardSelectorOption<boolean>[] = [
-    {
-      label: 'Public',
-      value: false,
-      info: {
-        icon: 'fa-light fa-globe',
-        description: 'Anyone can join this meeting. Best for community meetings and open discussions.',
-        color: lfxColors.emerald[500],
-      },
-    },
-    {
-      label: 'Restricted',
-      value: true,
-      info: {
-        icon: 'fa-light fa-lock',
-        description: 'Only invited guests can join. Best for board meetings and confidential discussions.',
-        color: lfxColors.amber[500],
-      },
-    },
-  ];
+  // Privacy options for Public / Private / Restricted selection (PCC parity)
+  public readonly privacyOptions: CardSelectorOption<MeetingPrivacyType>[] = MEETING_PRIVACY_OPTIONS.map((option) => ({
+    label: option.label,
+    value: option.value,
+    info: option.info,
+  }));
 
   // Meeting type options with their info - computed for template efficiency
   // Filtered based on user role (maintainers only see a subset of meeting types)

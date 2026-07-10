@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility } from '../enums';
+import { ArtifactVisibility, MeetingPrivacyType } from '../enums';
 import type { MeetingTypeConfig } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
 
@@ -35,6 +35,40 @@ export const MEETING_PLATFORMS = [
     color: lfxColors.gray[500],
   },
 ];
+
+/**
+ * Meeting privacy options for the create/edit wizard (PCC parity).
+ * @description Each option maps to an ITX `visibility` + `restricted` pair via meeting-privacy utils.
+ */
+export const MEETING_PRIVACY_OPTIONS = [
+  {
+    label: 'Public',
+    value: MeetingPrivacyType.PUBLIC,
+    info: {
+      icon: 'fa-light fa-globe',
+      description: 'Listed on the public project calendar. Anyone can join — best for community meetings and open discussions.',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: 'Private',
+    value: MeetingPrivacyType.PRIVATE,
+    info: {
+      icon: 'fa-light fa-eye-slash',
+      description: 'Hidden from the public calendar. Guests can still join with a name only — SSO required to see it in your dashboard.',
+      color: lfxColors.blue[500],
+    },
+  },
+  {
+    label: 'Restricted',
+    value: MeetingPrivacyType.RESTRICTED,
+    info: {
+      icon: 'fa-light fa-lock',
+      description: 'Hidden from the public calendar. Only invited guests can join — best for board meetings and confidential discussions.',
+      color: lfxColors.amber[500],
+    },
+  },
+] as const;
 
 /**
  * Available meeting features that can be enabled/disabled
@@ -72,16 +106,6 @@ export const MEETING_FEATURES = [
     description: "Automatically publish recordings to your project's YouTube channel",
     recommended: false,
     color: lfxColors.red[500],
-  },
-  {
-    key: 'visibility',
-    icon: 'fa-light fa-calendar-check',
-    title: 'Show in Public Calendar',
-    description: 'Make this meeting visible in the public project calendar',
-    recommended: true,
-    color: lfxColors.amber[500],
-    trueValue: 'public',
-    falseValue: 'private',
   },
 ];
 

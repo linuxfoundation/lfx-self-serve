@@ -20,7 +20,7 @@ import {
   TOTAL_STEPS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
-import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { MeetingVisibility, MeetingPrivacyType } from '@lfx-one/shared/enums';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRequest,
@@ -43,6 +43,8 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  fieldsToPrivacyType,
+  privacyTypeToFields,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
@@ -201,6 +203,15 @@ export class MeetingManageComponent {
         }
         titleControl.updateValueAndValidity();
         this.updateCanProceed();
+      });
+
+    // Keep legacy visibility/restricted form fields in sync with the unified privacy selector.
+    this.form()
+      .get('privacy_type')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((privacyType: MeetingPrivacyType) => {
+        const fields = privacyTypeToFields(privacyType);
+        this.form().patchValue({ visibility: fields.visibility, restricted: fields.restricted }, { emitEvent: false });
       });
 
     // Separate subscription for meeting data changes - populates form only once
@@ -500,6 +511,8 @@ export class MeetingManageComponent {
       }
     }
 
+    const privacyFields = privacyTypeToFields(formValue.privacy_type ?? MeetingPrivacyType.PRIVATE);
+
     return {
       project_uid: this.meeting()?.project_uid || this.projectContextService.activeContextUid(),
       title: formValue.title,
@@ -512,8 +525,8 @@ export class MeetingManageComponent {
         const parsed = parseInt(formValue.early_join_time_minutes, 10);
         return isNaN(parsed) ? DEFAULT_EARLY_JOIN_TIME : parsed;
       })(),
-      visibility: formValue.visibility || MeetingVisibility.PRIVATE,
-      restricted: formValue.restricted || false,
+      visibility: privacyFields.visibility,
+      restricted: privacyFields.restricted,
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
@@ -764,6 +777,9 @@ export class MeetingManageComponent {
       this.form().get('youtube_upload_enabled')?.enable();
     }
 
+    const privacyType = fieldsToPrivacyType(meeting.visibility, meeting.restricted);
+    const privacyFields = privacyTypeToFields(privacyType);
+
     this.form().patchValue({
       title: meeting.title,
       description: meeting.description,
@@ -774,8 +790,9 @@ export class MeetingManageComponent {
       timezone: meeting.timezone || getUserTimezone(),
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
       isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
-      visibility: meeting.visibility || MeetingVisibility.PRIVATE,
-      restricted: meeting.restricted ?? false,
+      privacy_type: privacyType,
+      visibility: privacyFields.visibility,
+      restricted: privacyFields.restricted,
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
@@ -888,7 +905,7 @@ export class MeetingManageComponent {
 
     switch (step) {
       case 1: // Meeting Type
-        return !!form.get('meeting_type')?.value && form.get('meeting_type')?.value !== '';
+        return !!form.get('meeting_type')?.value && form.get('meeting_type')?.value !== '' && !!form.get('privacy_type')?.value;
 
       case 2: // Meeting Details
         return !!(
@@ -921,6 +938,7 @@ export class MeetingManageComponent {
       {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
+        privacy_type: new FormControl(MeetingPrivacyType.PRIVATE, [Validators.required]),
         visibility: new FormControl(MeetingVisibility.PRIVATE),
         restricted: new FormControl(false),
 
