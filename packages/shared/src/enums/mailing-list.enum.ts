@@ -51,12 +51,15 @@ export enum MailingListMemberType {
 
 /**
  * Mailing list member delivery mode
- * @description How emails are delivered to this member
+ * @description How emails are delivered to this member (Groups.io API values)
  */
 export enum MailingListMemberDeliveryMode {
-  NORMAL = 'normal',
-  DIGEST = 'digest',
-  NONE = 'none',
+  NORMAL = 'email_delivery_single',
+  DIGEST = 'email_delivery_digest',
+  NONE = 'email_delivery_none',
+  SPECIAL = 'email_delivery_special',
+  HTML_DIGEST = 'email_delivery_html_digest',
+  SUMMARY = 'email_delivery_summary',
 }
 
 /**
