@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorOption } from '@lfx-one/shared/interfaces';
 
@@ -25,10 +25,40 @@ export class CardSelectorComponent<T = string> {
   // Output
   public readonly selectionChange = output<T>();
 
+  public readonly labelId = computed(() => `${this.testIdPrefix()}-label`);
+
+  public isSelected(value: T): boolean {
+    return this.form().get(this.control())?.value === value;
+  }
+
   // Handle selection
   public onSelect(value: T): void {
     this.form().get(this.control())?.setValue(value);
     this.form().get(this.control())?.markAsTouched();
     this.selectionChange.emit(value);
+  }
+
+  public onKeydown(event: KeyboardEvent, value: T): void {
+    const options = this.options();
+    const currentIndex = options.findIndex((option) => option.value === this.form().get(this.control())?.value);
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.onSelect(value);
+      return;
+    }
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
+      this.onSelect(options[nextIndex].value);
+      return;
+    }
+
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const nextIndex = currentIndex < 0 ? options.length - 1 : (currentIndex - 1 + options.length) % options.length;
+      this.onSelect(options[nextIndex].value);
+    }
   }
 }

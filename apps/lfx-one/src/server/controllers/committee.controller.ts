@@ -1374,8 +1374,8 @@ export class CommitteeController {
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
       ]);
 
-      // Filter PRIVATE/restricted meetings from the public feed (mirrors PublicMeetingController visibility guard).
-      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC && !m.restricted);
+      // Public calendar lists all public-visibility meetings; join access remains gated by `restricted`.
+      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
       const events = meetingsToVEvents(allMeetings);
       const ics = buildVCalendar(events, '-//LFX//Committee Calendar//EN');
 

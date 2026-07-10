@@ -61,9 +61,10 @@
       </div>
       <!-- Privacy dot badges (hidden for public + unrestricted) -->
       @if (showPrivateDot() || showRestrictedDot()) {
-        <div class="absolute -top-2 left-[47px] flex gap-0.5">
+        <div class="absolute -top-2 right-0 flex flex-row-reverse gap-0.5">
           @if (showPrivateDot()) {
             <div
+              role="img"
               class="w-5 h-5 rounded-full flex items-center justify-center"
               [style.background-color]="privateDotStyle.bgColor"
               [pTooltip]="privateDotStyle.label"
@@ -75,6 +76,7 @@
           }
           @if (showRestrictedDot()) {
             <div
+              role="img"
               class="w-5 h-5 rounded-full flex items-center justify-center"
               [style.background-color]="restrictedDotStyle.bgColor"
               [pTooltip]="restrictedDotStyle.label"
