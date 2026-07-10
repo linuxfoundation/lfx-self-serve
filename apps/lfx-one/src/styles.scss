@@ -263,6 +263,12 @@
     color: #fff;
   }
 
+  /* Restricted badge — solid fill */
+  &.tag-restricted {
+    background: #d97706;
+    color: #fff;
+  }
+
   /* Meeting type badges */
   &.tag-meeting-board {
     background: var(--meeting-board-bg);

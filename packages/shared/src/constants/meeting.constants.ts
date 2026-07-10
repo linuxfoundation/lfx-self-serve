@@ -55,7 +55,8 @@ export const MEETING_PRIVACY_OPTIONS = [
     value: MeetingPrivacyType.PRIVATE,
     info: {
       icon: 'fa-light fa-eye-slash',
-      description: 'Hidden from the public calendar. Guests can still join with a name only — SSO required to see it in your dashboard.',
+      description:
+        'Hidden from the public calendar. Guests can join without signing in (name and email required). SSO is required to see it in your dashboard.',
       color: lfxColors.blue[500],
     },
   },

@@ -32,8 +32,15 @@
                   <lfx-tag value="Ended" severity="warn" icon="fa-light fa-check" styleClass="tag-ended" [attr.data-testid]="'meeting-badge-ended'"></lfx-tag>
                 }
 
-                <!-- Private Badge -->
-                @if (meeting().visibility === 'private') {
+                <!-- Privacy Badge -->
+                @if (meeting().restricted) {
+                  <lfx-tag
+                    value="Restricted"
+                    severity="warn"
+                    icon="fa-light fa-lock"
+                    styleClass="tag-restricted"
+                    [attr.data-testid]="'meeting-badge-restricted'"></lfx-tag>
+                } @else if (meeting().visibility === 'private') {
                   <lfx-tag
                     value="Private"
                     severity="danger"

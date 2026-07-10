@@ -2,14 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingPrivacyType, MeetingVisibility } from '../enums';
-
-export interface MeetingPrivacyFields {
-  visibility: MeetingVisibility;
-  restricted: boolean;
-}
+import { MeetingPrivacyFields } from '../interfaces/meeting.interface';
 
 /** Maps the unified privacy selector to the ITX `visibility` + `restricted` pair. */
-export function privacyTypeToFields(privacyType: MeetingPrivacyType): MeetingPrivacyFields {
+export function privacyTypeToFields(privacyType: MeetingPrivacyType | null | undefined): MeetingPrivacyFields {
   switch (privacyType) {
     case MeetingPrivacyType.PUBLIC:
       return { visibility: MeetingVisibility.PUBLIC, restricted: false };
@@ -17,6 +13,8 @@ export function privacyTypeToFields(privacyType: MeetingPrivacyType): MeetingPri
       return { visibility: MeetingVisibility.PRIVATE, restricted: false };
     case MeetingPrivacyType.RESTRICTED:
       return { visibility: MeetingVisibility.PRIVATE, restricted: true };
+    default:
+      return { visibility: MeetingVisibility.PRIVATE, restricted: false };
   }
 }
 

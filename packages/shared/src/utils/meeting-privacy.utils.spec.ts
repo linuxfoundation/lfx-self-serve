@@ -27,6 +27,17 @@ describe('privacyTypeToFields', () => {
       restricted: true,
     });
   });
+
+  it('falls back to Private when privacy type is missing or unknown', () => {
+    expect(privacyTypeToFields(null)).toEqual({
+      visibility: MeetingVisibility.PRIVATE,
+      restricted: false,
+    });
+    expect(privacyTypeToFields(undefined)).toEqual({
+      visibility: MeetingVisibility.PRIVATE,
+      restricted: false,
+    });
+  });
 });
 
 describe('fieldsToPrivacyType', () => {

@@ -1184,6 +1184,14 @@ export interface MeetingTypeConfig {
 }
 
 /**
+ * ITX visibility + restricted pair derived from the unified privacy selector.
+ */
+export interface MeetingPrivacyFields {
+  visibility: MeetingVisibility;
+  restricted: boolean;
+}
+
+/**
  * Meeting type badge interface
  * @description Structure for meeting type badge display
  */

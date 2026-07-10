@@ -19,7 +19,7 @@ export enum MeetingVisibility {
 export enum MeetingPrivacyType {
   /** Public calendar listing; anyone can join */
   PUBLIC = 'public_unrestricted',
-  /** Hidden from public calendar; guest join allowed with name only */
+  /** Hidden from public calendar; guest join without SSO (name and email required) */
   PRIVATE = 'private_unrestricted',
   /** Hidden from public calendar; invite-only join */
   RESTRICTED = 'private_restricted',
