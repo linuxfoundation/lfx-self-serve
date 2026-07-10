@@ -5,7 +5,7 @@
   <!-- Step Title -->
   <div class="mb-6">
     <h2 class="font-normal">Meeting Type & Privacy</h2>
-    <p class="text-sm text-gray-500 mt-1">Choose the meeting category and visibility to ensure the right people have access</p>
+    <p class="text-sm text-gray-500 mt-1">Choose the meeting category and access settings to ensure the right people can find and join</p>
   </div>
 
   <!-- Two Column Layout -->
@@ -22,9 +22,27 @@
         testIdPrefix="meeting-type" />
     </div>
 
-    <!-- Right Column - Privacy Settings -->
-    <div class="flex flex-col gap-3">
-      <lfx-card-selector [options]="privacyOptions" [form]="form()" control="privacy_type" label="Select Privacy Setting" testIdPrefix="meeting-privacy" />
+    <!-- Right Column - Visibility & Join Restriction -->
+    <div class="flex flex-col gap-6">
+      <lfx-card-selector
+        [options]="visibilityOptions"
+        [form]="form()"
+        control="visibility"
+        label="Who can find this meeting?"
+        [required]="true"
+        [gridColumns]="2"
+        errorMessage="Visibility is required"
+        testIdPrefix="meeting-visibility" />
+
+      <lfx-card-selector
+        [options]="joinRestrictionOptions"
+        [form]="form()"
+        control="restricted"
+        label="Who can join this meeting?"
+        [required]="true"
+        [gridColumns]="2"
+        errorMessage="Join restriction is required"
+        testIdPrefix="meeting-join-restriction" />
 
       <!-- Info box -->
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -32,10 +50,10 @@
           <i class="fa-light fa-info-circle text-blue-500 flex-shrink-0 mt-0.5"></i>
           <div>
             <p class="text-sm text-blue-500">
-              <span class="font-semibold">Choose the right access level</span>
+              <span class="font-semibold">Visibility</span> controls discoverability — public meetings appear on the project calendar and in the app; private
+              meetings are only found by guests with the link.
               <br />
-              Public meetings build community trust. Private meetings stay off the public calendar but still allow guest join. Restricted meetings are
-              invite-only.
+              <span class="font-semibold">Join restriction</span> controls access — anyone with the link can join unless you restrict to invited guests only.
             </p>
           </div>
         </div>

@@ -13,8 +13,8 @@ export enum MeetingVisibility {
 }
 
 /**
- * Unified meeting privacy selector values (PCC parity).
- * @description Maps to the ITX pair of `visibility` + `restricted` via meeting-privacy utils.
+ * Derived meeting privacy labels for display (badges, tooltips).
+ * @description Computed from the independent `visibility` + `restricted` fields via meeting-privacy utils.
  */
 export enum MeetingPrivacyType {
   /** Public calendar listing; anyone can join */

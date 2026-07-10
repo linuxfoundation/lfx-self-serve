@@ -4,8 +4,8 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
-import { MEETING_PRIVACY_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
-import { MeetingPrivacyType, MeetingType } from '@lfx-one/shared/enums';
+import { MEETING_JOIN_RESTRICTION_OPTIONS, MEETING_VISIBILITY_OPTIONS, lfxColors } from '@lfx-one/shared/constants';
+import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import { CardSelectorOption, CardSelectorOptionInfo } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 
@@ -20,8 +20,13 @@ export class MeetingTypeSelectionComponent {
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
 
-  // Privacy options for Public / Private / Restricted selection (PCC parity)
-  public readonly privacyOptions: CardSelectorOption<MeetingPrivacyType>[] = MEETING_PRIVACY_OPTIONS.map((option) => ({
+  public readonly visibilityOptions: CardSelectorOption<MeetingVisibility>[] = MEETING_VISIBILITY_OPTIONS.map((option) => ({
+    label: option.label,
+    value: option.value,
+    info: option.info,
+  }));
+
+  public readonly joinRestrictionOptions: CardSelectorOption<boolean>[] = MEETING_JOIN_RESTRICTION_OPTIONS.map((option) => ({
     label: option.label,
     value: option.value,
     info: option.info,

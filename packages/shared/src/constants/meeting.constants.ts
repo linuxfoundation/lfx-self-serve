@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility, MeetingPrivacyType } from '../enums';
+import { ArtifactVisibility, MeetingVisibility } from '../enums';
 import type { MeetingTypeConfig } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
 
@@ -37,35 +37,50 @@ export const MEETING_PLATFORMS = [
 ];
 
 /**
- * Meeting privacy options for the create/edit wizard (PCC parity).
- * @description Each option maps to an ITX `visibility` + `restricted` pair via meeting-privacy utils.
+ * Meeting visibility options for the create/edit wizard (PCC parity).
+ * @description Controls who can discover the meeting — public calendar vs link-only.
  */
-export const MEETING_PRIVACY_OPTIONS = [
+export const MEETING_VISIBILITY_OPTIONS = [
   {
     label: 'Public',
-    value: MeetingPrivacyType.PUBLIC,
+    value: MeetingVisibility.PUBLIC,
     info: {
       icon: 'fa-light fa-globe',
-      description: 'Listed on the public project calendar. Anyone can join — best for community meetings and open discussions.',
+      description: 'Listed on the public project calendar and discoverable in the app.',
       color: lfxColors.emerald[500],
     },
   },
   {
     label: 'Private',
-    value: MeetingPrivacyType.PRIVATE,
+    value: MeetingVisibility.PRIVATE,
     info: {
       icon: 'fa-light fa-eye-slash',
-      description:
-        'Hidden from the public calendar. Guests can join without signing in (name and email required). SSO is required to see it in your dashboard.',
+      description: 'Hidden from the public calendar. Only guests with the meeting link can find this meeting.',
       color: lfxColors.blue[500],
     },
   },
+] as const;
+
+/**
+ * Meeting join-restriction options for the create/edit wizard (PCC parity).
+ * @description Controls who can join once they have the meeting link.
+ */
+export const MEETING_JOIN_RESTRICTION_OPTIONS = [
   {
-    label: 'Restricted',
-    value: MeetingPrivacyType.RESTRICTED,
+    label: 'Anyone with the link',
+    value: false,
+    info: {
+      icon: 'fa-light fa-link',
+      description: 'Anyone who has the meeting link can join.',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: 'Invited guests only',
+    value: true,
     info: {
       icon: 'fa-light fa-lock',
-      description: 'Hidden from the public calendar. Only invited guests can join — best for board meetings and confidential discussions.',
+      description: 'Only guests you invite can join this meeting.',
       color: lfxColors.amber[500],
     },
   },
