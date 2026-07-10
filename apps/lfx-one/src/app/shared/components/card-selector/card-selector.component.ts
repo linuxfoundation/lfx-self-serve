@@ -60,7 +60,10 @@ export class CardSelectorComponent<T = string> {
       return;
     }
 
-    const currentIndex = options.findIndex((option) => option.value === this.form().get(this.control())?.value);
+    const currentIndex = options.findIndex((option) => option.value === value);
+    if (currentIndex < 0) {
+      return;
+    }
 
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -70,7 +73,7 @@ export class CardSelectorComponent<T = string> {
 
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
       event.preventDefault();
-      const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
+      const nextIndex = (currentIndex + 1) % options.length;
       this.onSelect(options[nextIndex].value);
       this.focusOptionAt(nextIndex);
       return;
@@ -78,7 +81,7 @@ export class CardSelectorComponent<T = string> {
 
     if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
       event.preventDefault();
-      const nextIndex = currentIndex < 0 ? options.length - 1 : (currentIndex - 1 + options.length) % options.length;
+      const nextIndex = (currentIndex - 1 + options.length) % options.length;
       this.onSelect(options[nextIndex].value);
       this.focusOptionAt(nextIndex);
     }
