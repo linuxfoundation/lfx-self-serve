@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
-import { addInvitedStatusToMeeting, checkPastMeetingAccess } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, checkPastMeetingAccess, stripMeetingJoinCredentials } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -135,8 +135,10 @@ export class PublicMeetingController {
         if (!meeting.organizer) {
           delete (meeting as Partial<Meeting>).host_key;
         }
+
+        const meetingResponse = meeting.organizer || meeting.invited ? meeting : stripMeetingJoinCredentials(meeting);
         res.json({
-          meeting,
+          meeting: meetingResponse,
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
         });
         return;

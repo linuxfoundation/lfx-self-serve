@@ -147,3 +147,20 @@ export async function checkPastMeetingAccess(req: Request, meeting: PastMeeting,
 
   return hasAccess;
 }
+
+/** Removes join credentials from a meeting payload for public discoverability responses. */
+export function stripMeetingJoinCredentials(meeting: Meeting): Meeting {
+  const sanitized = { ...meeting };
+  delete sanitized.host_key;
+  delete sanitized.password;
+  delete sanitized.passcode;
+
+  if (sanitized.zoom_config) {
+    sanitized.zoom_config = {
+      ai_companion_enabled: sanitized.zoom_config.ai_companion_enabled,
+      ai_summary_require_approval: sanitized.zoom_config.ai_summary_require_approval,
+    };
+  }
+
+  return sanitized;
+}

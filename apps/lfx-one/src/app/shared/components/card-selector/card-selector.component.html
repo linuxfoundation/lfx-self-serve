@@ -13,6 +13,8 @@
   <div
     role="radiogroup"
     [attr.aria-labelledby]="label() ? labelId() : null"
+    [attr.aria-describedby]="hasError() ? errorId() : null"
+    [attr.aria-invalid]="hasError() || null"
     [attr.aria-required]="required() || null"
     class="grid gap-3"
     [ngClass]="{
@@ -50,7 +52,7 @@
       </div>
     }
   </div>
-  @if (form().get(control())?.errors?.['required'] && form().get(control())?.touched) {
-    <p class="text-sm text-red-600 mt-2">{{ errorMessage() }}</p>
+  @if (hasError()) {
+    <p class="text-sm text-red-600 mt-2" [id]="errorId()">{{ errorMessage() }}</p>
   }
 </div>

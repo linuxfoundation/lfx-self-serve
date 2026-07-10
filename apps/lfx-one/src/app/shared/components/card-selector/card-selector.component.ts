@@ -29,6 +29,7 @@ export class CardSelectorComponent<T = string> {
   public readonly selectionChange = output<T>();
 
   public readonly labelId = computed(() => `${this.testIdPrefix()}-label`);
+  public readonly errorId = computed(() => `${this.testIdPrefix()}-error`);
 
   public isSelected(value: T): boolean {
     return this.form().get(this.control())?.value === value;
@@ -45,6 +46,11 @@ export class CardSelectorComponent<T = string> {
     }
 
     return !this.hasSelection() && index === 0 ? 0 : -1;
+  }
+
+  public hasError(): boolean {
+    const control = this.form().get(this.control());
+    return !!(control?.errors?.['required'] && control?.touched);
   }
 
   // Handle selection
