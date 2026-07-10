@@ -12,6 +12,9 @@ import { CardSelectorOption } from '@lfx-one/shared/interfaces';
   templateUrl: './card-selector.component.html',
 })
 export class CardSelectorComponent<T = string> {
+  @ViewChildren('radioOption')
+  private readonly radioOptions!: QueryList<ElementRef<HTMLElement>>;
+
   // Inputs
   public readonly options = input.required<CardSelectorOption<T>[]>();
   public readonly form = input.required<FormGroup>();
@@ -24,9 +27,6 @@ export class CardSelectorComponent<T = string> {
 
   // Output
   public readonly selectionChange = output<T>();
-
-  @ViewChildren('radioOption')
-  private readonly radioOptions!: QueryList<ElementRef<HTMLElement>>;
 
   public readonly labelId = computed(() => `${this.testIdPrefix()}-label`);
 
