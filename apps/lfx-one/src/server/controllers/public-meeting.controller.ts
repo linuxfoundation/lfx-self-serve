@@ -331,9 +331,9 @@ export class PublicMeetingController {
         });
       }
 
-      // Public unrestricted meetings are open to anyone with the link; other meetings keep the password gate.
-      const isPublicUnrestricted = meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted;
-      if (!isPublicUnrestricted && !this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
+      // Public meetings skip the access-password gate on join-url; restricted meetings use
+      // registrant check below and private meetings keep the password gate.
+      if (meeting.visibility !== MeetingVisibility.PUBLIC && !this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
         return;
       }
 
