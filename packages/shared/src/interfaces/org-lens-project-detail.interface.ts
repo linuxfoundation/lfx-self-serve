@@ -4,10 +4,9 @@
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885) payload contracts.
  *
- * This story is served from demo company fixtures through `OrgLensProjectDetailService`;
- * the live Snowflake / LFX Insights integration (a separate story) will populate the same
- * shapes without any component changes. The contracts are self-contained so the page can
- * ship independently of the sibling Projects page (LFXV2-1883 / LFXV2-1884).
+ * Populated by the Snowflake-backed BFF (`OrgLensProjectDetailService`). Sparklines and
+ * trend series are stored on a 36-month axis (oldest → newest); the client slices to the
+ * active `?range=` toggle (1y / 2y / all).
  */
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
@@ -33,8 +32,12 @@ export interface InfluenceCardVm {
 /** CHAOSS-derived project health classification — drives the hero badge color token. */
 export type OrgLensProjectHealth = 'excellent' | 'healthy' | 'at-risk';
 
-/** Leaderboard band per the markup-mu methodology (Boysel et al.). Strongest → weakest. */
-export type OrgLensProjectBand = 'leading' | 'contributing' | 'participating' | 'non-lf';
+/**
+ * Precomputed org-influence tier, read straight through from the warehouse level column.
+ * Weakest → strongest. "Non-LF" is not a tier here — it is a separate project classification
+ * surfaced by `OrgLensProjectDetailResponse.isNonLfProject` and a null ecosystem level.
+ */
+export type OrgLensProjectBand = 'silent' | 'participating' | 'contributing' | 'leading';
 
 /** Leaderboard score-type dimension. Reserved for a future toggle — not yet persisted as a URL param. */
 export type OrgLensScoreType = 'combined' | 'technical' | 'ecosystem';
@@ -59,14 +62,15 @@ export interface OrgLensProjectHero {
   firstCommit: string | null;
   /** Project-level CHAOSS / Insights software-value estimate in USD (not the org's individual return). */
   softwareValueUsd: number | null;
-  health: OrgLensProjectHealth;
+  /** Overall health tier; null when the warehouse has no health score for the project (hero hides the badge). */
+  health: OrgLensProjectHealth | null;
   foundationLabel: string;
 }
 
 /**
  * A single Our-Influence metric card, used for both the Technical and Ecosystem groups
  * (Maintainers, Contributors, …, Event Speakers, Certified Individuals, …). Each renders a
- * title, a 12-month trendline, and a descriptive sentence; the sentence is pre-split so the
+ * title, a monthly trendline, and a descriptive sentence; the sentence is pre-split so the
  * stat renders bold. An empty `sparkline` shows a "No data" state.
  */
 export interface OrgLensProjectInfluenceCard {
@@ -74,8 +78,11 @@ export interface OrgLensProjectInfluenceCard {
   label: string;
   /** Source shown above the card for ecosystem metrics (project name or foundation name); null for technical. */
   scopeLabel: string | null;
-  /** 12 monthly bins, oldest → newest. Empty array → "No data". */
-  sparkline: number[];
+  /**
+   * Dense monthly bins (up to 36), oldest → newest. Empty array → "No data". Client slices to active
+   * range. A `null` bin is a genuine gap (avg-merge-time months with no merged PRs) — not a zero.
+   */
+  sparkline: (number | null)[];
   /** Project-wide average monthly series (grey reference line). Same length as sparkline. */
   projectSparkline: number[];
   /** Descriptive sentence split so the middle stat can render bold. */
@@ -111,23 +118,40 @@ export interface OrgLensCardDetailSection {
 }
 
 /**
- * One organization row on the project leaderboard. Rank and band are derived client-side
- * from the active score-type / metric, so they are not carried on the wire.
+ * One organization row on the project leaderboard. Rank is derived client-side from the active
+ * score-type / metric; the influence bands are precomputed in the warehouse and carried on the wire.
  */
 export interface OrgLensProjectLeaderboardRow {
   orgName: string;
   /** Org logo URL; empty string falls back to initials. */
   orgLogoUrl: string;
-  /** Calculated Influence scores (markup-mu, 1 decimal) per score-type. */
+  /** Calculated Influence scores (1 decimal) per score-type. */
   scores: { combined: number; technical: number; ecosystem: number };
-  /** Raw activity count for Activity Count mode (whole number). */
-  activityCount: number;
-  /** 12-month trend sparkline, oldest → newest. */
+  /** Precomputed warehouse influence tiers per score-type; ecosystem is null for non-LF projects (no ecosystem influence). */
+  levels: { combined: OrgLensProjectBand; technical: OrgLensProjectBand; ecosystem: OrgLensProjectBand | null };
+  /** Raw activity totals for Activity Count mode — contributions feed the technical board, collaborations the ecosystem board. */
+  activityCount: {
+    contributions: number;
+    collaborations: number;
+    contributionsPct: number;
+    collaborationsPct: number;
+  };
+  /** Trailing monthly combined series for the active range, oldest → newest. */
   trendSparkline: number[];
   /** 1-year delta as a signed fraction (e.g. 0.12 = +12%). */
   trendDeltaPct: number;
+  /** Precomputed warehouse rank for Activity Count mode boards (org-dashboard parity). */
+  warehouseRank?: number;
   /** The viewing org's own row — always rendered and visually pinned. */
   isViewingOrg: boolean;
+}
+
+/** Dense monthly combined-influence series for one org, oldest → newest. Feeds the stacked Influence Trend chart. */
+export interface OrgLensProjectTrendSeries {
+  accountId: string;
+  orgName: string;
+  orgLogoUrl: string;
+  combined: number[];
 }
 
 /** Full Project Detail payload. `accountId` + `projectSlug` echo the request envelope. */
@@ -135,10 +159,19 @@ export interface OrgLensProjectDetailResponse {
   accountId: string;
   projectSlug: string;
   hero: OrgLensProjectHero;
+  /** True when the project is not an LF-hosted project — the ecosystem group renders empty and bands show a Non-LF marker. */
+  isNonLfProject: boolean;
   technical: OrgLensProjectInfluenceCard[];
   ecosystem: OrgLensProjectInfluenceCard[];
   /** All organizations contributing to the project; the viewing-org row is always included. */
   leaderboard: OrgLensProjectLeaderboardRow[];
+  /** Activity Count mode boards — each wraps the org-dashboard contributions/collaborations top-10. */
+  activityLeaderboards: {
+    contributions: OrgLensProjectLeaderboardRow[];
+    collaborations: OrgLensProjectLeaderboardRow[];
+  };
+  /** Per-org monthly combined-influence series feeding the Influence Trend chart (36-month store; client slices to active range). */
+  trend: OrgLensProjectTrendSeries[];
   /** Keyed by card key — drawer definition + card-specific data table for each influence card. */
   cardDetails: Record<string, OrgLensCardDetailSection>;
 }

@@ -15,14 +15,14 @@
  * - Dev server running on the Playwright baseURL
  * - User authenticated with the `org-lens-enabled` flag on and an organization selected
  *
- * Demo semantics (v1): the page is served from server-side demo fixtures
- * (server/services/org-lens-project-detail.demo-data.ts). `kubernetes` is a rich seeded project; an
- * unknown slug returns null → the not-found panel.
+ * Data semantics (v1): the page is served from live Snowflake platinum via the BFF. `k8s` is the real
+ * catalog slug for the Kubernetes project (the earlier `kubernetes` was only the removed demo-fixture
+ * key); a slug with no catalog row for the selected org returns null → the not-found panel.
  */
 
 import { expect, test } from '@playwright/test';
 
-const DETAIL_URL = '/org/projects/kubernetes';
+const DETAIL_URL = '/org/projects/k8s';
 const DETAIL_URL_BOGUS = '/org/projects/totally-bogus-project';
 const DATA_LOAD_TIMEOUT = 30_000;
 
@@ -103,7 +103,9 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByRole('columnheader', { name: 'Influence Score' }).first()).toBeVisible();
     await page.getByTestId('project-detail-metric-activity').click();
     await expect(page).toHaveURL(/metric=activity/);
-    await expect(page.getByRole('columnheader', { name: 'Activity (12mo)' }).first()).toBeVisible();
+    await expect(page.getByText('Contribution Activities Leaderboard')).toBeVisible();
+    await expect(page.getByText('Collaboration Activities Leaderboard')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Total contributions' })).toHaveCount(2);
     await expect(page.getByRole('columnheader', { name: 'Influence Score' })).toHaveCount(0);
   });
 
@@ -111,7 +113,7 @@ test.describe('Org Project Detail — leaderboards', () => {
     await page.getByTestId('project-detail-metric-activity').click();
     await page.getByTestId('project-detail-time-range-2y').click();
     await expect(page).toHaveURL(/range=2y/);
-    await expect(page.getByRole('columnheader', { name: 'Activity (24mo)' }).first()).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Total contributions' }).first()).toBeVisible();
   });
 
   test('search filters a board to matching organizations', async ({ page }) => {

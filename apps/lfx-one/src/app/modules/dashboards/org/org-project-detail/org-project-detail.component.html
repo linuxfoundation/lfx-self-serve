@@ -224,6 +224,12 @@
                       (scroll)="onTrackScroll(ecosystemTrack, 'eco')">
                       @for (card of ecosystemCards(); track card.key) {
                         <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                      } @empty {
+                        <div
+                          class="flex w-full items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-sm text-gray-500"
+                          data-testid="project-detail-ecosystem-empty">
+                          No ecosystem influence data for this project yet.
+                        </div>
                       }
                     </div>
                   </div>
@@ -242,7 +248,7 @@
                   <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" data-testid="project-detail-leaderboard-technical">
                     <div class="mb-5 flex items-start justify-between gap-3">
                       <div>
-                        <div class="text-base font-bold text-gray-900">Technical Influence Leaderboard</div>
+                        <div class="text-base font-bold text-gray-900">{{ technicalBoardTitle() }}</div>
                       </div>
                       <div class="relative">
                         <label for="project-detail-search-technical" class="sr-only">Technical leaderboard search</label>
@@ -276,7 +282,7 @@
                           <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
                             <th scope="col" class="w-12 px-3 py-3">#</th>
                             <th scope="col" class="px-3 py-3">Organization</th>
-                            <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ scoreColumnLabel() }}</th>
+                            <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ columnLabel() }}</th>
                           </tr>
                         </ng-template>
                         <ng-template #body let-row>
@@ -319,7 +325,12 @@
                   <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" data-testid="project-detail-leaderboard-ecosystem">
                     <div class="mb-5 flex items-start justify-between gap-3">
                       <div>
-                        <div class="text-base font-bold text-gray-900">Ecosystem Influence Leaderboard</div>
+                        <div class="text-base font-bold text-gray-900">{{ ecosystemBoardTitle() }}</div>
+                        @if (ecosystemBoardNonLfMarker(); as marker) {
+                          <span [class]="marker.chipClass + ' mt-2 inline-flex'" data-testid="project-detail-leaderboard-ecosystem-non-lf">
+                            {{ marker.label }}
+                          </span>
+                        }
                       </div>
                       <div class="relative">
                         <label for="project-detail-search-ecosystem" class="sr-only">Ecosystem leaderboard search</label>
@@ -353,7 +364,7 @@
                           <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
                             <th scope="col" class="w-12 px-3 py-3">#</th>
                             <th scope="col" class="px-3 py-3">Organization</th>
-                            <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ scoreColumnLabel() }}</th>
+                            <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ columnLabel() }}</th>
                           </tr>
                         </ng-template>
                         <ng-template #body let-row>

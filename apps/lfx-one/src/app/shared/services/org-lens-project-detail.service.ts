@@ -3,15 +3,15 @@
 
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { OrgLensProjectDetailResponse } from '@lfx-one/shared/interfaces';
+import type { OrgLensLeaderboardTimeRange, OrgLensProjectDetailResponse } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, throwError } from 'rxjs';
 
 /**
- * Client-side proxy for GET /api/orgs/:orgUid/lens/projects/:projectSlug.
+ * Client-side proxy for GET /api/orgs/:orgUid/lens/projects/:projectSlug?range=.
  * Returns `null` when the server responds with 404 (unknown project slug) so the
- * page can render its not-found state. Wiring the real Snowflake / LFX Insights
- * backend (a separate story) only requires updating the server service — the
- * response shape and every consumer stay the same.
+ * page can render its not-found state. The `range` toggle is forwarded to the
+ * server so the card headlines, leaderboard scores, and activity totals all
+ * re-scope with the selected time range.
  */
 @Injectable({
   providedIn: 'root',
@@ -19,10 +19,15 @@ import { catchError, Observable, of, throwError } from 'rxjs';
 export class OrgLensProjectDetailService {
   private readonly http = inject(HttpClient);
 
-  public getProjectDetail(orgUid: string, orgName: string, projectSlug: string): Observable<OrgLensProjectDetailResponse | null> {
+  public getProjectDetail(
+    orgUid: string,
+    orgName: string,
+    projectSlug: string,
+    range: OrgLensLeaderboardTimeRange
+  ): Observable<OrgLensProjectDetailResponse | null> {
     const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/projects/${encodeURIComponent(projectSlug)}`;
     return this.http
-      .get<OrgLensProjectDetailResponse>(url, { params: { orgName } })
+      .get<OrgLensProjectDetailResponse>(url, { params: { orgName, range } })
       .pipe(catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err))));
   }
 }

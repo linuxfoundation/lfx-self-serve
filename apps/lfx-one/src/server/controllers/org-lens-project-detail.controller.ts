@@ -3,7 +3,8 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+import { FOUNDATION_ID_PATTERN, PD_DEFAULT_TIME_RANGE, PD_VALID_TIME_RANGES } from '@lfx-one/shared/constants';
+import type { OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
@@ -18,23 +19,27 @@ export class OrgLensProjectDetailController {
     this.service = new OrgLensProjectDetailService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/projects/:projectSlug */
-  public getProjectDetail(req: Request, res: Response, next: NextFunction): void {
+  /** GET /api/orgs/:orgUid/lens/projects/:projectSlug?range= */
+  public async getProjectDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const projectSlug = req.params['projectSlug'];
     const rawOrgName = typeof req.query['orgName'] === 'string' ? req.query['orgName'].trim() : '';
     const orgName = rawOrgName || 'Your Organization';
+    const rawRange = typeof req.query['range'] === 'string' ? req.query['range'] : '';
+    // Unknown / absent range falls back to the page default rather than erroring.
+    const range: OrgLensLeaderboardTimeRange = PD_VALID_TIME_RANGES.has(rawRange) ? (rawRange as OrgLensLeaderboardTimeRange) : PD_DEFAULT_TIME_RANGE;
 
     const startTime = logger.startOperation(req, 'get_org_lens_project_detail', {
       org_uid: orgUid,
       project_slug: projectSlug,
+      range,
     });
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_detail');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail');
 
-      const response = this.service.getProjectDetail(orgUid, orgName, projectSlug);
+      const response = await this.service.getProjectDetail(orgUid, orgName, projectSlug, range);
 
       if (response === null) {
         logger.success(req, 'get_org_lens_project_detail', startTime, {
