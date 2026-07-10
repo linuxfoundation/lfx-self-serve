@@ -888,7 +888,7 @@ export class MeetingManageComponent {
 
     switch (step) {
       case 1: // Meeting Type
-        return form.get('meeting_type')?.valid === true && form.get('visibility')?.valid === true && form.get('restricted')?.valid === true;
+        return form.get('meeting_type')?.valid === true && form.get('visibility')?.valid === true && typeof form.get('restricted')?.value === 'boolean';
 
       case 2: // Meeting Details
         return !!(
@@ -922,7 +922,7 @@ export class MeetingManageComponent {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
         visibility: new FormControl(MeetingVisibility.PRIVATE, [Validators.required]),
-        restricted: new FormControl(false, [Validators.required]),
+        restricted: new FormControl(false),
 
         // Step 2: Meeting Details
         title: new FormControl('', [Validators.required]),
