@@ -83,7 +83,9 @@ export async function addInvitedStatusToMeetings(req: Request, meetings: Meeting
  * organizer, or committee member).
  */
 export async function checkPastMeetingAccess(req: Request, meeting: PastMeeting, m2mToken: string, isOrganizer: boolean): Promise<boolean> {
-  // Public, non-restricted meetings are accessible to everyone
+  // Public, non-restricted meetings grant full past-meeting access to everyone.
+  // Public+restricted and private meetings still return basic discoverability from the controller;
+  // full access requires membership checks below.
   if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
     return true;
   }

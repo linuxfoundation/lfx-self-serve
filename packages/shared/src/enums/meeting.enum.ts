@@ -13,19 +13,6 @@ export enum MeetingVisibility {
 }
 
 /**
- * Derived meeting privacy labels for display (badges, tooltips).
- * @description Computed from the independent `visibility` + `restricted` fields via meeting-privacy utils.
- */
-export enum MeetingPrivacyType {
-  /** Public calendar listing; anyone can join */
-  PUBLIC = 'public_unrestricted',
-  /** Hidden from public calendar; guest join without SSO (name and email required) */
-  PRIVATE = 'private_unrestricted',
-  /** Hidden from public calendar; invite-only join */
-  RESTRICTED = 'private_restricted',
-}
-
-/**
  * Meeting type categories
  * @description Categorizes meetings by their purpose and governance structure
  */

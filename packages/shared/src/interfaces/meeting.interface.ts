@@ -1184,14 +1184,6 @@ export interface MeetingTypeConfig {
 }
 
 /**
- * ITX visibility + restricted pair for meeting create/update payloads.
- */
-export interface MeetingPrivacyFields {
-  visibility: MeetingVisibility;
-  restricted: boolean;
-}
-
-/**
  * Style metadata for compact meeting privacy indicator dots.
  */
 export interface MeetingPrivacyDotStyle {
