@@ -18,13 +18,16 @@ export function privacyTypeToFields(privacyType: MeetingPrivacyType | null | und
   }
 }
 
-/** Derives the privacy selector value from stored meeting fields (PCC parity). */
+/** Derives the legacy privacy selector value from stored meeting fields.
+ *  Note: `MeetingPrivacyType` cannot losslessly represent public+restricted; that combo maps to PUBLIC. */
 export function fieldsToPrivacyType(visibility: MeetingVisibility | string | null | undefined, restricted: boolean | null | undefined): MeetingPrivacyType {
+  const isPublic = visibility === MeetingVisibility.PUBLIC || visibility === 'public';
+
+  if (isPublic) {
+    return MeetingPrivacyType.PUBLIC;
+  }
   if (restricted) {
     return MeetingPrivacyType.RESTRICTED;
-  }
-  if (visibility === MeetingVisibility.PUBLIC || visibility === 'public') {
-    return MeetingPrivacyType.PUBLIC;
   }
   return MeetingPrivacyType.PRIVATE;
 }

@@ -512,7 +512,7 @@ export class MeetingManageComponent {
         const parsed = parseInt(formValue.early_join_time_minutes, 10);
         return isNaN(parsed) ? DEFAULT_EARLY_JOIN_TIME : parsed;
       })(),
-      visibility: formValue.visibility ?? MeetingVisibility.PRIVATE,
+      visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted ?? false,
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
@@ -774,7 +774,7 @@ export class MeetingManageComponent {
       timezone: meeting.timezone || getUserTimezone(),
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
       isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
-      visibility: meeting.visibility ?? MeetingVisibility.PRIVATE,
+      visibility: meeting.visibility || MeetingVisibility.PRIVATE,
       restricted: meeting.restricted ?? false,
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,

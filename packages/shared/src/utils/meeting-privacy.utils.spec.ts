@@ -49,9 +49,12 @@ describe('fieldsToPrivacyType', () => {
     expect(fieldsToPrivacyType(MeetingVisibility.PRIVATE, false)).toBe(MeetingPrivacyType.PRIVATE);
   });
 
-  it('derives Restricted when restricted is true regardless of visibility', () => {
+  it('derives Restricted from private + invite-only', () => {
     expect(fieldsToPrivacyType(MeetingVisibility.PRIVATE, true)).toBe(MeetingPrivacyType.RESTRICTED);
-    expect(fieldsToPrivacyType(MeetingVisibility.PUBLIC, true)).toBe(MeetingPrivacyType.RESTRICTED);
+  });
+
+  it('derives Public from public + invite-only (legacy enum cannot encode join restriction)', () => {
+    expect(fieldsToPrivacyType(MeetingVisibility.PUBLIC, true)).toBe(MeetingPrivacyType.PUBLIC);
   });
 });
 
