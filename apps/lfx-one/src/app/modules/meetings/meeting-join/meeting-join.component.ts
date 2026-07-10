@@ -3,7 +3,7 @@
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformServer, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -47,6 +47,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
+import { getUserTimezone } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -59,6 +60,7 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import {
   BehaviorSubject,
@@ -102,6 +104,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     GuestFormComponent,
     TooltipModule,
     DrawerModule,
+    SkeletonModule,
     MeetingTimePipe,
     RecurrenceSummaryPipe,
     LinkifyPipe,
@@ -214,6 +217,8 @@ export class MeetingJoinComponent implements OnInit {
     return name.substring(0, 2).toUpperCase();
   });
   protected isMobileViewport = signal(false);
+  // Null on the server and until hydration resolves the browser timezone — the badge shows a skeleton while null.
+  protected userTimezone = signal<string | null>(null);
   protected drawerPosition = computed(() => (this.isMobileViewport() ? 'bottom' : 'right') as 'bottom' | 'right');
   // Parent project (foundation) for context display
   protected parentProject: Signal<Project | null>;
@@ -318,6 +323,11 @@ export class MeetingJoinComponent implements OnInit {
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
     this.initializePublicMeetingPageviewTracking();
+
+    // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
+    afterNextRender(() => {
+      this.userTimezone.set(getUserTimezone());
+    });
   }
 
   public ngOnInit(): void {

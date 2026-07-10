@@ -7,7 +7,12 @@ import { Pipe, PipeTransform } from '@angular/core';
   name: 'meetingTime',
 })
 export class MeetingTimePipe implements PipeTransform {
-  public transform(startTime: string | null, duration: number | null, format: 'full' | 'full-start' | 'date' | 'time' | 'compact' = 'full'): string {
+  public transform(
+    startTime: string | null,
+    duration: number | null,
+    format: 'full' | 'full-start' | 'date' | 'time' | 'compact' = 'full',
+    timeZone?: string
+  ): string {
     if (!startTime) {
       return 'Time not set';
     }
@@ -30,6 +35,7 @@ export class MeetingTimePipe implements PipeTransform {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
+        ...(timeZone ? { timeZone } : {}),
       };
 
       // Format time: 3:00 PM
@@ -37,6 +43,7 @@ export class MeetingTimePipe implements PipeTransform {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
+        ...(timeZone ? { timeZone } : {}),
       };
 
       const dateStr = startDate.toLocaleDateString('en-US', dateOptions);
@@ -49,6 +56,7 @@ export class MeetingTimePipe implements PipeTransform {
             weekday: 'short',
             month: 'short',
             day: 'numeric',
+            ...(timeZone ? { timeZone } : {}),
           };
           const compactDateStr = startDate.toLocaleDateString('en-US', compactDateOptions);
           if (endDate) {
