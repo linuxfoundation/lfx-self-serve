@@ -33,7 +33,7 @@
                 }
 
                 <!-- Privacy Badges -->
-                @if (meeting().visibility === 'private') {
+                @if (showPrivateMeetingLabel(meeting().visibility)) {
                   <lfx-tag
                     value="Private"
                     severity="danger"
@@ -41,7 +41,7 @@
                     styleClass="tag-private"
                     [attr.data-testid]="'meeting-badge-private'"></lfx-tag>
                 }
-                @if (meeting().restricted) {
+                @if (showRestrictedMeetingLabel(meeting().restricted)) {
                   <lfx-tag
                     value="Restricted"
                     severity="warn"

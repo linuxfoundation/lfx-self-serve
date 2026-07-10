@@ -13,12 +13,15 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   lfxColors,
   Meeting,
+  MeetingPrivacyDotStyle,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingTypeBadge,
   PastMeetingRecording,
   resolveOccurrenceRecurrence,
+  shouldShowPrivateMeetingLabel,
+  shouldShowRestrictedMeetingLabel,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -66,10 +69,10 @@ export class DashboardMeetingCardComponent {
   public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = this.initMeetingTypeInfo();
   public readonly meetingStartTime: Signal<string> = this.initMeetingStartTime();
   public readonly formattedTimeWithDuration: Signal<string> = this.initFormattedTimeWithDuration();
-  public readonly showPrivateDot: Signal<boolean> = computed(() => this.meeting().visibility === 'private');
-  public readonly showRestrictedDot: Signal<boolean> = computed(() => !!this.meeting().restricted);
-  public readonly privateDotStyle = { bgColor: lfxColors.red[600], icon: 'fa-solid fa-shield-halved', label: 'Private meeting' };
-  public readonly restrictedDotStyle = { bgColor: lfxColors.amber[700], icon: 'fa-solid fa-lock', label: 'Restricted meeting' };
+  public readonly showPrivateDot: Signal<boolean> = computed(() => shouldShowPrivateMeetingLabel(this.meeting().visibility));
+  public readonly showRestrictedDot: Signal<boolean> = computed(() => shouldShowRestrictedMeetingLabel(this.meeting().restricted));
+  public readonly privateDotStyle: MeetingPrivacyDotStyle = { bgColor: lfxColors.red[600], icon: 'fa-solid fa-shield-halved', label: 'Private meeting' };
+  public readonly restrictedDotStyle: MeetingPrivacyDotStyle = { bgColor: lfxColors.amber[700], icon: 'fa-solid fa-lock', label: 'Restricted meeting' };
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();

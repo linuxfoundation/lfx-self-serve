@@ -888,7 +888,7 @@ export class MeetingManageComponent {
 
     switch (step) {
       case 1: // Meeting Type
-        return !!form.get('meeting_type')?.value && form.get('meeting_type')?.value !== '' && !!form.get('visibility')?.value;
+        return form.get('meeting_type')?.valid === true && form.get('visibility')?.valid === true && form.get('restricted')?.valid === true;
 
       case 2: // Meeting Details
         return !!(

@@ -7,10 +7,10 @@
     <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Privacy Badges -->
-        @if (meeting().visibility === 'private') {
+        @if (showPrivateMeetingLabel(meeting().visibility)) {
           <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
         }
-        @if (meeting().restricted) {
+        @if (showRestrictedMeetingLabel(meeting().restricted)) {
           <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock" styleClass="tag-restricted"></lfx-tag>
         }
 

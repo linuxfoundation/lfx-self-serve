@@ -59,6 +59,8 @@ import {
   PastMeetingSummary,
   PastMeetingTranscript,
   resolveOccurrenceRecurrence,
+  shouldShowPrivateMeetingLabel,
+  shouldShowRestrictedMeetingLabel,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
@@ -122,6 +124,9 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
+
+  public readonly showPrivateMeetingLabel = shouldShowPrivateMeetingLabel;
+  public readonly showRestrictedMeetingLabel = shouldShowRestrictedMeetingLabel;
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   public showMyRsvp: WritableSignal<boolean> = signal(false);

@@ -24,6 +24,8 @@ import {
   PastMeetingRecording,
   PastMeetingSummary,
   PastMeetingTranscript,
+  shouldShowPrivateMeetingLabel,
+  shouldShowRestrictedMeetingLabel,
   TagSeverity,
 } from '@lfx-one/shared';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -65,6 +67,9 @@ export class PastMeetingDetailsComponent {
   private readonly messageService = inject(MessageService);
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
+
+  public readonly showPrivateMeetingLabel = shouldShowPrivateMeetingLabel;
+  public readonly showRestrictedMeetingLabel = shouldShowRestrictedMeetingLabel;
 
   // Simple writable signals
   public loading = signal(true);

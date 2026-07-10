@@ -44,6 +44,8 @@ import {
   Project,
   PublicPastMeetingResponse,
   ROOT_PROJECT_SLUG,
+  shouldShowPrivateMeetingLabel,
+  shouldShowRestrictedMeetingLabel,
   TagSeverity,
   User,
 } from '@lfx-one/shared';
@@ -129,6 +131,9 @@ export class MeetingJoinComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+
+  public readonly showPrivateMeetingLabel = shouldShowPrivateMeetingLabel;
+  public readonly showRestrictedMeetingLabel = shouldShowRestrictedMeetingLabel;
 
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
