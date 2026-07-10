@@ -333,7 +333,10 @@ export class PublicMeetingController {
 
       // Public meetings skip the access-password gate on join-url; restricted meetings use
       // registrant check below and private meetings keep the password gate.
-      if (meeting.visibility !== MeetingVisibility.PUBLIC && !this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
+      if (
+        meeting.visibility !== MeetingVisibility.PUBLIC &&
+        !this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)
+      ) {
         return;
       }
 
