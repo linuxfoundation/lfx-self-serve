@@ -321,5 +321,4 @@ export class DashboardMeetingCardComponent {
       return meeting.project_name || meeting.committees?.[0]?.name || null;
     });
   }
-
 }
