@@ -34,6 +34,8 @@ export interface CdpOrganization {
   name: string;
   /** Organization logo URL */
   logo: string;
+  /** Primary organization domain (e.g. "google.com"), when known to CDP */
+  domain?: string;
 }
 
 /**

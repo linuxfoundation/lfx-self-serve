@@ -157,6 +157,8 @@ export class ProfileEditDialogComponent {
     this.saving.set(true);
     const formValue = this.profileForm.value;
 
+    // organization_domain is resolved server-side from the organization name on every save path,
+    // so the dialog only needs to send the selected organization here.
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,
