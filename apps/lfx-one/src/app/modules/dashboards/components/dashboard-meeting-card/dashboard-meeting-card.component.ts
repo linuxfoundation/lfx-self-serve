@@ -11,12 +11,10 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
-  fieldsToPrivacyType,
   lfxColors,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
-  MeetingPrivacyType,
   MeetingRecurrence,
   MeetingTypeBadge,
   PastMeetingRecording,
@@ -68,7 +66,10 @@ export class DashboardMeetingCardComponent {
   public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = this.initMeetingTypeInfo();
   public readonly meetingStartTime: Signal<string> = this.initMeetingStartTime();
   public readonly formattedTimeWithDuration: Signal<string> = this.initFormattedTimeWithDuration();
-  public readonly privacyDotInfo: Signal<{ label: string; bgColor: string; icon: string }> = this.initPrivacyDotInfo();
+  public readonly showPrivateDot: Signal<boolean> = computed(() => this.meeting().visibility === 'private');
+  public readonly showRestrictedDot: Signal<boolean> = computed(() => !!this.meeting().restricted);
+  public readonly privateDotStyle = { bgColor: lfxColors.red[600], icon: 'fa-solid fa-shield-halved', label: 'Private meeting' };
+  public readonly restrictedDotStyle = { bgColor: lfxColors.amber[700], icon: 'fa-solid fa-lock', label: 'Restricted meeting' };
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
@@ -150,35 +151,6 @@ export class DashboardMeetingCardComponent {
         return duration > 0 ? `${weekday}, ${time} · ${duration}m` : `${weekday}, ${time}`;
       } catch {
         return startTime;
-      }
-    });
-  }
-
-  private initPrivacyDotInfo(): Signal<{ label: string; bgColor: string; icon: string }> {
-    return computed(() => {
-      const meeting = this.meeting();
-      const privacyType = fieldsToPrivacyType(meeting.visibility, meeting.restricted);
-
-      switch (privacyType) {
-        case MeetingPrivacyType.RESTRICTED:
-          return {
-            label: 'Restricted meeting',
-            bgColor: lfxColors.amber[700],
-            icon: 'fa-solid fa-lock',
-          };
-        case MeetingPrivacyType.PUBLIC:
-          return {
-            label: 'Public meeting',
-            bgColor: lfxColors.emerald[700],
-            icon: 'fa-solid fa-globe',
-          };
-        case MeetingPrivacyType.PRIVATE:
-        default:
-          return {
-            label: 'Private meeting',
-            bgColor: lfxColors.red[600],
-            icon: 'fa-solid fa-shield-halved',
-          };
       }
     });
   }

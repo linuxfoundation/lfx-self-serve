@@ -6,11 +6,12 @@
     <!-- Header with badges and action menu -->
     <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
       <div class="flex items-center gap-2 flex-wrap">
-        <!-- Privacy Badge -->
+        <!-- Privacy Badges -->
+        @if (meeting().visibility === 'private') {
+          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
+        }
         @if (meeting().restricted) {
           <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock" styleClass="tag-restricted"></lfx-tag>
-        } @else if (meeting().visibility === 'private') {
-          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
         }
 
         <!-- Meeting Type Badge -->

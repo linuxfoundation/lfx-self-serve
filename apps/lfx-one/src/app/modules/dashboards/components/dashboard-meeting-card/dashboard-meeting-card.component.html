@@ -59,16 +59,33 @@
           </span>
         </div>
       </div>
-      <!-- Visibility dot badge -->
-      <div
-        class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
-        [style.background-color]="privacyDotInfo().bgColor"
-        [pTooltip]="privacyDotInfo().label"
-        [attr.aria-label]="privacyDotInfo().label"
-        tooltipPosition="top"
-        data-testid="dashboard-meeting-card-type-dot">
-        <i [class]="'text-white text-[10px] leading-none block ' + privacyDotInfo().icon" aria-hidden="true"></i>
-      </div>
+      <!-- Privacy dot badges (hidden for public + unrestricted) -->
+      @if (showPrivateDot() || showRestrictedDot()) {
+        <div class="absolute -top-2 left-[47px] flex gap-0.5">
+          @if (showPrivateDot()) {
+            <div
+              class="w-5 h-5 rounded-full flex items-center justify-center"
+              [style.background-color]="privateDotStyle.bgColor"
+              [pTooltip]="privateDotStyle.label"
+              [attr.aria-label]="privateDotStyle.label"
+              tooltipPosition="top"
+              data-testid="dashboard-meeting-card-private-dot">
+              <i [class]="'text-white text-[10px] leading-none block ' + privateDotStyle.icon" aria-hidden="true"></i>
+            </div>
+          }
+          @if (showRestrictedDot()) {
+            <div
+              class="w-5 h-5 rounded-full flex items-center justify-center"
+              [style.background-color]="restrictedDotStyle.bgColor"
+              [pTooltip]="restrictedDotStyle.label"
+              [attr.aria-label]="restrictedDotStyle.label"
+              tooltipPosition="top"
+              data-testid="dashboard-meeting-card-restricted-dot">
+              <i [class]="'text-white text-[10px] leading-none block ' + restrictedDotStyle.icon" aria-hidden="true"></i>
+            </div>
+          }
+        </div>
+      }
     </div>
 
     <!-- Meeting details -->

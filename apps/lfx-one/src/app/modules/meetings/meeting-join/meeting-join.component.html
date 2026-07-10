@@ -32,7 +32,15 @@
                   <lfx-tag value="Ended" severity="warn" icon="fa-light fa-check" styleClass="tag-ended" [attr.data-testid]="'meeting-badge-ended'"></lfx-tag>
                 }
 
-                <!-- Privacy Badge -->
+                <!-- Privacy Badges -->
+                @if (meeting().visibility === 'private') {
+                  <lfx-tag
+                    value="Private"
+                    severity="danger"
+                    icon="fa-light fa-shield"
+                    styleClass="tag-private"
+                    [attr.data-testid]="'meeting-badge-private'"></lfx-tag>
+                }
                 @if (meeting().restricted) {
                   <lfx-tag
                     value="Restricted"
@@ -40,13 +48,6 @@
                     icon="fa-light fa-lock"
                     styleClass="tag-restricted"
                     [attr.data-testid]="'meeting-badge-restricted'"></lfx-tag>
-                } @else if (meeting().visibility === 'private') {
-                  <lfx-tag
-                    value="Private"
-                    severity="danger"
-                    icon="fa-light fa-shield"
-                    styleClass="tag-private"
-                    [attr.data-testid]="'meeting-badge-private'"></lfx-tag>
                 }
 
                 <!-- Meeting Type Badge -->
