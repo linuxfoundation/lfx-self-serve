@@ -1,14 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  CommitteeDocumentItem,
-  MeetingAttachment,
-  PastMeetingAttachment,
-  PastMeetingRecording,
-  PastMeetingSummary,
-  RecordingFile,
-} from '@lfx-one/shared/interfaces';
+import { CommitteeDocumentItem, MeetingAttachment, PastMeetingAttachment, PastMeetingSummary, RecordingFile } from '@lfx-one/shared/interfaces';
 import { ALLOWED_RECORDING_FILE_TYPES, RECORDING_TYPE_LABELS } from '@lfx-one/shared/constants';
 
 export function mapAttachmentToDoc(
@@ -90,14 +83,6 @@ export function mapSummaryToDoc(
 export function getRecordingDisplayName(file: RecordingFile): string {
   const typeName = RECORDING_TYPE_LABELS[file.recording_type] || file.recording_type;
   return `${typeName} (${file.file_type})`;
-}
-
-export function getLargestSessionShareUrl(recording: PastMeetingRecording): string | null {
-  if (!recording.sessions || recording.sessions.length === 0) {
-    return null;
-  }
-  const largestSession = recording.sessions.reduce((largest, current) => (current.total_size > largest.total_size ? current : largest));
-  return largestSession.share_url || null;
 }
 
 export function isAllowedRecordingFileType(fileType: string): boolean {

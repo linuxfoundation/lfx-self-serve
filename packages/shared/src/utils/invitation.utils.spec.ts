@@ -160,7 +160,7 @@ describe('invitationRequiresOrganization', () => {
 });
 
 describe('buildCommitteeOrganizationPayload', () => {
-  it('maps form values to the committee-service organization shape', () => {
+  it('maps form values to the committee-service organization shape (id always null)', () => {
     expect(
       buildCommitteeOrganizationPayload({
         organization: 'Acme Corp',
@@ -168,7 +168,7 @@ describe('buildCommitteeOrganizationPayload', () => {
         organization_id: 'org-1',
       })
     ).toEqual({
-      id: 'org-1',
+      id: null,
       name: 'Acme Corp',
       website: 'https://acme.example',
     });
@@ -192,7 +192,7 @@ describe('buildCommitteeOrganizationPayload', () => {
         organization_id: '  org-1  ',
       })
     ).toEqual({
-      id: 'org-1',
+      id: null,
       name: 'Acme Corp',
       website: 'https://acme.example',
     });

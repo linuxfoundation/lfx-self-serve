@@ -25,10 +25,10 @@ export interface OrganizationSuggestionsResponse {
 
 /**
  * Organization record from the CDP (Community Data Platform)
- * @description Returned when finding or creating an organization via CDP API
+ * @description Raw shape returned by the CDP API when finding or creating an organization
  */
 export interface CdpOrganization {
-  /** CDP organization ID */
+  /** CDP internal organization ID (not a Salesforce SFID — never forward to v1 Project Service) */
   id: string;
   /** Organization display name */
   name: string;
@@ -39,12 +39,30 @@ export interface CdpOrganization {
 }
 
 /**
+ * Response from the BFF POST /api/organizations/resolve endpoint
+ */
+export interface OrganizationResolveResponse {
+  /**
+   * Raw CDP org ID. Work-experience consumers may store this; committee-service
+   * consumers must NOT forward it — buildCommitteeOrganizationPayload strips it to null.
+   */
+  id: string | null;
+  /** Organization display name (may differ from what the user searched) */
+  name: string;
+  /** Organization logo URL */
+  logo: string;
+}
+
+/**
  * Result of resolving an organization through CDP
- * @description Contains the resolved organization details and whether the display name changed
+ * @description Enriched form of OrganizationResolveResponse with name-change metadata
  */
 export interface OrganizationResolveResult {
-  /** CDP organization ID */
-  id: string;
+  /**
+   * Raw CDP org ID (sourced from OrganizationResolveResponse.id). Do not forward to
+   * committee-service — buildCommitteeOrganizationPayload strips it to null.
+   */
+  id: string | null;
   /** CDP display name (may differ from what the user searched) */
   name: string;
   /** Organization logo URL */

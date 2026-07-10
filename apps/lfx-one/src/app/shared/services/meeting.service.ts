@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
-import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_RECORDING_CACHE_TTL_MS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
@@ -43,7 +43,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -52,6 +52,7 @@ export class MeetingService {
   public meeting: WritableSignal<Meeting | null> = signal(null);
 
   private readonly http = inject(HttpClient);
+  private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -366,7 +367,9 @@ export class MeetingService {
   // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
 
   public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
-    return this.http.get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${pastMeetingId}/attachments/${attachmentId}/download`).pipe(take(1));
+    return this.http
+      .get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/${encodeURIComponent(attachmentId)}/download`)
+      .pipe(take(1));
   }
 
   public generateAgenda(request: GenerateAgendaRequest): Observable<GenerateAgendaResponse> {
@@ -399,7 +402,7 @@ export class MeetingService {
   }
 
   public getPastMeetingById(pastMeetingUid: string): Observable<PastMeeting> {
-    return this.http.get<PastMeeting>(`/api/past-meetings/${pastMeetingUid}`).pipe(
+    return this.http.get<PastMeeting>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}`).pipe(
       catchError((error) => {
         console.error(`Failed to load past meeting ${pastMeetingUid}:`, error);
         return throwError(() => error);
@@ -408,31 +411,47 @@ export class MeetingService {
   }
 
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
-    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`);
+    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`);
+  }
+
+  public clearPastMeetingRecordingCache(): void {
+    this.pastMeetingRecordingCache.clear();
   }
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
-    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+    this.pruneExpiredPastMeetingRecordingCache();
+    const cached = this.pastMeetingRecordingCache.get(pastMeetingUid);
+    if (cached && Date.now() - cached.cachedAt < PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.pastMeetingRecordingCache.delete(pastMeetingUid);
+    }
+    const recording$ = this.http
+      .get<PastMeetingRecording>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/recording`)
+      .pipe(tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }), shareReplay(1));
+    this.pastMeetingRecordingCache.set(pastMeetingUid, { observable: recording$, cachedAt: Date.now() });
+    return recording$;
   }
 
   public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
-    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${pastMeetingUid}/transcript`);
+    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/transcript`);
   }
 
   public getPastMeetingTranscriptContent(pastMeetingUid: string): Observable<PastMeetingTranscriptContent> {
-    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${pastMeetingUid}/transcript/content`);
+    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/transcript/content`);
   }
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
-    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
+    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary`);
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
-    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${pastMeetingUid}/attachments`);
+    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
   }
 
   public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {
-    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary/${summaryUid}`, updateData);
+    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary/${encodeURIComponent(summaryUid)}`, updateData);
   }
 
   public approvePastMeetingSummary(pastMeetingUid: string, summaryUid: string): Observable<PastMeetingSummary> {
@@ -573,5 +592,14 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  private pruneExpiredPastMeetingRecordingCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.pastMeetingRecordingCache) {
+      if (now - entry.cachedAt >= PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+        this.pastMeetingRecordingCache.delete(key);
+      }
+    }
   }
 }

@@ -103,11 +103,13 @@ export class OrganizationController {
       const org = await this.cdpService.resolveOrganization(req, name, domain || '', logo);
 
       logger.success(req, 'resolve_organization', startTime, {
-        organization_id: org.id,
         organization_name: org.name,
       });
 
-      res.json(org);
+      // Return the raw CDP org ID so work-experience consumers can store it.
+      // Committee-service consumers must NOT forward this as organization.id —
+      // buildCommitteeOrganizationPayload strips it to null at the payload layer.
+      res.json({ id: org.id, name: org.name, logo: org.logo });
     } catch (error) {
       next(error);
     }
