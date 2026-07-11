@@ -3,7 +3,9 @@
 <main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-meetings-page">
   <header class="flex flex-col gap-1">
     <h1 class="font-display font-light text-2xl">Meetings</h1>
-    <p class="text-sm text-gray-500">Coordinate decisions, align stakeholders, and maintain transparent governance across your foundations.</p>
+    <p class="text-sm text-gray-500">
+      This Organization Meetings page shows all public meetings attended by your company's employees and private meetings that you are invited to.
+    </p>
   </header>
 
   <lfx-stat-card-grid [cards]="kpiCards()" [loading]="summaryLoading()" [columns]="2" data-testid="org-meetings-kpi-strip" />
@@ -26,23 +28,6 @@
           </button>
         }
       </div>
-
-      @if (activeTab() === 'upcoming') {
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            [class]="
-              pendingRsvpOnly()
-                ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
-                : 'px-3 py-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
-            "
-            [attr.aria-pressed]="pendingRsvpOnly()"
-            data-testid="org-meetings-pending-rsvp-toggle"
-            (click)="togglePendingRsvpOnly()">
-            Pending RSVP
-          </button>
-        </div>
-      }
 
       <div class="flex-1">
         <label for="org-meetings-search-id" class="sr-only">Search meetings</label>

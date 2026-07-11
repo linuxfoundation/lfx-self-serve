@@ -73,7 +73,6 @@ export class MeetingService {
     if (options.searchQuery) params = params.set('searchQuery', options.searchQuery);
     if (options.project) params = params.set('project', options.project);
     if (options.type) params = params.set('type', options.type);
-    if (options.pendingRsvpOnly) params = params.set('pendingRsvpOnly', 'true');
     return this.http.get<OrgUpcomingMeetingsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings`, { params });
   }
 

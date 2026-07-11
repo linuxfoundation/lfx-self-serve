@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgMeetingPrivacy } from '../interfaces';
+import { ORG_MEETING_DETAILS_BASE_URL, ORG_MEETING_TYPE_LABELS } from '../constants';
+import type { OrgMeetingBase, OrgMeetingPrivacy, OrgMeetingType, OrgMeetingsPrivacySplit, OrgPrivateMeetingsRollupTypeBadgeVm } from '../interfaces';
 
 /**
  * Deterministic UI-only placeholder for "is the viewer invited to this private meeting".
@@ -22,12 +23,67 @@ export function deriveDemoPassword(meetingId: string, privacy: OrgMeetingPrivacy
   return privacy === 'private' ? `demo-${meetingId}` : null;
 }
 
-/** Demo "See Details" route path for a meeting (real routing target). */
-export function deriveDemoDetailsPath(meetingId: string): string {
-  return `/meetings/${meetingId}/details`;
+/** Absolute "See Meeting Details" URL for a meeting the viewer can access (public, or private + invited) — the `password` param is omitted for public meetings (see `deriveDemoPassword`). */
+export function deriveMeetingDetailsUrl(meetingId: string, password: string | null): string {
+  const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}`;
+  return password ? `${base}?password=${encodeURIComponent(password)}` : base;
 }
 
-/** Demo "See Details" query params for a meeting's placeholder password, for binding alongside `deriveDemoDetailsPath` via `[queryParams]` (not string-concatenated into the `[routerLink]` path). */
-export function deriveDemoDetailsQueryParams(password: string | null): Record<string, string> | undefined {
-  return password ? { password } : undefined;
+/**
+ * Partitions a meeting list into what the viewer may see as its own card (all public meetings, plus
+ * private meetings the viewer is invited to) versus what collapses into a single private-meetings
+ * rollup card. Shared by the upcoming/past tabs, which differ only in how each meeting's org-invitee
+ * names are read (`orgInvitees` vs `orgPastInvitees`).
+ *
+ * For the upcoming tab, `meetings` is only the currently-fetched page — the rollup reflects what has
+ * loaded so far, not the viewer's org-wide private-meeting count. A real aggregate would need a
+ * dedicated backend endpoint, out of scope for this UI-only ticket (see `deriveDemoViewerInvited`).
+ */
+export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
+  meetings: readonly T[],
+  getInviteeNames: (meeting: T) => readonly string[]
+): OrgMeetingsPrivacySplit<T> {
+  const visible: T[] = [];
+  const hidden: T[] = [];
+
+  for (const meeting of meetings) {
+    if (meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id)) {
+      visible.push(meeting);
+    } else {
+      hidden.push(meeting);
+    }
+  }
+
+  if (hidden.length === 0) {
+    return { visible, rollup: null };
+  }
+
+  const typeCounts = new Map<OrgMeetingType, number>();
+  const projects = new Set<string>();
+  const foundations = new Set<string>();
+  const employees = new Set<string>();
+
+  for (const meeting of hidden) {
+    typeCounts.set(meeting.type, (typeCounts.get(meeting.type) ?? 0) + 1);
+    projects.add(meeting.project);
+    foundations.add(meeting.foundation);
+    for (const name of getInviteeNames(meeting)) {
+      employees.add(name);
+    }
+  }
+
+  const typeBadges: OrgPrivateMeetingsRollupTypeBadgeVm[] = (Object.keys(ORG_MEETING_TYPE_LABELS) as OrgMeetingType[])
+    .filter((type) => typeCounts.has(type))
+    .map((type) => ({ type, count: typeCounts.get(type) as number, typeBadge: ORG_MEETING_TYPE_LABELS[type] }));
+
+  return {
+    visible,
+    rollup: {
+      totalCount: hidden.length,
+      typeBadges,
+      projectCount: projects.size,
+      foundationCount: foundations.size,
+      employeeCount: employees.size,
+    },
+  };
 }

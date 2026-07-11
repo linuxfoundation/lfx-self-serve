@@ -8,7 +8,7 @@
         <div class="h-3 bg-gray-100 rounded w-2/3"></div>
       </div>
     }
-  } @else if (meetings().length === 0) {
+  } @else if (meetingVms().length === 0 && !privateRollup()) {
     <div class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-past-meetings-empty">
       <i class="fa-light fa-calendar-check text-4xl text-gray-300" aria-hidden="true"></i>
       <p class="text-sm text-gray-500">No past meetings found in this window.</p>
@@ -22,6 +22,10 @@
             @if (meeting.privacy === 'private') {
               <span class="inline-flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-1 text-xs font-semibold text-white">
                 <i class="fa-light fa-shield-heart text-xs" aria-hidden="true"></i> Private
+              </span>
+            } @else {
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">
+                <i class="fa-light fa-globe text-xs" aria-hidden="true"></i> Public
               </span>
             }
             <span [class]="'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ' + meeting.typeBadge.badgeClass">
@@ -42,82 +46,108 @@
         <!-- ── Title ── -->
         <h3 class="text-base font-semibold text-gray-900">{{ meeting.title }}</h3>
 
-        @if (meeting.privacy === 'private' && !meeting.demoIsViewerInvited) {
-          <!-- ── Private meeting, viewer not invited: restricted summary only ── -->
-          <div
-            class="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700"
-            [attr.data-testid]="'org-past-meeting-restricted-' + meeting.id">
-            <i class="fa-light fa-lock text-red-400" aria-hidden="true"></i>
-            This is a private meeting. Contact the organizer for access to the recording and details.
-          </div>
-          <span
-            class="inline-flex w-fit items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600"
-            [attr.data-testid]="'org-past-meeting-invited-count-' + meeting.id">
-            <i class="fa-light fa-people-group text-gray-400" aria-hidden="true"></i>
-            {{ meeting.orgPastInvitees.length }} {{ orgName() }} employee{{ meeting.orgPastInvitees.length === 1 ? '' : 's' }} invited
-          </span>
-        }
-
         <!-- ── Date row + inline artifacts ── -->
         <div class="flex flex-wrap items-center gap-2">
           <span class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm text-gray-600">
             <i class="fa-light fa-calendar-day text-xs text-gray-400" aria-hidden="true"></i>
             {{ meeting.startTime | date: 'EEEE, MMMM d, y' }} &bull; {{ meeting.startTime | date: 'h:mm a' }} &ndash; {{ meeting.endTime | date: 'h:mm a' }}
           </span>
-          @if (meeting.artifact.recordingUrl) {
-            <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-500">
-              <i class="fa-light fa-circle-dot text-xs" aria-hidden="true"></i> Recording
-            </span>
-          }
-          @if (meeting.artifact.transcriptUrl) {
-            <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-500">
-              <i class="fa-light fa-file-lines text-xs" aria-hidden="true"></i> Transcripts
-            </span>
-          }
-          @if (meeting.artifact.aiSummaryId) {
-            <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-500">
-              <i class="fa-light fa-sparkles text-xs" aria-hidden="true"></i> AI Summary
-            </span>
-          }
-          @if (meeting.minutesUploaded) {
-            <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-500">
-              <i class="fa-light fa-file-check text-xs" aria-hidden="true"></i> Minutes
+        </div>
+
+        <!-- ── Two-column: description + details button | invitee count + attendees ── -->
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <!-- LEFT: description + See Meeting Details -->
+          <div class="flex flex-col gap-3">
+            @if (meeting.agenda) {
+              @let expanded = expandedIds().has(meeting.id);
+              <div class="flex flex-col gap-1">
+                <div
+                  [attr.id]="'org-past-meeting-agenda-' + meeting.id"
+                  class="text-sm text-gray-700 whitespace-pre-line"
+                  [class.line-clamp-3]="!expanded"
+                  [innerHTML]="meeting.agenda | linkify"></div>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 rounded w-fit"
+                  [attr.aria-expanded]="expanded"
+                  [attr.aria-controls]="'org-past-meeting-agenda-' + meeting.id"
+                  (click)="toggleExpand(meeting.id)">
+                  <i [class]="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'" aria-hidden="true"></i>
+                  {{ expanded ? 'Show less' : 'Show more' }}
+                </button>
+              </div>
+            }
+            <a
+              [href]="meeting.detailsUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex w-fit items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100 transition-colors"
+              [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
+              <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
+            </a>
+          </div>
+
+          <!-- RIGHT: invitee count + company attendees -->
+          <div
+            class="flex flex-col gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4"
+            [attr.data-testid]="'org-past-meeting-people-invited-' + meeting.id">
+            <p class="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              <i class="fa-light fa-users" aria-hidden="true"></i> {{ meeting.totalInvited }} invitee{{ meeting.totalInvited === 1 ? '' : 's' }}
+            </p>
+
+            @if (meeting.inviteeVms.length > 0) {
+              <div class="flex flex-col gap-3 rounded-lg border border-gray-100 bg-white p-3">
+                <p class="text-xs font-semibold tracking-wide text-gray-500 uppercase">{{ orgName() }} Invitees ({{ meeting.inviteeVms.length }})</p>
+                <div class="flex flex-col divide-y divide-gray-100">
+                  @for (invitee of meeting.inviteeVms; track $index; let i = $index) {
+                    <div class="flex items-center gap-3 py-2 first:pt-0 last:pb-0" [attr.data-testid]="'org-past-meeting-invitee-' + meeting.id + '-' + i">
+                      <lfx-person-avatar [avatarUrl]="invitee.avatarUrl" [name]="invitee.name" [identity]="invitee.name" />
+                      <div class="flex-1 min-w-0">
+                        <p class="truncate text-sm font-medium text-gray-900">{{ invitee.name }}</p>
+                        <p class="truncate text-sm text-gray-500">{{ invitee.title }}</p>
+                      </div>
+                      <span
+                        class="inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
+                        [class]="invitee.badge.badgeClass">
+                        <i class="fa-light fa-circle-small text-[6px]" aria-hidden="true"></i> {{ invitee.badge.label }}
+                      </span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+    @if (privateRollup(); as rollup) {
+      <div class="flex flex-col gap-3 p-5 bg-white rounded-xl shadow-sm border border-gray-100" data-testid="org-past-meetings-private-rollup">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="inline-flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-1 text-xs font-semibold text-white">
+            <i class="fa-light fa-shield-heart text-xs" aria-hidden="true"></i> Private
+          </span>
+          @for (typeBadge of rollup.typeBadges; track typeBadge.type) {
+            <span [class]="'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ' + typeBadge.typeBadge.badgeClass">
+              <i [class]="typeBadge.typeBadge.icon + ' text-xs'" aria-hidden="true"></i> {{ typeBadge.count }} {{ typeBadge.typeBadge.label }}
             </span>
           }
         </div>
-
-        @if (meeting.privacy !== 'private' || meeting.demoIsViewerInvited) {
-          <!-- ── Two-column: Resources | See Meeting Details ── -->
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <!-- LEFT: Resources -->
-            <div class="flex flex-col gap-2 rounded-lg bg-gray-50 p-3">
-              <p class="flex items-center gap-1.5 text-sm font-medium text-gray-500"><i class="fa-light fa-paperclip" aria-hidden="true"></i> Resources</p>
-              @if (meeting.resources.length === 0) {
-                <p class="text-sm text-gray-400 italic">No resources available</p>
-              } @else {
-                <div class="flex flex-col gap-1">
-                  @for (resource of meeting.resources; track resource) {
-                    <span class="inline-flex items-center gap-1 text-sm text-gray-600 truncate">
-                      <i class="fa-light fa-paperclip text-xs flex-shrink-0" aria-hidden="true"></i>
-                      <span class="truncate">{{ resource }}</span>
-                    </span>
-                  }
-                </div>
-              }
-            </div>
-
-            <!-- RIGHT: See Meeting Details -->
-            <div class="flex items-start">
-              <a
-                [routerLink]="meeting.demoDetailsPath"
-                [queryParams]="meeting.demoDetailsQueryParams"
-                class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100 transition-colors"
-                [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
-                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i> See Meeting Details
-              </a>
-            </div>
-          </div>
-        }
+        <h3 class="text-base font-semibold text-gray-900">{{ rollup.totalCount }} other private meeting{{ rollup.totalCount === 1 ? '' : 's' }}</h3>
+        <span
+          class="inline-flex w-fit items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600"
+          data-testid="org-past-meetings-private-rollup-employee-count">
+          <i class="fa-light fa-people-group text-gray-400" aria-hidden="true"></i>
+          {{ rollup.employeeCount }} {{ orgName() }} employee{{ rollup.employeeCount === 1 ? '' : 's' }} attending private meetings
+        </span>
+        <p class="text-sm text-gray-600">
+          Supporting {{ rollup.projectCount }} project{{ rollup.projectCount === 1 ? '' : 's' }} across {{ rollup.foundationCount }} foundation{{
+            rollup.foundationCount === 1 ? '' : 's'
+          }}
+        </p>
+        <p class="text-sm text-gray-500">
+          The Organization meetings page shows all public meetings attended by your company's employees, as well as private meetings that you are invited to.
+          Private meetings that you do not have access to are summarized in this card.
+        </p>
       </div>
     }
 

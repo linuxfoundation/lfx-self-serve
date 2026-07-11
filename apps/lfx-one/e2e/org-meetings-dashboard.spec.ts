@@ -1,11 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, Page, Route, test } from '@playwright/test';
+// Deep import the constants file directly (not the '@lfx-one/shared/constants' barrel) so the suite can
+// load the demo data without bootstrapping Angular. org-meetings.constants.ts only imports types, so this is safe.
+import { DEMO_PAST_MEETINGS } from '@lfx-one/shared/constants/org-meetings.constants';
+import { expect, Locator, Page, Route, test } from '@playwright/test';
 
 const ORG_MEETINGS_URL = '/org/meetings';
 const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+
+// Mirrors `deriveDemoViewerInvited`/`splitOrgMeetingsByPrivacy` in `@lfx-one/shared/utils/org-meetings.util` —
+// can't import that module directly because it pulls in the `../constants` barrel, which transitively imports
+// `@angular/forms` (via form.utils.ts) and crashes the plain-Node Playwright runtime (no Angular JIT compiler loaded).
+function isVisibleToDemoViewer(meeting: { id: string; privacy: string }): boolean {
+  if (meeting.privacy !== 'private') return true;
+  let hash = 0;
+  for (const char of meeting.id) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 997;
+  }
+  return hash % 3 !== 0;
+}
 
 test.setTimeout(120_000);
 
@@ -135,6 +150,16 @@ async function stubSinglePage(page: Page, meetings: StubMeeting[]): Promise<void
   await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: meetings, total: meetings.length, pageSize: 10, offset: 0 }));
 }
 
+/** Asserts the private-meetings rollup card, if rendered, is the last card-like element in the list — never interspersed with or before individual meeting cards. */
+async function expectRollupRendersLast(list: Locator, cardPrefix: string, rollupTestId: string): Promise<void> {
+  const testIds = await list
+    .locator(`[data-testid^="${cardPrefix}"], [data-testid="${rollupTestId}"]`)
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''));
+  const rollupIndex = testIds.indexOf(rollupTestId);
+  expect(rollupIndex, `expected ${rollupTestId} to be rendered`).toBeGreaterThan(-1);
+  expect(testIds.slice(rollupIndex)).toEqual([rollupTestId]);
+}
+
 test.describe('Org Meetings Dashboard', () => {
   test('renders KPI strip and real upcoming cards by default', async ({ page }) => {
     await stubSinglePage(page, [makeMeeting(1), makeMeeting(2)]);
@@ -194,7 +219,7 @@ test.describe('Org Meetings Dashboard', () => {
         await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
         return;
       }
-      await fulfillJson(route, { data: [makeMeeting(9)], total: 1, pageSize: 10, offset: 0 });
+      await fulfillJson(route, { data: [makeMeeting(10)], total: 1, pageSize: 10, offset: 0 });
     });
     await gotoOrgMeetingsPage(page);
 
@@ -202,7 +227,7 @@ test.describe('Org Meetings Dashboard', () => {
     await expect(page.getByTestId('org-upcoming-meetings-empty')).toHaveCount(0);
 
     await page.getByTestId('org-upcoming-meetings-retry').click();
-    await expect(page.getByTestId('org-upcoming-meeting-card-mtg-9')).toBeVisible();
+    await expect(page.getByTestId('org-upcoming-meeting-card-mtg-10')).toBeVisible();
     await expect(page.getByTestId('org-upcoming-meetings-error')).toHaveCount(0);
   });
 
@@ -213,7 +238,7 @@ test.describe('Org Meetings Dashboard', () => {
         await fulfillJson(route, { data: [makeMeeting(1), makeMeeting(2)], total: 3, pageSize: 10, offset: 0 });
         return;
       }
-      await fulfillJson(route, { data: [makeMeeting(3)], total: 3, pageSize: 10, offset });
+      await fulfillJson(route, { data: [makeMeeting(4)], total: 3, pageSize: 10, offset });
     });
     await gotoOrgMeetingsPage(page);
 
@@ -249,18 +274,17 @@ test.describe('Org Meetings Dashboard', () => {
     await expect(page.getByTestId('org-upcoming-meetings-error')).toHaveCount(0);
   });
 
-  test('renders org invitee rows and the reconciling attendance tally', async ({ page }) => {
+  test('renders org invitee rows and the total invitee count', async ({ page }) => {
     await stubSinglePage(page, [makeMeeting(1)]);
     await gotoOrgMeetingsPage(page);
 
     const panel = page.getByTestId('org-upcoming-meeting-people-invited-mtg-1');
     await expect(panel).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    // rsvpTally 2/1/0/1 => 2 of 4 attending; orgInvitees(2) + guests(2) = total(4).
-    await expect(panel).toContainText('2 of 4 attending');
+    // rsvpTally 2/1/0/1 => totalInvited = 4.
+    await expect(panel).toContainText('4 invitees');
     const firstInvitee = page.getByTestId('org-upcoming-meeting-invitee-mtg-1-0');
     await expect(firstInvitee).toContainText('Jeffrey Osier-Mixon');
     await expect(firstInvitee).toContainText('Community Architect');
-    await expect(page.getByTestId('org-upcoming-meeting-guests-mtg-1')).toContainText('2');
   });
 
   test('search re-fetches server-side with the searchQuery param', async ({ page }) => {
@@ -270,7 +294,7 @@ test.describe('Org Meetings Dashboard', () => {
         await fulfillJson(route, { data: [makeMeeting(7, { title: 'Security TAG Monthly' })], total: 1, pageSize: 10, offset: 0 });
         return;
       }
-      await fulfillJson(route, { data: [makeMeeting(1), makeMeeting(2), makeMeeting(3)], total: 3, pageSize: 10, offset: 0 });
+      await fulfillJson(route, { data: [makeMeeting(1), makeMeeting(2), makeMeeting(4)], total: 3, pageSize: 10, offset: 0 });
     });
     await gotoOrgMeetingsPage(page);
 
@@ -282,22 +306,6 @@ test.describe('Org Meetings Dashboard', () => {
     await request;
     await expect(list.locator('[data-testid^="org-upcoming-meeting-card-"]')).toHaveCount(1);
     await expect(list).toContainText('Security TAG Monthly');
-  });
-
-  test('pending RSVP toggle re-fetches with the pendingRsvpOnly param', async ({ page }) => {
-    await stubOrgMeetingsRoutes(page, async (route, url) => {
-      const pending = url.searchParams.get('pendingRsvpOnly') === 'true';
-      const data = pending ? [makeMeeting(1)] : [makeMeeting(1), makeMeeting(2)];
-      await fulfillJson(route, { data, total: data.length, pageSize: 10, offset: 0 });
-    });
-    await gotoOrgMeetingsPage(page);
-
-    const list = page.getByTestId('org-upcoming-meetings-list');
-    await expect(list.locator('[data-testid^="org-upcoming-meeting-card-"]')).toHaveCount(2);
-    const request = page.waitForRequest((req) => req.url().includes('/lens/meetings?') && req.url().includes('pendingRsvpOnly=true'));
-    await page.getByTestId('org-meetings-pending-rsvp-toggle').click();
-    await request;
-    await expect(list.locator('[data-testid^="org-upcoming-meeting-card-"]')).toHaveCount(1);
   });
 
   test('switches to the past tab and back, clearing the tab query param', async ({ page }) => {
@@ -312,5 +320,70 @@ test.describe('Org Meetings Dashboard', () => {
     await page.getByTestId('org-meetings-tab-upcoming').click();
     await expect(page).not.toHaveURL(/tab=/);
     await expect(page.getByTestId('org-meetings-upcoming-tab')).toBeVisible();
+  });
+
+  test('private meetings rollup card renders after every individual meeting card, on both tabs', async ({ page }) => {
+    // mtg-1 and mtg-3 are both private with no real invitee data, so the demo viewer-invited hash
+    // (deriveDemoViewerInvited) decides visibility: mtg-1 hashes visible, mtg-3 hashes hidden — this
+    // mix is required so the upcoming tab renders a visible card AND a rollup simultaneously.
+    await stubSinglePage(page, [makeMeeting(1), makeMeeting(3)]);
+    await gotoOrgMeetingsPage(page);
+
+    const upcomingList = page.getByTestId('org-upcoming-meetings-list');
+    await expect(upcomingList.getByTestId('org-upcoming-meetings-private-rollup')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expectRollupRendersLast(upcomingList, 'org-upcoming-meeting-card-', 'org-upcoming-meetings-private-rollup');
+
+    await page.getByTestId('org-meetings-tab-past').click();
+    const pastList = page.getByTestId('org-past-meetings-list');
+    await expect(pastList.getByTestId('org-past-meetings-private-rollup')).toBeVisible();
+    await expectRollupRendersLast(pastList, 'org-past-meeting-card-', 'org-past-meetings-private-rollup');
+  });
+
+  test('Recordings Available KPI reflects only recordings from the past 30 days the viewer can actually access', async ({ page }) => {
+    await stubSinglePage(page, [makeMeeting(1)]);
+    await gotoOrgMeetingsPage(page);
+    await page.getByTestId('org-meetings-tab-past').click();
+
+    // The past tab always renders DEMO_PAST_MEETINGS (no stub/fetch path exists for it), so the expected
+    // count is derived straight from that fixed data via the same privacy-visibility and 30-day-window rules
+    // the component uses.
+    const now = Date.now();
+    const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+    const expectedRecordings = DEMO_PAST_MEETINGS.filter((meeting) => new Date(meeting.startTime).getTime() < now)
+      .filter((meeting) => new Date(meeting.startTime).getTime() >= cutoff)
+      .filter((meeting) => isVisibleToDemoViewer(meeting))
+      .filter((meeting) => meeting.artifact.recordingUrl !== null).length;
+    // Sanity check the demo data actually exercises this path — a KPI that's coincidentally right at 0 would prove nothing.
+    expect(expectedRecordings).toBeGreaterThan(0);
+
+    const pastList = page.getByTestId('org-past-meetings-list');
+    await expect(pastList).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const recordingsCard = page.getByTestId('stat-card-Recordings Available');
+    await expect(recordingsCard).toContainText(String(expectedRecordings));
+    await expect(recordingsCard).toContainText('From past 30 days');
+  });
+
+  test('Past Meetings KPI shows an attendance-rate subtext computed across all past meetings', async ({ page }) => {
+    await stubSinglePage(page, [makeMeeting(1)]);
+    await gotoOrgMeetingsPage(page);
+    await page.getByTestId('org-meetings-tab-past').click();
+
+    // Same fixed-data premise as the Recordings Available KPI test above: the past tab always renders
+    // DEMO_PAST_MEETINGS, so the expected rate is derived straight from that data via the same
+    // attendanceTally aggregation the component uses (unfiltered by privacy — the headline count isn't either).
+    const now = Date.now();
+    const totals = DEMO_PAST_MEETINGS.filter((meeting) => new Date(meeting.startTime).getTime() < now).reduce(
+      (acc, meeting) => {
+        acc.attended += meeting.attendanceTally.attended;
+        acc.total += meeting.attendanceTally.attended + meeting.attendanceTally.missed + meeting.attendanceTally.excused;
+        return acc;
+      },
+      { attended: 0, total: 0 }
+    );
+    const expectedRate = Math.round((totals.attended / totals.total) * 100);
+
+    const pastList = page.getByTestId('org-past-meetings-list');
+    await expect(pastList).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('stat-card-Past Meetings')).toContainText(`${expectedRate}% attendance rate`);
   });
 });

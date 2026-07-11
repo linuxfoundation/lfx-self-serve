@@ -66,7 +66,6 @@ export class OrgLensMeetingsController {
         searchQuery: getStringQueryParam(req, 'searchQuery') ?? null,
         project: getStringQueryParam(req, 'project') ?? null,
         type,
-        pendingRsvpOnly: getStringQueryParam(req, 'pendingRsvpOnly') === 'true',
         pageSize,
         offset,
       };

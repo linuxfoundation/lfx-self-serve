@@ -15,7 +15,7 @@ import {
   DEFAULT_MEETINGS_PAGE_SIZE,
   DEFAULT_ORG_MEETINGS_TAB_ID,
   DEMO_PAST_MEETINGS,
-  ORG_MEETINGS_KPI_RECORDINGS_COUNT,
+  DEMO_UPCOMING_MEETINGS,
   ORG_MEETINGS_TABS,
   ORG_MEETINGS_TYPE_OPTIONS,
   VALID_ORG_MEETINGS_TAB_IDS,
@@ -30,6 +30,7 @@ import type {
   OrgPastMeeting,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
+import { splitOrgMeetingsByPrivacy } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { MeetingService } from '@services/meeting.service';
 
@@ -64,14 +65,14 @@ export class OrgMeetingsComponent {
 
   // === WritableSignals ===
   protected readonly summaryLoading = signal(true);
-  protected readonly pendingRsvpOnly = signal(false);
   protected readonly listLoading = signal(true);
   protected readonly loadingMore = signal(false);
   protected readonly listError = signal(false);
   protected readonly loadMoreError = signal(false);
   protected readonly offset = signal(0);
   protected readonly total = signal(0);
-  protected readonly upcomingMeetings = signal<readonly OrgMeeting[]>([]);
+  // Seeded with demo data until a real fetch returns rows — mirrors the past-tab demo seam (real Snowflake data pass deferred).
+  protected readonly upcomingMeetings = signal<readonly OrgMeeting[]>(DEMO_UPCOMING_MEETINGS);
   protected readonly projectOptions = signal<FilterOption[]>([{ label: 'All Projects', value: null }]);
   protected readonly pastMeetings = signal<readonly OrgPastMeeting[]>(DEMO_PAST_MEETINGS);
   private readonly refreshTick = signal(0);
@@ -88,6 +89,8 @@ export class OrgMeetingsComponent {
   protected readonly filterProject: Signal<string | null> = toSignal(this.filterForm.controls.project.valueChanges, { initialValue: null });
   protected readonly hasMore = computed(() => this.upcomingMeetings().length < this.total());
   protected readonly filteredPast: Signal<readonly OrgPastMeeting[]> = this.initFilteredPast();
+  protected readonly recordingsAvailableCount: Signal<number> = this.initRecordingsAvailableCount();
+  protected readonly attendanceRate: Signal<number> = this.initAttendanceRate();
 
   private readonly debouncedSearch = toSignal(toObservable(this.filterSearch).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
 
@@ -101,19 +104,12 @@ export class OrgMeetingsComponent {
   // === Protected methods ===
   protected switchTab(tabId: OrgMeetingsTabId): void {
     if (tabId === this.activeTab()) return;
-    if (tabId !== 'upcoming') {
-      this.pendingRsvpOnly.set(false);
-    }
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: tabId === DEFAULT_ORG_MEETINGS_TAB_ID ? null : tabId },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
-  }
-
-  protected togglePendingRsvpOnly(): void {
-    this.pendingRsvpOnly.update((value) => !value);
   }
 
   protected loadMore(): void {
@@ -145,16 +141,20 @@ export class OrgMeetingsComponent {
   private initKpiCards(): Signal<StatCardItem[]> {
     return computed<StatCardItem[]>(() => {
       if (this.activeTab() === 'past') {
+        const pastCount = this.filteredPast().length;
+        const attendanceRate = this.attendanceRate();
         return [
           {
-            value: this.filteredPast().length.toLocaleString(),
+            value: pastCount.toLocaleString(),
             label: 'Past Meetings',
+            subLine: pastCount > 0 ? `${attendanceRate}% attendance rate` : undefined,
             icon: 'fa-light fa-clock-rotate-left',
             iconContainerClass: 'bg-gray-200 text-gray-500',
           },
           {
-            value: ORG_MEETINGS_KPI_RECORDINGS_COUNT.toLocaleString(),
+            value: this.recordingsAvailableCount().toLocaleString(),
             label: 'Recordings Available',
+            subLine: 'From past 30 days',
             icon: 'fa-light fa-video',
             iconContainerClass: 'bg-red-100 text-red-600',
           },
@@ -219,23 +219,16 @@ export class OrgMeetingsComponent {
   }
 
   private initResetFiltersOnAccountChange(): void {
-    // Filters are org-scoped: a leftover project/type/search or pending-RSVP toggle would hide the new org's meetings.
+    // Filters are org-scoped: a leftover project/type/search would hide the new org's meetings.
     toObservable(this.accountId)
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe(() => {
         this.filterForm.reset({ search: '', type: null, project: null });
-        this.pendingRsvpOnly.set(false);
       });
   }
 
   private initResetOnFilterChange(): void {
-    combineLatest([
-      toObservable(this.accountId),
-      toObservable(this.debouncedSearch),
-      toObservable(this.filterType),
-      toObservable(this.filterProject),
-      toObservable(this.pendingRsvpOnly),
-    ])
+    combineLatest([toObservable(this.accountId), toObservable(this.debouncedSearch), toObservable(this.filterType), toObservable(this.filterProject)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.offset.set(0));
   }
@@ -243,17 +236,18 @@ export class OrgMeetingsComponent {
   private initUpcomingFetch(): void {
     const params$ = toObservable(
       computed(() => {
+        // Every signal must be read unconditionally (before the early-return) so this computed's
+        // dependency set always includes offset/refreshTick/etc. — a computed only tracks whatever it
+        // actually read on its last run, so short-circuiting here on a transient falsy accountId would
+        // silently drop those dependencies and loadMore()/filters would stop triggering re-fetches.
         const accountId = this.accountId();
+        const searchQuery = this.debouncedSearch() || null;
+        const project = this.filterProject();
+        const type = this.filterType();
+        const offset = this.offset();
+        const tick = this.refreshTick();
         if (!accountId) return null;
-        return {
-          accountId,
-          searchQuery: this.debouncedSearch() || null,
-          project: this.filterProject(),
-          type: this.filterType(),
-          pendingRsvpOnly: this.pendingRsvpOnly(),
-          offset: this.offset(),
-          tick: this.refreshTick(),
-        };
+        return { accountId, searchQuery, project, type, offset, tick };
       })
     );
 
@@ -279,7 +273,6 @@ export class OrgMeetingsComponent {
               searchQuery: p.searchQuery,
               project: p.project,
               type: p.type,
-              pendingRsvpOnly: p.pendingRsvpOnly,
               pageSize: this.pageSize,
               offset: p.offset,
             })
@@ -293,8 +286,11 @@ export class OrgMeetingsComponent {
       .subscribe(({ res, offset }) => {
         if (!res) {
           if (offset === 0) {
-            this.listError.set(true);
-            this.upcomingMeetings.set([]);
+            // Only surface the error banner when there's nothing to fall back on — otherwise keep showing
+            // the demo/existing set instead of wiping it out from under the viewer.
+            if (this.upcomingMeetings().length === 0) {
+              this.listError.set(true);
+            }
             this.listLoading.set(false);
           } else {
             // Keep the loaded pages; the load-more button surfaces the error and retries the same offset.
@@ -304,6 +300,12 @@ export class OrgMeetingsComponent {
           return;
         }
         this.total.set(res.total);
+        if (offset === 0 && res.data.length === 0) {
+          // No real rows yet (e.g. local dev without seeded data) — keep showing the demo set instead of an empty list.
+          this.listLoading.set(false);
+          this.loadingMore.set(false);
+          return;
+        }
         // Splice the page in at its offset so a re-fetch of the same page can't duplicate rows.
         this.upcomingMeetings.set([...this.upcomingMeetings().slice(0, offset), ...res.data]);
         this.listLoading.set(false);
@@ -317,6 +319,33 @@ export class OrgMeetingsComponent {
       return this.pastMeetings()
         .filter((m) => new Date(m.startTime).getTime() < now)
         .filter((m) => this.matchesFilters(m));
+    });
+  }
+
+  // "Available" means the viewer can actually reach the recording: public meetings, or private meetings
+  // they're invited to (same visibility rule as the rendered cards vs. the private rollup — see `splitOrgMeetingsByPrivacy`).
+  // Scoped to a rolling 30-day window to match the "From past 30 days" KPI subtext.
+  private initRecordingsAvailableCount(): Signal<number> {
+    return computed(() => {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const recent = this.filteredPast().filter((meeting) => new Date(meeting.startTime).getTime() >= cutoff);
+      const { visible } = splitOrgMeetingsByPrivacy(recent, (meeting) => meeting.orgPastInvitees.map((invitee) => invitee.name));
+      return visible.filter((meeting) => meeting.artifact.recordingUrl !== null).length;
+    });
+  }
+
+  private initAttendanceRate(): Signal<number> {
+    return computed(() => {
+      const totals = this.filteredPast().reduce(
+        (acc, meeting) => {
+          const { attended, missed, excused } = meeting.attendanceTally;
+          acc.attended += attended;
+          acc.total += attended + missed + excused;
+          return acc;
+        },
+        { attended: 0, total: 0 }
+      );
+      return totals.total > 0 ? Math.round((totals.attended / totals.total) * 100) : 0;
     });
   }
 

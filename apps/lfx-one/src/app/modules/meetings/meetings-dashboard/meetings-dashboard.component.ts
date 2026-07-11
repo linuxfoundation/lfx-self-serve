@@ -13,7 +13,13 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { CANCELLED_COLOR, MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import {
+  CANCELLED_COLOR,
+  MEETING_ATTENDANCE_COUNT_FETCH_CONCURRENCY,
+  MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
+  MEETING_TYPE_COLORS,
+  MEETING_TYPE_CONFIGS,
+} from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   addMinutesToDate,
@@ -132,6 +138,7 @@ export class MeetingsDashboardComponent {
   // Per-lens loading flags so Me/FP recording-count pipelines cannot clobber each other on lens switch.
   protected readonly meRecordingsCountLoading = signal(false);
   protected readonly fpRecordingsCountLoading = signal(false);
+  protected readonly fpAttendanceRateLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
@@ -161,6 +168,9 @@ export class MeetingsDashboardComponent {
   protected readonly fpPastCount: Signal<number>;
   protected readonly fpRecurringCount: Signal<number>;
   protected readonly fpRecordingsAvailableCount: Signal<number>;
+  protected readonly fpNextMeetingDate: Signal<string>;
+  protected readonly fpRecurringAcrossLabel: Signal<string>;
+  protected readonly fpAttendanceRate: Signal<number>;
 
   private upcomingPageToken = signal<string | undefined>(undefined);
   private pastPageToken = signal<string | undefined>(undefined);
@@ -235,6 +245,9 @@ export class MeetingsDashboardComponent {
     this.fpPastCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpPastMeetings().length : 0));
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
     this.fpRecordingsAvailableCount = this.initFpRecordingsAvailableCount();
+    this.fpNextMeetingDate = this.initFpNextMeetingDate();
+    this.fpRecurringAcrossLabel = this.initFpRecurringAcrossLabel();
+    this.fpAttendanceRate = this.initFpAttendanceRate();
 
     // Sentinel is placed at 50% of the list to trigger auto-load as user scrolls
     this.autoLoadTriggerIndex = computed(() => Math.floor(this.filteredMeetings().length / 2));
@@ -736,6 +749,34 @@ export class MeetingsDashboardComponent {
     );
   }
 
+  // Attendance rate isn't returned by the list endpoint (participant_count/attended_count are lazy-loaded
+  // per card elsewhere), so it's tallied here the same way recording availability is: one bounded,
+  // concurrency-capped fetch per meeting over the 30-day-windowed subset.
+  private countMeetingAttendance(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<number> {
+    const ids = meetings.map((m) => getPastMeetingResourceId(m));
+    if (ids.length === 0) {
+      loading.set(false);
+      return of(0);
+    }
+    loading.set(true);
+    return from(ids).pipe(
+      mergeMap(
+        (id) =>
+          this.meetingService.getPastMeetingParticipants(id).pipe(
+            map((participants) => ({ attended: participants.filter((p) => p.is_attended).length, total: participants.length })),
+            catchError(() => of({ attended: 0, total: 0 }))
+          ),
+        MEETING_ATTENDANCE_COUNT_FETCH_CONCURRENCY
+      ),
+      toArray(),
+      map((tallies) => {
+        const totals = tallies.reduce((acc, t) => ({ attended: acc.attended + t.attended, total: acc.total + t.total }), { attended: 0, total: 0 });
+        return totals.total > 0 ? Math.round((totals.attended / totals.total) * 100) : 0;
+      }),
+      finalize(() => loading.set(false))
+    );
+  }
+
   private filterRecentPastMeetings(past: PastMeeting[], cutoff: number): PastMeeting[] {
     return past.filter((m) => {
       const startMs = getPastMeetingStartTimeMs(m);
@@ -786,6 +827,39 @@ export class MeetingsDashboardComponent {
           if (lens === 'me') return of(0);
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.fpRecordingsCountLoading);
+        })
+      ),
+      { initialValue: 0 }
+    );
+  }
+
+  private initFpNextMeetingDate(): Signal<string> {
+    return computed(() => {
+      const first = this.rawFpUpcomingMeetings()[0];
+      if (!first) return '';
+      const occ = getCurrentOrNextOccurrence(first);
+      const d = new Date(occ ? occ.start_time : first.start_time);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+  }
+
+  private initFpRecurringAcrossLabel(): Signal<string> {
+    return computed(() => {
+      const recurring = this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null);
+      const uniqueProjects = new Set(recurring.map((m) => m.project_name).filter(Boolean));
+      const count = uniqueProjects.size;
+      const projectWord = count === 1 ? 'project' : 'projects';
+      return count > 0 ? `Across ${count} ${projectWord}` : '';
+    });
+  }
+
+  private initFpAttendanceRate(): Signal<number> {
+    return toSignal(
+      combineLatest([toObservable(this.activeLens), toObservable(this.rawFpPastMeetings)]).pipe(
+        switchMap(([lens, past]) => {
+          if (lens === 'me') return of(0);
+          const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          return this.countMeetingAttendance(this.filterRecentPastMeetings(past, cutoff), this.fpAttendanceRateLoading);
         })
       ),
       { initialValue: 0 }

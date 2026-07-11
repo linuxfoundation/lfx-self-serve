@@ -79,16 +79,15 @@ export class OrgLensMeetingsService {
     return summary;
   }
 
-  /** GET /api/orgs/:accountId/lens/meetings — paginated upcoming-meeting list (search/project/type/pending filters); surfaces errors so the client renders its "couldn't load" state. */
+  /** GET /api/orgs/:accountId/lens/meetings — paginated upcoming-meeting list (search/project/type filters); surfaces errors so the client renders its "couldn't load" state. */
   public async getOrgUpcomingMeetings(req: Request, accountId: string, options: GetOrgUpcomingMeetingsOptions): Promise<OrgUpcomingMeetingsResponse> {
-    const { searchQuery, project, type, pendingRsvpOnly, pageSize, offset } = options;
+    const { searchQuery, project, type, pageSize, offset } = options;
 
     logger.debug(req, 'get_org_lens_meetings', 'Building org meetings list query', {
       account_id: accountId,
       has_search: !!searchQuery,
       project,
       type,
-      pending_rsvp_only: pendingRsvpOnly,
       page_size: pageSize,
       offset,
     });
@@ -96,7 +95,6 @@ export class OrgLensMeetingsService {
     const searchFilter = searchQuery ? 'AND (m.TOPIC ILIKE ? OR m.AGENDA ILIKE ?)' : '';
     const projectFilter = project ? 'AND m.FOUNDATION_NAME = ?' : '';
     const typeFilter = type ? 'AND m.MEETING_TYPE_BUCKET = ?' : '';
-    const pendingFilter = pendingRsvpOnly ? 'AND m.HAS_PENDING_ORG_RSVP = TRUE' : '';
 
     const sql = `
       SELECT
@@ -123,7 +121,6 @@ export class OrgLensMeetingsService {
         ${searchFilter}
         ${projectFilter}
         ${typeFilter}
-        ${pendingFilter}
       ORDER BY m.NEXT_OCCURRENCE_UTC_TS ASC NULLS LAST
       LIMIT ? OFFSET ?
     `;
@@ -137,7 +134,7 @@ export class OrgLensMeetingsService {
     // Surface list errors (no fail-soft) so the client renders its distinct "couldn't load" state instead of an empty list.
     const rows = await withOrgCache(
       accountId,
-      `meetings:${paramSignature([searchQuery ?? null, project ?? null, type ?? null, pendingRsvpOnly, pageSize, offset])}`,
+      `meetings:${paramSignature([searchQuery ?? null, project ?? null, type ?? null, pageSize, offset])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchMeetingRows(sql, binds),
       isMeetingRowArray
