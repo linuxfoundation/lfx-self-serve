@@ -49,7 +49,6 @@ import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
-import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -60,13 +59,11 @@ import { ProjectService } from './project.service';
 export class MeetingService {
   private accessCheckService: AccessCheckService;
   private microserviceProxy: MicroserviceProxyService;
-  private committeeService: CommitteeService;
   private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
-    this.committeeService = new CommitteeService();
     this.projectService = new ProjectService();
   }
 
