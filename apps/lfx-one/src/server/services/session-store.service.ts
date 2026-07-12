@@ -62,7 +62,11 @@ export class SessionStoreService {
   }
 
   private async destroyAsync(sid: string): Promise<void> {
-    await valkeyService.del(this.cacheKey(sid));
+    const key = this.cacheKey(sid);
+    if (key === null) {
+      return;
+    }
+    await valkeyService.del(key);
   }
 
   /** Fail-closed on an unsafe/oversized session id — express-openid-connect then treats the session as missing rather than reading/writing a corrupt key. */
