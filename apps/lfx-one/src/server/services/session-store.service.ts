@@ -50,6 +50,7 @@ export class SessionStoreService {
   }
 
   private async setAsync(sid: string, session: SessionStorePayload): Promise<void> {
+    const startTime = logger.startOperation(undefined, 'session_store_set');
     const key = this.cacheKey(sid);
     if (key === null) {
       return;
@@ -57,7 +58,21 @@ export class SessionStoreService {
     const ttlSeconds = this.ttlSecondsFor(session);
     const persisted = await valkeyService.setJson(key, session, ttlSeconds);
     if (!persisted) {
-      logger.warning(undefined, 'session_store_set', 'Session write failed — user will be treated as logged out on next request');
+      // setJson is a `SET key val EX ttl` — a failed write leaves any prior value at this key
+      // untouched, so a stale session (e.g. a cleared impersonation token) would otherwise survive
+      // and be reloaded on the next request. Fail closed by invalidating the key outright.
+      const invalidated = await valkeyService.del(key);
+      if (!invalidated) {
+        logger.error(undefined, 'session_store_set', startTime, new Error('Valkey write and fallback invalidation both failed'), {
+          message: 'Session write failed and the stale entry could not be invalidated — a prior session value may still be served',
+        });
+      } else {
+        logger.warning(
+          undefined,
+          'session_store_set',
+          'Session write failed — invalidated the stale entry, user will be treated as logged out on next request'
+        );
+      }
     }
   }
 
