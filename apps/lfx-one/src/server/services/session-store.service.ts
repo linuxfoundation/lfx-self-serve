@@ -62,11 +62,17 @@ export class SessionStoreService {
   }
 
   private async destroyAsync(sid: string): Promise<void> {
+    const startTime = logger.startOperation(undefined, 'session_store_destroy');
     const key = this.cacheKey(sid);
     if (key === null) {
       return;
     }
-    await valkeyService.del(key);
+    const deleted = await valkeyService.del(key);
+    if (!deleted) {
+      logger.error(undefined, 'session_store_destroy', startTime, new Error('Valkey delete failed'), {
+        message: 'Session delete failed on logout — session will remain valid in Valkey until it expires via TTL',
+      });
+    }
   }
 
   /** Fail-closed on an unsafe/oversized session id — express-openid-connect then treats the session as missing rather than reading/writing a corrupt key. */
@@ -89,7 +95,7 @@ export class SessionStoreService {
 
   /** Guards against a corrupt/legacy cache entry being handed back to express-openid-connect as a valid session. */
   private static isSessionPayload(value: unknown): value is SessionStorePayload {
-    return typeof value === 'object' && value !== null && 'header' in value && 'data' in value;
+    return typeof value === 'object' && value !== null && 'header' in value && 'data' in value && 'cookie' in value;
   }
 }
 
