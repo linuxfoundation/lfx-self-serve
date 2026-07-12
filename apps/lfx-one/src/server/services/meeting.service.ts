@@ -1442,7 +1442,7 @@ export class MeetingService {
       unique_committees: uniqueCommitteeUids.length,
     });
 
-    const unique = [...new Set(uniqueCommitteeUids)].filter(Boolean);
+    const unique = uniqueCommitteeUids.filter(Boolean);
     const BATCH_SIZE = 100;
     const batches: string[][] = [];
     for (let i = 0; i < unique.length; i += BATCH_SIZE) {
