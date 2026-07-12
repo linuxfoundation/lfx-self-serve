@@ -8,6 +8,7 @@ import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
+import { randomBytes } from 'node:crypto';
 import { Server as HttpServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +61,7 @@ import mktgAgentsRouter from './routes/mktg-agents.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
+import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
@@ -165,6 +167,13 @@ const httpLogger = pinoHttp({
 
 app.use(httpLogger);
 
+// LFXV2-2666: move the session bundle out of the encrypted `appSession` cookie and into Valkey,
+// keyed by an opaque session id, so cookie size stays flat as more tokens (impersonation,
+// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when Valkey is
+// actually reachable — without VALKEY_URL every store read/write would degrade to "session
+// missing" (ValkeyService's fail-soft behavior) and silently log everyone out.
+const sessionStoreEnabled = process.env['SESSION_STORE_ENABLED'] === 'true' && !!process.env['VALKEY_URL'];
+
 const authConfig: ConfigParams = {
   // Global auth disabled; selective middleware handles it.
   authRequired: false,
@@ -182,6 +191,14 @@ const authConfig: ConfigParams = {
   routes: {
     login: false,
   },
+  ...(sessionStoreEnabled && {
+    session: {
+      store: sessionStoreService,
+      // 256 bits of cryptographically strong randomness — sufficient entropy on its own, per the
+      // library's genid docs, without needing signSessionStoreCookie.
+      genid: () => randomBytes(32).toString('hex'),
+    },
+  }),
 };
 
 app.use(auth(authConfig));

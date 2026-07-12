@@ -408,6 +408,13 @@ environment:
   VALKEY_KEY_NAMESPACE:
     value:
 
+  # Stores the OIDC session server-side in Valkey (keyed by an opaque session id) instead of the
+  # encrypted appSession cookie, so cookie size stays flat as more tokens are added to the session.
+  # Only takes effect when VALKEY_URL is also set; set to "false" or unset to roll back instantly to
+  # cookie-only sessions.
+  SESSION_STORE_ENABLED:
+    value: "false"
+
   SNOWFLAKE_MIN_CONNECTIONS:
     value: "2"
 

@@ -201,6 +201,12 @@ function keyPrefix(): string {
   return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
 }
 
+/** Session-store cache key for an opaque session id; null (fail-closed) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildSessionCacheKey(sessionId: string): string | null {
+  if (!isFilterSafeIdentifier(sessionId)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.SESSION_NAMESPACE}:${sessionId}`;
+}
+
 /** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildOrgCacheKey(accountId: string, subResource: string): string | null {
   if (!isFilterSafeIdentifier(accountId)) return null;
