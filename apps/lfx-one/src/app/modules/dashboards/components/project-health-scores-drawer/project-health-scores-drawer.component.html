@@ -43,17 +43,15 @@
       <!-- Section Header -->
       <div class="flex items-center gap-2">
         <h3 class="text-sm font-medium text-gray-900">Projects by Health Status</h3>
-        <div class="group relative">
-          <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke-width="2" />
-            <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
-          </svg>
-          <div
-            class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
-            role="tooltip">
-            Number of foundation projects in each health score category
-          </div>
-        </div>
+        <button
+          type="button"
+          class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+          pTooltip="Number of foundation projects in each health score category"
+          tooltipPosition="top"
+          tooltipEvent="both"
+          aria-label="Number of foundation projects in each health score category">
+          <i class="fa-light fa-circle-info"></i>
+        </button>
       </div>
 
       <!-- Legend -->
