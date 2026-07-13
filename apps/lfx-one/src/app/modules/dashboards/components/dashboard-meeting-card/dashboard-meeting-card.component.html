@@ -69,6 +69,18 @@
         data-testid="dashboard-meeting-card-type-dot">
         <i [class]="'text-white text-[10px] leading-none block ' + dateBadgeDotInfo().icon" aria-hidden="true"></i>
       </div>
+
+      <!-- Restricted dot badge (shown independently when join is restricted) -->
+      @if (isRestricted()) {
+        <div
+          class="absolute -top-2 left-[26px] w-5 h-5 rounded-full flex items-center justify-center bg-amber-500"
+          pTooltip="Restricted — invited guests only"
+          aria-label="Restricted — invited guests only"
+          tooltipPosition="top"
+          data-testid="dashboard-meeting-card-restricted-dot">
+          <i class="text-white text-[10px] leading-none block fa-solid fa-lock" aria-hidden="true"></i>
+        </div>
+      }
     </div>
 
     <!-- Meeting details -->
