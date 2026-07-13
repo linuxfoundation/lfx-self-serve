@@ -10,7 +10,7 @@ import { MeetingVisibility } from '../enums';
  * - Public + unrestricted → "Public"
  * - Private + unrestricted → "Private"
  * - Private + restricted  → "Private (Restricted)"
- * - Public + restricted   → "Public (Restricted)" (edge case; PCC matrix enforces PRIVATE+restricted)
+ * - Public + restricted   → "Public (Restricted)"
  */
 export function getMeetingPrivacyLabel(visibility: MeetingVisibility | null, restricted: boolean | null): string {
   if (visibility === MeetingVisibility.PRIVATE && restricted) {
