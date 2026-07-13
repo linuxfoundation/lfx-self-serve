@@ -37,3 +37,4 @@ export * from './search.utils';
 export * from './email.utils';
 export * from './invitation.utils';
 export * from './crowdfunding.utils';
+export * from './org-groups.utils';

@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GroupDetailTabConfig, GroupDetailTabId, GroupsSelectOption, GroupsTabConfig, GroupsTabId, GroupsVotingFilter } from '../interfaces';
+import type {
+  GroupDetailTabConfig,
+  GroupDetailTabId,
+  GroupsSelectOption,
+  GroupsTabConfig,
+  GroupsTabId,
+  GroupsVotingFilter,
+  OrgGroupsRollupTypeBadge,
+  OrgPrivateGroupsRollupBucket,
+} from '../interfaces';
 
 /** Groups page tabs in visible order (`all` is the default). */
 export const GROUPS_TABS: readonly GroupsTabConfig[] = [
@@ -46,3 +55,10 @@ export const DETAIL_TABS: readonly GroupDetailTabConfig[] = [
 
 /** Default tab for group detail — overview is shown on initial load. */
 export const DEFAULT_DETAIL_TAB_ID: GroupDetailTabId = 'overview';
+
+/** Label/icon/style badge per rollup bucket, shared by the org-groups private-rollup card (mirrors ORG_MEETING_TYPE_LABELS, LFXV2-1901). */
+export const ORG_GROUPS_ROLLUP_TYPE_BADGES: Record<OrgPrivateGroupsRollupBucket, OrgGroupsRollupTypeBadge> = {
+  Board: { label: 'Board', icon: 'fa-light fa-gavel', badgeClass: 'border border-violet-400 text-violet-600' },
+  'Working Group': { label: 'Working Group', icon: 'fa-light fa-users-gear', badgeClass: 'border border-amber-400 text-amber-600' },
+  Other: { label: 'Other', icon: 'fa-light fa-layer-group', badgeClass: 'bg-gray-100 text-gray-600' },
+};

@@ -9,7 +9,17 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { debounceTime, of, switchMap } from 'rxjs';
 
 import { GROUPS_TABS, GROUPS_VOTING_OPTIONS, DEFAULT_GROUPS_TAB_ID, VALID_GROUPS_TAB_IDS, VALID_GROUPS_VOTING_FILTERS } from '@lfx-one/shared/constants';
-import type { GroupsSelectOption, GroupsTabConfig, GroupsTabId, GroupsVotingFilter, OrgGroup, OrgGroupsStats, StatCardItem } from '@lfx-one/shared/interfaces';
+import type {
+  GroupsSelectOption,
+  GroupsTabConfig,
+  GroupsTabId,
+  GroupsVotingFilter,
+  OrgGroup,
+  OrgGroupsPrivacySplit,
+  OrgGroupsStats,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
+import { splitOrgGroupsByPrivacy } from '@lfx-one/shared/utils';
 
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -105,11 +115,16 @@ export class OrgGroupsComponent {
     });
   });
 
-  // ─── Tab counts (applied to filtered rows + tab filter) ───────────────────────
+  // ─── Privacy split (public + viewer-member private vs. rolled-up private) ─────
 
-  protected readonly allCount = computed(() => this.filteredGroups().length);
-  protected readonly boardCount = computed(() => this.filteredGroups().filter((g) => g.type === 'Board').length);
-  protected readonly otherCount = computed(() => this.filteredGroups().filter((g) => g.type !== 'Board').length);
+  protected readonly groupsPrivacySplit: Signal<OrgGroupsPrivacySplit> = computed(() => splitOrgGroupsByPrivacy(this.filteredGroups()));
+  protected readonly visibleGroups = computed(() => this.groupsPrivacySplit().visible);
+
+  // ─── Tab counts (applied to filtered + privacy-visible rows + tab filter) ─────
+
+  protected readonly allCount = computed(() => this.visibleGroups().length);
+  protected readonly boardCount = computed(() => this.visibleGroups().filter((g) => g.type === 'Board').length);
+  protected readonly otherCount = computed(() => this.visibleGroups().filter((g) => g.type !== 'Board').length);
 
   // ─── KPI cards ────────────────────────────────────────────────────────────────
 
@@ -223,19 +238,19 @@ export class OrgGroupsComponent {
         value: loading ? '—' : s.total,
         label: 'Total Groups',
         icon: 'fa-light fa-users-rectangle',
-        iconContainerClass: 'bg-blue-50 text-blue-600',
+        iconContainerClass: 'bg-gray-200 text-gray-500',
       },
       {
         value: loading ? '—' : s.public,
         label: 'Public Groups',
         icon: 'fa-light fa-globe',
-        iconContainerClass: 'bg-green-50 text-green-600',
+        iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       {
         value: loading ? '—' : s.votingEnabled,
         label: 'Voting Enabled Groups',
         icon: 'fa-light fa-check-to-slot',
-        iconContainerClass: 'bg-purple-50 text-purple-600',
+        iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
     ];
   }

@@ -1,0 +1,73 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let m = meeting();
+<div
+  class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-blue-400 transition-colors h-full"
+  data-testid="org-group-meeting-card">
+  <div class="flex gap-4 items-start px-4 py-3 flex-1">
+    <div class="relative shrink-0">
+      <div class="w-16 rounded-xl overflow-hidden flex flex-col border border-gray-200">
+        <div class="flex items-center justify-center py-0.5 bg-gray-200">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ m.monthAbbr }}</span>
+        </div>
+        <div class="h-11 flex items-center justify-center bg-gray-50">
+          <span class="font-display font-light text-3xl leading-none text-gray-900">{{ m.day }}</span>
+        </div>
+      </div>
+      <div
+        class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
+        [style.background-color]="m.isPrivate ? '#d4183d' : '#00bc7d'"
+        [attr.aria-label]="m.isPrivate ? 'Private meeting' : 'Public meeting'">
+        <i [class]="'text-white text-[10px] leading-none block ' + (m.isPrivate ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe')" aria-hidden="true"></i>
+      </div>
+    </div>
+    <div class="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
+      <div class="flex items-center gap-2 text-gray-400">
+        <p class="text-[10px] text-gray-500 shrink-0">{{ m.dayOfWeek }}, {{ m.time }} &middot; {{ m.durationMin }}m</p>
+        @if (m.hasRecording) {
+          <i class="fa-light fa-video text-[10px]" aria-hidden="true" title="Recording available"></i>
+        }
+        @if (m.hasTranscripts) {
+          <i class="fa-light fa-file-lines text-[10px]" aria-hidden="true" title="Transcripts available"></i>
+        }
+        @if (m.hasAiSummary) {
+          <i class="fa-light fa-sparkles text-[10px]" aria-hidden="true" title="AI summary available"></i>
+        }
+      </div>
+      <h4 class="text-sm font-semibold text-gray-900 truncate">{{ m.title }}</h4>
+      <div class="flex flex-wrap gap-1.5">
+        <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+          <i class="fa-light fa-landmark text-[10px]" aria-hidden="true"></i>{{ m.projectName }}
+        </span>
+        <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+          <i class="fa-light fa-calendar text-[10px]" aria-hidden="true"></i>{{ m.meetingType }}
+        </span>
+        @if (m.isRecurring) {
+          <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+            <i class="fa-light fa-arrows-rotate text-[10px]" aria-hidden="true"></i>Recurring
+          </span>
+        }
+      </div>
+      @if (m.description) {
+        <p class="text-[10px] text-gray-500 truncate min-w-0">{{ m.description }}</p>
+      }
+    </div>
+    <button
+      type="button"
+      class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
+      aria-label="Copy meeting link">
+      <i class="fa-light fa-clone text-xs" aria-hidden="true"></i>
+    </button>
+  </div>
+  <div class="flex gap-3 px-4 pb-4 pt-5">
+    <lfx-button
+      class="flex-1"
+      severity="secondary"
+      size="small"
+      styleClass="w-full"
+      label="Meeting details"
+      [outlined]="true"
+      icon="fa-light fa-arrow-up-right-from-square text-xs" />
+  </div>
+</div>

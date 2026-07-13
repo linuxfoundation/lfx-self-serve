@@ -1,9 +1,43 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgGroupDetail } from '@lfx-one/shared/interfaces';
+import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
+import type { OrgGroup, OrgGroupDetail } from '@lfx-one/shared/interfaces';
+
+import { ORG_GROUPS_DEMO_DATA } from './org-groups-demo.data';
 
 const d = (iso: string): Date => new Date(iso);
+
+const MAILING_LIST_DOMAINS: Readonly<Record<string, string>> = {
+  'Linux Foundation': 'lists.linuxfoundation.org',
+  CNCF: 'lists.cncf.io',
+  'LF AI & Data': 'lists.lfaidata.foundation',
+  OpenSSF: 'lists.openssf.org',
+  'Agentic AI Foundation': 'lists.agenticaifoundation.org',
+};
+
+const slugify = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+
+function buildGenericChannels(listGroup: OrgGroup): Partial<OrgGroupDetail> {
+  const slug = slugify(listGroup.name);
+  const domain = MAILING_LIST_DOMAINS[listGroup.foundation] ?? MAILING_LIST_DOMAINS['Linux Foundation'];
+
+  return {
+    ...(listGroup.hasMailingList && {
+      mailingListName: `${slug}@${domain}`,
+      mailingListSubscribers: listGroup.memberCount,
+      mailingListIsPrivate: listGroup.visibility === 'PRIVATE',
+    }),
+    ...(listGroup.hasChatChannel && {
+      chatChannelUrl: `https://linuxfoundation.slack.com/archives/${slug}`,
+    }),
+  };
+}
 
 const GENERIC_DETAIL: OrgGroupDetail = {
   id: 'generic',
@@ -22,7 +56,6 @@ const GENERIC_DETAIL: OrgGroupDetail = {
   createdAt: d('2024-01-15T00:00:00Z'),
   organizationCount: 5,
   meetingCount: 4,
-  activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: false,
   chairs: [{ id: 'c1', name: 'Jane Smith', initials: 'JS', role: 'Chair' }],
@@ -61,6 +94,67 @@ const GENERIC_DETAIL: OrgGroupDetail = {
       hasRecording: true,
     },
   ],
+  members: [
+    { id: 'gm1', name: 'Jane Smith', email: 'jane.smith@example.org', organizationName: 'Example Corp', role: 'Chair', votingStatus: 'Voting Rep' },
+    { id: 'gm2', name: 'Alex Johnson', email: 'alex.johnson@example.org', organizationName: 'Acme Inc', role: 'Member', votingStatus: 'Voting Rep' },
+  ],
+  votes: [
+    {
+      uid: 'v1',
+      name: 'Officer Election',
+      description: 'Annual officer election.',
+      end_time: '2026-07-25T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'lf',
+      committee_name: 'Group',
+      num_response_received: 4,
+      total_voting_request_invitations: 10,
+    },
+  ],
+  surveys: [
+    {
+      uid: 's1',
+      survey_title: 'Member Satisfaction Survey',
+      survey_status: SurveyStatus.OPEN,
+      survey_cutoff_date: '2026-07-30T00:00:00Z',
+      is_nps_survey: true,
+      is_project_survey: false,
+      committees: [
+        {
+          committee_id: 'c1',
+          committee_uid: 'c1',
+          committee_name: 'Group',
+          project_id: 'lf',
+          project_uid: 'lf',
+          project_name: 'Linux Foundation',
+          total_recipients: 10,
+          total_responses: 4,
+          nps_value: 40,
+          num_detractors: 1,
+          num_passives: 3,
+          num_promoters: 6,
+        },
+      ],
+      committee_category: 'Other',
+      total_responses: 4,
+      total_recipients: 10,
+      created_at: '2026-06-01T00:00:00Z',
+      last_modified_at: '2026-06-15T00:00:00Z',
+      creator_name: 'Jane Smith',
+    },
+  ],
+  documents: [
+    {
+      id: 'doc1',
+      name: 'Meeting Minutes - June 2026.pdf',
+      source: 'file',
+      foundationName: 'Linux Foundation',
+      groupOrMeetingName: 'Group',
+      groupOrMeetingUid: 'generic',
+      date: '2026-06-16T00:00:00Z',
+      fileType: 'pdf',
+    },
+  ],
 };
 
 const LF_KERNEL_BOARD: OrgGroupDetail = {
@@ -80,7 +174,6 @@ const LF_KERNEL_BOARD: OrgGroupDetail = {
   createdAt: d('2020-03-01T00:00:00Z'),
   organizationCount: 8,
   meetingCount: 24,
-  activeVoteCount: 1,
   openSurveyCount: 0,
   inviteOnly: true,
   chairs: [
@@ -124,6 +217,70 @@ const LF_KERNEL_BOARD: OrgGroupDetail = {
       isPrivate: true,
     },
   ],
+  members: [
+    {
+      id: 'gm1',
+      name: 'Linus Torvalds',
+      email: 'torvalds@linux-foundation.org',
+      organizationName: 'Linux Foundation',
+      role: 'Chair',
+      votingStatus: 'Voting Rep',
+    },
+    {
+      id: 'gm2',
+      name: 'Greg Kroah-Hartman',
+      email: 'gregkh@linuxfoundation.org',
+      organizationName: 'Linux Foundation',
+      role: 'Vice Chair',
+      votingStatus: 'Voting Rep',
+    },
+    { id: 'gm3', name: 'Sasha Levin', email: 'sashal@kernel.org', organizationName: 'Google', role: 'Member', votingStatus: 'Voting Rep' },
+  ],
+  votes: [
+    {
+      uid: 'v1',
+      name: 'Maintainer Nomination: Stable Tree',
+      description: 'Vote on the proposed stable-tree co-maintainer nomination.',
+      end_time: '2026-07-20T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'linux-kernel',
+      committee_name: 'Linux Kernel Maintainers Board',
+      num_response_received: 7,
+      total_voting_request_invitations: 12,
+    },
+    {
+      uid: 'v2',
+      name: 'Q1 Security Policy Update',
+      end_time: '2026-03-15T00:00:00Z',
+      status: PollStatus.ENDED,
+      project_uid: 'linux-kernel',
+      committee_name: 'Linux Kernel Maintainers Board',
+      num_response_received: 12,
+      total_voting_request_invitations: 12,
+    },
+  ],
+  surveys: [],
+  documents: [
+    {
+      id: 'doc1',
+      name: 'Kernel Board Charter.pdf',
+      source: 'file',
+      foundationName: 'Linux Foundation',
+      groupOrMeetingName: 'Linux Kernel Maintainers Board',
+      groupOrMeetingUid: 'lf-kernel-board',
+      date: '2020-03-01T00:00:00Z',
+      fileType: 'pdf',
+    },
+    {
+      id: 'doc2',
+      name: 'Board Meeting Recording - June 2026',
+      source: 'recording',
+      foundationName: 'Linux Foundation',
+      groupOrMeetingName: 'Linux Kernel Board Meeting',
+      groupOrMeetingUid: 'lf-kernel-board',
+      date: '2026-06-10T00:00:00Z',
+    },
+  ],
   mailingListName: 'kernel-board@lists.linuxfoundation.org',
   mailingListSubscribers: 12,
   mailingListIsPrivate: true,
@@ -146,7 +303,6 @@ const LFAI_GOVERNING_BOARD: OrgGroupDetail = {
   createdAt: d('2019-09-10T00:00:00Z'),
   organizationCount: 7,
   meetingCount: 18,
-  activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: true,
   chairs: [{ id: 'c1', name: 'Ibrahim Haddad', initials: 'IH', role: 'Chair' }],
@@ -185,6 +341,56 @@ const LFAI_GOVERNING_BOARD: OrgGroupDetail = {
       hasRecording: true,
     },
   ],
+  members: [
+    { id: 'gm1', name: 'Ibrahim Haddad', email: 'ihaddad@lfaidata.foundation', organizationName: 'LF AI & Data', role: 'Chair', votingStatus: 'Voting Rep' },
+    { id: 'gm2', name: 'Sherard Griffin', email: 'sgriffin@ibm.com', organizationName: 'IBM', role: 'Member', votingStatus: 'Voting Rep' },
+  ],
+  votes: [
+    {
+      uid: 'v1',
+      name: '2027 Budget Approval',
+      description: 'Approve the proposed 2027 annual budget for LF AI & Data.',
+      end_time: '2026-08-01T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'lfai-data',
+      committee_name: 'LF AI & Data Governing Board',
+      num_response_received: 5,
+      total_voting_request_invitations: 9,
+    },
+  ],
+  surveys: [
+    {
+      uid: 's1',
+      survey_title: 'Board Member Engagement Survey',
+      survey_status: SurveyStatus.CLOSED,
+      survey_cutoff_date: '2026-05-01T00:00:00Z',
+      is_nps_survey: false,
+      is_project_survey: false,
+      committees: [
+        {
+          committee_id: 'c1',
+          committee_uid: 'c1',
+          committee_name: 'LF AI & Data Governing Board',
+          project_id: 'lfai-data',
+          project_uid: 'lfai-data',
+          project_name: 'LF AI & Data Foundation',
+          total_recipients: 9,
+          total_responses: 8,
+          nps_value: 0,
+          num_detractors: 0,
+          num_passives: 0,
+          num_promoters: 0,
+        },
+      ],
+      committee_category: 'Board',
+      total_responses: 8,
+      total_recipients: 9,
+      created_at: '2026-04-01T00:00:00Z',
+      last_modified_at: '2026-05-02T00:00:00Z',
+      creator_name: 'Ibrahim Haddad',
+    },
+  ],
+  documents: [],
   mailingListName: 'lfai-governing-board@lists.lfaidata.foundation',
   mailingListSubscribers: 9,
   mailingListIsPrivate: true,
@@ -207,7 +413,6 @@ const K8S_STEERING: OrgGroupDetail = {
   createdAt: d('2017-08-16T00:00:00Z'),
   organizationCount: 5,
   meetingCount: 32,
-  activeVoteCount: 2,
   openSurveyCount: 1,
   inviteOnly: true,
   chairs: [
@@ -249,6 +454,68 @@ const K8S_STEERING: OrgGroupDetail = {
       hasRecording: true,
     },
   ],
+  members: [
+    { id: 'gm1', name: 'Bob Killen', email: 'bob@k8s.io', organizationName: 'Google', role: 'Chair', votingStatus: 'Voting Rep' },
+    { id: 'gm2', name: 'Christoph Blecker', email: 'christoph@k8s.io', organizationName: 'Red Hat', role: 'Vice Chair', votingStatus: 'Voting Rep' },
+    { id: 'gm3', name: 'Nikhita Raghunath', email: 'nikhita@k8s.io', organizationName: 'Loft Labs', role: 'Member', votingStatus: 'Voting Rep' },
+  ],
+  votes: [
+    {
+      uid: 'v1',
+      name: 'Steering Committee Election',
+      description: 'Annual election for open steering committee seats.',
+      end_time: '2026-07-18T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'kubernetes',
+      committee_name: 'Kubernetes Steering Committee',
+      num_response_received: 3,
+      total_voting_request_invitations: 7,
+    },
+  ],
+  surveys: [
+    {
+      uid: 's1',
+      survey_title: 'Contributor Experience Survey',
+      survey_status: SurveyStatus.OPEN,
+      survey_cutoff_date: '2026-08-01T00:00:00Z',
+      is_nps_survey: true,
+      is_project_survey: true,
+      committees: [
+        {
+          committee_id: 'c1',
+          committee_uid: 'c1',
+          committee_name: 'Kubernetes Steering Committee',
+          project_id: 'kubernetes',
+          project_uid: 'kubernetes',
+          project_name: 'Kubernetes',
+          total_recipients: 500,
+          total_responses: 180,
+          nps_value: 55,
+          num_detractors: 20,
+          num_passives: 90,
+          num_promoters: 70,
+        },
+      ],
+      committee_category: 'Board',
+      total_responses: 180,
+      total_recipients: 500,
+      created_at: '2026-06-01T00:00:00Z',
+      last_modified_at: '2026-06-20T00:00:00Z',
+      creator_name: 'Bob Killen',
+    },
+  ],
+  documents: [
+    {
+      id: 'doc1',
+      name: 'Steering Committee Charter.pdf',
+      source: 'file',
+      foundationName: 'CNCF',
+      groupOrMeetingName: 'Kubernetes Steering Committee',
+      groupOrMeetingUid: 'k8s-steering',
+      date: '2017-08-16T00:00:00Z',
+      fileType: 'pdf',
+    },
+  ],
   mailingListName: 'steering@kubernetes.io',
   mailingListSubscribers: 120,
   mailingListIsPrivate: false,
@@ -273,7 +540,6 @@ const CNCF_MARKETING: OrgGroupDetail = {
   createdAt: d('2026-03-23T00:00:00Z'),
   organizationCount: 22,
   meetingCount: 6,
-  activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: true,
   chairs: [],
@@ -317,6 +583,33 @@ const CNCF_MARKETING: OrgGroupDetail = {
       hasTranscripts: true,
     },
   ],
+  members: [
+    { id: 'gm1', name: 'Priya Nair', email: 'priya@cncf.io', organizationName: 'CNCF', role: 'Member', votingStatus: 'Non-Voting' },
+    { id: 'gm2', name: 'Marcus Chen', email: 'marcus@cncf.io', organizationName: 'CNCF', role: 'Member', votingStatus: 'Non-Voting' },
+  ],
+  votes: [],
+  surveys: [],
+  documents: [
+    {
+      id: 'doc1',
+      name: 'Q3 Content Calendar.xlsx',
+      source: 'file',
+      foundationName: 'CNCF',
+      groupOrMeetingName: 'CNCF Marketing Committee',
+      groupOrMeetingUid: 'cncf-marketing',
+      date: '2026-06-01T00:00:00Z',
+      fileType: 'xlsx',
+    },
+    {
+      id: 'doc2',
+      name: 'Committee Sync Transcript - June 2026',
+      source: 'transcript',
+      foundationName: 'CNCF',
+      groupOrMeetingName: 'Marketing Committee Sync',
+      groupOrMeetingUid: 'cncf-marketing',
+      date: '2026-06-11T00:00:00Z',
+    },
+  ],
   chatChannelUrl: 'https://linuxfoundation.slack.com/archives/C01GB7D71B9',
   websiteUrl: 'https://www.cncf.io/marketing',
 };
@@ -338,7 +631,6 @@ const PYTORCH_BOARD: OrgGroupDetail = {
   createdAt: d('2022-09-12T00:00:00Z'),
   organizationCount: 5,
   meetingCount: 12,
-  activeVoteCount: 0,
   openSurveyCount: 0,
   inviteOnly: true,
   chairs: [{ id: 'c1', name: 'David Nalley', initials: 'DN', role: 'Chair' }],
@@ -377,6 +669,23 @@ const PYTORCH_BOARD: OrgGroupDetail = {
       hasRecording: true,
     },
   ],
+  members: [
+    { id: 'gm1', name: 'David Nalley', email: 'dnalley@lfaidata.foundation', organizationName: 'Linux Foundation', role: 'Chair', votingStatus: 'Voting Rep' },
+  ],
+  votes: [
+    {
+      uid: 'v1',
+      name: 'Governing Board Seat Nomination',
+      end_time: '2026-01-15T00:00:00Z',
+      status: PollStatus.ENDED,
+      project_uid: 'pytorch',
+      committee_name: 'PyTorch Governing Board',
+      num_response_received: 6,
+      total_voting_request_invitations: 6,
+    },
+  ],
+  surveys: [],
+  documents: [],
   mailingListName: 'pytorch-board@lists.lfaidata.foundation',
   mailingListSubscribers: 6,
   mailingListIsPrivate: true,
@@ -391,5 +700,11 @@ export const ORG_GROUP_DETAIL_DEMO_MAP: Readonly<Record<string, OrgGroupDetail>>
 } as const;
 
 export function getGroupDetailDemo(id: string): OrgGroupDetail {
-  return ORG_GROUP_DETAIL_DEMO_MAP[id] ?? { ...GENERIC_DETAIL, id };
+  const curated = ORG_GROUP_DETAIL_DEMO_MAP[id];
+  if (curated) {
+    return curated;
+  }
+
+  const listGroup = ORG_GROUPS_DEMO_DATA.find((g) => g.id === id);
+  return { ...GENERIC_DETAIL, ...listGroup, id, ...(listGroup ? buildGenericChannels(listGroup) : {}) };
 }

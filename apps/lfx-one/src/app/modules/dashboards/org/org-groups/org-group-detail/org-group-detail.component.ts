@@ -4,24 +4,49 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
 import { SkeletonModule } from 'primeng/skeleton';
 
-import { DETAIL_TABS } from '@lfx-one/shared/constants';
-import type { GroupDetailTabConfig, GroupDetailTabId, OrgGroupDetail } from '@lfx-one/shared/interfaces';
+import { DETAIL_TABS, getCommitteeCategorySeverity } from '@lfx-one/shared/constants';
+import type {
+  GroupDetailTabConfig,
+  GroupDetailTabId,
+  GroupMember,
+  MyDocumentItem,
+  OrgGroupDetail,
+  Survey,
+  TagSeverity,
+  Vote,
+} from '@lfx-one/shared/interfaces';
 import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
+import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 
 import { OrgGroupsService } from '../services/org-groups.service';
+import { OrgGroupMeetingCardComponent } from './components/org-group-meeting-card/org-group-meeting-card.component';
 
 /** Group detail page shell (LFXV2-1879) — overview, members, meetings, votes, surveys, documents tabs. */
 @Component({
   selector: 'lfx-org-group-detail',
-  imports: [RouterLink, ButtonComponent, CardComponent, TagComponent, SkeletonModule],
+  imports: [
+    RouterLink,
+    ButtonComponent,
+    CardComponent,
+    TagComponent,
+    SkeletonModule,
+    OrgGroupMeetingCardComponent,
+    TableComponent,
+    VotesTableComponent,
+    SurveysTableComponent,
+    DocumentsTableComponent,
+  ],
   templateUrl: './org-group-detail.component.html',
 })
 export class OrgGroupDetailComponent {
@@ -29,6 +54,7 @@ export class OrgGroupDetailComponent {
 
   private readonly platformId = inject(PLATFORM_ID);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly groupsService = inject(OrgGroupsService);
 
   // ─── Constants exposed to template ───────────────────────────────────────────
@@ -61,6 +87,14 @@ export class OrgGroupDetailComponent {
   protected readonly nextMeeting = computed(() => this.detail()?.nextMeetings[0] ?? null);
   protected readonly pastMeeting = computed(() => this.detail()?.pastMeetings[0] ?? null);
 
+  protected readonly members = computed<GroupMember[]>(() => this.detail()?.members ?? []);
+  protected readonly votes = computed<Vote[]>(() => this.detail()?.votes ?? []);
+  protected readonly surveys = computed<Survey[]>(() => this.detail()?.surveys ?? []);
+  protected readonly documents = computed<MyDocumentItem[]>(() => this.detail()?.documents ?? []);
+
+  /** Group type tag severity, keyed off the same category→severity map production uses for committees. */
+  protected readonly typeSeverity: Signal<TagSeverity> = this.initTypeSeverity();
+
   /** Votes tab only shows for groups with voting enabled, mirroring committee's `enable_voting` gate. */
   protected readonly visibleTabs: Signal<readonly GroupDetailTabConfig[]> = this.initVisibleTabs();
 
@@ -68,6 +102,10 @@ export class OrgGroupDetailComponent {
 
   protected switchTab(id: GroupDetailTabId): void {
     this.activeTab.set(id);
+  }
+
+  protected goToParentProject(): void {
+    this.router.navigate(['/org/groups']);
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
@@ -95,6 +133,10 @@ export class OrgGroupDetailComponent {
 
   private initVisibleTabs(): Signal<readonly GroupDetailTabConfig[]> {
     return computed(() => this.tabs.filter((tab) => tab.id !== 'votes' || this.detail()?.votingEnabled));
+  }
+
+  private initTypeSeverity(): Signal<TagSeverity> {
+    return computed(() => getCommitteeCategorySeverity(this.detail()?.type ?? ''));
   }
 
   private initDetail(): Signal<OrgGroupDetail | null> {
