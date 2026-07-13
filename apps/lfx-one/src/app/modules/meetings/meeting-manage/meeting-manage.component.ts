@@ -213,6 +213,27 @@ export class MeetingManageComponent {
         }
       });
 
+    // PCC matrix constraint: PUBLIC+restricted is not a valid state.
+    // Sync the two controls so they stay consistent: restricted→true forces PRIVATE visibility;
+    // visibility→PUBLIC forces restricted=false.
+    this.form()
+      .get('restricted')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((restricted: boolean) => {
+        if (restricted && this.form().get('visibility')?.value === MeetingVisibility.PUBLIC) {
+          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE }, { emitEvent: false });
+        }
+      });
+
+    this.form()
+      .get('visibility')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((visibility: string) => {
+        if (visibility === MeetingVisibility.PUBLIC && this.form().get('restricted')?.value === true) {
+          this.form().patchValue({ restricted: false }, { emitEvent: false });
+        }
+      });
+
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)
       .pipe(
@@ -785,7 +806,7 @@ export class MeetingManageComponent {
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
       isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
       visibility: meeting.visibility || MeetingVisibility.PRIVATE,
-      restricted: meeting.restricted ?? false,
+      restricted: meeting.meeting_type === MeetingType.BOARD ? true : (meeting.restricted ?? false),
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,

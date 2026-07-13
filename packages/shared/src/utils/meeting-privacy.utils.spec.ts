@@ -24,6 +24,10 @@ describe('getMeetingPrivacyLabel', () => {
   it('returns "Public" when both fields are null', () => {
     expect(getMeetingPrivacyLabel(null, null)).toBe('Public');
   });
+
+  it('returns "Public (Restricted)" for public + restricted (edge case)', () => {
+    expect(getMeetingPrivacyLabel(MeetingVisibility.PUBLIC, true)).toBe('Public (Restricted)');
+  });
 });
 
 describe('getMeetingPrivacyIcon', () => {

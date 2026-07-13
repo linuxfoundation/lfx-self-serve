@@ -10,10 +10,14 @@ import { MeetingVisibility } from '../enums';
  * - Public + unrestricted → "Public"
  * - Private + unrestricted → "Private"
  * - Private + restricted  → "Private (Restricted)"
+ * - Public + restricted   → "Public (Restricted)" (edge case; PCC matrix enforces PRIVATE+restricted)
  */
 export function getMeetingPrivacyLabel(visibility: MeetingVisibility | null, restricted: boolean | null): string {
   if (visibility === MeetingVisibility.PRIVATE && restricted) {
     return 'Private (Restricted)';
+  }
+  if (restricted) {
+    return 'Public (Restricted)';
   }
   if (visibility === MeetingVisibility.PRIVATE) {
     return 'Private';
@@ -23,6 +27,9 @@ export function getMeetingPrivacyLabel(visibility: MeetingVisibility | null, res
 
 /**
  * Returns the Font Awesome icon class for the combined meeting privacy state.
+ * @description Icon prioritizes restriction state over visibility: `restricted=true` always
+ * shows a lock regardless of visibility, matching the PCC join-access model. This differs
+ * from `getMeetingPrivacyLabel`, which prioritizes visibility in its primary branches.
  */
 export function getMeetingPrivacyIcon(visibility: MeetingVisibility | null, restricted: boolean | null): string {
   if (restricted) {
