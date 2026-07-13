@@ -173,6 +173,10 @@ export class MeetingsDashboardComponent {
   protected readonly fpNextMeetingDate: Signal<string>;
   protected readonly fpRecurringAcrossLabel: Signal<string>;
   protected readonly fpAttendanceRate: Signal<number>;
+  // 30-day-scoped count backing the attendance-rate subtext's denominator — `fpPastCount` is all-time
+  // and can be non-zero while this is zero, which previously let a stale "0% attendance rate (last 30
+  // days)" render even though there were no meetings in the window at all.
+  protected readonly fpRecentPastCount: Signal<number>;
 
   private upcomingPageToken = signal<string | undefined>(undefined);
   private pastPageToken = signal<string | undefined>(undefined);
@@ -250,6 +254,11 @@ export class MeetingsDashboardComponent {
     this.fpNextMeetingDate = this.initFpNextMeetingDate();
     this.fpRecurringAcrossLabel = this.initFpRecurringAcrossLabel();
     this.fpAttendanceRate = this.initFpAttendanceRate();
+    this.fpRecentPastCount = computed(() => {
+      if (this.activeLens() === 'me') return 0;
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      return this.filterRecentPastMeetings(this.rawFpPastMeetings(), cutoff).length;
+    });
 
     // Sentinel is placed at 50% of the list to trigger auto-load as user scrolls
     this.autoLoadTriggerIndex = computed(() => Math.floor(this.filteredMeetings().length / 2));

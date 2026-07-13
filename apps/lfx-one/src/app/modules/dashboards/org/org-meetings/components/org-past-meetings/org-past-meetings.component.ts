@@ -25,8 +25,12 @@ export class OrgPastMeetingsComponent {
   protected readonly expandedIds = signal<ReadonlySet<string>>(new Set());
 
   // Splits the raw list into what renders its own card vs. what collapses into `privateRollup` (see `splitOrgMeetingsByPrivacy`).
+  // Only actually-attended invitees feed the rollup's employeeCount — otherwise declined/missed/excused
+  // invitees would be miscounted as "attending" private meetings.
   private readonly privacySplit = computed(() =>
-    splitOrgMeetingsByPrivacy(this.meetings(), (meeting) => meeting.orgPastInvitees.map((invitee) => invitee.name))
+    splitOrgMeetingsByPrivacy(this.meetings(), (meeting) =>
+      meeting.orgPastInvitees.filter((invitee) => invitee.attendanceStatus === 'attended').map((invitee) => invitee.name)
+    )
   );
 
   protected readonly privateRollup: Signal<OrgPrivateMeetingsRollupVm | null> = computed(() => this.privacySplit().rollup);

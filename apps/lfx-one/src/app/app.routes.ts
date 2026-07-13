@@ -422,12 +422,10 @@ export const routes: Routes = [
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
-  // Placeholder target for the Org Lens "See Details" links (LFXV2-1901, UI only) — reuses the join
-  // page until the real meeting-details page ships in a follow-up ticket.
-  {
-    path: 'meetings/:id/details',
-    loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
-  },
+  // Note: `meetings/:id/details` is intentionally NOT declared here — the authenticated `path: ''`
+  // block above already lazy-loads `MEETING_ROUTES`, whose `meetings/:id/details` child route
+  // (see modules/meetings/meetings.routes.ts) matches first and renders `PastMeetingDetailsComponent`.
+  // A duplicate route here would be unreachable dead code (LFXV2-1901 review feedback).
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',

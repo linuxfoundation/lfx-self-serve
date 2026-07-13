@@ -772,11 +772,21 @@ export class MeetingService {
 
       return resources[0].data;
     } catch (error) {
-      logger.warning(req, 'get_past_meeting_recording', 'Failed to fetch past meeting recording, returning null', {
+      // Only a genuine "not found" from upstream is an acceptable zero here — everything else (network
+      // failure, 5xx, timeout) must propagate so the controller's apiErrorHandler surfaces it as a real
+      // error instead of a misleading 404 (a 404 downstream currently reads as "no recording exists").
+      const statusCode = (error as { statusCode?: number; status?: number })?.statusCode ?? (error as { status?: number })?.status;
+      if (statusCode === 404) {
+        logger.warning(req, 'get_past_meeting_recording', 'No recording found for past meeting (404)', {
+          past_meeting_id: pastMeetingUid,
+        });
+        return null;
+      }
+      logger.warning(req, 'get_past_meeting_recording', 'Failed to fetch past meeting recording', {
         past_meeting_id: pastMeetingUid,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return null;
+      throw error;
     }
   }
 

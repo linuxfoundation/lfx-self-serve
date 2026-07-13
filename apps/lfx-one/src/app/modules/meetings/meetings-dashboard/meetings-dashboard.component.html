@@ -151,7 +151,7 @@
                       <p class="text-xl font-medium text-gray-900">{{ fpPastCount() }}</p>
                     }
                     <p class="text-sm font-normal text-gray-900">Past Meetings</p>
-                    @if (!fpStatsLoading() && !fpAttendanceRateLoading() && fpPastCount() > 0) {
+                    @if (!fpStatsLoading() && !fpAttendanceRateLoading() && fpRecentPastCount() > 0) {
                       <p class="text-xs text-gray-400">{{ fpAttendanceRate() }}% attendance rate (last 30 days)</p>
                     }
                   </div>

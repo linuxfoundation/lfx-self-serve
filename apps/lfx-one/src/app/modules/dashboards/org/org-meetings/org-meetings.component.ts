@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, Signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -80,7 +80,33 @@ export class OrgMeetingsComponent {
   // === Computed signals ===
   protected readonly accountId = computed(() => this.accountContext.selectedAccount().accountId);
   protected readonly orgName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  // Account the last-resolved `summary` actually belongs to — keeping this alongside the summary value
+  // (rather than trusting `summary()` alone) is what lets `accountUnseeded` avoid the account-switch race
+  // where the previous account's summary is still sitting in the signal while a new account's list/summary
+  // requests are in flight.
+  private readonly summaryAccountId = signal<string | null>(null);
   protected readonly summary: Signal<OrgMeetingsSummary | null> = this.initSummary();
+  // Ground truth for "this account genuinely has no real data." `total()` reflects the most recently
+  // completed real list fetch for the *current* request cycle (switchMap cancels stale in-flight
+  // requests on account/filter change, so it's always account-correct) — a positive total is definitive
+  // proof of real data and short-circuits the rest of this check. Below that, while the summary hasn't
+  // resolved *for the current account* yet, default to true (matches the pre-race-fix behavior of
+  // favoring the demo fallback over prematurely clearing the screen) — `pendingListOutcome`/its
+  // correction effect below re-evaluates once the summary actually resolves, so a confirmed-seeded
+  // account still ends up showing its real (possibly empty, possibly errored) state rather than getting
+  // stuck on demo data. Deliberately distinct from "a filter matched nothing," which is a legitimate
+  // zero and must not be treated as an unseeded account.
+  protected readonly accountUnseeded: Signal<boolean> = computed(() => {
+    if (this.total() > 0) return false;
+    const resolved = this.summaryAccountId() === this.accountId();
+    if (!resolved) return true;
+    const real = this.summary();
+    return !real || (real.upcomingMeetings === 0 && real.recurringSeries === 0);
+  });
+  // Set when the offset-0 list decision above was made *before* the summary had resolved for this
+  // account, so `accountUnseeded` was only an optimistic guess — corrected by the effect in the
+  // constructor once the summary actually resolves for the same account.
+  private readonly pendingListOutcome = signal<{ accountId: string; kind: 'failed' | 'empty' } | null>(null);
   protected readonly effectiveSummary: Signal<OrgMeetingsSummary> = this.initEffectiveSummary();
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
   protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
@@ -100,6 +126,7 @@ export class OrgMeetingsComponent {
     this.initResetFiltersOnAccountChange();
     this.initResetOnFilterChange();
     this.initUpcomingFetch();
+    this.initPendingListOutcomeCorrection();
   }
 
   // === Protected methods ===
@@ -127,6 +154,26 @@ export class OrgMeetingsComponent {
   }
 
   // === Private initializers ===
+  // Re-evaluates an offset-0 list decision that was made while the summary hadn't resolved for the
+  // current account yet (see `pendingListOutcome`). Once it resolves and turns out the account is NOT
+  // actually unseeded, the optimistic demo fallback was wrong — replace it with the real (possibly
+  // empty, possibly errored) outcome instead of leaving demo rows on screen indefinitely.
+  private initPendingListOutcomeCorrection(): void {
+    effect(() => {
+      const pending = this.pendingListOutcome();
+      if (!pending) return;
+      const resolved = this.summaryAccountId() === this.accountId();
+      if (!resolved || pending.accountId !== this.accountId()) return;
+      if (!this.accountUnseeded()) {
+        this.upcomingMeetings.set([]);
+        if (pending.kind === 'failed') {
+          this.listError.set(true);
+        }
+      }
+      this.pendingListOutcome.set(null);
+    });
+  }
+
   private initActiveTab(): Signal<OrgMeetingsTabId> {
     return toSignal(
       this.route.queryParamMap.pipe(
@@ -191,10 +238,15 @@ export class OrgMeetingsComponent {
         tap(() => this.summaryLoading.set(true)),
         switchMap((id) =>
           this.meetingService.getOrgMeetingsSummary(id).pipe(
-            catchError(() => of(null)),
+            map((summary) => ({ id, summary })),
+            catchError(() => of({ id, summary: null as OrgMeetingsSummary | null })),
             finalize(() => this.summaryLoading.set(false))
           )
-        )
+        ),
+        // Record which account this result belongs to *before* the summary value itself updates, so
+        // `accountUnseeded` never reads a summary value against the wrong account's id.
+        tap(({ id }) => this.summaryAccountId.set(id)),
+        map(({ summary }) => summary)
       ),
       { initialValue: null }
     );
@@ -202,12 +254,13 @@ export class OrgMeetingsComponent {
 
   // The real summary() call can legitimately return all-zeros while `upcomingMeetings()` is still
   // showing the demo fallback (no real rows yet) — that mismatch is exactly what made the KPI cards
-  // disagree with the rendered list. Once the real list-fetch has confirmed rows exist (total() > 0),
-  // trust the real summary; otherwise derive the summary directly from whatever list is actually on screen.
+  // disagree with the rendered list. Trust the real summary whenever the account isn't genuinely
+  // unseeded (a filtered-to-zero list is still a real account with real data); otherwise derive the
+  // summary directly from whatever demo list is actually on screen.
   private initEffectiveSummary(): Signal<OrgMeetingsSummary> {
     return computed<OrgMeetingsSummary>(() => {
       const real = this.summary();
-      if (this.total() > 0 && real) return real;
+      if (!this.accountUnseeded() && real) return real;
 
       const meetings = this.upcomingMeetings();
       const recurring = meetings.filter((meeting) => meeting.recurrenceLabel !== null);
@@ -302,6 +355,10 @@ export class OrgMeetingsComponent {
             this.listError.set(false);
             this.loadMoreError.set(false);
             this.loadingMore.set(false);
+            // A fresh page-0 request supersedes whatever the previous cycle's outcome was — if a stale
+            // pending correction from an earlier fetch (e.g. the failure that a retry just re-requested)
+            // were left set, its effect could fire later and stomp this new response once it lands.
+            this.pendingListOutcome.set(null);
           } else {
             this.loadingMore.set(true);
             this.loadMoreError.set(false);
@@ -327,14 +384,21 @@ export class OrgMeetingsComponent {
         if (!res) {
           if (offset === 0) {
             // Same ground-truth check as the zero-result branch below: only treat the on-screen list as a
-            // disposable demo fallback when the org-wide summary agrees the account is unseeded. Otherwise
-            // a first-page failure must clear whatever's showing (which could be the *previous* account's
-            // or filter's real rows) and surface the error, rather than leaving stale data look current.
-            const real = this.summary();
-            const accountLooksUnseeded = !real || (real.upcomingMeetings === 0 && real.recurringSeries === 0);
-            if (!accountLooksUnseeded) {
+            // disposable demo fallback when the account is confirmed unseeded (keyed to this account, not
+            // racing a stale/previous-account summary). Otherwise a first-page failure must clear whatever's
+            // showing and surface the error, rather than leaving stale data look current.
+            if (!this.accountUnseeded()) {
               this.upcomingMeetings.set([]);
               this.listError.set(true);
+            } else {
+              // Genuinely unseeded account: keep the demo seed, but respect whatever filters are active so
+              // the controls don't silently stop working against the fallback data.
+              this.upcomingMeetings.set(DEMO_UPCOMING_MEETINGS.filter((meeting) => this.matchesFilters(meeting)));
+              if (this.summaryAccountId() !== this.accountId()) {
+                // Summary hasn't resolved for this account yet — this was an optimistic guess, not a
+                // confirmed unseeded account. Flag it for re-evaluation once the summary resolves.
+                this.pendingListOutcome.set({ accountId: this.accountId(), kind: 'failed' });
+              }
             }
             this.listLoading.set(false);
           } else {
@@ -346,21 +410,29 @@ export class OrgMeetingsComponent {
         }
         this.total.set(res.total);
         if (offset === 0 && res.data.length === 0) {
-          // The org-wide summary (unaffected by the current search/type/project filter) is the ground
-          // truth for "does this account have any real data at all." Only treat a zero-result page as
-          // missing seed data when the summary agrees the account is genuinely empty/unloaded; otherwise
-          // this zero is a real result (e.g. a filter with no matches, or a switched-to account that's
-          // empty) and must replace whatever's on screen instead of leaving demo/stale rows visible.
-          const real = this.summary();
-          const accountLooksUnseeded = !real || (real.upcomingMeetings === 0 && real.recurringSeries === 0);
-          if (!accountLooksUnseeded) {
+          // `accountUnseeded` (keyed to this account) is the ground truth for "does this account have any
+          // real data at all." Only treat a zero-result page as missing seed data when the account is
+          // genuinely unseeded; otherwise this zero is a real result (e.g. a filter with no matches, or a
+          // switched-to account that's empty) and must replace whatever's on screen instead of leaving
+          // demo/stale rows visible.
+          if (!this.accountUnseeded()) {
             this.upcomingMeetings.set([]);
+          } else {
+            // Genuinely unseeded: keep showing demo data, but filter it so search/type/project controls
+            // still reflect their current selection instead of always showing the full unfiltered seed.
+            this.upcomingMeetings.set(DEMO_UPCOMING_MEETINGS.filter((meeting) => this.matchesFilters(meeting)));
+            if (this.summaryAccountId() !== this.accountId()) {
+              // Summary hasn't resolved for this account yet — flag for re-evaluation once it does.
+              this.pendingListOutcome.set({ accountId: this.accountId(), kind: 'empty' });
+            }
           }
           this.listLoading.set(false);
           this.loadingMore.set(false);
           return;
         }
-        // Splice the page in at its offset so a re-fetch of the same page can't duplicate rows.
+        // Splice the page in at its offset so a re-fetch of the same page can't duplicate rows. This is a
+        // confirmed real (non-demo) result, so any pending correction from an earlier cycle is moot.
+        this.pendingListOutcome.set(null);
         this.upcomingMeetings.set([...this.upcomingMeetings().slice(0, offset), ...res.data]);
         this.listLoading.set(false);
         this.loadingMore.set(false);
