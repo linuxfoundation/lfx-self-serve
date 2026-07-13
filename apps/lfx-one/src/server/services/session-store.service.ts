@@ -76,7 +76,13 @@ export class SessionStoreService {
       // a brand-new session or a rolling refresh — since a refresh write can carry a real mutation
       // and there's no cheap, reliable way to prove the payload is unchanged before leaving the
       // prior entry in place.
-      const invalidated = await valkeyService.del(key);
+      // `set` and `del` are independent Redis commands — a transient blip can fail both back-to-back
+      // while a later `get` succeeds against a since-recovered connection, resurrecting the stale
+      // entry. One immediate retry closes most of that window without adding real latency.
+      let invalidated = await valkeyService.del(key);
+      if (!invalidated) {
+        invalidated = await valkeyService.del(key);
+      }
       if (!invalidated) {
         logger.error(undefined, 'session_store_set', startTime, new Error('Valkey write and fallback invalidation both failed'), {
           message: 'Session write failed and the stale entry could not be invalidated — a prior session value may still be served',
@@ -123,8 +129,10 @@ export class SessionStoreService {
   /** Derives the Valkey TTL from the session's own `cookie.maxAge` (set by express-openid-connect from `session.rollingDuration`/`session.absoluteDuration`) so entries expire alongside the cookie; falls back to the configured default if that shape is ever missing. */
   private ttlSecondsFor(session: SessionStorePayload): number {
     const maxAgeMs = session.cookie?.maxAge;
-    if (typeof maxAgeMs === 'number' && maxAgeMs > 0) {
-      return Math.ceil(maxAgeMs / 1000);
+    if (typeof maxAgeMs === 'number') {
+      // A present-but-non-positive maxAge means the cookie has already reached its absolute expiry —
+      // the multi-day fallback below is reserved for missing/invalid metadata, not an expired session.
+      return maxAgeMs > 0 ? Math.ceil(maxAgeMs / 1000) : VALKEY_CACHE.SESSION_EXPIRED_TTL_SECONDS;
     }
     return VALKEY_CACHE.SESSION_FALLBACK_TTL_SECONDS;
   }

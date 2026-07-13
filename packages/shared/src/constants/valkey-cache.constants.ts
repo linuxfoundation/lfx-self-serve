@@ -42,6 +42,9 @@ export const VALKEY_CACHE = {
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,
 
+  /** TTL for a session whose `cookie.maxAge` is present but already non-positive (already past absolute expiry) — expires it out of Valkey immediately instead of handing it the multi-day fallback above. */
+  SESSION_EXPIRED_TTL_SECONDS: 1,
+
   /** Per-op cap; a slower cache resolves to a miss so the request fetches directly (well below the ~30s upstream timeout). */
   OP_TIMEOUT_MS: 250,
 
