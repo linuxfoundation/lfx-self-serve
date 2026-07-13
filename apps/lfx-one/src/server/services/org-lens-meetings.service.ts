@@ -32,7 +32,7 @@ export class OrgLensMeetingsService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** GET /api/orgs/:accountId/lens/meetings/summary — org upcoming + recurring counts (+ foundation breadth, next date); fail-soft to zeros. */
+  /** GET /api/orgs/:accountId/lens/meetings/summary — org upcoming + recurring counts (+ foundation breadth, next date); surfaces errors so the client renders its "couldn't load" state instead of a fabricated zero-valued summary. */
   public async getOrgMeetingsSummary(req: Request, accountId: string): Promise<OrgMeetingsSummary> {
     logger.debug(req, 'get_org_lens_meetings_summary', 'Building org meetings summary query', { account_id: accountId });
 
@@ -46,22 +46,17 @@ export class OrgLensMeetingsService {
       WHERE account_id = ?
     `;
 
-    let rows: OrgMeetingsSummaryRow[];
-    try {
-      rows = await withOrgCache(
-        accountId,
-        'meetings-summary',
-        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchSummaryRows(accountId, sql),
-        isObjectRowArray
-      );
-    } catch (error) {
-      logger.warning(req, 'get_org_lens_meetings_summary', 'Snowflake query failed, returning zero counts', {
-        err: error,
-        account_id: accountId,
-      });
-      return { upcomingMeetings: 0, recurringSeries: 0, recurringFoundations: 0, nextMeeting: null };
-    }
+    // Let a Snowflake failure propagate to the controller's error handler instead of degrading to a
+    // fake zero-valued summary — the frontend's `accountUnseeded` check treats an all-zero summary as
+    // proof the account has no real data, so masking an outage as zeros would wrongly trigger the demo
+    // fallback instead of the error/retry state.
+    const rows: OrgMeetingsSummaryRow[] = await withOrgCache(
+      accountId,
+      'meetings-summary',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchSummaryRows(accountId, sql),
+      isObjectRowArray
+    );
 
     const row = rows[0];
     // Degrade an unparseable (e.g. corrupt-cache) NEXT_MEETING to null instead of throwing.
