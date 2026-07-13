@@ -87,12 +87,14 @@
                   <div class="flex flex-col gap-0.5">
                     @if (meLensStatsLoading() || meRecordingsCountLoading()) {
                       <p class="text-xl font-medium text-gray-400">&mdash;</p>
+                    } @else if (meRecordingsCountError()) {
+                      <p class="text-xl font-medium text-gray-400" data-testid="me-recordings-available-error">&mdash;</p>
                     } @else {
                       <p class="text-xl font-medium text-gray-900">{{ recordingsAvailableCount() }}</p>
                     }
                     <p class="text-sm font-normal text-gray-900">Recordings Available</p>
                     @if (!meLensStatsLoading() && !meRecordingsCountLoading()) {
-                      <p class="text-xs text-gray-400">From past 30 days</p>
+                      <p class="text-xs text-gray-400">{{ meRecordingsCountError() ? 'Unable to load' : 'From past 30 days' }}</p>
                     }
                   </div>
                 </div>
@@ -152,7 +154,9 @@
                     }
                     <p class="text-sm font-normal text-gray-900">Past Meetings</p>
                     @if (!fpStatsLoading() && !fpAttendanceRateLoading() && fpRecentPastCount() > 0) {
-                      <p class="text-xs text-gray-400">{{ fpAttendanceRate() }}% attendance rate (last 30 days)</p>
+                      <p class="text-xs text-gray-400">
+                        {{ fpAttendanceRateError() ? 'Unable to load attendance rate' : fpAttendanceRate() + '% attendance rate (last 30 days)' }}
+                      </p>
                     }
                   </div>
                 </div>
@@ -163,12 +167,14 @@
                   <div class="flex flex-col gap-0.5">
                     @if (fpStatsLoading() || fpRecordingsCountLoading()) {
                       <p class="text-xl font-medium text-gray-400">&mdash;</p>
+                    } @else if (fpRecordingsCountError()) {
+                      <p class="text-xl font-medium text-gray-400" data-testid="fp-recordings-available-error">&mdash;</p>
                     } @else {
                       <p class="text-xl font-medium text-gray-900">{{ fpRecordingsAvailableCount() }}</p>
                     }
                     <p class="text-sm font-normal text-gray-900">Recordings Available</p>
                     @if (!fpStatsLoading() && !fpRecordingsCountLoading()) {
-                      <p class="text-xs text-gray-400">From past 30 days</p>
+                      <p class="text-xs text-gray-400">{{ fpRecordingsCountError() ? 'Unable to load' : 'From past 30 days' }}</p>
                     }
                   </div>
                 </div>

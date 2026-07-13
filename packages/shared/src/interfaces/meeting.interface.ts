@@ -1200,3 +1200,14 @@ export interface MeetingTypeBadge {
  * Derived from the {@link PAST_MEETING_SORT} constant so the union stays in sync with it.
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
+
+/**
+ * Result of a bounded, per-meeting KPI aggregation (e.g. recording availability, attendance rate)
+ * that fetches one resource per meeting. `hasError` is `true` when at least one fetch failed with a
+ * non-404 error (network/5xx) rather than a genuine "not found" — callers should render the KPI as
+ * unavailable instead of presenting `count` as an authoritative value in that case.
+ */
+export interface MeetingKpiFetchResult {
+  readonly count: number;
+  readonly hasError: boolean;
+}

@@ -21,7 +21,7 @@ import {
   MEETING_TYPE_COLORS,
   MEETING_TYPE_CONFIGS,
 } from '@lfx-one/shared/constants';
-import { Lens, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
+import { Lens, Meeting, MeetingKpiFetchResult, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   addMinutesToDate,
   getCurrentOrNextOccurrence,
@@ -141,6 +141,11 @@ export class MeetingsDashboardComponent {
   protected readonly meRecordingsCountLoading = signal(false);
   protected readonly fpRecordingsCountLoading = signal(false);
   protected readonly fpAttendanceRateLoading = signal(false);
+  // Set when at least one per-meeting KPI fetch failed with a non-404 error — the corresponding
+  // count/rate is unavailable rather than an authoritative value in that case (see countMeetingsWithRecording/countMeetingAttendance).
+  protected readonly meRecordingsCountError = signal(false);
+  protected readonly fpRecordingsCountError = signal(false);
+  protected readonly fpAttendanceRateError = signal(false);
   protected fpUpcomingCountLoading = signal(false);
   protected fpPastCountLoading = signal(false);
 
@@ -746,32 +751,36 @@ export class MeetingsDashboardComponent {
   // Availability is derived live from the recording resource (the same source "See Recording"
   // uses) rather than a stored flag, so the count can never disagree with the buttons. The
   // 30-day window bounds the per-meeting recording fetches.
-  private countMeetingsWithRecording(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<number> {
+  private countMeetingsWithRecording(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<MeetingKpiFetchResult> {
     const ids = meetings.map((m) => getPastMeetingResourceId(m));
     if (ids.length === 0) {
       loading.set(false);
-      return of(0);
+      return of({ count: 0, hasError: false });
     }
     loading.set(true);
     return from(ids).pipe(
       mergeMap(
         (id) =>
           this.meetingService.getPastMeetingRecording(id).pipe(
-            map((rec) => (getLargestSessionShareUrl(rec) ? 1 : 0)),
+            map((rec) => ({ flag: getLargestSessionShareUrl(rec) ? 1 : 0, hasError: false })),
             catchError((err: unknown) => {
               // A 404 means the recording genuinely doesn't exist yet — that's a real zero. Any other
-              // failure (network, 5xx) is unknown state, not "no recording"; log it rather than letting
-              // a transient outage silently present as an authoritative low count.
-              if (!(err instanceof HttpErrorResponse) || err.status !== 404) {
+              // failure (network, 5xx) is unknown state, not "no recording"; log it and flag the whole
+              // KPI as unavailable rather than letting a transient outage silently present as a low count.
+              const isNotFound = err instanceof HttpErrorResponse && err.status === 404;
+              if (!isNotFound) {
                 console.error(`Failed to check recording availability for meeting ${id}:`, err);
               }
-              return of(0);
+              return of({ flag: 0, hasError: !isNotFound });
             })
           ),
         MEETING_RECORDING_COUNT_FETCH_CONCURRENCY
       ),
       toArray(),
-      map((flags) => flags.reduce((a, b) => a + b, 0)),
+      map((results) => ({
+        count: results.reduce((a, r) => a + r.flag, 0),
+        hasError: results.some((r) => r.hasError),
+      })),
       finalize(() => loading.set(false))
     );
   }
@@ -779,34 +788,46 @@ export class MeetingsDashboardComponent {
   // Attendance rate isn't returned by the list endpoint (participant_count/attended_count are lazy-loaded
   // per card elsewhere), so it's tallied here the same way recording availability is: one bounded,
   // concurrency-capped fetch per meeting over the 30-day-windowed subset.
-  private countMeetingAttendance(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<number> {
+  private countMeetingAttendance(meetings: PastMeeting[], loading: WritableSignal<boolean>): Observable<MeetingKpiFetchResult> {
     const ids = meetings.map((m) => getPastMeetingResourceId(m));
     if (ids.length === 0) {
       loading.set(false);
-      return of(0);
+      return of({ count: 0, hasError: false });
     }
     loading.set(true);
     return from(ids).pipe(
       mergeMap(
         (id) =>
           this.meetingService.getPastMeetingParticipants(id).pipe(
-            map((participants) => ({ attended: participants.filter((p) => p.is_attended).length, total: participants.length })),
+            map((participants) => ({
+              attended: participants.filter((p) => p.is_attended).length,
+              total: participants.length,
+              hasError: false,
+            })),
             catchError((err: unknown) => {
               // A 404 means the meeting genuinely has no participant records — a real zero. Any other
-              // failure is unknown state; log it so a transient outage isn't silently indistinguishable
-              // from "no attendees" (contributing 0/0 already excludes it from the computed rate below).
-              if (!(err instanceof HttpErrorResponse) || err.status !== 404) {
+              // failure is unknown state; log it and flag the whole KPI as unavailable rather than
+              // silently averaging in a 0/0 that would bias the rate toward the successful subset.
+              const isNotFound = err instanceof HttpErrorResponse && err.status === 404;
+              if (!isNotFound) {
                 console.error(`Failed to load attendance for meeting ${id}:`, err);
               }
-              return of({ attended: 0, total: 0 });
+              return of({ attended: 0, total: 0, hasError: !isNotFound });
             })
           ),
         MEETING_ATTENDANCE_COUNT_FETCH_CONCURRENCY
       ),
       toArray(),
       map((tallies) => {
-        const totals = tallies.reduce((acc, t) => ({ attended: acc.attended + t.attended, total: acc.total + t.total }), { attended: 0, total: 0 });
-        return totals.total > 0 ? Math.round((totals.attended / totals.total) * 100) : 0;
+        const totals = tallies.reduce((acc, t) => ({ attended: acc.attended + t.attended, total: acc.total + t.total, hasError: acc.hasError || t.hasError }), {
+          attended: 0,
+          total: 0,
+          hasError: false,
+        });
+        return {
+          count: totals.total > 0 ? Math.round((totals.attended / totals.total) * 100) : 0,
+          hasError: totals.hasError,
+        };
       }),
       finalize(() => loading.set(false))
     );
@@ -823,10 +844,12 @@ export class MeetingsDashboardComponent {
     return toSignal(
       combineLatest([toObservable(this.activeLens), toObservable(this.rawUserPastMeetings)]).pipe(
         switchMap(([lens, past]) => {
-          if (lens !== 'me') return of(0);
+          if (lens !== 'me') return of<MeetingKpiFetchResult>({ count: 0, hasError: false });
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.meRecordingsCountLoading);
-        })
+        }),
+        tap((result) => this.meRecordingsCountError.set(result.hasError)),
+        map((result) => result.count)
       ),
       { initialValue: 0 }
     );
@@ -893,10 +916,12 @@ export class MeetingsDashboardComponent {
     return toSignal(
       combineLatest([toObservable(this.activeLens), toObservable(this.rawFpPastMeetings)]).pipe(
         switchMap(([lens, past]) => {
-          if (lens === 'me') return of(0);
+          if (lens === 'me') return of<MeetingKpiFetchResult>({ count: 0, hasError: false });
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.fpRecordingsCountLoading);
-        })
+        }),
+        tap((result) => this.fpRecordingsCountError.set(result.hasError)),
+        map((result) => result.count)
       ),
       { initialValue: 0 }
     );
@@ -927,10 +952,12 @@ export class MeetingsDashboardComponent {
     return toSignal(
       combineLatest([toObservable(this.activeLens), toObservable(this.rawFpPastMeetings)]).pipe(
         switchMap(([lens, past]) => {
-          if (lens === 'me') return of(0);
+          if (lens === 'me') return of<MeetingKpiFetchResult>({ count: 0, hasError: false });
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           return this.countMeetingAttendance(this.filterRecentPastMeetings(past, cutoff), this.fpAttendanceRateLoading);
-        })
+        }),
+        tap((result) => this.fpAttendanceRateError.set(result.hasError)),
+        map((result) => result.count)
       ),
       { initialValue: 0 }
     );
