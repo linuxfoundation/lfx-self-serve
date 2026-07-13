@@ -222,27 +222,6 @@ export class MeetingManageComponent {
         }
       });
 
-    // PCC matrix constraint: PUBLIC+restricted is not a valid state.
-    // Sync the two controls so they stay consistent: restricted→true forces PRIVATE visibility;
-    // visibility→PUBLIC forces restricted=false.
-    this.form()
-      .get('restricted')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((restricted: boolean) => {
-        if (restricted && this.form().get('visibility')?.value === MeetingVisibility.PUBLIC) {
-          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE }, { emitEvent: false });
-        }
-      });
-
-    this.form()
-      .get('visibility')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((visibility: string) => {
-        if (visibility === MeetingVisibility.PUBLIC && this.form().get('restricted')?.value === true) {
-          this.form().patchValue({ restricted: false }, { emitEvent: false });
-        }
-      });
-
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)
       .pipe(
