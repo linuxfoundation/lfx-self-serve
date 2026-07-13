@@ -52,7 +52,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
-import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, pairwise, startWith, switchMap, take, toArray } from 'rxjs';
 
 import { MeetingDetailsComponent } from '../components/meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
@@ -203,13 +203,21 @@ export class MeetingManageComponent {
         this.updateCanProceed();
       });
 
-    // When Board meeting type is selected, enforce private + restricted-only access
+    // When Board meeting type is selected, enforce private + restricted-only access.
+    // When switching away from Board, reset privacy to defaults so the user isn't
+    // left with Board-level restrictions silently applied to a non-Board meeting.
     this.form()
       .get('meeting_type')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((meetingType: string) => {
-        if (meetingType === MeetingType.BOARD) {
+      ?.valueChanges.pipe(
+        startWith(this.form().get('meeting_type')?.value as string),
+        pairwise(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(([previousType, currentType]: [string, string]) => {
+        if (currentType === MeetingType.BOARD) {
           this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
+        } else if (previousType === MeetingType.BOARD) {
+          this.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
         }
       });
 
