@@ -4,11 +4,14 @@
 import fs from 'fs';
 import path from 'path';
 import { chromium, FullConfig } from '@playwright/test';
-import dotenv from 'dotenv';
 import { AuthHelper } from './auth.helper';
 
 // Ensure .env is loaded before reading credentials
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+try {
+  process.loadEnvFile(path.resolve(__dirname, '../../.env'));
+} catch {
+  // .env is optional; credentials fall back to empty strings below.
+}
 
 async function globalSetup(config: FullConfig) {
   const credentials = {

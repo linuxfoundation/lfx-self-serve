@@ -5,7 +5,6 @@ import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
-import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { Server as HttpServer } from 'node:http';
@@ -66,7 +65,11 @@ import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shut
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
-  dotenv.config();
+  try {
+    process.loadEnvFile();
+  } catch {
+    // .env is optional in non-production; fall back to existing process.env.
+  }
 }
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));

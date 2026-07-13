@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { defineConfig, devices } from '@playwright/test';
-import dotenv from 'dotenv';
 
 // Load environment variables from .env file
-dotenv.config();
+try {
+  process.loadEnvFile();
+} catch {
+  // .env is optional; continue with existing process.env.
+}
 
 /**
  * See https://playwright.dev/docs/test-configuration.
