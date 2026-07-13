@@ -18,13 +18,15 @@ export function getPastMeetingStartTimeMs(meeting: Pick<PastMeeting, 'scheduled_
   return parsePastMeetingStartIso(meeting.scheduled_start_time) ?? parsePastMeetingStartIso(meeting.start_time);
 }
 
-// Largest recording session (by total_size) is canonical; a recording "exists" only if that
-// session has a shareable URL. Single source of truth for recording availability.
+// Largest *shareable* session (by total_size) is canonical — a smaller session with a share_url is
+// preferred over a larger one without, since the goal is finding a playable URL, not the biggest file.
+// Single source of truth for recording availability.
 export function getLargestSessionShareUrl(recording: PastMeetingRecording | null): string | null {
-  if (!recording?.sessions?.length) {
+  const shareable = recording?.sessions?.filter((session) => session.share_url) ?? [];
+  if (shareable.length === 0) {
     return null;
   }
-  const largest = recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
+  const largest = shareable.reduce((a, b) => (b.total_size > a.total_size ? b : a));
   return largest.share_url || null;
 }
 

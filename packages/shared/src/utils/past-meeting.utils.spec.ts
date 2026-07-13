@@ -227,8 +227,8 @@ describe('getLargestSessionShareUrl', () => {
     expect(getLargestSessionShareUrl(rec)).toBe('https://largest.example');
   });
 
-  it('returns null when the largest session has an empty share URL, even if a smaller one has one', () => {
+  it('falls back to the largest session that has a share URL when a bigger one has none', () => {
     const rec = recording([session({ total_size: 100, share_url: 'https://small.example' }), session({ total_size: 500, share_url: '' })]);
-    expect(getLargestSessionShareUrl(rec)).toBeNull();
+    expect(getLargestSessionShareUrl(rec)).toBe('https://small.example');
   });
 });

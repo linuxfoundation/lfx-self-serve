@@ -326,9 +326,14 @@ export class OrgMeetingsComponent {
       .subscribe(({ res, offset }) => {
         if (!res) {
           if (offset === 0) {
-            // Only surface the error banner when there's nothing to fall back on — otherwise keep showing
-            // the demo/existing set instead of wiping it out from under the viewer.
-            if (this.upcomingMeetings().length === 0) {
+            // Same ground-truth check as the zero-result branch below: only treat the on-screen list as a
+            // disposable demo fallback when the org-wide summary agrees the account is unseeded. Otherwise
+            // a first-page failure must clear whatever's showing (which could be the *previous* account's
+            // or filter's real rows) and surface the error, rather than leaving stale data look current.
+            const real = this.summary();
+            const accountLooksUnseeded = !real || (real.upcomingMeetings === 0 && real.recurringSeries === 0);
+            if (!accountLooksUnseeded) {
+              this.upcomingMeetings.set([]);
               this.listError.set(true);
             }
             this.listLoading.set(false);
