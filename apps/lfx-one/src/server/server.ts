@@ -173,8 +173,14 @@ app.use(httpLogger);
 // SESSION_STORE_ENABLED is set and VALKEY_URL is present — without VALKEY_URL every store
 // read/write would degrade to "session missing" (ValkeyService's fail-soft behavior) and silently
 // log everyone out. Note: this only gates on URL presence, not live reachability — a Valkey outage
-// after startup surfaces as failed session writes rather than a silent miss (see
-// SessionStoreService for the fail-soft read / fail-closed write split).
+// after startup surfaces as failed session writes (401, forced re-login) rather than a silent miss
+// (see SessionStoreService for the fail-soft read / fail-closed write behavior).
+//
+// Rollout note: toggling this flag changes what the `appSession` cookie *means* (encrypted JWE vs.
+// opaque Valkey id). The chart's default RollingUpdate strategy means old and new pods coexist
+// during the rollout window, so requests hitting different pods will flap between "valid session"
+// and "invalid session" until the rollout completes — see the PR description's rollout-safety note
+// for the accepted operational mitigation.
 const sessionStoreEnabled = process.env['SESSION_STORE_ENABLED'] === 'true' && !!process.env['VALKEY_URL'];
 
 const authConfig: ConfigParams = {

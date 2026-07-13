@@ -4,6 +4,7 @@
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { SessionStorePayload } from '@lfx-one/shared/interfaces';
 
+import { AuthenticationError } from '../errors';
 import { buildSessionCacheKey, valkeyService } from './valkey.service';
 import { logger } from './logger.service';
 
@@ -13,9 +14,15 @@ import { logger } from './logger.service';
  * out of the encrypted `appSession` cookie and into Valkey, keyed by an opaque session id — the
  * cookie then only carries that id. Reads are fail-soft: a Valkey read fault degrades to a miss
  * (treated by express-openid-connect as an expired session, forcing re-auth) rather than a 500,
- * matching ValkeyService's existing fail-soft cache behavior. Writes are fail-closed: a session
- * that fails to persist throws instead of resolving, which express-openid-connect surfaces as a
- * request error rather than silently issuing a cookie for a session that was never saved.
+ * matching ValkeyService's existing fail-soft cache behavior. Writes are always fail-closed: a
+ * session that fails to persist is invalidated (so a stale/mutated value never survives at that
+ * key) and throws an `AuthenticationError` (401) rather than resolving — express-openid-connect
+ * surfaces the throw as a request error, and 401 rather than a bare 500 means a Valkey outage
+ * degrades every affected request to "please log in again" instead of a crash, mirroring the
+ * fail-soft *experience* of a read fault while never serving stale data. This applies uniformly to
+ * every write (new session or rolling refresh) — a refresh write can carry a real mutation (e.g.
+ * stop-impersonation clearing `impersonationToken`), and there's no cheap, reliable way to prove
+ * the payload is unchanged before deciding it's safe to leave the prior entry in place.
  *
  * Structurally matches express-openid-connect's `session.store` contract (`get`/`set`/`destroy`
  * with a callback) — that type isn't exported from the library, so compatibility is enforced by
@@ -58,28 +65,17 @@ export class SessionStoreService {
       // Nothing was persisted, so letting this resolve normally would hand back a cookie whose id
       // never resolves in Valkey — the same unrecoverable-login-loop failure mode a Valkey write
       // failure below fails closed on. Fail closed here too instead of silently no-op'ing.
-      throw new Error('Session write rejected — cache key failed the safety check');
+      throw new AuthenticationError('Session write rejected — cache key failed the safety check', { operation: 'session_store_set' });
     }
     const ttlSeconds = this.ttlSecondsFor(session);
     const persisted = await valkeyService.setJson(key, session, ttlSeconds);
     if (!persisted) {
-      // express-openid-connect defaults session.rolling to true, so this write fires on every
-      // authenticated request (to extend the rolling window), not just at login. The library only
-      // omits `iat` (defaulting it to the fresh `uat`) when there's no prior session to extend, so
-      // `iat === uat` identifies a brand-new session; a rolling refresh carries the original `iat`
-      // alongside a freshly-stamped `uat`. A new session that fails to persist must fail closed (no
-      // entry exists anywhere for that id, so completing normally hands out a dead cookie). A
-      // refresh failure leaves the prior entry — still valid until its own TTL — untouched, so
-      // failing soft here avoids 500ing every authenticated page load for the duration of a Valkey
-      // outage.
-      const isNewSession = session.header.iat === session.header.uat;
-      if (!isNewSession) {
-        logger.warning(undefined, 'session_store_set', 'Rolling-refresh session write failed — leaving the existing entry in place until it expires via TTL');
-        return;
-      }
       // setJson is a `SET key val EX ttl` — a failed write leaves any prior value at this key
       // untouched, so a stale session (e.g. a cleared impersonation token) would otherwise survive
-      // and be reloaded on the next request. Fail closed by invalidating the key outright.
+      // and be reloaded on the next request. Always invalidate on a failed write — whether this was
+      // a brand-new session or a rolling refresh — since a refresh write can carry a real mutation
+      // and there's no cheap, reliable way to prove the payload is unchanged before leaving the
+      // prior entry in place.
       const invalidated = await valkeyService.del(key);
       if (!invalidated) {
         logger.error(undefined, 'session_store_set', startTime, new Error('Valkey write and fallback invalidation both failed'), {
@@ -93,10 +89,11 @@ export class SessionStoreService {
         );
       }
       // express-openid-connect awaits store.set() inside its res.end() wrapper and calls next(err)
-      // on rejection instead of completing the response — surfacing this now prevents the OIDC login
-      // callback from issuing a cookie for a session that was never persisted, which would otherwise
-      // loop the user through login indefinitely while Valkey is down.
-      throw new Error('Session write failed to persist');
+      // on rejection instead of completing the response. Throwing AuthenticationError (401) rather
+      // than a bare Error means apiErrorHandler returns a structured "please re-authenticate"
+      // response and logs at warn (not error) — so a Valkey outage degrades every affected request
+      // to a forced re-login instead of a raw 500, without ever serving the invalidated stale entry.
+      throw new AuthenticationError('Session write failed to persist', { operation: 'session_store_set' });
     }
   }
 
