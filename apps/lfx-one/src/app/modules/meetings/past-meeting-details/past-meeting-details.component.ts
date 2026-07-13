@@ -15,6 +15,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
+  getLargestSessionShareUrl,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
   MEETING_TYPE_CONFIGS,
@@ -317,12 +318,7 @@ export class PastMeetingDetailsComponent {
   }
 
   private initRecordingShareUrl(): Signal<string | null> {
-    return computed(() => {
-      const rec = this.recording();
-      if (!rec?.sessions?.length) return null;
-      const largest = rec.sessions.reduce((a, b) => ((a.total_size || 0) >= (b.total_size || 0) ? a : b));
-      return largest.share_url || null;
-    });
+    return computed(() => getLargestSessionShareUrl(this.recording()));
   }
 
   private initHasRecording(): Signal<boolean> {

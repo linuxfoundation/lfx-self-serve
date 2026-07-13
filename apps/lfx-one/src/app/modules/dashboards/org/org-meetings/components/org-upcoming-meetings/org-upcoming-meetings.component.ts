@@ -32,7 +32,16 @@ export class OrgUpcomingMeetingsComponent {
   protected readonly expandedIds = signal<ReadonlySet<string>>(new Set());
 
   // Splits the raw list into what renders its own card vs. what collapses into `privateRollup` (see `splitOrgMeetingsByPrivacy`).
-  private readonly privacySplit = computed(() => splitOrgMeetingsByPrivacy(this.meetings(), (meeting) => meeting.orgInvitees.map((invitee) => invitee.name)));
+  // `orgInvitees` is empty for real (non-demo) private meetings — see `isRedactedPrivate` in
+  // `org-lens-meetings.service.ts`. The fallback sums `rsvpTally`, which is never redacted, so the
+  // rollup's employee count stays accurate without exposing any real invitee's identity.
+  private readonly privacySplit = computed(() =>
+    splitOrgMeetingsByPrivacy(
+      this.meetings(),
+      (meeting) => meeting.orgInvitees.map((invitee) => invitee.name),
+      (meeting) => meeting.rsvpTally.yes + meeting.rsvpTally.maybe + meeting.rsvpTally.no + meeting.rsvpTally.noResponse
+    )
+  );
 
   protected readonly privateRollup: Signal<OrgPrivateMeetingsRollupVm | null> = computed(() => this.privacySplit().rollup);
 

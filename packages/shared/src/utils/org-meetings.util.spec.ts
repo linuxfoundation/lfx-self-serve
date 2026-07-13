@@ -92,6 +92,21 @@ describe('splitOrgMeetingsByPrivacy', () => {
     expect(typeBadgesByType.get('marketing')).toBe(1);
   });
 
+  it('falls back to an anonymous invitee count when a hidden meeting has no invitee names', () => {
+    // Mirrors a real (non-demo) private meeting whose orgInvitees were redacted server-side to `[]` —
+    // the rollup should still report a non-zero employeeCount via the RSVP/attendance tally fallback.
+    const redactedPrivate = meeting({ id: 'meeting-42', privacy: 'private', type: 'board' });
+    const namedPrivate = meeting({ id: 'meeting-43', privacy: 'private', type: 'board' });
+
+    const result = splitOrgMeetingsByPrivacy(
+      [redactedPrivate, namedPrivate],
+      (m) => (m.id === 'meeting-43' ? ['Dana Diaz'] : []),
+      (m) => (m.id === 'meeting-42' ? 5 : 0)
+    );
+
+    expect(result.rollup?.employeeCount).toBe(6); // 5 anonymous + Dana Diaz
+  });
+
   it('orders rollup type badges by the ORG_MEETING_TYPE_LABELS key order, not insertion order', () => {
     const hiddenOther = meeting({ id: 'meeting-9', privacy: 'private', type: 'other' });
     const hiddenBoard = meeting({ id: 'meeting-3', privacy: 'private', type: 'board' });

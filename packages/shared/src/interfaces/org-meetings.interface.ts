@@ -176,8 +176,12 @@ export interface OrgPrivateMeetingsRollupTypeBadgeVm {
 /**
  * Rollup summary for private meetings the viewer is not invited to, rendered as a single card per tab
  * instead of one restricted card per hidden meeting (see `splitOrgMeetingsByPrivacy`).
- * `employeeCount` is deduped by invitee name — neither the demo nor real data model has a stable
- * invitee id yet, and demo invitee names are intentionally reused across meetings.
+ * `employeeCount` is deduped by invitee name for meetings whose invitees are visible (demo rows, or a
+ * real meeting whose invitee list wasn't server-redacted). Real private meetings arrive with their
+ * invitee list already redacted to `[]` (see `isRedactedPrivate` in `org-lens-meetings.service.ts`), so
+ * those instead fall back to an already-unredacted aggregate tally (RSVP/attendance count) — see the
+ * `getFallbackInviteeCount` param on `splitOrgMeetingsByPrivacy`. Neither the demo nor real data model
+ * has a stable invitee id yet, and demo invitee names are intentionally reused across meetings.
  */
 export interface OrgPrivateMeetingsRollupVm {
   readonly totalCount: number;

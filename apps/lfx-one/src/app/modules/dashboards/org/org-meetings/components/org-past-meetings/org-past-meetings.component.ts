@@ -28,9 +28,14 @@ export class OrgPastMeetingsComponent {
   // Splits the raw list into what renders its own card vs. what collapses into `privateRollup` (see `splitOrgMeetingsByPrivacy`).
   // Only actually-attended invitees feed the rollup's employeeCount — otherwise declined/missed/excused
   // invitees would be miscounted as "attending" private meetings.
+  // `orgPastInvitees` is empty for real (non-demo) private meetings — see `isRedactedPrivate` in
+  // `org-lens-meetings.service.ts`. The fallback uses `attendanceTally.attended`, which is never
+  // redacted, so the rollup's employee count stays accurate without exposing any real attendee's identity.
   private readonly privacySplit = computed(() =>
-    splitOrgMeetingsByPrivacy(this.meetings(), (meeting) =>
-      meeting.orgPastInvitees.filter((invitee) => invitee.attendanceStatus === 'attended').map((invitee) => invitee.name)
+    splitOrgMeetingsByPrivacy(
+      this.meetings(),
+      (meeting) => meeting.orgPastInvitees.filter((invitee) => invitee.attendanceStatus === 'attended').map((invitee) => invitee.name),
+      (meeting) => meeting.attendanceTally.attended
     )
   );
 
@@ -52,10 +57,6 @@ export class OrgPastMeetingsComponent {
       }
       return next;
     });
-  }
-
-  protected meetingLinkUrl(meetingId: string): string {
-    return toAbsoluteUrl(`/meetings/${meetingId}`, isPlatformBrowser(this.platformId));
   }
 
   private toVm(meeting: OrgPastMeeting, isBrowser: boolean): OrgPastMeetingVm {

@@ -11,12 +11,12 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getLargestSessionShareUrl,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingTypeBadge,
-  PastMeetingRecording,
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
@@ -253,13 +253,7 @@ export class DashboardMeetingCardComponent {
             return of(null);
           }
           return this.meetingService.getPastMeetingRecording(meeting.id).pipe(
-            map((recording: PastMeetingRecording | null) => {
-              if (!recording?.sessions?.length) {
-                return null;
-              }
-              const largest = recording.sessions.reduce((a, b) => ((a.total_size || 0) >= (b.total_size || 0) ? a : b));
-              return largest.share_url || null;
-            }),
+            map(getLargestSessionShareUrl),
             catchError(() => of(null))
           );
         })

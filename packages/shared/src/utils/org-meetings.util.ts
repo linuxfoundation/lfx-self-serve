@@ -70,7 +70,8 @@ export function derivePastMeetingDetailsUrl(meetingId: string, password: string 
  */
 export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
   meetings: readonly T[],
-  getInviteeNames: (meeting: T) => readonly string[]
+  getInviteeNames: (meeting: T) => readonly string[],
+  getFallbackInviteeCount?: (meeting: T) => number
 ): OrgMeetingsPrivacySplit<T> {
   const visible: T[] = [];
   const hidden: T[] = [];
@@ -91,13 +92,23 @@ export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
   const projects = new Set<string>();
   const foundations = new Set<string>();
   const employees = new Set<string>();
+  let anonymousEmployeeCount = 0;
 
   for (const meeting of hidden) {
     typeCounts.set(meeting.type, (typeCounts.get(meeting.type) ?? 0) + 1);
     projects.add(meeting.project);
     foundations.add(meeting.foundation);
-    for (const name of getInviteeNames(meeting)) {
-      employees.add(name);
+    const names = getInviteeNames(meeting);
+    if (names.length > 0) {
+      for (const name of names) {
+        employees.add(name);
+      }
+    } else if (getFallbackInviteeCount) {
+      // Real (non-demo) private meetings arrive with `orgInvitees`/`orgPastInvitees` already
+      // redacted to `[]` server-side (see `org-lens-meetings.service.ts`'s `isRedactedPrivate`) —
+      // falling back to an aggregate tally (already unredacted, no identities) keeps the rollup's
+      // employee count non-zero without ever reading a real attendee's name.
+      anonymousEmployeeCount += getFallbackInviteeCount(meeting);
     }
   }
 
@@ -112,7 +123,7 @@ export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
       typeBadges,
       projectCount: projects.size,
       foundationCount: foundations.size,
-      employeeCount: employees.size,
+      employeeCount: employees.size + anonymousEmployeeCount,
     },
   };
 }
