@@ -87,7 +87,6 @@ export class OrgGroupsComponent {
   // ─── Account context ──────────────────────────────────────────────────────────
 
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
-  protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
 
   // ─── Filter values (debounced) ────────────────────────────────────────────────
 
@@ -100,10 +99,17 @@ export class OrgGroupsComponent {
   private readonly allGroups: Signal<readonly OrgGroup[]> = this.initAllGroups();
   private readonly stats: Signal<OrgGroupsStats> = this.initStats();
 
-  // ─── Filtered rows (client-side) ──────────────────────────────────────────────
+  // ─── Privacy split (public + viewer-member private vs. rolled-up private) ─────
+  // Computed from the unfiltered set so the rollup always reflects every hidden
+  // group regardless of the current search/foundation/voting filters — filtering
+  // first would let a search query act as an oracle for private group names.
 
-  protected readonly filteredGroups = computed<readonly OrgGroup[]>(() => {
-    const groups = this.allGroups();
+  protected readonly groupsPrivacySplit: Signal<OrgGroupsPrivacySplit> = computed(() => splitOrgGroupsByPrivacy(this.allGroups()));
+
+  // ─── Filtered rows (client-side, applied only to the viewer-visible set) ──────
+
+  protected readonly visibleGroups = computed<readonly OrgGroup[]>(() => {
+    const groups = this.groupsPrivacySplit().visible;
     const { search, foundation, voting } = this.filterValues();
     const q = (search ?? '').toLowerCase().trim();
     return groups.filter((g) => {
@@ -114,11 +120,6 @@ export class OrgGroupsComponent {
       return true;
     });
   });
-
-  // ─── Privacy split (public + viewer-member private vs. rolled-up private) ─────
-
-  protected readonly groupsPrivacySplit: Signal<OrgGroupsPrivacySplit> = computed(() => splitOrgGroupsByPrivacy(this.filteredGroups()));
-  protected readonly visibleGroups = computed(() => this.groupsPrivacySplit().visible);
 
   // ─── Tab counts (applied to filtered + privacy-visible rows + tab filter) ─────
 
@@ -210,6 +211,7 @@ export class OrgGroupsComponent {
             this.loadingState.set(false);
             return of([] as OrgGroup[]);
           }
+          this.loadingState.set(true);
           return this.groupsService.getGroups().pipe(
             switchMap((data) => {
               this.loadingState.set(false);

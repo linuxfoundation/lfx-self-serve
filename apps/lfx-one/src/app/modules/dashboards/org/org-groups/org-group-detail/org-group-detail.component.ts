@@ -8,7 +8,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
 import { SkeletonModule } from 'primeng/skeleton';
 
-import { DETAIL_TABS, getCommitteeCategorySeverity } from '@lfx-one/shared/constants';
+import { CHAIR_AVATAR_COLOR, DETAIL_TABS, getCommitteeCategorySeverity, VALID_DEMO_PROJECT_SLUGS } from '@lfx-one/shared/constants';
 import type {
   GroupDetailTabConfig,
   GroupDetailTabId,
@@ -60,6 +60,7 @@ export class OrgGroupDetailComponent {
   // ─── Constants exposed to template ───────────────────────────────────────────
 
   protected readonly tabs: readonly GroupDetailTabConfig[] = DETAIL_TABS;
+  protected readonly chairAvatarColor = CHAIR_AVATAR_COLOR;
 
   /** Pure platform-detection helpers exposed for template binding. */
   protected readonly chatPlatformIcon = getChatPlatformIcon;
@@ -87,6 +88,9 @@ export class OrgGroupDetailComponent {
   protected readonly nextMeeting = computed(() => this.detail()?.nextMeetings[0] ?? null);
   protected readonly pastMeeting = computed(() => this.detail()?.pastMeetings[0] ?? null);
 
+  /** Guards the "Parent Project" link — only known Org Lens project-detail demo ids are navigable. */
+  protected readonly hasValidParentProject = computed(() => VALID_DEMO_PROJECT_SLUGS.has(this.detail()?.parentProjectId ?? ''));
+
   protected readonly members = computed<GroupMember[]>(() => this.detail()?.members ?? []);
   protected readonly votes = computed<Vote[]>(() => this.detail()?.votes ?? []);
   protected readonly surveys = computed<Survey[]>(() => this.detail()?.surveys ?? []);
@@ -105,7 +109,10 @@ export class OrgGroupDetailComponent {
   }
 
   protected goToParentProject(): void {
-    this.router.navigate(['/org/groups']);
+    const parentProjectId = this.detail()?.parentProjectId;
+    if (parentProjectId && this.hasValidParentProject()) {
+      this.router.navigate(['/org/projects', parentProjectId]);
+    }
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {

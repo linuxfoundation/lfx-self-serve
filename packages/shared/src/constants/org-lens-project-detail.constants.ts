@@ -76,6 +76,29 @@ export const PD_TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: st
 
 export const PD_TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: 36 };
 
+/**
+ * Demo project slugs recognized by the Org Lens project-detail seed data (the server's
+ * `org-lens-project-detail.demo-data.ts` `SEEDS` map). Kept in sync manually since the seed
+ * data itself carries far more than an id list; used to guard client-side navigation so a
+ * group's "Parent Project" link never points at an id that resolves to a not-found page.
+ */
+export const VALID_DEMO_PROJECT_SLUGS: ReadonlySet<string> = new Set([
+  'kubernetes',
+  'prometheus',
+  'envoy',
+  'opentelemetry',
+  'argo',
+  'pytorch',
+  'onnx',
+  'onap',
+  'fd-io',
+  'sigstore',
+  'in-toto',
+  'tekton',
+  'jenkins',
+  'spiffe-spire',
+]);
+
 /** 11-slot palette for the stacked trend chart — top-10 companies + "All others". */
 export const PD_STACKED_PALETTE: string[] = [
   lfxColors.blue[600],

@@ -21,8 +21,12 @@ export class OrgGroupsService {
     return of(ORG_GROUPS_DEMO_STATS);
   }
 
-  /** Returns group detail for the given id. Real implementation will call the LFX Groups BFF detail endpoint. */
-  public getGroupDetail(id: string): Observable<OrgGroupDetail> {
+  /**
+   * Returns group detail for the given id, or null if the group doesn't exist or the viewer
+   * lacks access to a private group. Real implementation will call the LFX Groups BFF detail
+   * endpoint, which will enforce this same visibility/membership scoping server-side.
+   */
+  public getGroupDetail(id: string): Observable<OrgGroupDetail | null> {
     return of(getGroupDetailDemo(id));
   }
 }

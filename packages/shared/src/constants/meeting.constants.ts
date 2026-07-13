@@ -544,3 +544,17 @@ export const PAST_MEETING_SORT = {
   UPDATED_DESC: 'updated_desc',
   UPDATED_ASC: 'updated_asc',
 } as const;
+
+// ============================================================================
+// Meeting Card Design-Mandated Colors
+// ============================================================================
+
+/**
+ * Meeting-visibility dot color on the meeting-card date badge, keyed by `isPrivate`.
+ * Hardcoded hex (not a `lfxColors` scale) to exactly match the design spec — same
+ * escape-valve pattern as `VOTE_COLOR`/`SURVEY_COLOR` in calendar-colors.constants.ts.
+ */
+export const MEETING_VISIBILITY_DOT_COLOR = {
+  public: '#00bc7d',
+  private: '#d4183d',
+} as const;

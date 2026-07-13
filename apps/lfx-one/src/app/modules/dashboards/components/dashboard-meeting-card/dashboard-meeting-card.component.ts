@@ -13,6 +13,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   Meeting,
   MEETING_TYPE_CONFIGS,
+  MEETING_VISIBILITY_DOT_COLOR,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingTypeBadge,
@@ -306,7 +307,7 @@ export class DashboardMeetingCardComponent {
 
   private initDateBadgeDotInfo(): Signal<{ bgColor: string; icon: string }> {
     return computed(() => ({
-      bgColor: this.isPrivate() ? '#d4183d' : '#00bc7d',
+      bgColor: this.isPrivate() ? MEETING_VISIBILITY_DOT_COLOR.private : MEETING_VISIBILITY_DOT_COLOR.public,
       icon: this.isPrivate() ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe',
     }));
   }

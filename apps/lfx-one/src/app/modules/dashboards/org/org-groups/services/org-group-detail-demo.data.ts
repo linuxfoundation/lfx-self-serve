@@ -3,6 +3,7 @@
 
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import type { OrgGroup, OrgGroupDetail } from '@lfx-one/shared/interfaces';
+import { deriveDemoViewerIsGroupMember } from '@lfx-one/shared/utils';
 
 import { ORG_GROUPS_DEMO_DATA } from './org-groups-demo.data';
 
@@ -185,7 +186,7 @@ const LF_KERNEL_BOARD: OrgGroupDetail = {
       id: 'nm1',
       title: 'Linux Kernel Board Meeting',
       monthAbbr: 'JUL',
-      day: 8,
+      day: 22,
       dayOfWeek: 'Tue',
       time: '3:00 PM',
       durationMin: 60,
@@ -424,7 +425,7 @@ const K8S_STEERING: OrgGroupDetail = {
       id: 'nm1',
       title: 'Kubernetes Steering Meeting',
       monthAbbr: 'JUL',
-      day: 10,
+      day: 24,
       dayOfWeek: 'Thu',
       time: '9:00 AM',
       durationMin: 60,
@@ -548,7 +549,7 @@ const CNCF_MARKETING: OrgGroupDetail = {
       id: 'nm1',
       title: 'Marketing Committee Sync',
       monthAbbr: 'JUL',
-      day: 9,
+      day: 23,
       dayOfWeek: 'Wed',
       time: '11:00 AM',
       durationMin: 30,
@@ -699,12 +700,24 @@ export const ORG_GROUP_DETAIL_DEMO_MAP: Readonly<Record<string, OrgGroupDetail>>
   'cncf-marketing': CNCF_MARKETING,
 } as const;
 
-export function getGroupDetailDemo(id: string): OrgGroupDetail {
+/**
+ * Returns group detail for the given id, or null if the group doesn't exist or the viewer
+ * isn't a member of a private group — mirrors the org-groups list page's privacy split
+ * (`splitOrgGroupsByPrivacy`) so a private detail page is never reachable by guessing an id.
+ */
+export function getGroupDetailDemo(id: string): OrgGroupDetail | null {
+  const listGroup = ORG_GROUPS_DEMO_DATA.find((g) => g.id === id);
+  if (!listGroup) {
+    return null;
+  }
+  if (listGroup.visibility === 'PRIVATE' && !deriveDemoViewerIsGroupMember(id)) {
+    return null;
+  }
+
   const curated = ORG_GROUP_DETAIL_DEMO_MAP[id];
   if (curated) {
     return curated;
   }
 
-  const listGroup = ORG_GROUPS_DEMO_DATA.find((g) => g.id === id);
-  return { ...GENERIC_DETAIL, ...listGroup, id, ...(listGroup ? buildGenericChannels(listGroup) : {}) };
+  return { ...GENERIC_DETAIL, ...listGroup, id, ...buildGenericChannels(listGroup) };
 }

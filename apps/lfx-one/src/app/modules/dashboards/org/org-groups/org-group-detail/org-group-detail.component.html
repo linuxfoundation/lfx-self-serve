@@ -59,16 +59,24 @@
 
           <!-- Parent project -->
           <div class="flex items-center gap-4 flex-wrap">
-            <button
-              type="button"
-              class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-              data-testid="org-group-detail-parent-row"
-              (click)="goToParentProject()">
-              <i class="fa-light fa-diagram-project text-[11px]" aria-hidden="true"></i>
-              <span>Parent Project:</span>
-              <span>{{ g.parentProject }}</span>
-              <i class="fa-light fa-chevron-right text-[10px]" aria-hidden="true"></i>
-            </button>
+            @if (hasValidParentProject()) {
+              <button
+                type="button"
+                class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                data-testid="org-group-detail-parent-row"
+                (click)="goToParentProject()">
+                <i class="fa-light fa-diagram-project text-[11px]" aria-hidden="true"></i>
+                <span>Parent Project:</span>
+                <span>{{ g.parentProject }}</span>
+                <i class="fa-light fa-chevron-right text-[10px]" aria-hidden="true"></i>
+              </button>
+            } @else {
+              <span class="flex items-center gap-1.5 text-xs font-medium text-gray-500" data-testid="org-group-detail-parent-row">
+                <i class="fa-light fa-diagram-project text-[11px]" aria-hidden="true"></i>
+                <span>Parent Project:</span>
+                <span>{{ g.parentProject }}</span>
+              </span>
+            }
           </div>
 
           <!-- Dates -->
@@ -231,7 +239,7 @@
                     <div class="flex items-center gap-2" [attr.data-testid]="'org-group-detail-chair-' + chair.id">
                       <div
                         class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-                        [style.background-color]="chair.role === 'Chair' ? '#6366f1' : '#f59e0b'"
+                        [style.background-color]="chair.role === 'Chair' ? chairAvatarColor.chair : chairAvatarColor.other"
                         aria-hidden="true">
                         {{ chair.initials }}
                       </div>

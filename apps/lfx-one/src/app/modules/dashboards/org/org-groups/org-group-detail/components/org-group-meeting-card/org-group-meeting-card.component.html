@@ -17,7 +17,7 @@
       </div>
       <div
         class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
-        [style.background-color]="m.isPrivate ? '#d4183d' : '#00bc7d'"
+        [style.background-color]="m.isPrivate ? visibilityDotColor.private : visibilityDotColor.public"
         [attr.aria-label]="m.isPrivate ? 'Private meeting' : 'Public meeting'">
         <i [class]="'text-white text-[10px] leading-none block ' + (m.isPrivate ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe')" aria-hidden="true"></i>
       </div>
@@ -26,13 +26,13 @@
       <div class="flex items-center gap-2 text-gray-400">
         <p class="text-[10px] text-gray-500 shrink-0">{{ m.dayOfWeek }}, {{ m.time }} &middot; {{ m.durationMin }}m</p>
         @if (m.hasRecording) {
-          <i class="fa-light fa-video text-[10px]" aria-hidden="true" title="Recording available"></i>
+          <i class="fa-light fa-video text-[10px]" role="img" aria-label="Recording available" title="Recording available"></i>
         }
         @if (m.hasTranscripts) {
-          <i class="fa-light fa-file-lines text-[10px]" aria-hidden="true" title="Transcripts available"></i>
+          <i class="fa-light fa-file-lines text-[10px]" role="img" aria-label="Transcripts available" title="Transcripts available"></i>
         }
         @if (m.hasAiSummary) {
-          <i class="fa-light fa-sparkles text-[10px]" aria-hidden="true" title="AI summary available"></i>
+          <i class="fa-light fa-sparkles text-[10px]" role="img" aria-label="AI summary available" title="AI summary available"></i>
         }
       </div>
       <h4 class="text-sm font-semibold text-gray-900 truncate">{{ m.title }}</h4>
@@ -55,8 +55,11 @@
     </div>
     <button
       type="button"
-      class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
-      aria-label="Copy meeting link">
+      class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-300 mt-1 cursor-not-allowed"
+      disabled
+      aria-label="Copy meeting link (unavailable)"
+      pTooltip="Meeting links aren't available yet for Org Lens groups"
+      tooltipPosition="top">
       <i class="fa-light fa-clone text-xs" aria-hidden="true"></i>
     </button>
   </div>
@@ -68,6 +71,9 @@
       styleClass="w-full"
       label="Meeting details"
       [outlined]="true"
+      [disabled]="true"
+      tooltip="Meeting details aren't available yet for Org Lens groups"
+      tooltipPosition="top"
       icon="fa-light fa-arrow-up-right-from-square text-xs" />
   </div>
 </div>

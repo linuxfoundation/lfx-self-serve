@@ -62,3 +62,14 @@ export const ORG_GROUPS_ROLLUP_TYPE_BADGES: Record<OrgPrivateGroupsRollupBucket,
   'Working Group': { label: 'Working Group', icon: 'fa-light fa-users-gear', badgeClass: 'border border-amber-400 text-amber-600' },
   Other: { label: 'Other', icon: 'fa-light fa-layer-group', badgeClass: 'bg-gray-100 text-gray-600' },
 };
+
+/**
+ * Chair-avatar background color on the group detail page, keyed by whether the chair's role is
+ * exactly 'Chair'. Hardcoded hex (not a `lfxColors` scale) to exactly match production's own
+ * committee-overview chair-avatar design (`committee-overview.component.html`) — same
+ * escape-valve pattern as `VOTE_COLOR` in calendar-colors.constants.ts.
+ */
+export const CHAIR_AVATAR_COLOR = {
+  chair: '#6366f1',
+  other: '#f59e0b',
+} as const;
