@@ -57,7 +57,7 @@ const GENERIC_DETAIL: OrgGroupDetail = {
   createdAt: d('2024-01-15T00:00:00Z'),
   organizationCount: 5,
   meetingCount: 4,
-  openSurveyCount: 0,
+  openSurveyCount: 1,
   inviteOnly: false,
   chairs: [{ id: 'c1', name: 'Jane Smith', initials: 'JS', role: 'Chair' }],
   nextMeetings: [

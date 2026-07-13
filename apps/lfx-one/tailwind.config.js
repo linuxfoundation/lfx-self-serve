@@ -45,6 +45,12 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
+    // Org Lens groups — private-rollup type badges (ORG_GROUPS_ROLLUP_TYPE_BADGES in @lfx-one/shared, not scanned here)
+    'border-violet-400',
+    'text-violet-600',
+    'border-amber-400',
+    'text-amber-600',
+    'text-gray-600',
   ],
   theme: {
     container: {
