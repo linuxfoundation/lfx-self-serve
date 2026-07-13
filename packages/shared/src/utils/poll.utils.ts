@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
-import { UserVote } from '../interfaces/poll.interface';
+import { UserVote, Vote } from '../interfaces/poll.interface';
 
 /**
  * Combined vote status type
@@ -29,4 +29,14 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   }
 
   return 'closed';
+}
+
+/** Tooltip copy when a vote auto-ended because all eligible voters responded. */
+export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
+  return `Vote closed early on ${earlyEndTimeFormatted}. All voters have responded.`;
+}
+
+/** True when ITX auto-ended the poll because all eligible voters responded. */
+export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
+  return Boolean(vote.early_end_time);
 }

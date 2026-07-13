@@ -16,14 +16,24 @@
     display: none !important;
   }
 
+  // stylelint-disable-next-line declaration-no-important
+  border-radius: 0.75rem !important;
+
+  // Remove PrimeNG's default panel gutter so the JS-aligned top matches the selector exactly.
+  // stylelint-disable-next-line declaration-no-important
+  margin-top: 0 !important;
+
+  // Uniform 8px padding (overrides the theme's default content padding).
+  .p-popover-content {
+    // stylelint-disable-next-line declaration-no-important
+    padding: 8px !important;
+  }
+
   @media (min-width: 1024px) {
     // stylelint-disable-next-line declaration-no-important
     position: fixed !important;
-    left: 344px !important;
-    top: 4px !important;
-
-    &.org-selector-panel--with-banner {
-      top: 52px !important;
-    }
+    // Right of the full sidebar (48px rail + 300px nav = 348px) with an 8px gap.
+    left: 356px !important;
+    // `top` is set at runtime in onPopoverShow() to match the selector trigger's viewport position.
   }
 }

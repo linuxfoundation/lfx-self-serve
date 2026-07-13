@@ -5,8 +5,16 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES } from '@lfx-one/shared/constants';
-import { CrowdfundingInitiativeStatus, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
+import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_DONATION_MODES, SPONSORSHIP_TIER_NAMES } from '@lfx-one/shared/constants';
+import {
+  CreateAnnouncementInput,
+  CrowdfundingInitiativeStatus,
+  SponsorshipDonationMode,
+  SponsorshipTierName,
+  UpdateAnnouncementInput,
+  UpdateInitiativeInput,
+} from '@lfx-one/shared/interfaces';
+import { stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
@@ -291,6 +299,34 @@ export class CrowdfundingController {
         }));
       }
 
+      if (Array.isArray(body['sponsorshipTiers'])) {
+        const rawTiers = body['sponsorshipTiers'] as unknown[];
+        const hasInvalidTier = rawTiers.some(
+          (t) =>
+            !t || typeof t !== 'object' || !SPONSORSHIP_TIER_NAMES.includes((t as Record<string, unknown>)['name'] as (typeof SPONSORSHIP_TIER_NAMES)[number])
+        );
+        if (hasInvalidTier) {
+          throw ServiceValidationError.forField('sponsorshipTiers', `tier name must be one of: ${SPONSORSHIP_TIER_NAMES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
+        input.sponsorshipTiers = (rawTiers as Record<string, unknown>[]).map((t) => ({
+          name: t['name'] as SponsorshipTierName,
+          enabled: t['enabled'] === true,
+          goalCents: parseNonNegativeInt(t['goalCents']),
+          benefits: Array.isArray(t['benefits']) ? (t['benefits'] as unknown[]).filter((b): b is string => typeof b === 'string') : [],
+        }));
+      }
+
+      if (body['donationMode'] !== undefined) {
+        if (!SPONSORSHIP_DONATION_MODES.includes(body['donationMode'] as (typeof SPONSORSHIP_DONATION_MODES)[number])) {
+          throw ServiceValidationError.forField('donationMode', `donationMode must be one of: ${SPONSORSHIP_DONATION_MODES.join(', ')}`, {
+            operation: 'update_initiative',
+          });
+        }
+        input.donationMode = body['donationMode'] as SponsorshipDonationMode;
+      }
+
       const initiative = await this.crowdfundingService.updateInitiative(req, id, input);
 
       logger.success(req, 'update_initiative', startTime, { id });
@@ -401,6 +437,114 @@ export class CrowdfundingController {
       logger.success(req, 'get_initiative_transactions', startTime, { slug, total: transactions.totalCount });
 
       res.json(transactions);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/crowdfunding/initiatives/:id/announcements — list announcements for an initiative. */
+  public async getAnnouncements(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_announcements');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_announcements' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!id) {
+        throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'get_announcements' });
+      }
+
+      const announcements = await this.crowdfundingService.getAnnouncements(req, id);
+      logger.success(req, 'get_announcements', startTime, { id, count: announcements.data.length });
+      res.json(announcements);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /api/crowdfunding/initiatives/:id/announcements — create an announcement. */
+  public async createAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'create_announcement');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'create_announcement' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!id) {
+        throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'create_announcement' });
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const title = typeof body['title'] === 'string' ? body['title'].trim() : '';
+      const description = typeof body['description'] === 'string' ? body['description'].trim() : '';
+
+      if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'create_announcement' });
+      if (!description || !stripHtml(description)) {
+        throw ServiceValidationError.forField('description', 'description is required', { operation: 'create_announcement' });
+      }
+
+      const input: CreateAnnouncementInput = { title, description };
+      const announcement = await this.crowdfundingService.createAnnouncement(req, id, input);
+      logger.success(req, 'create_announcement', startTime, { id, announcementId: announcement.id });
+      res.status(201).json(announcement);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PUT /api/crowdfunding/initiatives/:id/announcements/:announcementId — update an announcement. */
+  public async updateAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_announcement');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_announcement' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      const announcementId = (req.params['announcementId'] ?? '').trim();
+      if (!id) throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'update_announcement' });
+      if (!announcementId) throw ServiceValidationError.forField('announcementId', 'announcementId is required', { operation: 'update_announcement' });
+
+      const body = req.body as Record<string, unknown>;
+      const title = typeof body['title'] === 'string' ? body['title'].trim() : '';
+      const description = typeof body['description'] === 'string' ? body['description'].trim() : '';
+
+      if (!title) throw ServiceValidationError.forField('title', 'title is required', { operation: 'update_announcement' });
+      if (!description || !stripHtml(description)) {
+        throw ServiceValidationError.forField('description', 'description is required', { operation: 'update_announcement' });
+      }
+
+      const input: UpdateAnnouncementInput = { title, description };
+      const announcement = await this.crowdfundingService.updateAnnouncement(req, id, announcementId, input);
+      logger.success(req, 'update_announcement', startTime, { id, announcementId });
+      res.json(announcement);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** DELETE /api/crowdfunding/initiatives/:id/announcements/:announcementId — delete an announcement. */
+  public async deleteAnnouncement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'delete_announcement');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'delete_announcement' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      const announcementId = (req.params['announcementId'] ?? '').trim();
+      if (!id) throw ServiceValidationError.forField('id', 'Initiative id is required', { operation: 'delete_announcement' });
+      if (!announcementId) throw ServiceValidationError.forField('announcementId', 'announcementId is required', { operation: 'delete_announcement' });
+
+      await this.crowdfundingService.deleteAnnouncement(req, id, announcementId);
+      logger.success(req, 'delete_announcement', startTime, { id, announcementId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

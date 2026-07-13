@@ -5876,7 +5876,7 @@ export class ProjectService {
     });
 
     const projects: (Project | null)[] = [];
-    const batchSize = 10;
+    const batchSize = 25;
 
     for (let i = 0; i < projectUids.length; i += batchSize) {
       const batch = projectUids.slice(i, i + batchSize);

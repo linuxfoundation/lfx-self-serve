@@ -3,7 +3,7 @@
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformServer, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -28,6 +28,8 @@ import {
   isPastMeetingSummaryAwaitingApproval,
   Meeting,
   MEETING_TYPE_CONFIGS,
+  getLargestSessionShareUrl,
+  getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   MeetingAttachment,
   MeetingOccurrence,
@@ -45,6 +47,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
+import { getUserTimezone } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -57,6 +60,7 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import {
   BehaviorSubject,
@@ -100,6 +104,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     GuestFormComponent,
     TooltipModule,
     DrawerModule,
+    SkeletonModule,
     MeetingTimePipe,
     RecurrenceSummaryPipe,
     LinkifyPipe,
@@ -192,6 +197,8 @@ export class MeetingJoinComponent implements OnInit {
   protected pastMeetingAttachments: Signal<PastMeetingAttachment[]>;
   protected primaryRecordingUrl: Signal<string | null>;
   protected transcriptUrl: Signal<string | null>;
+  // Past meetings badge on a real fetched recording; upcoming keep the recording_enabled config flag.
+  protected showRecordingBadge = computed(() => (this.loadedViaPastMeetingId() ? !!this.primaryRecordingUrl() : !!this.meeting()?.recording_enabled));
   protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
@@ -210,6 +217,8 @@ export class MeetingJoinComponent implements OnInit {
     return name.substring(0, 2).toUpperCase();
   });
   protected isMobileViewport = signal(false);
+  // Null on the server and until hydration resolves the browser timezone — the badge shows a skeleton while null.
+  protected userTimezone = signal<string | null>(null);
   protected drawerPosition = computed(() => (this.isMobileViewport() ? 'bottom' : 'right') as 'bottom' | 'right');
   // Parent project (foundation) for context display
   protected parentProject: Signal<Project | null>;
@@ -314,6 +323,11 @@ export class MeetingJoinComponent implements OnInit {
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
     this.initializePublicMeetingPageviewTracking();
+
+    // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
+    afterNextRender(() => {
+      this.userTimezone.set(getUserTimezone());
+    });
   }
 
   public ngOnInit(): void {
@@ -403,7 +417,7 @@ export class MeetingJoinComponent implements OnInit {
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
     const download$ = this.loadedViaPastMeetingId()
-      ? this.meetingService.getPastMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid)
+      ? this.meetingService.getPastMeetingAttachmentDownloadUrl(getPastMeetingResourceId(this.meeting()), attachment.uid)
       : this.meetingService.getMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid);
     download$.pipe(take(1)).subscribe({
       next: (res) => {
@@ -477,7 +491,7 @@ export class MeetingJoinComponent implements OnInit {
 
   public openTranscriptModal(): void {
     const meeting = this.meeting();
-    if (!meeting?.id) return;
+    if (!meeting) return;
 
     this.dialogService.open(TranscriptModalComponent, {
       header: 'Transcript',
@@ -485,7 +499,7 @@ export class MeetingJoinComponent implements OnInit {
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: { pastMeetingUid: meeting.id, meetingTitle: meeting.title },
+      data: { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title },
     });
   }
 
@@ -1061,8 +1075,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
-          return this.meetingService.getPastMeetingSummary(meeting.id).pipe(catchError(() => of(null)));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingSummary(id).pipe(catchError(() => of(null)));
         })
       ),
       { initialValue: null }
@@ -1073,8 +1088,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
-          return this.meetingService.getPastMeetingRecording(meeting.id).pipe(catchError(() => of(null)));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingRecording(id).pipe(catchError(() => of(null)));
         })
       ),
       { initialValue: null }
@@ -1085,8 +1101,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
-          return this.meetingService.getPastMeetingAttachments(meeting.id).pipe(catchError(() => of([] as PastMeetingAttachment[])));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
+          return this.meetingService.getPastMeetingAttachments(id).pipe(catchError(() => of([] as PastMeetingAttachment[])));
         })
       ),
       { initialValue: [] }
@@ -1097,8 +1114,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
-          return this.meetingService.getPastMeetingParticipants(meeting.id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
+          return this.meetingService.getPastMeetingParticipants(id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
         })
       ),
       { initialValue: [] }
@@ -1106,17 +1124,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializePrimaryRecordingUrl(): Signal<string | null> {
-    return computed(() => {
-      const recording = this.pastMeetingRecording();
-      if (!recording?.sessions?.length) return null;
-
-      const sessionsWithShareUrl = recording.sessions.filter((s) => !!s.share_url);
-      if (!sessionsWithShareUrl.length) return null;
-
-      const primary = sessionsWithShareUrl.reduce((largest, session) => (session.total_size > largest.total_size ? session : largest), sessionsWithShareUrl[0]);
-
-      return primary.share_url ?? null;
-    });
+    return computed(() => getLargestSessionShareUrl(this.pastMeetingRecording()));
   }
 
   private initializeHasSummaryContent(): Signal<boolean> {
@@ -1138,8 +1146,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
         switchMap(([hasAccess, meeting]) => {
-          if (!hasAccess || !meeting?.id || !this.authenticated()) return of(null);
-          return this.meetingService.getPastMeetingTranscript(meeting.id).pipe(
+          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+          if (!hasAccess || !id || !this.authenticated()) return of(null);
+          return this.meetingService.getPastMeetingTranscript(id).pipe(
             map((transcript) => getPastMeetingTranscriptUrl(transcript)),
             catchError(() => of(null))
           );

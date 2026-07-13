@@ -149,6 +149,16 @@ if (!otlpEndpoint) {
           requestHeaders: ['content-type'],
           responseHeaders: ['content-type'],
         },
+        responseHook: (span, { request, response }) => {
+          if (response.statusCode >= 500) {
+            const path = request.path.split('?')[0];
+            const err = new Error(
+              `HTTP ${response.statusCode} ${request.method} ${request.origin}${path}`
+            );
+            err.name = 'HttpClientError';
+            span.recordException(err);
+          }
+        },
       }),
     ],
   });

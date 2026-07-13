@@ -157,11 +157,15 @@
                   <!-- Date/Time Badge -->
                   @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
                     <div class="flex items-center gap-3">
-                      <lfx-tag
-                        [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact'"
-                        severity="secondary"
-                        icon="fa-light fa-calendar-days"
-                        [attr.data-testid]="'meeting-badge-datetime'"></lfx-tag>
+                      @if (userTimezone(); as tz) {
+                        <lfx-tag
+                          [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz"
+                          severity="secondary"
+                          icon="fa-light fa-calendar-days"
+                          [attr.data-testid]="'meeting-badge-datetime'"></lfx-tag>
+                      } @else {
+                        <p-skeleton width="14rem" height="1.5rem" borderRadius="9999px" animation="wave" data-testid="meeting-badge-datetime-skeleton" />
+                      }
                     </div>
                   }
 
@@ -203,7 +207,7 @@
                   <!-- Feature Badges Row -->
                   <div class="flex flex-wrap gap-2 items-center">
                     <!-- Recording Badge -->
-                    @if (meeting().recording_enabled) {
+                    @if (showRecordingBadge()) {
                       <lfx-tag
                         value="Recording"
                         severity="secondary"

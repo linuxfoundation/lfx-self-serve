@@ -12,6 +12,7 @@ import type {
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
+import { isObjectRowArray } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -74,10 +75,6 @@ export class OrgPeopleContributorsService {
     const result = await this.snowflakeService.execute<ContributorPersonProjectRow>(query, [accountId]);
     return result.rows;
   }
-}
-
-function isObjectRowArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
 }
 
 /** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (dbt caps at 3yr rolling). */

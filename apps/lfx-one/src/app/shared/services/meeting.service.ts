@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
-import { LINKEDIN_PROFILE_PATTERN } from '@lfx-one/shared/constants';
+import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_RECORDING_CACHE_TTL_MS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
@@ -20,11 +20,16 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingRsvp,
+  GetOrgUpcomingMeetingsOptions,
+  OrgMeetingsProjectsResponse,
+  OrgMeetingsSummary,
+  OrgUpcomingMeetingsResponse,
   PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
+  PastMeetingSort,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
   PastMeetingSummary,
@@ -38,7 +43,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -47,6 +52,7 @@ export class MeetingService {
   public meeting: WritableSignal<Meeting | null> = signal(null);
 
   private readonly http = inject(HttpClient);
+  private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -55,6 +61,24 @@ export class MeetingService {
         return of({ data: [] as Meeting[], page_token: undefined });
       })
     );
+  }
+
+  /** Org Lens Meetings stat strip: upcoming + recurring counts (with foundation breadth) for the selected org, from Snowflake. */
+  public getOrgMeetingsSummary(accountId: string): Observable<OrgMeetingsSummary> {
+    return this.http.get<OrgMeetingsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/summary`);
+  }
+
+  public getOrgUpcomingMeetings(accountId: string, options: GetOrgUpcomingMeetingsOptions): Observable<OrgUpcomingMeetingsResponse> {
+    let params = new HttpParams().set('pageSize', String(options.pageSize)).set('offset', String(options.offset));
+    if (options.searchQuery) params = params.set('searchQuery', options.searchQuery);
+    if (options.project) params = params.set('project', options.project);
+    if (options.type) params = params.set('type', options.type);
+    if (options.pendingRsvpOnly) params = params.set('pendingRsvpOnly', 'true');
+    return this.http.get<OrgUpcomingMeetingsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings`, { params });
+  }
+
+  public getOrgMeetingProjects(accountId: string): Observable<OrgMeetingsProjectsResponse> {
+    return this.http.get<OrgMeetingsProjectsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/projects`);
   }
 
   public getPastMeetings(params?: HttpParams): Observable<PaginatedResponse<PastMeeting>> {
@@ -89,14 +113,7 @@ export class MeetingService {
 
   /** Fetches meeting count scoped to a committee. */
   public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
-    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
-    return this.http.get<QueryServiceCountResponse>('/api/meetings/count', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load meetings count:', error);
-        return of({ count: 0 });
-      }),
-      map((response) => response.count)
-    );
+    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`);
   }
 
   /** Fetches upcoming meetings scoped to a committee. */
@@ -112,7 +129,7 @@ export class MeetingService {
    * (e.g. `updated_desc`). The `order` param with dot-notation is only for `/api/meetings`
    * which proxies to the meeting service.
    */
-  public getPastMeetingsByCommittee(committeeId: string, sort?: string): Observable<PastMeeting[]> {
+  public getPastMeetingsByCommittee(committeeId: string, sort?: PastMeetingSort): Observable<PastMeeting[]> {
     let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
 
     if (sort) {
@@ -123,19 +140,11 @@ export class MeetingService {
   }
 
   public getMeetingsCountByProject(uid: string): Observable<number> {
-    const params = new HttpParams().set('tags', `project_uid:${uid}`);
-    return this.http
-      .get<QueryServiceCountResponse>('/api/meetings/count', { params })
-      .pipe(
-        catchError((error) => {
-          console.error('Failed to load meetings count:', error);
-          return of({ count: 0 });
-        })
-      )
-      .pipe(
-        // Extract just the count number from the response
-        map((response) => response.count)
-      );
+    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`);
+  }
+
+  public getPastMeetingsCountByProject(uid: string): Observable<number> {
+    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -151,7 +160,7 @@ export class MeetingService {
   }
 
   public getPastMeetingsByProject(uid: string): Observable<PastMeeting[]> {
-    const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', 'name_desc');
+    const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
 
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
@@ -187,7 +196,7 @@ export class MeetingService {
     searchName?: string,
     filters?: string[]
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', 'name_desc');
+    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
@@ -343,7 +352,9 @@ export class MeetingService {
   // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
 
   public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
-    return this.http.get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${pastMeetingId}/attachments/${attachmentId}/download`).pipe(take(1));
+    return this.http
+      .get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/${encodeURIComponent(attachmentId)}/download`)
+      .pipe(take(1));
   }
 
   public generateAgenda(request: GenerateAgendaRequest): Observable<GenerateAgendaResponse> {
@@ -376,7 +387,7 @@ export class MeetingService {
   }
 
   public getPastMeetingById(pastMeetingUid: string): Observable<PastMeeting> {
-    return this.http.get<PastMeeting>(`/api/past-meetings/${pastMeetingUid}`).pipe(
+    return this.http.get<PastMeeting>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}`).pipe(
       catchError((error) => {
         console.error(`Failed to load past meeting ${pastMeetingUid}:`, error);
         return throwError(() => error);
@@ -385,31 +396,47 @@ export class MeetingService {
   }
 
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
-    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`);
+    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`);
+  }
+
+  public clearPastMeetingRecordingCache(): void {
+    this.pastMeetingRecordingCache.clear();
   }
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
-    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+    this.pruneExpiredPastMeetingRecordingCache();
+    const cached = this.pastMeetingRecordingCache.get(pastMeetingUid);
+    if (cached && Date.now() - cached.cachedAt < PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.pastMeetingRecordingCache.delete(pastMeetingUid);
+    }
+    const recording$ = this.http
+      .get<PastMeetingRecording>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/recording`)
+      .pipe(tap({ error: () => this.pastMeetingRecordingCache.delete(pastMeetingUid) }), shareReplay(1));
+    this.pastMeetingRecordingCache.set(pastMeetingUid, { observable: recording$, cachedAt: Date.now() });
+    return recording$;
   }
 
   public getPastMeetingTranscript(pastMeetingUid: string): Observable<PastMeetingTranscript> {
-    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${pastMeetingUid}/transcript`);
+    return this.http.get<PastMeetingTranscript>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/transcript`);
   }
 
   public getPastMeetingTranscriptContent(pastMeetingUid: string): Observable<PastMeetingTranscriptContent> {
-    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${pastMeetingUid}/transcript/content`);
+    return this.http.get<PastMeetingTranscriptContent>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/transcript/content`);
   }
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
-    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
+    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary`);
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
-    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${pastMeetingUid}/attachments`);
+    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
   }
 
   public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {
-    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary/${summaryUid}`, updateData);
+    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary/${encodeURIComponent(summaryUid)}`, updateData);
   }
 
   public approvePastMeetingSummary(pastMeetingUid: string, summaryUid: string): Observable<PastMeetingSummary> {
@@ -549,6 +576,26 @@ export class MeetingService {
         console.error(`Failed to register for public meeting ${registrantData.meeting_id}:`, error);
         return throwError(() => error);
       })
+    );
+  }
+
+  private pruneExpiredPastMeetingRecordingCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.pastMeetingRecordingCache) {
+      if (now - entry.cachedAt >= PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+        this.pastMeetingRecordingCache.delete(key);
+      }
+    }
+  }
+
+  private getCountByTag(endpoint: string, tag: string): Observable<number> {
+    const params = new HttpParams().set('tags', tag);
+    return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load count from ${endpoint}:`, error);
+        return of({ count: 0 });
+      }),
+      map((response) => response.count)
     );
   }
 }

@@ -243,7 +243,7 @@ export interface MailingListMember {
   job_title?: string;
   /** How member was added (committee or direct) */
   member_type: MailingListMemberType;
-  /** Email delivery mode (normal, digest, none) */
+  /** Email delivery mode (Groups.io API values, e.g. email_delivery_single, email_delivery_digest, email_delivery_none) */
   delivery_mode: MailingListMemberDeliveryMode;
   /** Moderation status (none, moderator, owner) */
   mod_status: MailingListMemberModStatus;

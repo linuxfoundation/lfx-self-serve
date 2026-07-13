@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import { TagSeverity } from './components.interface';
 
 // ============================================================================
 // V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
@@ -1157,3 +1159,44 @@ export interface SummarySection {
   /** Tailwind text color class for the icon */
   iconColor: string;
 }
+
+/**
+ * Meeting type color configuration
+ * @description Defines colors, icons, and styling for meeting type badges and borders
+ */
+export interface MeetingTypeConfig {
+  /** Display label for the meeting type */
+  label: string;
+  /** Background color class (e.g., bg-violet-100) */
+  bgColor: string;
+  /** Text color class - 600 shade (e.g., text-violet-600) */
+  textColor: string;
+  /** Text color class - 500 shade (e.g., text-violet-500) for alternate styling */
+  textColorAlt: string;
+  /** Border color class - 500 shade (e.g., border-violet-500) */
+  borderColor: string;
+  /** Border color class - 300 shade (e.g., border-violet-300) for lighter borders */
+  borderColorLight: string;
+  /** Font Awesome icon class */
+  icon: string;
+  /** CSS class for tag badge color override (e.g., tag-meeting-board) */
+  tagStyleClass: string;
+}
+
+/**
+ * Meeting type badge interface
+ * @description Structure for meeting type badge display
+ */
+export interface MeetingTypeBadge {
+  label: string;
+  className: string;
+  severity?: TagSeverity;
+  styleClass?: string;
+  icon?: string;
+}
+
+/**
+ * Query-service `sort` value for the `v1_past_meeting` resource type.
+ * Derived from the {@link PAST_MEETING_SORT} constant so the union stays in sync with it.
+ */
+export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];

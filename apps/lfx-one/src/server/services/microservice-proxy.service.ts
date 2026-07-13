@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_QUERY_PARAMS } from '@lfx-one/shared/constants';
-import { ApiResponse, MicroserviceUrls } from '@lfx-one/shared/interfaces';
+import { ApiRequestOptions, ApiResponse, MicroserviceUrls } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -18,7 +18,8 @@ export class MicroserviceProxyService {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
     query?: Record<string, any>,
     data?: any,
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
+    options?: ApiRequestOptions
   ): Promise<T> {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
@@ -31,7 +32,7 @@ export class MicroserviceProxyService {
       // This ensures that default params cannot be overridden by the caller
       const mergedQuery = { ...query, ...DEFAULT_QUERY_PARAMS };
 
-      const response = await this.apiClient.request<T>(method, endpoint, token, mergedQuery, data, customHeaders);
+      const response = await this.apiClient.request<T>(method, endpoint, token, mergedQuery, data, customHeaders, options);
       return response.data;
     } catch (error: any) {
       // Transform HTTP errors from API client into MicroserviceError

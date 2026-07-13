@@ -46,7 +46,7 @@ export interface BehavioralClassDisplayConfig {
  * Mirrors the committee-service organization object: `id`, `name`, and `website`.
  */
 export interface CommitteeOrganizationReference {
-  /** CDP organization ID */
+  /** b2b Salesforce Account SFID (18-char); null/omit when the org has no LF member account */
   id?: string | null;
   /** Organization display name */
   name?: string | null;
@@ -890,7 +890,6 @@ export interface CommitteeUser {
 
 export interface JoinApplicationDialogData {
   committeeName: string;
-  mode: 'application' | 'invite_only';
 }
 
 export interface JoinApplicationDialogResult {
@@ -943,4 +942,15 @@ export interface CommitteeMemberPermissionInfo {
   level: CommitteePermissionLevel;
   /** True when `level` comes only from an inherited (project/foundation) grant, not a committee-scoped role. */
   inherited: boolean;
+}
+
+/**
+ * Committee category info for card-based selection
+ * @description Defines icons, descriptions, and colors for each committee category
+ */
+export interface CommitteeCategoryInfo {
+  icon: string;
+  description: string;
+  examples: string;
+  color: string;
 }

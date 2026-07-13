@@ -77,7 +77,7 @@ export class WorkExperienceFormDialogComponent {
   }
 
   public onOrganizationResolved(result: OrganizationResolveResult): void {
-    this.form.patchValue({ organizationId: result.id });
+    this.form.patchValue({ organizationId: result.id ?? '' });
   }
 
   public onSubmit(): void {

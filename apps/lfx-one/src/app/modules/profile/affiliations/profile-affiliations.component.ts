@@ -54,6 +54,8 @@ export class ProfileAffiliationsComponent {
   private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
+  // Read-only when impersonating — affiliation mutations act on the real account and are blocked server-side.
+  public readonly impersonating = this.userService.impersonating;
   private readonly projectService = inject(ProjectService);
 
   public readonly hideHeader = input(false);

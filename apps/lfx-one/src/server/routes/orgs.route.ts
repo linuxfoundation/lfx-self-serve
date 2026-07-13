@@ -11,14 +11,18 @@ import { OrgLensDocumentsController } from '../controllers/org-lens-documents.co
 import { OrgLensEventsController } from '../controllers/org-lens-events.controller';
 import { OrgLensFoundationsController } from '../controllers/org-lens-foundations.controller';
 import { OrgLensKeyContactsController } from '../controllers/org-lens-key-contacts.controller';
+import { OrgLensMeetingsController } from '../controllers/org-lens-meetings.controller';
 import { OrgLensMembershipsController } from '../controllers/org-lens-memberships.controller';
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
+import { OrgLensProjectDetailController } from '../controllers/org-lens-project-detail.controller';
+import { OrgLensProjectsController } from '../controllers/org-lens-projects.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 
 function buildOrgsRouter(): Router {
   const router = Router();
   const orgLensFoundationsController = new OrgLensFoundationsController();
   const orgLensEventsController = new OrgLensEventsController();
+  const orgLensMeetingsController = new OrgLensMeetingsController();
   const orgLensMembershipsController = new OrgLensMembershipsController();
   const orgLensBoardCommitteeController = new OrgLensBoardCommitteeController();
   const orgLensDocumentsController = new OrgLensDocumentsController();
@@ -27,6 +31,8 @@ function buildOrgsRouter(): Router {
   const orgLensAccessController = new OrgLensAccessController();
   const orgLensTrainingController = new OrgLensTrainingController();
   const orgLensContributionsController = new OrgLensContributionsController();
+  const orgLensProjectsController = new OrgLensProjectsController();
+  const orgLensProjectDetailController = new OrgLensProjectDetailController();
   const orgIdentityController = new OrgIdentityController();
 
   // Spec 020 — org-selector identity & role-grants endpoints.
@@ -45,6 +51,9 @@ function buildOrgsRouter(): Router {
   router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
   router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
+  router.get('/:accountId/lens/meetings/summary', (req, res, next) => orgLensMeetingsController.getOrgMeetingsSummary(req, res, next));
+  router.get('/:accountId/lens/meetings/projects', (req, res, next) => orgLensMeetingsController.getMeetingProjects(req, res, next));
+  router.get('/:accountId/lens/meetings', (req, res, next) => orgLensMeetingsController.getOrgUpcomingMeetings(req, res, next));
   router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));
@@ -115,6 +124,21 @@ function buildOrgsRouter(): Router {
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));
+
+  // The literal /projects/search route MUST be registered before the /projects/:projectSlug matcher
+  // below, so 'search' isn't consumed as a project slug.
+  router.get('/:orgUid/lens/projects/search', (req, res, next) => orgLensProjectsController.searchProjects(req, res, next));
+  router.get('/:orgUid/lens/projects', (req, res, next) => orgLensProjectsController.getProjects(req, res, next));
+  // LFXV2-1885 — Org Lens Project Detail sub-page.
+  router.get('/:orgUid/lens/projects/:projectSlug', (req, res, next) => orgLensProjectDetailController.getProjectDetail(req, res, next));
+  router.get('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.getWorkspaces(req, res, next));
+  router.post('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.createWorkspace(req, res, next));
+  router.put('/:orgUid/lens/workspaces/:workspaceId', (req, res, next) => orgLensProjectsController.renameWorkspace(req, res, next));
+  router.delete('/:orgUid/lens/workspaces/:workspaceId', (req, res, next) => orgLensProjectsController.deleteWorkspace(req, res, next));
+  router.post('/:orgUid/lens/workspaces/:workspaceId/projects', (req, res, next) => orgLensProjectsController.addProjectsToWorkspace(req, res, next));
+  router.delete('/:orgUid/lens/workspaces/:workspaceId/projects/:slug', (req, res, next) =>
+    orgLensProjectsController.removeProjectFromWorkspace(req, res, next)
+  );
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
   router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));

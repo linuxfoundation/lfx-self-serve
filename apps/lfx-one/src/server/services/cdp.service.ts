@@ -805,6 +805,47 @@ export class CdpService {
   }
 
   /**
+   * Find an organization in CDP by exact name.
+   * Used to resolve the canonical domain for an organization the user selected
+   * from their work history (where the work-experience payload only carries names).
+   */
+  public async findOrganizationByName(req: Request | undefined, name: string): Promise<CdpOrganization | null> {
+    const token = await this.generateToken(req);
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.ORGANIZATIONS}?name=${encodeURIComponent(name)}`;
+    const requestId = randomUUID();
+
+    logger.debug(req, 'find_cdp_organization_by_name', 'Finding CDP organization by name', { name, request_id: requestId });
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-LFX-Request-ID': requestId,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        logger.debug(req, 'find_cdp_organization_by_name', 'Organization not found in CDP', { name });
+        return null;
+      }
+      const errorText = await response.text();
+      throw new MicroserviceError(`CDP organization find failed: ${response.statusText}`, response.status, 'CDP_ORGANIZATION_FIND_ERROR', {
+        operation: 'find_cdp_organization_by_name',
+        service: 'cdp_service',
+        errorBody: errorText,
+      });
+    }
+
+    const data = (await response.json()) as CdpOrganization;
+    if (!data?.id) {
+      return null;
+    }
+    return data;
+  }
+
+  /**
    * Create an organization in CDP
    */
   public async createOrganization(req: Request | undefined, name: string, domain: string, source = 'lfxOne', logo?: string): Promise<CdpOrganization> {

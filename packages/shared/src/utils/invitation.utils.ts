@@ -67,16 +67,17 @@ export function invitationRequiresOrganization(flags: {
 
 /**
  * Maps organization form controls to the committee-service organization payload.
+ * id is always null — organization_id holds the CDP UUID which committee-service
+ * must never receive (v1-sync-helper rejects non-SFID IDs).
  */
 export function buildCommitteeOrganizationPayload(
   formValue: Pick<CommitteeOrganizationFormValue, 'organization' | 'organization_url' | 'organization_id'>
 ): CommitteeOrganizationReference | null {
   const name = formValue.organization?.trim() || null;
   const website = formValue.organization_url?.trim() || null;
-  const id = formValue.organization_id?.trim() || null;
 
-  if (name || website || id) {
-    return { id, name, website };
+  if (name || website) {
+    return { id: null, name, website };
   }
   return null;
 }

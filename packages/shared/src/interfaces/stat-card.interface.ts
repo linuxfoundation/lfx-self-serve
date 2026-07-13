@@ -11,10 +11,10 @@ export interface StatCardItem {
   value: number | string;
   /** Short descriptive label rendered below the value (e.g., "Total Groups"). */
   label: string;
+  /** Optional muted line rendered below the label (e.g., "Next: Jul 2", "Across 3 projects"). */
+  subLine?: string;
   /** Font Awesome class string for the icon (e.g., "fa-light fa-envelope"). */
   icon: string;
   /** Tailwind class string applied to the icon's rounded container (bg + text color). */
   iconContainerClass: string;
-  /** Optional secondary line displayed below the label (e.g., "Across 4 foundations"). */
-  subtext?: string;
 }

@@ -3,7 +3,16 @@
 
 export type NewsletterStatusTabId = 'draft' | 'sent';
 
-export type NewsletterStatus = 'draft' | 'sent';
+/**
+ * Newsletter lifecycle states.
+ *
+ * `sending` is the transient state between the newsletter-service accepting a
+ * send (202) and the background fan-out settling — to `sent` on completion, or
+ * back to `draft` when zero recipients could be delivered to. The upstream
+ * `status=sent` list filter also matches `sending` rows, so in-flight sends
+ * appear on the Sent tab.
+ */
+export type NewsletterStatus = 'draft' | 'sending' | 'sent';
 
 /**
  * Top-level view shown by the newsletter manage screen.
@@ -47,6 +56,14 @@ export interface NewsletterSendFailure {
   error: string;
 }
 
+/**
+ * Response of POST …/newsletters/{uid}/send.
+ *
+ * The upstream send is asynchronous: acceptance returns the newsletter in
+ * `status='sending'` with `sent=0`, and the fan-out completes in a detached
+ * background job. Branch on `newsletter.status` — `'sent'` means the send
+ * settled synchronously (zero-recipient edge case, or a pre-async upstream).
+ */
 export interface NewsletterSendResult {
   newsletter: Newsletter;
   group_id: string;

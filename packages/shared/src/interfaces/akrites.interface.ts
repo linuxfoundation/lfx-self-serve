@@ -3,7 +3,7 @@
 
 export type AkritesStatus = 'unassigned' | 'open' | 'assessing' | 'active' | 'needs_attention' | 'escalated' | 'blocked' | 'inactive';
 export type AkritesLifecycle = 'active' | 'stable' | 'declining' | 'abandoned';
-export type AkritesEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo';
+export type AkritesEcosystem = 'npm' | 'maven' | 'pypi' | 'go' | 'cargo' | 'nuget' | 'packagist' | 'rubygems';
 export type AkritesHealthBand = 'healthy' | 'fair' | 'concerning' | 'critical';
 export type AkritesSeverity = 'critical' | 'high' | 'medium' | 'moderate' | 'low';
 /** Severities the advisories flow models. Narrower than AkritesSeverity — excludes the package-level `medium`. */
@@ -430,6 +430,7 @@ export interface AkritesLoadResult {
   total: number | null;
   error: boolean;
   statusCounts: AkritesStatusCounts | null;
+  loading: boolean;
 }
 
 export interface CdpPackagesMetricsResponse {

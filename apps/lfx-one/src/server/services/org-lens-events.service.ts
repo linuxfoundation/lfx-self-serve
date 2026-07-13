@@ -16,7 +16,7 @@ import type {
   OrgEventsSummary,
   OrgEventsSummaryRow,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, normalizeToUrl } from '@lfx-one/shared/utils';
+import { formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -103,7 +103,7 @@ export class OrgLensEventsService {
       );
     } catch (error) {
       logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
         account_id: accountId,
       });
       return { data: [], total: 0, pageSize, offset };
@@ -141,7 +141,7 @@ export class OrgLensEventsService {
       );
     } catch (error) {
       logger.warning(req, 'get_org_lens_events_summary', 'Snowflake query failed, returning zero counts', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
         account_id: accountId,
       });
       return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0 };
@@ -197,7 +197,7 @@ export class OrgLensEventsService {
       );
     } catch (error) {
       logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
         account_id: accountId,
         event_id: eventId,
       });
@@ -254,7 +254,7 @@ export class OrgLensEventsService {
       );
     } catch (error) {
       logger.warning(req, 'get_event_speakers', 'Snowflake query failed, returning empty speakers', {
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
         account_id: accountId,
         event_id: eventId,
       });
@@ -322,15 +322,6 @@ export class OrgLensEventsService {
 /** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
 function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
   return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
-}
-
-function isObjectRow(el: unknown): el is Record<string, unknown> {
-  return el !== null && typeof el === 'object' && !Array.isArray(el);
-}
-
-/** Summary rows expose no contract key replayed verbatim to the client (every field is read null-safe), so an object shape suffices. */
-function isObjectRowArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every(isObjectRow);
 }
 
 /** Event-list rows reach the client through `mapRowToOrgEvent`, which reads `EVENT_ID` with no fallback — validate the contract key so a poisoned `[{}]` entry degrades to a miss. */

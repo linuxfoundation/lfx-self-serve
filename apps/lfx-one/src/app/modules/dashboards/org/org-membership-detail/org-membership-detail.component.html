@@ -5,7 +5,7 @@
 <p-toast position="top-right" key="key-contact-toast-success-added" data-testid="key-contact-toast-success-added" />
 <p-toast position="top-right" key="key-contact-toast-remove" data-testid="key-contact-toast-remove" />
 
-<div class="flex flex-col gap-6" data-testid="membership-detail-page">
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="membership-detail-page">
   @switch (pageState()) {
     @case ('loading') {
       <div class="flex flex-col gap-4" data-testid="membership-detail-loading">
@@ -51,7 +51,7 @@
       </a>
       @if (foundation(); as f) {
         <div class="flex flex-col gap-1">
-          <h1 class="text-2xl font-semibold text-gray-900" data-testid="membership-detail-foundation-name">{{ f.foundationName }}</h1>
+          <h1 class="font-display font-light text-2xl" data-testid="membership-detail-foundation-name">{{ f.foundationName }}</h1>
           <p class="text-sm text-gray-500" data-testid="membership-detail-foundation-meta">
             <span>{{ f.membershipTier }}</span>
             <span class="mx-1.5">·</span>

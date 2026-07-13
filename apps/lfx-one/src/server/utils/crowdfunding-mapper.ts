@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  Announcement,
   Beneficiary,
   CrowdfundingTransaction,
   FinancialSummary,
@@ -15,24 +16,36 @@ import {
   PaymentMethod,
   RecurringDonation,
   RecurringDonationStatus,
+  SponsorshipTier,
+  SponsorshipDonationMode,
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
+import { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_DONATION_MODES } from '@lfx-one/shared/constants';
 
 import {
+  BackendAnnouncement,
   BackendBeneficiary,
   BackendDonation,
   BackendGoal,
   BackendInitiative,
   BackendSponsor,
+  BackendSponsorshipTier,
   BackendSubscription,
   BackendTransaction,
   PaymentMethodWire,
 } from '../types/crowdfunding.types';
 
-const VALID_INITIATIVE_STATUSES: CrowdfundingInitiativeStatus[] = ['submitted', 'pending', 'published', 'declined', 'hidden'];
-
 function toValidInitiativeStatus(value: unknown): CrowdfundingInitiativeStatus {
-  return VALID_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus) ? (value as CrowdfundingInitiativeStatus) : 'pending';
+  return CROWDFUNDING_INITIATIVE_STATUSES.includes(value as CrowdfundingInitiativeStatus) ? (value as CrowdfundingInitiativeStatus) : 'pending';
+}
+
+function toValidDonationMode(value: unknown): SponsorshipDonationMode | undefined {
+  return SPONSORSHIP_DONATION_MODES.includes(value as SponsorshipDonationMode) ? (value as SponsorshipDonationMode) : undefined;
+}
+
+function mapSponsorshipTier(t: BackendSponsorshipTier): SponsorshipTier | undefined {
+  if (!SPONSORSHIP_TIER_NAMES.includes(t.name as SponsorshipTier['name'])) return undefined;
+  return { name: t.name as SponsorshipTier['name'], enabled: t.enabled, goalCents: t.minimum, benefits: t.benefits };
 }
 
 function toValidFundType(value: unknown): FundType {
@@ -76,6 +89,8 @@ export function mapToInitiativeDetail(b: BackendInitiative): InitiativeDetail {
     fundingGoals: (b.goals ?? []).map(mapFundingGoal),
     financialSummary: b.financials ? mapFinancialSummary(b) : undefined,
     beneficiaries: (b.beneficiaries ?? []).map(mapBeneficiary),
+    sponsorshipTiers: b.sponsorship_tiers?.map(mapSponsorshipTier).filter((t): t is SponsorshipTier => t !== undefined),
+    donationMode: toValidDonationMode(b.donation_mode),
     // Not yet available from the backend
     githubUrl: undefined,
     impactStats: undefined,
@@ -170,6 +185,18 @@ const VALID_RECURRING_STATUSES: RecurringDonationStatus[] = ['active', 'paused',
 
 function toValidRecurringStatus(value: unknown): RecurringDonationStatus {
   return VALID_RECURRING_STATUSES.includes(value as RecurringDonationStatus) ? (value as RecurringDonationStatus) : 'active';
+}
+
+export function mapAnnouncementWire(b: BackendAnnouncement): Announcement {
+  return {
+    id: b.id,
+    initiativeId: b.initiative_id,
+    createdBy: b.created_by,
+    title: b.title,
+    description: b.description,
+    createdOn: b.created_on,
+    updatedOn: b.updated_on,
+  };
 }
 
 /** Maps a CF API Subscription (from GET /v1/me/subscriptions) to the RecurringDonation shape. */

@@ -39,6 +39,12 @@ export default {
     'fill-blue-200',
     'fill-amber-200',
     'fill-red-200',
+    // Org Lens projects — influence trend text/badge colors (INFLUENCE_TREND_TEXT_CLASS / INFLUENCE_TREND_ARROW_BADGE_CLASS in @lfx-one/shared, not scanned here)
+    'text-emerald-600',
+    'text-red-600',
+    'bg-emerald-100',
+    'bg-red-100',
+    'bg-gray-100',
   ],
   theme: {
     container: {
