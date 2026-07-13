@@ -203,9 +203,10 @@ export class MeetingManageComponent {
         this.updateCanProceed();
       });
 
-    // When Board meeting type is selected, enforce private + restricted-only access.
-    // When switching away from Board, reset privacy to defaults so the user isn't
-    // left with Board-level restrictions silently applied to a non-Board meeting.
+    // When Board meeting type is selected, default to private + restricted access.
+    // When switching away from Board, reset to public + unrestricted defaults so the
+    // user isn't left with Board-level settings silently applied to a non-Board meeting.
+    // The user can freely override visibility and restriction after the default is applied.
     this.form()
       .get('meeting_type')
       ?.valueChanges.pipe(
@@ -224,15 +225,10 @@ export class MeetingManageComponent {
     // PCC matrix constraint: PUBLIC+restricted is not a valid state.
     // Sync the two controls so they stay consistent: restricted→true forces PRIVATE visibility;
     // visibility→PUBLIC forces restricted=false.
-    // Board meetings always lock back to PRIVATE+restricted regardless of which control changed.
     this.form()
       .get('restricted')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((restricted: boolean) => {
-        if (this.form().get('meeting_type')?.value === MeetingType.BOARD) {
-          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true }, { emitEvent: false });
-          return;
-        }
         if (restricted && this.form().get('visibility')?.value === MeetingVisibility.PUBLIC) {
           this.form().patchValue({ visibility: MeetingVisibility.PRIVATE }, { emitEvent: false });
         }
@@ -242,10 +238,6 @@ export class MeetingManageComponent {
       .get('visibility')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((visibility: string) => {
-        if (this.form().get('meeting_type')?.value === MeetingType.BOARD) {
-          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true }, { emitEvent: false });
-          return;
-        }
         if (visibility === MeetingVisibility.PUBLIC && this.form().get('restricted')?.value === true) {
           this.form().patchValue({ restricted: false }, { emitEvent: false });
         }
@@ -823,7 +815,7 @@ export class MeetingManageComponent {
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
       isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
       visibility: meeting.visibility || MeetingVisibility.PRIVATE,
-      restricted: meeting.meeting_type === MeetingType.BOARD ? true : (meeting.restricted ?? false),
+      restricted: meeting.restricted ?? false,
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
