@@ -7,7 +7,7 @@ import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpTally, OrgMeetingVm, OrgPrivateMeetingsRollupVm } from '@lfx-one/shared/interfaces';
-import { deriveDemoPassword, deriveMeetingDetailsUrl, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoPassword, deriveUpcomingMeetingDetailsUrl, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
@@ -64,7 +64,7 @@ export class OrgUpcomingMeetingsComponent {
         badge: invitee.rsvpStatus ? ORG_MEETINGS_RSVP_BADGES[invitee.rsvpStatus] : ORG_MEETINGS_NO_RESPONSE_BADGE,
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
-      detailsUrl: toAbsoluteUrl(deriveMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
+      detailsUrl: toAbsoluteUrl(deriveUpcomingMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
     };
   }
 

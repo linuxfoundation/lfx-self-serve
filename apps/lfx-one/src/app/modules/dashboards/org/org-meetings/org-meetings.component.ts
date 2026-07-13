@@ -95,13 +95,17 @@ export class OrgMeetingsComponent {
   // correction effect below re-evaluates once the summary actually resolves, so a confirmed-seeded
   // account still ends up showing its real (possibly empty, possibly errored) state rather than getting
   // stuck on demo data. Deliberately distinct from "a filter matched nothing," which is a legitimate
-  // zero and must not be treated as an unseeded account.
+  // zero and must not be treated as an unseeded account. A `null` summary means the fetch *failed*,
+  // not that it resolved to zero — treating failure as proof of "unseeded" would let the demo fallback
+  // mask a genuine summary/list error as the selected org's real (empty) data. Only a successfully
+  // resolved all-zero summary may establish the demo fallback; `null` leaves the account non-unseeded
+  // so the error/unknown path (e.g. `pendingListOutcome`'s 'failed' kind) surfaces instead.
   protected readonly accountUnseeded: Signal<boolean> = computed(() => {
     if (this.total() > 0) return false;
     const resolved = this.summaryAccountId() === this.accountId();
     if (!resolved) return true;
     const real = this.summary();
-    return !real || (real.upcomingMeetings === 0 && real.recurringSeries === 0);
+    return real !== null && real.upcomingMeetings === 0 && real.recurringSeries === 0;
   });
   // Set when the offset-0 list decision above was made *before* the summary had resolved for this
   // account, so `accountUnseeded` was only an optimistic guess — corrected by the effect in the

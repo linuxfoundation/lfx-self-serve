@@ -115,8 +115,10 @@ export interface OrgMeetingTypeBadge {
 /**
  * Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`).
  *
- * `detailsUrl` is the absolute in-app "See Meeting Details" link (see `deriveMeetingDetailsUrl` in
- * `@lfx-one/shared/utils`, resolved via `toAbsoluteUrl`); its placeholder password query param is a UI-only stand-in (see `deriveDemoPassword`) —
+ * `detailsUrl` is the absolute in-app "See Details" link (see `deriveUpcomingMeetingDetailsUrl` in
+ * `@lfx-one/shared/utils`, resolved via `toAbsoluteUrl`) — it routes to the meeting-join view, not the
+ * past-meeting `/details` route, since an upcoming id doesn't resolve via `getPastMeetingById`. Its
+ * placeholder password query param is a UI-only stand-in (see `deriveDemoPassword`) —
  * LFXV2-1901 is scoped to UI only, the real invite-membership/password data model lands in a follow-up ticket.
  */
 export interface OrgMeetingVm extends OrgMeeting {
@@ -138,12 +140,18 @@ export interface OrgPastMeetingInviteeVm extends OrgPastMeetingInvitee {
   readonly badge: OrgMeetingAttendanceBadge;
 }
 
-/** Past meeting with the same `typeBadge` / `detailsUrl` fields as `OrgMeetingVm` (see there for rationale), plus invitee presentation fields. */
+/**
+ * Past meeting with the same `typeBadge` field as `OrgMeetingVm` (see there for rationale), plus invitee
+ * presentation fields. `detailsUrl` is built by `derivePastMeetingDetailsUrl` and only resolves for a
+ * real past-meeting id; `hasResolvableDetails` gates whether the "See Meeting Details" link renders at
+ * all, since the current demo-seeded rows have no backing `getPastMeetingById` record.
+ */
 export interface OrgPastMeetingVm extends OrgPastMeeting {
   readonly totalInvited: number;
   readonly inviteeVms: readonly OrgPastMeetingInviteeVm[];
   readonly typeBadge: OrgMeetingTypeBadge;
   readonly detailsUrl: string;
+  readonly hasResolvableDetails: boolean;
 }
 
 /** A past meeting in the Org Lens Meetings list. */

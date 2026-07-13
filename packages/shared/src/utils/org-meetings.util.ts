@@ -24,11 +24,25 @@ export function deriveDemoPassword(meetingId: string, privacy: OrgMeetingPrivacy
 }
 
 /**
- * App-relative "See Meeting Details" path for a meeting the viewer can access (public, or private +
- * invited) — the `password` param is omitted for public meetings (see `deriveDemoPassword`). Callers
- * wrap the result in `toAbsoluteUrl` (same as the join-page `linkUrl`) before binding it to `[href]`.
+ * App-relative "See Details" path for an *upcoming* meeting — routes to the existing meeting-join
+ * view (`/meetings/:id`), which resolves an `OrgMeeting` id via `getPublicMeeting`. The `/details`
+ * route resolves past-meeting ids instead (see `derivePastMeetingDetailsUrl`) and 404s on an
+ * upcoming id, so upcoming and past meetings must never share the same details path. The `password`
+ * param is omitted for public meetings (see `deriveDemoPassword`). Callers wrap the result in
+ * `toAbsoluteUrl` before binding it to `[href]`.
  */
-export function deriveMeetingDetailsUrl(meetingId: string, password: string | null): string {
+export function deriveUpcomingMeetingDetailsUrl(meetingId: string, password: string | null): string {
+  const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}`;
+  return password ? `${base}?password=${encodeURIComponent(password)}` : base;
+}
+
+/**
+ * App-relative "See Meeting Details" path for a *past* meeting — routes to `PastMeetingDetailsComponent`,
+ * which resolves the id via `getPastMeetingById`. Only valid for a real (non-demo-fixture) past-meeting
+ * id; see `OrgPastMeetingVm.hasResolvableDetails` for why demo rows must not render this link. The
+ * `password` param is omitted for public meetings (see `deriveDemoPassword`).
+ */
+export function derivePastMeetingDetailsUrl(meetingId: string, password: string | null): string {
   const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}/details`;
   return password ? `${base}?password=${encodeURIComponent(password)}` : base;
 }

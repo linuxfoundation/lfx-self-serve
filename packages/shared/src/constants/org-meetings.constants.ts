@@ -29,7 +29,7 @@ export const VALID_ORG_MEETINGS_TAB_IDS: ReadonlySet<OrgMeetingsTabId> = new Set
 export const DEFAULT_MEETINGS_PAGE_SIZE = 10;
 export const MAX_MEETINGS_PAGE_SIZE = 100;
 
-/** App-relative base path for the "See Meeting Details" route (see `deriveMeetingDetailsUrl`); resolved to an absolute URL by callers via `toAbsoluteUrl`. */
+/** App-relative base path for meeting join/details routes (see `deriveUpcomingMeetingDetailsUrl` / `derivePastMeetingDetailsUrl`); resolved to an absolute URL by callers via `toAbsoluteUrl`. */
 export const ORG_MEETING_DETAILS_BASE_URL = '/meetings';
 
 /** Valid meeting-type filter values for server-side validation. */

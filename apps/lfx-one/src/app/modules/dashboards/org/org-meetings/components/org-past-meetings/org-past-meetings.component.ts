@@ -7,7 +7,7 @@ import { Component, computed, inject, input, PLATFORM_ID, signal, Signal } from 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_ATTENDANCE_BADGES } from '@lfx-one/shared/constants';
 import type { OrgPastMeeting, OrgPastMeetingVm, OrgPrivateMeetingsRollupVm } from '@lfx-one/shared/interfaces';
-import { deriveDemoPassword, deriveMeetingDetailsUrl, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoPassword, derivePastMeetingDetailsUrl, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
@@ -67,7 +67,11 @@ export class OrgPastMeetingsComponent {
         badge: ORG_MEETINGS_ATTENDANCE_BADGES[invitee.attendanceStatus],
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
-      detailsUrl: toAbsoluteUrl(deriveMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
+      detailsUrl: toAbsoluteUrl(derivePastMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
+      // The Org Lens past-meeting list is entirely demo-seeded (see DEMO_PAST_MEETINGS) — there is no
+      // real past-meeting fetch path yet, so every id here is unresolvable by the details route's
+      // getPastMeetingById lookup. Flip to a real resolvability check once that fetch lands.
+      hasResolvableDetails: false,
     };
   }
 }
