@@ -184,11 +184,15 @@ DD_RUM_APPLICATION_ID=your-datadog-rum-app-id
 INTERCOM_APP_ID=your-intercom-app-id
 ```
 
-The server reads these via `dotenv` in development mode:
+The server reads these via `process.loadEnvFile` in development mode:
 
 ```typescript
 if (process.env['NODE_ENV'] !== 'production') {
-  dotenv.config();
+  try {
+    process.loadEnvFile();
+  } catch {
+    // .env is optional in non-production; fall back to existing process.env.
+  }
 }
 ```
 

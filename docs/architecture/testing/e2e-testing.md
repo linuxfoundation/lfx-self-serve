@@ -207,7 +207,7 @@ await page.goto('/badges', { waitUntil: 'domcontentloaded' });
 await expect(page).not.toHaveURL(/auth0\.com/);
 ```
 
-Required env vars (loaded from `.env` by both `playwright.config.ts` via `dotenv` and `e2e/helpers/global-setup.ts` via `process.env`): `TEST_USERNAME`, `TEST_PASSWORD`.
+Required env vars (loaded from `.env` by both `playwright.config.ts` and `e2e/helpers/global-setup.ts` via `process.loadEnvFile`): `TEST_USERNAME`, `TEST_PASSWORD`.
 
 ## Best Practices
 
