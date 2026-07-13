@@ -17,7 +17,7 @@ import type {
   OrgUpcomingMeetingRow,
   OrgUpcomingMeetingsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, isDemoOrgMeetingId, isObjectRow, isObjectRowArray } from '@lfx-one/shared/utils';
+import { formatDateToUTC, isObjectRow, isObjectRowArray } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -87,7 +87,11 @@ export class OrgLensMeetingsService {
       offset,
     });
 
-    const searchFilter = searchQuery ? 'AND (m.TOPIC ILIKE ? OR m.AGENDA ILIKE ?)' : '';
+    // Private rows always pass the search filter regardless of content match — filtering them by
+    // TOPIC/AGENDA would let an uninvited viewer probe a private meeting's title/agenda by watching
+    // whether the private rollup's count shifts across search terms. Only public rows are actually
+    // matched against the query.
+    const searchFilter = searchQuery ? "AND (LOWER(m.VISIBILITY) = 'private' OR m.TOPIC ILIKE ? OR m.AGENDA ILIKE ?)" : '';
     const projectFilter = project ? 'AND m.FOUNDATION_NAME = ?' : '';
     // 'other' is a UI catch-all (see mapMeetingType) with no matching literal bucket in Snowflake —
     // filter it by exclusion instead of an equality bind that would never match a real row. NULL
@@ -271,7 +275,10 @@ export class OrgLensMeetingsService {
     // collapse into the client's rollup card. Redact its sensitive fields here rather than let
     // title/agenda/invitee identities reach the browser (and app state / network tab) only to be
     // hidden by that client-side partition — a real per-viewer invite check is a follow-up ticket.
-    const isRedactedPrivate = privacy === 'private' && !isDemoOrgMeetingId(row.MEETING_ID);
+    // Every row reaching this mapper is API-backed (demo fixtures are a client-side array that never
+    // flows through this Snowflake-backed service), so redaction applies unconditionally to every
+    // private row rather than special-casing a demo id prefix that can't occur here.
+    const isRedactedPrivate = privacy === 'private';
 
     return {
       id: row.MEETING_ID,

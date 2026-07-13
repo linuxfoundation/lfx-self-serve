@@ -180,8 +180,16 @@ export interface OrgPrivateMeetingsRollupTypeBadgeVm {
  * real meeting whose invitee list wasn't server-redacted). Real private meetings arrive with their
  * invitee list already redacted to `[]` (see `isRedactedPrivate` in `org-lens-meetings.service.ts`), so
  * those instead fall back to an already-unredacted aggregate tally (RSVP/attendance count) — see the
- * `getFallbackInviteeCount` param on `splitOrgMeetingsByPrivacy`. Neither the demo nor real data model
- * has a stable invitee id yet, and demo invitee names are intentionally reused across meetings.
+ * `getFallbackInviteeCount` param on `splitOrgMeetingsByPrivacy`. That fallback sums per-meeting
+ * occurrence counts rather than deduping by person, so the same employee across multiple redacted
+ * meetings contributes once per meeting — `employeeCount` is therefore an attendance/invitation
+ * *occurrence* count, not a distinct-employee count, whenever any hidden meeting used the fallback.
+ * The UI copy reflects this ("N employee attendances/invitations", not "N employees") rather than
+ * implying dedup that isn't possible without a stable invitee id (neither the demo nor real data model
+ * has one yet, and demo invitee names are intentionally reused across meetings).
+ * `projectCount` is computed but not currently rendered — for API-backed data the server has no
+ * distinct project field yet and aliases `project` to `foundation` (see `mapRowToOrgMeeting`), which
+ * would make a displayed project count redundant with `foundationCount`.
  */
 export interface OrgPrivateMeetingsRollupVm {
   readonly totalCount: number;

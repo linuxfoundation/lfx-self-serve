@@ -153,13 +153,9 @@
           class="inline-flex w-fit items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600"
           data-testid="org-upcoming-meetings-private-rollup-employee-count">
           <i class="fa-light fa-people-group text-gray-400" aria-hidden="true"></i>
-          {{ rollup.employeeCount }} {{ orgName() }} employee{{ rollup.employeeCount === 1 ? '' : 's' }} invited to private meetings
+          {{ rollup.employeeCount }} {{ orgName() }} employee invitation{{ rollup.employeeCount === 1 ? '' : 's' }} to private meetings
         </span>
-        <p class="text-sm text-gray-600">
-          Supporting {{ rollup.projectCount }} project{{ rollup.projectCount === 1 ? '' : 's' }} across {{ rollup.foundationCount }} foundation{{
-            rollup.foundationCount === 1 ? '' : 's'
-          }}
-        </p>
+        <p class="text-sm text-gray-600">Supporting activity across {{ rollup.foundationCount }} foundation{{ rollup.foundationCount === 1 ? '' : 's' }}</p>
         <p class="text-sm text-gray-500">
           The Organization meetings page shows all public meetings attended by your company's employees, as well as private meetings that you are invited to.
           Private meetings that you do not have access to are summarized in this card.
