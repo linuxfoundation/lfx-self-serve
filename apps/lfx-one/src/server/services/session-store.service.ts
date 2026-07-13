@@ -11,9 +11,11 @@ import { logger } from './logger.service';
  * express-openid-connect session store backed by Valkey. Moves the session bundle (Auth0 tokens
  * plus impersonation / API-gateway / crowdfunding / profile tokens written onto `req.appSession`)
  * out of the encrypted `appSession` cookie and into Valkey, keyed by an opaque session id — the
- * cookie then only carries that id. All methods are best-effort: a read/write fault degrades to a
- * miss (treated by express-openid-connect as an expired session, forcing re-auth) rather than a
- * 500, matching ValkeyService's existing fail-soft cache behavior.
+ * cookie then only carries that id. Reads are fail-soft: a Valkey read fault degrades to a miss
+ * (treated by express-openid-connect as an expired session, forcing re-auth) rather than a 500,
+ * matching ValkeyService's existing fail-soft cache behavior. Writes are fail-closed: a session
+ * that fails to persist throws instead of resolving, which express-openid-connect surfaces as a
+ * request error rather than silently issuing a cookie for a session that was never saved.
  *
  * Structurally matches express-openid-connect's `session.store` contract (`get`/`set`/`destroy`
  * with a callback) — that type isn't exported from the library, so compatibility is enforced by
@@ -113,9 +115,24 @@ export class SessionStoreService {
     return VALKEY_CACHE.SESSION_FALLBACK_TTL_SECONDS;
   }
 
-  /** Guards against a corrupt/legacy cache entry being handed back to express-openid-connect as a valid session. */
+  /**
+   * Guards against a corrupt/legacy cache entry being handed back to express-openid-connect as a
+   * valid session — a shallow key-presence check would let e.g. `data: null` through, and
+   * express-openid-connect crashes trying to redefine `req.appSession` with a non-object value.
+   */
   private static isSessionPayload(value: unknown): value is SessionStorePayload {
-    return typeof value === 'object' && value !== null && 'header' in value && 'data' in value && 'cookie' in value;
+    if (typeof value !== 'object' || value === null) {
+      return false;
+    }
+    const header = (value as { header?: unknown }).header;
+    const data = (value as { data?: unknown }).data;
+    const cookie = (value as { cookie?: unknown }).cookie;
+    if (typeof header !== 'object' || header === null || typeof data !== 'object' || data === null || typeof cookie !== 'object' || cookie === null) {
+      return false;
+    }
+    const { iat, uat, exp } = header as { iat?: unknown; uat?: unknown; exp?: unknown };
+    const { expires, maxAge } = cookie as { expires?: unknown; maxAge?: unknown };
+    return typeof iat === 'number' && typeof uat === 'number' && typeof exp === 'number' && typeof expires === 'number' && typeof maxAge === 'number';
   }
 }
 
