@@ -4,13 +4,23 @@
 import { ORG_MEETING_DETAILS_BASE_URL, ORG_MEETING_TYPE_LABELS } from '../constants';
 import type { OrgMeetingBase, OrgMeetingPrivacy, OrgMeetingType, OrgMeetingsPrivacySplit, OrgPrivateMeetingsRollupTypeBadgeVm } from '../interfaces';
 
+/** DEMO_UPCOMING_MEETINGS / DEMO_PAST_MEETINGS ids use `um-`/`pm-` prefixes (see org-meetings.constants.ts) — the only signal these VMs have to tell a demo-fixture row from a real, API-backed one. */
+export function isDemoOrgMeetingId(meetingId: string): boolean {
+  return meetingId.startsWith('um-') || meetingId.startsWith('pm-');
+}
+
 /**
- * Deterministic UI-only placeholder for "is the viewer invited to this private meeting".
- * LFXV2-1901 is scoped to UI only — the real invite-membership check lands in a follow-up
- * ticket. Deterministic (hashed off the meeting id) so the same meeting always renders the
- * same way across re-fetches instead of flickering between states.
+ * Deterministic UI-only placeholder for "is the viewer invited to this private meeting" —
+ * scoped to demo-fixture rows only. Real private meetings have already reached the browser by
+ * this point, so a hash-based guess would be a false access-control boundary rather than UI
+ * decoration; they stay hidden behind the rollup until a real, server-enforced invite check
+ * lands in a follow-up ticket. Demo rows are hashed off the meeting id so the same meeting
+ * always renders the same way across re-fetches instead of flickering between states.
  */
 export function deriveDemoViewerInvited(meetingId: string): boolean {
+  if (!isDemoOrgMeetingId(meetingId)) {
+    return false;
+  }
   let hash = 0;
   for (const char of meetingId) {
     hash = (hash * 31 + char.charCodeAt(0)) % 997;
@@ -18,9 +28,9 @@ export function deriveDemoViewerInvited(meetingId: string): boolean {
   return hash % 3 !== 0;
 }
 
-/** Deterministic UI-only placeholder for a private meeting's join password (see `deriveDemoViewerInvited`). */
+/** Deterministic UI-only placeholder for a demo private meeting's join password (see `deriveDemoViewerInvited`) — scoped to demo-fixture rows so a synthetic value is never sent as a real meeting's password. */
 export function deriveDemoPassword(meetingId: string, privacy: OrgMeetingPrivacy): string | null {
-  return privacy === 'private' ? `demo-${meetingId}` : null;
+  return privacy === 'private' && isDemoOrgMeetingId(meetingId) ? `demo-${meetingId}` : null;
 }
 
 /**

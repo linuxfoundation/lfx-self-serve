@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpTally, OrgMeetingVm, OrgPrivateMeetingsRollupVm } from '@lfx-one/shared/interfaces';
-import { deriveDemoPassword, deriveUpcomingMeetingDetailsUrl, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoPassword, deriveUpcomingMeetingDetailsUrl, isDemoOrgMeetingId, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
@@ -66,11 +66,9 @@ export class OrgUpcomingMeetingsComponent {
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
       detailsUrl: toAbsoluteUrl(deriveUpcomingMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
-      // UI-only build: always show the CTA, even for demo-fallback rows with no backing meeting record —
-      // the real link resolves once the account's data is wired up (see `deriveUpcomingMeetingDetailsUrl`).
-      // TODO(LFXV2-1901 follow-up): once real invite/backing-record data lands, this must be computed
-      // per-row instead of hardcoded true, so demo-fallback rows hide the CTA again.
-      hasResolvableDetails: true,
+      // Demo-fallback rows (DEMO_UPCOMING_MEETINGS, id prefix `um-`) have no backing meeting record —
+      // the CTA would 404. Real, API-backed rows do have one, so the CTA always resolves for them.
+      hasResolvableDetails: !isDemoOrgMeetingId(meeting.id),
     };
   }
 

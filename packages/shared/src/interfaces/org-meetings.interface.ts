@@ -120,8 +120,8 @@ export interface OrgMeetingTypeBadge {
  * past-meeting `/details` route, since an upcoming id doesn't resolve via `getPastMeetingById`. Its
  * placeholder password query param is a UI-only stand-in (see `deriveDemoPassword`) —
  * LFXV2-1901 is scoped to UI only, the real invite-membership/password data model lands in a follow-up ticket.
- * `hasResolvableDetails` is always `true` for now (UI-only build) — the CTA renders on every card,
- * including `DEMO_UPCOMING_MEETINGS` rows, and the link resolves for real once real data is wired up.
+ * `hasResolvableDetails` is `false` for `DEMO_UPCOMING_MEETINGS` fallback rows (id prefix `um-`,
+ * see `isDemoOrgMeetingId`) since they have no backing meeting record, and `true` otherwise.
  */
 export interface OrgMeetingVm extends OrgMeeting {
   readonly linkUrl: string;
@@ -146,8 +146,9 @@ export interface OrgPastMeetingInviteeVm extends OrgPastMeetingInvitee {
 /**
  * Past meeting with the same `typeBadge` field as `OrgMeetingVm` (see there for rationale), plus invitee
  * presentation fields. `detailsUrl` is built by `derivePastMeetingDetailsUrl`; `hasResolvableDetails` is
- * always `true` for now (UI-only build) even though the current rows are demo-seeded (see `DEMO_PAST_MEETINGS`)
- * with no backing `getPastMeetingById` record — the link resolves for real once a real fetch path lands.
+ * `false` for `DEMO_PAST_MEETINGS` fallback rows (id prefix `pm-`, see `isDemoOrgMeetingId`) since they
+ * have no backing `getPastMeetingById` record. The Org Lens past-meeting list is 100% demo-seeded today,
+ * so this evaluates `false` for every row until a real past-meetings fetch path lands.
  */
 export interface OrgPastMeetingVm extends OrgPastMeeting {
   readonly totalInvited: number;
