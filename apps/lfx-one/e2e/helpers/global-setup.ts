@@ -9,8 +9,10 @@ import { AuthHelper } from './auth.helper';
 // Ensure .env is loaded before reading credentials
 try {
   process.loadEnvFile(path.resolve(__dirname, '../../.env'));
-} catch {
-  // .env is optional; credentials fall back to empty strings below.
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+    console.warn('[loadenvfile] failed to parse .env:', err);
+  }
 }
 
 async function globalSetup(config: FullConfig) {

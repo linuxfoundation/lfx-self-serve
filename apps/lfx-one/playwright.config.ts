@@ -6,8 +6,10 @@ import { defineConfig, devices } from '@playwright/test';
 // Load environment variables from .env file
 try {
   process.loadEnvFile();
-} catch {
-  // .env is optional; continue with existing process.env.
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+    console.warn('[loadenvfile] failed to parse .env:', err);
+  }
 }
 
 /**
