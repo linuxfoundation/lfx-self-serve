@@ -3,7 +3,7 @@
 
 // Deep import the constants file directly (not the '@lfx-one/shared/constants' barrel) so the suite can
 // load the demo data without bootstrapping Angular. org-meetings.constants.ts only imports types, so this is safe.
-import { DEMO_PAST_MEETINGS } from '@lfx-one/shared/constants/org-meetings.constants';
+import { DEMO_PAST_MEETINGS, DEMO_UPCOMING_MEETINGS } from '@lfx-one/shared/constants/org-meetings.constants';
 import { expect, Locator, Page, Route, test } from '@playwright/test';
 
 const ORG_MEETINGS_URL = '/org/meetings';
@@ -103,7 +103,13 @@ async function seedSelectedOrgCookie(page: Page): Promise<void> {
   ]);
 }
 
-async function stubOrgMeetingsRoutes(page: Page, listResponder: (route: Route, url: URL) => Promise<void>): Promise<void> {
+const REAL_SUMMARY_STUB = { upcomingMeetings: 12, recurringSeries: 4, recurringFoundations: 3, nextMeeting: '2026-07-03T12:00:00.000Z' };
+
+async function stubOrgMeetingsRoutes(
+  page: Page,
+  listResponder: (route: Route, url: URL) => Promise<void>,
+  summary: typeof REAL_SUMMARY_STUB = REAL_SUMMARY_STUB
+): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, {
       personas: ['contributor'],
@@ -121,7 +127,7 @@ async function stubOrgMeetingsRoutes(page: Page, listResponder: (route: Route, u
   await page.route('**/api/orgs/**/lens/meetings**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/lens/meetings/summary')) {
-      await fulfillJson(route, { upcomingMeetings: 12, recurringSeries: 4, recurringFoundations: 3, nextMeeting: '2026-07-03T12:00:00.000Z' });
+      await fulfillJson(route, summary);
       return;
     }
     if (url.pathname.endsWith('/lens/meetings/projects')) {
@@ -194,6 +200,35 @@ test.describe('Org Meetings Dashboard', () => {
     await expect(strip).toContainText('Upcoming Meetings');
     await expect(strip).toContainText('12');
     await expect(strip).toContainText('Recurring Series');
+  });
+
+  test('KPI strip falls back to counting the rendered demo list when the real summary and list are both empty', async ({ page }) => {
+    // Simulates local dev / a freshly onboarded org: the real summary endpoint legitimately returns all
+    // zeros, and the real list-fetch also returns zero rows — so the page keeps rendering
+    // DEMO_UPCOMING_MEETINGS underneath. The KPI cards must derive their counts/subtext from that demo
+    // list (what's actually on screen), not from the zeroed-out real summary — otherwise the cards would
+    // read "0 Upcoming Meetings" above a list full of visible demo meetings.
+    await stubOrgMeetingsRoutes(page, (route) => fulfillJson(route, { data: [], total: 0, pageSize: 10, offset: 0 }), {
+      upcomingMeetings: 0,
+      recurringSeries: 0,
+      recurringFoundations: 0,
+      nextMeeting: null,
+    });
+    await gotoOrgMeetingsPage(page);
+
+    const recurringDemo = DEMO_UPCOMING_MEETINGS.filter((m) => m.recurrenceLabel !== null);
+    const expectedFoundations = new Set(recurringDemo.map((m) => m.foundation)).size;
+    const expectedNext = DEMO_UPCOMING_MEETINGS.reduce((earliest, m) => (m.startTime < earliest ? m.startTime : earliest), DEMO_UPCOMING_MEETINGS[0].startTime);
+    const expectedNextLabel = new Date(expectedNext).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    const strip = page.getByTestId('org-meetings-kpi-strip');
+    await expect(strip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const upcomingCard = page.getByTestId('stat-card-Upcoming Meetings');
+    await expect(upcomingCard).toContainText(String(DEMO_UPCOMING_MEETINGS.length));
+    await expect(upcomingCard).toContainText(`Next: ${expectedNextLabel}`);
+    const recurringCard = page.getByTestId('stat-card-Recurring Series');
+    await expect(recurringCard).toContainText(String(recurringDemo.length));
+    await expect(recurringCard).toContainText(`Across ${expectedFoundations}`);
   });
 
   test('card date/time shows a timezone abbreviation', async ({ page }) => {

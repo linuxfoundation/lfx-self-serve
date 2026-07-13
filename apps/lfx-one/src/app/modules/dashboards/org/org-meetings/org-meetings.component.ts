@@ -81,6 +81,7 @@ export class OrgMeetingsComponent {
   protected readonly accountId = computed(() => this.accountContext.selectedAccount().accountId);
   protected readonly orgName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
   protected readonly summary: Signal<OrgMeetingsSummary | null> = this.initSummary();
+  protected readonly effectiveSummary: Signal<OrgMeetingsSummary> = this.initEffectiveSummary();
   protected readonly activeTab: Signal<OrgMeetingsTabId> = this.initActiveTab();
   protected readonly kpiCards: Signal<StatCardItem[]> = this.initKpiCards();
   protected readonly nextUpcomingMeetingDate: Signal<string> = this.initNextUpcomingMeetingDate();
@@ -161,19 +162,19 @@ export class OrgMeetingsComponent {
         ];
       }
       const nextDate = this.nextUpcomingMeetingDate();
-      const summary = this.summary();
-      const recurringProjects = summary?.recurringFoundations ?? 0;
+      const summary = this.effectiveSummary();
+      const recurringProjects = summary.recurringFoundations;
       const recurringProjectsLabel = recurringProjects === 1 ? 'project' : 'projects';
       return [
         {
-          value: (summary?.upcomingMeetings ?? 0).toLocaleString(),
+          value: summary.upcomingMeetings.toLocaleString(),
           label: 'Upcoming Meetings',
           subLine: nextDate ? `Next: ${nextDate}` : undefined,
           icon: 'fa-light fa-calendar',
           iconContainerClass: 'bg-blue-100 text-blue-600',
         },
         {
-          value: (summary?.recurringSeries ?? 0).toLocaleString(),
+          value: summary.recurringSeries.toLocaleString(),
           label: 'Recurring Series',
           subLine: recurringProjects > 0 ? `Across ${recurringProjects} ${recurringProjectsLabel}` : undefined,
           icon: 'fa-light fa-repeat',
@@ -199,9 +200,34 @@ export class OrgMeetingsComponent {
     );
   }
 
+  // The real summary() call can legitimately return all-zeros while `upcomingMeetings()` is still
+  // showing the demo fallback (no real rows yet) — that mismatch is exactly what made the KPI cards
+  // disagree with the rendered list. Once the real list-fetch has confirmed rows exist (total() > 0),
+  // trust the real summary; otherwise derive the summary directly from whatever list is actually on screen.
+  private initEffectiveSummary(): Signal<OrgMeetingsSummary> {
+    return computed<OrgMeetingsSummary>(() => {
+      const real = this.summary();
+      if (this.total() > 0 && real) return real;
+
+      const meetings = this.upcomingMeetings();
+      const recurring = meetings.filter((meeting) => meeting.recurrenceLabel !== null);
+      const recurringFoundations = new Set(recurring.map((meeting) => meeting.foundation)).size;
+      const nextMeeting = meetings.reduce<string | null>(
+        (earliest, meeting) => (earliest === null || meeting.startTime < earliest ? meeting.startTime : earliest),
+        null
+      );
+      return {
+        upcomingMeetings: meetings.length,
+        recurringSeries: recurring.length,
+        recurringFoundations,
+        nextMeeting,
+      };
+    });
+  }
+
   private initNextUpcomingMeetingDate(): Signal<string> {
     return computed(() => {
-      const next = this.summary()?.nextMeeting;
+      const next = this.effectiveSummary().nextMeeting;
       if (!next) return '';
       // Format via DatePipe (same engine as the meeting-card `| date` bindings) so the KPI date stays consistent with the cards.
       return this.datePipe.transform(next, 'MMM d') ?? '';
