@@ -73,6 +73,11 @@ export class SessionStoreService {
           'Session write failed — invalidated the stale entry, user will be treated as logged out on next request'
         );
       }
+      // express-openid-connect awaits store.set() inside its res.end() wrapper and calls next(err)
+      // on rejection instead of completing the response — surfacing this now prevents the OIDC login
+      // callback from issuing a cookie for a session that was never persisted, which would otherwise
+      // loop the user through login indefinitely while Valkey is down.
+      throw new Error('Session write failed to persist');
     }
   }
 
