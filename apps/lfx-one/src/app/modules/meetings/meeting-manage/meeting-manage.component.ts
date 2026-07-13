@@ -20,7 +20,7 @@ import {
   TOTAL_STEPS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
-import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRequest,
@@ -201,6 +201,16 @@ export class MeetingManageComponent {
         }
         titleControl.updateValueAndValidity();
         this.updateCanProceed();
+      });
+
+    // When Board meeting type is selected, enforce private + restricted-only access
+    this.form()
+      .get('meeting_type')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((meetingType: string) => {
+        if (meetingType === MeetingType.BOARD) {
+          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
+        }
       });
 
     // Separate subscription for meeting data changes - populates form only once
@@ -512,7 +522,7 @@ export class MeetingManageComponent {
         const parsed = parseInt(formValue.early_join_time_minutes, 10);
         return isNaN(parsed) ? DEFAULT_EARLY_JOIN_TIME : parsed;
       })(),
-      visibility: formValue.visibility || MeetingVisibility.PRIVATE,
+      visibility: formValue.visibility || MeetingVisibility.PUBLIC,
       restricted: formValue.restricted || false,
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
@@ -921,7 +931,7 @@ export class MeetingManageComponent {
       {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
-        visibility: new FormControl(MeetingVisibility.PRIVATE),
+        visibility: new FormControl(MeetingVisibility.PUBLIC),
         restricted: new FormControl(false),
 
         // Step 2: Meeting Details
