@@ -10,7 +10,7 @@ import otelSdk from '@opentelemetry/sdk-node';
 import otelSemconv from '@opentelemetry/semantic-conventions';
 import { ATTR_DEPLOYMENT_ENVIRONMENT_NAME } from '@opentelemetry/semantic-conventions/incubating';
 
-const { diag, DiagConsoleLogger, DiagLogLevel } = otelApi;
+const { diag, DiagLogLevel } = otelApi;
 const { OTLPTraceExporter: OTLPTraceExporterProto } = otelExporterProto;
 const { ExpressInstrumentation } = otelExpress;
 const { HttpInstrumentation } = otelHttp;
@@ -23,8 +23,16 @@ const { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } = otelSemconv;
 
 const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 
+// Minimal JSON logger for otel.mjs — serverLogger is not available here since
+// this module runs via --import before the server module loads.
+const otelLog = {
+  info: (msg, extra) => process.stdout.write(JSON.stringify({ level: 'INFO', msg, ...extra }) + '\n'),
+  warn: (msg, extra) => process.stdout.write(JSON.stringify({ level: 'WARN', msg, ...extra }) + '\n'),
+  error: (msg, extra) => process.stdout.write(JSON.stringify({ level: 'ERROR', msg, ...extra }) + '\n'),
+};
+
 if (!otlpEndpoint) {
-  console.log('[otel] OTEL_EXPORTER_OTLP_ENDPOINT not set, tracing disabled');
+  otelLog.info('[otel] OTEL_EXPORTER_OTLP_ENDPOINT not set, tracing disabled');
 } else {
   const logLevel = (process.env['OTEL_LOG_LEVEL'] || 'info').toLowerCase();
   const diagLevelMap = {
@@ -36,11 +44,20 @@ if (!otlpEndpoint) {
     verbose: DiagLogLevel.VERBOSE,
     all: DiagLogLevel.ALL,
   };
+
+  // Custom JSON diag logger so OTel diagnostic output stays single-line JSON.
+  const jsonDiagLogger = {
+    error: (msg, ...args) => otelLog.error(`[otel] ${msg}`, args.length ? { args } : undefined),
+    warn: (msg, ...args) => otelLog.warn(`[otel] ${msg}`, args.length ? { args } : undefined),
+    info: (msg, ...args) => otelLog.info(`[otel] ${msg}`, args.length ? { args } : undefined),
+    debug: (msg, ...args) => otelLog.info(`[otel] ${msg}`, args.length ? { args } : undefined),
+    verbose: (msg, ...args) => otelLog.info(`[otel] ${msg}`, args.length ? { args } : undefined),
+  };
   if (diagLevelMap[logLevel] !== undefined) {
-    diag.setLogger(new DiagConsoleLogger(), diagLevelMap[logLevel]);
+    diag.setLogger(jsonDiagLogger, diagLevelMap[logLevel]);
   } else {
-    console.warn(`[otel] Unknown OTEL_LOG_LEVEL: ${logLevel}, defaulting to info`);
-    diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
+    otelLog.warn(`[otel] Unknown OTEL_LOG_LEVEL: ${logLevel}, defaulting to info`);
+    diag.setLogger(jsonDiagLogger, DiagLogLevel.INFO);
   }
 
   const serviceName = process.env['OTEL_SERVICE_NAME'] || 'lfx-self-serve';
@@ -58,14 +75,14 @@ if (!otlpEndpoint) {
   const rawRatio = parseFloat(process.env['OTEL_TRACES_SAMPLER_ARG'] || '1.0');
   const traceRatio = Number.isFinite(rawRatio) ? Math.min(1.0, Math.max(0.0, rawRatio)) : 1.0;
   if (process.env['OTEL_TRACES_SAMPLER_ARG'] && (!Number.isFinite(rawRatio) || rawRatio < 0 || rawRatio > 1)) {
-    console.warn(`[otel] Invalid OTEL_TRACES_SAMPLER_ARG=${process.env['OTEL_TRACES_SAMPLER_ARG']}, using ${traceRatio}`);
+    otelLog.warn(`[otel] Invalid OTEL_TRACES_SAMPLER_ARG=${process.env['OTEL_TRACES_SAMPLER_ARG']}, using ${traceRatio}`);
   }
 
   // OTEL_TRACES_SAMPLER selects the sampler strategy (default: parentbased_always_on)
   const samplerName = (process.env['OTEL_TRACES_SAMPLER'] || 'parentbased_always_on').toLowerCase();
   const knownSamplers = ['always_on', 'always_off', 'traceidratio', 'parentbased_always_on', 'parentbased_always_off', 'parentbased_traceidratio'];
   if (!knownSamplers.includes(samplerName)) {
-    console.warn(`[otel] Unknown sampler: ${samplerName}, falling back to parentbased_always_on`);
+    otelLog.warn(`[otel] Unknown sampler: ${samplerName}, falling back to parentbased_always_on`);
   }
   let sampler;
   switch (samplerName) {
@@ -165,22 +182,17 @@ if (!otlpEndpoint) {
 
   try {
     await sdk.start();
-    console.log('[otel] Tracing enabled:', JSON.stringify({
-      service: serviceName,
-      version: serviceVersion,
-      sampler: samplerName,
-      ratio: traceRatio,
-    }));
+    otelLog.info('[otel] Tracing enabled', { service: serviceName, version: serviceVersion, sampler: samplerName, ratio: traceRatio });
   } catch (err) {
-    console.error('[otel] Failed to start SDK:', err);
+    otelLog.error('[otel] Failed to start SDK', { err: { message: err.message, stack: err.stack } });
   }
 
   const shutdown = async () => {
     try {
       await sdk.shutdown();
-      console.log('[otel] SDK shut down successfully');
+      otelLog.info('[otel] SDK shut down successfully');
     } catch (err) {
-      console.error('[otel] Error shutting down SDK:', err);
+      otelLog.error('[otel] Error shutting down SDK', { err: { message: err.message, stack: err.stack } });
     }
   };
 
