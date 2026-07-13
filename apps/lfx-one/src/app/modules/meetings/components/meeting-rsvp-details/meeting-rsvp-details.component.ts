@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ButtonComponent } from '@components/button/button.component';
 import {
   calculateRsvpCounts,
+  getPastMeetingResourceId,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -130,7 +131,7 @@ export class MeetingRsvpDetailsComponent {
           if (!this.pastMeeting()) {
             return of([] as PastMeetingParticipant[]);
           }
-          return this.meetingService.getPastMeetingParticipants(meeting.id).pipe(
+          return this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(
             catchError((error) => {
               console.error('Failed to fetch past meeting participants:', error);
               return of([] as PastMeetingParticipant[]);

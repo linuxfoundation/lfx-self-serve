@@ -32,6 +32,9 @@ export const MAX_MEETINGS_PAGE_SIZE = 100;
 /** App-relative base path for meeting join/details routes (see `deriveUpcomingMeetingDetailsUrl` / `derivePastMeetingDetailsUrl`); resolved to an absolute URL by callers via `toAbsoluteUrl`. */
 export const ORG_MEETING_DETAILS_BASE_URL = '/meetings';
 
+/** Id prefix on every `DEMO_UPCOMING_MEETINGS` row — lets `deriveUpcomingHasResolvableDetails` tell a synthetic demo-fallback id from a real fetched one, since the two can be intermixed once the real `getOrgUpcomingMeetings` fetch resolves. */
+export const DEMO_UPCOMING_MEETING_ID_PREFIX = 'um-';
+
 /** Valid meeting-type filter values for server-side validation. */
 export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'marketing', 'technical', 'other']);
 

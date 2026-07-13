@@ -120,6 +120,8 @@ export interface OrgMeetingTypeBadge {
  * past-meeting `/details` route, since an upcoming id doesn't resolve via `getPastMeetingById`. Its
  * placeholder password query param is a UI-only stand-in (see `deriveDemoPassword`) —
  * LFXV2-1901 is scoped to UI only, the real invite-membership/password data model lands in a follow-up ticket.
+ * `hasResolvableDetails` (see `deriveUpcomingHasResolvableDetails`) gates the "See Details" CTA off for
+ * `DEMO_UPCOMING_MEETINGS` rows, which can be interleaved with real rows once the account's real fetch resolves.
  */
 export interface OrgMeetingVm extends OrgMeeting {
   readonly linkUrl: string;
@@ -127,6 +129,7 @@ export interface OrgMeetingVm extends OrgMeeting {
   readonly inviteeVms: readonly OrgMeetingInviteeVm[];
   readonly typeBadge: OrgMeetingTypeBadge;
   readonly detailsUrl: string;
+  readonly hasResolvableDetails: boolean;
 }
 
 /** Attendance badge label + style for a past-meeting invitee row. */
