@@ -10,6 +10,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -20,7 +21,7 @@ const DEFAULT_DISTRIBUTION: OrgContributorsProjectDistributionResponse = { proje
 
 @Component({
   selector: 'lfx-org-active-contributors-drawer',
-  imports: [DrawerModule, ChartComponent],
+  imports: [DrawerModule, ChartComponent, TooltipModule],
   templateUrl: './org-active-contributors-drawer.component.html',
 })
 export class OrgActiveContributorsDrawerComponent {

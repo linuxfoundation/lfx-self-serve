@@ -8,13 +8,14 @@ import { lfxColors } from '@lfx-one/shared/constants';
 import { buildLensAwareInsightsUrl } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type { FoundationHealthScoreDistributionResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-project-health-scores-drawer',
-  imports: [DrawerModule, ChartComponent, InsightsHandoffSectionComponent],
+  imports: [DrawerModule, ChartComponent, InsightsHandoffSectionComponent, TooltipModule],
   templateUrl: './project-health-scores-drawer.component.html',
 })
 export class ProjectHealthScoresDrawerComponent {

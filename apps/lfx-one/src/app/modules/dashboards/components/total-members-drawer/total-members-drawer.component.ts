@@ -7,13 +7,14 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_TOTAL_MEMBERS, lfxColors } from '@lfx-one/shared/constants';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type { FoundationTotalMembersResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-total-members-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule],
   templateUrl: './total-members-drawer.component.html',
 })
 export class TotalMembersDrawerComponent {
