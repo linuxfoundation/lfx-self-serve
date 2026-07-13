@@ -4,6 +4,7 @@
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_NO_RESPONSE_BADGE, ORG_MEETINGS_RSVP_BADGES } from '@lfx-one/shared/constants';
 import type { OrgMeeting, OrgMeetingRsvpTally, OrgMeetingVm, OrgPrivateMeetingsRollupVm } from '@lfx-one/shared/interfaces';
@@ -12,7 +13,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
   selector: 'lfx-org-upcoming-meetings',
-  imports: [DatePipe, PersonAvatarComponent, ClipboardModule, LinkifyPipe],
+  imports: [DatePipe, PersonAvatarComponent, ClipboardModule, LinkifyPipe, ButtonComponent],
   templateUrl: './org-upcoming-meetings.component.html',
 })
 export class OrgUpcomingMeetingsComponent {
