@@ -51,6 +51,27 @@ function makeUpcomingMeeting(index: number) {
   };
 }
 
+// Simulates the real-world upstream quirk documented on getUpcomingMeetingStartTime: the list
+// payload's `occurrences` array isn't guaranteed to be projected, so a long-running recurring
+// series' `start_time` (the series origin) can be far in the past even though the meeting has a
+// legitimate future occurrence via `next_occurrence_start_time`. A card that ignores that field
+// would both wrongly filter this meeting out of "upcoming" and show the wrong date if it didn't.
+function makeRecurringMeetingWithStaleOrigin() {
+  return {
+    id: 'mtg-upcoming-stale-origin',
+    project_uid: MOCK_FOUNDATION_UID,
+    project_name: 'Meetings Dashboard Foundation',
+    title: 'Long-Running Governing Board Meeting',
+    start_time: '2020-01-01T17:00:00.000Z',
+    next_occurrence_start_time: '2099-09-20T17:00:00.000Z',
+    duration: 60,
+    timezone: 'America/Los_Angeles',
+    recurrence: { type: 1, repeat_interval: 1 },
+    meeting_type: 'board',
+    occurrences: [],
+  };
+}
+
 function makePastMeeting(index: number, attended: number, total: number) {
   const scheduledStart = new Date(Date.now() - index * 24 * 60 * 60 * 1000).toISOString();
   return {
@@ -181,6 +202,18 @@ test.describe('Meetings Dashboard — Foundation lens stat card subtext', () => 
     await expect(card).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(card).toContainText('Next: Aug 14');
     await page.screenshot({ path: 'test-results/visual-check-fp-stat-cards-upcoming.png' });
+  });
+
+  test('Upcoming Meetings card uses next_occurrence_start_time when occurrences is unusable and the series origin has passed', async ({ page }) => {
+    await page.route('**/api/meetings*', (route) => fulfillJson(route, { data: [makeRecurringMeetingWithStaleOrigin()], page_token: null }));
+
+    await gotoFoundationMeetings(page);
+
+    const card = page.getByTestId('stat-card-Upcoming Meetings');
+    await expect(card).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(card).toContainText('1');
+    await expect(card).toContainText('Next: Sep 20');
+    await page.screenshot({ path: 'test-results/visual-check-fp-stat-cards-upcoming-stale-origin.png' });
   });
 
   test('Recurring Series card shows the across-projects subtext', async ({ page }) => {

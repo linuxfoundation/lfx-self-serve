@@ -27,6 +27,7 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
+  getUpcomingMeetingStartTime,
   hasMeetingEnded,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
@@ -597,14 +598,18 @@ export class MeetingsDashboardComponent {
       if (meeting.occurrences && meeting.occurrences.length > 0) {
         return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));
       }
-      return !hasMeetingEnded(meeting);
+      // occurrences isn't usable here — fall back to the upstream-computed next occurrence
+      // (see getUpcomingMeetingStartTime) instead of the series origin start_time, so a
+      // long-running recurring series isn't misclassified as ended.
+      const nextStartTime = getUpcomingMeetingStartTime(meeting);
+      return !!nextStartTime && !hasMeetingEnded({ ...meeting, start_time: nextStartTime });
     });
 
     return activeMeetings.sort((a, b) => {
       const occurrenceA = getCurrentOrNextOccurrence(a);
       const occurrenceB = getCurrentOrNextOccurrence(b);
-      const timeA = occurrenceA ? new Date(occurrenceA.start_time).getTime() : new Date(a.start_time).getTime();
-      const timeB = occurrenceB ? new Date(occurrenceB.start_time).getTime() : new Date(b.start_time).getTime();
+      const timeA = new Date(getUpcomingMeetingStartTime(a, occurrenceA) ?? a.start_time).getTime();
+      const timeB = new Date(getUpcomingMeetingStartTime(b, occurrenceB) ?? b.start_time).getTime();
       return timeA - timeB;
     });
   }
@@ -709,8 +714,9 @@ export class MeetingsDashboardComponent {
       const first = this.sortedUpcomingUserMeetings()[0];
       if (!first) return '';
       const occ = getCurrentOrNextOccurrence(first);
-      const d = new Date(occ ? occ.start_time : first.start_time);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const startTime = getUpcomingMeetingStartTime(first, occ);
+      if (!startTime) return '';
+      return new Date(startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
   }
 
@@ -838,8 +844,9 @@ export class MeetingsDashboardComponent {
       const first = this.rawFpUpcomingMeetings()[0];
       if (!first) return '';
       const occ = getCurrentOrNextOccurrence(first);
-      const d = new Date(occ ? occ.start_time : first.start_time);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const startTime = getUpcomingMeetingStartTime(first, occ);
+      if (!startTime) return '';
+      return new Date(startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
   }
 
