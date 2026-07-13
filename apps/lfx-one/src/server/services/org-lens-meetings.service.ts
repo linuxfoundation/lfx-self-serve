@@ -90,10 +90,12 @@ export class OrgLensMeetingsService {
     const searchFilter = searchQuery ? 'AND (m.TOPIC ILIKE ? OR m.AGENDA ILIKE ?)' : '';
     const projectFilter = project ? 'AND m.FOUNDATION_NAME = ?' : '';
     // 'other' is a UI catch-all (see mapMeetingType) with no matching literal bucket in Snowflake —
-    // filter it by exclusion instead of an equality bind that would never match a real row.
+    // filter it by exclusion instead of an equality bind that would never match a real row. NULL
+    // buckets also map to 'other' in mapMeetingType, but SQL's NOT IN treats NULL as UNKNOWN rather
+    // than TRUE, so the IS NULL branch must be included explicitly or those rows would be dropped.
     let typeFilter = '';
     if (type === 'other') {
-      typeFilter = "AND m.MEETING_TYPE_BUCKET NOT IN ('board','marketing','working-group')";
+      typeFilter = "AND (m.MEETING_TYPE_BUCKET NOT IN ('board','marketing','working-group') OR m.MEETING_TYPE_BUCKET IS NULL)";
     } else if (type) {
       typeFilter = 'AND m.MEETING_TYPE_BUCKET = ?';
     }
