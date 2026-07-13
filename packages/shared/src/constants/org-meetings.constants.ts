@@ -29,8 +29,8 @@ export const VALID_ORG_MEETINGS_TAB_IDS: ReadonlySet<OrgMeetingsTabId> = new Set
 export const DEFAULT_MEETINGS_PAGE_SIZE = 10;
 export const MAX_MEETINGS_PAGE_SIZE = 100;
 
-/** Base URL for the external "See Meeting Details" page (see `deriveMeetingDetailsUrl`). */
-export const ORG_MEETING_DETAILS_BASE_URL = 'https://app.lfx.dev/meetings';
+/** App-relative base path for the "See Meeting Details" route (see `deriveMeetingDetailsUrl`); resolved to an absolute URL by callers via `toAbsoluteUrl`. */
+export const ORG_MEETING_DETAILS_BASE_URL = '/meetings';
 
 /** Valid meeting-type filter values for server-side validation. */
 export const VALID_ORG_MEETING_TYPE_VALUES: ReadonlySet<OrgMeetingType> = new Set<OrgMeetingType>(['board', 'marketing', 'technical', 'other']);

@@ -32,7 +32,10 @@ export class OrgPastMeetingsComponent {
   protected readonly privateRollup: Signal<OrgPrivateMeetingsRollupVm | null> = computed(() => this.privacySplit().rollup);
 
   // Pre-bake per-meeting presentation fields once per list change so the template's `@for` binds plain values (no method calls per change-detection).
-  protected readonly meetingVms: Signal<readonly OrgPastMeetingVm[]> = computed(() => this.privacySplit().visible.map((meeting) => this.toVm(meeting)));
+  protected readonly meetingVms: Signal<readonly OrgPastMeetingVm[]> = computed(() => {
+    const isBrowser = isPlatformBrowser(this.platformId);
+    return this.privacySplit().visible.map((meeting) => this.toVm(meeting, isBrowser));
+  });
 
   protected toggleExpand(id: string): void {
     this.expandedIds.update((prev) => {
@@ -50,7 +53,7 @@ export class OrgPastMeetingsComponent {
     return toAbsoluteUrl(`/meetings/${meetingId}`, isPlatformBrowser(this.platformId));
   }
 
-  private toVm(meeting: OrgPastMeeting): OrgPastMeetingVm {
+  private toVm(meeting: OrgPastMeeting, isBrowser: boolean): OrgPastMeetingVm {
     const demoPassword = deriveDemoPassword(meeting.id, meeting.privacy);
     return {
       ...meeting,
@@ -60,7 +63,7 @@ export class OrgPastMeetingsComponent {
         badge: ORG_MEETINGS_ATTENDANCE_BADGES[invitee.attendanceStatus],
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
-      detailsUrl: deriveMeetingDetailsUrl(meeting.id, demoPassword),
+      detailsUrl: toAbsoluteUrl(deriveMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
     };
   }
 }

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -745,7 +746,15 @@ export class MeetingsDashboardComponent {
         (id) =>
           this.meetingService.getPastMeetingRecording(id).pipe(
             map((rec) => (getLargestSessionShareUrl(rec) ? 1 : 0)),
-            catchError(() => of(0))
+            catchError((err: unknown) => {
+              // A 404 means the recording genuinely doesn't exist yet — that's a real zero. Any other
+              // failure (network, 5xx) is unknown state, not "no recording"; log it rather than letting
+              // a transient outage silently present as an authoritative low count.
+              if (!(err instanceof HttpErrorResponse) || err.status !== 404) {
+                console.error(`Failed to check recording availability for meeting ${id}:`, err);
+              }
+              return of(0);
+            })
           ),
         MEETING_RECORDING_COUNT_FETCH_CONCURRENCY
       ),
@@ -770,7 +779,15 @@ export class MeetingsDashboardComponent {
         (id) =>
           this.meetingService.getPastMeetingParticipants(id).pipe(
             map((participants) => ({ attended: participants.filter((p) => p.is_attended).length, total: participants.length })),
-            catchError(() => of({ attended: 0, total: 0 }))
+            catchError((err: unknown) => {
+              // A 404 means the meeting genuinely has no participant records — a real zero. Any other
+              // failure is unknown state; log it so a transient outage isn't silently indistinguishable
+              // from "no attendees" (contributing 0/0 already excludes it from the computed rate below).
+              if (!(err instanceof HttpErrorResponse) || err.status !== 404) {
+                console.error(`Failed to load attendance for meeting ${id}:`, err);
+              }
+              return of({ attended: 0, total: 0 });
+            })
           ),
         MEETING_ATTENDANCE_COUNT_FETCH_CONCURRENCY
       ),

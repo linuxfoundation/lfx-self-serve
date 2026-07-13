@@ -23,9 +23,13 @@ export function deriveDemoPassword(meetingId: string, privacy: OrgMeetingPrivacy
   return privacy === 'private' ? `demo-${meetingId}` : null;
 }
 
-/** Absolute "See Meeting Details" URL for a meeting the viewer can access (public, or private + invited) — the `password` param is omitted for public meetings (see `deriveDemoPassword`). */
+/**
+ * App-relative "See Meeting Details" path for a meeting the viewer can access (public, or private +
+ * invited) — the `password` param is omitted for public meetings (see `deriveDemoPassword`). Callers
+ * wrap the result in `toAbsoluteUrl` (same as the join-page `linkUrl`) before binding it to `[href]`.
+ */
 export function deriveMeetingDetailsUrl(meetingId: string, password: string | null): string {
-  const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}`;
+  const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}/details`;
   return password ? `${base}?password=${encodeURIComponent(password)}` : base;
 }
 

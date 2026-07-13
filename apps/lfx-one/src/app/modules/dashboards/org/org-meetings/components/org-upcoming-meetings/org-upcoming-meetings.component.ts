@@ -64,7 +64,7 @@ export class OrgUpcomingMeetingsComponent {
         badge: invitee.rsvpStatus ? ORG_MEETINGS_RSVP_BADGES[invitee.rsvpStatus] : ORG_MEETINGS_NO_RESPONSE_BADGE,
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
-      detailsUrl: deriveMeetingDetailsUrl(meeting.id, demoPassword),
+      detailsUrl: toAbsoluteUrl(deriveMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
     };
   }
 

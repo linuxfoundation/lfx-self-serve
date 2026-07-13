@@ -246,10 +246,24 @@ export class OrgMeetingsComponent {
 
   private initResetFiltersOnAccountChange(): void {
     // Filters are org-scoped: a leftover project/type/search would hide the new org's meetings.
+    // accountId starts as the placeholder '' and resolves to the first real account either
+    // synchronously or after an async canonical-record fetch — filtering out the falsy value before
+    // skip(1) ensures that initial settling (of either speed) is never mistaken for a user-driven
+    // account switch.
     toObservable(this.accountId)
-      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .pipe(
+        filter((id): id is string => !!id),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
       .subscribe(() => {
         this.filterForm.reset({ search: '', type: null, project: null });
+        // Reset to the same demo seed the signal starts with (not `[]`) rather than leaving the prior
+        // account's rows visible until the new account's fetch resolves — an empty array here would
+        // read as "confirmed no meetings" and fight the zero-result branch's own demo-fallback logic.
+        this.upcomingMeetings.set(DEMO_UPCOMING_MEETINGS);
+        this.total.set(0);
       });
   }
 
@@ -327,7 +341,16 @@ export class OrgMeetingsComponent {
         }
         this.total.set(res.total);
         if (offset === 0 && res.data.length === 0) {
-          // No real rows yet (e.g. local dev without seeded data) — keep showing the demo set instead of an empty list.
+          // The org-wide summary (unaffected by the current search/type/project filter) is the ground
+          // truth for "does this account have any real data at all." Only treat a zero-result page as
+          // missing seed data when the summary agrees the account is genuinely empty/unloaded; otherwise
+          // this zero is a real result (e.g. a filter with no matches, or a switched-to account that's
+          // empty) and must replace whatever's on screen instead of leaving demo/stale rows visible.
+          const real = this.summary();
+          const accountLooksUnseeded = !real || (real.upcomingMeetings === 0 && real.recurringSeries === 0);
+          if (!accountLooksUnseeded) {
+            this.upcomingMeetings.set([]);
+          }
           this.listLoading.set(false);
           this.loadingMore.set(false);
           return;

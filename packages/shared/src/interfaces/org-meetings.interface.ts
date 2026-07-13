@@ -115,8 +115,8 @@ export interface OrgMeetingTypeBadge {
 /**
  * Upcoming meeting with presentation fields pre-baked for template rendering (avoids method calls in the `@for`).
  *
- * `detailsUrl` is the absolute external "See Meeting Details" link (see `deriveMeetingDetailsUrl` in
- * `@lfx-one/shared/utils`); its placeholder password query param is a UI-only stand-in (see `deriveDemoPassword`) —
+ * `detailsUrl` is the absolute in-app "See Meeting Details" link (see `deriveMeetingDetailsUrl` in
+ * `@lfx-one/shared/utils`, resolved via `toAbsoluteUrl`); its placeholder password query param is a UI-only stand-in (see `deriveDemoPassword`) —
  * LFXV2-1901 is scoped to UI only, the real invite-membership/password data model lands in a follow-up ticket.
  */
 export interface OrgMeetingVm extends OrgMeeting {
