@@ -38,6 +38,7 @@ import {
   FoundationContributorsMentoredRow,
   FoundationEventsAttendanceDistributionResponse,
   FoundationEventsAttendanceDistributionRow,
+  FoundationHealthScore,
   FoundationEventsQuarterlyResponse,
   FoundationEventsQuarterlyRow,
   FoundationHealthEventsMonthlyRow,
@@ -136,6 +137,15 @@ import { SnowflakeService } from './snowflake.service';
 
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
+
+/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. */
+const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<FoundationHealthScore> = new Set(['excellent', 'healthy', 'stable', 'unsteady', 'critical']);
+
+/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY; null when absent or unrecognized. */
+function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
+  const category = raw?.toLowerCase() as FoundationHealthScore | undefined;
+  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? category : null;
+}
 
 /** Upstream response shape for project folders (POST response) */
 interface ProjectFolder {
@@ -1676,24 +1686,35 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
+    // LEFT JOIN latest per-project health category (separate daily table) for the badge;
+    // keyed on PROJECT_SLUG since the two tables use different PROJECT_ID systems.
     const query = `
       SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        LIFECYCLE_STAGE,
-        CONTRIBUTORS_90D_COUNT,
-        COMMITS_90D_COUNT,
-        MAINTAINERS_CURRENT_COUNT,
-        STARS_YTD_COUNT,
-        LAST_UPDATED_TS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
-      WHERE FOUNDATION_SLUG = ?
-      ORDER BY PROJECT_NAME ASC
+        d.PROJECT_ID,
+        d.PROJECT_NAME,
+        d.PROJECT_SLUG,
+        d.LIFECYCLE_STAGE,
+        d.CONTRIBUTORS_90D_COUNT,
+        d.COMMITS_90D_COUNT,
+        d.MAINTAINERS_CURRENT_COUNT,
+        d.STARS_YTD_COUNT,
+        d.LAST_UPDATED_TS,
+        h.HEALTH_SCORE_CATEGORY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
+      LEFT JOIN (
+        SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
+        WHERE FOUNDATION_SLUG = ?
+          AND HEALTH_SCORE IS NOT NULL
+          AND HEALTH_SCORE_CATEGORY IS NOT NULL
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY PROJECT_SLUG ORDER BY METRIC_DATE DESC) = 1
+      ) h ON d.PROJECT_SLUG = h.PROJECT_SLUG
+      WHERE d.FOUNDATION_SLUG = ?
+      ORDER BY d.PROJECT_NAME ASC
     `;
 
     try {
-      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug]);
+      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug, foundationSlug]);
 
       const projects = result.rows.map((row) => ({
         id: row.PROJECT_SLUG,
@@ -1714,6 +1735,9 @@ export class ProjectService {
         maintainers: row.MAINTAINERS_CURRENT_COUNT ?? 0,
         stars: row.STARS_YTD_COUNT ?? 0,
         lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
+        // Normalize the upstream capitalized category to our lowercase union; guard
+        // against unexpected strings so the interface's promise (FoundationHealthScore | null) holds.
+        healthScoreCategory: normalizeHealthScoreCategory(row.HEALTH_SCORE_CATEGORY),
       }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
