@@ -68,6 +68,8 @@ export class OrgUpcomingMeetingsComponent {
       detailsUrl: toAbsoluteUrl(deriveUpcomingMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
       // UI-only build: always show the CTA, even for demo-fallback rows with no backing meeting record —
       // the real link resolves once the account's data is wired up (see `deriveUpcomingMeetingDetailsUrl`).
+      // TODO(LFXV2-1901 follow-up): once real invite/backing-record data lands, this must be computed
+      // per-row instead of hardcoded true, so demo-fallback rows hide the CTA again.
       hasResolvableDetails: true,
     };
   }

@@ -71,6 +71,8 @@ export class OrgPastMeetingsComponent {
       detailsUrl: toAbsoluteUrl(derivePastMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
       // UI-only build: always show the CTA, even though the Org Lens past-meeting list is entirely
       // demo-seeded (see DEMO_PAST_MEETINGS) — the real link resolves once a real fetch path lands.
+      // TODO(LFXV2-1901 follow-up): once real backing records land, this must be computed per-row
+      // instead of hardcoded true, so demo-fallback rows hide the CTA again.
       hasResolvableDetails: true,
     };
   }

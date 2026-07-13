@@ -89,7 +89,14 @@ export class OrgLensMeetingsService {
 
     const searchFilter = searchQuery ? 'AND (m.TOPIC ILIKE ? OR m.AGENDA ILIKE ?)' : '';
     const projectFilter = project ? 'AND m.FOUNDATION_NAME = ?' : '';
-    const typeFilter = type ? 'AND m.MEETING_TYPE_BUCKET = ?' : '';
+    // 'other' is a UI catch-all (see mapMeetingType) with no matching literal bucket in Snowflake —
+    // filter it by exclusion instead of an equality bind that would never match a real row.
+    let typeFilter = '';
+    if (type === 'other') {
+      typeFilter = "AND m.MEETING_TYPE_BUCKET NOT IN ('board','marketing','working-group')";
+    } else if (type) {
+      typeFilter = 'AND m.MEETING_TYPE_BUCKET = ?';
+    }
 
     const sql = `
       SELECT
@@ -123,7 +130,7 @@ export class OrgLensMeetingsService {
     const binds: (string | number)[] = [accountId];
     if (searchQuery) binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     if (project) binds.push(project);
-    if (type) binds.push(mapMeetingTypeToBucket(type));
+    if (type && type !== 'other') binds.push(mapMeetingTypeToBucket(type));
     binds.push(pageSize, offset);
 
     // Surface list errors (no fail-soft) so the client renders its distinct "couldn't load" state instead of an empty list.

@@ -27,7 +27,7 @@ export function getLargestSessionShareUrl(recording: PastMeetingRecording | null
     return null;
   }
   const largest = shareable.reduce((a, b) => (b.total_size > a.total_size ? b : a));
-  return largest.share_url || null;
+  return largest.share_url;
 }
 
 // Past-meeting sub-resources are keyed by meeting_and_occurrence_id; project-scoped lists may
