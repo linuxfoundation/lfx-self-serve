@@ -22,6 +22,7 @@ import { buildLensAwareInsightsUrl, buildVisiblePages, hexToRgba } from '@lfx-on
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
@@ -46,6 +47,7 @@ import type {
     DecimalPipe,
     NgClass,
     InsightsHandoffSectionComponent,
+    TooltipModule,
   ],
   templateUrl: './total-projects-drawer.component.html',
 })

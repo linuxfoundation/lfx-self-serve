@@ -112,14 +112,7 @@ export class MeetingService {
 
   /** Fetches meeting count scoped to a committee. */
   public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
-    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
-    return this.http.get<QueryServiceCountResponse>('/api/meetings/count', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load meetings count:', error);
-        return of({ count: 0 });
-      }),
-      map((response) => response.count)
-    );
+    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`);
   }
 
   /** Fetches upcoming meetings scoped to a committee. */
@@ -146,19 +139,11 @@ export class MeetingService {
   }
 
   public getMeetingsCountByProject(uid: string): Observable<number> {
-    const params = new HttpParams().set('tags', `project_uid:${uid}`);
-    return this.http
-      .get<QueryServiceCountResponse>('/api/meetings/count', { params })
-      .pipe(
-        catchError((error) => {
-          console.error('Failed to load meetings count:', error);
-          return of({ count: 0 });
-        })
-      )
-      .pipe(
-        // Extract just the count number from the response
-        map((response) => response.count)
-      );
+    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`);
+  }
+
+  public getPastMeetingsCountByProject(uid: string): Observable<number> {
+    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -600,5 +585,16 @@ export class MeetingService {
         this.pastMeetingRecordingCache.delete(key);
       }
     }
+  }
+
+  private getCountByTag(endpoint: string, tag: string): Observable<number> {
+    const params = new HttpParams().set('tags', tag);
+    return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load count from ${endpoint}:`, error);
+        return of({ count: 0 });
+      }),
+      map((response) => response.count)
+    );
   }
 }

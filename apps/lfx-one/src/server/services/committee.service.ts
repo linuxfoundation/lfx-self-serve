@@ -1330,6 +1330,56 @@ export class CommitteeService {
   }
 
   /**
+   * Batch-fetches committee resources by UID from the query service.
+   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
+   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
+   */
+  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+    const unique = Array.from(new Set(uids)).filter(Boolean);
+    if (unique.length === 0) return new Map();
+
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
+    }
+
+    // Rethrow batch failures — returning [] would make callers treat real memberships as
+    // "committee not found" and silently drop them (defeats failOnPartial: true).
+    const batchResults = await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          return await fetchAllQueryResources<Committee>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          );
+        } catch (error) {
+          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
+            batch_size: batch.length,
+            err: error,
+          });
+          throw error;
+        }
+      })
+    );
+
+    const byUid = new Map<string, Committee>();
+    for (const committee of batchResults.flat()) {
+      if (committee?.uid) {
+        byUid.set(committee.uid, committee);
+      }
+    }
+
+    return byUid;
+  }
+
+  /**
    * Fetches the caller's membership row for a single committee, or null if none.
    * Uses the username-tagged query so visibility is independent of which email
    * the caller authenticated with — matching the pattern used by
@@ -1417,56 +1467,6 @@ export class CommitteeService {
       // Tie-breaker: prefer lexicographically smallest uid for stable ordering across requests.
       return (current.uid ?? '') < (best.uid ?? '') ? current : best;
     });
-  }
-
-  /**
-   * Batch-fetches committee resources by UID from the query service.
-   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
-   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
-   */
-  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
-    const unique = Array.from(new Set(uids)).filter(Boolean);
-    if (unique.length === 0) return new Map();
-
-    const BATCH_SIZE = 100;
-    const batches: string[][] = [];
-    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-      batches.push(unique.slice(i, i + BATCH_SIZE));
-    }
-
-    // Rethrow batch failures — returning [] would make callers treat real memberships as
-    // "committee not found" and silently drop them (defeats failOnPartial: true).
-    const batchResults = await Promise.all(
-      batches.map(async (batch) => {
-        try {
-          return await fetchAllQueryResources<Committee>(
-            req,
-            (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'committee',
-                filters_or: batch.map((uid) => `uid:${uid}`),
-                ...(pageToken && { page_token: pageToken }),
-              }),
-            { failOnPartial: true }
-          );
-        } catch (error) {
-          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
-            batch_size: batch.length,
-            err: error,
-          });
-          throw error;
-        }
-      })
-    );
-
-    const byUid = new Map<string, Committee>();
-    for (const committee of batchResults.flat()) {
-      if (committee?.uid) {
-        byUid.set(committee.uid, committee);
-      }
-    }
-
-    return byUid;
   }
 
   /**

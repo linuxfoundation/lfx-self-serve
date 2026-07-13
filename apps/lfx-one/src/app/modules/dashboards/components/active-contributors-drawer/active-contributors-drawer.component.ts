@@ -12,6 +12,7 @@ import { buildLensAwareInsightsUrl, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -23,7 +24,7 @@ import type {
 
 @Component({
   selector: 'lfx-active-contributors-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent, TooltipModule],
   templateUrl: './active-contributors-drawer.component.html',
 })
 export class ActiveContributorsDrawerComponent {
