@@ -68,10 +68,9 @@ export class OrgPastMeetingsComponent {
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
       detailsUrl: toAbsoluteUrl(derivePastMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
-      // The Org Lens past-meeting list is entirely demo-seeded (see DEMO_PAST_MEETINGS) — there is no
-      // real past-meeting fetch path yet, so every id here is unresolvable by the details route's
-      // getPastMeetingById lookup. Flip to a real resolvability check once that fetch lands.
-      hasResolvableDetails: false,
+      // UI-only build: always show the CTA, even though the Org Lens past-meeting list is entirely
+      // demo-seeded (see DEMO_PAST_MEETINGS) — the real link resolves once a real fetch path lands.
+      hasResolvableDetails: true,
     };
   }
 }

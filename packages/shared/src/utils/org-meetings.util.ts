@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEMO_UPCOMING_MEETING_ID_PREFIX, ORG_MEETING_DETAILS_BASE_URL, ORG_MEETING_TYPE_LABELS } from '../constants';
+import { ORG_MEETING_DETAILS_BASE_URL, ORG_MEETING_TYPE_LABELS } from '../constants';
 import type { OrgMeetingBase, OrgMeetingPrivacy, OrgMeetingType, OrgMeetingsPrivacySplit, OrgPrivateMeetingsRollupTypeBadgeVm } from '../interfaces';
 
 /**
@@ -38,23 +38,13 @@ export function deriveUpcomingMeetingDetailsUrl(meetingId: string, password: str
 
 /**
  * App-relative "See Meeting Details" path for a *past* meeting — routes to `PastMeetingDetailsComponent`,
- * which resolves the id via `getPastMeetingById`. Only valid for a real (non-demo-fixture) past-meeting
- * id; see `OrgPastMeetingVm.hasResolvableDetails` for why demo rows must not render this link. The
- * `password` param is omitted for public meetings (see `deriveDemoPassword`).
+ * which resolves the id via `getPastMeetingById`. UI-only build: rendered for every row, including
+ * demo-fixture ids with no backing meeting record — the real link resolves once a real fetch path lands.
+ * The `password` param is omitted for public meetings (see `deriveDemoPassword`).
  */
 export function derivePastMeetingDetailsUrl(meetingId: string, password: string | null): string {
   const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}/details`;
   return password ? `${base}?password=${encodeURIComponent(password)}` : base;
-}
-
-/**
- * Whether an upcoming meeting's `deriveUpcomingMeetingDetailsUrl` link is safe to render — false for
- * `DEMO_UPCOMING_MEETINGS` rows (id prefix `um-`), since those ids have no backing meeting record and
- * `MeetingJoinComponent` would redirect to `meetings/not-found`. Real fetched rows can be interleaved
- * with demo-fallback rows in the same list, so this checks the individual id rather than the list source.
- */
-export function deriveUpcomingHasResolvableDetails(meetingId: string): boolean {
-  return !meetingId.startsWith(DEMO_UPCOMING_MEETING_ID_PREFIX);
 }
 
 /**
