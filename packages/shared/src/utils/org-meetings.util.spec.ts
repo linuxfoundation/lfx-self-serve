@@ -41,15 +41,29 @@ describe('splitOrgMeetingsByPrivacy', () => {
     expect(result.rollup).toBeNull();
   });
 
-  it('keeps a private meeting visible when the demo viewer-invited hash resolves truthy', () => {
+  it('keeps a private meeting visible when the demo viewer-invited hash resolves truthy and it has named invitees', () => {
     // deriveDemoViewerInvited only ever grants invited status to demo-prefixed ids (um-/pm-); um-2
-    // hashes to a non-zero mod-3 bucket, so the viewer is treated as invited.
+    // hashes to a non-zero mod-3 bucket, so the viewer is treated as invited — but "invited" also
+    // requires at least one named invitee, since a real (non-demo) private meeting always arrives
+    // with an empty invitee list (server-redacted) and must never be treated as visible.
+    const invited = meeting({ id: 'um-2', privacy: 'private' });
+
+    const result = splitOrgMeetingsByPrivacy([invited], () => ['Ada Lovelace']);
+
+    expect(result.visible).toEqual([invited]);
+    expect(result.rollup).toBeNull();
+  });
+
+  it('collapses a private meeting into the rollup even when the demo viewer-invited hash resolves truthy if it has no named invitees', () => {
+    // Guards against treating an id-prefix hash alone as an access-control signal — a real API-backed
+    // private meeting could theoretically collide with the um-/pm- demo prefix, but it always arrives
+    // with orgInvitees redacted to `[]`, so it must stay hidden regardless of the hash outcome.
     const invited = meeting({ id: 'um-2', privacy: 'private' });
 
     const result = splitOrgMeetingsByPrivacy([invited], noInvitees);
 
-    expect(result.visible).toEqual([invited]);
-    expect(result.rollup).toBeNull();
+    expect(result.visible).toEqual([]);
+    expect(result.rollup?.totalCount).toBe(1);
   });
 
   it('collapses a private meeting into the rollup when the demo viewer-invited hash resolves falsy', () => {

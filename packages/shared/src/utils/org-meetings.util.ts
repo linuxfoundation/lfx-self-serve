@@ -77,7 +77,8 @@ export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
   const hidden: T[] = [];
 
   for (const meeting of meetings) {
-    if (meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id)) {
+    const invited = meeting.privacy !== 'private' || (deriveDemoViewerInvited(meeting.id) && getInviteeNames(meeting).length > 0);
+    if (invited) {
       visible.push(meeting);
     } else {
       hidden.push(meeting);

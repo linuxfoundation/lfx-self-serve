@@ -280,14 +280,18 @@ export class OrgLensMeetingsService {
     // private row rather than special-casing a demo id prefix that can't occur here.
     const isRedactedPrivate = privacy === 'private';
 
+    // Only `type`, `foundation`/`project`, and `rsvpTally` feed the client's private-meetings rollup
+    // (see `splitOrgMeetingsByPrivacy`) — a hidden meeting's card never renders, so its id, recurrence
+    // label, timing, guest count, and status flags have no legitimate consumer and shouldn't reach the
+    // browser at all.
     return {
-      id: row.MEETING_ID,
+      id: isRedactedPrivate ? '' : row.MEETING_ID,
       title: isRedactedPrivate ? '' : row.TOPIC,
       privacy,
       type: mapMeetingType(row.MEETING_TYPE_BUCKET),
-      recurrenceLabel: row.RECURRENCE_LABEL ?? null,
-      startTime,
-      endTime,
+      recurrenceLabel: isRedactedPrivate ? null : (row.RECURRENCE_LABEL ?? null),
+      startTime: isRedactedPrivate ? '' : startTime,
+      endTime: isRedactedPrivate ? '' : endTime,
       foundation,
       orgName: '',
       project: foundation,
@@ -300,13 +304,15 @@ export class OrgLensMeetingsService {
         noResponse: row.NO_RESPONSE_COUNT ?? 0,
       },
       orgInvitees: isRedactedPrivate ? [] : orgInvitees,
-      guestCount: row.GUEST_COUNT ?? 0,
+      guestCount: isRedactedPrivate ? 0 : (row.GUEST_COUNT ?? 0),
       joinUrl: null,
-      statusFlags: {
-        recording: !!row.RECORDING_ENABLED,
-        transcripts: !!row.TRANSCRIPT_ENABLED,
-        aiSummary: !!row.AI_SUMMARY_ENABLED,
-      },
+      statusFlags: isRedactedPrivate
+        ? { recording: false, transcripts: false, aiSummary: false }
+        : {
+            recording: !!row.RECORDING_ENABLED,
+            transcripts: !!row.TRANSCRIPT_ENABLED,
+            aiSummary: !!row.AI_SUMMARY_ENABLED,
+          },
     };
   }
 }

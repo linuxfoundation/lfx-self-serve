@@ -179,9 +179,15 @@ export class OrgMeetingsComponent {
       const resolved = this.summaryAccountId() === this.accountId();
       if (!resolved || pending.accountId !== this.accountId()) return;
       if (!this.accountUnseeded()) {
-        this.upcomingMeetings.set([]);
         if (pending.kind === 'failed') {
+          this.upcomingMeetings.set([]);
           this.listError.set(true);
+        } else {
+          // 'empty' outcome was an optimistic demo fallback made before the summary resolved — now that
+          // the account is confirmed seeded, re-fetch at offset 0 for an authoritative answer instead of
+          // trusting a response that a race could have made stale.
+          this.offset.set(0);
+          this.refreshTick.update((value) => value + 1);
         }
       }
       this.pendingListOutcome.set(null);
