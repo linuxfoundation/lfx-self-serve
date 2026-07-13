@@ -693,3 +693,12 @@ export interface TabOption<T = string> {
   /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
   savesInline?: boolean;
 }
+
+/**
+ * Confirm dialog component properties
+ * @description Configuration for LFX confirm dialog wrapper component (wraps PrimeNG ConfirmDialog)
+ */
+export interface ConfirmDialogProps {
+  /** Scoping key — when set, only ConfirmationService.confirm({ key }) calls with the same key trigger this dialog instance. Use when a template contains multiple confirm dialogs. */
+  key?: string;
+}

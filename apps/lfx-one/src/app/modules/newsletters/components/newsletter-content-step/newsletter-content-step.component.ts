@@ -9,14 +9,14 @@ import { RichEditorComponent } from '@components/rich-editor/rich-editor.compone
 import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
 import { NewsletterGenerateDrawerComponent } from '../newsletter-generate-drawer/newsletter-generate-drawer.component';
 
 @Component({
   selector: 'lfx-newsletter-content-step',
-  imports: [ReactiveFormsModule, RichEditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
+  imports: [ConfirmDialogComponent, ReactiveFormsModule, RichEditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent],
   templateUrl: './newsletter-content-step.component.html',
 })
 export class NewsletterContentStepComponent {

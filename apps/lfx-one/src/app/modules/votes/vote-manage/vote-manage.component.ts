@@ -22,7 +22,7 @@ import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { StepperModule } from 'primeng/stepper';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap } from 'rxjs';
 
@@ -34,11 +34,11 @@ import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss
 @Component({
   selector: 'lfx-vote-manage',
   imports: [
+    ConfirmDialogComponent,
     ReactiveFormsModule,
     RouterLink,
     ButtonComponent,
     MessageComponent,
-    ConfirmDialogModule,
     StepperModule,
     VoteBasicsComponent,
     VoteQuestionComponent,

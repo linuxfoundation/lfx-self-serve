@@ -13,7 +13,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { EmailManagementData, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -22,6 +22,7 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
 @Component({
   selector: 'lfx-profile-email',
   imports: [
+    ConfirmDialogComponent,
     NgClass,
     ReactiveFormsModule,
     CardComponent,
@@ -29,7 +30,6 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
     MessageComponent,
     ButtonComponent,
     BadgeComponent,
-    ConfirmDialogModule,
     ToastModule,
     TooltipModule,
   ],

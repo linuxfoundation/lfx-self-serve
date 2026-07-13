@@ -22,13 +22,14 @@ import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-votes-table',
   imports: [
+    ConfirmDialogComponent,
     CardComponent,
     CardTabsBarComponent,
     TableComponent,
@@ -43,7 +44,6 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     DueDateLabelPipe,
     DueDateLabelColorPipe,
     TooltipModule,
-    ConfirmDialogModule,
     EmptyStateComponent,
   ],
   providers: [ConfirmationService],

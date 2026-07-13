@@ -13,7 +13,7 @@ import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
@@ -24,7 +24,7 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 
 @Component({
   selector: 'lfx-committee-settings-tab',
-  imports: [CommitteeSettingsComponent, ButtonComponent, TagComponent, ConfirmDialogModule, MailingListEmailPipe, MailingListTypePipe],
+  imports: [ConfirmDialogComponent, CommitteeSettingsComponent, ButtonComponent, TagComponent, MailingListEmailPipe, MailingListTypePipe],
   providers: [DialogService],
   templateUrl: './committee-settings-tab.component.html',
   styleUrl: './committee-settings-tab.component.scss',

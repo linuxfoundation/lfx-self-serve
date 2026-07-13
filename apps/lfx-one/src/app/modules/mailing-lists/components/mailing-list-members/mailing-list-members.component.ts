@@ -17,7 +17,7 @@ import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-
 import { GroupsIOMailingList, MailingListMember, UpdateMailingListMemberRequest } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, take } from 'rxjs';
 
@@ -26,13 +26,13 @@ import { ManageMemberModalComponent } from '../manage-member-modal/manage-member
 @Component({
   selector: 'lfx-mailing-list-members',
   imports: [
+    ConfirmDialogComponent,
     CardComponent,
     ButtonComponent,
     TableComponent,
     LowerCasePipe,
     FullNamePipe,
     SelectChipComponent,
-    ConfirmDialogModule,
     ReactiveFormsModule,
     InputTextComponent,
     SelectComponent,

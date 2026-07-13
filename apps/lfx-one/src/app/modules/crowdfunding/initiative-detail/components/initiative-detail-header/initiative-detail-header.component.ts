@@ -17,11 +17,11 @@ import {
 import { CrowdfundingInitiativeStatus, InitiativeDetail, InitiativeMenuItem, TabOption } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
 import { ConfirmationService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'lfx-initiative-detail-header',
-  imports: [AvatarComponent, CardComponent, TagComponent, ButtonComponent, MenuComponent, MarkdownRendererComponent, ConfirmDialogModule],
+  imports: [ConfirmDialogComponent, AvatarComponent, CardComponent, TagComponent, ButtonComponent, MenuComponent, MarkdownRendererComponent],
   templateUrl: './initiative-detail-header.component.html',
   styleUrl: './initiative-detail-header.component.scss',
 })

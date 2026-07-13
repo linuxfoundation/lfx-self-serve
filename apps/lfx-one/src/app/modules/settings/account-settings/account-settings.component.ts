@@ -14,7 +14,7 @@ import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
@@ -25,12 +25,12 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
   selector: 'lfx-account-settings',
   host: { class: 'block' },
   imports: [
+    ConfirmDialogComponent,
     NgClass,
     ReactiveFormsModule,
     BadgeComponent,
     ButtonComponent,
     InputTextComponent,
-    ConfirmDialogModule,
     ToastModule,
     TooltipModule,
     DynamicDialogModule,

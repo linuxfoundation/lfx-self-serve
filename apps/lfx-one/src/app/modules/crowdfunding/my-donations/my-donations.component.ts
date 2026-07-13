@@ -16,20 +16,20 @@ import { DonationHistoryTableComponent } from './components/donation-history-tab
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { RecurringDonationsListComponent } from './components/recurring-donations-list/recurring-donations-list.component';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { BehaviorSubject } from 'rxjs';
 import { finalize, map, scan, switchMap, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-my-donations',
   imports: [
+    ConfirmDialogComponent,
     ButtonComponent,
     StatCardGridComponent,
     RouteLoadingComponent,
     RecurringDonationsListComponent,
     DonationHistoryTableComponent,
     PaymentMethodsComponent,
-    ConfirmDialogModule,
   ],
   providers: [ConfirmationService],
   templateUrl: './my-donations.component.html',

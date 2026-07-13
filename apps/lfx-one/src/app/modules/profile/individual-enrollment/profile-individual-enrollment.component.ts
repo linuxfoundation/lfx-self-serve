@@ -9,7 +9,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DisplayEnrollment, EnrollmentsState } from '@lfx-one/shared/interfaces';
 import { deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { ToastModule } from 'primeng/toast';
 import { finalize, take } from 'rxjs';
 
@@ -23,7 +23,7 @@ import { UserService } from '@services/user.service';
 
 @Component({
   selector: 'lfx-profile-individual-enrollment',
-  imports: [ButtonComponent, CardComponent, ConfirmDialogModule, DatePipe, EmptyStateComponent, TagComponent, ToastModule],
+  imports: [ConfirmDialogComponent, ButtonComponent, CardComponent, DatePipe, EmptyStateComponent, TagComponent, ToastModule],
   templateUrl: './profile-individual-enrollment.component.html',
   styleUrl: './profile-individual-enrollment.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

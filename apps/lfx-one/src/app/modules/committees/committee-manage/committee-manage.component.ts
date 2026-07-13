@@ -12,7 +12,7 @@ import { Committee, MemberPendingChanges } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { StepperModule } from 'primeng/stepper';
 import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, Observable, of, switchMap, take, toArray } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
@@ -26,10 +26,10 @@ import { CommitteeSettingsComponent } from '../components/committee-settings/com
 @Component({
   selector: 'lfx-committee-manage',
   imports: [
+    ConfirmDialogComponent,
     RouterLink,
     ReactiveFormsModule,
     StepperModule,
-    ConfirmDialogModule,
     ButtonComponent,
     CommitteeCategorySelectionComponent,
     CommitteeBasicInfoComponent,

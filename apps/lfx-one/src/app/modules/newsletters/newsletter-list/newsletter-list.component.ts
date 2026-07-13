@@ -16,7 +16,7 @@ import { FilterPillOption, NewsletterListItem, NewsletterRow, NewsletterStatus, 
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, distinctUntilChanged, finalize, take } from 'rxjs';
 
@@ -25,6 +25,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
 @Component({
   selector: 'lfx-newsletter-list',
   imports: [
+    ConfirmDialogComponent,
     DatePipe,
     ButtonComponent,
     CardComponent,
@@ -32,7 +33,6 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     EmptyStateComponent,
     TableComponent,
     TagComponent,
-    ConfirmDialogModule,
     TooltipModule,
     NewsletterPreviewDrawerComponent,
   ],

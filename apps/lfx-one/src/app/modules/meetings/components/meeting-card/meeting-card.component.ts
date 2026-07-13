@@ -71,7 +71,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -85,6 +85,7 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
 @Component({
   selector: 'lfx-meeting-card',
   imports: [
+    ConfirmDialogComponent,
     NgClass,
     ButtonComponent,
     TagComponent,
@@ -92,7 +93,6 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     RecurrenceSummaryPipe,
     TooltipModule,
     AnimateOnScrollModule,
-    ConfirmDialogModule,
     DrawerModule,
     ExpandableTextComponent,
     LinkifyPipe,

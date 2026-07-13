@@ -24,7 +24,7 @@ import {
 import { generateTempId } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
@@ -34,6 +34,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 @Component({
   selector: 'lfx-committee-members-manager',
   imports: [
+    ConfirmDialogComponent,
     NgClass,
     ReactiveFormsModule,
     AvatarComponent,
@@ -42,7 +43,6 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     FullNamePipe,
     InputTextComponent,
     SelectComponent,
-    ConfirmDialogModule,
     DynamicDialogModule,
     TooltipModule,
   ],

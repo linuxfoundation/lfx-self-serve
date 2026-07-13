@@ -49,7 +49,7 @@ import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
 import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
@@ -64,11 +64,11 @@ import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss
 @Component({
   selector: 'lfx-meeting-manage',
   imports: [
+    ConfirmDialogComponent,
     StepperModule,
     ButtonComponent,
     MessageComponent,
     ReactiveFormsModule,
-    ConfirmDialogModule,
     MeetingTypeSelectionComponent,
     MeetingDetailsComponent,
     MeetingPlatformFeaturesComponent,

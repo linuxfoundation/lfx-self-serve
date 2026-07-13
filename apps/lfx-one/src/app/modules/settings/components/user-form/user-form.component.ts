@@ -11,14 +11,14 @@ import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest }
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-user-form',
-  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
+  imports: [ConfirmDialogComponent, ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule],
   templateUrl: './user-form.component.html',
 })
 export class UserFormComponent {

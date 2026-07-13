@@ -30,7 +30,7 @@ import {
 import { canManageCommitteeMembers, resolveCommitteeMemberPermission } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, of, startWith, take } from 'rxjs';
@@ -42,6 +42,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 @Component({
   selector: 'lfx-committee-members',
   imports: [
+    ConfirmDialogComponent,
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
@@ -52,7 +53,6 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     SelectComponent,
     TableComponent,
     TagComponent,
-    ConfirmDialogModule,
     DynamicDialogModule,
     Skeleton,
   ],

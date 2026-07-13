@@ -22,13 +22,14 @@ import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/sch
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
 import { ConfirmationService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { TooltipModule } from 'primeng/tooltip';
 import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-surveys-table',
   imports: [
+    ConfirmDialogComponent,
     CardComponent,
     CardTabsBarComponent,
     TableComponent,
@@ -45,7 +46,6 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     ScheduledSendTooltipPipe,
     ScheduledSendAriaLabelPipe,
     TooltipModule,
-    ConfirmDialogModule,
     EmptyStateComponent,
   ],
   providers: [ConfirmationService],

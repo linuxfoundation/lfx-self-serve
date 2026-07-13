@@ -9,7 +9,7 @@ import { REWARD_STEP_SIZE } from '@lfx-one/shared/constants';
 import { RewardPromotion, RewardsState, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 import { EMPTY_REWARD_PROMOTIONS } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, firstValueFrom, map, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
@@ -24,7 +24,7 @@ const SUMMARY_LOAD_FALLBACK = 'Rewards are temporarily unavailable. Please try a
 
 @Component({
   selector: 'lfx-rewards',
-  imports: [AvailableIncentivesComponent, ButtonComponent, ConfirmDialogModule, DatePipe, MyCouponsComponent, SkeletonModule],
+  imports: [ConfirmDialogComponent, AvailableIncentivesComponent, ButtonComponent, DatePipe, MyCouponsComponent, SkeletonModule],
   templateUrl: './rewards.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

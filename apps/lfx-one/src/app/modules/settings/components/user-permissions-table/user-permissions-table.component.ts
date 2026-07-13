@@ -10,7 +10,7 @@ import { ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
@@ -19,7 +19,7 @@ import { UserFormComponent } from '../user-form/user-form.component';
 
 @Component({
   selector: 'lfx-user-permissions-table',
-  imports: [TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent],
+  imports: [ConfirmDialogComponent, TableComponent, TooltipModule, CardComponent, ButtonComponent, MenuComponent],
   templateUrl: './user-permissions-table.component.html',
 })
 export class UserPermissionsTableComponent {

@@ -23,7 +23,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
 import {
@@ -52,11 +52,11 @@ import { NewsletterSendStepComponent } from '../components/newsletter-send-step/
 @Component({
   selector: 'lfx-newsletter-manage',
   imports: [
+    ConfirmDialogComponent,
     ReactiveFormsModule,
     RouterLink,
     StepperModule,
     SkeletonModule,
-    ConfirmDialogModule,
     ButtonComponent,
     NewsletterAudienceStepComponent,
     NewsletterContentStepComponent,

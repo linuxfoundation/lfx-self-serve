@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
 import { concatMap, filter, map, scan, startWith, switchMap, tap } from 'rxjs/operators';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 
 import { CrowdfundingTransaction, RecurringDonation } from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
@@ -20,8 +20,8 @@ import { RecurringDonationChargeHistoryComponent } from './components/recurring-
 @Component({
   selector: 'lfx-recurring-donation-detail',
   imports: [
+    ConfirmDialogComponent,
     RouterLink,
-    ConfirmDialogModule,
     ButtonComponent,
     RecurringDonationInitiativeHeaderComponent,
     RecurringDonationSubscriptionSummaryComponent,

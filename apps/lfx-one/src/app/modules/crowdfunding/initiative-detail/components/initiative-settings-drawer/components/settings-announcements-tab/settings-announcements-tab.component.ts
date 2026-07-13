@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { filter, firstValueFrom, map } from 'rxjs';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
@@ -17,7 +17,7 @@ import { CrowdfundingService } from '@services/crowdfunding.service';
 
 @Component({
   selector: 'lfx-settings-announcements-tab',
-  imports: [DatePipe, ReactiveFormsModule, ConfirmDialogModule, ButtonComponent, InputTextComponent, RichEditorComponent],
+  imports: [ConfirmDialogComponent, DatePipe, ReactiveFormsModule, ButtonComponent, InputTextComponent, RichEditorComponent],
   providers: [ConfirmationService],
   templateUrl: './settings-announcements-tab.component.html',
 })

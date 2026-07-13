@@ -20,7 +20,7 @@ import {
 import { generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
 
 import { MeetingCommitteeManagerComponent } from '../meeting-committee-manager/meeting-committee-manager.component';
@@ -30,13 +30,13 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 @Component({
   selector: 'lfx-meeting-registrants-manager',
   imports: [
+    ConfirmDialogComponent,
     ReactiveFormsModule,
     ButtonComponent,
     FeatureToggleComponent,
     InputTextComponent,
     MeetingCommitteeManagerComponent,
     SelectComponent,
-    ConfirmDialogModule,
     RegistrantCardComponent,
     RegistrantFormComponent,
   ],

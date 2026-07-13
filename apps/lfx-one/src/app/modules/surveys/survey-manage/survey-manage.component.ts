@@ -22,7 +22,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogComponent } from '@components/confirm-dialog/confirm-dialog.component';
 import { StepperModule } from 'primeng/stepper';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
 
@@ -34,11 +34,11 @@ import { SurveyTimingRemindersComponent } from '../components/survey-timing-remi
 @Component({
   selector: 'lfx-survey-manage',
   imports: [
+    ConfirmDialogComponent,
     ReactiveFormsModule,
     RouterLink,
     ButtonComponent,
     MessageComponent,
-    ConfirmDialogModule,
     StepperModule,
     SurveyAudienceTypeComponent,
     SurveyTimingRemindersComponent,
