@@ -216,10 +216,15 @@ export class MeetingManageComponent {
     // PCC matrix constraint: PUBLIC+restricted is not a valid state.
     // Sync the two controls so they stay consistent: restricted→true forces PRIVATE visibility;
     // visibility→PUBLIC forces restricted=false.
+    // Board meetings always lock back to PRIVATE+restricted regardless of which control changed.
     this.form()
       .get('restricted')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((restricted: boolean) => {
+        if (this.form().get('meeting_type')?.value === MeetingType.BOARD) {
+          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true }, { emitEvent: false });
+          return;
+        }
         if (restricted && this.form().get('visibility')?.value === MeetingVisibility.PUBLIC) {
           this.form().patchValue({ visibility: MeetingVisibility.PRIVATE }, { emitEvent: false });
         }
@@ -229,6 +234,10 @@ export class MeetingManageComponent {
       .get('visibility')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((visibility: string) => {
+        if (this.form().get('meeting_type')?.value === MeetingType.BOARD) {
+          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true }, { emitEvent: false });
+          return;
+        }
         if (visibility === MeetingVisibility.PUBLIC && this.form().get('restricted')?.value === true) {
           this.form().patchValue({ restricted: false }, { emitEvent: false });
         }
