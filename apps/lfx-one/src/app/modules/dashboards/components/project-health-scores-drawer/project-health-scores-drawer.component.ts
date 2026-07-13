@@ -77,6 +77,10 @@ export class ProjectHealthScoresDrawerComponent {
     critical: 0,
   });
 
+  // Total foundation projects (from FOUNDATION_TOTAL_PROJECTS_MONTHLY) — may exceed
+  // the number of scored projects because the two counts come from separate tables.
+  public readonly total = input<number>(0);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -85,12 +89,18 @@ export class ProjectHealthScoresDrawerComponent {
     buildLensAwareInsightsUrl(this.projectContextService.activeContext()?.slug, this.projectContextService.isFoundationContext())
   );
 
-  protected readonly totalProjects: Signal<number> = computed(() => {
+  protected readonly scoredProjects: Signal<number> = computed(() => {
     const d = this.data();
     return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;
   });
 
-  protected readonly hasData: Signal<boolean> = computed(() => this.totalProjects() > 0);
+  protected readonly scoredLabel: Signal<string> = computed(() => {
+    const scored = this.scoredProjects();
+    const total = this.total();
+    return total > scored ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored` : `${scored.toLocaleString()} projects scored`;
+  });
+
+  protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
 
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 

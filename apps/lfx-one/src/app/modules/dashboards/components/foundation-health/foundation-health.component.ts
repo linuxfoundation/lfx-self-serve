@@ -190,7 +190,7 @@ export class FoundationHealthComponent {
       const data = [
         { category: 'Critical', count: distribution.critical, color: lfxColors.red[500] },
         { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.amber[400] },
-        { category: 'Stable', count: distribution.stable, color: lfxColors.amber[500] },
+        { category: 'Stable', count: distribution.stable, color: lfxColors.violet[500] },
         { category: 'Healthy', count: distribution.healthy, color: lfxColors.blue[500] },
         { category: 'Excellent', count: distribution.excellent, color: lfxColors.emerald[500] },
       ];
@@ -518,12 +518,20 @@ export class FoundationHealthComponent {
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
     const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
+    const total = this.totalProjectsData().totalProjects;
+
+    let subtitle = '';
+    if (scored > 0) {
+      // The two counts come from independent Snowflake tables; only reconcile
+      // against the total when it is loaded and not smaller than the scored count.
+      subtitle = total > scored ? `${scored} of ${total} projects scored` : `${scored} projects scored`;
+    }
 
     return {
       ...metric,
       loading: this.healthScoresLoading(),
       value: '',
-      subtitle: scored > 0 ? `${scored} projects scored` : '',
+      subtitle,
       healthScores: data,
     };
   }
