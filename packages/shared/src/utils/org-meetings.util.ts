@@ -48,9 +48,10 @@ export function deriveUpcomingMeetingDetailsUrl(meetingId: string, password: str
 
 /**
  * App-relative "See Meeting Details" path for a *past* meeting — routes to `PastMeetingDetailsComponent`,
- * which resolves the id via `getPastMeetingById`. UI-only build: rendered for every row, including
- * demo-fixture ids with no backing meeting record — the real link resolves once a real fetch path lands.
- * The `password` param is omitted for public meetings (see `deriveDemoPassword`).
+ * which resolves the id via `getPastMeetingById`. Demo-fixture ids have no backing meeting record, so
+ * callers suppress this link for them (see `hasResolvableDetails` in the upcoming/past meeting VMs)
+ * rather than render a guaranteed 404. The `password` param is omitted for public meetings (see
+ * `deriveDemoPassword`).
  */
 export function derivePastMeetingDetailsUrl(meetingId: string, password: string | null): string {
   const base = `${ORG_MEETING_DETAILS_BASE_URL}/${meetingId}/details`;
