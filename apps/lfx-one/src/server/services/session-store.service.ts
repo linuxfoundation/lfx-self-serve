@@ -55,11 +55,28 @@ export class SessionStoreService {
     const startTime = logger.startOperation(undefined, 'session_store_set');
     const key = this.cacheKey(sid);
     if (key === null) {
-      return;
+      // Nothing was persisted, so letting this resolve normally would hand back a cookie whose id
+      // never resolves in Valkey — the same unrecoverable-login-loop failure mode a Valkey write
+      // failure below fails closed on. Fail closed here too instead of silently no-op'ing.
+      throw new Error('Session write rejected — cache key failed the safety check');
     }
     const ttlSeconds = this.ttlSecondsFor(session);
     const persisted = await valkeyService.setJson(key, session, ttlSeconds);
     if (!persisted) {
+      // express-openid-connect defaults session.rolling to true, so this write fires on every
+      // authenticated request (to extend the rolling window), not just at login. The library only
+      // omits `iat` (defaulting it to the fresh `uat`) when there's no prior session to extend, so
+      // `iat === uat` identifies a brand-new session; a rolling refresh carries the original `iat`
+      // alongside a freshly-stamped `uat`. A new session that fails to persist must fail closed (no
+      // entry exists anywhere for that id, so completing normally hands out a dead cookie). A
+      // refresh failure leaves the prior entry — still valid until its own TTL — untouched, so
+      // failing soft here avoids 500ing every authenticated page load for the duration of a Valkey
+      // outage.
+      const isNewSession = session.header.iat === session.header.uat;
+      if (!isNewSession) {
+        logger.warning(undefined, 'session_store_set', 'Rolling-refresh session write failed — leaving the existing entry in place until it expires via TTL');
+        return;
+      }
       // setJson is a `SET key val EX ttl` — a failed write leaves any prior value at this key
       // untouched, so a stale session (e.g. a cleared impersonation token) would otherwise survive
       // and be reloaded on the next request. Fail closed by invalidating the key outright.

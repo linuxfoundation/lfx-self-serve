@@ -169,9 +169,12 @@ app.use(httpLogger);
 
 // LFXV2-2666: move the session bundle out of the encrypted `appSession` cookie and into Valkey,
 // keyed by an opaque session id, so cookie size stays flat as more tokens (impersonation,
-// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when Valkey is
-// actually reachable — without VALKEY_URL every store read/write would degrade to "session
-// missing" (ValkeyService's fail-soft behavior) and silently log everyone out.
+// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when
+// SESSION_STORE_ENABLED is set and VALKEY_URL is present — without VALKEY_URL every store
+// read/write would degrade to "session missing" (ValkeyService's fail-soft behavior) and silently
+// log everyone out. Note: this only gates on URL presence, not live reachability — a Valkey outage
+// after startup surfaces as failed session writes rather than a silent miss (see
+// SessionStoreService for the fail-soft read / fail-closed write split).
 const sessionStoreEnabled = process.env['SESSION_STORE_ENABLED'] === 'true' && !!process.env['VALKEY_URL'];
 
 const authConfig: ConfigParams = {
@@ -195,7 +198,10 @@ const authConfig: ConfigParams = {
     session: {
       store: sessionStoreService,
       // 256 bits of cryptographically strong randomness — sufficient entropy on its own, per the
-      // library's genid docs, without needing signSessionStoreCookie.
+      // library's genid docs, without needing signSessionStoreCookie. 64 hex chars is also the
+      // exact cap enforced by isFilterSafeIdentifier (used to build the Valkey cache key) — don't
+      // widen randomBytes() or change the encoding without raising that cap too, or every session
+      // id will fail the cache-key safety check and every session will be treated as missing.
       genid: () => randomBytes(32).toString('hex'),
     },
   }),
