@@ -10,6 +10,7 @@ import { DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION, DEFAULT_FOUNDATION_E
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -21,7 +22,7 @@ import type {
 
 @Component({
   selector: 'lfx-events-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule],
   templateUrl: './events-drawer.component.html',
 })
 export class EventsDrawerComponent {
