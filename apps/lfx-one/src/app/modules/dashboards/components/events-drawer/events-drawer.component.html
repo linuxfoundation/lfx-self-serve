@@ -50,17 +50,14 @@
         <!-- Title + Tooltip -->
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-gray-900">Foundation Events</h3>
-          <div class="group relative">
-            <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke-width="2" />
-              <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
-            </svg>
-            <div
-              class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
-              role="tooltip">
-              Total events across all foundation projects per quarter over the last 8 quarters
-            </div>
-          </div>
+          <button
+            type="button"
+            class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+            pTooltip="Total events across all foundation projects per quarter over the last 8 quarters"
+            tooltipPosition="top"
+            aria-label="Total events across all foundation projects per quarter over the last 8 quarters">
+            <i class="fa-light fa-circle-info"></i>
+          </button>
         </div>
 
         <!-- Metric Value -->
@@ -91,17 +88,14 @@
       <div class="flex flex-col gap-1">
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-gray-900">Event Distribution by Attendance Size</h3>
-          <div class="group relative">
-            <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke-width="2" />
-              <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
-            </svg>
-            <div
-              class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
-              role="tooltip">
-              Number of events in each attendance size category over the last 12 months
-            </div>
-          </div>
+          <button
+            type="button"
+            class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+            pTooltip="Number of events in each attendance size category over the last 12 months"
+            tooltipPosition="top"
+            aria-label="Number of events in each attendance size category over the last 12 months">
+            <i class="fa-light fa-circle-info"></i>
+          </button>
         </div>
         <p class="text-sm text-gray-500">Foundation events segmented by attendance</p>
       </div>
