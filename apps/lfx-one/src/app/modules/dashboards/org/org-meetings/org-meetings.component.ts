@@ -107,6 +107,16 @@ export class OrgMeetingsComponent {
     const real = this.summary();
     return real !== null && real.upcomingMeetings === 0 && real.recurringSeries === 0;
   });
+  // A resolved-but-null summary for the current account is a genuine fetch failure (see `accountUnseeded`'s
+  // doc comment) rather than proof the account is unseeded — `initEffectiveSummary` still has to return some
+  // shape in that case, so it falls back to the (paginated, possibly-first-page-only) `upcomingMeetings()` list.
+  // That fallback is fine for `total()`-backed counts but not for `recurringSeries`/`recurringFoundations`,
+  // which only reflect whatever page is currently loaded. This flag lets `initKpiCards` render those two
+  // cards as unavailable instead of presenting a partial-page count as the org-wide total.
+  protected readonly summaryError: Signal<boolean> = computed(() => {
+    const resolved = this.summaryAccountId() === this.accountId();
+    return resolved && this.summary() === null && !this.accountUnseeded();
+  });
   // Set when the offset-0 list decision above was made *before* the summary had resolved for this
   // account, so `accountUnseeded` was only an optimistic guess — corrected by the effect in the
   // constructor once the summary actually resolves for the same account.
@@ -212,22 +222,39 @@ export class OrgMeetingsComponent {
           },
         ];
       }
+      const hasError = this.summaryError();
       const nextDate = this.nextUpcomingMeetingDate();
       const summary = this.effectiveSummary();
       const recurringProjects = summary.recurringFoundations;
       const recurringProjectsLabel = recurringProjects === 1 ? 'project' : 'projects';
+      // A resolved-but-failed summary fetch leaves `effectiveSummary` deriving these counts from
+      // whatever page of `upcomingMeetings()` happens to be loaded — accurate for a demo/unseeded
+      // account, but a misleading partial-page count for a real account whose summary call failed
+      // (see `summaryError`). Render "—" instead of presenting that partial count as an org-wide total.
+      let upcomingSubLine: string | undefined;
+      if (hasError) {
+        upcomingSubLine = 'Unable to load';
+      } else if (nextDate) {
+        upcomingSubLine = `Next: ${nextDate}`;
+      }
+      let recurringSubLine: string | undefined;
+      if (hasError) {
+        recurringSubLine = 'Unable to load';
+      } else if (recurringProjects > 0) {
+        recurringSubLine = `Across ${recurringProjects} ${recurringProjectsLabel}`;
+      }
       return [
         {
-          value: summary.upcomingMeetings.toLocaleString(),
+          value: hasError ? '—' : summary.upcomingMeetings.toLocaleString(),
           label: 'Upcoming Meetings',
-          subLine: nextDate ? `Next: ${nextDate}` : undefined,
+          subLine: upcomingSubLine,
           icon: 'fa-light fa-calendar',
           iconContainerClass: 'bg-blue-100 text-blue-600',
         },
         {
-          value: summary.recurringSeries.toLocaleString(),
+          value: hasError ? '—' : summary.recurringSeries.toLocaleString(),
           label: 'Recurring Series',
-          subLine: recurringProjects > 0 ? `Across ${recurringProjects} ${recurringProjectsLabel}` : undefined,
+          subLine: recurringSubLine,
           icon: 'fa-light fa-repeat',
           iconContainerClass: 'bg-purple-100 text-purple-600',
         },

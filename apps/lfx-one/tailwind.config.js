@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
-import { AVATAR_COLORS, lfxColors, lfxFontSizes } from '@lfx-one/shared';
+import { AVATAR_COLORS, lfxColors, lfxFontSizes, ORG_MEETING_TYPE_LABELS } from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
+
+// ORG_MEETING_TYPE_LABELS' badgeClass strings are built at runtime (outside `content`), so their
+// classes would otherwise be purged — derive the safelist from the same source instead of
+// hand-maintaining a duplicate list that silently drifts when a badge's classes change.
+const ORG_MEETING_TYPE_BADGE_CLASSES = Object.values(ORG_MEETING_TYPE_LABELS).flatMap((badge) => badge.badgeClass.split(' '));
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -45,9 +50,8 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
-    // Org Lens meeting type badges — border colors defined in ORG_MEETING_TYPE_LABELS (@lfx-one/shared), not scanned here
-    'border-violet-400',
-    'border-emerald-400',
+    // Org Lens meeting type badges — classes defined in ORG_MEETING_TYPE_LABELS (@lfx-one/shared), not scanned here
+    ...ORG_MEETING_TYPE_BADGE_CLASSES,
   ],
   theme: {
     container: {

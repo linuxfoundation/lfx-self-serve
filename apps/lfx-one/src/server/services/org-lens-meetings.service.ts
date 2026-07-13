@@ -17,7 +17,7 @@ import type {
   OrgUpcomingMeetingRow,
   OrgUpcomingMeetingsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, isObjectRow, isObjectRowArray } from '@lfx-one/shared/utils';
+import { formatDateToUTC, isDemoOrgMeetingId, isObjectRow, isObjectRowArray } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -264,11 +264,19 @@ export class OrgLensMeetingsService {
     const startMs = startTime ? new Date(startTime).getTime() : Number.NaN;
     const endTime = Number.isFinite(startMs) ? new Date(startMs + durationMinutes * 60_000).toISOString() : startTime;
     const foundation = row.FOUNDATION_NAME ?? '';
+    const privacy = mapPrivacy(row.VISIBILITY);
+
+    // There's no server-enforced invite-membership check yet — `deriveDemoViewerInvited` (client-side)
+    // only grants visibility to demo-fixture rows, so every real private meeting is always going to
+    // collapse into the client's rollup card. Redact its sensitive fields here rather than let
+    // title/agenda/invitee identities reach the browser (and app state / network tab) only to be
+    // hidden by that client-side partition — a real per-viewer invite check is a follow-up ticket.
+    const isRedactedPrivate = privacy === 'private' && !isDemoOrgMeetingId(row.MEETING_ID);
 
     return {
       id: row.MEETING_ID,
-      title: row.TOPIC,
-      privacy: mapPrivacy(row.VISIBILITY),
+      title: isRedactedPrivate ? '' : row.TOPIC,
+      privacy,
       type: mapMeetingType(row.MEETING_TYPE_BUCKET),
       recurrenceLabel: row.RECURRENCE_LABEL ?? null,
       startTime,
@@ -276,7 +284,7 @@ export class OrgLensMeetingsService {
       foundation,
       orgName: '',
       project: foundation,
-      agenda: row.AGENDA ?? null,
+      agenda: isRedactedPrivate ? null : (row.AGENDA ?? null),
       resources: [],
       rsvpTally: {
         yes: row.ATTENDING_COUNT ?? 0,
@@ -284,7 +292,7 @@ export class OrgLensMeetingsService {
         no: row.NO_COUNT ?? 0,
         noResponse: row.NO_RESPONSE_COUNT ?? 0,
       },
-      orgInvitees,
+      orgInvitees: isRedactedPrivate ? [] : orgInvitees,
       guestCount: row.GUEST_COUNT ?? 0,
       joinUrl: null,
       statusFlags: {

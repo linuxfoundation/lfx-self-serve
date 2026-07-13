@@ -42,8 +42,9 @@ describe('splitOrgMeetingsByPrivacy', () => {
   });
 
   it('keeps a private meeting visible when the demo viewer-invited hash resolves truthy', () => {
-    // meeting-1 hashes to a non-zero mod-3 bucket, so deriveDemoViewerInvited treats the viewer as invited.
-    const invited = meeting({ id: 'meeting-1', privacy: 'private' });
+    // deriveDemoViewerInvited only ever grants invited status to demo-prefixed ids (um-/pm-); um-2
+    // hashes to a non-zero mod-3 bucket, so the viewer is treated as invited.
+    const invited = meeting({ id: 'um-2', privacy: 'private' });
 
     const result = splitOrgMeetingsByPrivacy([invited], noInvitees);
 
@@ -52,8 +53,8 @@ describe('splitOrgMeetingsByPrivacy', () => {
   });
 
   it('collapses a private meeting into the rollup when the demo viewer-invited hash resolves falsy', () => {
-    // meeting-3 hashes to mod-3 === 0, so deriveDemoViewerInvited treats the viewer as not invited.
-    const hidden = meeting({ id: 'meeting-3', privacy: 'private', type: 'board', project: 'Envoy', foundation: 'CNCF' });
+    // um-1 hashes to mod-3 === 0, so deriveDemoViewerInvited treats the viewer as not invited.
+    const hidden = meeting({ id: 'um-1', privacy: 'private', type: 'board', project: 'Envoy', foundation: 'CNCF' });
 
     const result = splitOrgMeetingsByPrivacy([hidden], noInvitees);
 

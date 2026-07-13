@@ -283,6 +283,7 @@ export class MeetingsDashboardComponent {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
     this.meetingService.clearPastMeetingRecordingCache();
+    this.meetingService.clearPastMeetingParticipantsCache();
     this.refresh$.next();
   }
 

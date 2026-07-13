@@ -53,6 +53,7 @@ export class MeetingService {
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
+  private readonly pastMeetingParticipantsCache = new Map<string, { observable: Observable<PastMeetingParticipant[]>; cachedAt: number }>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -394,12 +395,32 @@ export class MeetingService {
     );
   }
 
+  // Shared/cached like `getPastMeetingRecording` below: the meetings-dashboard KPI aggregation
+  // (attendance rate) and the per-card `meeting-rsvp-details` lazy fetch both call this for the
+  // same meeting ids, so without a cache a visible card re-fetches participants the KPI pass
+  // already retrieved seconds earlier.
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
-    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`);
+    this.pruneExpiredPastMeetingParticipantsCache();
+    const cached = this.pastMeetingParticipantsCache.get(pastMeetingUid);
+    if (cached && Date.now() - cached.cachedAt < PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.pastMeetingParticipantsCache.delete(pastMeetingUid);
+    }
+    const participants$ = this.http
+      .get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`)
+      .pipe(tap({ error: () => this.pastMeetingParticipantsCache.delete(pastMeetingUid) }), shareReplay(1));
+    this.pastMeetingParticipantsCache.set(pastMeetingUid, { observable: participants$, cachedAt: Date.now() });
+    return participants$;
   }
 
   public clearPastMeetingRecordingCache(): void {
     this.pastMeetingRecordingCache.clear();
+  }
+
+  public clearPastMeetingParticipantsCache(): void {
+    this.pastMeetingParticipantsCache.clear();
   }
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
@@ -583,6 +604,15 @@ export class MeetingService {
     for (const [key, entry] of this.pastMeetingRecordingCache) {
       if (now - entry.cachedAt >= PAST_MEETING_RECORDING_CACHE_TTL_MS) {
         this.pastMeetingRecordingCache.delete(key);
+      }
+    }
+  }
+
+  private pruneExpiredPastMeetingParticipantsCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.pastMeetingParticipantsCache) {
+      if (now - entry.cachedAt >= PAST_MEETING_RECORDING_CACHE_TTL_MS) {
+        this.pastMeetingParticipantsCache.delete(key);
       }
     }
   }

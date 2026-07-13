@@ -55,7 +55,11 @@ function makeMeeting(index: number, overrides: Partial<StubMeeting> = {}): StubM
   return {
     id: `mtg-${index}`,
     title: `Governing Board Meeting ${index}`,
-    privacy: 'private',
+    // Default to public: mtg-* ids are non-demo, so deriveDemoViewerInvited always returns false and a
+    // 'private' default would make every card here collapse into the rollup instead of rendering — most
+    // of these tests are about card content, not privacy. Tests that specifically exercise the private/rollup
+    // path override `privacy` (and use a demo-prefixed id) explicitly.
+    privacy: 'public',
     type: 'board',
     recurrenceLabel: 'Every week on Thu',
     startTime: '2026-08-14T17:00:00.000Z',
@@ -358,10 +362,10 @@ test.describe('Org Meetings Dashboard', () => {
   });
 
   test('private meetings rollup card renders after every individual meeting card, on both tabs', async ({ page }) => {
-    // mtg-1 and mtg-3 are both private with no real invitee data, so the demo viewer-invited hash
-    // (deriveDemoViewerInvited) decides visibility: mtg-1 hashes visible, mtg-3 hashes hidden — this
-    // mix is required so the upcoming tab renders a visible card AND a rollup simultaneously.
-    await stubSinglePage(page, [makeMeeting(1), makeMeeting(3)]);
+    // deriveDemoViewerInvited only grants invited status to demo-prefixed ids (um-/pm-) — a plain
+    // mtg-* id is always treated as a real, non-demo row and always hidden. Use um-2 (hashes
+    // visible) and um-1 (hashes hidden) so the upcoming tab renders a visible card AND a rollup simultaneously.
+    await stubSinglePage(page, [makeMeeting(2, { id: 'um-2', privacy: 'private' }), makeMeeting(1, { id: 'um-1', privacy: 'private' })]);
     await gotoOrgMeetingsPage(page);
 
     const upcomingList = page.getByTestId('org-upcoming-meetings-list');
