@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal, type Signal } from '@angular/core';
+import { Component, computed, inject, model, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
@@ -24,10 +24,14 @@ import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepo
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
+import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
+import { AccountContextService } from '@services/account-context.service';
 
 import { OrgGroupsService } from '../services/org-groups.service';
 import { OrgGroupMeetingCardComponent } from './components/org-group-meeting-card/org-group-meeting-card.component';
@@ -39,12 +43,15 @@ import { OrgGroupMeetingCardComponent } from './components/org-group-meeting-car
     RouterLink,
     ButtonComponent,
     CardComponent,
+    EmptyStateComponent,
     TagComponent,
     SkeletonModule,
     OrgGroupMeetingCardComponent,
     TableComponent,
     VotesTableComponent,
+    VoteResultsDrawerComponent,
     SurveysTableComponent,
+    SurveyResultsDrawerComponent,
     DocumentsTableComponent,
   ],
   templateUrl: './org-group-detail.component.html',
@@ -56,6 +63,7 @@ export class OrgGroupDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly groupsService = inject(OrgGroupsService);
+  private readonly accountContext = inject(AccountContextService);
 
   // ─── Constants exposed to template ───────────────────────────────────────────
 
@@ -68,9 +76,18 @@ export class OrgGroupDetailComponent {
   protected readonly repoPlatformIcon = getRepoPlatformIcon;
   protected readonly repoPlatformLabel = getRepoPlatformLabel;
 
+  // ─── Two-way bindings ─────────────────────────────────────────────────────────
+
+  protected voteResultsDrawerVisible = model<boolean>(false);
+  protected surveyResultsDrawerVisible = model<boolean>(false);
+
   // ─── Mutable state ────────────────────────────────────────────────────────────
 
   protected activeTab = signal<GroupDetailTabId>('overview');
+  protected selectedVoteId = signal<string | null>(null);
+  protected selectedVote = signal<Vote | null>(null);
+  protected selectedSurveyId = signal<string | null>(null);
+  protected selectedSurvey = signal<Survey | null>(null);
 
   // ─── Route param signal ───────────────────────────────────────────────────────
 
@@ -82,6 +99,9 @@ export class OrgGroupDetailComponent {
   protected readonly detail: Signal<OrgGroupDetail | null> = this.initDetail();
 
   // ─── Computed helpers ─────────────────────────────────────────────────────────
+
+  /** Org Lens is a cross-company aggregate view — gate content on an Impersonate company selection, like the groups list and Org Project Detail. */
+  protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
 
   protected readonly hasNextMeeting = computed(() => (this.detail()?.nextMeetings.length ?? 0) > 0);
   protected readonly hasPastMeeting = computed(() => (this.detail()?.pastMeetings.length ?? 0) > 0);
@@ -134,6 +154,19 @@ export class OrgGroupDetailComponent {
 
   protected formatDate(date: Date): string {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  protected viewVoteResults(voteUid: string): void {
+    const vote = this.votes().find((v) => v.uid === voteUid) || null;
+    this.selectedVoteId.set(voteUid);
+    this.selectedVote.set(vote);
+    this.voteResultsDrawerVisible.set(true);
+  }
+
+  protected viewSurveyResults(survey: Survey): void {
+    this.selectedSurveyId.set(survey.uid);
+    this.selectedSurvey.set(survey);
+    this.surveyResultsDrawerVisible.set(true);
   }
 
   // ─── Private initializers ─────────────────────────────────────────────────────
