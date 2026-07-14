@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { BaseApiError, isBaseApiError } from '../errors';
+import { AuthenticationError, BaseApiError, isBaseApiError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
@@ -55,6 +55,13 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
       logger.warning(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
     } else {
       logger.debug(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
+    }
+
+    // express-openid-connect writes the session cookie via a headers hook registered independently
+    // of how this request settles, so it still reissues the existing cookie after this response —
+    // clearing req.appSession first makes it clear the cookie instead.
+    if (error instanceof AuthenticationError && error.clearSession) {
+      req.appSession = null;
     }
 
     // Send structured response

@@ -65,7 +65,10 @@ export class SessionStoreService {
       // Nothing was persisted, so letting this resolve normally would hand back a cookie whose id
       // never resolves in Valkey — the same unrecoverable-login-loop failure mode a Valkey write
       // failure below fails closed on. Fail closed here too instead of silently no-op'ing.
-      throw new AuthenticationError('Session write rejected — cache key failed the safety check', { operation: 'session_store_set' });
+      throw new AuthenticationError('Session write rejected — cache key failed the safety check', {
+        operation: 'session_store_set',
+        clearSession: true,
+      });
     }
     const ttlSeconds = this.ttlSecondsFor(session);
     const persisted = await valkeyService.setJson(key, session, ttlSeconds);
@@ -99,7 +102,10 @@ export class SessionStoreService {
       // than a bare Error means apiErrorHandler returns a structured "please re-authenticate"
       // response and logs at warn (not error) — so a Valkey outage degrades every affected request
       // to a forced re-login instead of a raw 500, without ever serving the invalidated stale entry.
-      throw new AuthenticationError('Session write failed to persist', { operation: 'session_store_set' });
+      // Also tell apiErrorHandler to clear req.appSession: express-openid-connect's cookie-write hook
+      // fires regardless of this throw, and would otherwise reissue a cookie pointing at a stale (or
+      // un-invalidated) Valkey entry.
+      throw new AuthenticationError('Session write failed to persist', { operation: 'session_store_set', clearSession: true });
     }
   }
 
