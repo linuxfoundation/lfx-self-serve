@@ -34,9 +34,8 @@ function buildGenericChannels(listGroup: OrgGroup): Partial<OrgGroupDetail> {
       mailingListSubscribers: listGroup.memberCount,
       mailingListIsPrivate: listGroup.visibility === 'PRIVATE',
     }),
-    ...(listGroup.hasChatChannel && {
-      chatChannelUrl: `https://linuxfoundation.slack.com/archives/${slug}`,
-    }),
+    // No real Slack channel ID exists for generic/fallback demo groups — omit chatChannelUrl rather than
+    // fabricate a name-derived archive link that 404s. Groups with real channel data set it explicitly.
   };
 }
 

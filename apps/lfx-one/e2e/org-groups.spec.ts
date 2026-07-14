@@ -115,9 +115,12 @@ test.describe('Org Groups', () => {
     const firstRow = page.locator('[data-testid^="org-groups-row-"]').first();
     const testId = await firstRow.getAttribute('data-testid');
     const groupId = testId?.replace('org-groups-row-', '');
+    const groupName = (await firstRow.locator('.lfx-table-name-link').textContent())?.trim();
     await firstRow.click();
 
     await expect(page).toHaveURL(new RegExp(`/org/groups/${groupId}$`));
-    await expect(page.getByTestId('org-group-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Assert on real detail content, not just the shell testid shared with the not-found state.
+    await expect(page.getByTestId('org-group-detail-name')).toHaveText(groupName ?? '', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-group-detail-not-found')).not.toBeVisible();
   });
 });

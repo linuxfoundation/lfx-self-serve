@@ -18,6 +18,7 @@
       <div
         class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
         [style.background-color]="m.isPrivate ? visibilityDotColor.private : visibilityDotColor.public"
+        role="img"
         [attr.aria-label]="m.isPrivate ? 'Private meeting' : 'Public meeting'">
         <i [class]="'text-white text-[10px] leading-none block ' + (m.isPrivate ? 'fa-solid fa-shield-halved' : 'fa-solid fa-globe')" aria-hidden="true"></i>
       </div>

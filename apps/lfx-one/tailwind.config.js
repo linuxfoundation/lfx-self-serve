@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
-import { AVATAR_COLORS, lfxColors, lfxFontSizes } from '@lfx-one/shared';
+import { AVATAR_COLORS, lfxColors, lfxFontSizes, ORG_GROUPS_ROLLUP_TYPE_BADGES } from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
@@ -45,12 +45,10 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
-    // Org Lens groups — private-rollup type badges (ORG_GROUPS_ROLLUP_TYPE_BADGES in @lfx-one/shared, not scanned here)
-    'border-violet-400',
-    'text-violet-600',
-    'border-amber-400',
-    'text-amber-600',
-    'text-gray-600',
+    // Org Lens groups — private-rollup type badges: badgeClass is built at runtime from
+    // ORG_GROUPS_ROLLUP_TYPE_BADGES in @lfx-one/shared (outside `content`), so spread its actual
+    // classes here to avoid drift instead of hand-copying them.
+    ...Object.values(ORG_GROUPS_ROLLUP_TYPE_BADGES).flatMap((badge) => badge.badgeClass.split(' ')),
   ],
   theme: {
     container: {

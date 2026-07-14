@@ -44,7 +44,7 @@
           <div class="flex items-center gap-3" data-testid="org-group-detail-title-row">
             <h1 class="font-display font-light text-[20px]" data-testid="org-group-detail-name">{{ g.name }}</h1>
             @if (g.visibility === 'PRIVATE') {
-              <i class="fa-light fa-lock w-4 h-4 text-gray-400" aria-label="Private group" data-testid="org-group-detail-private-icon"></i>
+              <i class="fa-light fa-lock w-4 h-4 text-gray-400" role="img" aria-label="Private group" data-testid="org-group-detail-private-icon"></i>
             }
           </div>
 
@@ -389,7 +389,9 @@
                   </div>
                 </lfx-card>
               }
-              <lfx-vote-results-drawer [(visible)]="voteResultsDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()" />
+              <!-- Org Lens is a cross-company, read-only aggregate view — audience='voter' keeps the drawer off the
+                   creator-only live-results path, mirroring votes-dashboard's Me lens usage. -->
+              <lfx-vote-results-drawer [(visible)]="voteResultsDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()" [audience]="'voter'" />
             </div>
           }
           @case ('meetings') {
