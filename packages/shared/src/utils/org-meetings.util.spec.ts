@@ -121,6 +121,19 @@ describe('splitOrgMeetingsByPrivacy', () => {
     expect(result.rollup?.employeeCount).toBe(6); // 5 anonymous + Dana Diaz
   });
 
+  it('excludes empty project/foundation values from the rollup counts', () => {
+    // A redacted/API-backed row without project or foundation metadata maps both to `''` (see
+    // org-lens-meetings.service.ts's mapRowToOrgMeeting) — that must not count as a distinct project
+    // or foundation the rollup "supports."
+    const redactedNoMetadata = meeting({ id: 'meeting-50', privacy: 'private', project: '', foundation: '' });
+    const namedWithMetadata = meeting({ id: 'meeting-51', privacy: 'private', project: 'Envoy', foundation: 'CNCF' });
+
+    const result = splitOrgMeetingsByPrivacy([redactedNoMetadata, namedWithMetadata], noInvitees);
+
+    expect(result.rollup?.projectCount).toBe(1);
+    expect(result.rollup?.foundationCount).toBe(1);
+  });
+
   it('orders rollup type badges by the ORG_MEETING_TYPE_LABELS key order, not insertion order', () => {
     const hiddenOther = meeting({ id: 'meeting-9', privacy: 'private', type: 'other' });
     const hiddenBoard = meeting({ id: 'meeting-3', privacy: 'private', type: 'board' });

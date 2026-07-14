@@ -97,8 +97,11 @@ export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
 
   for (const meeting of hidden) {
     typeCounts.set(meeting.type, (typeCounts.get(meeting.type) ?? 0) + 1);
-    projects.add(meeting.project);
-    foundations.add(meeting.foundation);
+    // A redacted/API-backed row without project or foundation metadata maps to `''` (see
+    // `org-lens-meetings.service.ts`'s `mapRowToOrgMeeting`) — an empty value isn't a real
+    // project/foundation and must not inflate projectCount/foundationCount.
+    if (meeting.project) projects.add(meeting.project);
+    if (meeting.foundation) foundations.add(meeting.foundation);
     const names = getInviteeNames(meeting);
     if (names.length > 0) {
       for (const name of names) {

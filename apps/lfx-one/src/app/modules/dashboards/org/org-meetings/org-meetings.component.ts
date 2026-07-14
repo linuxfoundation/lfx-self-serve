@@ -272,14 +272,19 @@ export class OrgMeetingsComponent {
     return toSignal(
       toObservable(this.accountId).pipe(
         filter((id): id is string => !!id),
-        tap(() => this.summaryLoading.set(true)),
-        switchMap((id) =>
-          this.meetingService.getOrgMeetingsSummary(id).pipe(
+        switchMap((id) => {
+          // Set loading=true *inside* the switchMap projection, not in a tap() before it — a tap()
+          // ahead of switchMap runs, then switchMap cancels the previous inner observable, whose
+          // finalize() immediately flips loading back to false before this inner observable ever
+          // subscribes. Setting it here means loading stays true for the whole duration of this
+          // specific inner observable's lifetime.
+          this.summaryLoading.set(true);
+          return this.meetingService.getOrgMeetingsSummary(id).pipe(
             map((summary) => ({ id, summary })),
             catchError(() => of({ id, summary: null as OrgMeetingsSummary | null })),
             finalize(() => this.summaryLoading.set(false))
-          )
-        ),
+          );
+        }),
         // Record which account this result belongs to *before* the summary value itself updates, so
         // `accountUnseeded` never reads a summary value against the wrong account's id.
         tap(({ id }) => this.summaryAccountId.set(id)),
@@ -297,7 +302,12 @@ export class OrgMeetingsComponent {
   private initEffectiveSummary(): Signal<OrgMeetingsSummary> {
     return computed<OrgMeetingsSummary>(() => {
       const real = this.summary();
-      if (!this.accountUnseeded() && real) return real;
+      // `accountUnseeded`'s `total() > 0` fast path can go false before `summaryAccountId` catches up
+      // to a just-switched `accountId` (e.g. the new account's list resolves before its summary does) —
+      // trusting `real` in that window would render the *previous* account's summary against the new
+      // account's list. Require the summary to actually belong to the current account too.
+      const summaryMatchesAccount = this.summaryAccountId() === this.accountId();
+      if (!this.accountUnseeded() && summaryMatchesAccount && real) return real;
 
       const meetings = this.upcomingMeetings();
       const recurring = meetings.filter((meeting) => meeting.recurrenceLabel !== null);
