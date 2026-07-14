@@ -105,7 +105,7 @@ export class SessionStoreService {
       // Also tell apiErrorHandler to clear req.appSession: express-openid-connect's cookie-write hook
       // fires regardless of this throw, and would otherwise reissue a cookie pointing at a stale (or
       // un-invalidated) Valkey entry.
-      throw new AuthenticationError('Session write failed to persist', { operation: 'session_store_set', clearSession: true });
+      throw new AuthenticationError('Your session could not be saved — please sign in again.', { operation: 'session_store_set', clearSession: true });
     }
   }
 
