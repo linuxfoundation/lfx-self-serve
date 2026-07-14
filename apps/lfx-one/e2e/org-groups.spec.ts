@@ -108,6 +108,26 @@ test.describe('Org Groups', () => {
     await expect(page.getByTestId('org-groups-private-rollup-member-count')).toBeVisible();
   });
 
+  test('switches between Board/Other tabs and updates the URL', async ({ page }) => {
+    await gotoOrgGroupsPage(page);
+    await expect(page.getByTestId('org-groups-panel-all')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('org-groups-tab-board').click();
+    await expect(page).toHaveURL(/[?&]tab=board\b/);
+    await expect(page.getByTestId('org-groups-panel-board')).toBeVisible();
+    await expect(page.getByTestId('org-groups-tab-board')).toHaveAttribute('aria-selected', 'true');
+
+    await page.getByTestId('org-groups-tab-other').click();
+    await expect(page).toHaveURL(/[?&]tab=other\b/);
+    await expect(page.getByTestId('org-groups-panel-other')).toBeVisible();
+    await expect(page.getByTestId('org-groups-tab-other')).toHaveAttribute('aria-selected', 'true');
+
+    await page.getByTestId('org-groups-tab-all').click();
+    // 'all' is the default tab — its URL drops the `?tab=` param entirely.
+    await expect(page).not.toHaveURL(/[?&]tab=/);
+    await expect(page.getByTestId('org-groups-panel-all')).toBeVisible();
+  });
+
   test('navigates to a group detail page from a table row', async ({ page }) => {
     await gotoOrgGroupsPage(page);
     await expect(page.getByTestId('org-groups-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
