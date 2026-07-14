@@ -1,10 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Vitest evaluates the full `../constants` barrel on import; some path through it (unlike
-// meeting.utils.ts's use of the same barrel) reaches an Angular Location static initializer
-// that needs the JIT compiler. Loading it upfront avoids the "PlatformLocation" JIT crash.
-import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import type { OrgGroup } from '../interfaces';
