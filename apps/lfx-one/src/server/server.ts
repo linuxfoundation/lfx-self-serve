@@ -225,6 +225,31 @@ const authConfig: ConfigParams = {
 
 app.use(auth(authConfig));
 
+// The native custom-store cookie writer (appSession.js's CustomStore.setCookie) only ever sets or
+// clears the single unchunked `appSession` cookie — it has no awareness of the legacy
+// `appSession.0`, `appSession.1`, ... chunk cookies a large pre-cutover session may have left in a
+// user's browser. Left uncleared, those chunks stay valid (decryptable, unexpired) in the browser
+// even after the user logs out under the store, and a later rollback to cookie mode would silently
+// re-authenticate them from that stale, pre-cutover session snapshot. Proactively clear any such
+// chunks on every request while the store is enabled, so nothing survives to be resurrected by a
+// rollback.
+if (sessionStoreEnabled) {
+  app.use((req, res, next) => {
+    const cookieHeader = req.headers.cookie;
+    if (cookieHeader) {
+      for (const pair of cookieHeader.split(';')) {
+        const eqIndex = pair.indexOf('=');
+        if (eqIndex === -1) continue;
+        const name = pair.slice(0, eqIndex).trim();
+        if (/^appSession\.\d+$/.test(name)) {
+          res.clearCookie(name);
+        }
+      }
+    }
+    next();
+  });
+}
+
 // Meeting join pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
 

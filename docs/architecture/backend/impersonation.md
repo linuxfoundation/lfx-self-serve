@@ -214,11 +214,12 @@ Note that persona detection (step 2) resolves the **target** user's persona even
 
 ## Session Storage
 
-All impersonation state is stored in the `express-openid-connect` session cookie (encrypted, chunked):
+All impersonation state is stored on `req.appSession`, which express-openid-connect backs with one of two storage modes:
 
 ```text
+Default (SESSION_STORE_ENABLED unset/false):
 ┌─────────────────────────────────────────────────────┐
-│  req.appSession (encrypted cookie)                  │
+│  req.appSession (encrypted, chunked cookie)          │
 │                                                     │
 │  Primary OIDC Session (managed by library):         │
 │    access_token, refresh_token, id_token            │
@@ -229,9 +230,17 @@ All impersonation state is stored in the `express-openid-connect` session cookie
 │    impersonationUser       — { sub, email, ...}     │
 │    impersonator            — { sub, email, name }   │
 └─────────────────────────────────────────────────────┘
+
+SESSION_STORE_ENABLED=true:
+┌─────────────────────────────────────────────────────┐
+│  req.appSession (Valkey-backed, keyed by opaque id)  │
+│  Cookie carries only the session id — the same       │
+│  fields above (access_token .. impersonator) live in  │
+│  Valkey instead of the cookie.                        │
+└─────────────────────────────────────────────────────┘
 ```
 
-This is stored on `req.appSession`, so it works across replicas without sticky sessions regardless of session backend: by default the cookie holds the full encrypted session (cookie-based, no server-side store); with `SESSION_STORE_ENABLED=true` the cookie holds only an opaque session id and the data (including these impersonation fields) lives server-side in Valkey, keyed by that id (see [Runtime Configuration](../../runtime-configuration.md)).
+This works across replicas without sticky sessions regardless of session backend: by default the cookie holds the full encrypted session (cookie-based, no server-side store); with `SESSION_STORE_ENABLED=true` the cookie holds only an opaque session id and the data (including these impersonation fields) lives server-side in Valkey, keyed by that id (see [Runtime Configuration](../../runtime-configuration.md)).
 
 ## Environment Variables
 
