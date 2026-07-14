@@ -89,9 +89,7 @@ export class FoundationHealthComponent {
   // totalProjectsData retains the prior foundation's total until the next request
   // resolves; surface 0 while loading so the card and drawer never reconcile a
   // new scored count against a stale total.
-  protected readonly reconciledTotalProjects = computed(() =>
-    this.totalProjectsLoading() ? 0 : this.totalProjectsData().totalProjects
-  );
+  protected readonly reconciledTotalProjects = computed(() => (this.totalProjectsLoading() ? 0 : this.totalProjectsData().totalProjects));
 
   public readonly selectedFilter = signal<string>('all');
 
