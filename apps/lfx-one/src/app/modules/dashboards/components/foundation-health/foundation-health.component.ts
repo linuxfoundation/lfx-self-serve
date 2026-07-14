@@ -535,7 +535,7 @@ export class FoundationHealthComponent {
     if (scored > 0 || total > 0) {
       // The two counts come from independent Snowflake tables; only reconcile
       // against the total when it is loaded and not smaller than the scored count.
-      subtitle = total > scored ? `${scored} of ${total} projects scored` : `${scored} projects scored`;
+      subtitle = total > scored ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored` : `${scored.toLocaleString()} projects scored`;
     }
 
     return {

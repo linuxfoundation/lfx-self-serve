@@ -25,7 +25,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -84,7 +84,7 @@ export class ProjectHealthScoresDrawerComponent {
             const category = PROJECT_HEALTH_SCORE_CATEGORIES[items[0]?.dataIndex ?? 0];
             return PROJECT_HEALTH_CATEGORY_LABEL[category];
           },
-          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} projects`,
+          label: (ctx) => `${(ctx.parsed.y as number).toLocaleString()} projects`,
         },
       },
     },
@@ -210,21 +210,23 @@ export class ProjectHealthScoresDrawerComponent {
 
   private initProjectsData(): Signal<FoundationProjectsDetailResponse> {
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the table reloads when
+      // the foundation switches while the drawer is open (chart/totals are parent-driven).
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.tableLoading.set(false);
             return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL);
           }
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.tableLoading.set(false);
             return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL);
           }
           this.tableLoading.set(true);
-          // Reset to first page on each reopen so a stale page index can't
-          // point past the fresh list and trigger a false "no data" empty state.
+          // Reset to first page on each (re)load so a stale index can't point
+          // past the fresh list and trigger a false "no data" empty state.
           this.page.set(1);
           return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
             tap(() => this.tableLoading.set(false)),

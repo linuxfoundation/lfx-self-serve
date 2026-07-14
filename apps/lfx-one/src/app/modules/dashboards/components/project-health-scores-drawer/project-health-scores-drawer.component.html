@@ -177,7 +177,7 @@
         </div>
 
         <!-- Pagination -->
-        @if (totalPages() > 1) {
+        @if (filteredProjects().length > 0) {
           <div class="flex items-center justify-between" data-testid="project-health-scores-drawer-pagination">
             <span class="text-sm text-slate-600">{{ pageInfo() }}</span>
 
