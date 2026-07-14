@@ -182,13 +182,13 @@ export class InviteController {
       return null;
     }
 
-    // A non-empty resource_uid means this LFID invite is tied to a specific committee invite
-    // resource. The NATS publish above triggers HandleInviteAccepted in the committee service,
-    // which writes the FGA invitee tuple that grants query-service read access to the pending
-    // invite. Because that handler runs asynchronously, the first attempt may find no invites
-    // yet — retry up to FGA_PROPAGATION_MAX_RETRIES times with a delay between each so the
-    // tuple has time to propagate. Non-committee LFID invites skip the retry entirely.
-    const isCommitteeInvite = !!payload.resource_uid?.trim();
+    // When resource_type is present: 'group' means committee invite (retry while FGA propagates),
+    // any other value means not a committee invite (skip retry).
+    // When resource_type is absent we can't rule out a committee invite, so still attempt
+    // auto-accept rather than silently skip it.
+    const isCommitteeInvite = payload.resource_type
+      ? payload.resource_type === 'group'
+      : !!payload.resource_uid?.trim();
 
     for (let attempt = 0; attempt <= FGA_PROPAGATION_MAX_RETRIES; attempt++) {
       if (attempt > 0) {
