@@ -10,6 +10,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import {
+  DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
   lfxColors,
   PROJECT_HEALTH_CATEGORY_BADGE,
@@ -116,13 +117,7 @@ export class ProjectHealthScoresDrawerComponent {
   public readonly visible = model<boolean>(false);
 
   // === Inputs ===
-  public readonly data = input<FoundationHealthScoreDistributionResponse>({
-    excellent: 0,
-    healthy: 0,
-    stable: 0,
-    unsteady: 0,
-    critical: 0,
-  });
+  public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
   // Total foundation projects (from FOUNDATION_TOTAL_PROJECTS_MONTHLY) — may exceed
   // the number of scored projects because the two counts come from separate tables.
@@ -231,9 +226,11 @@ export class ProjectHealthScoresDrawerComponent {
             return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL);
           }
           this.tableLoading.set(true);
-          // Reset to first page on each (re)load so a stale index can't point
-          // past the fresh list and trigger a false "no data" empty state.
+          // Reset pagination and filters so stale search/status pills from the
+          // previous foundation can't hide the freshly loaded list.
           this.page.set(1);
+          this.selectedStatuses.set(new Set());
+          this.searchForm.get('query')!.setValue('', { emitEvent: false });
           return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
             tap(() => this.tableLoading.set(false)),
             catchError(() => {

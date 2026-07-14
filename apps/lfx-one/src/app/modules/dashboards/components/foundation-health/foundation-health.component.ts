@@ -9,6 +9,7 @@ import { MetricCardComponent } from '@components/metric-card/metric-card.compone
 import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
+  DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION,
   lfxColors,
   PROJECT_HEALTH_CATEGORY_CHART_COLOR,
   PROJECT_HEALTH_CATEGORY_LABEL,
@@ -98,6 +99,13 @@ export class FoundationHealthComponent {
   // resolves; surface 0 while loading so the card and drawer never reconcile a
   // new scored count against a stale total.
   protected readonly reconciledTotalProjects = computed(() => (this.totalProjectsLoading() ? 0 : this.totalProjectsData().totalProjects));
+
+  // healthScoresData likewise retains the prior foundation's distribution during a
+  // switch; surface the zeroed default while loading so the drawer chart/badge
+  // never renders the previous foundation's buckets for the newly selected one.
+  protected readonly reconciledHealthScoresData = computed(() =>
+    this.healthScoresLoading() ? DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION : this.healthScoresData()
+  );
 
   public readonly selectedFilter = signal<string>('all');
 
@@ -540,7 +548,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
-      loading: this.healthScoresLoading(),
+      loading: this.healthScoresLoading() || this.totalProjectsLoading(),
       value: '',
       subtitle,
       healthScores: data,

@@ -2,9 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
-import type { FoundationHealthScore, HealthStatusFilterOption } from '../interfaces';
+import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthStatusFilterOption } from '../interfaces';
 
 export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
+
+// Zeroed distribution used as the loading/empty fallback so the drawer chart and
+// the foundation-health card never render a previous foundation's buckets while
+// the new foundation's request is in flight.
+export const DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION: FoundationHealthScoreDistributionResponse = {
+  excellent: 0,
+  healthy: 0,
+  stable: 0,
+  unsteady: 0,
+  critical: 0,
+};
 
 // Ordered health buckets (low → high), matching the distribution chart's bar order.
 export const PROJECT_HEALTH_SCORE_CATEGORIES: readonly FoundationHealthScore[] = ['critical', 'unsteady', 'stable', 'healthy', 'excellent'];
