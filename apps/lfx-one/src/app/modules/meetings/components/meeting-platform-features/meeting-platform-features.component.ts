@@ -51,7 +51,6 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
   public readonly transcriptFeature = MEETING_FEATURES.find((f) => f.key === 'transcript_enabled')!;
   public readonly youtubeFeature = MEETING_FEATURES.find((f) => f.key === 'youtube_upload_enabled')!;
   public readonly aiSummaryFeature = MEETING_FEATURES.find((f) => f.key === 'zoom_ai_enabled')!;
-  public readonly calendarFeature = MEETING_FEATURES.find((f) => f.key === 'visibility')!;
 
   // Transform platforms into dropdown options (only available platforms)
   public readonly platformDropdownOptions = MEETING_PLATFORMS.map((platform) => ({
