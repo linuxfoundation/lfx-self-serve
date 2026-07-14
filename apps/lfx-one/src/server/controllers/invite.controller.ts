@@ -13,6 +13,11 @@ import { CommitteeService } from '../services/committee.service';
 import { NatsService } from '../services/nats.service';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
+/** Delay between auto-accept retries while waiting for FGA invitee tuple propagation. */
+const FGA_PROPAGATION_DELAY_MS = 3_000;
+/** Maximum number of retries after the initial attempt (total wait: up to 9 s). */
+const FGA_PROPAGATION_MAX_RETRIES = 3;
+
 /** Controller for non-LF user invite acceptance via signed JWT. */
 export class InviteController {
   private readonly natsService = new NatsService();
@@ -177,9 +182,29 @@ export class InviteController {
       return null;
     }
 
-    return this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
-      invitedEmail,
-      resourceUid: payload.resource_uid,
-    });
+    // When resource_type is present: 'group' means committee invite (retry while FGA propagates),
+    // any other value means not a committee invite (skip retry).
+    // When resource_type is absent we can't rule out a committee invite, so still attempt
+    // auto-accept rather than silently skip it.
+    const isCommitteeInvite = payload.resource_type ? payload.resource_type === 'group' : !!payload.resource_uid?.trim();
+
+    for (let attempt = 0; attempt <= FGA_PROPAGATION_MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, FGA_PROPAGATION_DELAY_MS));
+      }
+
+      const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
+        invitedEmail,
+        resourceUid: payload.resource_uid,
+      });
+
+      // undefined = no pending invites found yet; the FGA tuple may still be in-flight — retry.
+      // null or PendingCommitteeInviteForOrg = invite was found and processed; return immediately.
+      if (result !== undefined || !isCommitteeInvite) {
+        return result ?? null;
+      }
+    }
+
+    return null;
   }
 }
