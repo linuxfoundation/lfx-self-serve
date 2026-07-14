@@ -12,6 +12,7 @@ import {
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
   getLargestSessionShareUrl,
+  getPastMeetingResourceId,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
@@ -252,7 +253,7 @@ export class DashboardMeetingCardComponent {
           if (new Date(startTime).getTime() > Date.now()) {
             return of(null);
           }
-          return this.meetingService.getPastMeetingRecording(meeting.id).pipe(
+          return this.meetingService.getPastMeetingRecording(getPastMeetingResourceId(meeting)).pipe(
             map(getLargestSessionShareUrl),
             catchError(() => of(null))
           );

@@ -77,7 +77,10 @@ export function splitOrgMeetingsByPrivacy<T extends OrgMeetingBase>(
   const hidden: T[] = [];
 
   for (const meeting of meetings) {
-    const invited = meeting.privacy !== 'private' || (deriveDemoViewerInvited(meeting.id) && getInviteeNames(meeting).length > 0);
+    // `getInviteeNames` is presentation/aggregate data (rollup employee counts), not an access signal —
+    // gating visibility on it as well as `deriveDemoViewerInvited` made a demo meeting with zero invitees
+    // (or, on the past tab, zero attendees) collapse into the rollup even when the viewer hash says invited.
+    const invited = meeting.privacy !== 'private' || deriveDemoViewerInvited(meeting.id);
     if (invited) {
       visible.push(meeting);
     } else {

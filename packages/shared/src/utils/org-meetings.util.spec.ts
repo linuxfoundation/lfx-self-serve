@@ -43,9 +43,7 @@ describe('splitOrgMeetingsByPrivacy', () => {
 
   it('keeps a private meeting visible when the demo viewer-invited hash resolves truthy and it has named invitees', () => {
     // deriveDemoViewerInvited only ever grants invited status to demo-prefixed ids (um-/pm-); um-2
-    // hashes to a non-zero mod-3 bucket, so the viewer is treated as invited — but "invited" also
-    // requires at least one named invitee, since a real (non-demo) private meeting always arrives
-    // with an empty invitee list (server-redacted) and must never be treated as visible.
+    // hashes to a non-zero mod-3 bucket, so the viewer is treated as invited.
     const invited = meeting({ id: 'um-2', privacy: 'private' });
 
     const result = splitOrgMeetingsByPrivacy([invited], () => ['Ada Lovelace']);
@@ -54,16 +52,18 @@ describe('splitOrgMeetingsByPrivacy', () => {
     expect(result.rollup).toBeNull();
   });
 
-  it('collapses a private meeting into the rollup even when the demo viewer-invited hash resolves truthy if it has no named invitees', () => {
-    // Guards against treating an id-prefix hash alone as an access-control signal — a real API-backed
-    // private meeting could theoretically collide with the um-/pm- demo prefix, but it always arrives
-    // with orgInvitees redacted to `[]`, so it must stay hidden regardless of the hash outcome.
+  it('keeps a private meeting visible when the demo viewer-invited hash resolves truthy even with no named invitees', () => {
+    // getInviteeNames is presentation/aggregate data (rollup employee counts), not an access signal —
+    // it must not gate visibility on top of deriveDemoViewerInvited. A demo meeting the viewer hash
+    // says they're invited to (e.g. zero attendees on the past tab) must stay visible. Real (non-demo)
+    // private meetings can never reach this branch as "invited" regardless: their ids never carry the
+    // um-/pm- prefix, so deriveDemoViewerInvited always returns false for them.
     const invited = meeting({ id: 'um-2', privacy: 'private' });
 
     const result = splitOrgMeetingsByPrivacy([invited], noInvitees);
 
-    expect(result.visible).toEqual([]);
-    expect(result.rollup?.totalCount).toBe(1);
+    expect(result.visible).toEqual([invited]);
+    expect(result.rollup).toBeNull();
   });
 
   it('collapses a private meeting into the rollup when the demo viewer-invited hash resolves falsy', () => {

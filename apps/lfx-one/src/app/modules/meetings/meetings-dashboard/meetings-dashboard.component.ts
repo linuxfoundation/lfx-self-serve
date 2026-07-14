@@ -146,6 +146,10 @@ export class MeetingsDashboardComponent {
   protected readonly meRecordingsCountError = signal(false);
   protected readonly fpRecordingsCountError = signal(false);
   protected readonly fpAttendanceRateError = signal(false);
+  // Set when the underlying FP past-meetings list fetch itself fails (as opposed to a per-meeting
+  // KPI fetch) — `rawFpPastMeetings` swallows list/pagination errors to `[]` so downstream KPIs
+  // can't tell "no meetings in window" from "list fetch failed" on their own.
+  private readonly fpPastListError = signal(false);
   protected fpUpcomingCountLoading = signal(false);
   protected fpPastCountLoading = signal(false);
 
@@ -921,7 +925,7 @@ export class MeetingsDashboardComponent {
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           return this.countMeetingsWithRecording(this.filterRecentPastMeetings(past, cutoff), this.fpRecordingsCountLoading);
         }),
-        tap((result) => this.fpRecordingsCountError.set(result.hasError)),
+        tap((result) => this.fpRecordingsCountError.set(result.hasError || this.fpPastListError())),
         map((result) => result.count)
       ),
       { initialValue: 0 }
@@ -957,7 +961,7 @@ export class MeetingsDashboardComponent {
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           return this.countMeetingAttendance(this.filterRecentPastMeetings(past, cutoff), this.fpAttendanceRateLoading);
         }),
-        tap((result) => this.fpAttendanceRateError.set(result.hasError)),
+        tap((result) => this.fpAttendanceRateError.set(result.hasError || this.fpPastListError())),
         map((result) => result.count)
       ),
       { initialValue: 0 }
@@ -1007,6 +1011,7 @@ export class MeetingsDashboardComponent {
       combineLatest([project$, lens$, timeFilter$, this.refresh$]).pipe(
         switchMap(([project, lens, timeFilter]) => {
           if (lens === 'me' || !project?.uid || timeFilter !== 'past') {
+            this.fpPastListError.set(false);
             return of([] as PastMeeting[]);
           }
           // SSR: pin loading=true so the stat cards render their skeleton instead of "0".
@@ -1035,9 +1040,11 @@ export class MeetingsDashboardComponent {
             toArray(),
             map((responses) => responses.flatMap((r) => r.data)),
             tap((meetings) => {
+              this.fpPastListError.set(false);
               this.fpRecordingsCountLoading.set(this.filterRecentPastMeetings(meetings, cutoff).length > 0);
             }),
             catchError(() => {
+              this.fpPastListError.set(true);
               this.fpRecordingsCountLoading.set(false);
               return of([] as PastMeeting[]);
             }),

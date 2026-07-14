@@ -364,6 +364,9 @@ export class OrgMeetingsComponent {
         // read as "confirmed no meetings" and fight the zero-result branch's own demo-fallback logic.
         this.upcomingMeetings.set(DEMO_UPCOMING_MEETINGS);
         this.total.set(0);
+        // Without this, the demo seed renders as real cards (labeled with the new org's name) until
+        // the offset-0 fetch this reset triggers resolves and flips loading itself.
+        this.listLoading.set(true);
       });
   }
 
