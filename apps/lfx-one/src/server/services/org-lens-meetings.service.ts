@@ -130,14 +130,13 @@ export class OrgLensMeetingsService {
         ${projectFilter}
         ${typeFilter}
       ORDER BY m.NEXT_OCCURRENCE_UTC_TS ASC NULLS LAST
-      LIMIT ? OFFSET ?
+      LIMIT ${Number(pageSize)} OFFSET ${Number(offset)}
     `;
 
     const binds: (string | number)[] = [accountId];
     if (searchQuery) binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     if (project) binds.push(project);
     if (type && type !== 'other') binds.push(mapMeetingTypeToBucket(type));
-    binds.push(pageSize, offset);
 
     // Surface list errors (no fail-soft) so the client renders its distinct "couldn't load" state instead of an empty list.
     const rows = await withOrgCache(
@@ -149,7 +148,10 @@ export class OrgLensMeetingsService {
     );
 
     const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
-    const meetingIds = rows.map((row) => row.MEETING_ID);
+    // Private rows are always redacted to `orgInvitees: []` in mapRowToOrgMeeting below, so their
+    // invitee identities have no legitimate consumer — skip fetching them at all rather than pull
+    // sensitive rows server-side only to discard them.
+    const meetingIds = rows.filter((row) => mapPrivacy(row.VISIBILITY) !== 'private').map((row) => row.MEETING_ID);
     const inviteesByMeeting = await this.fetchInviteesByMeeting(req, accountId, meetingIds);
     const data = rows.map((row) => this.mapRowToOrgMeeting(row, inviteesByMeeting.get(row.MEETING_ID) ?? []));
 

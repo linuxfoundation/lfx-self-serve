@@ -201,7 +201,6 @@ test.describe('Meetings Dashboard — Foundation lens stat card subtext', () => 
     const card = page.getByTestId('stat-card-Upcoming Meetings');
     await expect(card).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(card).toContainText('Next: Aug 14');
-    await page.screenshot({ path: 'test-results/visual-check-fp-stat-cards-upcoming.png' });
   });
 
   test('Upcoming Meetings card uses next_occurrence_start_time when occurrences is unusable and the series origin has passed', async ({ page }) => {
@@ -213,7 +212,6 @@ test.describe('Meetings Dashboard — Foundation lens stat card subtext', () => 
     await expect(card).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(card).toContainText('1');
     await expect(card).toContainText('Next: Sep 20');
-    await page.screenshot({ path: 'test-results/visual-check-fp-stat-cards-upcoming-stale-origin.png' });
   });
 
   test('Recurring Series card shows the across-projects subtext', async ({ page }) => {
@@ -231,6 +229,5 @@ test.describe('Meetings Dashboard — Foundation lens stat card subtext', () => 
     const card = page.getByTestId('stat-card-Past Meetings');
     await expect(card).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(card).toContainText('50% attendance rate');
-    await page.screenshot({ path: 'test-results/visual-check-fp-stat-cards-past.png' });
   });
 });

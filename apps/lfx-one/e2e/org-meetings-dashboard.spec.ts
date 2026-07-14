@@ -4,6 +4,7 @@
 // Deep import the constants file directly (not the '@lfx-one/shared/constants' barrel) so the suite can
 // load the demo data without bootstrapping Angular. org-meetings.constants.ts only imports types, so this is safe.
 import { DEMO_PAST_MEETINGS, DEMO_UPCOMING_MEETINGS } from '@lfx-one/shared/constants/org-meetings.constants';
+import type { OrgMeetingType } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, Route, test } from '@playwright/test';
 
 const ORG_MEETINGS_URL = '/org/meetings';
@@ -35,7 +36,7 @@ interface StubMeeting {
   id: string;
   title: string;
   privacy: 'public' | 'private';
-  type: 'board' | 'working-group' | 'other';
+  type: OrgMeetingType;
   recurrenceLabel: string | null;
   startTime: string;
   endTime: string;
