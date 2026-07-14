@@ -29,6 +29,25 @@ export const PROJECT_HEALTH_CATEGORY_BADGE: Record<FoundationHealthScore, { bg: 
   excellent: { bg: lfxColors.emerald[100], text: lfxColors.emerald[700] },
 };
 
+// Distribution-chart bar / legend swatch color per health category (500-scale).
+// Single source of truth for the chart bar fill shared by the foundation-health
+// distribution chart and the drawer's chart + legend.
+export const PROJECT_HEALTH_CATEGORY_CHART_COLOR: Record<FoundationHealthScore, string> = {
+  critical: lfxColors.red[500],
+  unsteady: lfxColors.amber[400],
+  stable: lfxColors.violet[500],
+  healthy: lfxColors.blue[500],
+  excellent: lfxColors.emerald[500],
+};
+
+// Neutral badge for unscored project rows (null healthScoreCategory), reusing the
+// gray scale the Unscored filter pill uses so the row status matches the filter.
+export const PROJECT_HEALTH_UNSCORED_BADGE: { bg: string; text: string; label: string } = {
+  bg: lfxColors.gray[100],
+  text: lfxColors.gray[600],
+  label: 'Unscored',
+};
+
 // Drawer table status-filter pills: the 5 scored categories plus an "Unscored" bucket
 // for projects whose per-project health score hasn't been emitted yet (null category).
 export const PROJECT_HEALTH_STATUS_FILTER_OPTIONS: readonly HealthStatusFilterOption[] = [

@@ -6,7 +6,15 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
-import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
+import {
+  BASE_BAR_CHART_OPTIONS,
+  BASE_LINE_CHART_OPTIONS,
+  lfxColors,
+  PROJECT_HEALTH_CATEGORY_CHART_COLOR,
+  PROJECT_HEALTH_CATEGORY_LABEL,
+  PROJECT_HEALTH_SCORE_CATEGORIES,
+  PRIMARY_FOUNDATION_HEALTH_METRICS,
+} from '@lfx-one/shared/constants';
 import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -85,6 +93,11 @@ export class FoundationHealthComponent {
   protected readonly healthScoresData = this.initializeHealthScoresData();
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
   protected readonly eventsData = this.initializeEventsData();
+
+  // totalProjectsData retains the prior foundation's total until the next request
+  // resolves; surface 0 while loading so the card and drawer never reconcile a
+  // new scored count against a stale total.
+  protected readonly reconciledTotalProjects = computed(() => (this.totalProjectsLoading() ? 0 : this.totalProjectsData().totalProjects));
 
   public readonly selectedFilter = signal<string>('all');
 
@@ -187,13 +200,11 @@ export class FoundationHealthComponent {
     return computed(() => {
       const distribution = this.healthScoresData();
 
-      const data = [
-        { category: 'Critical', count: distribution.critical, color: lfxColors.red[500] },
-        { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.amber[400] },
-        { category: 'Stable', count: distribution.stable, color: lfxColors.violet[500] },
-        { category: 'Healthy', count: distribution.healthy, color: lfxColors.blue[500] },
-        { category: 'Excellent', count: distribution.excellent, color: lfxColors.emerald[500] },
-      ];
+      const data = PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => ({
+        category: PROJECT_HEALTH_CATEGORY_LABEL[category],
+        count: distribution[category],
+        color: PROJECT_HEALTH_CATEGORY_CHART_COLOR[category],
+      }));
 
       const maxCount = Math.max(...data.map((d) => d.count));
 
@@ -518,10 +529,10 @@ export class FoundationHealthComponent {
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
     const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
-    const total = this.totalProjectsData().totalProjects;
+    const total = this.reconciledTotalProjects();
 
     let subtitle = '';
-    if (scored > 0) {
+    if (scored > 0 || total > 0) {
       // The two counts come from independent Snowflake tables; only reconcile
       // against the total when it is loaded and not smaller than the scored count.
       subtitle = total > scored ? `${scored} of ${total} projects scored` : `${scored} projects scored`;

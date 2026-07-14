@@ -13,10 +13,12 @@ import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
   lfxColors,
   PROJECT_HEALTH_CATEGORY_BADGE,
+  PROJECT_HEALTH_CATEGORY_CHART_COLOR,
   PROJECT_HEALTH_CATEGORY_LABEL,
   PROJECT_HEALTH_SCORE_CATEGORIES,
   PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE,
   PROJECT_HEALTH_STATUS_FILTER_OPTIONS,
+  PROJECT_HEALTH_UNSCORED_BADGE,
 } from '@lfx-one/shared/constants';
 import { buildLensAwareInsightsUrl, buildVisiblePages } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -36,7 +38,17 @@ import type {
 
 @Component({
   selector: 'lfx-project-health-scores-drawer',
-  imports: [DrawerModule, ChartComponent, InsightsHandoffSectionComponent, TooltipModule, InputTextComponent, ButtonComponent, ReactiveFormsModule, DecimalPipe, NgClass],
+  imports: [
+    DrawerModule,
+    ChartComponent,
+    InsightsHandoffSectionComponent,
+    TooltipModule,
+    InputTextComponent,
+    ButtonComponent,
+    ReactiveFormsModule,
+    DecimalPipe,
+    NgClass,
+  ],
   templateUrl: './project-health-scores-drawer.component.html',
 })
 export class ProjectHealthScoresDrawerComponent {
@@ -46,16 +58,11 @@ export class ProjectHealthScoresDrawerComponent {
   private readonly fb = inject(FormBuilder);
 
   // === Static Options ===
-  protected readonly legendColors = {
-    critical: lfxColors.red[500],
-    unsteady: lfxColors.amber[400],
-    stable: lfxColors.violet[500],
-    healthy: lfxColors.blue[500],
-    excellent: lfxColors.emerald[500],
-  };
-
+  protected readonly categories = PROJECT_HEALTH_SCORE_CATEGORIES;
   protected readonly categoryBadge = PROJECT_HEALTH_CATEGORY_BADGE;
   protected readonly categoryLabel = PROJECT_HEALTH_CATEGORY_LABEL;
+  protected readonly chartColor = PROJECT_HEALTH_CATEGORY_CHART_COLOR;
+  protected readonly unscoredBadge = PROJECT_HEALTH_UNSCORED_BADGE;
   protected readonly statusFilterOptions = PROJECT_HEALTH_STATUS_FILTER_OPTIONS;
 
   protected readonly chartOptions: ChartOptions<'bar'> = {
@@ -184,17 +191,11 @@ export class ProjectHealthScoresDrawerComponent {
     return computed(() => {
       const d = this.data();
       return {
-        labels: ['Critical', 'Unsteady', 'Stable', 'Healthy', 'Excellent'],
+        labels: PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => PROJECT_HEALTH_CATEGORY_LABEL[category]),
         datasets: [
           {
-            data: [d.critical, d.unsteady, d.stable, d.healthy, d.excellent],
-            backgroundColor: [
-              this.legendColors.critical,
-              this.legendColors.unsteady,
-              this.legendColors.stable,
-              this.legendColors.healthy,
-              this.legendColors.excellent,
-            ],
+            data: PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => d[category]),
+            backgroundColor: PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => this.chartColor[category]),
             borderRadius: 4,
             borderSkipped: 'start',
           },

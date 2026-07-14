@@ -8,6 +8,7 @@ import {
   NATS_CONFIG,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
+  PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
@@ -138,8 +139,8 @@ import { SnowflakeService } from './snowflake.service';
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
 
-/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. */
-const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<FoundationHealthScore> = new Set(['excellent', 'healthy', 'stable', 'unsteady', 'critical']);
+/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list so the server and UI cannot drift. */
+const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<FoundationHealthScore> = new Set(PROJECT_HEALTH_SCORE_CATEGORIES);
 
 /** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY; null when absent or unrecognized. */
 function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
@@ -1688,6 +1689,8 @@ export class ProjectService {
 
     // LEFT JOIN latest per-project health category (separate daily table) for the badge;
     // keyed on PROJECT_SLUG since the two tables use different PROJECT_ID systems.
+    // Rank all daily rows first, then take the newest, so a project whose latest row
+    // is unscored surfaces a null category (Unscored) instead of a stale prior score.
     const query = `
       SELECT
         d.PROJECT_ID,
@@ -1705,8 +1708,6 @@ export class ProjectService {
         SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
         FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
         WHERE FOUNDATION_SLUG = ?
-          AND HEALTH_SCORE IS NOT NULL
-          AND HEALTH_SCORE_CATEGORY IS NOT NULL
         QUALIFY ROW_NUMBER() OVER (PARTITION BY PROJECT_SLUG ORDER BY METRIC_DATE DESC) = 1
       ) h ON d.PROJECT_SLUG = h.PROJECT_SLUG
       WHERE d.FOUNDATION_SLUG = ?
