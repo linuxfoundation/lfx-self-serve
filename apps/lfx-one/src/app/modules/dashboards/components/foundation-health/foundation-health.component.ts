@@ -521,7 +521,7 @@ export class FoundationHealthComponent {
     const total = this.totalProjectsData().totalProjects;
 
     let subtitle = '';
-    if (scored > 0) {
+    if (scored > 0 || total > 0) {
       // The two counts come from independent Snowflake tables; only reconcile
       // against the total when it is loaded and not smaller than the scored count.
       subtitle = total > scored ? `${scored} of ${total} projects scored` : `${scored} projects scored`;
