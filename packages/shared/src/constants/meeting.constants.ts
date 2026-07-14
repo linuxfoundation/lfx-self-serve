@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingVisibility } from '../enums';
-import type { CardSelectorOption } from '../interfaces/components.interface';
-import type { MeetingTypeConfig } from '../interfaces/meeting.interface';
+import type { CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
