@@ -86,6 +86,13 @@ export class FoundationHealthComponent {
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
   protected readonly eventsData = this.initializeEventsData();
 
+  // totalProjectsData retains the prior foundation's total until the next request
+  // resolves; surface 0 while loading so the card and drawer never reconcile a
+  // new scored count against a stale total.
+  protected readonly reconciledTotalProjects = computed(() =>
+    this.totalProjectsLoading() ? 0 : this.totalProjectsData().totalProjects
+  );
+
   public readonly selectedFilter = signal<string>('all');
 
   public readonly filterOptions: FilterPillOption[] = [
@@ -518,7 +525,7 @@ export class FoundationHealthComponent {
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
     const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
-    const total = this.totalProjectsData().totalProjects;
+    const total = this.reconciledTotalProjects();
 
     let subtitle = '';
     if (scored > 0 || total > 0) {
