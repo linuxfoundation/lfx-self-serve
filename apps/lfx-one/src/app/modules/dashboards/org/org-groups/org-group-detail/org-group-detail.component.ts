@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, model, PLATFORM_ID, signal, type Signal } from '@angular/core';
+import { Component, computed, effect, inject, model, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
@@ -122,6 +122,15 @@ export class OrgGroupDetailComponent {
   /** Votes tab only shows for groups with voting enabled, mirroring committee's `enable_voting` gate. */
   protected readonly visibleTabs: Signal<readonly GroupDetailTabConfig[]> = this.initVisibleTabs();
 
+  constructor() {
+    // Angular reuses this component instance across `/org/groups/:groupId` navigations — reset the
+    // tab selection so switching groups doesn't strand the viewer on a tab the new group may not have.
+    effect(() => {
+      this.groupId();
+      this.activeTab.set('overview');
+    });
+  }
+
   // ─── Public methods ───────────────────────────────────────────────────────────
 
   protected switchTab(id: GroupDetailTabId): void {
@@ -131,7 +140,7 @@ export class OrgGroupDetailComponent {
   protected goToParentProject(): void {
     const parentProjectId = this.detail()?.parentProjectId;
     if (parentProjectId && this.hasValidParentProject()) {
-      this.router.navigate(['/org/projects', parentProjectId]);
+      void this.router.navigate(['/org/projects', parentProjectId]);
     }
   }
 
