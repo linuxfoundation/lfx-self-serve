@@ -224,8 +224,6 @@ const authConfig: ConfigParams = {
   }),
 };
 
-app.use(auth(authConfig));
-
 // The native custom-store cookie writer (appSession.js's CustomStore.setCookie) only ever sets or
 // clears the single unchunked `appSession` cookie — it has no awareness of the legacy
 // `appSession.0`, `appSession.1`, ... chunk cookies a large pre-cutover session may have left in a
@@ -234,6 +232,10 @@ app.use(auth(authConfig));
 // re-authenticate them from that stale, pre-cutover session snapshot. Proactively clear any such
 // chunks on every request while the store is enabled, so nothing survives to be resurrected by a
 // rollback.
+//
+// Registered BEFORE auth(authConfig): express-openid-connect's built-in /logout route completes
+// the response inside its own router without calling next(), so cleanup registered after auth()
+// would never run on a logout request — the exact request where clearing these chunks matters most.
 if (sessionStoreEnabled) {
   // Mirror the attributes express-openid-connect used when it originally set these chunk cookies
   // (config.js's session.cookie defaults: httpOnly=true, sameSite='Lax', secure=true iff baseURL is
@@ -254,6 +256,8 @@ if (sessionStoreEnabled) {
     next();
   });
 }
+
+app.use(auth(authConfig));
 
 // Meeting join pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
