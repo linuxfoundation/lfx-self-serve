@@ -13,6 +13,11 @@ import { CommitteeService } from '../services/committee.service';
 import { NatsService } from '../services/nats.service';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
+/** Delay between auto-accept retries while waiting for FGA invitee tuple propagation. */
+const FGA_PROPAGATION_DELAY_MS = 3_000;
+/** Maximum number of retries after the initial attempt (total wait: up to 9 s). */
+const FGA_PROPAGATION_MAX_RETRIES = 3;
+
 /** Controller for non-LF user invite acceptance via signed JWT. */
 export class InviteController {
   private readonly natsService = new NatsService();
@@ -177,9 +182,31 @@ export class InviteController {
       return null;
     }
 
-    return this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
-      invitedEmail,
-      resourceUid: payload.resource_uid,
-    });
+    // A non-empty resource_uid means this LFID invite is tied to a specific committee invite
+    // resource. The NATS publish above triggers HandleInviteAccepted in the committee service,
+    // which writes the FGA invitee tuple that grants query-service read access to the pending
+    // invite. Because that handler runs asynchronously, the first attempt may find no invites
+    // yet — retry up to FGA_PROPAGATION_MAX_RETRIES times with a delay between each so the
+    // tuple has time to propagate. Non-committee LFID invites skip the retry entirely.
+    const isCommitteeInvite = !!payload.resource_uid?.trim();
+
+    for (let attempt = 0; attempt <= FGA_PROPAGATION_MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, FGA_PROPAGATION_DELAY_MS));
+      }
+
+      const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
+        invitedEmail,
+        resourceUid: payload.resource_uid,
+      });
+
+      // undefined = no pending invites found yet; the FGA tuple may still be in-flight — retry.
+      // null or PendingCommitteeInviteForOrg = invite was found and processed; return immediately.
+      if (result !== undefined || !isCommitteeInvite) {
+        return result ?? null;
+      }
+    }
+
+    return null;
   }
 }

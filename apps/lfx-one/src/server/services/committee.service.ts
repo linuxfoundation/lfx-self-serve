@@ -717,11 +717,12 @@ export class CommitteeService {
   public async acceptPendingCommitteeInvitesAfterLfidAccept(
     req: Request,
     params: { invitedEmail: string; resourceUid?: string }
-  ): Promise<PendingCommitteeInviteForOrg | null> {
+  ): Promise<PendingCommitteeInviteForOrg | null | undefined> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
     if (pendingInvites.length === 0) {
       logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
-      return null;
+      // undefined signals "not found" to the caller so it can retry while FGA propagates.
+      return undefined;
     }
 
     const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
@@ -730,7 +731,7 @@ export class CommitteeService {
         pending_count: pendingInvites.length,
         resource_uid: params.resourceUid,
       });
-      return null;
+      return undefined;
     }
 
     logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
