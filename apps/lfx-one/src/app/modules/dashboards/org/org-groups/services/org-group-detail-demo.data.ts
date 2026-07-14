@@ -39,6 +39,34 @@ function buildGenericChannels(listGroup: OrgGroup): Partial<OrgGroupDetail> {
   };
 }
 
+// GENERIC_DETAIL's nested collections (meetings, votes, surveys, documents) carry placeholder
+// identifiers ('lf', 'generic', 'Group') meant to be overridden per-group — curated groups set their
+// own values on every record (see LF_KERNEL_BOARD etc.), so the generic fallback must do the same
+// rather than leak the placeholders into every non-curated group's detail page.
+function buildGenericNestedFixtures(listGroup: OrgGroup, parentProjectId: string): Partial<OrgGroupDetail> {
+  return {
+    nextMeetings: GENERIC_DETAIL.nextMeetings.map((meeting) => ({ ...meeting, projectName: listGroup.parentProject })),
+    pastMeetings: GENERIC_DETAIL.pastMeetings.map((meeting) => ({ ...meeting, projectName: listGroup.parentProject })),
+    votes: GENERIC_DETAIL.votes.map((vote) => ({ ...vote, project_uid: parentProjectId, committee_name: listGroup.name })),
+    surveys: GENERIC_DETAIL.surveys.map((survey) => ({
+      ...survey,
+      committees: survey.committees.map((committee) => ({
+        ...committee,
+        project_id: parentProjectId,
+        project_uid: parentProjectId,
+        project_name: listGroup.parentProject,
+        committee_name: listGroup.name,
+      })),
+    })),
+    documents: GENERIC_DETAIL.documents.map((document) => ({
+      ...document,
+      foundationName: listGroup.foundation,
+      groupOrMeetingName: listGroup.name,
+      groupOrMeetingUid: listGroup.id,
+    })),
+  };
+}
+
 const GENERIC_DETAIL: OrgGroupDetail = {
   id: 'generic',
   name: 'Group',
@@ -722,5 +750,13 @@ export function getGroupDetailDemo(id: string): OrgGroupDetail | null {
   // override it with a slug derived from the group's real parentProject name so the "Parent Project" link
   // (gated by VALID_DEMO_PROJECT_SLUGS in the component) only activates when that name genuinely matches a
   // known Org Lens project-detail seed, instead of silently pointing every generic group at Linux Foundation.
-  return { ...GENERIC_DETAIL, ...listGroup, id, parentProjectId: slugify(listGroup.parentProject), ...buildGenericChannels(listGroup) };
+  const parentProjectId = slugify(listGroup.parentProject);
+  return {
+    ...GENERIC_DETAIL,
+    ...listGroup,
+    id,
+    parentProjectId,
+    ...buildGenericChannels(listGroup),
+    ...buildGenericNestedFixtures(listGroup, parentProjectId),
+  };
 }

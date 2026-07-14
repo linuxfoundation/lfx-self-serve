@@ -81,6 +81,11 @@ export class GroupsTableComponent {
   }
 
   protected onRowKeydown(event: KeyboardEvent, groupId: string): void {
+    // Ignore key events bubbled up from focusable children (name link, channel indicators) —
+    // only the row itself being the activation target should trigger navigation.
+    if (event.target !== event.currentTarget) {
+      return;
+    }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       this.navigateToGroup(groupId);

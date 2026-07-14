@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import type {
   GroupDetailTabConfig,
   GroupDetailTabId,
@@ -63,14 +64,8 @@ export const ORG_GROUPS_ROLLUP_TYPE_BADGES: Record<OrgPrivateGroupsRollupBucket,
   Other: { label: 'Other', icon: 'fa-light fa-layer-group', badgeClass: 'bg-gray-100 text-gray-600' },
 };
 
-/**
- * Chair-avatar background color on the group detail page, keyed by whether the chair's role is
- * exactly 'Chair'. Hardcoded hex (not a `lfxColors` scale) to exactly match the pre-existing inline
- * style in production's own committee-overview chair-avatar design (`committee-overview.component.html`),
- * the same documented-exception pattern (though a different underlying reason) as `VOTE_COLOR` in
- * calendar-colors.constants.ts.
- */
+/** Chair-avatar background color on the group detail page, keyed by whether the chair's role is exactly 'Chair'. */
 export const CHAIR_AVATAR_COLOR = {
-  chair: '#6366f1',
-  other: '#f59e0b',
+  chair: lfxColors.violet[500],
+  other: lfxColors.amber[500],
 } as const;

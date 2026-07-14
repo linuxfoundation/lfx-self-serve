@@ -16,6 +16,9 @@ import { expect, Page, test } from '@playwright/test';
 
 const DETAIL_URL = '/org/groups/k8s-steering';
 const DETAIL_URL_BOGUS = '/org/groups/totally-bogus-group';
+// A real, seeded private group whose deriveDemoViewerIsGroupMember(id) hash resolves to
+// non-member — exercises the "exists but viewer lacks access" branch, distinct from an unknown id.
+const DETAIL_URL_PRIVATE_NON_MEMBER = '/org/groups/cncf-budget';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const TEST_ORG_UID = TEST_ACCOUNT_ID;
@@ -137,6 +140,14 @@ test.describe('Org Group Detail', () => {
 test.describe('Org Group Detail — not found', () => {
   test('renders the not-found panel for an unknown id', async ({ page }) => {
     await gotoOrgGroupDetailPage(page, DETAIL_URL_BOGUS);
+    const notFound = page.getByTestId('org-group-detail-not-found');
+    await expect(notFound).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(notFound).toContainText('Group not found');
+    await expect(page.getByTestId('org-group-detail-tabs')).not.toBeVisible();
+  });
+
+  test('renders the not-found panel for a private group the viewer is not a member of', async ({ page }) => {
+    await gotoOrgGroupDetailPage(page, DETAIL_URL_PRIVATE_NON_MEMBER);
     const notFound = page.getByTestId('org-group-detail-not-found');
     await expect(notFound).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(notFound).toContainText('Group not found');

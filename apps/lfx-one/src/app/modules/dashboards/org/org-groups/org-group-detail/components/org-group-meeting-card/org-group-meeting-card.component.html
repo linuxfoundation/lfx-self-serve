@@ -54,8 +54,8 @@
         <p class="text-[10px] text-gray-500 truncate min-w-0">{{ m.description }}</p>
       }
     </div>
-    <!-- Wrap the disabled button in a span so the tooltip remains reachable when [disabled] suppresses pointer events on the button itself. -->
-    <span class="shrink-0 mt-1" pTooltip="Meeting links aren't available yet for Org Lens groups" tooltipPosition="top">
+    <!-- Wrap the disabled button in a focusable span so the tooltip remains reachable via keyboard: PrimeNG pTooltip needs hover/focus events, and a natively [disabled] button never receives either. -->
+    <span class="shrink-0 mt-1" tabindex="0" pTooltip="Meeting links aren't available yet for Org Lens groups" tooltipPosition="top">
       <button
         type="button"
         class="w-7 h-7 flex items-center justify-center rounded-full text-gray-300 cursor-not-allowed"
