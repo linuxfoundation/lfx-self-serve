@@ -231,7 +231,7 @@ All impersonation state is stored in the `express-openid-connect` session cookie
 └─────────────────────────────────────────────────────┘
 ```
 
-This is cookie-based (no server-side session store), so it works across replicas without sticky sessions.
+This is stored on `req.appSession`, so it works across replicas without sticky sessions regardless of session backend: by default the cookie holds the full encrypted session (cookie-based, no server-side store); with `SESSION_STORE_ENABLED=true` the cookie holds only an opaque session id and the data (including these impersonation fields) lives server-side in Valkey, keyed by that id (see [Runtime Configuration](../../runtime-configuration.md)).
 
 ## Environment Variables
 

@@ -3,7 +3,9 @@
 
 /** Cookie metadata express-openid-connect attaches to a stored session entry — mirrors the cookie's own expiry so a custom store can derive a matching TTL. */
 export interface SessionStoreCookieMeta {
+  /** Epoch timestamp (milliseconds) when the cookie expires. */
   expires: number;
+  /** Remaining cookie lifetime in milliseconds (not seconds) — callers deriving a TTL in seconds must divide by 1000. */
   maxAge: number;
 }
 

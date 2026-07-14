@@ -94,7 +94,7 @@ export class SessionStoreService {
         logger.warning(
           undefined,
           'session_store_set',
-          'Session write failed — invalidated the stale entry, user will be treated as logged out on next request'
+          'Session write failed — invalidated the stale entry; apiErrorHandler clears the cookie and the current request gets a 401, forcing an immediate re-login'
         );
       }
       // express-openid-connect awaits store.set() inside its res.end() wrapper and calls next(err)
