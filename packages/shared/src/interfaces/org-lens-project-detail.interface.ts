@@ -202,6 +202,18 @@ export interface OrgLensHeroBlock {
   isNonLfProject: boolean;
 }
 
+/** Hero block lifecycle state — the sole page-level gate; a null hero (404) is the whole-page not-found. */
+export interface HeroState {
+  status: 'loading' | 'ready' | 'notFound' | 'error';
+  data: OrgLensHeroBlock | null;
+}
+
+/** Generic per-block lifecycle state for the tab-content blocks (B3/B4, B5, B6, B7, B8). */
+export interface BlockState<T> {
+  status: OrgLensBlockStatus;
+  data: T | null;
+}
+
 /**
  * B3/B4 Our-Influence block — the Technical + Ecosystem card groups, plus the viewing org's own
  * precomputed influence tiers carried inline so the Our-Influence tab never depends on (or waits

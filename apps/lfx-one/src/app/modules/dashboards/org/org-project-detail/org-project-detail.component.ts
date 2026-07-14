@@ -36,12 +36,12 @@ import {
   PD_VALID_TIME_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
+  BlockState,
+  HeroState,
   InfluenceCardVm,
   LeaderboardDimension,
-  OrgLensBlockStatus,
   OrgLensCardDetailRow,
   OrgLensCardDetailSection,
-  OrgLensHeroBlock,
   OrgLensInfluenceBlock,
   OrgLensLeaderboardBlock,
   OrgLensLeaderboardMetric,
@@ -59,17 +59,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, type Observable, of, scan, skip, startWith, switchMap } from 'rxjs';
-
-/** Hero block state — the sole page-level gate; a null hero (404) is the whole-page not-found. */
-interface HeroState {
-  status: 'loading' | 'ready' | 'notFound' | 'error';
-  data: OrgLensHeroBlock | null;
-}
-/** Generic per-block lifecycle state for the tab-content blocks (B3/B4, B5, B6, B7, B8). */
-interface BlockState<T> {
-  status: OrgLensBlockStatus;
-  data: T | null;
-}
 
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885), routed at `/org/projects/:projectSlug`.
