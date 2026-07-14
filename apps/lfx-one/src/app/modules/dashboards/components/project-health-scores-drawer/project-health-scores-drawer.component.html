@@ -114,9 +114,7 @@
               (click)="toggleStatus(option.value)"
               [style.backgroundColor]="selectedStatuses().has(option.value) ? option.bg : null"
               [style.color]="selectedStatuses().has(option.value) ? option.text : null"
-              [ngClass]="
-                selectedStatuses().has(option.value) ? 'border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              "
+              [ngClass]="selectedStatuses().has(option.value) ? 'border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
               class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors"
               [attr.aria-pressed]="selectedStatuses().has(option.value)"
               [attr.data-testid]="'project-health-scores-drawer-status-filter-' + option.value">

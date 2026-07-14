@@ -36,7 +36,17 @@ import type {
 
 @Component({
   selector: 'lfx-project-health-scores-drawer',
-  imports: [DrawerModule, ChartComponent, InsightsHandoffSectionComponent, TooltipModule, InputTextComponent, ButtonComponent, ReactiveFormsModule, DecimalPipe, NgClass],
+  imports: [
+    DrawerModule,
+    ChartComponent,
+    InsightsHandoffSectionComponent,
+    TooltipModule,
+    InputTextComponent,
+    ButtonComponent,
+    ReactiveFormsModule,
+    DecimalPipe,
+    NgClass,
+  ],
   templateUrl: './project-health-scores-drawer.component.html',
 })
 export class ProjectHealthScoresDrawerComponent {
