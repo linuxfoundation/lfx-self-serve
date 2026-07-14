@@ -7,7 +7,6 @@ import { environment } from '@environments/environment';
 import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
-  CROWDFUNDING_ENABLED_FLAG,
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_ENABLED_FLAG,
@@ -43,8 +42,6 @@ export class SidebarNavService {
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
-  /** Dark-launch gate; the Crowdfunding section is shown only when on (no Crowdfunding nav entry when off). */
-  private readonly isCrowdfundingEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS agents marketplace; hides the project-lens nav entry when off. */
@@ -82,17 +79,95 @@ export class SidebarNavService {
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
-    this.isAkritesEnabled() ? this.meLensItems() : this.meLensItems().filter((item) => item.label !== 'Security')
+    this.isAkritesEnabled() ? this.meLensItems : this.meLensItems.filter((item) => item.label !== 'Security')
   );
 
   // --- Me Lens Items ---
-  // Computed so both Crowdfunding and Security/Akrites nav entries react to their feature flags in real time.
-  private readonly meLensItems = computed((): SidebarMenuItem[] => {
-    const crowdfundingEnabled = this.isCrowdfundingEnabled();
-
-    // Flag ON: Crowdfunding is promoted to its own top-level section (peer of
-    // My Engagement / My Growth), with its sub-pages as section children.
-    const crowdfundingSection: SidebarMenuItem = {
+  // Crowdfunding is a top-level section (peer of My Engagement / My Growth), with its
+  // sub-pages as section children. Security/Akrites is filtered out reactively in visibleMeLensItems.
+  private readonly meLensItems: SidebarMenuItem[] = [
+    {
+      label: 'My Dashboard',
+      icon: 'fa-light fa-grid-2',
+      routerLink: '/',
+    },
+    {
+      label: 'My Engagement',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'My Meetings',
+          icon: 'fa-light fa-calendar',
+          routerLink: '/meetings',
+        },
+        {
+          label: 'My Events',
+          icon: 'fa-light fa-ticket',
+          routerLink: '/events',
+        },
+        {
+          label: 'My Meetups',
+          icon: 'fa-light fa-handshake',
+          routerLink: '/meetups',
+        },
+        {
+          label: 'My ' + COMMITTEE_LABEL.plural,
+          icon: 'fa-light fa-users-rectangle',
+          routerLink: '/groups',
+        },
+        {
+          label: 'My ' + MAILING_LIST_LABEL.plural,
+          icon: 'fa-light fa-envelope',
+          routerLink: '/mailing-lists',
+        },
+        {
+          label: 'My ' + VOTE_LABEL.plural,
+          icon: 'fa-light fa-check-to-slot',
+          routerLink: '/votes',
+        },
+        {
+          label: 'My ' + SURVEY_LABEL.plural,
+          icon: 'fa-light fa-clipboard-list',
+          routerLink: '/surveys',
+        },
+        {
+          label: 'My ' + DOCUMENT_LABEL.plural,
+          icon: 'fa-light fa-folder-open',
+          routerLink: '/documents',
+        },
+      ],
+    },
+    {
+      label: 'Security',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Akrites Program',
+          icon: 'fa-light fa-shield-halved',
+          routerLink: '/akrites',
+        },
+      ],
+    },
+    {
+      label: 'My Growth',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Training & Certifications',
+          icon: 'fa-light fa-graduation-cap',
+          routerLink: '/me/training',
+        },
+        {
+          label: 'Badges',
+          icon: 'fa-light fa-award',
+          routerLink: '/badges',
+        },
+      ],
+    },
+    {
       label: 'Crowdfunding',
       isSection: true,
       expanded: true,
@@ -108,115 +183,30 @@ export class SidebarNavService {
           routerLink: '/crowdfunding/donations',
         },
       ],
-    };
-
-    return [
-      {
-        label: 'My Dashboard',
-        icon: 'fa-light fa-grid-2',
-        routerLink: '/',
-      },
-      {
-        label: 'My Engagement',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: 'My Meetings',
-            icon: 'fa-light fa-calendar',
-            routerLink: '/meetings',
-          },
-          {
-            label: 'My Events',
-            icon: 'fa-light fa-ticket',
-            routerLink: '/events',
-          },
-          {
-            label: 'My Meetups',
-            icon: 'fa-light fa-handshake',
-            routerLink: '/meetups',
-          },
-          {
-            label: 'My ' + COMMITTEE_LABEL.plural,
-            icon: 'fa-light fa-users-rectangle',
-            routerLink: '/groups',
-          },
-          {
-            label: 'My ' + MAILING_LIST_LABEL.plural,
-            icon: 'fa-light fa-envelope',
-            routerLink: '/mailing-lists',
-          },
-          {
-            label: 'My ' + VOTE_LABEL.plural,
-            icon: 'fa-light fa-check-to-slot',
-            routerLink: '/votes',
-          },
-          {
-            label: 'My ' + SURVEY_LABEL.plural,
-            icon: 'fa-light fa-clipboard-list',
-            routerLink: '/surveys',
-          },
-          {
-            label: 'My ' + DOCUMENT_LABEL.plural,
-            icon: 'fa-light fa-folder-open',
-            routerLink: '/documents',
-          },
-        ],
-      },
-      {
-        label: 'Security',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: 'Akrites Program',
-            icon: 'fa-light fa-shield-halved',
-            routerLink: '/akrites',
-          },
-        ],
-      },
-      {
-        label: 'My Growth',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: 'Training & Certifications',
-            icon: 'fa-light fa-graduation-cap',
-            routerLink: '/me/training',
-          },
-          {
-            label: 'Badges',
-            icon: 'fa-light fa-award',
-            routerLink: '/badges',
-          },
-        ],
-      },
-      ...(crowdfundingEnabled ? [crowdfundingSection] : []),
-      {
-        label: 'My Account',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: 'Profile',
-            icon: 'fa-light fa-user',
-            routerLink: '/profile',
-          },
-          {
-            label: 'Settings',
-            icon: 'fa-light fa-gear',
-            routerLink: '/settings',
-          },
-          {
-            label: 'Transactions',
-            icon: 'fa-light fa-receipt',
-            routerLink: '/me/transactions',
-          },
-        ],
-      },
-    ];
-  });
+    },
+    {
+      label: 'My Account',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Profile',
+          icon: 'fa-light fa-user',
+          routerLink: '/profile',
+        },
+        {
+          label: 'Settings',
+          icon: 'fa-light fa-gear',
+          routerLink: '/settings',
+        },
+        {
+          label: 'Transactions',
+          icon: 'fa-light fa-receipt',
+          routerLink: '/me/transactions',
+        },
+      ],
+    },
+  ];
 
   // Whether the currently selected foundation has project-level data in Snowflake.
   // Drives the conditional "Projects" sidebar entry — hidden when the foundation has no rows.
