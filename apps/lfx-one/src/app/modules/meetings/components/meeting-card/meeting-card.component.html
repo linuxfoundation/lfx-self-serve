@@ -11,6 +11,11 @@
           <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
         }
 
+        <!-- Restricted Badge -->
+        @if (meeting().restricted) {
+          <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock"></lfx-tag>
+        }
+
         <!-- Meeting Type Badge -->
         @if (meetingTypeBadge(); as badge) {
           @if (badge.text !== 'None') {
