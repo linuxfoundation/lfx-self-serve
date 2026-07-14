@@ -73,7 +73,7 @@ export class GroupsTableComponent {
   }
 
   protected formatDate(date: Date): string {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   }
 
   protected navigateToGroup(groupId: string): void {

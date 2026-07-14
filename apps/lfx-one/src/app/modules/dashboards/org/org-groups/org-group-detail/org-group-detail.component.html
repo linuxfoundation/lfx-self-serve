@@ -3,7 +3,10 @@
 
 <div class="flex flex-col gap-6 p-6" data-testid="org-group-detail-page">
   @if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select a company via Impersonate to view group details." data-testid="org-group-detail-no-company-empty-state" />
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="Select a company via Impersonate to view group details."
+      data-testid="org-group-detail-no-company-empty-state" />
   }
 
   <!-- ── Loading skeleton ──────────────────────────────────────────────── -->

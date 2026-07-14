@@ -131,10 +131,11 @@ export class OrgGroupsComponent {
 
   protected readonly kpiCards: Signal<StatCardItem[]> = computed(() => this.initKpiCards());
 
-  // ─── Foundation options (derived from data) ───────────────────────────────────
+  // ─── Foundation options (derived from the viewer-visible set — a hidden ──────
+  // private group's foundation must not leak into the dropdown as a filterable option)
 
   protected readonly foundationOptions: Signal<GroupsSelectOption[]> = computed(() => {
-    const foundations = [...new Set(this.allGroups().map((g) => g.foundation))].sort();
+    const foundations = [...new Set(this.groupsPrivacySplit().visible.map((g) => g.foundation))].sort();
     return [{ label: 'All Foundations', value: '' }, ...foundations.map((f) => ({ label: f, value: f }))];
   });
 
