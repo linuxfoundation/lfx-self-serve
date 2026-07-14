@@ -483,6 +483,9 @@ export class OrgProjectDetailComponent {
   private buildBoard(dimension: LeaderboardDimension, search: string) {
     const block = dimension === 'technical' ? this.techBoardState().data : this.ecoBoardState().data;
     const isActivity = this.metric() === 'activity';
+    if (dimension === 'ecosystem' && !isActivity && this.isNonLfProject()) {
+      return [];
+    }
     const sourceRows = isActivity ? (block?.activity ?? []) : (block?.influence ?? []);
 
     if (isActivity) {

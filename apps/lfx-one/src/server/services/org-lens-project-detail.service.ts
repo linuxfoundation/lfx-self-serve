@@ -1438,7 +1438,8 @@ export class OrgLensProjectDetailService {
       Array.isArray(candidate.activityLeaderboards.collaborations) &&
       Array.isArray(candidate.trend) &&
       typeof candidate.cardDetails === 'object' &&
-      candidate.cardDetails !== null
+      candidate.cardDetails !== null &&
+      typeof candidate.isNonLfProject === 'boolean'
     );
   }
 
