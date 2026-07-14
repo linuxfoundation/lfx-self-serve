@@ -131,6 +131,8 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/projects', (req, res, next) => orgLensProjectsController.getProjects(req, res, next));
   // LFXV2-1885 — Org Lens Project Detail sub-page.
   router.get('/:orgUid/lens/projects/:projectSlug', (req, res, next) => orgLensProjectDetailController.getProjectDetail(req, res, next));
+  // LFXV2-1885 DN9 — per-card drawer roster (server-side paginated), fetched lazily on drawer open.
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', (req, res, next) => orgLensProjectDetailController.getCardRoster(req, res, next));
   router.get('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.getWorkspaces(req, res, next));
   router.post('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.createWorkspace(req, res, next));
   router.put('/:orgUid/lens/workspaces/:workspaceId', (req, res, next) => orgLensProjectsController.renameWorkspace(req, res, next));

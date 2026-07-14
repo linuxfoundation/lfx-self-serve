@@ -128,6 +128,14 @@ export class OrgProjectDetailComponent {
   protected readonly drawerState = signal<BlockState<OrgLensCardDetailSection>>({ status: 'loading', data: null });
   private readonly drawerCache = new Map<string, OrgLensCardDetailSection | null>();
 
+  // B5 drawer roster (DN9) — fetched lazily and server-side paginated on open + page change, so the
+  // big code-activity rosters never ship in the main payload.
+  protected readonly rosterRows = signal<OrgLensCardDetailRow[]>([]);
+  protected readonly rosterTotal = signal(0);
+  protected readonly rosterFirst = signal(0);
+  protected readonly rosterRowsPerPage = signal(10);
+  protected readonly rosterLoading = signal(false);
+
   protected readonly tabs: { id: OrgLensProjectDetailTab; label: string; icon: string }[] = [
     { id: 'pd-influence', label: 'Our Influence', icon: 'fa-light fa-chart-network' },
     { id: 'pd-leaderboards', label: 'Leaderboards', icon: 'fa-light fa-ranking-star' },
@@ -319,7 +327,10 @@ export class OrgProjectDetailComponent {
 
   protected retryDrawer(): void {
     const key = this.selectedCardKey();
-    if (key) this.loadDrawer(key, true);
+    if (key) {
+      this.loadDrawer(key, true);
+      this.loadRosterPage(key, 0, this.rosterRowsPerPage());
+    }
   }
 
   protected setMetric(metric: OrgLensLeaderboardMetric): void {
@@ -345,22 +356,28 @@ export class OrgProjectDetailComponent {
   protected openCardDetail(card: InfluenceCardVm): void {
     this.selectedCardKey.set(card.key);
     this.drawerOpen.set(true);
+    this.resetRoster();
     this.loadDrawer(card.key);
+    this.loadRosterPage(card.key, 0, this.rosterRowsPerPage());
   }
 
   protected closeCardDetail(): void {
     this.drawerOpen.set(false);
     this.selectedCardKey.set(null);
+    this.resetRoster();
+  }
+
+  /** lfx-table lazy-load callback: fetch the requested page (and page size) of the open card's roster. */
+  protected onRosterLazyLoad(event: { first?: number; rows?: number }): void {
+    const cardKey = this.selectedCardKey();
+    if (!cardKey) return;
+    const rowsPerPage = event.rows && event.rows > 0 ? event.rows : this.rosterRowsPerPage();
+    this.loadRosterPage(cardKey, event.first ?? 0, rowsPerPage);
   }
 
   /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
   protected scrollCards(el: HTMLElement, direction: 1 | -1): void {
     el.scrollBy({ left: direction * 336, behavior: 'smooth' });
-  }
-
-  /** Builds a stable `@for` track key from a detail row's cells. */
-  protected rowKey(row: OrgLensCardDetailRow): string {
-    return row.cells.map((cell) => cell.person?.name ?? cell.text ?? '').join('|');
   }
 
   protected onTrackScroll(el: HTMLElement, track: 'tech' | 'eco'): void {
@@ -407,6 +424,41 @@ export class OrgProjectDetailComponent {
         error: (err: unknown) => {
           console.error('[OrgProjectDetail] failed to load card detail', err);
           this.drawerState.set({ status: 'error', data: null });
+        },
+      });
+  }
+
+  private resetRoster(): void {
+    this.rosterRows.set([]);
+    this.rosterTotal.set(0);
+    this.rosterFirst.set(0);
+    this.rosterRowsPerPage.set(10);
+    this.rosterLoading.set(false);
+  }
+
+  /** Fetch one server-paginated page of the open card's roster and update the drawer table state. */
+  private loadRosterPage(cardKey: string, first: number, rowsPerPage: number): void {
+    const uid = this.accountContext.selectedAccount()?.uid;
+    const slug = this.projectSlug();
+    if (!uid || !slug) return;
+    const page = Math.floor(first / rowsPerPage);
+    this.rosterFirst.set(first);
+    this.rosterRowsPerPage.set(rowsPerPage);
+    this.rosterLoading.set(true);
+    this.detailService
+      .getCardRoster(uid, this.orgName(), slug, cardKey, this.timeRange(), page, rowsPerPage)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.rosterRows.set(result.rows);
+          this.rosterTotal.set(result.total);
+          this.rosterLoading.set(false);
+        },
+        error: (err: unknown) => {
+          console.error('[OrgProjectDetail] failed to load card roster', err);
+          this.rosterRows.set([]);
+          this.rosterTotal.set(0);
+          this.rosterLoading.set(false);
         },
       });
   }

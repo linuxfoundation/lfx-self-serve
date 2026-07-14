@@ -620,41 +620,56 @@
               </table>
             </div>
 
-            <!-- Card-specific data table -->
-            @if (detail.rows.length > 0) {
+            <!-- Card-specific data table (lazy, server-side paginated; dynamic columns + person/text cells) -->
+            @if (rosterTotal() > 0 || rosterLoading()) {
               <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-detail-table">
-                <table class="w-full text-sm">
-                  <thead>
+                <lfx-table
+                  [value]="rosterRows()"
+                  [lazy]="true"
+                  [lazyLoadOnInit]="false"
+                  [paginator]="true"
+                  [rows]="rosterRowsPerPage()"
+                  [first]="rosterFirst()"
+                  [totalRecords]="rosterTotal()"
+                  [loading]="rosterLoading()"
+                  [rowsPerPageOptions]="[10, 25, 50]"
+                  [showCurrentPageReport]="true"
+                  [showFirstLastIcon]="false"
+                  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+                  paginatorPosition="bottom"
+                  (onLazyLoad)="onRosterLazyLoad($event)">
+                  <ng-template #header>
                     <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
                       @for (col of detail.columns; track col) {
                         <th scope="col" class="px-4 py-3">{{ col }}</th>
                       }
                     </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-50">
-                    @for (dataRow of detail.rows; track rowKey(dataRow)) {
-                      <tr class="bg-white transition-colors hover:bg-gray-50">
-                        @for (cell of dataRow.cells; track $index) {
-                          <td class="px-4 py-2.5">
-                            @if (cell.person; as person) {
-                              <div class="flex items-center gap-2">
+                  </ng-template>
+                  <ng-template #body let-dataRow>
+                    <tr class="border-b border-gray-50 bg-white transition-colors hover:bg-gray-50">
+                      @for (cell of dataRow.cells; track $index) {
+                        <td class="px-4 py-2.5">
+                          @if (cell.person; as person) {
+                            <div class="flex items-center gap-2">
+                              @if (person.avatarUrl) {
+                                <img [src]="person.avatarUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-cover" aria-hidden="true" />
+                              } @else {
                                 <span
                                   class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700"
                                   aria-hidden="true">
                                   {{ person.initials }}
                                 </span>
-                                <span class="font-medium text-blue-600">{{ person.name }}</span>
-                              </div>
-                            } @else {
-                              <span class="text-gray-700">{{ cell.text }}</span>
-                            }
-                          </td>
-                        }
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-                <div class="border-t border-gray-50 px-4 py-2 text-xs text-gray-400">Showing {{ detail.rows.length }} of {{ detail.rows.length }} rows</div>
+                              }
+                              <span class="font-medium text-blue-600">{{ person.name }}</span>
+                            </div>
+                          } @else {
+                            <span class="text-gray-700">{{ cell.text }}</span>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  </ng-template>
+                </lfx-table>
               </div>
             } @else {
               <div class="rounded-xl border border-gray-100 bg-gray-50 px-5 py-6 text-center text-sm text-gray-400">No data available for this metric.</div>

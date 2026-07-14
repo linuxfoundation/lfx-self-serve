@@ -114,7 +114,15 @@ export interface OrgLensCardDetailSection {
   definition: OrgLensCardDefinition;
   /** Column header labels for the card-specific data table. */
   columns: string[];
+  /** Roster rows; empty in the main response — the drawer pages them in lazily via OrgLensCardRosterPage. */
   rows: OrgLensCardDetailRow[];
+}
+
+/** One server-paginated page of a card drawer's roster rows. */
+export interface OrgLensCardRosterPage {
+  rows: OrgLensCardDetailRow[];
+  /** Total roster rows for this card (all pages), for the paginator. */
+  total: number;
 }
 
 /**

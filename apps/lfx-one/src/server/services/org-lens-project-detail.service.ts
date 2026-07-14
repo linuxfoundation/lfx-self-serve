@@ -3,7 +3,10 @@
 
 import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  OrgLensCardDetailCell,
+  OrgLensCardDetailRow,
   OrgLensCardDetailSection,
+  OrgLensCardRosterPage,
   OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
   OrgLensProjectDetailResponse,
@@ -91,6 +94,20 @@ interface PlatformsRow {
   COMMIT_PLATFORMS: string | null;
   PR_PLATFORMS: string | null;
   MAINTAINER_PLATFORMS: string | null;
+}
+
+/** A per-card drawer roster provider (DN9): the wrapper table to page + how to project and map rows. */
+interface RosterProvider {
+  /** Fully-qualified LFX One wrapper table (already schema-resolved). */
+  table: string;
+  /** Column projection for the page query. */
+  select: string;
+  /** Optional extra predicate ANDed after the (account, slug) filter — a constant, never user input. */
+  where?: string;
+  /** Stable ORDER BY for deterministic pagination. */
+  orderBy: string;
+  /** Map one fetched row to its drawer cells. */
+  map: (row: Record<string, unknown>) => OrgLensCardDetailRow;
 }
 
 /**
@@ -326,6 +343,53 @@ export class OrgLensProjectDetailService {
     return response;
   }
 
+  /** One server-paginated page of a card's drawer roster (DN9); rows page in on demand, never in the main payload. */
+  public async getCardRoster(
+    orgUid: string,
+    orgName: string,
+    projectSlug: string,
+    cardKey: string,
+    range: OrgLensLeaderboardTimeRange,
+    page: number,
+    pageSize: number
+  ): Promise<OrgLensCardRosterPage> {
+    const provider = this.rosterProvider(cardKey);
+    if (provider === null) return { rows: [], total: 0 };
+
+    const slug = projectSlug.trim().toLowerCase();
+    const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
+    const safePage = Math.max(Math.trunc(page) || 0, 0);
+    const offset = safePage * safeSize;
+
+    const cacheKey = `project-detail-roster:${this.paramSignature([projectSlug, cardKey, range, safePage, safeSize])}`;
+    const key = buildOrgCacheKey(orgUid, cacheKey);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensCardRosterPage>(key, OrgLensProjectDetailService.isRosterPage);
+      if (cached !== null) return cached;
+    }
+
+    const whereExtra = provider.where ? ` AND ${provider.where}` : '';
+    const [pageResult, countResult] = await Promise.all([
+      this.snowflakeService.execute<Record<string, unknown>>(
+        `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ? OFFSET ?`,
+        [orgUid, slug, safeSize, offset]
+      ),
+      this.snowflakeService.execute<{ N: number }>(`SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra}`, [
+        orgUid,
+        slug,
+      ]),
+    ]);
+
+    const result: OrgLensCardRosterPage = {
+      rows: pageResult.rows.map((row) => provider.map(row)),
+      total: this.num(countResult.rows[0]?.N ?? 0),
+    };
+    if (key !== null) {
+      await valkeyService.setJson(key, result, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return result;
+  }
+
   private async fetchProjectDetail(
     orgUid: string,
     orgName: string,
@@ -428,6 +492,7 @@ export class OrgLensProjectDetailService {
       leaderboard: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLfProject, trendByAccount)),
       activityLeaderboards,
       trend: this.buildTrendSeries(trendByAccount),
+      // Roster rows page in lazily per card via getCardRoster; the main response carries only definition + column headers.
       cardDetails: this.buildCardDetails(cards, platforms, isNonLfProject),
     };
   }
@@ -502,11 +567,279 @@ export class OrgLensProjectDetailService {
       details[key] = {
         definition: { text: meta.text, totalType: meta.totalType, total, dataSource },
         columns: meta.columns,
+        // Rows are fetched lazily and server-paginated via getCardRoster; the main response ships none.
         rows: [],
       };
     }
 
     return details;
+  }
+
+  /** Per-card roster provider (wrapper table + projection + optional predicate + order + row mapping); null when a card has no roster. */
+  private rosterProvider(cardKey: string): RosterProvider | null {
+    switch (cardKey) {
+      case 'board-members':
+        return {
+          table: this.committeeMembersTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, JOINED_DATE, APPOINTED_BY',
+          where: 'IS_BOARD_MEMBER = TRUE',
+          orderBy: 'JOINED_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.formatDrawerDate(this.dateVal(r['JOINED_DATE'])) },
+              { text: this.str(r['APPOINTED_BY']) ?? '—' },
+            ],
+          }),
+        };
+      case 'committee-members':
+        return {
+          table: this.committeeMembersTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, COMMITTEE_NAME, JOINED_DATE',
+          where: 'IS_BOARD_MEMBER = FALSE',
+          orderBy: 'JOINED_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['COMMITTEE_NAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['JOINED_DATE'])) },
+            ],
+          }),
+        };
+      case 'certified-individuals':
+        return {
+          table: this.certifiedIndividualsTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, CERTIFICATION_NAME, ISSUED_DATE',
+          orderBy: 'ISSUED_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['CERTIFICATION_NAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['ISSUED_DATE'])) },
+            ],
+          }),
+        };
+      case 'event-attendance':
+        return {
+          table: this.eventAttendanceTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, EVENT_NAME, EVENT_DATE, LOCATION',
+          orderBy: 'EVENT_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['EVENT_NAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['EVENT_DATE'])) },
+              { text: this.str(r['LOCATION']) ?? '—' },
+            ],
+          }),
+        };
+      case 'event-speakers':
+        return {
+          table: this.eventSpeakersTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, EVENT_NAME, EVENT_DATE',
+          orderBy: 'EVENT_DATE DESC NULLS LAST',
+          // 'Talk title' has no upstream source — rendered as a placeholder.
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['EVENT_NAME']) ?? '—' },
+              { text: '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['EVENT_DATE'])) },
+            ],
+          }),
+        };
+      case 'meeting-attendance':
+        return {
+          table: this.meetingAttendanceTable(),
+          select: 'PERSON_NAME, MEETING_TYPE, MEETING_DATE',
+          orderBy: 'MEETING_DATE DESC NULLS LAST',
+          // No attendee photo in the source, so the person cell renders initials.
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), null),
+              { text: this.str(r['MEETING_TYPE']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['MEETING_DATE'])) },
+            ],
+          }),
+        };
+      case 'event-sponsorships':
+        return {
+          table: this.eventSponsorshipsTable(),
+          select: 'EVENT_NAME, EVENT_DATE, SPONSORSHIP_TIER, REACH',
+          orderBy: 'EVENT_DATE DESC NULLS LAST',
+          // Org-level roster — no person cell.
+          map: (r) => ({
+            cells: [
+              { text: this.str(r['EVENT_NAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['EVENT_DATE'])) },
+              { text: this.str(r['SPONSORSHIP_TIER']) ?? '—' },
+              { text: this.formatCount(this.numVal(r['REACH'])) },
+            ],
+          }),
+        };
+      case 'contributors':
+        return {
+          table: this.contributorsTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, USERNAME, FIRST_ACTIVITY_TS, MOST_RECENT_ACTIVITY_TS, CONTRIBUTIONS_COUNT',
+          orderBy: 'CONTRIBUTIONS_COUNT DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['USERNAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['FIRST_ACTIVITY_TS'])) },
+              { text: this.formatDrawerDate(this.dateVal(r['MOST_RECENT_ACTIVITY_TS'])) },
+              { text: this.formatCount(this.numVal(r['CONTRIBUTIONS_COUNT'])) },
+            ],
+          }),
+        };
+      case 'maintainers':
+        return {
+          table: this.maintainersTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, USERNAME, GRANTED_DATE',
+          orderBy: 'GRANTED_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['USERNAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['GRANTED_DATE'])) },
+            ],
+          }),
+        };
+      case 'collaboration':
+        return {
+          table: this.collaborationTable(),
+          select: 'SOURCE_PLATFORM, PERSON_NAME, PERSON_AVATAR_URL, LOCATION, COLLABORATION_COUNT, MOST_RECENT_TS',
+          orderBy: 'COLLABORATION_COUNT DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              { text: this.formatPlatform(this.str(r['SOURCE_PLATFORM'])) },
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['LOCATION']) ?? '—' },
+              { text: this.formatCount(this.numVal(r['COLLABORATION_COUNT'])) },
+              { text: this.formatDrawerDate(this.dateVal(r['MOST_RECENT_TS'])) },
+            ],
+          }),
+        };
+      case 'meetup-attendance':
+        return {
+          table: this.meetupAttendanceTable(),
+          select: 'PERSON_NAME, PERSON_AVATAR_URL, MEETUP_NAME, EVENT_DATE, LOCATION',
+          orderBy: 'EVENT_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.str(r['MEETUP_NAME']) ?? '—' },
+              { text: this.formatDrawerDate(this.dateVal(r['EVENT_DATE'])) },
+              { text: this.str(r['LOCATION']) ?? '—' },
+            ],
+          }),
+        };
+      case 'commits':
+        return {
+          table: this.commitsTable(),
+          select: 'REPOSITORY_GROUP, PERSON_NAME, PERSON_AVATAR_URL, COMMIT_DATE, COMMIT_MESSAGE',
+          orderBy: 'COMMIT_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              { text: this.str(r['REPOSITORY_GROUP']) ?? '—' },
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.formatDrawerDate(this.dateVal(r['COMMIT_DATE'])) },
+              { text: this.str(r['COMMIT_MESSAGE']) ?? '—' },
+            ],
+          }),
+        };
+      case 'pull-requests':
+        return {
+          table: this.pullRequestsTable(),
+          select: 'REPOSITORY_GROUP, PERSON_NAME, PERSON_AVATAR_URL, OPENED_DATE, PR_TITLE',
+          orderBy: 'OPENED_DATE DESC NULLS LAST',
+          map: (r) => ({
+            cells: [
+              { text: this.str(r['REPOSITORY_GROUP']) ?? '—' },
+              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+              { text: this.formatDrawerDate(this.dateVal(r['OPENED_DATE'])) },
+              { text: this.str(r['PR_TITLE']) ?? '—' },
+            ],
+          }),
+        };
+      case 'avg-merge-time':
+        return {
+          table: this.avgMergeTimeTable(),
+          select: 'REPOSITORY_GROUP, PERSON_NAME, PERSON_AVATAR_URL, PR_TITLE, MERGED_DATE, MERGE_SECONDS',
+          orderBy: 'MERGED_DATE DESC NULLS LAST',
+          map: (r) => {
+            const seconds = this.numVal(r['MERGE_SECONDS']);
+            return {
+              cells: [
+                { text: this.str(r['REPOSITORY_GROUP']) ?? '—' },
+                this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
+                { text: this.str(r['PR_TITLE']) ?? '—' },
+                { text: this.formatDrawerDate(this.dateVal(r['MERGED_DATE'])) },
+                { text: seconds === null ? '—' : this.formatDuration(seconds) },
+              ],
+            };
+          },
+        };
+      default:
+        return null;
+    }
+  }
+
+  /** Coerce a Snowflake cell to a display string (null preserved). */
+  private str(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    return typeof value === 'string' ? value : String(value);
+  }
+
+  /** Coerce a Snowflake cell to a Date/ISO string the date formatter accepts (else null). */
+  private dateVal(value: unknown): Date | string | null {
+    if (value instanceof Date || typeof value === 'string') return value;
+    return null;
+  }
+
+  /** Coerce a Snowflake cell to a number (null preserved). */
+  private numVal(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+    return typeof value === 'number' ? value : Number(value);
+  }
+
+  /** A person cell for a roster row: display name, optional avatar, and derived initials fallback. */
+  private personCell(name: string | null, avatarUrl: string | null): OrgLensCardDetailCell {
+    const display = name?.trim() || 'Unknown';
+    const person: { name: string; avatarUrl?: string; initials: string } = { name: display, initials: this.deriveInitials(display) };
+    const url = avatarUrl?.trim();
+    if (url) person.avatarUrl = url;
+    return { person };
+  }
+
+  /** Up-to-2-letter initials from a display name (first + last word), for the avatar fallback. */
+  private deriveInitials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  /** Human-readable platform label for the collaboration "Source" column (e.g. github → GitHub). */
+  private formatPlatform(value: string | null): string {
+    const raw = value?.trim();
+    if (!raw) return '—';
+    return OrgLensProjectDetailService.platformLabels[raw.toLowerCase()] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+
+  /** Format an integer roster count column (e.g. "1,764"); "—" when absent. */
+  private formatCount(value: number | null): string {
+    if (value === null || value === undefined) return '—';
+    return Math.round(this.num(value)).toLocaleString('en-US');
+  }
+
+  /** Format a roster date column (e.g. "May 7, 2026"); "—" when absent. UTC-anchored to avoid off-by-one. */
+  private formatDrawerDate(value: Date | string | null): string {
+    const iso = this.toIsoDate(value);
+    if (iso === null) return '—';
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return '—';
+    return parsed.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
   }
 
   /**
@@ -1031,6 +1364,58 @@ export class OrgLensProjectDetailService {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_PLATFORMS`;
   }
 
+  private committeeMembersTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_COMMITTEE_MEMBERS`;
+  }
+
+  private certifiedIndividualsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_CERTIFIED_INDIVIDUALS`;
+  }
+
+  private eventAttendanceTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_EVENT_ATTENDANCE`;
+  }
+
+  private eventSpeakersTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_EVENT_SPEAKERS`;
+  }
+
+  private meetingAttendanceTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_MEETING_ATTENDANCE`;
+  }
+
+  private eventSponsorshipsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_EVENT_SPONSORSHIPS`;
+  }
+
+  private contributorsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_CONTRIBUTORS`;
+  }
+
+  private maintainersTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_MAINTAINERS`;
+  }
+
+  private collaborationTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_COLLABORATION`;
+  }
+
+  private meetupAttendanceTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_MEETUP_ATTENDANCE`;
+  }
+
+  private commitsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_COMMITS`;
+  }
+
+  private pullRequestsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_PULL_REQUESTS`;
+  }
+
+  private avgMergeTimeTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_AVG_MERGE_TIME`;
+  }
+
   private static isDetailResponse(value: unknown): value is OrgLensProjectDetailResponse {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensProjectDetailResponse;
@@ -1048,5 +1433,11 @@ export class OrgLensProjectDetailService {
       typeof candidate.cardDetails === 'object' &&
       candidate.cardDetails !== null
     );
+  }
+
+  private static isRosterPage(value: unknown): value is OrgLensCardRosterPage {
+    if (value === null || typeof value !== 'object') return false;
+    const candidate = value as OrgLensCardRosterPage;
+    return Array.isArray(candidate.rows) && typeof candidate.total === 'number';
   }
 }

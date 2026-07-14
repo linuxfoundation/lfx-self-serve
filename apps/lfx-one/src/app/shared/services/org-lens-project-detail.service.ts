@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { PD_DEFAULT_TIME_RANGE } from '@lfx-one/shared/constants';
 import type {
   OrgLensCardDetailSection,
+  OrgLensCardRosterPage,
   OrgLensHeroBlock,
   OrgLensInfluenceBlock,
   OrgLensLeaderboardBlock,
@@ -103,7 +104,7 @@ export class OrgLensProjectDetailService {
     return this.boardBlock(orgUid, orgName, projectSlug, range, (resp) => resp.activityLeaderboards.collaborations);
   }
 
-  /** B5 — Card detail drawer for one card; fetched lazily on open, keyed by (card, range). */
+  /** B5 — Card detail drawer definition (+ column headers) for one card; the roster rows come from getCardRoster. */
   public getCardDrawer(
     orgUid: string,
     orgName: string,
@@ -112,6 +113,22 @@ export class OrgLensProjectDetailService {
     range: OrgLensLeaderboardTimeRange
   ): Observable<OrgLensCardDetailSection | null> {
     return this.sharedRequest(orgUid, orgName, projectSlug, range).pipe(map((resp) => resp?.cardDetails?.[cardKey] ?? null));
+  }
+
+  /** B5 — One server-paginated page of a card drawer's roster rows; fetched lazily on open / page change. */
+  public getCardRoster(
+    orgUid: string,
+    orgName: string,
+    projectSlug: string,
+    cardKey: string,
+    range: OrgLensLeaderboardTimeRange,
+    page: number,
+    pageSize: number
+  ): Observable<OrgLensCardRosterPage> {
+    const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/projects/${encodeURIComponent(projectSlug)}/cards/${encodeURIComponent(cardKey)}/roster`;
+    return this.http
+      .get<OrgLensCardRosterPage>(url, { params: { orgName, range, page: String(page), pageSize: String(pageSize) } })
+      .pipe(catchError((err: HttpErrorResponse) => (err.status === 404 ? of({ rows: [], total: 0 }) : throwError(() => err))));
   }
 
   private boardBlock(
