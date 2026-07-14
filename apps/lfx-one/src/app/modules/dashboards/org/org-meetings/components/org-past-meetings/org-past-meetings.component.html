@@ -32,16 +32,14 @@
               <i [class]="meeting.typeBadge.icon + ' text-xs'" aria-hidden="true"></i> {{ meeting.typeBadge.label }}
             </span>
           </div>
-          @if (meeting.hasResolvableDetails) {
-            @defer (on idle) {
-              <button
-                type="button"
-                class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded flex-shrink-0"
-                aria-label="Copy meeting link"
-                [cdkCopyToClipboard]="meeting.detailsUrl">
-                <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
-              </button>
-            }
+          @defer (on idle) {
+            <button
+              type="button"
+              class="text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded flex-shrink-0"
+              aria-label="Copy meeting link"
+              [cdkCopyToClipboard]="meeting.detailsUrl">
+              <i class="fa-light fa-copy text-base" aria-hidden="true"></i>
+            </button>
           }
         </div>
 
@@ -79,18 +77,16 @@
                 </button>
               </div>
             }
-            @if (meeting.hasResolvableDetails) {
-              <lfx-button
-                icon="fa-light fa-arrow-up-right-from-square"
-                label="See Meeting Details"
-                size="small"
-                severity="secondary"
-                [href]="meeting.detailsUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
-              </lfx-button>
-            }
+            <lfx-button
+              icon="fa-light fa-arrow-up-right-from-square"
+              label="See Meeting Details"
+              size="small"
+              severity="secondary"
+              [href]="meeting.detailsUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              [attr.data-testid]="'org-past-meeting-details-' + meeting.id">
+            </lfx-button>
           </div>
 
           <!-- RIGHT: invitee count + company attendees -->

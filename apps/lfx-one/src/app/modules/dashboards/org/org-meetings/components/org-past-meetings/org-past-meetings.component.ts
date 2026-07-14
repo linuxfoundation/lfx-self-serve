@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { ORG_MEETING_TYPE_LABELS, ORG_MEETINGS_ATTENDANCE_BADGES } from '@lfx-one/shared/constants';
 import type { OrgPastMeeting, OrgPastMeetingVm, OrgPrivateMeetingsRollupVm } from '@lfx-one/shared/interfaces';
-import { deriveDemoPassword, derivePastMeetingDetailsUrl, isDemoOrgMeetingId, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { deriveDemoPassword, derivePastMeetingDetailsUrl, splitOrgMeetingsByPrivacy, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 @Component({
@@ -70,11 +70,6 @@ export class OrgPastMeetingsComponent {
       })),
       typeBadge: ORG_MEETING_TYPE_LABELS[meeting.type],
       detailsUrl: toAbsoluteUrl(derivePastMeetingDetailsUrl(meeting.id, demoPassword), isBrowser),
-      // Demo-fallback rows (DEMO_PAST_MEETINGS, id prefix `pm-`) have no backing meeting record —
-      // the CTA would 404. Real, API-backed rows do have one, so the CTA always resolves for them.
-      // (The Org Lens past-meeting list is 100% demo-seeded today — see org-meetings.component.ts —
-      // so this evaluates false for every row until a real past-meetings fetch path lands.)
-      hasResolvableDetails: !isDemoOrgMeetingId(meeting.id),
     };
   }
 }
