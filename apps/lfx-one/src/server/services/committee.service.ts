@@ -741,6 +741,7 @@ export class CommitteeService {
     });
 
     let pendingForOrg: PendingCommitteeInviteForOrg | null = null;
+    let anyAccepted = false;
 
     for (const invite of toAccept) {
       try {
@@ -780,6 +781,7 @@ export class CommitteeService {
         } else {
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
         }
+        anyAccepted = true;
       } catch (error) {
         logger.warning(req, 'accept_invite', 'Failed to auto-accept committee invitation after LFID invite', {
           committee_uid: invite.committee_uid,
@@ -789,7 +791,15 @@ export class CommitteeService {
       }
     }
 
-    return pendingForOrg;
+    // Return the org-required signal whenever it is set — the org-required case is surfaced to
+    // the user regardless of whether other invites succeeded or failed.
+    if (pendingForOrg) {
+      return pendingForOrg;
+    }
+    // If every acceptCommitteeInvite call threw, return undefined so the controller retries —
+    // the acceptance failure may be transient, and the committee-service accept endpoint is
+    // idempotent so retrying is safe.
+    return anyAccepted ? null : undefined;
   }
 
   /**
