@@ -66,16 +66,19 @@
     </span>
   </div>
   <div class="flex gap-3 px-4 pb-4 pt-5">
-    <lfx-button
-      class="flex-1"
-      severity="secondary"
-      size="small"
-      styleClass="w-full"
-      label="Meeting details"
-      [outlined]="true"
-      [disabled]="true"
-      tooltip="Meeting details aren't available yet for Org Lens groups"
-      tooltipPosition="top"
-      icon="fa-light fa-arrow-up-right-from-square text-xs" />
+    <!-- lfx-button binds [disabled] straight onto the native PrimeNG button, so its own `tooltip` input
+         never fires on a disabled button — wrap it in a focusable span for the same reason as the
+         copy-link action above. -->
+    <span class="flex-1" tabindex="0" pTooltip="Meeting details aren't available yet for Org Lens groups" tooltipPosition="top">
+      <lfx-button
+        class="w-full"
+        severity="secondary"
+        size="small"
+        styleClass="w-full"
+        label="Meeting details"
+        [outlined]="true"
+        [disabled]="true"
+        icon="fa-light fa-arrow-up-right-from-square text-xs" />
+    </span>
   </div>
 </div>
