@@ -10,7 +10,7 @@ import { Request } from 'express';
 import { logger } from './logger.service';
 
 export class CredlyService {
-  // Resolved lazily on first access so dotenv has finished loading,
+  // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _apiUrl: string | undefined;
   private _orgId: string | undefined;

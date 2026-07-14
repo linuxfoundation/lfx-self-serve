@@ -48,7 +48,7 @@ interface CachedToken {
 export class CdpService {
   private cachedToken: CachedToken | null = null;
 
-  // Resolved lazily on first access so dotenv has finished loading,
+  // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _cdpApiUrl: string | undefined;
   private _issuerBaseUrl: string | undefined;
