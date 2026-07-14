@@ -190,8 +190,10 @@ The server reads these via `process.loadEnvFile` in development mode:
 if (process.env['NODE_ENV'] !== 'production') {
   try {
     process.loadEnvFile();
-  } catch {
-    // .env is optional in non-production; fall back to existing process.env.
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[loadenvfile] failed to load .env:', err);
+    }
   }
 }
 ```

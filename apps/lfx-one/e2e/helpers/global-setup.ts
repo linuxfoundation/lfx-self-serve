@@ -11,7 +11,7 @@ try {
   process.loadEnvFile(path.resolve(__dirname, '../../.env'));
 } catch (err) {
   if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-    console.warn('[loadenvfile] failed to parse .env:', err);
+    console.warn('[loadenvfile] failed to load .env:', err);
   }
 }
 

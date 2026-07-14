@@ -8,7 +8,7 @@ try {
   process.loadEnvFile();
 } catch (err) {
   if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-    console.warn('[loadenvfile] failed to parse .env:', err);
+    console.warn('[loadenvfile] failed to load .env:', err);
   }
 }
 
