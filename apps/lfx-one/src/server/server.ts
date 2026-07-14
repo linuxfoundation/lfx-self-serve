@@ -234,6 +234,10 @@ app.use(auth(authConfig));
 // chunks on every request while the store is enabled, so nothing survives to be resurrected by a
 // rollback.
 if (sessionStoreEnabled) {
+  // Mirror the attributes express-openid-connect used when it originally set these chunk cookies
+  // (config.js's session.cookie defaults: httpOnly=true, sameSite='Lax', secure=true iff baseURL is
+  // https) — a Set-Cookie clear with mismatched attributes can be silently ignored by the browser.
+  const chunkCookieOptions = { httpOnly: true, sameSite: 'lax' as const, secure: /^https:/i.test(authConfig.baseURL as string) };
   app.use((req, res, next) => {
     const cookieHeader = req.headers.cookie;
     if (cookieHeader) {
@@ -242,7 +246,7 @@ if (sessionStoreEnabled) {
         if (eqIndex === -1) continue;
         const name = pair.slice(0, eqIndex).trim();
         if (/^appSession\.\d+$/.test(name)) {
-          res.clearCookie(name);
+          res.clearCookie(name, chunkCookieOptions);
         }
       }
     }
