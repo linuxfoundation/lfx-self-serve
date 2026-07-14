@@ -30,7 +30,7 @@
 
   <ng-template #body let-row>
     <tr
-      class="cursor-pointer hover:bg-gray-50 transition-colors"
+      class="cursor-pointer hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
       role="button"
       tabindex="0"
       [attr.aria-label]="'View details for ' + row.name"

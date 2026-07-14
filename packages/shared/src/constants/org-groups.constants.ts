@@ -65,9 +65,10 @@ export const ORG_GROUPS_ROLLUP_TYPE_BADGES: Record<OrgPrivateGroupsRollupBucket,
 
 /**
  * Chair-avatar background color on the group detail page, keyed by whether the chair's role is
- * exactly 'Chair'. Hardcoded hex (not a `lfxColors` scale) to exactly match production's own
- * committee-overview chair-avatar design (`committee-overview.component.html`) — same
- * escape-valve pattern as `VOTE_COLOR` in calendar-colors.constants.ts.
+ * exactly 'Chair'. Hardcoded hex (not a `lfxColors` scale) to exactly match the pre-existing inline
+ * style in production's own committee-overview chair-avatar design (`committee-overview.component.html`),
+ * the same documented-exception pattern (though a different underlying reason) as `VOTE_COLOR` in
+ * calendar-colors.constants.ts.
  */
 export const CHAIR_AVATAR_COLOR = {
   chair: '#6366f1',

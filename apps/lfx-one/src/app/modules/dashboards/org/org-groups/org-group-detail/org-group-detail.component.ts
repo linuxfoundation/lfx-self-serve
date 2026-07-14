@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, effect, inject, model, PLATFORM_ID, signal, type Signal } from '@angular/core';
+import { Component, computed, effect, inject, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
@@ -27,9 +27,7 @@ import { DocumentsTableComponent } from '@components/documents-table/documents-t
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
-import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { AccountContextService } from '@services/account-context.service';
 
@@ -49,9 +47,7 @@ import { OrgGroupMeetingCardComponent } from './components/org-group-meeting-car
     OrgGroupMeetingCardComponent,
     TableComponent,
     VotesTableComponent,
-    VoteResultsDrawerComponent,
     SurveysTableComponent,
-    SurveyResultsDrawerComponent,
     DocumentsTableComponent,
   ],
   templateUrl: './org-group-detail.component.html',
@@ -76,18 +72,9 @@ export class OrgGroupDetailComponent {
   protected readonly repoPlatformIcon = getRepoPlatformIcon;
   protected readonly repoPlatformLabel = getRepoPlatformLabel;
 
-  // ─── Two-way bindings ─────────────────────────────────────────────────────────
-
-  protected voteResultsDrawerVisible = model<boolean>(false);
-  protected surveyResultsDrawerVisible = model<boolean>(false);
-
   // ─── Mutable state ────────────────────────────────────────────────────────────
 
   protected activeTab = signal<GroupDetailTabId>('overview');
-  protected selectedVoteId = signal<string | null>(null);
-  protected selectedVote = signal<Vote | null>(null);
-  protected selectedSurveyId = signal<string | null>(null);
-  protected selectedSurvey = signal<Survey | null>(null);
 
   // ─── Route param signal ───────────────────────────────────────────────────────
 
@@ -163,19 +150,6 @@ export class OrgGroupDetailComponent {
 
   protected formatDate(date: Date): string {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-  }
-
-  protected viewVoteResults(voteUid: string): void {
-    const vote = this.votes().find((v) => v.uid === voteUid) || null;
-    this.selectedVoteId.set(voteUid);
-    this.selectedVote.set(vote);
-    this.voteResultsDrawerVisible.set(true);
-  }
-
-  protected viewSurveyResults(survey: Survey): void {
-    this.selectedSurveyId.set(survey.uid);
-    this.selectedSurvey.set(survey);
-    this.surveyResultsDrawerVisible.set(true);
   }
 
   // ─── Private initializers ─────────────────────────────────────────────────────

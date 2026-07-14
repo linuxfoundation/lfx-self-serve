@@ -379,7 +379,10 @@
           @case ('votes') {
             <div class="flex flex-col gap-4 pt-2" data-testid="org-group-detail-votes-panel">
               @if (votes().length > 0) {
-                <lfx-votes-table [votes]="votes()" (viewResults)="viewVoteResults($event)" (viewVote)="viewVoteResults($event)" />
+                <!-- interactive=false: this Org Lens tab uses synthetic demo vote IDs. VotesTable's row/results
+                     actions open VoteResultsDrawerComponent, which calls the real vote endpoints and has no
+                     demo-data fallback for the my-response lookup — it would always render "access denied". -->
+                <lfx-votes-table [votes]="votes()" [interactive]="false" />
               } @else {
                 <lfx-card>
                   <div class="flex flex-col items-center py-12">
@@ -389,9 +392,6 @@
                   </div>
                 </lfx-card>
               }
-              <!-- Org Lens is a cross-company, read-only aggregate view — audience='voter' keeps the drawer off the
-                   creator-only live-results path, mirroring votes-dashboard's Me lens usage. -->
-              <lfx-vote-results-drawer [(visible)]="voteResultsDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()" [audience]="'voter'" />
             </div>
           }
           @case ('meetings') {
@@ -443,7 +443,10 @@
           @case ('surveys') {
             <div class="flex flex-col gap-4 pt-2" data-testid="org-group-detail-surveys-panel">
               @if (surveys().length > 0) {
-                <lfx-surveys-table [surveys]="surveys()" (viewResults)="viewSurveyResults($event)" (rowClick)="viewSurveyResults($event)" />
+                <!-- interactive=false: this Org Lens tab uses synthetic demo survey IDs. SurveysTable's row/results
+                     actions open SurveyResultsDrawerComponent, which calls the real survey endpoint and has no
+                     demo-data fallback — it would always fail to load against a fabricated ID. -->
+                <lfx-surveys-table [surveys]="surveys()" [interactive]="false" />
               } @else {
                 <lfx-card>
                   <div class="flex flex-col items-center py-12">
@@ -453,7 +456,6 @@
                   </div>
                 </lfx-card>
               }
-              <lfx-survey-results-drawer [(visible)]="surveyResultsDrawerVisible" [surveyId]="selectedSurveyId()" [listSurvey]="selectedSurvey()" />
             </div>
           }
           @case ('documents') {

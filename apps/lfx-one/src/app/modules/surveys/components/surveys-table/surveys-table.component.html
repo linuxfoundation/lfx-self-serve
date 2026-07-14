@@ -79,7 +79,7 @@
           currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
           [customSort]="true"
           [loading]="loading()"
-          selectionMode="single"
+          [selectionMode]="interactive() ? 'single' : undefined"
           (onRowSelect)="onRowSelect($event)"
           data-testid="surveys-table">
           <ng-template #header>
@@ -102,13 +102,17 @@
             @let rowId = survey.response_uid || survey.uid;
             <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'surveys-row-' + rowId">
               <td>
-                <button
-                  type="button"
-                  class="lfx-table-name-link text-sm text-left bg-transparent border-none p-0"
-                  (click)="onViewResults(survey)"
-                  [attr.data-testid]="'surveys-name-' + rowId">
-                  {{ survey.survey_title }}
-                </button>
+                @if (interactive()) {
+                  <button
+                    type="button"
+                    class="lfx-table-name-link text-sm text-left bg-transparent border-none p-0"
+                    (click)="onViewResults(survey)"
+                    [attr.data-testid]="'surveys-name-' + rowId">
+                    {{ survey.survey_title }}
+                  </button>
+                } @else {
+                  <span class="text-sm text-gray-900" [attr.data-testid]="'surveys-name-' + rowId">{{ survey.survey_title }}</span>
+                }
               </td>
 
               <td>
@@ -188,59 +192,61 @@
 
               <td>
                 <div class="flex items-center justify-end gap-1">
-                  @if (hasPMOAccess() && survey.displayStatus === SurveyStatus.DRAFT) {
-                    <lfx-button
-                      label="Edit"
-                      severity="primary"
-                      size="small"
-                      [text]="true"
-                      [routerLink]="['/surveys', survey.uid, 'edit']"
-                      [queryParams]="editQueryParams()"
-                      (onClick)="$event.stopPropagation()"
-                      [attr.data-testid]="'surveys-edit-' + rowId">
-                    </lfx-button>
-                    <lfx-button
-                      label="Delete"
-                      severity="danger"
-                      size="small"
-                      [text]="true"
-                      styleClass=""
-                      (onClick)="onDeleteSurvey(survey)"
-                      [disabled]="isDeleting()"
-                      [attr.data-testid]="'surveys-delete-' + rowId">
-                    </lfx-button>
-                  } @else if (!hasPMOAccess() && survey.displayStatus === SurveyStatus.OPEN && survey.survey_link) {
-                    @let actionIsResponded = survey.response_status?.toLowerCase() === 'responded';
-                    <lfx-button
-                      [label]="actionIsResponded ? 'Update' : 'Take Survey'"
-                      [severity]="actionIsResponded ? 'secondary' : 'primary'"
-                      size="small"
-                      [text]="true"
-                      [href]="survey.survey_link"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      [attr.data-testid]="(actionIsResponded ? 'surveys-update-' : 'surveys-take-') + rowId">
-                    </lfx-button>
-                  } @else if (isMeLens() && survey.displayStatus === SurveyStatus.CLOSED) {
-                    <lfx-button
-                      label="View"
-                      severity="secondary"
-                      size="small"
-                      [text]="true"
-                      styleClass=""
-                      (onClick)="onViewResults(survey)"
-                      [attr.data-testid]="'surveys-view-' + rowId">
-                    </lfx-button>
-                  } @else if (!isMeLens() && (survey.displayStatus === SurveyStatus.OPEN || survey.displayStatus === SurveyStatus.CLOSED)) {
-                    <lfx-button
-                      label="Results"
-                      severity="secondary"
-                      size="small"
-                      [text]="true"
-                      styleClass=""
-                      (onClick)="onViewResults(survey)"
-                      [attr.data-testid]="'surveys-results-' + rowId">
-                    </lfx-button>
+                  @if (interactive()) {
+                    @if (hasPMOAccess() && survey.displayStatus === SurveyStatus.DRAFT) {
+                      <lfx-button
+                        label="Edit"
+                        severity="primary"
+                        size="small"
+                        [text]="true"
+                        [routerLink]="['/surveys', survey.uid, 'edit']"
+                        [queryParams]="editQueryParams()"
+                        (onClick)="$event.stopPropagation()"
+                        [attr.data-testid]="'surveys-edit-' + rowId">
+                      </lfx-button>
+                      <lfx-button
+                        label="Delete"
+                        severity="danger"
+                        size="small"
+                        [text]="true"
+                        styleClass=""
+                        (onClick)="onDeleteSurvey(survey)"
+                        [disabled]="isDeleting()"
+                        [attr.data-testid]="'surveys-delete-' + rowId">
+                      </lfx-button>
+                    } @else if (!hasPMOAccess() && survey.displayStatus === SurveyStatus.OPEN && survey.survey_link) {
+                      @let actionIsResponded = survey.response_status?.toLowerCase() === 'responded';
+                      <lfx-button
+                        [label]="actionIsResponded ? 'Update' : 'Take Survey'"
+                        [severity]="actionIsResponded ? 'secondary' : 'primary'"
+                        size="small"
+                        [text]="true"
+                        [href]="survey.survey_link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        [attr.data-testid]="(actionIsResponded ? 'surveys-update-' : 'surveys-take-') + rowId">
+                      </lfx-button>
+                    } @else if (isMeLens() && survey.displayStatus === SurveyStatus.CLOSED) {
+                      <lfx-button
+                        label="View"
+                        severity="secondary"
+                        size="small"
+                        [text]="true"
+                        styleClass=""
+                        (onClick)="onViewResults(survey)"
+                        [attr.data-testid]="'surveys-view-' + rowId">
+                      </lfx-button>
+                    } @else if (!isMeLens() && (survey.displayStatus === SurveyStatus.OPEN || survey.displayStatus === SurveyStatus.CLOSED)) {
+                      <lfx-button
+                        label="Results"
+                        severity="secondary"
+                        size="small"
+                        [text]="true"
+                        styleClass=""
+                        (onClick)="onViewResults(survey)"
+                        [attr.data-testid]="'surveys-results-' + rowId">
+                      </lfx-button>
+                    }
                   }
                 </div>
               </td>

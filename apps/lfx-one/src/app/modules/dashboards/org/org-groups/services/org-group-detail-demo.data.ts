@@ -718,5 +718,9 @@ export function getGroupDetailDemo(id: string): OrgGroupDetail | null {
     return curated;
   }
 
-  return { ...GENERIC_DETAIL, ...listGroup, id, ...buildGenericChannels(listGroup) };
+  // GENERIC_DETAIL.parentProjectId ('lf') is only a placeholder for groups with no curated detail record —
+  // override it with a slug derived from the group's real parentProject name so the "Parent Project" link
+  // (gated by VALID_DEMO_PROJECT_SLUGS in the component) only activates when that name genuinely matches a
+  // known Org Lens project-detail seed, instead of silently pointing every generic group at Linux Foundation.
+  return { ...GENERIC_DETAIL, ...listGroup, id, parentProjectId: slugify(listGroup.parentProject), ...buildGenericChannels(listGroup) };
 }

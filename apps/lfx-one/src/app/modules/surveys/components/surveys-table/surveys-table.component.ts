@@ -74,6 +74,9 @@ export class SurveysTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
   public readonly editQueryParams = input<Record<string, string>>({});
+  // Read-only surfaces (e.g. Org Lens aggregate views) have no real survey/results endpoint to open —
+  // set false to render rows as static display instead of wiring rowClick/viewResults.
+  public readonly interactive = input<boolean>(true);
 
   // === Outputs ===
   public readonly viewResults = output<Survey>();
@@ -121,10 +124,12 @@ export class SurveysTableComponent {
   }
 
   protected onRowSelect(event: { data: Survey }): void {
+    if (!this.interactive()) return;
     this.rowClick.emit(event.data);
   }
 
   protected onViewResults(survey: Survey): void {
+    if (!this.interactive()) return;
     this.viewResults.emit(survey);
   }
 

@@ -77,6 +77,9 @@ export class VotesTableComponent {
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
   public readonly editQueryParams = input<Record<string, string>>({});
+  // Read-only surfaces (e.g. Org Lens aggregate views) have no real vote/results endpoint to open —
+  // set false to render rows as static display instead of wiring viewVote/viewResults.
+  public readonly interactive = input<boolean>(true);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -126,10 +129,12 @@ export class VotesTableComponent {
 
   // === Protected Methods ===
   protected onViewVote(voteId: string): void {
+    if (!this.interactive()) return;
     this.viewVote.emit(voteId);
   }
 
   protected onViewResults(voteId: string): void {
+    if (!this.interactive()) return;
     this.viewResults.emit(voteId);
   }
 
@@ -148,6 +153,7 @@ export class VotesTableComponent {
   }
 
   protected onRowSelect(event: { data: VoteTableRow }): void {
+    if (!this.interactive()) return;
     const vote = event.data;
     if (vote.status === PollStatus.ENDED) {
       this.viewResults.emit(vote.uid);

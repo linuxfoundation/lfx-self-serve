@@ -137,6 +137,9 @@ test.describe('Org Group Detail', () => {
 test.describe('Org Group Detail — not found', () => {
   test('renders the not-found panel for an unknown id', async ({ page }) => {
     await gotoOrgGroupDetailPage(page, DETAIL_URL_BOGUS);
-    await expect(page.getByTestId('org-group-detail-not-found')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const notFound = page.getByTestId('org-group-detail-not-found');
+    await expect(notFound).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(notFound).toContainText('Group not found');
+    await expect(page.getByTestId('org-group-detail-tabs')).not.toBeVisible();
   });
 });
