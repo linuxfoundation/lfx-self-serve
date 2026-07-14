@@ -19,6 +19,7 @@ import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
+import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
@@ -482,6 +483,13 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
 // Global error handler — must be last.
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  // Clear the in-memory session before this headersSent guard so a failed session write's
+  // clearSession still takes effect on SSR/auth-redirect routes that flush headers before
+  // apiErrorHandler would otherwise run — mirrors the same guard inside apiErrorHandler itself.
+  if (error instanceof AuthenticationError && error.clearSession) {
+    req.appSession = null;
+  }
+
   if (res.headersSent) {
     next(error);
     return;

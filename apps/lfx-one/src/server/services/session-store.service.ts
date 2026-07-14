@@ -29,24 +29,48 @@ import { logger } from './logger.service';
  * assignment in `server.ts` rather than an `implements` clause here.
  */
 export class SessionStoreService {
-  public get(sid: string, callback: (err: unknown, session?: SessionStorePayload | null) => void): void {
-    void this.getAsync(sid).then(
+  // express-openid-connect's safePromisify probes callback-vs-promise stores two ways: first by
+  // checking whether the method's *minified* source still contains the substring "cb"/"callback"
+  // (unreliable — production builds minify local parameter names), and if that fails, by invoking
+  // the method with no callback arg and checking whether the result is a thenable. Returning the
+  // underlying promise whenever `callback` is omitted satisfies that probe under either detection
+  // path, instead of invoking `callback` as a function when it's `undefined`.
+  public get(sid: string, callback?: (err: unknown, session?: SessionStorePayload | null) => void): void | Promise<SessionStorePayload | null> {
+    const promise = this.getAsync(sid);
+    if (!callback) {
+      return promise;
+    }
+    void promise.then(
       (session) => callback(null, session),
       (err) => callback(err)
     );
   }
 
-  public set(sid: string, session: SessionStorePayload, callback?: (err?: unknown) => void): void {
-    void this.setAsync(sid, session).then(
-      () => callback?.(),
-      (err) => callback?.(err)
+  public set(sid: string, session?: SessionStorePayload, callback?: (err?: unknown) => void): void | Promise<void> {
+    // The same detection probe above can invoke `set` with only the `sid` arg to test for a
+    // thenable return — guard against treating that as a real write (which would persist
+    // `undefined` as the session value) rather than reaching setAsync with a missing payload.
+    if (!session) {
+      return callback ? callback() : Promise.resolve();
+    }
+    const promise = this.setAsync(sid, session);
+    if (!callback) {
+      return promise;
+    }
+    void promise.then(
+      () => callback(),
+      (err) => callback(err)
     );
   }
 
-  public destroy(sid: string, callback?: (err?: unknown) => void): void {
-    void this.destroyAsync(sid).then(
-      () => callback?.(),
-      (err) => callback?.(err)
+  public destroy(sid: string, callback?: (err?: unknown) => void): void | Promise<void> {
+    const promise = this.destroyAsync(sid);
+    if (!callback) {
+      return promise;
+    }
+    void promise.then(
+      () => callback(),
+      (err) => callback(err)
     );
   }
 
@@ -65,7 +89,7 @@ export class SessionStoreService {
       // Nothing was persisted, so letting this resolve normally would hand back a cookie whose id
       // never resolves in Valkey — the same unrecoverable-login-loop failure mode a Valkey write
       // failure below fails closed on. Fail closed here too instead of silently no-op'ing.
-      throw new AuthenticationError('Session write rejected — cache key failed the safety check', {
+      throw new AuthenticationError('Your session could not be saved — please sign in again.', {
         operation: 'session_store_set',
         clearSession: true,
       });
@@ -127,7 +151,10 @@ export class SessionStoreService {
   private cacheKey(sid: string): string | null {
     const key = buildSessionCacheKey(sid);
     if (key === null) {
-      logger.warning(undefined, 'session_store_key', 'Session id failed the cache-key safety check — treating session as missing');
+      // The sid comes straight from an unsigned cookie an anonymous client controls, so a malformed
+      // value is expected untrusted input rather than a system fault — debug, not warn, avoids a
+      // log flood from probing/malformed cookies ahead of route-level rate limiting.
+      logger.debug(undefined, 'session_store_key', 'Session id failed the cache-key safety check — treating session as missing');
     }
     return key;
   }
