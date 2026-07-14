@@ -706,7 +706,8 @@ export class CommitteeService {
    * {@link invitedEmail}. Callers must verify the session email matches the invite token
    * email before invoking. {@link resourceUid} (from the LFID invite JWT) disambiguates
    * when multiple pending invites exist — matched against committee_invite UID first, then
-   * committee UID; if no match and exactly one pending invite remains, that one is accepted.
+   * committee UID; if neither matches, returns undefined so the caller can retry while the
+   * target invite's FGA invitee tuple propagates.
    *
    * Returns the first invite that requires an organization but had none pre-filled — the
    * caller must surface this to the user to collect their organization and complete acceptance.
@@ -1731,6 +1732,9 @@ export class CommitteeService {
       return byCommitteeUid;
     }
 
-    return pending.length === 1 ? pending : [];
+    // When resource_uid is specified, require a positive match — the single-invite fallback
+    // could accept an unrelated invite while the target's FGA invitee tuple is still
+    // propagating, which would stop the retry loop before the correct invite is processed.
+    return [];
   }
 }
