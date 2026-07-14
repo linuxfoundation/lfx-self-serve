@@ -54,15 +54,16 @@
         <p class="text-[10px] text-gray-500 truncate min-w-0">{{ m.description }}</p>
       }
     </div>
-    <button
-      type="button"
-      class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-300 mt-1 cursor-not-allowed"
-      disabled
-      aria-label="Copy meeting link (unavailable)"
-      pTooltip="Meeting links aren't available yet for Org Lens groups"
-      tooltipPosition="top">
-      <i class="fa-light fa-clone text-xs" aria-hidden="true"></i>
-    </button>
+    <!-- Wrap the disabled button in a span so the tooltip remains reachable when [disabled] suppresses pointer events on the button itself. -->
+    <span class="shrink-0 mt-1" pTooltip="Meeting links aren't available yet for Org Lens groups" tooltipPosition="top">
+      <button
+        type="button"
+        class="w-7 h-7 flex items-center justify-center rounded-full text-gray-300 cursor-not-allowed"
+        disabled
+        aria-label="Copy meeting link (unavailable)">
+        <i class="fa-light fa-clone text-xs" aria-hidden="true"></i>
+      </button>
+    </span>
   </div>
   <div class="flex gap-3 px-4 pb-4 pt-5">
     <lfx-button

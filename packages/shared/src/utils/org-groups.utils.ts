@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_GROUPS_ROLLUP_TYPE_BADGES } from '../constants';
+import { ORG_GROUPS_ROLLUP_TYPE_BADGES } from '../constants/org-groups.constants';
 import type {
   GroupType,
   OrgGroup,
