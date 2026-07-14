@@ -76,7 +76,7 @@
             <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private" data-testid="badge-private"></lfx-tag>
           }
           @if (meeting.restricted) {
-            <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock" styleClass="tag-restricted" data-testid="badge-restricted"></lfx-tag>
+            <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock" data-testid="badge-restricted"></lfx-tag>
           }
           @if (meetingTypeBadge(); as badge) {
             <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [styleClass]="badge.styleClass" data-testid="badge-type"></lfx-tag>

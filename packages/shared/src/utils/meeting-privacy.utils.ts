@@ -36,7 +36,7 @@ export function getMeetingPrivacyIcon(visibility: MeetingVisibility | null, rest
     return 'fa-light fa-lock';
   }
   if (visibility === MeetingVisibility.PRIVATE) {
-    return 'fa-light fa-eye-slash';
+    return 'fa-light fa-shield';
   }
   return 'fa-light fa-globe';
 }

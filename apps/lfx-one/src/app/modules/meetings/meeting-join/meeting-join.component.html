@@ -44,12 +44,7 @@
 
                 <!-- Restricted Badge -->
                 @if (meeting().restricted) {
-                  <lfx-tag
-                    value="Restricted"
-                    severity="warn"
-                    icon="fa-light fa-lock"
-                    styleClass="tag-restricted"
-                    [attr.data-testid]="'meeting-badge-restricted'"></lfx-tag>
+                  <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock" [attr.data-testid]="'meeting-badge-restricted'"></lfx-tag>
                 }
 
                 <!-- Meeting Type Badge -->

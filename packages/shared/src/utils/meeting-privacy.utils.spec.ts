@@ -35,8 +35,8 @@ describe('getMeetingPrivacyIcon', () => {
     expect(getMeetingPrivacyIcon(MeetingVisibility.PUBLIC, false)).toBe('fa-light fa-globe');
   });
 
-  it('returns eye-slash icon for private + unrestricted', () => {
-    expect(getMeetingPrivacyIcon(MeetingVisibility.PRIVATE, false)).toBe('fa-light fa-eye-slash');
+  it('returns shield icon for private + unrestricted', () => {
+    expect(getMeetingPrivacyIcon(MeetingVisibility.PRIVATE, false)).toBe('fa-light fa-shield');
   });
 
   it('returns lock icon when restricted is true', () => {

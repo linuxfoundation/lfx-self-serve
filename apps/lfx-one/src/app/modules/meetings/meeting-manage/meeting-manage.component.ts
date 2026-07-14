@@ -543,7 +543,7 @@ export class MeetingManageComponent {
         const parsed = parseInt(formValue.early_join_time_minutes, 10);
         return isNaN(parsed) ? DEFAULT_EARLY_JOIN_TIME : parsed;
       })(),
-      visibility: formValue.visibility || MeetingVisibility.PUBLIC,
+      visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted || false,
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
