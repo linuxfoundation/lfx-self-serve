@@ -1687,10 +1687,8 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
-    // LEFT JOIN latest per-project health category (separate daily table) for the badge;
-    // keyed on PROJECT_SLUG since the two tables use different PROJECT_ID systems.
-    // Rank all daily rows first, then take the newest, so a project whose latest row
-    // is unscored surfaces a null category (Unscored) instead of a stale prior score.
+    // Latest valid (non-null) health category, keyed on PROJECT_SLUG (different
+    // PROJECT_ID systems); Unscored = no valid score row, matching FOUNDATION_HEALTH_SCORE_DISTRIBUTION.
     const query = `
       SELECT
         d.PROJECT_ID,
@@ -1708,6 +1706,7 @@ export class ProjectService {
         SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
         FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
         WHERE FOUNDATION_SLUG = ?
+          AND HEALTH_SCORE_CATEGORY IS NOT NULL
         QUALIFY ROW_NUMBER() OVER (PARTITION BY PROJECT_SLUG ORDER BY METRIC_DATE DESC) = 1
       ) h ON d.PROJECT_SLUG = h.PROJECT_SLUG
       WHERE d.FOUNDATION_SLUG = ?

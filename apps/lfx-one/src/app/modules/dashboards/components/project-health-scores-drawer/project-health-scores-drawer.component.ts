@@ -139,16 +139,9 @@ export class ProjectHealthScoresDrawerComponent {
     buildLensAwareInsightsUrl(this.projectContextService.activeContext()?.slug, this.projectContextService.isFoundationContext())
   );
 
-  protected readonly scoredProjects: Signal<number> = computed(() => {
-    const d = this.data();
-    return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;
-  });
+  protected readonly scoredProjects: Signal<number> = computed(() => this.initScoredProjects());
 
-  protected readonly scoredLabel: Signal<string> = computed(() => {
-    const scored = this.scoredProjects();
-    const total = this.total();
-    return total > scored ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored` : `${scored.toLocaleString()} projects scored`;
-  });
+  protected readonly scoredLabel: Signal<string> = computed(() => this.initScoredLabel());
 
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!this.search().trim() || this.selectedStatuses().size > 0);
@@ -187,6 +180,19 @@ export class ProjectHealthScoresDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initScoredProjects(): number {
+    const d = this.data();
+    return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;
+  }
+
+  private initScoredLabel(): string {
+    const scored = this.scoredProjects();
+    const total = this.total();
+    return total > scored
+      ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored`
+      : `${scored.toLocaleString()} projects scored`;
+  }
+
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const d = this.data();
