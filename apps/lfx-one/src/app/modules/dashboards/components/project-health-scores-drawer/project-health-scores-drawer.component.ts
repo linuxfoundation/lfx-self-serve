@@ -17,7 +17,6 @@ import {
   PROJECT_HEALTH_SCORE_CATEGORIES,
   PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE,
   PROJECT_HEALTH_STATUS_FILTER_OPTIONS,
-  TOOLTIP_MAX_PROJECT_NAMES,
 } from '@lfx-one/shared/constants';
 import { buildLensAwareInsightsUrl, buildVisiblePages } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -72,22 +71,13 @@ export class ProjectHealthScoresDrawerComponent {
         borderWidth: 1,
         padding: 10,
         cornerRadius: 6,
-        displayColors: false,
+        displayColors: true,
         callbacks: {
-          // Title reads "Healthy · 2"; body lists the project names in that bucket.
           title: (items) => {
             const category = PROJECT_HEALTH_SCORE_CATEGORIES[items[0]?.dataIndex ?? 0];
-            return `${PROJECT_HEALTH_CATEGORY_LABEL[category]} · ${(items[0]?.parsed.y as number)?.toLocaleString() ?? 0}`;
+            return PROJECT_HEALTH_CATEGORY_LABEL[category];
           },
-          label: (ctx) => {
-            const category = PROJECT_HEALTH_SCORE_CATEGORIES[ctx.dataIndex];
-            const names = this.projectsByCategory()[category];
-            if (!names.length) return ` ${(ctx.parsed.y as number).toLocaleString()} projects`;
-            // Cap the list so a large bucket doesn't produce an oversized tooltip.
-            return names.length > TOOLTIP_MAX_PROJECT_NAMES
-              ? [...names.slice(0, TOOLTIP_MAX_PROJECT_NAMES), `+${names.length - TOOLTIP_MAX_PROJECT_NAMES} more`]
-              : names;
-          },
+          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} projects`,
         },
       },
     },
@@ -159,7 +149,6 @@ export class ProjectHealthScoresDrawerComponent {
 
   protected readonly search: Signal<string> = this.initSearch();
   protected readonly projectsData: Signal<FoundationProjectsDetailResponse> = this.initProjectsData();
-  protected readonly projectsByCategory: Signal<Record<FoundationHealthScore, string[]>> = this.initProjectsByCategory();
   protected readonly filteredProjects: Signal<ProjectTableRow[]> = this.initFilteredProjects();
   protected readonly totalPages: Signal<number> = computed(() => Math.ceil(this.filteredProjects().length / PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE));
   protected readonly paginatedProjects: Signal<ProjectTableRow[]> = this.initPaginatedProjects();
@@ -247,18 +236,6 @@ export class ProjectHealthScoresDrawerComponent {
       ),
       { initialValue: DEFAULT_FOUNDATION_PROJECTS_DETAIL }
     );
-  }
-
-  private initProjectsByCategory(): Signal<Record<FoundationHealthScore, string[]>> {
-    return computed(() => {
-      const groups: Record<FoundationHealthScore, string[]> = { critical: [], unsteady: [], stable: [], healthy: [], excellent: [] };
-      for (const project of this.projectsData().projects) {
-        if (project.healthScoreCategory) {
-          groups[project.healthScoreCategory].push(project.projectName);
-        }
-      }
-      return groups;
-    });
   }
 
   private initFilteredProjects(): Signal<ProjectTableRow[]> {

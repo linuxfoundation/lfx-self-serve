@@ -6,9 +6,6 @@ import type { FoundationHealthScore, HealthStatusFilterOption } from '../interfa
 
 export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
 
-// Max project names listed in a chart-bar tooltip before collapsing to "+N more".
-export const TOOLTIP_MAX_PROJECT_NAMES = 10;
-
 // Ordered health buckets (low → high), matching the distribution chart's bar order.
 export const PROJECT_HEALTH_SCORE_CATEGORIES: readonly FoundationHealthScore[] = ['critical', 'unsteady', 'stable', 'healthy', 'excellent'];
 
