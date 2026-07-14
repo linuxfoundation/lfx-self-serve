@@ -327,7 +327,7 @@ export class OrgLensProjectDetailService {
     projectSlug: string,
     range: OrgLensLeaderboardTimeRange
   ): Promise<OrgLensProjectDetailResponse | null> {
-    const cacheKey = `project-detail:${this.paramSignature([projectSlug, range, orgName])}`;
+    const cacheKey = `project-detail:${this.paramSignature([projectSlug, range])}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectDetailResponse>(key, OrgLensProjectDetailService.isDetailResponse);

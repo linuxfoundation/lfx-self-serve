@@ -276,6 +276,10 @@ export class OrgProjectDetailComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.closeCardDetail());
 
+    combineLatest([this.orgUid$, this.slug$])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.resetLeaderboardSearch());
+
     // Refresh horizontal scroll arrows when the Our-Influence cards change.
     toObservable(
       computed(() => ({
@@ -393,17 +397,13 @@ export class OrgProjectDetailComponent {
     return this.isActivityMode() ? 'Total contributions' : 'Influence Score';
   }
 
-  /**
-   * B5 — Lazy-fetch the drawer section for one card, keyed by (card, active range). A cache hit
-   * paints instantly; a miss shows the in-drawer skeleton until the fetch resolves. `force` bypasses
-   * the cache for a retry after an error.
-   */
+  /** B5 — Lazy-fetch the drawer section for one card, cached per (org, project, card, range); force bypasses the cache for retry. */
   private loadDrawer(cardKey: string, force = false): void {
     const uid = this.accountContext.selectedAccount()?.uid;
     const slug = this.projectSlug();
     if (!uid || !slug) return;
     const range = this.timeRange();
-    const cacheKey = `${cardKey}|${range}`;
+    const cacheKey = `${uid}|${slug}|${cardKey}|${range}`;
 
     if (force) this.drawerCache.delete(cacheKey);
     if (this.drawerCache.has(cacheKey)) {
@@ -419,10 +419,12 @@ export class OrgProjectDetailComponent {
       .subscribe({
         next: (section) => {
           this.drawerCache.set(cacheKey, section);
+          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range) return;
           this.drawerState.set(section ? { status: 'ready', data: section } : { status: 'empty', data: null });
         },
         error: (err: unknown) => {
           console.error('[OrgProjectDetail] failed to load card detail', err);
+          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range) return;
           this.drawerState.set({ status: 'error', data: null });
         },
       });
@@ -436,26 +438,37 @@ export class OrgProjectDetailComponent {
     this.rosterLoading.set(false);
   }
 
+  private resetLeaderboardSearch(): void {
+    this.searchForm.reset({ technical: '', ecosystem: '' }, { emitEvent: false });
+    this.techSearch.set('');
+    this.ecoSearch.set('');
+  }
+
   /** Fetch one server-paginated page of the open card's roster and update the drawer table state. */
   private loadRosterPage(cardKey: string, first: number, rowsPerPage: number): void {
     const uid = this.accountContext.selectedAccount()?.uid;
     const slug = this.projectSlug();
     if (!uid || !slug) return;
+    const range = this.timeRange();
     const page = Math.floor(first / rowsPerPage);
     this.rosterFirst.set(first);
     this.rosterRowsPerPage.set(rowsPerPage);
     this.rosterLoading.set(true);
     this.detailService
-      .getCardRoster(uid, this.orgName(), slug, cardKey, this.timeRange(), page, rowsPerPage)
+      .getCardRoster(uid, this.orgName(), slug, cardKey, range, page, rowsPerPage)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range || this.rosterFirst() !== first || this.rosterRowsPerPage() !== rowsPerPage)
+            return;
           this.rosterRows.set(result.rows);
           this.rosterTotal.set(result.total);
           this.rosterLoading.set(false);
         },
         error: (err: unknown) => {
           console.error('[OrgProjectDetail] failed to load card roster', err);
+          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range || this.rosterFirst() !== first || this.rosterRowsPerPage() !== rowsPerPage)
+            return;
           this.rosterRows.set([]);
           this.rosterTotal.set(0);
           this.rosterLoading.set(false);

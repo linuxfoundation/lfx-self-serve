@@ -144,7 +144,7 @@ export interface OrgLensProjectLeaderboardRow {
     contributionsPct: number;
     collaborationsPct: number;
   };
-  /** Trailing monthly combined series for the active range, oldest → newest. */
+  /** Trailing 12-month combined series (fixed window, not range-scoped), oldest → newest. */
   trendSparkline: number[];
   /** 1-year delta as a signed fraction (e.g. 0.12 = +12%). */
   trendDeltaPct: number;
