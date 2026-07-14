@@ -183,9 +183,7 @@ export class ProjectHealthScoresDrawerComponent {
   private initScoredLabel(): string {
     const scored = this.scoredProjects();
     const total = this.total();
-    return total > scored
-      ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored`
-      : `${scored.toLocaleString()} projects scored`;
+    return total > scored ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored` : `${scored.toLocaleString()} projects scored`;
   }
 
   private initChartData(): Signal<ChartData<'bar'>> {
