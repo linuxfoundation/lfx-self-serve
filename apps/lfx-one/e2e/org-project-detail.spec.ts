@@ -37,7 +37,7 @@ test.describe('Org Project Detail — testid resolution', () => {
 
   test('renders breadcrumb, hero and tab strip', async ({ page }) => {
     await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible();
-    await expect(page.getByTestId('project-detail-hero')).toBeVisible();
+    await expect(page.getByTestId('project-detail-hero')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-name')).toHaveText('Kubernetes');
     await expect(page.getByTestId('project-detail-first-commit')).toBeVisible();
     await expect(page.getByTestId('project-detail-software-value')).toBeVisible();
@@ -48,6 +48,7 @@ test.describe('Org Project Detail — testid resolution', () => {
   });
 
   test('renders the Technical and Ecosystem card groups', async ({ page }) => {
+    await expect(page.getByTestId('project-detail-technical-card-maintainers')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     for (const key of ['maintainers', 'contributors', 'commits', 'pull-requests']) {
       await expect(page.getByTestId(`project-detail-technical-card-${key}`)).toBeVisible();
     }

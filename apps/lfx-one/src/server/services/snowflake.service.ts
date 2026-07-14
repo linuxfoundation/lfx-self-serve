@@ -218,7 +218,9 @@ export class SnowflakeService {
             span.recordException(error instanceof Error ? error : new Error(String(error)));
 
             const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
-            if (!expectedMissing) {
+            if (expectedMissing) {
+              this.recordSuccess();
+            } else {
               this.recordFailure();
             }
 
