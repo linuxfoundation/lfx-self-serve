@@ -1024,18 +1024,15 @@ export class MeetingsDashboardComponent {
           const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
           const fetchPage = (pageToken?: string) => this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken);
           return fetchPage().pipe(
-            // Pages are most-recent-first, so once a page's oldest (last) item falls before the 30-day
-            // cutoff, every later page is entirely out of window — stop expanding rather than blindly
-            // capping at a fixed page count, which could silently drop in-window meetings past page 10
-            // for a foundation with heavy meeting volume. `take(50)` is only a safety backstop against
-            // runaway pagination (e.g. malformed/missing start times that never trip the cutoff check).
-            expand((response) => {
-              if (!response.page_token) return EMPTY;
-              const oldestInPage = response.data[response.data.length - 1];
-              const oldestStartMs = oldestInPage ? getPastMeetingStartTimeMs(oldestInPage) : null;
-              const pageFullyBeforeCutoff = oldestStartMs !== null && oldestStartMs < cutoff;
-              return pageFullyBeforeCutoff ? EMPTY : fetchPage(response.page_token);
-            }),
+            // `NAME_DESC` sorts by `sort_name`, which the indexer populates from each occurrence's
+            // series/template start_time — not its actual `scheduled_start_time` (see PAST_MEETING_SORT
+            // doc comment; same divergence fixed for committee-meetings.component.ts under LFXV2-2053).
+            // Recurring rows can therefore appear out of true chronological order across pages, so an
+            // early-stop keyed on "this page's oldest item looks before cutoff" can miss later pages that
+            // still contain in-window meetings. Page to completion instead — bounded by the `take(50)`
+            // safety backstop against runaway pagination — and apply the 30-day cutoff after all pages
+            // are collected.
+            expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
             take(50),
             toArray(),
             map((responses) => responses.flatMap((r) => r.data)),
