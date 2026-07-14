@@ -369,21 +369,26 @@ export class OrgLensProjectDetailService {
     }
 
     const whereExtra = provider.where ? ` AND ${provider.where}` : '';
-    const [pageResult, countResult] = await Promise.all([
-      this.snowflakeService.execute<Record<string, unknown>>(
-        `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ? OFFSET ?`,
-        [orgUid, slug, safeSize, offset]
-      ),
-      this.snowflakeService.execute<{ N: number }>(`SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra}`, [
-        orgUid,
-        slug,
-      ]),
-    ]);
-
-    const result: OrgLensCardRosterPage = {
-      rows: pageResult.rows.map((row) => provider.map(row)),
-      total: this.num(countResult.rows[0]?.N ?? 0),
-    };
+    let result: OrgLensCardRosterPage;
+    try {
+      const [pageResult, countResult] = await Promise.all([
+        this.snowflakeService.execute<Record<string, unknown>>(
+          `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ? OFFSET ?`,
+          [orgUid, slug, safeSize, offset]
+        ),
+        this.snowflakeService.execute<{ N: number }>(`SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra}`, [
+          orgUid,
+          slug,
+        ]),
+      ]);
+      result = {
+        rows: pageResult.rows.map((row) => provider.map(row)),
+        total: this.num(countResult.rows[0]?.N ?? 0),
+      };
+    } catch (error) {
+      if (!OrgLensProjectDetailService.isMissingObjectError(error)) throw error;
+      result = { rows: [], total: 0 };
+    }
     if (key !== null) {
       await valkeyService.setJson(key, result, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
@@ -1439,5 +1444,10 @@ export class OrgLensProjectDetailService {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensCardRosterPage;
     return Array.isArray(candidate.rows) && typeof candidate.total === 'number';
+  }
+
+  private static isMissingObjectError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /does not exist or not authorized/i.test(message);
   }
 }

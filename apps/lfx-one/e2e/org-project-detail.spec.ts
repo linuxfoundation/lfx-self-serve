@@ -114,8 +114,8 @@ test.describe('Org Project Detail — leaderboards', () => {
 
   test('time-range toggle persists in the URL and updates the activity column label', async ({ page }) => {
     await page.getByTestId('project-detail-metric-activity').click();
-    await page.getByTestId('project-detail-time-range-2y').click();
-    await expect(page).toHaveURL(/range=2y/);
+    await page.getByTestId('project-detail-time-range-1y').click();
+    await expect(page).toHaveURL(/range=1y/);
     await expect(page.getByRole('columnheader', { name: 'Total contributions' }).first()).toBeVisible();
   });
 
