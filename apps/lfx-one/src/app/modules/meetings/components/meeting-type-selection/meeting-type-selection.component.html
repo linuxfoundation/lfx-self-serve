@@ -5,7 +5,7 @@
   <!-- Step Title -->
   <div class="mb-6">
     <h2 class="font-normal">Meeting Type & Privacy</h2>
-    <p class="text-sm text-gray-500 mt-1">Choose the meeting category and visibility to ensure the right people have access</p>
+    <p class="text-sm text-gray-500 mt-1">Choose the meeting category and configure who can find and join this meeting</p>
   </div>
 
   <!-- Two Column Layout -->
@@ -23,18 +23,34 @@
     </div>
 
     <!-- Right Column - Privacy Settings -->
-    <div class="flex flex-col gap-3">
-      <lfx-card-selector [options]="privacyOptions" [form]="form()" control="restricted" label="Select Privacy Setting" testIdPrefix="meeting-privacy" />
+    <div class="flex flex-col gap-6">
+      <!-- Visibility: who can find the meeting -->
+      <lfx-card-selector
+        [options]="visibilityOptions"
+        [form]="form()"
+        control="visibility"
+        label="Visibility"
+        [gridColumns]="2"
+        testIdPrefix="meeting-visibility" />
+
+      <!-- Join restriction: who can join the meeting -->
+      <lfx-card-selector
+        [options]="joinRestrictionOptions"
+        [form]="form()"
+        control="restricted"
+        label="Join Restriction"
+        [gridColumns]="2"
+        testIdPrefix="meeting-join-restriction" />
 
       <!-- Info box -->
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div class="flex gap-3">
           <i class="fa-light fa-info-circle text-blue-500 flex-shrink-0 mt-0.5"></i>
-          <div>
+          <div class="flex flex-col gap-1">
+            <p class="text-sm font-semibold text-blue-500">Two independent privacy controls</p>
             <p class="text-sm text-blue-500">
-              <span class="font-semibold">Transparency is key</span>
-              <br />
-              Public meetings help build trust and encourage community participation. Consider making meetings public unless they involve confidential matters.
+              <span class="font-medium">Visibility</span> controls discoverability — whether the meeting appears in the public project calendar.
+              <span class="font-medium">Join Restriction</span> controls access — who is allowed to join once they have the meeting link.
             </p>
           </div>
         </div>

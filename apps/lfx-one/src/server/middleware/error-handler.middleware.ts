@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { BaseApiError, isBaseApiError } from '../errors';
+import { AuthenticationError, BaseApiError, isBaseApiError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
@@ -22,6 +22,14 @@ function getOperationFromPath(path: string): string {
 }
 
 export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: Response, next: NextFunction): void {
+  // express-openid-connect's session-write hook (the patched res.end()) can throw this error after
+  // headers were already flushed — e.g. SSE controllers that flush before streaming. Clear the
+  // in-memory session before the headersSent check below so a failed write's session still gets
+  // cleared (and its cookie not reissued) even on responses we can no longer reshape.
+  if (error instanceof AuthenticationError && error.clearSession) {
+    req.appSession = null;
+  }
+
   // If response already sent, delegate to default Express error handler
   if (res.headersSent) {
     next(error);
