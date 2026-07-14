@@ -217,7 +217,10 @@ export class SnowflakeService {
             });
             span.recordException(error instanceof Error ? error : new Error(String(error)));
 
-            this.recordFailure();
+            const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
+            if (!expectedMissing) {
+              this.recordFailure();
+            }
 
             logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
               query_hash: queryHash,
@@ -532,6 +535,11 @@ export class SnowflakeService {
     this.consecutiveFailures = 0;
     this.probeInFlight = false;
     this.circuitState = SnowflakeCircuitState.CLOSED;
+  }
+
+  private static isMissingObjectError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /does not exist or not authorized/i.test(message);
   }
 
   /**

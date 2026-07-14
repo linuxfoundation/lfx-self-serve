@@ -3,7 +3,6 @@
 
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { PD_DEFAULT_TIME_RANGE } from '@lfx-one/shared/constants';
 import type {
   OrgLensCardDetailSection,
   OrgLensCardRosterPage,
@@ -45,13 +44,13 @@ export class OrgLensProjectDetailService {
   private readonly heroCache = new Map<string, OrgLensHeroBlock | null>();
 
   /** B1 — Hero block; fetched once per (org, slug), never re-fetched on a range change. A null result is the page-level not-found. */
-  public getHero(orgUid: string, orgName: string, projectSlug: string): Observable<OrgLensHeroBlock | null> {
+  public getHero(orgUid: string, orgName: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Observable<OrgLensHeroBlock | null> {
     const cacheKey = `${orgUid}|${projectSlug}`;
     const cached = this.heroCache.get(cacheKey);
     if (cached !== undefined) {
       return of(cached);
     }
-    return this.sharedRequest(orgUid, orgName, projectSlug, PD_DEFAULT_TIME_RANGE).pipe(
+    return this.sharedRequest(orgUid, orgName, projectSlug, range).pipe(
       map((resp) => {
         const block = resp ? { hero: resp.hero, isNonLfProject: resp.isNonLfProject } : null;
         this.heroCache.set(cacheKey, block);

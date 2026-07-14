@@ -374,12 +374,14 @@ export class OrgLensProjectDetailService {
       const [pageResult, countResult] = await Promise.all([
         this.snowflakeService.execute<Record<string, unknown>>(
           `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ? OFFSET ?`,
-          [orgUid, slug, safeSize, offset]
+          [orgUid, slug, safeSize, offset],
+          { expectMissingObject: true }
         ),
-        this.snowflakeService.execute<{ N: number }>(`SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra}`, [
-          orgUid,
-          slug,
-        ]),
+        this.snowflakeService.execute<{ N: number }>(
+          `SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra}`,
+          [orgUid, slug],
+          { expectMissingObject: true }
+        ),
       ]);
       result = {
         rows: pageResult.rows.map((row) => provider.map(row)),
