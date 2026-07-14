@@ -42,6 +42,7 @@ export class OrgLensProjectDetailService {
   // Hero is range-independent (§B1) — cache the first resolved hero block per (org, slug) so a
   // range change never re-resolves it.
   private readonly heroCache = new Map<string, OrgLensHeroBlock | null>();
+  private static readonly maxHeroEntries = 8;
 
   /** B1 — Hero block; fetched once per (org, slug), never re-fetched on a range change. A null result is the page-level not-found. */
   public getHero(orgUid: string, orgName: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Observable<OrgLensHeroBlock | null> {
@@ -53,6 +54,9 @@ export class OrgLensProjectDetailService {
     return this.sharedRequest(orgUid, orgName, projectSlug, range).pipe(
       map((resp) => {
         const block = resp ? { hero: resp.hero, isNonLfProject: resp.isNonLfProject } : null;
+        if (this.heroCache.size >= OrgLensProjectDetailService.maxHeroEntries) {
+          this.heroCache.clear();
+        }
         this.heroCache.set(cacheKey, block);
         return block;
       })
@@ -148,7 +152,7 @@ export class OrgLensProjectDetailService {
     projectSlug: string,
     range: OrgLensLeaderboardTimeRange
   ): Observable<OrgLensProjectDetailResponse | null> {
-    const key = `${orgUid}|${orgName}|${projectSlug}|${range}`;
+    const key = `${orgUid}|${projectSlug.trim().toLowerCase()}|${range}`;
     let request = this.shared.get(key);
     if (!request) {
       if (this.shared.size >= OrgLensProjectDetailService.maxSharedEntries) {

@@ -87,6 +87,11 @@ export class SnowflakeService {
     }
   }
 
+  public static isMissingObjectError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /does not exist or not authorized/i.test(message);
+  }
+
   private constructor() {
     // Configure Snowflake SDK logging (defaults to ERROR to minimize verbose logs)
     // Valid levels: 'OFF', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'
@@ -537,11 +542,6 @@ export class SnowflakeService {
     this.consecutiveFailures = 0;
     this.probeInFlight = false;
     this.circuitState = SnowflakeCircuitState.CLOSED;
-  }
-
-  private static isMissingObjectError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /does not exist or not authorized/i.test(message);
   }
 
   /**

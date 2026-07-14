@@ -388,7 +388,7 @@ export class OrgLensProjectDetailService {
         total: this.num(countResult.rows[0]?.N ?? 0),
       };
     } catch (error) {
-      if (!OrgLensProjectDetailService.isMissingObjectError(error)) throw error;
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
       result = { rows: [], total: 0 };
     }
     if (key !== null) {
@@ -804,10 +804,11 @@ export class OrgLensProjectDetailService {
     return null;
   }
 
-  /** Coerce a Snowflake cell to a number (null preserved). */
+  /** Coerce a Snowflake cell to a finite number (null for missing or non-numeric values). */
   private numVal(value: unknown): number | null {
     if (value === null || value === undefined) return null;
-    return typeof value === 'number' ? value : Number(value);
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   /** A person cell for a roster row: display name, optional avatar, and derived initials fallback. */
@@ -1447,10 +1448,5 @@ export class OrgLensProjectDetailService {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensCardRosterPage;
     return Array.isArray(candidate.rows) && typeof candidate.total === 'number';
-  }
-
-  private static isMissingObjectError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /does not exist or not authorized/i.test(message);
   }
 }
