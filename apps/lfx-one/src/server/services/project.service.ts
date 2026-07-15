@@ -1687,8 +1687,8 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
-    // Newest health score per project from PROJECT_HEALTH_METRICS_LATEST (keeps the
-    // latest row regardless of age, unlike the 30-day DAILY table); null flows through as Unscored.
+    // Newest health score per project from PROJECT_HEALTH_METRICS_LATEST, which
+    // holds the latest score row per project (DAILY keeps per-date history); null flows through as Unscored.
     const query = `
       SELECT
         d.PROJECT_ID,
