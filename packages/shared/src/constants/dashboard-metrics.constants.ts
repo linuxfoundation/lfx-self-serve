@@ -1047,7 +1047,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       // reporting window — the endpoint covers a fixed six-month range, so
       // the window is labeled directly rather than estimated from row count.
       caption: brandReach.weeklyTrend.length > 0 ? `${brandReach.activePlatforms} platforms · Last 6 months` : `${brandReach.activePlatforms} platforms`,
-      tooltipText: 'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
+      tooltipText:
+        'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
     {
