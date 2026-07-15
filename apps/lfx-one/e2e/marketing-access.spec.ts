@@ -238,6 +238,16 @@ test.describe('US1: Marketing Auditor — marketing_auditor only (no campaign_ma
     await expect(page.getByTestId(SIDEBAR.marketingImpact), 'auditor lens=foundation item=marketing-impact').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId(SIDEBAR.campaigns), 'auditor lens=foundation item=campaigns should be absent').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
   });
+
+  test('can open /foundation/marketing-impact and the page renders (granted deep link)', async ({ page }) => {
+    await setPersonaCookie(page, ['contributor']);
+    await gotoRoute(page, `/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`);
+
+    // marketingViewGuard passed (no redirect) and the page rendered — verifies the guarded route
+    // itself for a granted auditor, not just the nav entry (guards against a guard/render regression).
+    await expect(page, 'marketing_auditor ⇒ Marketing Impact route persists').toHaveURL(/\/foundation\/marketing-impact/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(MARKETING_IMPACT_PAGE), 'marketing impact page rendered').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
 });
 
 test.describe('US1: non-granted project — no marketing_auditor', () => {
@@ -370,5 +380,24 @@ test.describe('Scenario 6: granted→denied context switch re-checks access (fai
     await page.getByTestId(PROJECT_SELECTOR.item(MOCK_DENIED_SLUG)).click();
 
     await expect(page, 'denied context ⇒ redirected off Campaigns').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('Marketing section toggles on in-session foundation switch (no reload)', async ({ page }) => {
+    // On /foundation/overview a same-lens foundation switch stays put (replaceState, no navigation),
+    // so this exercises the per-context signals (canViewMarketing / canManageCampaigns), including the
+    // startWith(false) reset that prevents a stale grant from leaking across the switch. (FR-009/SC-009)
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_DENIED_SLUG}`);
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'denied ⇒ marketing section hidden').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId(PROJECT_SELECTOR.trigger).click();
+    await page.getByTestId(PROJECT_SELECTOR.item(MOCK_FOUNDATION_SLUG)).click();
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'granted ⇒ marketing section appears').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(SIDEBAR.campaigns), 'granted ⇒ campaigns entry appears').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId(PROJECT_SELECTOR.trigger).click();
+    await page.getByTestId(PROJECT_SELECTOR.item(MOCK_DENIED_SLUG)).click();
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'switched back to denied ⇒ marketing section hidden again').toHaveCount(0, {
+      timeout: ELEMENT_TIMEOUT,
+    });
   });
 });

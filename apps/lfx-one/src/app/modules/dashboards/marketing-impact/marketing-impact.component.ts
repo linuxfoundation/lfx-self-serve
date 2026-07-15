@@ -78,17 +78,20 @@ export class MarketingImpactComponent {
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
 
   public constructor() {
-    // marketingViewGuard only runs on navigation. An in-place context switch (setFoundation /
-    // setProject uses Location.replaceState — no navigation) would otherwise leave this read-only
-    // surface mounted for a project the user can't audit, and its child tabs would fetch analytics
-    // for that context. Re-probe marketing_auditor on every context change and redirect (fail
-    // closed) when access is lost. The entry context was already authorized by the guard, so its
-    // probe resolves true and no redirect occurs; the getProject cache is shared with the guard.
-    toObservable(this.projectContextService.activeContext)
+    // marketingViewGuard only runs on navigation. An in-place context switch (setFoundation uses
+    // Location.replaceState — no navigation) would otherwise leave this read-only surface mounted
+    // for a project the user can't audit, and its child tabs would fetch analytics for that context.
+    // Re-probe marketing_auditor on every foundation change and redirect (fail closed) when access
+    // is lost. Key off `selectedFoundation` — not the lens-dependent `activeContext` — to match the
+    // guard's slug source: projectQueryParamGuard seeds the foundation from `?project=` before this
+    // page mounts, whereas `activeContext` still trails the lens on a cold deep-link (would give a
+    // null/project slug and redirect a legitimately-authorized user). The entry foundation was
+    // already authorized by the guard, so its probe resolves true; the getProject cache is shared.
+    toObservable(this.projectContextService.selectedFoundation)
       .pipe(
-        switchMap((ctx) =>
-          ctx?.slug
-            ? this.projectService.getProject(ctx.slug, false, { marketing: true }).pipe(
+        switchMap((foundation) =>
+          foundation?.slug
+            ? this.projectService.getProject(foundation.slug, false, { marketing: true }).pipe(
                 map((project) => project?.marketingAuditor === true),
                 catchError(() => of(false))
               )
@@ -98,7 +101,7 @@ export class MarketingImpactComponent {
       )
       .subscribe((allowed) => {
         if (!allowed) {
-          const slug = this.projectContextService.activeContext()?.slug;
+          const slug = this.projectContextService.selectedFoundation()?.slug;
           this.router.navigate(['/foundation/overview'], slug ? { queryParams: { project: slug } } : {});
         }
       });

@@ -38,17 +38,20 @@ export class CampaignsComponent {
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
 
   public constructor() {
-    // campaignAccessGuard only runs on navigation. An in-place context switch (setFoundation /
-    // setProject uses Location.replaceState — no navigation) would otherwise leave this managed
-    // surface mounted for a project the user can't manage, and its child tabs would fetch data for
-    // that context. Re-probe campaign_manager on every context change and redirect (fail closed)
-    // when access is lost. The entry context was already authorized by the guard, so its probe
-    // resolves true and no redirect occurs; the getProject cache is shared with the guard's fetch.
-    toObservable(this.projectContextService.activeContext)
+    // campaignAccessGuard only runs on navigation. An in-place context switch (setFoundation uses
+    // Location.replaceState — no navigation) would otherwise leave this managed surface mounted for
+    // a project the user can't manage, and its child tabs would fetch data for that context.
+    // Re-probe campaign_manager on every foundation change and redirect (fail closed) when access
+    // is lost. Key off `selectedFoundation` — not the lens-dependent `activeContext` — to match the
+    // guard's slug source: projectQueryParamGuard seeds the foundation from `?project=` before this
+    // page mounts, whereas `activeContext` still trails the lens on a cold deep-link (would give a
+    // null/project slug and redirect a legitimately-authorized user). The entry foundation was
+    // already authorized by the guard, so its probe resolves true; the getProject cache is shared.
+    toObservable(this.projectContextService.selectedFoundation)
       .pipe(
-        switchMap((ctx) =>
-          ctx?.slug
-            ? this.projectService.getProject(ctx.slug, false, { marketing: true }).pipe(
+        switchMap((foundation) =>
+          foundation?.slug
+            ? this.projectService.getProject(foundation.slug, false, { marketing: true }).pipe(
                 map((project) => project?.campaignManager === true),
                 catchError(() => of(false))
               )
@@ -58,7 +61,7 @@ export class CampaignsComponent {
       )
       .subscribe((allowed) => {
         if (!allowed) {
-          const slug = this.projectContextService.activeContext()?.slug;
+          const slug = this.projectContextService.selectedFoundation()?.slug;
           this.router.navigate(['/foundation/overview'], slug ? { queryParams: { project: slug } } : {});
         }
       });
