@@ -28,7 +28,7 @@ Existing params (`meeting_coordinator`) are unaffected and may be combined.
 }
 ```
 
-- When `marketing=true` was requested, both fields are **always present as a `boolean`**: `true` = grant, `false` = no grant **or** a transient upstream failure (`checkSingleAccess` is fail-closed and coerces errors to `false`). Fields are `undefined` **only** when the probe was not requested. Callers MUST NOT treat `undefined` (unrequested) as denial; guards that DID request the probe treat `!== true` as no access (fail closed).
+- When `marketing=true` was requested, both fields are **always present as a `boolean`**: `true` = grant, `false` = no grant **or** a transient upstream failure (the probe uses `AccessCheckService.checkAccessOrdered`, a single batched round-trip that is fail-closed and coerces errors to `false`). Fields are `undefined` **only** when the probe was not requested. Callers MUST NOT treat `undefined` (unrequested) as denial; guards that DID request the probe treat `!== true` as no access (fail closed).
 
 ## Angular consumer
 

@@ -325,14 +325,14 @@ export class ProjectService {
 
       // Marketing probes are independent of writer status (marketing_auditor / campaign_manager
       // are distinct FGA relations), so run them whenever the caller asks — even for writers.
-      // Two relations on the same resource id can't be distinguished by checkAccess's id-keyed
-      // result map, so run parallel single checks. checkSingleAccess is already fail-closed:
-      // upstream errors are swallowed inside checkAccess and surface as `false`, so on any
-      // transient failure the fields resolve to `false` (deny) rather than throwing.
+      // Both relations sit on the same project uid, so use the positional `checkAccessOrdered`
+      // (one batched /access-check round-trip) rather than two calls — the id-keyed `checkAccess`
+      // map would collapse them. It is fail-closed: any transient upstream error resolves both
+      // entries to `false` (deny) rather than throwing.
       if (includeMarketing) {
-        const [marketingAuditor, campaignManager] = await Promise.all([
-          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'marketing_auditor' }),
-          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'campaign_manager' }),
+        const [marketingAuditor, campaignManager] = await this.accessCheckService.checkAccessOrdered(req, [
+          { resource: 'project', id: project.uid, access: 'marketing_auditor' },
+          { resource: 'project', id: project.uid, access: 'campaign_manager' },
         ]);
         writerProject = { ...writerProject, marketingAuditor, campaignManager };
       }
