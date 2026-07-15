@@ -50,8 +50,8 @@ export class OrgLensProjectDetailService {
   }
 
   /** B6 — Influence Trend series. */
-  public getTrendBlock(orgUid: string, orgName: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Observable<OrgLensTrendBlock | null> {
-    return this.blockGet<OrgLensTrendBlock>(`${this.baseUrl(orgUid, projectSlug)}/trend`, { orgName, range });
+  public getTrendBlock(orgUid: string, orgName: string, projectSlug: string): Observable<OrgLensTrendBlock | null> {
+    return this.blockGet<OrgLensTrendBlock>(`${this.baseUrl(orgUid, projectSlug)}/trend`, { orgName });
   }
 
   /** B7 — Technical leaderboard board (influence rows + contribution activity rows). */

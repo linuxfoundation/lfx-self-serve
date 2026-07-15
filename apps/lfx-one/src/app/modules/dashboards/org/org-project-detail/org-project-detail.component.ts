@@ -523,7 +523,7 @@ export class OrgProjectDetailComponent {
             orgName: row.orgName,
             orgLogoUrl: row.orgLogoUrl,
             initials: this.initialsFor(row.orgName),
-            activityLabel: `${activity.toLocaleString()} - ${Math.round(activityPct)}%`,
+            activityLabel: `${activity.toLocaleString('en-US')} - ${Math.round(activityPct)}%`,
             bandLabel: '',
             bandSeverity: 'secondary' as const,
             isViewingOrg: row.isViewingOrg,
@@ -552,7 +552,9 @@ export class OrgProjectDetailComponent {
       // board/section level (ecosystemBoardNonLfMarker), never stamped on an individual org chip.
       // A row with no mapped tier renders a blank chip.
       const bandMeta = entry.level ? PD_BAND_TAG[entry.level] : null;
-      const activityLabel = isActivity ? `${entry.activity.toLocaleString()} - ${Math.round(entry.activityPct)}%` : entry.activity.toLocaleString();
+      const activityLabel = isActivity
+        ? `${entry.activity.toLocaleString('en-US')} - ${Math.round(entry.activityPct)}%`
+        : entry.activity.toLocaleString('en-US');
       return {
         rank: i + 1,
         orgName: entry.row.orgName,
@@ -611,12 +613,12 @@ export class OrgProjectDetailComponent {
     );
   }
 
-  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation, re-fetches on range change. */
+  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation. */
   private buildTrendState(): Observable<BlockState<OrgLensTrendBlock>> {
-    return combineLatest([this.orgUid$, this.slug$, this.range$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
-      filter(([, , , activated]) => activated),
-      switchMap(([uid, slug, range]) =>
-        this.detailService.getTrendBlock(uid, this.orgName(), slug, range).pipe(
+    return combineLatest([this.orgUid$, this.slug$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
+      filter(([, , activated]) => activated),
+      switchMap(([uid, slug]) =>
+        this.detailService.getTrendBlock(uid, this.orgName(), slug).pipe(
           map(
             (block): BlockState<OrgLensTrendBlock> => (block && block.trend.length > 0 ? { status: 'ready', data: block } : { status: 'empty', data: block })
           ),

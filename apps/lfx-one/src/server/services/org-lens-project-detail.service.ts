@@ -344,6 +344,7 @@ export class OrgLensProjectDetailService {
 
     const whereExtra = provider.where ? ` AND ${provider.where}` : '';
     let result: OrgLensCardRosterPage;
+    let degradedMissingObject = false;
     try {
       const [pageResult, countResult] = await Promise.all([
         this.snowflakeService.execute<Record<string, unknown>>(
@@ -363,9 +364,10 @@ export class OrgLensProjectDetailService {
       };
     } catch (error) {
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      degradedMissingObject = true;
       result = { rows: [], total: 0 };
     }
-    if (key !== null) {
+    if (key !== null && !degradedMissingObject) {
       await valkeyService.setJson(key, result, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return result;
@@ -971,7 +973,7 @@ export class OrgLensProjectDetailService {
       .split(',')
       .map((token) => token.trim())
       .filter((token) => token.length > 0)
-      .map((token) => OrgLensProjectDetailService.platformLabels[token] ?? token.charAt(0).toUpperCase() + token.slice(1));
+      .map((token) => OrgLensProjectDetailService.platformLabels[token.toLowerCase()] ?? token.charAt(0).toUpperCase() + token.slice(1));
     return labels.length > 0 ? [...new Set(labels)].join(', ') : 'LFX Insights';
   }
 

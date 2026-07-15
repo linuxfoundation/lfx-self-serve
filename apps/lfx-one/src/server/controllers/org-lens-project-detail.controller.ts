@@ -115,6 +115,7 @@ export class OrgLensProjectDetailController {
       org_uid: orgUid,
       project_slug: projectSlug,
       card_key: cardKey,
+      range,
       page,
       page_size: pageSize,
     });
