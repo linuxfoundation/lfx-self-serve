@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { EVENT_GROWTH_TOP_EVENTS_LIMIT, lfxColors } from '@lfx-one/shared/constants';
 import { formatCompact, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -72,6 +72,8 @@ export class EventGrowthDrawerComponent {
 
   // === Computed year label ===
   protected readonly currentYear = new Date().getUTCFullYear();
+  /** Server-side cap on the events list — the template discloses it when hit. */
+  protected readonly topEventsLimit = EVENT_GROWTH_TOP_EVENTS_LIMIT;
 
   // === Computed Signals ===
   protected readonly sortedTopEvents: Signal<EventGrowthTopEventView[]> = this.initSortedTopEvents();

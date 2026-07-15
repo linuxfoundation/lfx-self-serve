@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
@@ -4964,10 +4965,12 @@ export class ProjectService {
         GROUP BY YEAR(EVENT_START_DATE)
       `;
 
-      // Query 2: All events for the current year (past + upcoming), sorted by date.
-      // LIMIT 500 caps the payload — the TLF umbrella (no slug filter) returns
-      // every foundation's events, and the drawer renders the full list without
-      // virtualization.
+      // Query 2: Current-year events (past + upcoming), sorted by date, CAPPED at
+      // EVENT_GROWTH_TOP_EVENTS_LIMIT rows — the TLF umbrella (no slug filter)
+      // returns every foundation's events and the drawer renders the list
+      // unvirtualized. The drawer discloses the cap when the list hits it; the
+      // YTD summary metrics above are computed independently and remain
+      // uncapped.
       // Per-event revenue is shown in the event's LOCAL currency (NET_REVENUE),
       // labeled via CURRENCY_CODE — but ONLY when the event's registrations carry
       // exactly one distinct currency. Events are ASSUMED single-currency, not
@@ -4993,7 +4996,7 @@ export class ProjectService {
           ${slugFilter}
         GROUP BY EVENT_ID, EVENT_NAME, EVENT_START_DATE
         ORDER BY EVENT_START_DATE
-        LIMIT 500
+        LIMIT ${EVENT_GROWTH_TOP_EVENTS_LIMIT}
       `;
 
       // Query 3: Quarterly registration trend — bounded to the last 12 quarters (3 years)

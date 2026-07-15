@@ -192,8 +192,12 @@
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">{{ currentYear }} Events</h3>
         <p class="text-sm text-gray-600">
-          All events this year (past and upcoming), by date. Revenue is shown in each event's local currency; events with mixed or unknown currencies are shown
-          in USD.
+          @if (data().topEvents.length >= topEventsLimit) {
+            The first {{ topEventsLimit }} events this year by date (the list is capped).
+          } @else {
+            All events this year (past and upcoming), by date.
+          }
+          Revenue is shown in each event's local currency; events with mixed or unknown currencies are shown in USD.
         </p>
       </div>
       @if (data().topEvents.length > 0) {
