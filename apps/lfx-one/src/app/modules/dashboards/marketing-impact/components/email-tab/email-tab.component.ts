@@ -73,9 +73,6 @@ export class EmailTabComponent {
       const totalOpens = data.monthlyOpens?.reduce((s, v) => s + v, 0) ?? 0;
       const changePct = data.momChangePercentage;
 
-      const sendsMom = computeMomPct(data.monthlySends);
-      const opensMom = computeMomPct(data.monthlyOpens);
-
       const sends = data.monthlySends ?? [];
       const opens = data.monthlyOpens ?? [];
       const minLen = Math.min(sends.length, opens.length);
@@ -83,6 +80,13 @@ export class EmailTabComponent {
       const prevSends = minLen > 1 ? sends[minLen - 2] : undefined;
       const lastOpens = minLen > 0 ? (opens[minLen - 1] ?? 0) : 0;
       const prevOpens = minLen > 1 ? (opens[minLen - 2] ?? 0) : 0;
+
+      // The series are calendar zero-filled, so a trailing no-send month
+      // would read as a -100% MoM on sends/opens — a send gap, not a decline.
+      // MoM claims require the latest month to have actual sends.
+      const lastMonthActive = lastSends !== undefined && lastSends > 0;
+      const sendsMom = lastMonthActive ? computeMomPct(data.monthlySends) : null;
+      const opensMom = lastMonthActive ? computeMomPct(data.monthlyOpens) : null;
 
       // Open rate is undefined without sends — the series is calendar
       // zero-filled, so a no-send month must suppress the value and the MoM

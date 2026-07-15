@@ -2128,11 +2128,30 @@ export class ProjectService {
       const totalSessions = domainGroups.reduce((sum, g) => sum + g.totalSessions, 0);
       const totalPageViews = domainGroups.reduce((sum, g) => sum + g.totalPageViews, 0);
 
-      const dailyData = dailyResult.rows.map((row) => row.DAILY_SESSIONS ?? 0);
-      const dailyLabels = dailyResult.rows.map((row) => {
-        const date = new Date(row.ACTIVITY_DATE);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      });
+      // Zero-fill weekly buckets across the requested range: the query only
+      // groups weeks that HAVE rows, so a silent week would otherwise vanish
+      // and downstream trend math (e.g. the drawer's midpoint split) would
+      // compare observed weeks instead of the window's calendar halves. The
+      // walk is anchored to the first returned bucket's weekday so keys match
+      // Snowflake's DATE_TRUNC('WEEK') alignment; an empty result stays empty
+      // to preserve the no-data signal.
+      const dailyData: number[] = [];
+      const dailyLabels: string[] = [];
+      if (dailyResult.rows.length > 0) {
+        const weekRowsByStart = new Map(
+          dailyResult.rows.map((row) => [(ProjectService.toIsoDate(row.ACTIVITY_DATE) ?? '').slice(0, 10), row.DAILY_SESSIONS ?? 0])
+        );
+        const firstBucket = new Date(`${(ProjectService.toIsoDate(dailyResult.rows[0].ACTIVITY_DATE) ?? '').slice(0, 10)}T00:00:00Z`);
+        const weekCursor = new Date(`${resolved.startDate}T00:00:00Z`);
+        weekCursor.setUTCDate(weekCursor.getUTCDate() - ((weekCursor.getUTCDay() - firstBucket.getUTCDay() + 7) % 7));
+        const weekFillEnd = new Date(`${resolved.endDate}T00:00:00Z`);
+        while (weekCursor < weekFillEnd) {
+          const key = weekCursor.toISOString().slice(0, 10);
+          dailyData.push(weekRowsByStart.get(key) ?? 0);
+          dailyLabels.push(weekCursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+          weekCursor.setUTCDate(weekCursor.getUTCDate() + 7);
+        }
+      }
 
       return { totalSessions, totalPageViews, domainGroups, dailyData, dailyLabels };
     } catch (error) {

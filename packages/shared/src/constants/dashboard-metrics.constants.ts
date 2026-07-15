@@ -1037,10 +1037,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down')
         ),
       ],
-      caption:
-        brandReach.weeklyTrend.length > 0
-          ? `${brandReach.activePlatforms} platforms · ${trendWindow(Math.max(1, Math.round(brandReach.weeklyTrend.length / 4.345)))}`
-          : `${brandReach.activePlatforms} platforms`,
+      // weeklyTrend only holds weeks WITH rows, so its length is not the
+      // reporting window — the endpoint covers a fixed six-month range, so
+      // the window is labeled directly rather than estimated from row count.
+      caption: brandReach.weeklyTrend.length > 0 ? `${brandReach.activePlatforms} platforms · Last 6 months` : `${brandReach.activePlatforms} platforms`,
       tooltipText: 'Social followers across all platforms (stock) and monthly website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
