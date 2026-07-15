@@ -13,7 +13,8 @@ Defines the observable UI behavior each role must experience. These are the acce
 
 `showFoundation = hasBoardRole || isRootWriter || isRootMarketingAuditor`
 
-- A non-ED marketing user gains the foundation ("Projects") lens + project selector.
+- Lens unlock for marketing users is **ROOT-scoped**: `isRootMarketingAuditor` is true only when the user holds `marketing_auditor` on the tenant ROOT project (cascades down). A child-only grant does not unlock the foundation lens.
+- A non-ED marketing user with a ROOT grant gains the foundation ("Projects") lens + project selector and can browse/search the hierarchy reachable under that cascade.
 - `me` lens unchanged; `project`/`org` unchanged.
 
 ## Marketing-only foundation mode (FR-017)

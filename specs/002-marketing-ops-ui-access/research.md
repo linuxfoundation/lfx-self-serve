@@ -30,11 +30,13 @@ This document resolves the open design decisions for gating the Marketing surfac
 - `marketing_auditor` cascades from ROOT, so a ROOT grant is the correct, cheapest single probe that means "this user has marketing visibility somewhere in the hierarchy" — the exact condition for offering the foundation lens.
 - `isRootWriter` already establishes the pattern of a request-scoped ROOT access probe that promotes navigation capability; this is a minimal, well-trodden extension.
 - Per-project gating still applies after lens selection — the lens signal only decides whether the user can _navigate_; the guards decide what they can _open_.
+- A child-only `marketing_auditor` grant (no ROOT) does **not** unlock the foundation lens. Team assignment is expected at ROOT (manual / LFXV2-1760); "browse all projects" for marketing users means the hierarchy reachable under that ROOT cascade, not a full LFX catalog and not child-only grants.
 
 **Alternatives considered**:
 
 - _Grant foundation lens to everyone and rely on guards_: over-exposes the lens/selector to users with no marketing access; poor UX and inconsistent with existing lens gating. Rejected.
 - _Derive from the personas list only_: marketing_ops is not a persona; encoding it as a persona would blur the persona (presentation) vs. authorization (FGA) separation documented in the frontend permission model. Rejected.
+- _ListObjects / any-project marketing grant for lens unlock_: would admit child-only auditors without ROOT; deferred — out of scope for LFXV2-2236; ROOT assignment is the operational model.
 
 **Consequence for the project selector**: The foundation/project selectors are populated by `NavigationService` from `/api/nav/lens-items`. Marketing users must be able to browse/search all projects they can audit (FR-002/SC-008). Confirm the lens-items source returns the hierarchy for marketing-cascaded users; if it is persona-scoped, extend it to include marketing-audited projects. This is flagged as a task-level verification in `tasks`.
 
