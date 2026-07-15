@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { inject, PLATFORM_ID } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
+import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 
@@ -15,15 +18,43 @@ import { PersonaService } from '../services/persona.service';
  * Groups, Documents, Governance, etc. (FR-017). Those routes keep this guard; marketing
  * routes use `marketingViewGuard` / `campaignAccessGuard` instead. Overview stays open so
  * Marketing Ops can land on the dashboard Marketing Overview section.
+ *
+ * `isRootWriter` is API-hydrated (not cookie-seeded), so on a cold browser session this
+ * guard waits for `personaLoaded` before denying — otherwise a root writer would be
+ * redirected from every product route before the personas response arrives. SSR defers
+ * the real decision to the browser re-run (same pattern as `orgLensEnabledGuard`).
  */
-export const foundationProductGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+export const foundationProductGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
   const router = inject(Router);
+  const platformId = inject(PLATFORM_ID);
 
+  const deny = () => {
+    const slug = route.queryParamMap.get('project');
+    return slug ? router.createUrlTree(['/foundation/overview'], { queryParams: { project: slug } }) : router.parseUrl('/foundation/overview');
+  };
+
+  const decide = () => (personaService.hasBoardRole() || personaService.isRootWriter() ? true : deny());
+
+  // Fast path: board persona is cookie-seeded and available immediately.
   if (personaService.hasBoardRole() || personaService.isRootWriter()) {
     return true;
   }
 
-  const slug = route.queryParamMap.get('project');
-  return slug ? router.createUrlTree(['/foundation/overview'], { queryParams: { project: slug } }) : router.parseUrl('/foundation/overview');
+  // SSR cannot await the personas API — allow match and let the browser guard decide.
+  if (!isPlatformBrowser(platformId)) {
+    return true;
+  }
+
+  if (!personaService.personaLoaded()) {
+    await firstValueFrom(
+      toObservable(personaService.personaLoaded).pipe(
+        filter((loaded): loaded is true => loaded === true),
+        timeout(10_000),
+        catchError(() => of(true))
+      )
+    );
+  }
+
+  return decide();
 };

@@ -9,7 +9,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
@@ -76,22 +76,19 @@ export class BoardMemberDashboardComponent {
   private initializeBoardMemberActions(): Signal<PendingActionItem[]> {
     // Convert project signal to observable to react to changes (handles both project and foundation)
     const project$ = toObservable(this.selectedProject);
+    const marketingOnly$ = toObservable(this.isMarketingOnlyFoundation);
 
     return toSignal(
-      this.refresh$.pipe(
+      combineLatest([this.refresh$, project$, marketingOnly$]).pipe(
         takeUntilDestroyed(),
-        switchMap(() => {
-          return project$.pipe(
-            switchMap((project) => {
-              // If no project/foundation selected, return empty array
-              if (!project?.slug || !project?.uid) {
-                return of([]);
-              }
+        switchMap(([, project, marketingOnly]) => {
+          // Marketing-only foundation mode never renders pending actions — skip the expensive
+          // aggregator so newly admitted marketing users don't pay for non-marketing dashboard data.
+          if (marketingOnly || !project?.slug || !project?.uid) {
+            return of([]);
+          }
 
-              // Fetch all pending actions from unified backend endpoint
-              return this.projectService.getPendingActions(project.slug, project.uid, 'board-member').pipe(catchError(() => of([])));
-            })
-          );
+          return this.projectService.getPendingActions(project.slug, project.uid, 'board-member').pipe(catchError(() => of([])));
         })
       ),
       { initialValue: [] }

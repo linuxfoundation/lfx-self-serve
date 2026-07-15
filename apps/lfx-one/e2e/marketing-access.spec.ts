@@ -232,7 +232,7 @@ test.describe('US1: Marketing Ops (non-ED) — marketing_auditor + campaign_mana
     await expect(page.getByRole('link', { name: 'Events' }), 'marketing-only ⇒ Events nav absent').toHaveCount(0, {
       timeout: ELEMENT_TIMEOUT,
     });
-    await expect(page.getByTestId('foundation-health-placeholder'), 'marketing-only ⇒ Foundation Health absent').toHaveCount(0, {
+    await expect(page.getByTestId('foundation-health-section'), 'marketing-only ⇒ Foundation Health absent').toHaveCount(0, {
       timeout: ELEMENT_TIMEOUT,
     });
 
