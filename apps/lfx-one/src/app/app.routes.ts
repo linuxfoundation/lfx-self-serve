@@ -169,7 +169,7 @@ export const routes: Routes = [
           },
           {
             path: 'meetings',
-            data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in.', icon: 'fa-light fa-video' },
+            data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in — coming soon.', icon: 'fa-light fa-video' },
             loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
           },
           {
