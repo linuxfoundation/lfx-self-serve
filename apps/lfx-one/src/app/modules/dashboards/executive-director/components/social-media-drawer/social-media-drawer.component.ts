@@ -308,11 +308,19 @@ export class SocialMediaDrawerComponent {
         }
       }
 
-      // Monthly trend
+      // Monthly trend. The series only contains months with snapshots, so the
+      // last three points can span gaps — "3 consecutive months" is only
+      // claimable when they are truly adjacent calendar months. (Follower
+      // counts are snapshots, so zero-filling gaps would be wrong here.)
       if (monthlyData.length >= 3) {
         const recent3 = monthlyData.slice(-3);
-        const isGrowing = recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
-        const isShrinking = recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
+        const ordinals = recent3.map((point) => {
+          const date = new Date(point.month);
+          return date.getUTCFullYear() * 12 + date.getUTCMonth();
+        });
+        const consecutive = ordinals.every((ord) => Number.isFinite(ord)) && ordinals[1] === ordinals[0] + 1 && ordinals[2] === ordinals[1] + 1;
+        const isGrowing = consecutive && recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
+        const isShrinking = consecutive && recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
         if (isGrowing) {
           insights.push({ text: 'Follower count growing for 3 consecutive months', type: 'driver' });
         } else if (isShrinking) {

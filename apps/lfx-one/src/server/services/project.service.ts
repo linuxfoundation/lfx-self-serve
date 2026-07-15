@@ -2339,9 +2339,13 @@ export class ProjectService {
         const lastOrd = monthOrdinal(ProjectService.toIsoDate(monthlyRows[monthlyRows.length - 1].PUBLISHED_MONTH_DATE));
         const priorOrd = monthOrdinal(ProjectService.toIsoDate(monthlyRows[monthlyRows.length - 2].PUBLISHED_MONTH_DATE));
         const adjacent = lastOrd !== null && priorOrd !== null && lastOrd - priorOrd === 1;
+        // Both months must have SENDS: with zero-filled rows, a trailing
+        // no-send month has CTR 0 by construction — CTR is undefined without
+        // sends, and reporting it as a "-100% MoM" drop would be noise.
+        const lastHasSends = (monthlyRows[monthlyRows.length - 1].TOTAL_SENDS ?? 0) > 0;
         const current = rawMonthlyCtrs[rawMonthlyCtrs.length - 1];
         const prior = rawMonthlyCtrs[rawMonthlyCtrs.length - 2];
-        if (adjacent && prior > 0) {
+        if (adjacent && lastHasSends && prior > 0) {
           momChangePercentage = ((current - prior) / prior) * 100;
         }
       }

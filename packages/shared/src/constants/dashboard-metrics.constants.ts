@@ -758,9 +758,10 @@ function flatSparklineData(value: number): number[] {
   return [Math.max(value - nudge, 0), value, value, value, value, value + nudge];
 }
 
-/** Build a time-window label from the number of data points available.
- *  Reports the ACTUAL count — capping at 6 mislabeled the 12-month member
- *  growth series as "Last 6 months". */
+/** Build a "Last N months" label from a caller-supplied month count. Formats
+ *  exactly the number it is given (no cap — capping at 6 mislabeled the
+ *  12-month member growth series); callers estimating the count from other
+ *  granularities (e.g. weeks) own the accuracy of the estimate. */
 function trendWindow(monthCount: number): string {
   if (monthCount <= 0) return '';
   return `Last ${monthCount} month${monthCount === 1 ? '' : 's'}`;
