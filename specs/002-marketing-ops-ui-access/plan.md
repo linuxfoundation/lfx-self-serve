@@ -27,6 +27,7 @@ Technical approach: extend the existing BFF `AccessCheckService` access-type uni
 **Performance Goals**: No new latency targets. Each guarded navigation adds at most one `/access-check` round-trip per project context, batched (both relations in one call where possible) and de-duplicated via the existing `getProject` `shareReplay` cache. Persona-based fast paths are intentionally NOT used (see Constraints).
 
 **Constraints**:
+
 - **Per-project correctness**: access MUST be evaluated against the selected project's UID — no global persona fast-path (an ED of Project A must not pass for Project B). This differs from `newsletterAccessGuard`, which keeps an ED persona fast-path.
 - **Fail closed**: any probe error ⇒ treat as no access (matches `AccessCheckService` fallback + guard denial).
 - **SSR-safe**: guards run on server and client; no browser-only APIs without `isPlatformBrowser`; persona/lens state is cookie-seeded.
@@ -37,19 +38,19 @@ Technical approach: extend the existing BFF `AccessCheckService` access-type uni
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 The project constitution file (`.specify/memory/constitution.md`) is an unpopulated template, so there are no ratified numbered principles to gate against. In its place, this plan is gated against the repository's documented conventions (`CLAUDE.md`, `.claude/rules/`, `docs/architecture/`), which serve as the de-facto constitution:
 
-| Gate | Assessment |
-|------|------------|
-| Shared types in `@lfx-one/shared` (no local `interface`/module consts in `apps/lfx-one`) | PASS — new access types and `Project` fields go in `packages/shared`. |
-| Types in `interfaces/`, runtime values in `constants/` | PASS — union edits are in `.interface.ts`; no new runtime constants required beyond existing. |
-| PrimeNG interface referencing / LFX component wrappers | PASS — no new UI primitives; reuse existing sidebar/nav/dashboard components. |
-| SSR safety | PASS — guards/services are SSR-safe; no new browser-only APIs. |
-| Security: prefer per-project FGA over persona; fail closed | PASS — core design intent. |
-| Component replacement rule (DELETE→CREATE) | PASS — changes are non-breaking in-place edits (visibility gates, route data), not full component replacements. |
-| MIT license headers on new files | PASS — new guard(s)/service(s) will include headers. |
+| Gate                                                                                     | Assessment                                                                                                      |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Shared types in `@lfx-one/shared` (no local `interface`/module consts in `apps/lfx-one`) | PASS — new access types and `Project` fields go in `packages/shared`.                                           |
+| Types in `interfaces/`, runtime values in `constants/`                                   | PASS — union edits are in `.interface.ts`; no new runtime constants required beyond existing.                   |
+| PrimeNG interface referencing / LFX component wrappers                                   | PASS — no new UI primitives; reuse existing sidebar/nav/dashboard components.                                   |
+| SSR safety                                                                               | PASS — guards/services are SSR-safe; no new browser-only APIs.                                                  |
+| Security: prefer per-project FGA over persona; fail closed                               | PASS — core design intent.                                                                                      |
+| Component replacement rule (DELETE→CREATE)                                               | PASS — changes are non-breaking in-place edits (visibility gates, route data), not full component replacements. |
+| MIT license headers on new files                                                         | PASS — new guard(s)/service(s) will include headers.                                                            |
 
 **Result**: PASS (no violations; Complexity Tracking not required).
 

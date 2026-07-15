@@ -29,15 +29,15 @@ The following per-project relations exist in the platform authorization model an
 
 ### Surface → grant → audience mapping
 
-| Surface | Governing grant | Who can see it | Access level |
-|---------|-----------------|----------------|--------------|
+| Surface                                                        | Governing grant                                                                   | Who can see it                       | Access level                                            |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------- |
 | Project browse / search / select (to reach marketing surfaces) | any marketing grant (`marketing_ops`, `marketing_auditor`, or `campaign_manager`) | ED, Marketing Ops, Marketing Auditor | Navigate to any project they hold a marketing grant for |
-| Marketing **navigation section** (sidebar) | `marketing_auditor` | ED, Marketing Ops, Marketing Auditor | View entries |
-| **Marketing Impact** page | `marketing_auditor` | ED, Marketing Ops, Marketing Auditor | Read-only |
-| **Campaigns** page | `campaign_manager` (= ED or Marketing Ops) | ED, Marketing Ops | Full view **and** actions |
-| Dashboard **Marketing Overview** section | ED or Marketing Ops (equivalently, the `campaign_manager` grant) | ED, Marketing Ops | Read-only (no actions) |
-| **Health Metrics** page | ED persona (unchanged) | ED | Unchanged |
-| Rest of ED dashboard | ED persona (unchanged) | ED | Unchanged |
+| Marketing **navigation section** (sidebar)                     | `marketing_auditor`                                                               | ED, Marketing Ops, Marketing Auditor | View entries                                            |
+| **Marketing Impact** page                                      | `marketing_auditor`                                                               | ED, Marketing Ops, Marketing Auditor | Read-only                                               |
+| **Campaigns** page                                             | `campaign_manager` (= ED or Marketing Ops)                                        | ED, Marketing Ops                    | Full view **and** actions                               |
+| Dashboard **Marketing Overview** section                       | ED or Marketing Ops (equivalently, the `campaign_manager` grant)                  | ED, Marketing Ops                    | Read-only (no actions)                                  |
+| **Health Metrics** page                                        | ED persona (unchanged)                                                            | ED                                   | Unchanged                                               |
+| Rest of ED dashboard                                           | ED persona (unchanged)                                                            | ED                                   | Unchanged                                               |
 
 Effective outcomes:
 
@@ -57,7 +57,7 @@ Effective outcomes:
 - Q: Who can access the Campaigns page and its actions, and is there a view-only tier? → A: EDs and Marketing Ops only (the `campaign_manager` grant), with full view and actions — no separate view-only tier. Marketing Auditors have no Campaigns access.
 - Q: Are there any other product page permission changes in this feature? → A: No — only the marketing surfaces above change; all other product page permissions are unchanged.
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Find a project and view its marketing dashboards (Priority: P1)
 
@@ -120,7 +120,7 @@ An ED or Marketing Ops team member views the dashboard for an authorized project
 - **Data fetched before authorization known**: Marketing data requests are not issued until the relevant access check has passed for the selected project.
 - **Mixed grants across a hierarchy**: A user granted at one branch but not another sees marketing only where granted.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -142,7 +142,7 @@ An ED or Marketing Ops team member views the dashboard for an authorized project
 - **FR-016**: Executive Directors MUST retain the marketing access they have today for their own projects (Marketing nav, Marketing Impact, Campaigns with actions, and the Marketing Overview section), now decided by the authorization check, with no regression.
 - **FR-017**: The system MUST NOT change any product page permissions other than the marketing surfaces defined in this specification.
 
-### Key Entities *(include if feature involves data)*
+### Key Entities _(include if feature involves data)_
 
 - **Marketing viewing grant (`marketing_auditor`)**: Per-project read permission that governs the Marketing navigation section and the Marketing Impact page; held by EDs, Marketing Ops, and Marketing Auditors; cascades from parent projects.
 - **Campaign management grant (`campaign_manager`)**: Per-project permission that governs the Campaigns page (full view + actions) and the dashboard Marketing Overview section; resolves to EDs and Marketing Ops (no independent assignment); excludes Marketing Auditors.
@@ -150,7 +150,7 @@ An ED or Marketing Ops team member views the dashboard for an authorized project
 - **Selected project context**: The project the user is currently viewing, which scopes every marketing access check and data request.
 - **Marketing surfaces**: The Marketing navigation section, the Marketing Impact page (analytics dashboards), the Campaigns page (planning, implementation, monitoring, optimization), and the dashboard Marketing Overview section.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

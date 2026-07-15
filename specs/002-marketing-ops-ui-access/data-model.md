@@ -4,11 +4,11 @@ This feature adds no new persisted entities. It introduces (a) two new authoriza
 
 ## Authorization relations (upstream OpenFGA — source of truth, not defined here)
 
-| Relation | Meaning | Resolves to (per project) | Cascades from parent |
-|----------|---------|---------------------------|----------------------|
-| `marketing_auditor` | Read marketing dashboards + marketing nav | Marketing Ops team, EDs, assigned Marketing Auditors | Yes |
-| `campaign_manager` | Full campaign view + actions; Marketing Overview section | EDs, Marketing Ops (`executive_director or marketing_ops`) | Via `marketing_ops` cascade; no direct `campaign_manager from parent` |
-| `marketing_ops` | Seeds the two above | Marketing Ops team | Yes |
+| Relation            | Meaning                                                  | Resolves to (per project)                                  | Cascades from parent                                                  |
+| ------------------- | -------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| `marketing_auditor` | Read marketing dashboards + marketing nav                | Marketing Ops team, EDs, assigned Marketing Auditors       | Yes                                                                   |
+| `campaign_manager`  | Full campaign view + actions; Marketing Overview section | EDs, Marketing Ops (`executive_director or marketing_ops`) | Via `marketing_ops` cascade; no direct `campaign_manager from parent` |
+| `marketing_ops`     | Seeds the two above                                      | Marketing Ops team                                         | Yes                                                                   |
 
 The UI checks `marketing_auditor` and `campaign_manager` on `project:<uid>`; it does not check `marketing_ops` directly.
 
@@ -27,18 +27,18 @@ The UI checks `marketing_auditor` and `campaign_manager` on `project:<uid>`; it 
 
 ### `Project` (interfaces/project.interface.ts) — response-only additions
 
-| Field | Type | Semantics |
-|-------|------|-----------|
+| Field              | Type       | Semantics                                                                                                                                               |
+| ------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `marketingAuditor` | `boolean?` | `true` = user holds `marketing_auditor` on this project; `false` = probed clean, no grant; `undefined` = not probed / transient failure (NOT a denial). |
-| `campaignManager` | `boolean?` | `true` = user holds `campaign_manager` (⇒ ED or Marketing Ops); `false` = probed clean, no grant; `undefined` = not probed / transient failure. |
+| `campaignManager`  | `boolean?` | `true` = user holds `campaign_manager` (⇒ ED or Marketing Ops); `false` = probed clean, no grant; `undefined` = not probed / transient failure.         |
 
 - Probe-gated: populated only when the caller requests the marketing probe (see `contracts/project-probe.contract.md`), mirroring `meetingCoordinator`.
 - Guards/visibility MUST treat only `=== true` as access; `undefined`/`false` ⇒ no access (fail closed).
 
 ### Personas API response — ROOT marketing signal
 
-| Field | Type | Semantics |
-|-------|------|-----------|
+| Field                    | Type      | Semantics                                                                                                                                                                                             |
+| ------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `isRootMarketingAuditor` | `boolean` | `true` when the user holds `marketing_auditor` on the ROOT project (⇒ marketing visibility somewhere in the hierarchy). Drives foundation-lens availability. Parallel to the existing `isRootWriter`. |
 
 (Added to the persona/personas API response interface used by `PersonaService`; exact interface name to be confirmed at task time — it is the same response that currently carries `isRootWriter`.)
@@ -47,31 +47,31 @@ The UI checks `marketing_auditor` and `campaign_manager` on `project:<uid>`; it 
 
 ### `PersonaService`
 
-| Signal | Type | Source |
-|--------|------|--------|
+| Signal                   | Type              | Source                                                                   |
+| ------------------------ | ----------------- | ------------------------------------------------------------------------ |
 | `isRootMarketingAuditor` | `Signal<boolean>` | Hydrated from personas API (cookie-seedable like `isRootWriter` for SSR) |
 
 ### `ProjectContextService`
 
-| Signal | Type | Derivation |
-|--------|------|------------|
-| `canViewMarketing` | `Signal<boolean>` | `getProject(activeContext.slug, false, { marketing: true }) ⇒ project.marketingAuditor === true` |
-| `canManageCampaigns` | `Signal<boolean>` | `… ⇒ project.campaignManager === true` |
+| Signal               | Type              | Derivation                                                                                       |
+| -------------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
+| `canViewMarketing`   | `Signal<boolean>` | `getProject(activeContext.slug, false, { marketing: true }) ⇒ project.marketingAuditor === true` |
+| `canManageCampaigns` | `Signal<boolean>` | `… ⇒ project.campaignManager === true`                                                           |
 
 - Both recompute when `activeContext()` changes (project switch) — satisfies FR-009.
 - Fail closed: null project or `undefined`/`false` flag ⇒ `false`.
 
 ## Surface → state → audience (authoritative mapping)
 
-| Surface | Gated by | Audience | Access level |
-|---------|----------|----------|--------------|
-| Foundation ("Projects") lens availability | `hasBoardRole ∨ isRootWriter ∨ isRootMarketingAuditor` | Board/ED + any marketing user | Navigate |
-| Sidebar Marketing section + Marketing Impact entry | `canViewMarketing` | ED + Marketing Ops + Marketing Auditor | View entry |
-| Marketing Impact route/page | `marketingViewGuard` (`project.marketingAuditor`) | ED + Marketing Ops + Marketing Auditor | Read-only |
-| Sidebar Campaigns entry | `canManageCampaigns` | ED + Marketing Ops | View entry |
-| Campaigns route/page | `campaignAccessGuard` (`project.campaignManager`) | ED + Marketing Ops | Full view + actions |
-| Dashboard Marketing Overview section | `canManageCampaigns` | ED + Marketing Ops | Read-only |
-| Health Metrics + rest of ED dashboard | ED persona (unchanged) | ED | Unchanged |
+| Surface                                            | Gated by                                               | Audience                               | Access level        |
+| -------------------------------------------------- | ------------------------------------------------------ | -------------------------------------- | ------------------- |
+| Foundation ("Projects") lens availability          | `hasBoardRole ∨ isRootWriter ∨ isRootMarketingAuditor` | Board/ED + any marketing user          | Navigate            |
+| Sidebar Marketing section + Marketing Impact entry | `canViewMarketing`                                     | ED + Marketing Ops + Marketing Auditor | View entry          |
+| Marketing Impact route/page                        | `marketingViewGuard` (`project.marketingAuditor`)      | ED + Marketing Ops + Marketing Auditor | Read-only           |
+| Sidebar Campaigns entry                            | `canManageCampaigns`                                   | ED + Marketing Ops                     | View entry          |
+| Campaigns route/page                               | `campaignAccessGuard` (`project.campaignManager`)      | ED + Marketing Ops                     | Full view + actions |
+| Dashboard Marketing Overview section               | `canManageCampaigns`                                   | ED + Marketing Ops                     | Read-only           |
+| Health Metrics + rest of ED dashboard              | ED persona (unchanged)                                 | ED                                     | Unchanged           |
 
 ## State transitions
 

@@ -4,10 +4,10 @@ Defines the observable UI behavior each role must experience. These are the acce
 
 ## Reactive access signals (`ProjectContextService`)
 
-| Signal | True when | Drives |
-|--------|-----------|--------|
-| `canViewMarketing()` | active project's `marketingAuditor === true` | Marketing sidebar section + Marketing Impact entry |
-| `canManageCampaigns()` | active project's `campaignManager === true` | Campaigns entry + Campaigns route + Marketing Overview section |
+| Signal                 | True when                                    | Drives                                                         |
+| ---------------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| `canViewMarketing()`   | active project's `marketingAuditor === true` | Marketing sidebar section + Marketing Impact entry             |
+| `canManageCampaigns()` | active project's `campaignManager === true`  | Campaigns entry + Campaigns route + Marketing Overview section |
 
 ## Lens availability (`LensService.getAllowedLensIds`)
 
@@ -18,21 +18,21 @@ Defines the observable UI behavior each role must experience. These are the acce
 
 ## Sidebar (`SidebarNavService`, foundation lens)
 
-| Section/entry | Visible when | Notes |
-|---------------|--------------|-------|
-| Metrics → Health Metrics | `currentPersona() === 'executive-director'` | UNCHANGED (ED-only) |
-| Metrics → Social Listening | ED (as today) | UNCHANGED |
-| Marketing (section) | `canViewMarketing()` | was ED-only |
-| Marketing → Marketing Impact | `canViewMarketing()` | was ED-only |
-| Marketing → Campaigns | `canManageCampaigns()` | was ED-only; auditors excluded |
+| Section/entry                | Visible when                                | Notes                          |
+| ---------------------------- | ------------------------------------------- | ------------------------------ |
+| Metrics → Health Metrics     | `currentPersona() === 'executive-director'` | UNCHANGED (ED-only)            |
+| Metrics → Social Listening   | ED (as today)                               | UNCHANGED                      |
+| Marketing (section)          | `canViewMarketing()`                        | was ED-only                    |
+| Marketing → Marketing Impact | `canViewMarketing()`                        | was ED-only                    |
+| Marketing → Campaigns        | `canManageCampaigns()`                      | was ED-only; auditors excluded |
 
 ## Routes (`app.routes.ts`)
 
-| Path | Guard(s) before | Guard(s) after |
-|------|-----------------|----------------|
-| `foundation/health-metrics` | `executiveDirectorGuard`, `projectQueryParamGuard` | UNCHANGED |
-| `foundation/marketing-impact` | `executiveDirectorGuard`, `projectQueryParamGuard` | `marketingViewGuard`, `projectQueryParamGuard` |
-| `foundation/campaigns` | `executiveDirectorGuard`, `projectQueryParamGuard` | `campaignAccessGuard`, `projectQueryParamGuard` |
+| Path                          | Guard(s) before                                    | Guard(s) after                                  |
+| ----------------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| `foundation/health-metrics`   | `executiveDirectorGuard`, `projectQueryParamGuard` | UNCHANGED                                       |
+| `foundation/marketing-impact` | `executiveDirectorGuard`, `projectQueryParamGuard` | `marketingViewGuard`, `projectQueryParamGuard`  |
+| `foundation/campaigns`        | `executiveDirectorGuard`, `projectQueryParamGuard` | `campaignAccessGuard`, `projectQueryParamGuard` |
 
 ## Dashboard Marketing Overview section
 
@@ -42,13 +42,13 @@ Defines the observable UI behavior each role must experience. These are the acce
 
 ## Role → expected UI matrix (per selected project P)
 
-| Role (on P) | Foundation lens | Marketing section | Marketing Impact | Campaigns | Marketing Overview | Health Metrics |
-|-------------|-----------------|-------------------|------------------|-----------|--------------------|----------------|
-| ED of P | ✅ | ✅ | ✅ read | ✅ full | ✅ read | ✅ |
-| Marketing Ops (grant reaches P) | ✅ | ✅ | ✅ read | ✅ full | ✅ read | ❌ |
-| Marketing Auditor (grant reaches P) | ✅ | ✅ | ✅ read | ❌ (link hidden, route blocked) | ❌ | ❌ |
-| Project owner/writer, no marketing grant | (per existing rules) | ❌ | ❌ blocked | ❌ blocked | ❌ | ❌ |
-| No marketing grant, non-ED | per existing | ❌ | ❌ blocked | ❌ blocked | ❌ | ❌ |
+| Role (on P)                              | Foundation lens      | Marketing section | Marketing Impact | Campaigns                       | Marketing Overview | Health Metrics |
+| ---------------------------------------- | -------------------- | ----------------- | ---------------- | ------------------------------- | ------------------ | -------------- |
+| ED of P                                  | ✅                   | ✅                | ✅ read          | ✅ full                         | ✅ read            | ✅             |
+| Marketing Ops (grant reaches P)          | ✅                   | ✅                | ✅ read          | ✅ full                         | ✅ read            | ❌             |
+| Marketing Auditor (grant reaches P)      | ✅                   | ✅                | ✅ read          | ❌ (link hidden, route blocked) | ❌                 | ❌             |
+| Project owner/writer, no marketing grant | (per existing rules) | ❌                | ❌ blocked       | ❌ blocked                      | ❌                 | ❌             |
+| No marketing grant, non-ED               | per existing         | ❌                | ❌ blocked       | ❌ blocked                      | ❌                 | ❌             |
 
 ## Failure/edge behavior
 

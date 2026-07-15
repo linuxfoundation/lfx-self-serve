@@ -33,7 +33,5 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
 
   const deniedUrl = router.createUrlTree(['/foundation/overview'], { queryParams: { project: slug } });
 
-  return projectService.getProject(slug, false, { marketing: true }).pipe(
-    map((project) => (project?.campaignManager === true ? true : deniedUrl))
-  );
+  return projectService.getProject(slug, false, { marketing: true }).pipe(map((project) => (project?.campaignManager === true ? true : deniedUrl)));
 };

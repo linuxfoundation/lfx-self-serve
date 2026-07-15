@@ -25,7 +25,7 @@ Web app in a Turborepo monorepo: shared types in `packages/shared/src/`, BFF in 
 **Purpose**: Preconditions for building and validating the feature. No project scaffolding is needed (existing monorepo).
 
 - [ ] T001 Ensure OpenFGA validation fixtures exist per `specs/002-marketing-ops-ui-access/quickstart.md` prerequisites — test users/tuples for: Marketing Ops (non-ED, granted at ROOT), Marketing Auditor (single-project), ED (single-project), and a project writer/owner with no marketing grant (manual tuple insertion / `/nats`; deferred assignment UI is LFXV2-1760). — DEFERRED: requires the shared dev/FGA environment; not creatable from the repo. Needed for T027 manual validation.
-- [X] T002 [P] Confirm baseline gates pass before changes: run `yarn check-types` and `yarn lint:check` from repo root.
+- [x] T002 [P] Confirm baseline gates pass before changes: run `yarn check-types` and `yarn lint:check` from repo root.
 
 ---
 
@@ -35,12 +35,12 @@ Web app in a Turborepo monorepo: shared types in `packages/shared/src/`, BFF in 
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T003 [P] Extend `AccessCheckAccessType` with `'marketing_auditor' | 'campaign_manager'` in `packages/shared/src/interfaces/access-check.interface.ts` (per `contracts/access-check.contract.md`).
-- [X] T004 [P] Add response-only `marketingAuditor?: boolean` and `campaignManager?: boolean` to `Project` in `packages/shared/src/interfaces/project.interface.ts`, documenting the same `undefined = not probed / not a denial` semantics as `meetingCoordinator` (per `data-model.md`).
-- [X] T005 Add probe-gated marketing enrichment to `getProjectById` in `apps/lfx-one/src/server/services/project.service.ts`: when requested, batch-check `marketing_auditor` and `campaign_manager` for the project UID via `AccessCheckService.checkAccess` and map results to the camelCase `marketingAuditor` / `campaignManager` fields (mirror the `meetingCoordinator` block; leave `undefined` when not requested). Depends on T003, T004.
-- [X] T006 Read a `?marketing=true` query flag in `getProjectBySlug` (and the `getProjectById` slug path) in `apps/lfx-one/src/server/controllers/project.controller.ts` and thread it into the service call. Depends on T005.
-- [X] T007 Add a `marketing?: boolean` option to `ProjectService.getProject` in `apps/lfx-one/src/app/shared/services/project.service.ts`, sending `?marketing=true` and including the flag in the cache key (like the existing `:mc` segment). Depends on T004.
-- [X] T008 Add `canViewMarketing` (from `project.marketingAuditor === true`) and `canManageCampaigns` (from `project.campaignManager === true`) computed signals to `ProjectContextService` in `apps/lfx-one/src/app/shared/services/project-context.service.ts`, probing the active context slug via `getProject(slug, false, { marketing: true })` and failing closed. Depends on T007.
+- [x] T003 [P] Extend `AccessCheckAccessType` with `'marketing_auditor' | 'campaign_manager'` in `packages/shared/src/interfaces/access-check.interface.ts` (per `contracts/access-check.contract.md`).
+- [x] T004 [P] Add response-only `marketingAuditor?: boolean` and `campaignManager?: boolean` to `Project` in `packages/shared/src/interfaces/project.interface.ts`, documenting the same `undefined = not probed / not a denial` semantics as `meetingCoordinator` (per `data-model.md`).
+- [x] T005 Add probe-gated marketing enrichment to `getProjectById` in `apps/lfx-one/src/server/services/project.service.ts`: when requested, batch-check `marketing_auditor` and `campaign_manager` for the project UID via `AccessCheckService.checkAccess` and map results to the camelCase `marketingAuditor` / `campaignManager` fields (mirror the `meetingCoordinator` block; leave `undefined` when not requested). Depends on T003, T004.
+- [x] T006 Read a `?marketing=true` query flag in `getProjectBySlug` (and the `getProjectById` slug path) in `apps/lfx-one/src/server/controllers/project.controller.ts` and thread it into the service call. Depends on T005.
+- [x] T007 Add a `marketing?: boolean` option to `ProjectService.getProject` in `apps/lfx-one/src/app/shared/services/project.service.ts`, sending `?marketing=true` and including the flag in the cache key (like the existing `:mc` segment). Depends on T004.
+- [x] T008 Add `canViewMarketing` (from `project.marketingAuditor === true`) and `canManageCampaigns` (from `project.campaignManager === true`) computed signals to `ProjectContextService` in `apps/lfx-one/src/app/shared/services/project-context.service.ts`, probing the active context slug via `getProject(slug, false, { marketing: true })` and failing closed. Depends on T007.
 
 **Checkpoint**: Shared plumbing ready — user stories can proceed (US1 and US2 in parallel; US3 after T008).
 
@@ -54,19 +54,19 @@ Web app in a Turborepo monorepo: shared types in `packages/shared/src/`, BFF in 
 
 ### Tests for User Story 1
 
-- [X] T009 [P] [US1] E2E covering the US1 matrix (Marketing Ops + Marketing Auditor: section + Marketing Impact read-only on granted project; hidden and route-blocked on non-granted; lens available) in `apps/lfx-one/e2e/marketing-access.spec.ts`.
+- [x] T009 [P] [US1] E2E covering the US1 matrix (Marketing Ops + Marketing Auditor: section + Marketing Impact read-only on granted project; hidden and route-blocked on non-granted; lens available) in `apps/lfx-one/e2e/marketing-access.spec.ts`.
 
 ### Implementation for User Story 1
 
-- [X] T010 [US1] Add `checkRootMarketingAuditor(req)` to `PersonaDetectionService` in `apps/lfx-one/src/server/services/persona-detection.service.ts` — mirror `checkRootWriter` (resolve ROOT uid, `checkSingleAccess` for `marketing_auditor`, fail closed to `false`, request-cache).
-- [X] T011 [P] [US1] Add `isRootMarketingAuditor: boolean` to the personas API response interface (the same shape that carries `isRootWriter`) in `packages/shared/src/interfaces/persona-detection.interface.ts`.
-- [X] T012 [US1] Include `isRootMarketingAuditor` in the `getPersonas` return in `apps/lfx-one/src/server/services/persona-detection.service.ts` (resolve alongside `isRootWriter`). Depends on T010, T011.
-- [X] T013 [US1] Expose an `isRootMarketingAuditor` signal on `PersonaService` in `apps/lfx-one/src/app/shared/services/persona.service.ts`, hydrated from the personas API and cookie-seedable for SSR (parallel to `isRootWriter`). Depends on T011.
-- [X] T014 [US1] Update `getAllowedLensIds()` in `apps/lfx-one/src/app/shared/services/lens.service.ts` so `showFoundation = hasBoardRole || isRootWriter || isRootMarketingAuditor`. Depends on T013.
-- [X] T015 [P] [US1] Create `marketingViewGuard` (checks `project.marketingAuditor === true` via `getProject(slug, false, { marketing: true })`; slug from `?project=` then active context; NO ED persona fast-path; deny → redirect to `/foundation/overview?project=<slug>`) in `apps/lfx-one/src/app/shared/guards/marketing-view.guard.ts`. Depends on T007, T008.
-- [X] T016 [US1] Wire `foundation/marketing-impact` to `[marketingViewGuard, projectQueryParamGuard]` (replace `executiveDirectorGuard`) in `apps/lfx-one/src/app/app.routes.ts`; leave `foundation/health-metrics` on `executiveDirectorGuard`. Depends on T015.
-- [X] T017 [US1] Gate the Marketing section header and the Marketing Impact entry on `canViewMarketing()` (replace the `currentPersona() === 'executive-director'` gate; keep Metrics/Health Metrics + Social Listening ED-only) in `apps/lfx-one/src/app/shared/services/sidebar-nav.service.ts`. Depends on T008.
-- [X] T018 [US1] Verify the foundation lens-items source (`/api/nav/lens-items?lens=foundation`) returns the marketing-audited project hierarchy for non-board users; if it is persona/board-scoped, extend it to include marketing-audited projects (research R2) in the relevant `apps/lfx-one/src/server/` nav lens-items service/route. — VERIFIED: BFF `NavigationService.getLensItems`/`buildQuery` is not persona/board-scoped; access is gated by the user's bearer token via the upstream query service. No BFF change needed; ROOT-cascaded `marketing_auditor` visibility is an upstream query-service FGA concern.
+- [x] T010 [US1] Add `checkRootMarketingAuditor(req)` to `PersonaDetectionService` in `apps/lfx-one/src/server/services/persona-detection.service.ts` — mirror `checkRootWriter` (resolve ROOT uid, `checkSingleAccess` for `marketing_auditor`, fail closed to `false`, request-cache).
+- [x] T011 [P] [US1] Add `isRootMarketingAuditor: boolean` to the personas API response interface (the same shape that carries `isRootWriter`) in `packages/shared/src/interfaces/persona-detection.interface.ts`.
+- [x] T012 [US1] Include `isRootMarketingAuditor` in the `getPersonas` return in `apps/lfx-one/src/server/services/persona-detection.service.ts` (resolve alongside `isRootWriter`). Depends on T010, T011.
+- [x] T013 [US1] Expose an `isRootMarketingAuditor` signal on `PersonaService` in `apps/lfx-one/src/app/shared/services/persona.service.ts`, hydrated from the personas API and cookie-seedable for SSR (parallel to `isRootWriter`). Depends on T011.
+- [x] T014 [US1] Update `getAllowedLensIds()` in `apps/lfx-one/src/app/shared/services/lens.service.ts` so `showFoundation = hasBoardRole || isRootWriter || isRootMarketingAuditor`. Depends on T013.
+- [x] T015 [P] [US1] Create `marketingViewGuard` (checks `project.marketingAuditor === true` via `getProject(slug, false, { marketing: true })`; slug from `?project=` then active context; NO ED persona fast-path; deny → redirect to `/foundation/overview?project=<slug>`) in `apps/lfx-one/src/app/shared/guards/marketing-view.guard.ts`. Depends on T007, T008.
+- [x] T016 [US1] Wire `foundation/marketing-impact` to `[marketingViewGuard, projectQueryParamGuard]` (replace `executiveDirectorGuard`) in `apps/lfx-one/src/app/app.routes.ts`; leave `foundation/health-metrics` on `executiveDirectorGuard`. Depends on T015.
+- [x] T017 [US1] Gate the Marketing section header and the Marketing Impact entry on `canViewMarketing()` (replace the `currentPersona() === 'executive-director'` gate; keep Metrics/Health Metrics + Social Listening ED-only) in `apps/lfx-one/src/app/shared/services/sidebar-nav.service.ts`. Depends on T008.
+- [x] T018 [US1] Verify the foundation lens-items source (`/api/nav/lens-items?lens=foundation`) returns the marketing-audited project hierarchy for non-board users; if it is persona/board-scoped, extend it to include marketing-audited projects (research R2) in the relevant `apps/lfx-one/src/server/` nav lens-items service/route. — VERIFIED: BFF `NavigationService.getLensItems`/`buildQuery` is not persona/board-scoped; access is gated by the user's bearer token via the upstream query service. No BFF change needed; ROOT-cascaded `marketing_auditor` visibility is an upstream query-service FGA concern.
 
 **Checkpoint**: US1 fully functional — non-ED marketing users can navigate and view Marketing Impact per project; MVP deliverable.
 
@@ -80,13 +80,13 @@ Web app in a Turborepo monorepo: shared types in `packages/shared/src/`, BFF in 
 
 ### Tests for User Story 2
 
-- [X] T019 [P] [US2] E2E covering the US2 matrix (ED + Marketing Ops: Campaigns link + page with actions; Marketing Auditor: link hidden and route blocked) in `apps/lfx-one/e2e/marketing-access.spec.ts`.
+- [x] T019 [P] [US2] E2E covering the US2 matrix (ED + Marketing Ops: Campaigns link + page with actions; Marketing Auditor: link hidden and route blocked) in `apps/lfx-one/e2e/marketing-access.spec.ts`.
 
 ### Implementation for User Story 2
 
-- [X] T020 [P] [US2] Create `campaignAccessGuard` (checks `project.campaignManager === true` via `getProject(slug, false, { marketing: true })`; same slug resolution and denial-redirect as `marketingViewGuard`; NO ED persona fast-path) in `apps/lfx-one/src/app/shared/guards/campaign-access.guard.ts`. Depends on T007, T008.
-- [X] T021 [US2] Wire `foundation/campaigns` to `[campaignAccessGuard, projectQueryParamGuard]` (replace `executiveDirectorGuard`) in `apps/lfx-one/src/app/app.routes.ts`. Depends on T020. (Same file as T016 — sequence, do not parallelize.)
-- [X] T022 [US2] Gate the Campaigns sidebar entry on `canManageCampaigns()` in `apps/lfx-one/src/app/shared/services/sidebar-nav.service.ts`. Depends on T008. (Same file as T017 — sequence, do not parallelize.)
+- [x] T020 [P] [US2] Create `campaignAccessGuard` (checks `project.campaignManager === true` via `getProject(slug, false, { marketing: true })`; same slug resolution and denial-redirect as `marketingViewGuard`; NO ED persona fast-path) in `apps/lfx-one/src/app/shared/guards/campaign-access.guard.ts`. Depends on T007, T008.
+- [x] T021 [US2] Wire `foundation/campaigns` to `[campaignAccessGuard, projectQueryParamGuard]` (replace `executiveDirectorGuard`) in `apps/lfx-one/src/app/app.routes.ts`. Depends on T020. (Same file as T016 — sequence, do not parallelize.)
+- [x] T022 [US2] Gate the Campaigns sidebar entry on `canManageCampaigns()` in `apps/lfx-one/src/app/shared/services/sidebar-nav.service.ts`. Depends on T008. (Same file as T017 — sequence, do not parallelize.)
 
 **Checkpoint**: US1 + US2 both work independently — read access and campaign management are correctly separated.
 
@@ -100,11 +100,11 @@ Web app in a Turborepo monorepo: shared types in `packages/shared/src/`, BFF in 
 
 ### Tests for User Story 3
 
-- [X] T023 [P] [US3] E2E asserting the Marketing Overview section is visible (read-only) only to ED + Marketing Ops and hidden from Marketing Auditors / non-marketing users in `apps/lfx-one/e2e/marketing-access.spec.ts`.
+- [x] T023 [P] [US3] E2E asserting the Marketing Overview section is visible (read-only) only to ED + Marketing Ops and hidden from Marketing Auditors / non-marketing users in `apps/lfx-one/e2e/marketing-access.spec.ts`.
 
 ### Implementation for User Story 3
 
-- [X] T024 [US3] Gate the `<lfx-marketing-overview />` section render on `canManageCampaigns()` and surface it in the foundation-lens dashboard for non-ED Marketing Ops (confirm placement across the ED and board-member/foundation dashboard variants per research R5), keeping every other ED-dashboard section and Health Metrics ED-only, in `apps/lfx-one/src/app/modules/dashboards/executive-director/executive-director-dashboard.component.html` / `.ts` (and the board-member/foundation dashboard component if the section must render there). Depends on T008.
+- [x] T024 [US3] Gate the `<lfx-marketing-overview />` section render on `canManageCampaigns()` and surface it in the foundation-lens dashboard for non-ED Marketing Ops (confirm placement across the ED and board-member/foundation dashboard variants per research R5), keeping every other ED-dashboard section and Health Metrics ED-only, in `apps/lfx-one/src/app/modules/dashboards/executive-director/executive-director-dashboard.component.html` / `.ts` (and the board-member/foundation dashboard component if the section must render there). Depends on T008.
 
 **Checkpoint**: All three stories independently functional.
 
@@ -114,10 +114,10 @@ Web app in a Turborepo monorepo: shared types in `packages/shared/src/`, BFF in 
 
 **Purpose**: Cross-story verification and hardening.
 
-- [X] T025 [P] Extend `apps/lfx-one/e2e/persona-navigation.spec.ts` to assert Health Metrics + the rest of the ED dashboard stay ED-only, and that a project writer/owner with no marketing grant sees zero marketing surfaces.
-- [X] T026 Run `yarn check-types`, `yarn lint:check`, and `yarn build` from repo root; fix any issues. — All three pass (member-ordering error from an initial private helper fixed by inlining the marketing probe into `getProjectById`). Remaining lint warning (`org-project-detail.component.ts`) and the fullcalendar SCSS budget warning are pre-existing and unrelated.
+- [x] T025 [P] Extend `apps/lfx-one/e2e/persona-navigation.spec.ts` to assert Health Metrics + the rest of the ED dashboard stay ED-only, and that a project writer/owner with no marketing grant sees zero marketing surfaces.
+- [x] T026 Run `yarn check-types`, `yarn lint:check`, and `yarn build` from repo root; fix any issues. — All three pass (member-ordering error from an initial private helper fixed by inlining the marketing probe into `getProjectById`). Remaining lint warning (`org-project-detail.component.ts`) and the fullcalendar SCSS budget warning are pre-existing and unrelated.
 - [ ] T027 Execute the six validation scenarios in `specs/002-marketing-ops-ui-access/quickstart.md` against the shared dev environment. — DEFERRED: requires the running shared dev environment + FGA fixtures (T001). E2E specs (`marketing-access.spec.ts`, `persona-navigation.spec.ts`) encode the matrix and run in CI once fixtures exist.
-- [X] T028 [P] Document in the PR description the residual risk that `/api/analytics/*` and `/api/campaigns/*` remain directly callable until backend enforcement (LFXV2-2235) lands (spec Out of Scope / research R7). — Risk note drafted (see Completion Report); to be pasted into the PR description at open time.
+- [x] T028 [P] Document in the PR description the residual risk that `/api/analytics/*` and `/api/campaigns/*` remain directly callable until backend enforcement (LFXV2-2235) lands (spec Out of Scope / research R7). — Risk note drafted (see Completion Report); to be pasted into the PR description at open time.
 
 ---
 

@@ -21,10 +21,7 @@ Example batched payload for one project (both relations in a single round-trip):
 
 ```json
 {
-  "requests": [
-    "project:<project_uid>#marketing_auditor",
-    "project:<project_uid>#campaign_manager"
-  ]
+  "requests": ["project:<project_uid>#marketing_auditor", "project:<project_uid>#campaign_manager"]
 }
 ```
 
@@ -32,10 +29,7 @@ Example batched payload for one project (both relations in a single round-trip):
 
 ```json
 {
-  "results": [
-    "project:<project_uid>#marketing_auditor@user:<username>\ttrue",
-    "project:<project_uid>#campaign_manager@user:<username>\tfalse"
-  ]
+  "results": ["project:<project_uid>#marketing_auditor@user:<username>\ttrue", "project:<project_uid>#campaign_manager@user:<username>\tfalse"]
 }
 ```
 
