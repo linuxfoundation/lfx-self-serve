@@ -98,6 +98,12 @@ test.describe('Org Meetings (retired — coming soon)', () => {
     await gotoOrgMeetingsPage(page);
 
     await expect(page.getByTestId('org-meetings-coming-soon')).toBeVisible();
+
+    // Keep observing over a bounded window after the placeholder renders: a deferred/async
+    // call to the retired endpoint would resolve waitForRequest and fail this expectation,
+    // instead of slipping past an immediate check. No request within the window => the wait
+    // times out and rejects, which is the pass condition.
+    await expect(page.waitForRequest('**/api/orgs/**/lens/meetings**', { timeout: 1000 })).rejects.toThrow();
     expect(meetingsApiHit).toBe(false);
   });
 });
