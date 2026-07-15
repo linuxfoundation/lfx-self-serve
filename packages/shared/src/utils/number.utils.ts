@@ -38,11 +38,14 @@ export function formatValueLost(value: number): string {
   return formatCompact(Math.abs(value), value < 0 ? '-' : '', '$');
 }
 
-/** Centralized compact formatter — thresholds, scales, and rounding in one place. */
-function formatCompact(abs: number, sign: string, prefix = ''): string {
+/** Centralized compact formatter — thresholds, scales, and rounding in one place.
+ *  Locale is pinned to en-US: this runs during SSR (Node) and in the browser,
+ *  and an unpinned toLocaleString() renders different separators per client
+ *  locale, causing hydration text mismatches. */
+export function formatCompact(abs: number, sign: string, prefix = ''): string {
   if (abs >= 999_950) return `${sign}${prefix}${stripTrailingZero((abs / 1_000_000).toFixed(1))}M`;
   if (abs >= 1_000) return `${sign}${prefix}${stripTrailingZero((abs / 1_000).toFixed(1))}K`;
-  return `${sign}${prefix}${abs.toLocaleString()}`;
+  return `${sign}${prefix}${abs.toLocaleString('en-US')}`;
 }
 
 /** Strip trailing zeros (and a dangling decimal point) from a fixed-decimal string. */

@@ -59,6 +59,7 @@
             <span class="text-2xl font-semibold" [class.text-green-600]="data().registrantYoyChange > 0" [class.text-red-600]="data().registrantYoyChange < 0">
               {{ formattedRegistrantYoyChange() }}%
             </span>
+            <span class="text-xs text-gray-400">YTD vs same period last year</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -70,7 +71,7 @@
     <div class="flex gap-4" data-testid="event-growth-drawer-revenue-stats">
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Total Event Revenue</span>
+          <span class="text-sm text-gray-500">Total Event Revenue (USD)</span>
           @if (data().totalRevenue > 0) {
             <span class="text-2xl font-semibold text-gray-900">{{ formattedRevenue() }}</span>
             <span class="text-xs text-gray-400">YTD</span>
@@ -81,9 +82,10 @@
       </lfx-card>
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Revenue Per Attendee</span>
+          <span class="text-sm text-gray-500">Revenue Per Attendee (USD)</span>
           @if (data().revenuePerAttendee > 0) {
             <span class="text-2xl font-semibold text-gray-900">${{ data().revenuePerAttendee | number: '1.2-2' }}</span>
+            <span class="text-xs text-gray-400">YTD · all event revenue ÷ attendees</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -96,6 +98,7 @@
             <span class="text-2xl font-semibold" [class.text-green-600]="data().revenueYoyChange > 0" [class.text-red-600]="data().revenueYoyChange < 0">
               {{ formattedRevenueYoyChange() }}%
             </span>
+            <span class="text-xs text-gray-400">YTD vs same period last year</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -168,7 +171,10 @@
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="event-growth-drawer-monthly-trend">
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">Quarterly Registrations</h3>
-        <p class="text-sm text-gray-600">Total event registrations per quarter</p>
+        <p class="text-sm text-gray-600">
+          Registrations by event quarter, from three years back through upcoming events. Current and upcoming quarters are still filling as registrations come
+          in.
+        </p>
       </div>
       @if (data().monthlyData.length > 0) {
         <div class="h-[240px]" data-testid="event-growth-drawer-monthly-chart">
@@ -185,7 +191,14 @@
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="event-growth-drawer-top-events">
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">{{ currentYear }} Events</h3>
-        <p class="text-sm text-gray-600">All events this year (past and upcoming), by date</p>
+        <p class="text-sm text-gray-600">
+          @if (data().topEvents.length >= topEventsLimit) {
+            The first {{ topEventsLimit }} events this year by date (the list is capped).
+          } @else {
+            All events this year (past and upcoming), by date.
+          }
+          Revenue is shown in each event's local currency; events with mixed or unknown currencies are shown in USD.
+        </p>
       </div>
       @if (data().topEvents.length > 0) {
         <div class="flex flex-col gap-0">
