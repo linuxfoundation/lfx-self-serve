@@ -89,7 +89,8 @@ export class EmailTabComponent {
       // delta rather than read as a measured 0% (a false -100% decline).
       const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : null;
       const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : null;
-      const openRateMom = currentOpenRate !== null && prevOpenRate !== null && prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
+      const openRateMom =
+        currentOpenRate !== null && prevOpenRate !== null && prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
 
       return [
         {
