@@ -18,9 +18,14 @@
       </div>
 
       <!-- Projects Scored Badge -->
-      @if (hasData()) {
+      @if (distributionLoading()) {
+        <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full" data-testid="project-health-scores-drawer-total-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400" aria-hidden="true"></i>
+          <span class="sr-only">Loading scored project count…</span>
+        </div>
+      } @else if (hasData() || total() > 0) {
         <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full" data-testid="project-health-scores-drawer-total">
-          <span class="text-sm font-medium text-gray-700">{{ totalProjects().toLocaleString() }} projects scored</span>
+          <span class="text-sm font-medium text-gray-700">{{ scoredLabel() }}</span>
         </div>
       }
 
@@ -56,30 +61,21 @@
 
       <!-- Legend -->
       <div class="flex flex-wrap gap-3" data-testid="project-health-scores-drawer-legend">
-        <div class="flex items-center gap-1.5">
-          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.critical"></span>
-          <span class="text-xs text-gray-600">Critical</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.unsteady"></span>
-          <span class="text-xs text-gray-600">Unsteady</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.stable"></span>
-          <span class="text-xs text-gray-600">Stable</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.healthy"></span>
-          <span class="text-xs text-gray-600">Healthy</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.excellent"></span>
-          <span class="text-xs text-gray-600">Excellent</span>
-        </div>
+        @for (category of categories; track category) {
+          <div class="flex items-center gap-1.5">
+            <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="chartColor[category]"></span>
+            <span class="text-xs text-gray-600">{{ categoryLabel[category] }}</span>
+          </div>
+        }
       </div>
 
       <!-- Chart -->
-      @if (hasData()) {
+      @if (distributionLoading()) {
+        <div class="h-[280px] flex items-center justify-center" role="status" aria-live="polite" data-testid="project-health-scores-drawer-chart-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+          <span class="sr-only">Loading health score distribution…</span>
+        </div>
+      } @else if (hasData()) {
         <div class="h-[280px]" data-testid="project-health-scores-drawer-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
         </div>
@@ -88,6 +84,141 @@
           <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
           <p class="text-sm text-gray-500">No health score data available for this foundation.</p>
         </div>
+      }
+    </div>
+
+    <!-- Projects Table -->
+    <div class="flex flex-col gap-3" data-testid="project-health-scores-drawer-table-section">
+      <h3 class="text-sm font-medium text-gray-900">Projects by health status</h3>
+
+      <!-- Search -->
+      <label for="project-health-scores-search" class="sr-only">Search projects by name</label>
+      <lfx-input-text
+        [form]="searchForm"
+        control="query"
+        id="project-health-scores-search"
+        type="text"
+        size="small"
+        icon="fa-light fa-magnifying-glass"
+        placeholder="Search projects by name..."
+        data-testid="project-health-scores-drawer-search"></lfx-input-text>
+
+      <!-- Status Filter -->
+      <div class="flex flex-wrap gap-2" data-testid="project-health-scores-drawer-status-filter">
+        @for (option of statusFilterOptions; track option.value) {
+          <button
+            type="button"
+            (click)="toggleStatus(option.value)"
+            [style.backgroundColor]="selectedStatuses().has(option.value) ? option.bg : null"
+            [style.color]="selectedStatuses().has(option.value) ? option.text : null"
+            [ngClass]="selectedStatuses().has(option.value) ? 'border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+            class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors"
+            [attr.aria-pressed]="selectedStatuses().has(option.value)"
+            [attr.data-testid]="'project-health-scores-drawer-status-filter-' + option.value">
+            {{ option.label }}
+          </button>
+        }
+      </div>
+
+      @if (tableLoading()) {
+        <div class="flex items-center justify-center py-12" role="status" aria-live="polite" data-testid="project-health-scores-drawer-table-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+          <span class="sr-only">Loading projects…</span>
+        </div>
+      } @else {
+        <div class="overflow-auto border border-slate-200 rounded-lg">
+          <table class="w-full text-sm" data-testid="project-health-scores-drawer-table">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Project</th>
+                <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Maintainers</th>
+                <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Contributors</th>
+                <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Commits (90d)</th>
+                <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Health status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (project of paginatedProjects(); track project.id) {
+                <tr class="border-b border-slate-100 hover:bg-slate-50" [attr.data-testid]="'project-health-scores-drawer-table-row-' + project.id">
+                  <td class="py-3 px-4">
+                    <div class="flex items-center gap-2.5">
+                      <span
+                        aria-hidden="true"
+                        class="flex-shrink-0 w-7 h-7 rounded-md bg-slate-100 text-slate-500 text-xs font-semibold flex items-center justify-center uppercase">
+                        {{ project.projectName.charAt(0) || '·' }}
+                      </span>
+                      <span class="font-medium text-slate-900">{{ project.projectName }}</span>
+                    </div>
+                  </td>
+                  <td class="text-right py-3 px-4 text-slate-700">{{ project.maintainers | number }}</td>
+                  <td class="text-right py-3 px-4 text-slate-700">{{ project.activeContributors | number }}</td>
+                  <td class="text-right py-3 px-4 text-slate-700">{{ project.commitsLast90Days | number }}</td>
+                  <td class="text-right py-3 px-4">
+                    @if (project.healthScoreCategory; as category) {
+                      <span
+                        class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold"
+                        [style.backgroundColor]="categoryBadge[category].bg"
+                        [style.color]="categoryBadge[category].text">
+                        {{ categoryLabel[category] }}
+                      </span>
+                    } @else {
+                      <span
+                        class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold"
+                        [style.backgroundColor]="unscoredBadge.bg"
+                        [style.color]="unscoredBadge.text">
+                        {{ unscoredBadge.label }}
+                      </span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="5" class="py-8 text-center text-slate-500">
+                    @if (hasActiveFilters()) {
+                      No projects match the current filters.
+                    } @else {
+                      No project data available for this foundation.
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        @if (filteredProjects().length > 0) {
+          <div class="flex items-center justify-between" data-testid="project-health-scores-drawer-pagination">
+            <span class="text-sm text-slate-600">{{ pageInfo() }}</span>
+
+            <div class="flex items-center gap-1">
+              <lfx-button
+                icon="fa-light fa-chevron-left"
+                [outlined]="true"
+                size="small"
+                [disabled]="page() === 1"
+                (onClick)="goToPage(page() - 1)"
+                ariaLabel="Previous page"></lfx-button>
+
+              @for (p of visiblePages(); track p) {
+                <lfx-button
+                  [label]="p.toString()"
+                  [outlined]="page() !== p"
+                  size="small"
+                  (onClick)="goToPage(p)"
+                  [ariaLabel]="'Page ' + p + (page() === p ? ', current page' : '')"></lfx-button>
+              }
+
+              <lfx-button
+                icon="fa-light fa-chevron-right"
+                [outlined]="true"
+                size="small"
+                [disabled]="page() === totalPages()"
+                (onClick)="goToPage(page() + 1)"
+                ariaLabel="Next page"></lfx-button>
+            </div>
+          </div>
+        }
       }
     </div>
 
