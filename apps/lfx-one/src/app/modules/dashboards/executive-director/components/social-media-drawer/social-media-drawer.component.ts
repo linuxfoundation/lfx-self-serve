@@ -317,7 +317,16 @@ export class SocialMediaDrawerComponent {
       if (monthlyData.length >= 3) {
         const recent3 = monthlyData.slice(-3);
         const ordinals = recent3.map((point) => monthLabelOrdinal(point.month));
-        const consecutive = ordinals.every((ord) => Number.isFinite(ord)) && ordinals[1] === ordinals[0] + 1 && ordinals[2] === ordinals[1] + 1;
+        // Freshness: the newest point must be the latest completed month —
+        // this drawer always requests a last-6 window anchored at now, and a
+        // stale Jan–Mar streak must not read as a present-tense claim in July.
+        const now = new Date();
+        const latestCompletedOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth() - 1;
+        const consecutive =
+          ordinals.every((ord) => Number.isFinite(ord)) &&
+          ordinals[1] === ordinals[0] + 1 &&
+          ordinals[2] === ordinals[1] + 1 &&
+          ordinals[2] >= latestCompletedOrdinal;
         const isGrowing = consecutive && recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
         const isShrinking = consecutive && recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
         if (isGrowing) {

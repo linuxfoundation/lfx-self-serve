@@ -219,12 +219,13 @@ export class PaidSocialReachDrawerComponent {
       }
 
       // ROAS trending down — separate from absolute level. All three months
-      // must have actual ROAS (> 0): the series is calendar zero-filled, so a
-      // month with no campaigns carries 0 — that's a spend gap, not a
-      // performance trend, and must not fabricate a "3 months straight" streak.
-      if (monthlyRoas && monthlyRoas.length >= 3) {
+      // must be ACTIVE, judged by the aligned zero-filled impressions series:
+      // a month with no impressions is a spend gap (must not fabricate a
+      // "3 months straight" streak), while a measured 0x ROAS in an active
+      // month (spend, no attributed revenue) is a legitimate trend point.
+      if (monthlyRoas && monthlyRoas.length >= 3 && monthlyData.length === monthlyRoas.length) {
         const recent3 = monthlyRoas.slice(-3);
-        const allActive = recent3.every((v) => v > 0);
+        const allActive = monthlyData.slice(-3).every((v) => v > 0);
         const falling = allActive && recent3[0] > recent3[1] && recent3[1] > recent3[2];
         const drop = recent3[0] - recent3[2];
         if (falling && drop >= 0.5) {
@@ -289,11 +290,12 @@ export class PaidSocialReachDrawerComponent {
         insights.push({ text: `Impressions declined ${Math.abs(impressionsMomPct).toFixed(1)}% MoM`, type: 'warning' });
       }
 
-      // ROAS trend — streak claims require all three months to have actual
-      // ROAS (> 0); zero-filled no-campaign months are spend gaps, not trend.
-      if (monthlyRoas && monthlyRoas.length >= 3) {
+      // ROAS trend — streak claims require all three months to be ACTIVE per
+      // the aligned impressions series: no-impression months are spend gaps,
+      // while a measured 0x ROAS in an active month is a real trend point.
+      if (monthlyRoas && monthlyRoas.length >= 3 && monthlyData.length === monthlyRoas.length) {
         const recent3 = monthlyRoas.slice(-3);
-        const allActive = recent3.every((v) => v > 0);
+        const allActive = monthlyData.slice(-3).every((v) => v > 0);
         const isDecreasing = allActive && recent3[0] > recent3[1] && recent3[1] > recent3[2];
         const isIncreasing = allActive && recent3[0] < recent3[1] && recent3[1] < recent3[2];
         if (isIncreasing) {

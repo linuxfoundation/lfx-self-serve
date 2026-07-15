@@ -843,22 +843,25 @@ function monthlyValues(data: { month: string; value: number }[]): number[] {
   return data.map((d) => d.value);
 }
 
-/** Compute MoM change display from a monthly numeric series (last vs second-to-last). */
+/** Compute MoM change display from a monthly numeric series (last vs second-to-last).
+ *  Both months must be non-zero: the feeding series are calendar zero-filled,
+ *  so a trailing no-activity month would otherwise display as a steep -100%. */
 function seriesMomChange(series: number[]): string | undefined {
   if (series.length < 2) return undefined;
   const prev = series[series.length - 2];
   const curr = series[series.length - 1];
-  if (prev === 0) return undefined;
+  if (prev === 0 || curr === 0) return undefined;
   return formatMomChange(((curr - prev) / prev) * 100);
 }
 
 /** Compute trend direction from a monthly numeric series.
- *  Uses the same MoM % formula as seriesMomChange so the color matches the displayed text. */
+ *  Uses the same MoM % formula and zero guards as seriesMomChange so the
+ *  color never diverges from the displayed text. */
 function seriesTrendDirection(series: number[]): 'up' | 'down' | 'neutral' | undefined {
   if (series.length < 2) return undefined;
   const prev = series[series.length - 2];
   const curr = series[series.length - 1];
-  if (prev === 0) return undefined;
+  if (prev === 0 || curr === 0) return undefined;
   return trendFromChange(((curr - prev) / prev) * 100);
 }
 
@@ -1057,9 +1060,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         ),
         protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
       ],
+      // monthlyMentions only holds months WITH rows, so its length is not the
+      // reporting window — the ED caller always requests last-6, so the trend
+      // window is labeled directly rather than derived from row count.
       caption:
         brandHealth.monthlyMentions.length > 0
-          ? `${formatNumber(brandHealth.totalMentions)} mentions (30d) · trend ${trendWindow(brandHealth.monthlyMentions.length).toLowerCase()}`
+          ? `${formatNumber(brandHealth.totalMentions)} mentions (30d) · trend last 6 months`
           : `${formatNumber(brandHealth.totalMentions)} mentions (30d)`,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,

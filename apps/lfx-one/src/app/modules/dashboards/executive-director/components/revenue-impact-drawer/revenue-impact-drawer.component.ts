@@ -348,7 +348,16 @@ export class RevenueImpactDrawerComponent {
         // entry.month is the raw CAMPAIGN_MONTH date serialization; parse it
         // explicitly rather than via implementation-defined new Date(string).
         const ordinals = recent3.map((entry) => monthLabelOrdinal(entry.month));
-        const consecutive = ordinals.every((ord) => Number.isFinite(ord)) && ordinals[1] === ordinals[0] + 1 && ordinals[2] === ordinals[1] + 1;
+        // Freshness: the newest entry must be the latest completed month —
+        // this drawer's data always covers a last-6 window anchored at now,
+        // and a stale streak must not read as a present-tense claim.
+        const now = new Date();
+        const latestCompletedOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth() - 1;
+        const consecutive =
+          ordinals.every((ord) => Number.isFinite(ord)) &&
+          ordinals[1] === ordinals[0] + 1 &&
+          ordinals[2] === ordinals[1] + 1 &&
+          ordinals[2] >= latestCompletedOrdinal;
         const isRisingRev = consecutive && recent3[0].revenue < recent3[1].revenue && recent3[1].revenue < recent3[2].revenue;
         const isFallingRev = consecutive && recent3[0].revenue > recent3[1].revenue && recent3[1].revenue > recent3[2].revenue && recent3[0].revenue > 0;
         if (isRisingRev) {

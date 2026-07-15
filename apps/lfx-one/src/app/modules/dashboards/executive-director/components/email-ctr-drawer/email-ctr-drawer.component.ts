@@ -350,8 +350,11 @@ export class EmailCtrDrawerComponent {
       }
 
       if (paidActions.length === 0 && paid.monthlyData.length >= 3) {
+        // The series is calendar zero-filled — all three months must have
+        // actual impressions, or a trailing no-campaign month fabricates a
+        // "3 consecutive months" decline (spend gap, not a trend).
         const recent3 = paid.monthlyData.slice(-3);
-        if (recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
+        if (recent3.every((v) => v > 0) && recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
           paidActions.push({
             title: 'Investigate declining paid impressions',
             description: 'Impressions dropped for 3 consecutive months — review budget pacing and bid strategy',
@@ -384,7 +387,16 @@ export class EmailCtrDrawerComponent {
         });
       }
 
-      if (emailActions.length === 0 && email.monthlySends.length >= 2 && email.monthlyOpens.length >= 2) {
+      // Open-rate comparison requires sends in BOTH months: the series is
+      // calendar zero-filled, and a no-send month has no open rate — treating
+      // it as 0% fabricates an "Open rate declined" action.
+      if (
+        emailActions.length === 0 &&
+        email.monthlySends.length >= 2 &&
+        email.monthlyOpens.length >= 2 &&
+        email.monthlySends[email.monthlySends.length - 1] > 0 &&
+        email.monthlySends[email.monthlySends.length - 2] > 0
+      ) {
         const latestOpenRate =
           email.monthlySends[email.monthlySends.length - 1] > 0
             ? (email.monthlyOpens[email.monthlyOpens.length - 1] / email.monthlySends[email.monthlySends.length - 1]) * 100
@@ -515,7 +527,9 @@ export class EmailCtrDrawerComponent {
       if (paidInsights.length === 0 && paid.totalReach > 0 && paid.monthlyData.length >= 2) {
         const prev = paid.monthlyData[paid.monthlyData.length - 2];
         const curr = paid.monthlyData[paid.monthlyData.length - 1];
-        if (prev > 0) {
+        // Both months must be active: a zero-filled trailing no-campaign
+        // month reads as ~-100% MoM — a spend gap, not an impressions drop.
+        if (prev > 0 && curr > 0) {
           const paidMom = ((curr - prev) / prev) * 100;
           if (paidMom > 20) {
             paidInsights.push({ text: `Paid impressions surged ${paidMom.toFixed(0)}% MoM — ${formatNumber(curr)} last month`, type: 'driver' });
