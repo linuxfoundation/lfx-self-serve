@@ -489,7 +489,7 @@ export class OrgLensProjectDetailService {
       hero: this.mapHero(heroRow, slug, foundationLabel),
       technical: this.buildTechnicalCards(cards, sparklineIndex, monthAxis),
       ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLfProject, sparklineIndex, monthAxis),
-      leaderboard: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLfProject, trendByAccount)),
+      leaderboard: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, orgName, isNonLfProject, trendByAccount)),
       activityLeaderboards,
       trend: this.buildTrendSeries(trendByAccount),
       // Roster rows page in lazily per card via getCardRoster; the main response carries only definition + column headers.
@@ -1215,10 +1215,16 @@ export class OrgLensProjectDetailService {
     return { key, label, scopeLabel, sparkline, projectSparkline, caption };
   }
 
-  private mapLeaderboardRow(row: LeaderboardRow, orgUid: string, isNonLf: boolean, trendByAccount: Map<string, TrendSeries>): OrgLensProjectLeaderboardRow {
+  private mapLeaderboardRow(
+    row: LeaderboardRow,
+    orgUid: string,
+    orgName: string,
+    isNonLf: boolean,
+    trendByAccount: Map<string, TrendSeries>
+  ): OrgLensProjectLeaderboardRow {
     const series = row.ORG_ACCOUNT_ID ? (trendByAccount.get(row.ORG_ACCOUNT_ID)?.combined ?? []) : [];
     return {
-      orgName: row.ORG_NAME ?? '',
+      orgName: row.ORG_NAME ?? (row.ORG_ACCOUNT_ID === orgUid ? orgName : ''),
       orgLogoUrl: row.ORG_LOGO_URL ?? '',
       scores: {
         combined: this.round1(this.num(row.SCORE_COMBINED)),

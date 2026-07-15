@@ -34,7 +34,7 @@ import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
 export class OrgLensProjectDetailService {
   private readonly http = inject(HttpClient);
 
-  // One in-flight/replayed request per (org, name, slug, range). Bounded to a few recent keys so
+  // One in-flight/replayed request per (org, slug, range). Bounded to a few recent keys so
   // the shared cache never grows across a long browsing session.
   private readonly shared = new Map<string, Observable<OrgLensProjectDetailResponse | null>>();
   private static readonly maxSharedEntries = 8;
