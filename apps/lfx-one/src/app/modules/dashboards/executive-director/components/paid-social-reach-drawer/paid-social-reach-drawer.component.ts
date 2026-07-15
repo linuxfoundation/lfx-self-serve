@@ -9,7 +9,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createBarChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { formatCurrency, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { computeMomPct, formatCurrency, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -169,7 +169,7 @@ export class PaidSocialReachDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getSocialReach(foundationSlug).pipe(
+          this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -189,7 +189,10 @@ export class PaidSocialReachDrawerComponent {
 
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
-      const { roas, changePercentage, totalSpend, totalRevenue, monthlyRoas } = this.drawerData();
+      const { roas, totalSpend, totalRevenue, monthlyRoas, monthlyData } = this.drawerData();
+      // changePercentage from the API is ROAS MoM — impressions MoM must come
+      // from the impressions series itself, or reach texts report the wrong metric.
+      const impressionsMomPct = computeMomPct(monthlyData);
       const actions: MarketingRecommendedAction[] = [];
 
       // Losing money — the most urgent signal (includes 0.00x — spend with no attributed revenue)
@@ -229,10 +232,10 @@ export class PaidSocialReachDrawerComponent {
       }
 
       // Reach drop — separate from ROAS
-      if (changePercentage <= -10) {
+      if (impressionsMomPct !== null && impressionsMomPct <= -10) {
         actions.push({
           title: 'Investigate reach decline',
-          description: `Impressions dropped ${Math.abs(changePercentage).toFixed(1)}% MoM — review targeting, bid strategy, and platform algorithm changes`,
+          description: `Impressions dropped ${Math.abs(impressionsMomPct).toFixed(1)}% MoM — review targeting, bid strategy, and platform algorithm changes`,
           priority: 'high',
 
           actionType: 'investigate',
@@ -245,7 +248,10 @@ export class PaidSocialReachDrawerComponent {
 
   private initKeyInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
-      const { roas, totalReach, totalSpend, totalRevenue, changePercentage, monthlyRoas } = this.drawerData();
+      const { roas, totalReach, totalSpend, totalRevenue, monthlyRoas, monthlyData } = this.drawerData();
+      // changePercentage from the API is ROAS MoM — impressions texts must use
+      // the impressions series' own MoM.
+      const impressionsMomPct = computeMomPct(monthlyData);
       const insights: MarketingKeyInsight[] = [];
 
       if (totalReach === 0) {
@@ -265,10 +271,10 @@ export class PaidSocialReachDrawerComponent {
       }
 
       // Impressions trend
-      if (changePercentage >= 10) {
-        insights.push({ text: `Impressions grew ${changePercentage.toFixed(1)}% MoM to ${formatNumber(totalReach)}`, type: 'driver' });
-      } else if (changePercentage <= -5) {
-        insights.push({ text: `Impressions declined ${Math.abs(changePercentage).toFixed(1)}% MoM`, type: 'warning' });
+      if (impressionsMomPct !== null && impressionsMomPct >= 10) {
+        insights.push({ text: `Impressions grew ${impressionsMomPct.toFixed(1)}% MoM to ${formatNumber(totalReach)}`, type: 'driver' });
+      } else if (impressionsMomPct !== null && impressionsMomPct <= -5) {
+        insights.push({ text: `Impressions declined ${Math.abs(impressionsMomPct).toFixed(1)}% MoM`, type: 'warning' });
       }
 
       // ROAS trend

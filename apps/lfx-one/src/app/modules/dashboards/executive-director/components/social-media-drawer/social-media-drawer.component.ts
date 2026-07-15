@@ -187,7 +187,7 @@ export class SocialMediaDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getSocialMedia(foundationSlug).pipe(
+          this.analyticsService.getSocialMedia(foundationSlug, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);

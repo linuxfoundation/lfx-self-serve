@@ -257,7 +257,7 @@ export class EmailCtrDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getEmailCtr(foundationSlug).pipe(
+          this.analyticsService.getEmailCtr(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -578,7 +578,7 @@ export class EmailCtrDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.paidDataResolved.set(false)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getSocialReach(foundationSlug).pipe(
+          this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.paidDataResolved.set(true)),
             catchError(() => {
               this.paidDataResolved.set(true);
@@ -603,7 +603,7 @@ export class EmailCtrDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.attributionDataResolved.set(false)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getMarketingAttribution(foundationSlug).pipe(
+          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.attributionDataResolved.set(true)),
             catchError(() => {
               this.attributionDataResolved.set(true);
