@@ -4961,9 +4961,14 @@ export class ProjectService {
       `;
 
       // Query 2: All events for the current year (past + upcoming), sorted by date.
-      // Per-event revenue stays in the event's LOCAL currency (NET_REVENUE), with
-      // CURRENCY_CODE carried alongside so the UI can label it — an event is
-      // priced in one currency, so MAX() just picks that single code.
+      // Per-event revenue is shown in the event's LOCAL currency (NET_REVENUE),
+      // labeled via CURRENCY_CODE — but ONLY when the event's registrations carry
+      // exactly one distinct currency. Events are ASSUMED single-currency, not
+      // guaranteed: if rows mix currencies (regional pricing, USD sponsorships
+      // alongside local tickets) the local SUM would silently add mixed
+      // currencies, so the mapping below falls back to the USD-normalized figure
+      // for that event. The same fallback covers revenue with a NULL currency
+      // code, which cannot be labeled honestly with any local code.
       const topEventsQuery = `
         SELECT
           EVENT_ID,
@@ -4972,7 +4977,9 @@ export class ProjectService {
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
           SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE,
-          MAX(CURRENCY_CODE) AS CURRENCY_CODE
+          SUM(COALESCE(NET_REVENUE_USD, 0)) AS EVENT_REVENUE_USD,
+          MAX(CURRENCY_CODE) AS CURRENCY_CODE,
+          COUNT(DISTINCT CURRENCY_CODE) AS CURRENCY_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE)
           ${slugFilter}
@@ -5007,7 +5014,9 @@ export class ProjectService {
           REGISTRANT_COUNT: number;
           ATTENDEE_COUNT: number;
           EVENT_REVENUE: number;
+          EVENT_REVENUE_USD: number;
           CURRENCY_CODE: string | null;
+          CURRENCY_COUNT: number;
         }>(topEventsQuery, binds),
         this.snowflakeService.execute<{
           QUARTER_START_DATE: string | Date;
@@ -5041,15 +5050,30 @@ export class ProjectService {
       const yoyRegistrantChange = pctChange(totalRegistrants, registrantsLastYtd);
       const yoyRevenueChange = pctChange(totalRevenue, revenueLastYtd);
 
-      const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => ({
-        id: String(row.EVENT_ID ?? ''),
-        name: row.EVENT_NAME ?? '',
-        date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
-        registrants: row.REGISTRANT_COUNT ?? 0,
-        attendees: row.ATTENDEE_COUNT ?? 0,
-        revenue: row.EVENT_REVENUE ?? 0,
-        currencyCode: row.CURRENCY_CODE ?? 'USD',
-      }));
+      const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => {
+        // Local currency is only honest when the event's rows carry exactly one
+        // distinct code; multi-currency events (or revenue with a NULL code)
+        // fall back to the USD-normalized amount rather than mislabeling a
+        // mixed/unknown sum with a single local code.
+        const singleCurrency = (row.CURRENCY_COUNT ?? 0) === 1 && !!row.CURRENCY_CODE;
+        const hasRevenue = (row.EVENT_REVENUE ?? 0) !== 0;
+        if (hasRevenue && !singleCurrency) {
+          logger.warning(undefined, 'get_event_growth', 'Event revenue is multi-currency or missing a currency code; falling back to USD', {
+            event_id: String(row.EVENT_ID ?? ''),
+            currency_count: row.CURRENCY_COUNT ?? 0,
+          });
+        }
+        const useLocal = singleCurrency || !hasRevenue;
+        return {
+          id: String(row.EVENT_ID ?? ''),
+          name: row.EVENT_NAME ?? '',
+          date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
+          registrants: row.REGISTRANT_COUNT ?? 0,
+          attendees: row.ATTENDEE_COUNT ?? 0,
+          revenue: useLocal ? (row.EVENT_REVENUE ?? 0) : (row.EVENT_REVENUE_USD ?? 0),
+          currencyCode: useLocal ? (row.CURRENCY_CODE ?? 'USD') : 'USD',
+        };
+      });
 
       // Quarterly registration trend — stored as monthlyData for API compatibility
       const quarterlyData = quarterlyResult.rows.map((row) => {

@@ -264,7 +264,9 @@ export class EventGrowthDrawerComponent {
     } else if (value >= 1_000) {
       compact = `${(value / 1_000).toFixed(1)}K`;
     } else {
-      compact = Math.round(value).toLocaleString();
+      // Fixed locale: SSR (Node) and the browser must render identical text or
+      // hydration flags a mismatch on non-en-US clients.
+      compact = Math.round(value).toLocaleString('en-US');
     }
     if (currencyCode === 'USD' || !currencyCode) {
       return `$${compact}`;
