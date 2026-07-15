@@ -232,6 +232,8 @@ export class OrgProjectDetailComponent {
   protected readonly isActivityMode = computed(() => this.metric() === 'activity');
   protected readonly technicalBoardTitle = computed(() => (this.isActivityMode() ? 'Contribution Activities Leaderboard' : 'Technical Influence Leaderboard'));
   protected readonly ecosystemBoardTitle = computed(() => (this.isActivityMode() ? 'Collaboration Activities Leaderboard' : 'Ecosystem Influence Leaderboard'));
+  protected readonly technicalColumnLabel = computed(() => (this.isActivityMode() ? 'Total contributions' : 'Influence Score'));
+  protected readonly ecosystemColumnLabel = computed(() => (this.isActivityMode() ? 'Total collaborations' : 'Influence Score'));
   /** Project-level Non-LF marker for the ecosystem leaderboard when the project has no ecosystem influence. */
   protected readonly ecosystemBoardNonLfMarker = computed(() => (this.isNonLfProject() ? PD_NON_LF_MARKER : null));
   protected readonly drawerTimeRangeLabel = computed(() => (this.timeRange() === 'all' ? 'All time' : `Last ${PD_TIME_RANGE_MONTHS[this.timeRange()]} months`));
@@ -379,12 +381,6 @@ export class OrgProjectDetailComponent {
 
   protected onTrackScroll(el: HTMLElement, track: 'tech' | 'eco'): void {
     this.refreshArrows(el, track === 'tech');
-  }
-
-  /** Right-hand leaderboard column header: influence mode shows the score; activity mode shows the board's own metric. */
-  protected columnLabel(dimension: LeaderboardDimension): string {
-    if (!this.isActivityMode()) return 'Influence Score';
-    return dimension === 'technical' ? 'Total contributions' : 'Total collaborations';
   }
 
   /** B5 — Lazy-fetch the drawer section for one card, cached per (org, project, card, range); force bypasses the cache for retry. */
