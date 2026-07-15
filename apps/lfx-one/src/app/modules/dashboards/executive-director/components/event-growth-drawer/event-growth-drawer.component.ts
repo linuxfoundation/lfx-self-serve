@@ -108,7 +108,7 @@ export class EventGrowthDrawerComponent {
         .sort((a, b) => a.date.localeCompare(b.date))
         .map((event) => ({
           ...event,
-          formattedRevenue: EventGrowthDrawerComponent.formatMoney(event.revenue),
+          formattedRevenue: EventGrowthDrawerComponent.formatMoney(event.revenue, event.currencyCode),
           isPast: !!event.date && event.date < today,
         }));
     });
@@ -243,7 +243,7 @@ export class EventGrowthDrawerComponent {
       if (topEvents.length > 0) {
         const leadEvent = topEvents.reduce((max, e) => (e.attendees > max.attendees ? e : max), topEvents[0]);
         insights.push({
-          text: `${leadEvent.name} leads with ${formatNumber(leadEvent.attendees)} attendees (${EventGrowthDrawerComponent.formatMoney(leadEvent.revenue)} revenue)`,
+          text: `${leadEvent.name} leads with ${formatNumber(leadEvent.attendees)} attendees (${EventGrowthDrawerComponent.formatMoney(leadEvent.revenue, leadEvent.currencyCode)} revenue)`,
           type: 'info',
         });
       }
@@ -252,9 +252,23 @@ export class EventGrowthDrawerComponent {
     });
   }
 
-  private static formatMoney(value: number): string {
-    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-    return `$${Math.round(value).toLocaleString()}`;
+  /**
+   * Compact money formatter. USD keeps the `$` prefix; any other currency is
+   * prefixed with its ISO 4217 code (e.g. "INR 4.1M") — per-event revenue is
+   * denominated in the event's LOCAL currency, so labeling it `$` would be wrong.
+   */
+  private static formatMoney(value: number, currencyCode: string = 'USD'): string {
+    let compact: string;
+    if (value >= 1_000_000) {
+      compact = `${(value / 1_000_000).toFixed(1)}M`;
+    } else if (value >= 1_000) {
+      compact = `${(value / 1_000).toFixed(1)}K`;
+    } else {
+      compact = Math.round(value).toLocaleString();
+    }
+    if (currencyCode === 'USD' || !currencyCode) {
+      return `$${compact}`;
+    }
+    return `${currencyCode} ${compact}`;
   }
 }

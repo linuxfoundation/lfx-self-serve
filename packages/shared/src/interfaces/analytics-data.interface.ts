@@ -2998,7 +2998,10 @@ export interface EventGrowthTopEvent {
   date: string;
   registrants: number;
   attendees: number;
+  /** Net revenue in the event's LOCAL currency (see currencyCode) — NOT USD-normalized. */
   revenue: number;
+  /** ISO 4217 code of the currency `revenue` is denominated in (e.g. USD, INR, KRW). */
+  currencyCode: string;
 }
 
 /**

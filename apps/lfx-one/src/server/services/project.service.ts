@@ -4940,13 +4940,16 @@ export class ProjectService {
       // Query 1: YTD summary — apples-to-apples comparison.
       // Current year: Jan 1 → today.  Last year: Jan 1 → same month/day last year.
       // This prevents mid-year YoY from comparing partial 2026 against full 2025.
+      // Totals use NET_REVENUE_USD (not NET_REVENUE, which is in each event's
+      // LOCAL currency) — summing local amounts across events mixes currencies
+      // (INR + KRW + USD) into a meaningless number.
       const summaryQuery = `
         SELECT
           YEAR(EVENT_START_DATE) AS EVENT_YEAR,
           COUNT(DISTINCT EVENT_ID) AS EVENT_COUNT,
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
-          SUM(COALESCE(NET_REVENUE, 0)) AS TOTAL_NET_REVENUE
+          SUM(COALESCE(NET_REVENUE_USD, 0)) AS TOTAL_NET_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE (
           (YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE) AND EVENT_START_DATE <= CURRENT_DATE)
@@ -4957,7 +4960,10 @@ export class ProjectService {
         GROUP BY YEAR(EVENT_START_DATE)
       `;
 
-      // Query 2: All events for the current year (past + upcoming), sorted by date
+      // Query 2: All events for the current year (past + upcoming), sorted by date.
+      // Per-event revenue stays in the event's LOCAL currency (NET_REVENUE), with
+      // CURRENCY_CODE carried alongside so the UI can label it — an event is
+      // priced in one currency, so MAX() just picks that single code.
       const topEventsQuery = `
         SELECT
           EVENT_ID,
@@ -4965,7 +4971,8 @@ export class ProjectService {
           EVENT_START_DATE,
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
-          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE
+          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE,
+          MAX(CURRENCY_CODE) AS CURRENCY_CODE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE)
           ${slugFilter}
@@ -5000,6 +5007,7 @@ export class ProjectService {
           REGISTRANT_COUNT: number;
           ATTENDEE_COUNT: number;
           EVENT_REVENUE: number;
+          CURRENCY_CODE: string | null;
         }>(topEventsQuery, binds),
         this.snowflakeService.execute<{
           QUARTER_START_DATE: string | Date;
@@ -5040,6 +5048,7 @@ export class ProjectService {
         registrants: row.REGISTRANT_COUNT ?? 0,
         attendees: row.ATTENDEE_COUNT ?? 0,
         revenue: row.EVENT_REVENUE ?? 0,
+        currencyCode: row.CURRENCY_CODE ?? 'USD',
       }));
 
       // Quarterly registration trend — stored as monthlyData for API compatibility
