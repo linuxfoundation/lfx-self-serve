@@ -342,8 +342,16 @@ export class RevenueImpactDrawerComponent {
 
       if (paidMedia.monthlyTrend.length >= 3) {
         const recent3 = paidMedia.monthlyTrend.slice(-3);
-        const isRisingRev = recent3[0].revenue < recent3[1].revenue && recent3[1].revenue < recent3[2].revenue;
-        const isFallingRev = recent3[0].revenue > recent3[1].revenue && recent3[1].revenue > recent3[2].revenue && recent3[0].revenue > 0;
+        // The backend series has no rows for months without campaigns, so the
+        // last three entries can span gaps — "3 consecutive months" is only
+        // claimable when the entries are truly adjacent calendar months.
+        const ordinals = recent3.map((entry) => {
+          const date = new Date(entry.month);
+          return date.getUTCFullYear() * 12 + date.getUTCMonth();
+        });
+        const consecutive = ordinals.every((ord) => Number.isFinite(ord)) && ordinals[1] === ordinals[0] + 1 && ordinals[2] === ordinals[1] + 1;
+        const isRisingRev = consecutive && recent3[0].revenue < recent3[1].revenue && recent3[1].revenue < recent3[2].revenue;
+        const isFallingRev = consecutive && recent3[0].revenue > recent3[1].revenue && recent3[1].revenue > recent3[2].revenue && recent3[0].revenue > 0;
         if (isRisingRev) {
           insights.push({ text: 'Paid-attributed revenue rising for 3 consecutive months', type: 'driver' });
         } else if (isFallingRev) {

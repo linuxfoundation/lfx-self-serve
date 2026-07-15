@@ -2312,9 +2312,20 @@ export class ProjectService {
 
       let momChangePercentage: number | null = null;
       if (rawMonthlyCtrs.length >= 2) {
+        // Only claim MoM when the last two rows are ADJACENT calendar months —
+        // the series has no rows for months without sends, so the tail can
+        // otherwise span a gap and compare non-consecutive months.
+        const monthOrdinal = (iso: string | null): number | null => {
+          if (!iso) return null;
+          const [year, month] = iso.split('-').map(Number);
+          return year * 12 + month;
+        };
+        const lastOrd = monthOrdinal(ProjectService.toIsoDate(monthlyResult.rows[monthlyResult.rows.length - 1].PUBLISHED_MONTH_DATE));
+        const priorOrd = monthOrdinal(ProjectService.toIsoDate(monthlyResult.rows[monthlyResult.rows.length - 2].PUBLISHED_MONTH_DATE));
+        const adjacent = lastOrd !== null && priorOrd !== null && lastOrd - priorOrd === 1;
         const current = rawMonthlyCtrs[rawMonthlyCtrs.length - 1];
         const prior = rawMonthlyCtrs[rawMonthlyCtrs.length - 2];
-        if (prior > 0) {
+        if (adjacent && prior > 0) {
           momChangePercentage = ((current - prior) / prior) * 100;
         }
       }
