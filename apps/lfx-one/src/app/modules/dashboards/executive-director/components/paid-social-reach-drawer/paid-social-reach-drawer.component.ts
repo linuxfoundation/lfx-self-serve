@@ -215,10 +215,14 @@ export class PaidSocialReachDrawerComponent {
         });
       }
 
-      // ROAS trending down — separate from absolute level
+      // ROAS trending down — separate from absolute level. All three months
+      // must have actual ROAS (> 0): the series is calendar zero-filled, so a
+      // month with no campaigns carries 0 — that's a spend gap, not a
+      // performance trend, and must not fabricate a "3 months straight" streak.
       if (monthlyRoas && monthlyRoas.length >= 3) {
         const recent3 = monthlyRoas.slice(-3);
-        const falling = recent3[0] > recent3[1] && recent3[1] > recent3[2];
+        const allActive = recent3.every((v) => v > 0);
+        const falling = allActive && recent3[0] > recent3[1] && recent3[1] > recent3[2];
         const drop = recent3[0] - recent3[2];
         if (falling && drop >= 0.5) {
           actions.push({
@@ -280,11 +284,13 @@ export class PaidSocialReachDrawerComponent {
         insights.push({ text: `Impressions declined ${Math.abs(impressionsMomPct).toFixed(1)}% MoM`, type: 'warning' });
       }
 
-      // ROAS trend
+      // ROAS trend — streak claims require all three months to have actual
+      // ROAS (> 0); zero-filled no-campaign months are spend gaps, not trend.
       if (monthlyRoas && monthlyRoas.length >= 3) {
         const recent3 = monthlyRoas.slice(-3);
-        const isDecreasing = recent3[0] > recent3[1] && recent3[1] > recent3[2];
-        const isIncreasing = recent3[0] < recent3[1] && recent3[1] < recent3[2];
+        const allActive = recent3.every((v) => v > 0);
+        const isDecreasing = allActive && recent3[0] > recent3[1] && recent3[1] > recent3[2];
+        const isIncreasing = allActive && recent3[0] < recent3[1] && recent3[1] < recent3[2];
         if (isIncreasing) {
           insights.push({ text: `ROAS improving 3 months straight — now at ${recent3[2].toFixed(2)}x`, type: 'driver' });
         } else if (isDecreasing) {
