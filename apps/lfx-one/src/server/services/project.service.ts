@@ -2715,8 +2715,16 @@ export class ProjectService {
       // no campaigns genuinely had 0 impressions; ROAS fills as 0 for series
       // alignment (labels are shared across both series).
       const monthKey = (d: Date): string => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      const impressionsByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [monthKey(new Date(row.CAMPAIGN_MONTH)), row.IMPRESSIONS ?? 0]));
-      const roasByMonth = new Map(monthlyRoasResult.rows.map((row) => [monthKey(new Date(row.CAMPAIGN_MONTH)), Math.round((row.ROAS ?? 0) * 100) / 100]));
+      // Row keys come from the CAMPAIGN_MONTH string prefix, not a Date
+      // round-trip — new Date() on a driver-provided value could carry a
+      // timezone shift and land the row one month off the fill loop's
+      // explicit-UTC keys.
+      const rowMonthKey = (value: string): string => {
+        const match = /^(\d{4}-\d{2})/.exec(String(value));
+        return match ? match[1] : monthKey(new Date(value));
+      };
+      const impressionsByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), row.IMPRESSIONS ?? 0]));
+      const roasByMonth = new Map(monthlyRoasResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), Math.round((row.ROAS ?? 0) * 100) / 100]));
       const monthlyData: number[] = [];
       const monthlyRoas: number[] = [];
       const monthlyLabels: string[] = [];

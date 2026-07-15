@@ -844,24 +844,27 @@ function monthlyValues(data: { month: string; value: number }[]): number[] {
 }
 
 /** Compute MoM change display from a monthly numeric series (last vs second-to-last).
- *  Both months must be non-zero: the feeding series are calendar zero-filled,
- *  so a trailing no-activity month would otherwise display as a steep -100%. */
-function seriesMomChange(series: number[]): string | undefined {
-  if (series.length < 2) return undefined;
+ *  The feeding series are calendar zero-filled, so months with no underlying
+ *  activity must not read as measured zeros. By default the series is its own
+ *  activity signal; callers whose series can carry a legitimate zero in an
+ *  active month (e.g. opens in a month that HAD sends) pass the aligned
+ *  activity series separately so real -100% observations still display. */
+function seriesMomChange(series: number[], activity: number[] = series): string | undefined {
+  if (series.length < 2 || activity.length !== series.length) return undefined;
   const prev = series[series.length - 2];
   const curr = series[series.length - 1];
-  if (prev === 0 || curr === 0) return undefined;
+  if (prev === 0 || activity[activity.length - 1] === 0 || activity[activity.length - 2] === 0) return undefined;
   return formatMomChange(((curr - prev) / prev) * 100);
 }
 
 /** Compute trend direction from a monthly numeric series.
- *  Uses the same MoM % formula and zero guards as seriesMomChange so the
+ *  Uses the same MoM % formula and activity guards as seriesMomChange so the
  *  color never diverges from the displayed text. */
-function seriesTrendDirection(series: number[]): 'up' | 'down' | 'neutral' | undefined {
-  if (series.length < 2) return undefined;
+function seriesTrendDirection(series: number[], activity: number[] = series): 'up' | 'down' | 'neutral' | undefined {
+  if (series.length < 2 || activity.length !== series.length) return undefined;
   const prev = series[series.length - 2];
   const curr = series[series.length - 1];
-  if (prev === 0 || curr === 0) return undefined;
+  if (prev === 0 || activity[activity.length - 1] === 0 || activity[activity.length - 2] === 0) return undefined;
   return trendFromChange(((curr - prev) / prev) * 100);
 }
 
@@ -902,8 +905,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           formatNumber(emailTotalOpens) + ' opens',
           emailCtr.monthlyOpens,
           lfxColors.blue[500],
-          seriesMomChange(emailCtr.monthlyOpens),
-          seriesTrendDirection(emailCtr.monthlyOpens)
+          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
+          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
         ),
         protoDualSignal(
           `Paid · ${formatCurrency(paidCampaign.totalSpend)} spend`,
