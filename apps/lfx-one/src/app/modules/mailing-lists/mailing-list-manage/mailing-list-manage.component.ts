@@ -286,7 +286,9 @@ export class MailingListManageComponent {
   }
 
   private initNeedsSharedServiceCreation(): Signal<boolean> {
-    return computed(() => this.parentService() !== null && this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0);
+    return computed(
+      () => this.parentService() !== null && this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0
+    );
   }
 
   private initServicePrefix(): Signal<string> {
