@@ -1032,7 +1032,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       ],
       caption:
         brandReach.weeklyTrend.length > 0
-          ? `${brandReach.activePlatforms} platforms · ${trendWindow(Math.ceil(brandReach.weeklyTrend.length / 4))}`
+          ? `${brandReach.activePlatforms} platforms · ${trendWindow(Math.round(brandReach.weeklyTrend.length / 4.345))}`
           : `${brandReach.activePlatforms} platforms`,
       tooltipText: 'Social followers across all platforms (stock) and monthly website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,

@@ -2689,12 +2689,28 @@ export class ProjectService {
         };
       }
 
-      const monthlyData = monthlyImpressionsResult.rows.map((row) => row.IMPRESSIONS ?? 0);
-      const monthlyRoas = monthlyRoasResult.rows.map((row) => Math.round((row.ROAS ?? 0) * 100) / 100);
-      const monthlyLabels = monthlyImpressionsResult.rows.map((row) => {
-        const date = new Date(row.CAMPAIGN_MONTH);
-        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      });
+      // Zero-fill the monthly series across the whole requested period: the
+      // queries emit only months that have campaign rows, so gaps would leave
+      // the series with non-consecutive months — chart bars would sit side by
+      // side across a hole, and client-side MoM (computeMomPct on monthlyData)
+      // would compare two non-adjacent months as if consecutive. A month with
+      // no campaigns genuinely had 0 impressions; ROAS fills as 0 for series
+      // alignment (labels are shared across both series).
+      const monthKey = (d: Date): string => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const impressionsByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [monthKey(new Date(row.CAMPAIGN_MONTH)), row.IMPRESSIONS ?? 0]));
+      const roasByMonth = new Map(monthlyRoasResult.rows.map((row) => [monthKey(new Date(row.CAMPAIGN_MONTH)), Math.round((row.ROAS ?? 0) * 100) / 100]));
+      const monthlyData: number[] = [];
+      const monthlyRoas: number[] = [];
+      const monthlyLabels: string[] = [];
+      const monthCursor = new Date(`${resolved.startDate}T00:00:00Z`);
+      const periodEnd = new Date(`${resolved.endDate}T00:00:00Z`);
+      while (monthCursor < periodEnd) {
+        const key = monthKey(monthCursor);
+        monthlyData.push(impressionsByMonth.get(key) ?? 0);
+        monthlyRoas.push(roasByMonth.get(key) ?? 0);
+        monthlyLabels.push(monthCursor.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }));
+        monthCursor.setUTCMonth(monthCursor.getUTCMonth() + 1);
+      }
 
       // Aggregate platform rows by CHANNEL for channelGroups and platformBreakdown
       const platformMap = new Map<
