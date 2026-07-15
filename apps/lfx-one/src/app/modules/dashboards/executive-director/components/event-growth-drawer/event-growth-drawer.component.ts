@@ -190,8 +190,16 @@ export class EventGrowthDrawerComponent {
         }
       }
 
-      if (monthlyData.length >= 3) {
-        const recent3 = monthlyData.slice(-3);
+      // Decline detection must only compare COMPLETED quarters. The quarterly
+      // series is keyed by EVENT start date, so the current and future quarters
+      // hold events whose registrations are still coming in — a completed
+      // quarter will always dwarf them, which would flag a "sustained decline"
+      // for any foundation with upcoming events (e.g. a first-year foundation
+      // with one big past quarter and a future pipeline).
+      const currentQuarterStart = EventGrowthDrawerComponent.quarterStartKey(new Date());
+      const completedQuarters = monthlyData.filter((d) => d.month < currentQuarterStart);
+      if (completedQuarters.length >= 3) {
+        const recent3 = completedQuarters.slice(-3);
         const falling = recent3[0].value > recent3[1].value && recent3[1].value > recent3[2].value;
         if (falling && !actions.some((a) => a.actionType === 'decline')) {
           actions.push({
@@ -250,6 +258,16 @@ export class EventGrowthDrawerComponent {
 
       return insights;
     });
+  }
+
+  /**
+   * Quarter-start key ('YYYY-MM') for the quarter containing the given date —
+   * matches the key format of the quarterly series (EVENT quarter start month),
+   * so string comparison identifies completed vs current/future quarters.
+   */
+  private static quarterStartKey(date: Date): string {
+    const quarterStartMonth = Math.floor(date.getUTCMonth() / 3) * 3 + 1;
+    return `${date.getUTCFullYear()}-${String(quarterStartMonth).padStart(2, '0')}`;
   }
 
   /**
