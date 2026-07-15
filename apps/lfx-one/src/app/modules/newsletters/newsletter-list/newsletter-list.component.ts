@@ -74,6 +74,11 @@ export class NewsletterListComponent {
   // settled (`sent`) row; those are not retried for the component's lifetime.
   private readonly openRateAnalytics = signal<Map<string, NewsletterAnalytics | null>>(new Map());
   private readonly openRatePendingIds = signal<Set<string>>(new Set());
+  // Incremented on every context-driven list reload. loadMore captures it at
+  // request time and discards responses from an older generation — covering
+  // change-and-revert (A→B→A) sequences a value comparison would miss. Not a
+  // signal: nothing renders from it.
+  private loadGeneration = 0;
 
   // === Reactive context ===
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
@@ -118,6 +123,7 @@ export class NewsletterListComponent {
     const token = this.nextPageToken();
     const uid = this.projectUid();
     const status = this.statusTab();
+    const generation = this.loadGeneration;
     if (!token || this.loadingMore() || !uid) return;
     this.loadingMore.set(true);
     this.newsletterService
@@ -128,16 +134,22 @@ export class NewsletterListComponent {
       )
       .subscribe({
         next: (response) => {
-          // Discard the page if the tab or project changed while it was in flight —
-          // appending it would clobber the newer context's rows and page token.
-          if (this.projectUid() !== uid || this.statusTab() !== status) {
+          // Discard the page if the list was reloaded while it was in flight —
+          // appending it would clobber the newer load's rows and page token.
+          if (generation !== this.loadGeneration) {
             return;
           }
           this.newsletters.update((current) => [...current, ...response.newsletters]);
           this.nextPageToken.set(response.next_page_token);
           this.loadOpenRates(response.newsletters);
         },
-        error: (err: HttpErrorResponse) => this.showLoadError(err),
+        error: (err: HttpErrorResponse) => {
+          // A stale request's failure is irrelevant to the context now on screen.
+          if (generation !== this.loadGeneration) {
+            return;
+          }
+          this.showLoadError(err);
+        },
       });
   }
 
@@ -195,6 +207,7 @@ export class NewsletterListComponent {
       .pipe(
         distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
         switchMap(([uid, status]) => {
+          this.loadGeneration++;
           this.previewVisible.set(false);
           this.selectedNewsletter.set(null);
           this.nextPageToken.set(undefined);
