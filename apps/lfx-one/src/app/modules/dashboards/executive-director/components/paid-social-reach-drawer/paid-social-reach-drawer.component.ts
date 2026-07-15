@@ -293,11 +293,17 @@ export class PaidSocialReachDrawerComponent {
       // Impressions trend
       // "grew to" must quote the latest MONTH's impressions — totalReach is the
       // whole window's cumulative figure, a different window than the MoM claim.
+      // A prior ACTIVE month with zero impressions is a real baseline, but a
+      // percentage from zero is undefined — report the rebound in absolute
+      // terms instead of dropping the insight.
       const latestMonthImpressions = monthlyData.at(-1) ?? 0;
+      const reboundFromActiveZero = (monthActive.at(-2) ?? false) && (monthlyData.at(-2) ?? 0) === 0 && latestMonthImpressions > 0;
       if (impressionsMomPct !== null && impressionsMomPct >= 10) {
         insights.push({ text: `Impressions grew ${impressionsMomPct.toFixed(1)}% MoM to ${formatNumber(latestMonthImpressions)}`, type: 'driver' });
       } else if (impressionsMomPct !== null && impressionsMomPct <= -5) {
         insights.push({ text: `Impressions declined ${Math.abs(impressionsMomPct).toFixed(1)}% MoM`, type: 'warning' });
+      } else if (reboundFromActiveZero) {
+        insights.push({ text: `Impressions rebounded from zero to ${formatNumber(latestMonthImpressions)} last month`, type: 'driver' });
       }
 
       // ROAS trend — streak claims require all three months to be ACTIVE

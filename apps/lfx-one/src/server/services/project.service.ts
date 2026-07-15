@@ -3420,7 +3420,11 @@ export class ProjectService {
       const monthlyData = trendResult.rows.map((row) => {
         const date = new Date(row.SNAPSHOT_MONTH);
         return {
-          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          // timeZone: 'UTC' is load-bearing: the drawer parses this label back
+          // into a calendar ordinal for its streak-freshness check, and a
+          // non-UTC server would shift UTC-midnight month starts into the
+          // prior month's label.
+          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           totalFollowers: row.TOTAL_FOLLOWERS ?? 0,
         };
       });
@@ -5564,7 +5568,9 @@ export class ProjectService {
       const monthlyMentions: NorthStarMonthlyDataPoint[] = [...trendResult.rows].reverse().map((row) => {
         const date = new Date(row.MONTH_START_DATE);
         return {
-          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          // Display-only today, but pinned to UTC to match the convention for
+          // month labels elsewhere (a non-UTC server would shift the label).
+          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           value: row.MENTION_COUNT ?? 0,
         };
       });
