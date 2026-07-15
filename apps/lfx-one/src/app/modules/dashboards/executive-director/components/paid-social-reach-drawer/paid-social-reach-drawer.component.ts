@@ -192,7 +192,10 @@ export class PaidSocialReachDrawerComponent {
       const { roas, totalSpend, totalRevenue, monthlyRoas, monthlyData } = this.drawerData();
       // changePercentage from the API is ROAS MoM — impressions MoM must come
       // from the impressions series itself, or reach texts report the wrong metric.
-      const impressionsMomPct = computeMomPct(monthlyData);
+      // The series is calendar zero-filled: a latest month with no campaigns
+      // reads as ~-100% MoM — that's a spend gap, not a reach decline, so MoM
+      // claims require the latest month to have actual impressions.
+      const impressionsMomPct = (monthlyData.at(-1) ?? 0) > 0 ? computeMomPct(monthlyData) : null;
       const actions: MarketingRecommendedAction[] = [];
 
       // Losing money — the most urgent signal (includes 0.00x — spend with no attributed revenue)
@@ -254,8 +257,10 @@ export class PaidSocialReachDrawerComponent {
     return computed(() => {
       const { roas, totalReach, totalSpend, totalRevenue, monthlyRoas, monthlyData } = this.drawerData();
       // changePercentage from the API is ROAS MoM — impressions texts must use
-      // the impressions series' own MoM.
-      const impressionsMomPct = computeMomPct(monthlyData);
+      // the impressions series' own MoM. A zero-filled trailing no-campaign
+      // month would read as ~-100% MoM — a spend gap, not a reach decline —
+      // so MoM claims require the latest month to have actual impressions.
+      const impressionsMomPct = (monthlyData.at(-1) ?? 0) > 0 ? computeMomPct(monthlyData) : null;
       const insights: MarketingKeyInsight[] = [];
 
       if (totalReach === 0) {

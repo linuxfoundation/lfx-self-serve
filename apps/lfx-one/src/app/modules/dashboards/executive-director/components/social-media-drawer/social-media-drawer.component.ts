@@ -10,7 +10,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatNumber, hexToRgba, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -312,12 +312,11 @@ export class SocialMediaDrawerComponent {
       // last three points can span gaps — "3 consecutive months" is only
       // claimable when they are truly adjacent calendar months. (Follower
       // counts are snapshots, so zero-filling gaps would be wrong here.)
+      // point.month is the server's en-US "MMM YYYY" label; parse it
+      // explicitly rather than via implementation-defined new Date(string).
       if (monthlyData.length >= 3) {
         const recent3 = monthlyData.slice(-3);
-        const ordinals = recent3.map((point) => {
-          const date = new Date(point.month);
-          return date.getUTCFullYear() * 12 + date.getUTCMonth();
-        });
+        const ordinals = recent3.map((point) => monthLabelOrdinal(point.month));
         const consecutive = ordinals.every((ord) => Number.isFinite(ord)) && ordinals[1] === ordinals[0] + 1 && ordinals[2] === ordinals[1] + 1;
         const isGrowing = consecutive && recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
         const isShrinking = consecutive && recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
