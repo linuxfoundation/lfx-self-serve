@@ -200,7 +200,13 @@ export class EventGrowthDrawerComponent {
       const completedQuarters = monthlyData.filter((d) => d.month < currentQuarterStart);
       if (completedQuarters.length >= 3) {
         const recent3 = completedQuarters.slice(-3);
-        const falling = recent3[0].value > recent3[1].value && recent3[1].value > recent3[2].value;
+        // The series has no buckets for quarters with zero events, so the last
+        // three entries can span non-adjacent quarters (annual or sparse event
+        // portfolios). "3 quarters straight" is only claimable when they are
+        // truly consecutive.
+        const indices = recent3.map((d) => EventGrowthDrawerComponent.quarterIndex(d.month));
+        const consecutive = indices[1] === indices[0] + 1 && indices[2] === indices[1] + 1;
+        const falling = consecutive && recent3[0].value > recent3[1].value && recent3[1].value > recent3[2].value;
         if (falling && !actions.some((a) => a.actionType === 'decline')) {
           actions.push({
             title: 'Registrations falling 3 quarters straight',
@@ -268,6 +274,16 @@ export class EventGrowthDrawerComponent {
   private static quarterStartKey(date: Date): string {
     const quarterStartMonth = Math.floor(date.getUTCMonth() / 3) * 3 + 1;
     return `${date.getUTCFullYear()}-${String(quarterStartMonth).padStart(2, '0')}`;
+  }
+
+  /**
+   * Linear quarter index for a 'YYYY-MM' key (year * 4 + quarter ordinal) —
+   * adjacent calendar quarters differ by exactly 1, so consecutiveness checks
+   * are simple integer arithmetic.
+   */
+  private static quarterIndex(monthKey: string): number {
+    const [year, month] = monthKey.split('-').map(Number);
+    return year * 4 + Math.floor((month - 1) / 3);
   }
 
   /**

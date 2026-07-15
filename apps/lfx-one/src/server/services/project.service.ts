@@ -4978,8 +4978,8 @@ export class ProjectService {
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
           SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE,
           SUM(COALESCE(NET_REVENUE_USD, 0)) AS EVENT_REVENUE_USD,
-          MAX(CURRENCY_CODE) AS CURRENCY_CODE,
-          COUNT(DISTINCT CURRENCY_CODE) AS CURRENCY_COUNT
+          MAX(CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 THEN CURRENCY_CODE END) AS CURRENCY_CODE,
+          COUNT(DISTINCT CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 THEN COALESCE(CURRENCY_CODE, '__NULL__') END) AS REVENUE_CURRENCY_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE)
           ${slugFilter}
@@ -5016,7 +5016,7 @@ export class ProjectService {
           EVENT_REVENUE: number;
           EVENT_REVENUE_USD: number;
           CURRENCY_CODE: string | null;
-          CURRENCY_COUNT: number;
+          REVENUE_CURRENCY_COUNT: number;
         }>(topEventsQuery, binds),
         this.snowflakeService.execute<{
           QUARTER_START_DATE: string | Date;
@@ -5051,19 +5051,25 @@ export class ProjectService {
       const yoyRevenueChange = pctChange(totalRevenue, revenueLastYtd);
 
       const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => {
-        // Local currency is only honest when the event's rows carry exactly one
-        // distinct code; multi-currency events (or revenue with a NULL code)
-        // fall back to the USD-normalized amount rather than mislabeling a
-        // mixed/unknown sum with a single local code.
-        const singleCurrency = (row.CURRENCY_COUNT ?? 0) === 1 && !!row.CURRENCY_CODE;
-        const hasRevenue = (row.EVENT_REVENUE ?? 0) !== 0;
-        if (hasRevenue && !singleCurrency) {
+        // Local currency is only honest when the event's REVENUE-BEARING rows
+        // carry exactly one known code. REVENUE_CURRENCY_COUNT is computed only
+        // over rows with nonzero NET_REVENUE and counts a NULL code as its own
+        // sentinel value, so: 0 = no revenue rows at all (free event — local sum
+        // is 0, keep local); 1 with a known code = single currency (keep local);
+        // anything else (mixed codes, or revenue whose code is NULL) falls back
+        // to the USD-normalized amount rather than mislabeling the sum. Row
+        // counting (not the net sum) also catches charges and refunds that
+        // cancel to zero — those events still route through the fallback check.
+        const revenueCurrencyCount = row.REVENUE_CURRENCY_COUNT ?? 0;
+        const hasRevenueRows = revenueCurrencyCount > 0;
+        const singleKnownCurrency = revenueCurrencyCount === 1 && !!row.CURRENCY_CODE;
+        if (hasRevenueRows && !singleKnownCurrency) {
           logger.warning(undefined, 'get_event_growth', 'Event revenue is multi-currency or missing a currency code; falling back to USD', {
             event_id: String(row.EVENT_ID ?? ''),
-            currency_count: row.CURRENCY_COUNT ?? 0,
+            revenue_currency_count: revenueCurrencyCount,
           });
         }
-        const useLocal = singleCurrency || !hasRevenue;
+        const useLocal = singleKnownCurrency || !hasRevenueRows;
         return {
           id: String(row.EVENT_ID ?? ''),
           name: row.EVENT_NAME ?? '',
