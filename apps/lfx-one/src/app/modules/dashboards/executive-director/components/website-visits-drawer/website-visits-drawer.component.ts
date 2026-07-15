@@ -162,7 +162,7 @@ export class WebsiteVisitsDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getWebActivitiesSummary(foundationSlug).pipe(
+          this.analyticsService.getWebActivitiesSummary(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
