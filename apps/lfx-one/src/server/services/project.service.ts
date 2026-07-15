@@ -5497,18 +5497,21 @@ export class ProjectService {
       // trendResult is ordered DESC, so [0] = latest, [1] = previous. The series
       // only contains months with mention rows, so a genuine MoM additionally
       // requires: (a) the two rows are ADJACENT calendar months, and (b) the
-      // newest row is the latest completed month (not a stale older pair).
+      // newest row is the final month of the REQUESTED period (not a stale
+      // older pair). resolved.endDate is the exclusive first-of-next-month
+      // boundary, so the expected newest month is one ordinal below it —
+      // wall-clock "now" would permanently zero MoM for historical periods.
       let mentionMomChangePct = 0;
       if (trendResult.rows.length >= 2) {
         const rowOrdinal = (value: string | Date): number => {
           const date = new Date(value);
           return date.getUTCFullYear() * 12 + date.getUTCMonth();
         };
-        const now = new Date();
-        const latestCompletedOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth() - 1;
+        const periodEnd = new Date(resolved.endDate);
+        const expectedNewestOrdinal = periodEnd.getUTCFullYear() * 12 + periodEnd.getUTCMonth() - 1;
         const newestOrdinal = rowOrdinal(trendResult.rows[0].MONTH_START_DATE);
         const priorOrdinal = rowOrdinal(trendResult.rows[1].MONTH_START_DATE);
-        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= latestCompletedOrdinal;
+        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= expectedNewestOrdinal;
         const current = trendResult.rows[0].MENTION_COUNT ?? 0;
         const previous = trendResult.rows[1].MENTION_COUNT ?? 0;
         if (validPair && previous > 0) {
