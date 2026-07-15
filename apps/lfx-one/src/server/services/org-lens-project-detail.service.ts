@@ -7,14 +7,17 @@ import type {
   OrgLensCardDetailRow,
   OrgLensCardDetailSection,
   OrgLensCardRosterPage,
+  OrgLensHeroBlock,
+  OrgLensInfluenceBlock,
+  OrgLensLeaderboardBlock,
   OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
-  OrgLensProjectDetailResponse,
   OrgLensProjectHealth,
   OrgLensProjectHero,
   OrgLensProjectInfluenceCard,
   OrgLensProjectLeaderboardRow,
   OrgLensProjectTrendSeries,
+  OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl } from '@lfx-one/shared/utils';
 
@@ -314,28 +317,6 @@ export class OrgLensProjectDetailService {
 
   private readonly snowflakeService = SnowflakeService.getInstance();
 
-  public async getProjectDetail(
-    orgUid: string,
-    orgName: string,
-    projectSlug: string,
-    range: OrgLensLeaderboardTimeRange
-  ): Promise<OrgLensProjectDetailResponse | null> {
-    const cacheKey = `project-detail:${this.paramSignature([projectSlug.trim().toLowerCase(), range])}`;
-    const key = buildOrgCacheKey(orgUid, cacheKey);
-    if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensProjectDetailResponse>(key, OrgLensProjectDetailService.isDetailResponse);
-      if (cached !== null) {
-        return cached;
-      }
-    }
-
-    const response = await this.fetchProjectDetail(orgUid, orgName, projectSlug, range);
-    if (response !== null && key !== null) {
-      await valkeyService.setJson(key, response, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
-    }
-    return response;
-  }
-
   /** One server-paginated page of a card's drawer roster (DN9); rows page in on demand, never in the main payload. */
   public async getCardRoster(
     orgUid: string,
@@ -390,16 +371,159 @@ export class OrgLensProjectDetailService {
     return result;
   }
 
-  private async fetchProjectDetail(
-    orgUid: string,
-    orgName: string,
-    projectSlug: string,
-    range: OrgLensLeaderboardTimeRange
-  ): Promise<OrgLensProjectDetailResponse | null> {
+  public async getHeroBlock(orgUid: string, projectSlug: string): Promise<OrgLensHeroBlock | null> {
+    const slug = projectSlug.trim().toLowerCase();
+    const key = buildOrgCacheKey(orgUid, `project-detail-hero:${this.paramSignature([slug])}`);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensHeroBlock>(key, OrgLensProjectDetailService.isHeroBlock);
+      if (cached !== null) return cached;
+    }
+
+    const heroRow = await this.fetchHeroRow(orgUid, slug);
+    if (!heroRow) return null;
+
+    const block: OrgLensHeroBlock = {
+      hero: this.mapHero(heroRow, slug, heroRow.FOUNDATION_NAME ?? 'Outside LF'),
+      isNonLfProject: heroRow.IS_LF_PROJECT !== true,
+    };
+    if (key !== null) {
+      await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return block;
+  }
+
+  public async getInfluenceBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensInfluenceBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:${this.paramSignature([slug, range])}`);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(key, OrgLensProjectDetailService.isInfluenceBlock);
+      if (cached !== null) return cached;
+    }
 
-    const heroResult = await this.snowflakeService.execute<HeroRow>(
+    const heroRow = await this.fetchHeroRow(orgUid, slug);
+    if (!heroRow) return null;
+    const isNonLf = heroRow.IS_LF_PROJECT !== true;
+    const foundationLabel = heroRow.FOUNDATION_NAME ?? 'Outside LF';
+
+    const [cardRows, sparkRows, leaderboardRows] = await Promise.all([
+      this.fetchCards(orgUid, slug, timeRangeType),
+      this.fetchSparklines(orgUid, slug),
+      this.fetchLeaderboard(orgUid, slug, timeRangeType),
+    ]);
+
+    const cards = cardRows[0] ?? null;
+    const sparklineIndex = this.buildSparklineIndex(sparkRows);
+    const monthAxis = this.monthAxis();
+    const viewing = leaderboardRows.find((row) => row.ORG_ACCOUNT_ID === orgUid) ?? null;
+
+    const block: OrgLensInfluenceBlock = {
+      technical: this.buildTechnicalCards(cards, sparklineIndex, monthAxis),
+      ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLf, sparklineIndex, monthAxis),
+      isNonLfProject: isNonLf,
+      levels: {
+        technical: viewing ? (this.mapBand(viewing.LEVEL_TECHNICAL) ?? 'silent') : null,
+        ecosystem: isNonLf || !viewing ? null : (this.mapBand(viewing.LEVEL_ECOSYSTEM) ?? 'silent'),
+      },
+    };
+    if (key !== null) {
+      await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return block;
+  }
+
+  public async getTrendBlock(orgUid: string, projectSlug: string): Promise<OrgLensTrendBlock | null> {
+    const slug = projectSlug.trim().toLowerCase();
+    const key = buildOrgCacheKey(orgUid, `project-detail-trend:${this.paramSignature([slug])}`);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensTrendBlock>(key, OrgLensProjectDetailService.isTrendBlock);
+      if (cached !== null) return cached;
+    }
+
+    // Gate on the (org, slug) catalog row like every other block, so project-wide trend is not
+    // served for a project the org has no activity on (and the 404 stays consistent across blocks).
+    const [heroRow, trendRows] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrend(slug)]);
+    if (!heroRow) return null;
+
+    const block: OrgLensTrendBlock = { trend: this.buildTrendSeries(this.buildTrendByAccount(trendRows)) };
+    if (key !== null) {
+      await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return block;
+  }
+
+  public async getTechnicalBoard(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensLeaderboardBlock | null> {
+    return this.fetchLeaderboardBlock(orgUid, projectSlug, range, 'technical');
+  }
+
+  public async getEcosystemBoard(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensLeaderboardBlock | null> {
+    return this.fetchLeaderboardBlock(orgUid, projectSlug, range, 'ecosystem');
+  }
+
+  public async getCardDrawer(
+    orgUid: string,
+    projectSlug: string,
+    cardKey: string,
+    range: OrgLensLeaderboardTimeRange
+  ): Promise<OrgLensCardDetailSection | null> {
+    const slug = projectSlug.trim().toLowerCase();
+    const timeRangeType = PD_TIME_RANGE_TYPE[range];
+    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:${this.paramSignature([slug, cardKey, range])}`);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensCardDetailSection>(key, OrgLensProjectDetailService.isCardDetailSection);
+      if (cached !== null) return cached;
+    }
+
+    const heroRow = await this.fetchHeroRow(orgUid, slug);
+    if (!heroRow) return null;
+
+    const [cardRows, platformRows] = await Promise.all([this.fetchCards(orgUid, slug, timeRangeType), this.fetchPlatforms(slug, timeRangeType)]);
+    const section = this.buildCardDetails(cardRows[0] ?? null, platformRows[0] ?? null, heroRow.IS_LF_PROJECT !== true)[cardKey] ?? null;
+    if (section !== null && key !== null) {
+      await valkeyService.setJson(key, section, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return section;
+  }
+
+  private async fetchLeaderboardBlock(
+    orgUid: string,
+    projectSlug: string,
+    range: OrgLensLeaderboardTimeRange,
+    dimension: 'technical' | 'ecosystem'
+  ): Promise<OrgLensLeaderboardBlock | null> {
+    const slug = projectSlug.trim().toLowerCase();
+    const timeRangeType = PD_TIME_RANGE_TYPE[range];
+    const key = buildOrgCacheKey(orgUid, `project-detail-board-${dimension}:${this.paramSignature([slug, range])}`);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLensLeaderboardBlock>(key, OrgLensProjectDetailService.isLeaderboardBlock);
+      if (cached !== null) return cached;
+    }
+
+    const heroRow = await this.fetchHeroRow(orgUid, slug);
+    if (!heroRow) return null;
+    const isNonLf = heroRow.IS_LF_PROJECT !== true;
+
+    const [leaderboardRows, activityBoardRows, trendRows] = await Promise.all([
+      this.fetchLeaderboard(orgUid, slug, timeRangeType),
+      this.fetchActivityLeaderboards(orgUid, slug, timeRangeType),
+      this.fetchTrend(slug),
+    ]);
+
+    const trendByAccount = this.buildTrendByAccount(trendRows);
+    const activityLeaderboards = this.mapActivityLeaderboards(activityBoardRows, orgUid, trendByAccount);
+    const block: OrgLensLeaderboardBlock = {
+      influence: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLf, trendByAccount)),
+      activity: dimension === 'technical' ? activityLeaderboards.contributions : activityLeaderboards.collaborations,
+      isNonLfProject: isNonLf,
+    };
+    if (key !== null) {
+      await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return block;
+  }
+
+  private async fetchHeroRow(orgUid: string, slug: string): Promise<HeroRow | null> {
+    const result = await this.snowflakeService.execute<HeroRow>(
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
                DESCRIPTION, HEALTH_OVERALL_SCORE, SOFTWARE_VALUE, FIRST_COMMIT_TS
@@ -409,92 +533,67 @@ export class OrgLensProjectDetailService {
       `,
       [orgUid, slug]
     );
-    const heroRow = heroResult.rows[0];
-    if (!heroRow) {
-      // No catalog row for (org, slug) → the org has no activity on this project → 404.
-      return null;
-    }
+    return result.rows[0] ?? null;
+  }
 
-    const [cardsResult, leaderboardRows, activityBoardRows, trendRows, sparkRows, platformsResult] = await Promise.all([
-      this.snowflakeService.execute<CardsRow>(
-        `
-          SELECT TECH_MAINTAINERS_COUNT, TECH_CONTRIBUTORS_PCT, TECH_COMMITS_PCT, TECH_PR_OPENED_PCT,
-                 TECH_AVG_MERGE_TIME_SPEED_PCT, TECH_AVG_MERGE_TIME_SPEED_CATEGORY,
-                 ECO_COLLABORATION_PCT, ECO_MEETING_ATTENDANCE_COUNT, ECO_BOARD_MEMBERS_COUNT,
-                 ECO_COMMITTEE_MEMBERS_PCT, ECO_EVENT_ATTENDANCE_PCT, ECO_EVENT_SPEAKERS_PCT,
-                 ECO_EVENT_SPONSORSHIPS_PCT, ECO_MEETUP_ATTENDANCE_PCT, ECO_CERTIFIED_INDIVIDUALS_PCT,
-                 TECH_MAINTAINERS_TOTAL, TECH_CONTRIBUTORS_TOTAL, TECH_COMMITS_TOTAL, TECH_PR_OPENED_TOTAL,
-                 TECH_AVG_MERGE_TIME_SECONDS,
-                 ECO_COLLABORATION_TOTAL, ECO_MEETING_ATTENDANCE_TOTAL, ECO_BOARD_MEMBERS_TOTAL,
-                 ECO_COMMITTEE_MEMBERS_TOTAL, ECO_EVENT_ATTENDANCE_TOTAL, ECO_EVENT_SPEAKERS_TOTAL,
-                 ECO_EVENT_SPONSORSHIPS_TOTAL, ECO_MEETUP_ATTENDANCE_TOTAL, ECO_CERTIFIED_INDIVIDUALS_TOTAL
-          FROM ${this.cardsTable()}
-          WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
-          LIMIT 1
-        `,
-        [orgUid, slug, timeRangeType]
-      ),
-      this.fetchLeaderboard(orgUid, slug, timeRangeType),
-      this.fetchActivityLeaderboards(orgUid, slug, timeRangeType),
-      // Trend is viewer- and range-independent (all orgs, full 36-month window); the client
-      // slices to the active range. Returned oldest → newest per org.
-      this.snowflakeService.execute<TrendRow>(
-        `
-          SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SPAN_MONTH, COMBINED_INFLUENCE_SCORE
-          FROM ${this.trendTable()}
-          WHERE PROJECT_SLUG = ?
-          ORDER BY ACCOUNT_ID, SPAN_MONTH ASC
-        `,
-        [slug]
-      ),
-      // Per-card monthly series for the viewing org across all 14 cards (org + project-wide
-      // values); densified/sliced client-side per range. Range-independent (full history stored).
-      this.snowflakeService.execute<SparkRow>(
-        `
-          SELECT METRIC_KEY, SPAN_MONTH, ORG_VALUE, PROJECT_VALUE
-          FROM ${this.sparklinesTable()}
-          WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
-        `,
-        [orgUid, slug]
-      ),
-      // Project-wide distinct source platforms for the technical cards' drawer data-source line.
-      // Project-scoped (org-dashboard's per-card summaries drop the account) and range-scoped
-      // (only maintainer_platforms actually varies by range).
-      this.snowflakeService.execute<PlatformsRow>(
-        `
-          SELECT CONTRIBUTOR_PLATFORMS, COMMIT_PLATFORMS, PR_PLATFORMS, MAINTAINER_PLATFORMS
-          FROM ${this.platformsTable()}
-          WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
-          LIMIT 1
-        `,
-        [slug, timeRangeType]
-      ),
-    ]);
+  private async fetchCards(orgUid: string, slug: string, timeRangeType: string): Promise<CardsRow[]> {
+    const result = await this.snowflakeService.execute<CardsRow>(
+      `
+        SELECT TECH_MAINTAINERS_COUNT, TECH_CONTRIBUTORS_PCT, TECH_COMMITS_PCT, TECH_PR_OPENED_PCT,
+               TECH_AVG_MERGE_TIME_SPEED_PCT, TECH_AVG_MERGE_TIME_SPEED_CATEGORY,
+               ECO_COLLABORATION_PCT, ECO_MEETING_ATTENDANCE_COUNT, ECO_BOARD_MEMBERS_COUNT,
+               ECO_COMMITTEE_MEMBERS_PCT, ECO_EVENT_ATTENDANCE_PCT, ECO_EVENT_SPEAKERS_PCT,
+               ECO_EVENT_SPONSORSHIPS_PCT, ECO_MEETUP_ATTENDANCE_PCT, ECO_CERTIFIED_INDIVIDUALS_PCT,
+               TECH_MAINTAINERS_TOTAL, TECH_CONTRIBUTORS_TOTAL, TECH_COMMITS_TOTAL, TECH_PR_OPENED_TOTAL,
+               TECH_AVG_MERGE_TIME_SECONDS,
+               ECO_COLLABORATION_TOTAL, ECO_MEETING_ATTENDANCE_TOTAL, ECO_BOARD_MEMBERS_TOTAL,
+               ECO_COMMITTEE_MEMBERS_TOTAL, ECO_EVENT_ATTENDANCE_TOTAL, ECO_EVENT_SPEAKERS_TOTAL,
+               ECO_EVENT_SPONSORSHIPS_TOTAL, ECO_MEETUP_ATTENDANCE_TOTAL, ECO_CERTIFIED_INDIVIDUALS_TOTAL
+        FROM ${this.cardsTable()}
+        WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
+        LIMIT 1
+      `,
+      [orgUid, slug, timeRangeType]
+    );
+    return result.rows;
+  }
 
-    const isLf = heroRow.IS_LF_PROJECT === true;
-    const isNonLfProject = !isLf;
-    const foundationLabel = heroRow.FOUNDATION_NAME ?? 'Outside LF';
-    const cards = cardsResult.rows[0] ?? null;
-    const trendByAccount = this.buildTrendByAccount(trendRows.rows);
-    const sparklineIndex = this.buildSparklineIndex(sparkRows.rows);
-    const monthAxis = this.monthAxis();
-    const platforms = platformsResult.rows[0] ?? null;
+  private async fetchSparklines(orgUid: string, slug: string): Promise<SparkRow[]> {
+    const result = await this.snowflakeService.execute<SparkRow>(
+      `
+        SELECT METRIC_KEY, SPAN_MONTH, ORG_VALUE, PROJECT_VALUE
+        FROM ${this.sparklinesTable()}
+        WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
+      `,
+      [orgUid, slug]
+    );
+    return result.rows;
+  }
 
-    const activityLeaderboards = this.mapActivityLeaderboards(activityBoardRows, orgUid, trendByAccount);
+  private async fetchPlatforms(slug: string, timeRangeType: string): Promise<PlatformsRow[]> {
+    const result = await this.snowflakeService.execute<PlatformsRow>(
+      `
+        SELECT CONTRIBUTOR_PLATFORMS, COMMIT_PLATFORMS, PR_PLATFORMS, MAINTAINER_PLATFORMS
+        FROM ${this.platformsTable()}
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
+        LIMIT 1
+      `,
+      [slug, timeRangeType]
+    );
+    return result.rows;
+  }
 
-    return {
-      accountId: orgUid,
-      projectSlug: slug,
-      isNonLfProject,
-      hero: this.mapHero(heroRow, slug, foundationLabel),
-      technical: this.buildTechnicalCards(cards, sparklineIndex, monthAxis),
-      ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLfProject, sparklineIndex, monthAxis),
-      leaderboard: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLfProject, trendByAccount)),
-      activityLeaderboards,
-      trend: this.buildTrendSeries(trendByAccount),
-      // Roster rows page in lazily per card via getCardRoster; the main response carries only definition + column headers.
-      cardDetails: this.buildCardDetails(cards, platforms, isNonLfProject),
-    };
+  private async fetchTrend(slug: string): Promise<TrendRow[]> {
+    const result = await this.snowflakeService.execute<TrendRow>(
+      `
+        SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SPAN_MONTH, COMBINED_INFLUENCE_SCORE
+        FROM ${this.trendTable()}
+        WHERE PROJECT_SLUG = ?
+        ORDER BY ACCOUNT_ID, SPAN_MONTH ASC
+      `,
+      [slug]
+    );
+    return result.rows;
   }
 
   /** Index the tall sparkline rows into per-card (year-month → value) maps for org + project. */
@@ -1417,29 +1516,44 @@ export class OrgLensProjectDetailService {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_AVG_MERGE_TIME`;
   }
 
-  private static isDetailResponse(value: unknown): value is OrgLensProjectDetailResponse {
-    if (value === null || typeof value !== 'object') return false;
-    const candidate = value as OrgLensProjectDetailResponse;
-    return (
-      typeof candidate.accountId === 'string' &&
-      typeof candidate.projectSlug === 'string' &&
-      !!candidate.hero &&
-      Array.isArray(candidate.technical) &&
-      Array.isArray(candidate.ecosystem) &&
-      Array.isArray(candidate.leaderboard) &&
-      !!candidate.activityLeaderboards &&
-      Array.isArray(candidate.activityLeaderboards.contributions) &&
-      Array.isArray(candidate.activityLeaderboards.collaborations) &&
-      Array.isArray(candidate.trend) &&
-      typeof candidate.cardDetails === 'object' &&
-      candidate.cardDetails !== null &&
-      typeof candidate.isNonLfProject === 'boolean'
-    );
-  }
-
   private static isRosterPage(value: unknown): value is OrgLensCardRosterPage {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensCardRosterPage;
     return Array.isArray(candidate.rows) && typeof candidate.total === 'number';
+  }
+
+  private static isHeroBlock(value: unknown): value is OrgLensHeroBlock {
+    if (value === null || typeof value !== 'object') return false;
+    const candidate = value as OrgLensHeroBlock;
+    return !!candidate.hero && typeof candidate.hero === 'object' && typeof candidate.isNonLfProject === 'boolean';
+  }
+
+  private static isInfluenceBlock(value: unknown): value is OrgLensInfluenceBlock {
+    if (value === null || typeof value !== 'object') return false;
+    const candidate = value as OrgLensInfluenceBlock;
+    return (
+      Array.isArray(candidate.technical) &&
+      Array.isArray(candidate.ecosystem) &&
+      typeof candidate.isNonLfProject === 'boolean' &&
+      !!candidate.levels &&
+      typeof candidate.levels === 'object'
+    );
+  }
+
+  private static isTrendBlock(value: unknown): value is OrgLensTrendBlock {
+    if (value === null || typeof value !== 'object') return false;
+    return Array.isArray((value as OrgLensTrendBlock).trend);
+  }
+
+  private static isLeaderboardBlock(value: unknown): value is OrgLensLeaderboardBlock {
+    if (value === null || typeof value !== 'object') return false;
+    const candidate = value as OrgLensLeaderboardBlock;
+    return Array.isArray(candidate.influence) && Array.isArray(candidate.activity) && typeof candidate.isNonLfProject === 'boolean';
+  }
+
+  private static isCardDetailSection(value: unknown): value is OrgLensCardDetailSection {
+    if (value === null || typeof value !== 'object') return false;
+    const candidate = value as OrgLensCardDetailSection;
+    return !!candidate.definition && typeof candidate.definition === 'object' && Array.isArray(candidate.columns) && Array.isArray(candidate.rows);
   }
 }

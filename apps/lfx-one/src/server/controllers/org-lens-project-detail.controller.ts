@@ -19,47 +19,81 @@ export class OrgLensProjectDetailController {
     this.service = new OrgLensProjectDetailService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/projects/:projectSlug?range= */
-  public async getProjectDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const orgUid = req.params['orgUid'];
-    const projectSlug = req.params['projectSlug'];
-    const rawOrgName = typeof req.query['orgName'] === 'string' ? req.query['orgName'].trim() : '';
-    const orgName = rawOrgName || 'Your Organization';
-    const rawRange = typeof req.query['range'] === 'string' ? req.query['range'] : '';
-    // Unknown / absent range falls back to the page default rather than erroring.
-    const range: OrgLensLeaderboardTimeRange = PD_VALID_TIME_RANGES.has(rawRange) ? (rawRange as OrgLensLeaderboardTimeRange) : PD_DEFAULT_TIME_RANGE;
-
-    const startTime = logger.startOperation(req, 'get_org_lens_project_detail', {
-      org_uid: orgUid,
-      project_slug: projectSlug,
-      range,
-    });
-
+  public async getHeroBlock(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { orgUid, projectSlug } = this.context(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_hero', { org_uid: orgUid, project_slug: projectSlug });
     try {
-      assertOrgUid(orgUid, 'get_org_lens_project_detail');
-      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail');
+      assertOrgUid(orgUid, 'get_org_lens_project_detail_hero');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_hero');
+      const block = await this.service.getHeroBlock(orgUid, projectSlug);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_hero', startTime, orgUid, projectSlug, block);
+    } catch (error) {
+      next(error);
+    }
+  }
 
-      const response = await this.service.getProjectDetail(orgUid, orgName, projectSlug, range);
+  public async getInfluenceBlock(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { orgUid, projectSlug, range } = this.context(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_influence', { org_uid: orgUid, project_slug: projectSlug, range });
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_project_detail_influence');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_influence');
+      const block = await this.service.getInfluenceBlock(orgUid, projectSlug, range);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_influence', startTime, orgUid, projectSlug, block);
+    } catch (error) {
+      next(error);
+    }
+  }
 
-      if (response === null) {
-        logger.success(req, 'get_org_lens_project_detail', startTime, {
-          org_uid: orgUid,
-          project_slug: projectSlug,
-          found: false,
-        });
-        res.setHeader('Cache-Control', 'no-store');
-        res.status(404).json({ message: 'Project not found' });
-        return;
-      }
+  public async getTrendBlock(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { orgUid, projectSlug } = this.context(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_trend', { org_uid: orgUid, project_slug: projectSlug });
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_project_detail_trend');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_trend');
+      const block = await this.service.getTrendBlock(orgUid, projectSlug);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_trend', startTime, orgUid, projectSlug, block);
+    } catch (error) {
+      next(error);
+    }
+  }
 
-      logger.success(req, 'get_org_lens_project_detail', startTime, {
-        org_uid: orgUid,
-        project_slug: projectSlug,
-        found: true,
-      });
+  public async getTechnicalBoard(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { orgUid, projectSlug, range } = this.context(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_board_technical', { org_uid: orgUid, project_slug: projectSlug, range });
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_project_detail_board_technical');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_technical');
+      const block = await this.service.getTechnicalBoard(orgUid, projectSlug, range);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_board_technical', startTime, orgUid, projectSlug, block);
+    } catch (error) {
+      next(error);
+    }
+  }
 
-      res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+  public async getEcosystemBoard(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { orgUid, projectSlug, range } = this.context(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_board_ecosystem', { org_uid: orgUid, project_slug: projectSlug, range });
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_project_detail_board_ecosystem');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_ecosystem');
+      const block = await this.service.getEcosystemBoard(orgUid, projectSlug, range);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_board_ecosystem', startTime, orgUid, projectSlug, block);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async getCardDrawer(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { orgUid, projectSlug, range } = this.context(req);
+    const cardKey = req.params['cardKey'];
+    const startTime = logger.startOperation(req, 'get_org_lens_card_drawer', { org_uid: orgUid, project_slug: projectSlug, card_key: cardKey, range });
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_card_drawer');
+      this.assertProjectSlug(projectSlug, 'get_org_lens_card_drawer');
+      this.assertCardKey(cardKey, 'get_org_lens_card_drawer');
+      const section = await this.service.getCardDrawer(orgUid, projectSlug, cardKey, range);
+      this.sendBlock(req, res, 'get_org_lens_card_drawer', startTime, orgUid, projectSlug, section);
     } catch (error) {
       next(error);
     }
@@ -124,5 +158,25 @@ export class OrgLensProjectDetailController {
   private parseNonNegativeInt(value: unknown, fallback: number): number {
     const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : NaN;
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  }
+
+  private context(req: Request): { orgUid: string | undefined; projectSlug: string | undefined; range: OrgLensLeaderboardTimeRange } {
+    const rawRange = typeof req.query['range'] === 'string' ? req.query['range'] : '';
+    return {
+      orgUid: req.params['orgUid'],
+      projectSlug: req.params['projectSlug'],
+      range: PD_VALID_TIME_RANGES.has(rawRange) ? (rawRange as OrgLensLeaderboardTimeRange) : PD_DEFAULT_TIME_RANGE,
+    };
+  }
+
+  private sendBlock(req: Request, res: Response, operation: string, startTime: number, orgUid: string, projectSlug: string, block: unknown): void {
+    res.setHeader('Cache-Control', 'no-store');
+    if (block === null) {
+      logger.success(req, operation, startTime, { org_uid: orgUid, project_slug: projectSlug, found: false });
+      res.status(404).json({ message: 'Not found' });
+      return;
+    }
+    logger.success(req, operation, startTime, { org_uid: orgUid, project_slug: projectSlug, found: true });
+    res.json(block);
   }
 }

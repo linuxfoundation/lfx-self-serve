@@ -582,7 +582,7 @@ export class OrgProjectDetailComponent {
   private buildHeroState(): Observable<HeroState> {
     return combineLatest([this.orgUid$, this.slug$, toObservable(this.heroRetry)]).pipe(
       switchMap(([uid, slug]) =>
-        this.detailService.getHero(uid, this.orgName(), slug, this.timeRange()).pipe(
+        this.detailService.getHero(uid, this.orgName(), slug).pipe(
           map((block): HeroState => (block === null ? { status: 'notFound', data: null } : { status: 'ready', data: block })),
           startWith<HeroState>({ status: 'loading', data: null }),
           catchError((err: unknown): Observable<HeroState> => {

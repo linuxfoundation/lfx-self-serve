@@ -35,7 +35,7 @@ export type OrgLensProjectHealth = 'excellent' | 'healthy' | 'at-risk';
 /**
  * Precomputed org-influence tier, read straight through from the warehouse level column.
  * Weakest → strongest. "Non-LF" is not a tier here — it is a separate project classification
- * surfaced by `OrgLensProjectDetailResponse.isNonLfProject` and a null ecosystem level.
+ * surfaced by each block payload's `isNonLfProject` flag and a null ecosystem level.
  */
 export type OrgLensProjectBand = 'silent' | 'participating' | 'contributing' | 'leading';
 
@@ -161,31 +161,6 @@ export interface OrgLensProjectTrendSeries {
   orgLogoUrl: string;
   combined: number[];
 }
-
-/** Full Project Detail payload. `accountId` + `projectSlug` echo the request envelope. */
-export interface OrgLensProjectDetailResponse {
-  accountId: string;
-  projectSlug: string;
-  hero: OrgLensProjectHero;
-  /** True when the project is not an LF-hosted project — the ecosystem group renders empty and bands show a Non-LF marker. */
-  isNonLfProject: boolean;
-  technical: OrgLensProjectInfluenceCard[];
-  ecosystem: OrgLensProjectInfluenceCard[];
-  /** All organizations contributing to the project; the viewing-org row is always included. */
-  leaderboard: OrgLensProjectLeaderboardRow[];
-  /** Activity Count mode boards — each wraps the org-dashboard contributions/collaborations top-10. */
-  activityLeaderboards: {
-    contributions: OrgLensProjectLeaderboardRow[];
-    collaborations: OrgLensProjectLeaderboardRow[];
-  };
-  /** Per-org monthly combined-influence series feeding the Influence Trend chart (36-month store; client slices to active range). */
-  trend: OrgLensProjectTrendSeries[];
-  /** Keyed by card key — drawer definition + card-specific data table for each influence card. */
-  cardDetails: Record<string, OrgLensCardDetailSection>;
-}
-
-/** Page-level lifecycle state for the Project Detail component. */
-export type OrgLensProjectDetailPageState = 'loading' | 'error' | 'notFound' | 'ready';
 
 /**
  * Lifecycle state for a single Project Detail data-fetching block (LFXV2-1885 UX contract).
