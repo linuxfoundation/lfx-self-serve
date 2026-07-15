@@ -827,7 +827,7 @@ export class OrgProjectDetailComponent {
       key: card.key,
       title: card.label,
       scopeLabel: card.scopeLabel,
-      hasData: sparkline.length > 0,
+      hasData: sparkline.some((value) => value !== null),
       chartType: (variant === 'bar' ? 'bar' : 'line') as ChartType,
       chartData: this.buildCardChartData(sparkline, projectSparkline, colorHex, variant, labels),
       chartOptions: variant === 'bar' ? this.buildBarCardOptions(valueSuffix) : this.buildLineAreaCardOptions(valueSuffix),

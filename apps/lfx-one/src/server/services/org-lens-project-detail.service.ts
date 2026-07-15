@@ -198,7 +198,7 @@ export class OrgLensProjectDetailService {
     maintainers: {
       text: 'Individuals granted maintainer status with merge rights and code ownership for this project.',
       totalType: 'count',
-      columns: ['Our Contributors', 'Username', 'Granted Maintainer Status'],
+      columns: ['Our Contributors', 'Username', 'Maintainer Since'],
       totalField: 'TECH_MAINTAINERS_TOTAL',
       platformField: 'MAINTAINER_PLATFORMS',
     },
