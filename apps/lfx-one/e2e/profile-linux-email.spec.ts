@@ -97,10 +97,12 @@ test.describe('Linux.com email — partial claim failure recovery', () => {
 
     // Recovery: even though the claim request failed, the tab transitions to the
     // claimed/edit view (not left stuck on the claim form) and surfaces a guiding toast.
+    // The toast assertion runs first — PrimeNG toasts have a short default lifetime, so
+    // checking it after the other awaits below risks it disappearing before we see it.
+    await expect(page.getByText(/set your forwarding address below/i)).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claimed-address')).toContainText(`${ALIAS}@${DOMAIN}`);
     await expect(page.getByTestId('linux-email-forward-form')).toBeVisible();
-    await expect(page.getByText(/set your forwarding address below/i)).toBeVisible();
 
     // The claim form is gone — retrying the old form is no longer possible (and would
     // have failed with already_claimed since the alias is immutable upstream).
