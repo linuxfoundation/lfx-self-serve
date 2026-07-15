@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -342,8 +342,24 @@ export class RevenueImpactDrawerComponent {
 
       if (paidMedia.monthlyTrend.length >= 3) {
         const recent3 = paidMedia.monthlyTrend.slice(-3);
-        const isRisingRev = recent3[0].revenue < recent3[1].revenue && recent3[1].revenue < recent3[2].revenue;
-        const isFallingRev = recent3[0].revenue > recent3[1].revenue && recent3[1].revenue > recent3[2].revenue && recent3[0].revenue > 0;
+        // The backend series has no rows for months without campaigns, so the
+        // last three entries can span gaps — "3 consecutive months" is only
+        // claimable when the entries are truly adjacent calendar months.
+        // entry.month is the raw CAMPAIGN_MONTH date serialization; parse it
+        // explicitly rather than via implementation-defined new Date(string).
+        const ordinals = recent3.map((entry) => monthLabelOrdinal(entry.month));
+        // Freshness: the newest entry must be the latest completed month —
+        // this drawer's data always covers a last-6 window anchored at now,
+        // and a stale streak must not read as a present-tense claim.
+        const now = new Date();
+        const latestCompletedOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth() - 1;
+        const consecutive =
+          ordinals.every((ord) => Number.isFinite(ord)) &&
+          ordinals[1] === ordinals[0] + 1 &&
+          ordinals[2] === ordinals[1] + 1 &&
+          ordinals[2] >= latestCompletedOrdinal;
+        const isRisingRev = consecutive && recent3[0].revenue < recent3[1].revenue && recent3[1].revenue < recent3[2].revenue;
+        const isFallingRev = consecutive && recent3[0].revenue > recent3[1].revenue && recent3[1].revenue > recent3[2].revenue && recent3[0].revenue > 0;
         if (isRisingRev) {
           insights.push({ text: 'Paid-attributed revenue rising for 3 consecutive months', type: 'driver' });
         } else if (isFallingRev) {
