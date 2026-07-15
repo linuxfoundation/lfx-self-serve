@@ -135,6 +135,14 @@ export const HEALTH_METRICS_BOARD_MEETING_JOB_TITLE_MAX_LENGTH = 50;
 
 export const HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES = 2;
 
+/**
+ * Payload cap for the Event Growth drawer's current-year events list. The TLF
+ * umbrella (no foundation filter) returns every foundation's events and the
+ * drawer renders the list unvirtualized — the server query LIMITs to this and
+ * the drawer discloses the cap when the list hits it.
+ */
+export const EVENT_GROWTH_TOP_EVENTS_LIMIT = 500;
+
 // ============================================
 // Marketing Action Icon Map
 // ============================================

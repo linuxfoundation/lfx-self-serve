@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
@@ -4962,15 +4963,22 @@ export class ProjectService {
       const binds = isUmbrella ? [] : [foundationSlug];
 
       // Query 1: YTD summary — apples-to-apples comparison.
-      // Current year: Jan 1 → today.  Last year: Jan 1 → same month/day last year.
-      // This prevents mid-year YoY from comparing partial 2026 against full 2025.
+      // Current year: Jan 1 → today.  Last year: Jan 1 → approximately the same
+      // period last year (DATEADD year -1; the cutoff can differ by a day across
+      // a Feb 29 boundary). This prevents mid-year YoY from comparing partial
+      // 2026 against full 2025.
+      // Totals use NET_REVENUE_USD (not NET_REVENUE, which is in each event's
+      // LOCAL currency) — summing local amounts across events mixes currencies
+      // (INR + KRW + USD) into a meaningless number. NOTE: the FX basis of
+      // NET_REVENUE_USD (transaction-date vs snapshot rate) is owned by lf-dbt;
+      // if it is a snapshot rate, part of the YoY movement is currency drift.
       const summaryQuery = `
         SELECT
           YEAR(EVENT_START_DATE) AS EVENT_YEAR,
           COUNT(DISTINCT EVENT_ID) AS EVENT_COUNT,
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
-          SUM(COALESCE(NET_REVENUE, 0)) AS TOTAL_NET_REVENUE
+          SUM(COALESCE(NET_REVENUE_USD, 0)) AS TOTAL_NET_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE (
           (YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE) AND EVENT_START_DATE <= CURRENT_DATE)
@@ -4981,7 +4989,20 @@ export class ProjectService {
         GROUP BY YEAR(EVENT_START_DATE)
       `;
 
-      // Query 2: All events for the current year (past + upcoming), sorted by date
+      // Query 2: Current-year events (past + upcoming), sorted by date, CAPPED at
+      // EVENT_GROWTH_TOP_EVENTS_LIMIT rows — the TLF umbrella (no slug filter)
+      // returns every foundation's events and the drawer renders the list
+      // unvirtualized. The drawer discloses the cap when the list hits it; the
+      // YTD summary metrics above are computed independently and remain
+      // uncapped.
+      // Per-event revenue is shown in the event's LOCAL currency (NET_REVENUE),
+      // labeled via CURRENCY_CODE — but ONLY when the event's registrations carry
+      // exactly one distinct currency. Events are ASSUMED single-currency, not
+      // guaranteed: if rows mix currencies (regional pricing, USD sponsorships
+      // alongside local tickets) the local SUM would silently add mixed
+      // currencies, so the mapping below falls back to the USD-normalized figure
+      // for that event. The same fallback covers revenue with a NULL currency
+      // code, which cannot be labeled honestly with any local code.
       const topEventsQuery = `
         SELECT
           EVENT_ID,
@@ -4989,12 +5010,17 @@ export class ProjectService {
           EVENT_START_DATE,
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
-          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE
+          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE,
+          SUM(COALESCE(NET_REVENUE_USD, 0)) AS EVENT_REVENUE_USD,
+          MAX(CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 THEN CURRENCY_CODE END) AS CURRENCY_CODE,
+          COUNT(DISTINCT CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 THEN CURRENCY_CODE END) AS KNOWN_CODE_COUNT,
+          MAX(CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 AND CURRENCY_CODE IS NULL THEN 1 ELSE 0 END) AS HAS_NULL_CODE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE)
           ${slugFilter}
         GROUP BY EVENT_ID, EVENT_NAME, EVENT_START_DATE
         ORDER BY EVENT_START_DATE
+        LIMIT ${EVENT_GROWTH_TOP_EVENTS_LIMIT}
       `;
 
       // Query 3: Quarterly registration trend — bounded to the last 12 quarters (3 years)
@@ -5024,6 +5050,10 @@ export class ProjectService {
           REGISTRANT_COUNT: number;
           ATTENDEE_COUNT: number;
           EVENT_REVENUE: number;
+          EVENT_REVENUE_USD: number;
+          CURRENCY_CODE: string | null;
+          KNOWN_CODE_COUNT: number;
+          HAS_NULL_CODE: number;
         }>(topEventsQuery, binds),
         this.snowflakeService.execute<{
           QUARTER_START_DATE: string | Date;
@@ -5057,14 +5087,39 @@ export class ProjectService {
       const yoyRegistrantChange = pctChange(totalRegistrants, registrantsLastYtd);
       const yoyRevenueChange = pctChange(totalRevenue, revenueLastYtd);
 
-      const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => ({
-        id: String(row.EVENT_ID ?? ''),
-        name: row.EVENT_NAME ?? '',
-        date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
-        registrants: row.REGISTRANT_COUNT ?? 0,
-        attendees: row.ATTENDEE_COUNT ?? 0,
-        revenue: row.EVENT_REVENUE ?? 0,
-      }));
+      const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => {
+        // Local currency is only honest when the event's REVENUE-BEARING rows
+        // carry exactly one known code. Both aggregates are scoped to rows with
+        // nonzero NET_REVENUE; NULL-code presence is tracked as a separate flag
+        // rather than a string sentinel (a literal placeholder like '__NULL__'
+        // in upstream data could otherwise collide and under-count). So:
+        // no revenue rows at all = free event (local sum is 0, keep local);
+        // exactly one known code and no NULL-code revenue = single currency
+        // (keep local); anything else falls back to the USD-normalized amount
+        // rather than mislabeling the sum. Row-scoped counting (not the net
+        // sum) also catches charges and refunds that cancel to zero.
+        const knownCodeCount = row.KNOWN_CODE_COUNT ?? 0;
+        const hasNullCodeRevenue = (row.HAS_NULL_CODE ?? 0) === 1;
+        const hasRevenueRows = knownCodeCount > 0 || hasNullCodeRevenue;
+        const singleKnownCurrency = knownCodeCount === 1 && !hasNullCodeRevenue;
+        if (hasRevenueRows && !singleKnownCurrency) {
+          logger.warning(undefined, 'get_event_growth', 'Event revenue is multi-currency or missing a currency code; falling back to USD', {
+            event_id: String(row.EVENT_ID ?? ''),
+            known_code_count: knownCodeCount,
+            has_null_code_revenue: hasNullCodeRevenue,
+          });
+        }
+        const useLocal = singleKnownCurrency || !hasRevenueRows;
+        return {
+          id: String(row.EVENT_ID ?? ''),
+          name: row.EVENT_NAME ?? '',
+          date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
+          registrants: row.REGISTRANT_COUNT ?? 0,
+          attendees: row.ATTENDEE_COUNT ?? 0,
+          revenue: useLocal ? (row.EVENT_REVENUE ?? 0) : (row.EVENT_REVENUE_USD ?? 0),
+          currencyCode: useLocal ? (row.CURRENCY_CODE ?? 'USD') : 'USD',
+        };
+      });
 
       // Quarterly registration trend — stored as monthlyData for API compatibility
       const quarterlyData = quarterlyResult.rows.map((row) => {
