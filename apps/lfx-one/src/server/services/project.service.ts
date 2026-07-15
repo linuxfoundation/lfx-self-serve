@@ -303,7 +303,13 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
+  public async getProjectById(
+    req: Request,
+    uid: string,
+    access: boolean = true,
+    includeMeetingCoordinator: boolean = false,
+    includeMarketing: boolean = false
+  ): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
     if (!project) {
@@ -315,7 +321,33 @@ export class ProjectService {
     }
 
     if (access) {
-      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
+      let writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
+
+      // Marketing probes are independent of writer status (marketing_auditor / campaign_manager
+      // are distinct FGA relations), so run them whenever the caller asks — even for writers.
+      // Two relations on the same resource id can't be distinguished by checkAccess's id-keyed
+      // result map, so run parallel single checks. On failure leave the field undefined (unknown)
+      // rather than false — a false-negative would wrongly assert the role was checked and denied.
+      if (includeMarketing) {
+        const [marketingAuditor, campaignManager] = await Promise.all([
+          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'marketing_auditor' }).catch((error) => {
+            logger.warning(req, 'get_project_by_id', 'marketing_auditor check failed, skipping field', {
+              project_uid: project.uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return undefined;
+          }),
+          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'campaign_manager' }).catch((error) => {
+            logger.warning(req, 'get_project_by_id', 'campaign_manager check failed, skipping field', {
+              project_uid: project.uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return undefined;
+          }),
+        ]);
+        writerProject = { ...writerProject, marketingAuditor, campaignManager };
+      }
+
       // Skip meeting_coordinator check when already a writer — the guard allows writer OR
       // meeting_coordinator, so the extra round trip can't change the outcome.
       // Return the field as undefined (omitted) rather than false — false would be a
@@ -417,7 +449,12 @@ export class ProjectService {
    * Fetches a single project by slug using NATS for slug resolution
    * First resolves slug to ID via NATS, then fetches project data
    */
-  public async getProjectBySlug(req: Request, projectSlug: string, includeMeetingCoordinator: boolean = false): Promise<Project> {
+  public async getProjectBySlug(
+    req: Request,
+    projectSlug: string,
+    includeMeetingCoordinator: boolean = false,
+    includeMarketing: boolean = false
+  ): Promise<Project> {
     const natsResult = await this.getProjectIdBySlug(req, projectSlug);
 
     if (!natsResult.exists || !natsResult.uid) {
@@ -429,7 +466,7 @@ export class ProjectService {
     }
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator);
+    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator, includeMarketing);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {

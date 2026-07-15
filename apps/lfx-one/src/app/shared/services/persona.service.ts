@@ -45,6 +45,8 @@ export class PersonaService {
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
   /** Writer on the tenant root project — bypasses nav persona filtering */
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
+  /** Marketing auditor on the tenant root project — surfaces the foundation lens to non-board marketing users */
+  public readonly isRootMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -131,6 +133,7 @@ export class PersonaService {
         allPersonas: this.allPersonas(),
       });
       this.isRootWriter.set(false);
+      this.isRootMarketingAuditor.set(false);
       this.personaLoaded.set(true);
       return;
     }
@@ -139,6 +142,7 @@ export class PersonaService {
     this.personaProjects.set(response.personaProjects);
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
+    this.isRootMarketingAuditor.set(response.isRootMarketingAuditor ?? false);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();

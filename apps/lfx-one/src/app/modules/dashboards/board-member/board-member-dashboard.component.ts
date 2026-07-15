@@ -16,6 +16,7 @@ import { FoundationHealthComponent } from '../components/foundation-health/found
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
+import { MarketingOverviewComponent } from '../executive-director/components/marketing-overview/marketing-overview.component';
 
 @Component({
   selector: 'lfx-board-member-dashboard',
@@ -24,6 +25,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
     PendingActionsComponent,
     MyMeetingsComponent,
     FoundationHealthComponent,
+    MarketingOverviewComponent,
     SkeletonModule,
     DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
@@ -38,6 +40,10 @@ export class BoardMemberDashboardComponent {
 
   protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
   protected readonly showOrgInvolvement = computed(() => this.lensService.activeLens() !== 'me');
+  // Read-only Marketing Overview for non-ED Marketing Ops users (who land on this dashboard on the
+  // foundation lens). Gated on `campaign_manager` for the active context so board members and other
+  // non-marketing users never see it.
+  protected readonly canManageCampaigns = this.projectContextService.canManageCampaigns;
 
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());

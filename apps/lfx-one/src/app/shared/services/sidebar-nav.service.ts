@@ -49,6 +49,11 @@ export class SidebarNavService {
 
   private readonly activeLens = this.lensService.activeLens;
 
+  // Marketing nav visibility is FGA-driven off the active context (reactive to context switches):
+  // `marketing_auditor` gates Marketing Impact + the section; `campaign_manager` gates Campaigns.
+  private readonly canViewMarketing = this.projectContextService.canViewMarketing;
+  private readonly canManageCampaigns = this.projectContextService.canManageCampaigns;
+
   // Newsletter nav visibility: ED persona always sees it; non-ED users see it
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
@@ -326,6 +331,8 @@ export class SidebarNavService {
       });
     }
 
+    // Metrics (Health Metrics + Social Listening) stays ED-only — it is not part of the
+    // FGA-gated Marketing surface.
     if (this.personaService.currentPersona() === 'executive-director') {
       const metricsItems: SidebarMenuItem[] = [
         {
@@ -356,26 +363,39 @@ export class SidebarNavService {
         expanded: true,
         items: metricsItems,
       });
+    }
 
-      items.push({
-        label: 'Marketing',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: 'Marketing Impact',
-            icon: 'fa-light fa-bullhorn',
-            routerLink: '/foundation/marketing-impact',
-            testId: 'sidebar-marketing-impact',
-          },
-          {
-            label: 'Campaigns',
-            icon: 'fa-light fa-megaphone',
-            routerLink: '/foundation/campaigns',
-            testId: 'sidebar-marketing-campaigns',
-          },
-        ],
-      });
+    // Marketing section is FGA-gated per active context (not persona-gated):
+    //  - Marketing Impact appears with `marketing_auditor` (ED / Marketing Ops / Marketing Auditor).
+    //  - Campaigns appears with `campaign_manager` (ED / Marketing Ops only).
+    // campaign_manager implies marketing_auditor upstream, so canViewMarketing() gates the section.
+    if (this.canViewMarketing() || this.canManageCampaigns()) {
+      const marketingItems: SidebarMenuItem[] = [];
+      if (this.canViewMarketing()) {
+        marketingItems.push({
+          label: 'Marketing Impact',
+          icon: 'fa-light fa-bullhorn',
+          routerLink: '/foundation/marketing-impact',
+          testId: 'sidebar-marketing-impact',
+        });
+      }
+      if (this.canManageCampaigns()) {
+        marketingItems.push({
+          label: 'Campaigns',
+          icon: 'fa-light fa-megaphone',
+          routerLink: '/foundation/campaigns',
+          testId: 'sidebar-marketing-campaigns',
+        });
+      }
+
+      if (marketingItems.length > 0) {
+        items.push({
+          label: 'Marketing',
+          isSection: true,
+          expanded: true,
+          items: marketingItems,
+        });
+      }
     }
 
     return items;

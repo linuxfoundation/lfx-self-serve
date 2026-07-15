@@ -21,6 +21,28 @@ export interface Project {
    *   transiently. Do NOT treat as a definitive role denial.
    */
   meetingCoordinator?: boolean;
+  /**
+   * Response-only — present only when the caller requested the marketing checks
+   * (`?marketing=true`).
+   *
+   * - `true`      — user holds the `marketing_auditor` role on this project (read access
+   *   to marketing dashboards; cascades from parent projects upstream).
+   * - `false`     — check ran clean; user does not hold the role.
+   * - `undefined` — check was not requested or failed transiently. Do NOT treat as a
+   *   definitive role denial.
+   */
+  marketingAuditor?: boolean;
+  /**
+   * Response-only — present only when the caller requested the marketing checks
+   * (`?marketing=true`).
+   *
+   * - `true`      — user holds the `campaign_manager` role on this project (manage campaigns;
+   *   resolves as `executive_director or marketing_ops` upstream).
+   * - `false`     — check ran clean; user does not hold the role.
+   * - `undefined` — check was not requested or failed transiently. Do NOT treat as a
+   *   definitive role denial.
+   */
+  campaignManager?: boolean;
   public: boolean;
   parent_uid: string;
   stage: ProjectStage | string;

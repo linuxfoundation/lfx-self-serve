@@ -6,7 +6,9 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
+import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
+import { marketingViewGuard } from './shared/guards/marketing-view.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
@@ -42,18 +44,18 @@ export const routes: Routes = [
         canActivate: [executiveDirectorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
-      // Foundation Lens — Marketing Impact page (ED-only)
+      // Foundation Lens — Marketing Impact page (FGA marketing_auditor: ED / Marketing Ops / Marketing Auditor)
       {
         path: 'foundation/marketing-impact',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [marketingViewGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
-      // Foundation Lens — Campaigns page (ED-only)
+      // Foundation Lens — Campaigns page (FGA campaign_manager: ED / Marketing Ops)
       {
         path: 'foundation/campaigns',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
       // Foundation Lens — Projects page
