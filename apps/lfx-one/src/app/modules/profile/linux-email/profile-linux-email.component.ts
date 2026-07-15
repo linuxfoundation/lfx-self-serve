@@ -137,7 +137,23 @@ export class ProfileLinuxEmailComponent {
           this.refresh.next();
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Your Linux.com alias is active.' });
         },
-        error: (err: HttpErrorResponse) => this.handleError(err, 'Failed to claim your alias. Please try again.'),
+        error: (err: HttpErrorResponse) => {
+          // Partial failure: the alias was claimed but forwarding could not be set. The
+          // alias is immutable upstream, so a retry here would just fail with
+          // already_claimed — recover into the claimed/edit state instead of stranding
+          // the user on the claim form.
+          if (err.error?.code === 'FORWARD_SET_FAILED') {
+            this.claimForm.reset();
+            this.refresh.next();
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Alias claimed',
+              detail: 'Your alias is active, but we couldn’t set forwarding. Please set your forwarding address below.',
+            });
+            return;
+          }
+          this.handleError(err, 'Failed to claim your alias. Please try again.');
+        },
       });
   }
 
