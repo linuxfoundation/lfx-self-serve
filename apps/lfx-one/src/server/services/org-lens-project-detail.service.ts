@@ -412,7 +412,7 @@ export class OrgLensProjectDetailService {
     const [cardRows, sparkRows, leaderboardRows] = await Promise.all([
       this.fetchCards(orgUid, slug, timeRangeType),
       this.fetchSparklines(orgUid, slug),
-      this.fetchLeaderboard(orgUid, slug, timeRangeType),
+      this.fetchLeaderboard(orgUid, slug, timeRangeType).catch(() => [] as LeaderboardRow[]),
     ]);
 
     const cards = cardRows[0] ?? null;
