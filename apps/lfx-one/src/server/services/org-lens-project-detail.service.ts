@@ -21,6 +21,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl } from '@lfx-one/shared/utils';
 
+import { toIsoDate } from '../helpers/date-format.helper';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -936,7 +937,7 @@ export class OrgLensProjectDetailService {
 
   /** Format a roster date column (e.g. "May 7, 2026"); "—" when absent. UTC-anchored to avoid off-by-one. */
   private formatDrawerDate(value: Date | string | null): string {
-    const iso = this.toIsoDate(value);
+    const iso = toIsoDate(value);
     if (iso === null) return '—';
     const parsed = new Date(`${iso}T00:00:00Z`);
     if (Number.isNaN(parsed.getTime())) return '—';
@@ -1130,7 +1131,7 @@ export class OrgLensProjectDetailService {
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${foundationLabel} ecosystem.`,
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       lfxInsightsUrl: buildInsightsUrl(`/project/${slug}`),
-      firstCommit: this.toIsoDate(row.FIRST_COMMIT_TS),
+      firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
       health: this.mapHealth(row.HEALTH_OVERALL_SCORE),
       foundationLabel,
@@ -1415,13 +1416,6 @@ export class OrgLensProjectDetailService {
 
   private plural(n: number, singular: string, pluralForm: string): string {
     return n === 1 ? singular : pluralForm;
-  }
-
-  private toIsoDate(value: Date | string | null): string | null {
-    if (value === null || value === undefined) return null;
-    if (value instanceof Date) return value.toISOString().slice(0, 10);
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
   }
 
   private paramSignature(parts: readonly (string | number | boolean | null)[]): string {
