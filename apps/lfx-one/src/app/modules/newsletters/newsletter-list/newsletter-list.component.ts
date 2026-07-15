@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,13 +12,15 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FilterPillOption, NewsletterListItem, NewsletterRow, NewsletterStatus, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY } from '@lfx-one/shared/constants';
+import { FilterPillOption, NewsletterAnalytics, NewsletterListItem, NewsletterRow, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { combineLatest, distinctUntilChanged, finalize, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -33,6 +35,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     TableComponent,
     TagComponent,
     ConfirmDialogModule,
+    SkeletonModule,
     TooltipModule,
     NewsletterPreviewDrawerComponent,
   ],
@@ -49,6 +52,7 @@ export class NewsletterListComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Tab options ===
   protected readonly statusTabOptions: FilterPillOption[] = [
@@ -65,6 +69,25 @@ export class NewsletterListComponent {
   protected readonly deletingId = signal<string | null>(null);
   protected readonly previewVisible = signal<boolean>(false);
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
+  // Analytics fetched lazily per sent row (the list endpoint intentionally omits
+  // open_rate/unique_opens). Kept in a side map keyed by newsletter id — never
+  // written back into `newsletters` — so row identity stays stable and results
+  // are cached across draft/sent tab toggles. `null` marks a failed fetch for a
+  // settled (`sent`) row; those are not retried while the project context is
+  // unchanged. The cache is cleared on project change to keep it bounded.
+  private readonly openRateAnalytics = signal<Map<string, NewsletterAnalytics | null>>(new Map());
+  private readonly openRatePendingIds = signal<Set<string>>(new Set());
+  private lastLoadedUid: string | null = null;
+  // Incremented whenever the analytics cache is cleared (project change). Each
+  // fan-out batch captures it at start; results from an older generation are
+  // discarded so a stale batch can't repopulate the pruned cache or race a
+  // newer batch's entries and pending markers (A→B→A project toggles).
+  private analyticsCacheGeneration = 0;
+  // Incremented on every context-driven list reload. loadMore captures it at
+  // request time and discards responses from an older generation — covering
+  // change-and-revert (A→B→A) sequences a value comparison would miss. Not a
+  // signal: nothing renders from it.
+  private loadGeneration = 0;
 
   // === Reactive context ===
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
@@ -72,21 +95,7 @@ export class NewsletterListComponent {
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0);
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
-  protected readonly rows: Signal<NewsletterRow[]> = computed(() =>
-    this.newsletters().map((n) => {
-      const total = n.total_recipients ?? 0;
-      const opens = n.unique_opens ?? 0;
-      const groupCount = n.committee_uids?.length ?? 0;
-      const openRateLabel = n.open_rate === undefined || n.open_rate === null ? '—' : `${Math.round(n.open_rate * 100)}%`;
-      return {
-        ...n,
-        openRateLabel,
-        openRateTooltip: `${opens} of ${total} recipients opened`,
-        recipientsLabel: n.total_recipients !== undefined && n.total_recipients !== null ? String(n.total_recipients) : '—',
-        groupsLabel: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`,
-      };
-    })
-  );
+  protected readonly rows: Signal<NewsletterRow[]> = this.initRows();
 
   public constructor() {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
@@ -121,23 +130,35 @@ export class NewsletterListComponent {
 
   protected loadMore(): void {
     const token = this.nextPageToken();
-    if (!token || this.loadingMore() || !this.projectUid()) return;
+    const uid = this.projectUid();
+    const status = this.statusTab();
+    const generation = this.loadGeneration;
+    if (!token || this.loadingMore() || !uid) return;
     this.loadingMore.set(true);
     this.newsletterService
-      .listNewsletters(this.projectUid(), {
-        status: this.statusTab() as NewsletterStatus,
-        page_token: token,
-      })
+      .listNewsletters(uid, { status, page_token: token })
       .pipe(
         take(1),
         finalize(() => this.loadingMore.set(false))
       )
       .subscribe({
         next: (response) => {
+          // Discard the page if the list was reloaded while it was in flight —
+          // appending it would clobber the newer load's rows and page token.
+          if (generation !== this.loadGeneration) {
+            return;
+          }
           this.newsletters.update((current) => [...current, ...response.newsletters]);
           this.nextPageToken.set(response.next_page_token);
+          this.loadOpenRates(response.newsletters);
         },
-        error: (err: HttpErrorResponse) => this.showLoadError(err),
+        error: (err: HttpErrorResponse) => {
+          // A stale request's failure is irrelevant to the context now on screen.
+          if (generation !== this.loadGeneration) {
+            return;
+          }
+          this.showLoadError(err);
+        },
       });
   }
 
@@ -154,6 +175,79 @@ export class NewsletterListComponent {
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.runDelete(item.id),
     });
+  }
+
+  private initRows(): Signal<NewsletterRow[]> {
+    return computed(() => {
+      const analyticsMap = this.openRateAnalytics();
+      const pendingIds = this.openRatePendingIds();
+      return this.newsletters().map((n) => {
+        const analytics = analyticsMap.get(n.id);
+        const total = n.total_recipients ?? 0;
+        const opens = n.unique_opens ?? analytics?.unique_opens ?? 0;
+        const openRate = n.open_rate ?? analytics?.open_rate;
+        const groupCount = n.committee_uids?.length ?? 0;
+        const hasOpenRate = openRate !== undefined && openRate !== null;
+        const openRateLabel = hasOpenRate ? `${Math.round(openRate * 100)}%` : '—';
+        // Don't fabricate "0 of N opened" when analytics are missing or failed.
+        const openRateTooltip = hasOpenRate ? `${opens} of ${total} recipients opened` : 'Analytics not available';
+        return {
+          ...n,
+          openRateLabel,
+          openRatePending: pendingIds.has(n.id),
+          openRateTooltip,
+          openRateAria: hasOpenRate ? `Open rate ${openRateLabel}, ${openRateTooltip}` : 'Open rate not available',
+          recipientsLabel: n.total_recipients !== undefined && n.total_recipients !== null ? String(n.total_recipients) : '—',
+          groupsLabel: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`,
+        };
+      });
+    });
+  }
+
+  // switchMap cancels the in-flight initial list request when the tab or project
+  // changes, so a slow response can never clobber the newer tab's rows or fan out
+  // analytics for rows that are no longer displayed. (loadMore requests are not
+  // cancelled — loadMore guards its own response against context changes instead.)
+  // Loading is cleared explicitly on every outcome path (empty uid, error, next)
+  // rather than via finalize, so cancellation can never produce a loading write
+  // regardless of operator teardown ordering.
+  private initLoadOnContextOrTab(): void {
+    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
+      .pipe(
+        distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
+        switchMap(([uid, status]) => {
+          this.loadGeneration++;
+          this.previewVisible.set(false);
+          this.selectedNewsletter.set(null);
+          this.nextPageToken.set(undefined);
+          this.newsletters.set([]);
+          if (uid !== this.lastLoadedUid) {
+            this.lastLoadedUid = uid;
+            this.analyticsCacheGeneration++;
+            this.openRateAnalytics.set(new Map());
+            this.openRatePendingIds.set(new Set());
+          }
+          if (!uid) {
+            this.loading.set(false);
+            return EMPTY;
+          }
+          this.loading.set(true);
+          return this.newsletterService.listNewsletters(uid, { status }).pipe(
+            catchError((err: HttpErrorResponse) => {
+              this.loading.set(false);
+              this.showLoadError(err);
+              return EMPTY;
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => {
+        this.loading.set(false);
+        this.newsletters.set(response.newsletters);
+        this.nextPageToken.set(response.next_page_token);
+        this.loadOpenRates(response.newsletters);
+      });
   }
 
   private runDelete(id: string): void {
@@ -180,40 +274,59 @@ export class NewsletterListComponent {
       });
   }
 
-  private initLoadOnContextOrTab(): void {
-    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
+  // Fan out one analytics call per newly loaded sent row to fill the Open Rate
+  // column. Browser-only: SSR skips the fan-out and the client replay of the
+  // list load (via the transfer cache) triggers it. Rows whose analytics are
+  // already loaded or in flight are skipped, so tab toggles and load-more never
+  // duplicate requests. `sending` rows are excluded rather than negatively
+  // cached — their analytics don't exist yet, and the next list load (tab or
+  // project change) retries them once they settle to `sent`.
+  private loadOpenRates(items: NewsletterListItem[]): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const targets = items.filter(
+      (n) =>
+        n.status === 'sent' &&
+        (n.open_rate === undefined || n.open_rate === null) &&
+        !this.openRateAnalytics().has(n.id) &&
+        !this.openRatePendingIds().has(n.id)
+    );
+    if (targets.length === 0) {
+      return;
+    }
+    const cacheGeneration = this.analyticsCacheGeneration;
+    this.openRatePendingIds.update((ids) => new Set([...ids, ...targets.map((n) => n.id)]));
+    from(targets)
       .pipe(
-        distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
+        mergeMap(
+          // Use the item's own project_uid rather than ambient context — see goToRow.
+          (n) =>
+            this.newsletterService.getAnalytics(n.project_uid, n.id).pipe(
+              map((analytics): { id: string; analytics: NewsletterAnalytics | null } => ({ id: n.id, analytics })),
+              // A single failed row keeps its "—" without breaking the rest.
+              catchError((err: HttpErrorResponse) => {
+                console.error(`Failed to load analytics for newsletter ${n.id}:`, err);
+                return of({ id: n.id, analytics: null });
+              })
+            ),
+          NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY
+        ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(([uid, status]) => {
-        this.previewVisible.set(false);
-        this.selectedNewsletter.set(null);
-        if (uid) {
-          this.loadInitial(status as NewsletterStatus);
-        } else {
-          this.newsletters.set([]);
-          this.nextPageToken.set(undefined);
+      .subscribe(({ id, analytics }) => {
+        // A result from before the last cache clear is stale — writing it would
+        // repopulate the pruned cache and race the newer batch for the same ids.
+        // Within a generation the pending-set dedupe guarantees one fetch per id.
+        if (cacheGeneration !== this.analyticsCacheGeneration) {
+          return;
         }
-      });
-  }
-
-  private loadInitial(status: NewsletterStatus): void {
-    this.loading.set(true);
-    this.nextPageToken.set(undefined);
-    this.newsletters.set([]);
-    this.newsletterService
-      .listNewsletters(this.projectUid(), { status })
-      .pipe(
-        take(1),
-        finalize(() => this.loading.set(false))
-      )
-      .subscribe({
-        next: (response) => {
-          this.newsletters.set(response.newsletters);
-          this.nextPageToken.set(response.next_page_token);
-        },
-        error: (err: HttpErrorResponse) => this.showLoadError(err),
+        this.openRateAnalytics.update((current) => new Map(current).set(id, analytics));
+        this.openRatePendingIds.update((ids) => {
+          const next = new Set(ids);
+          next.delete(id);
+          return next;
+        });
       });
   }
 
