@@ -20,6 +20,13 @@ export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardM
 export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '2y';
 export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
+/** Snowflake `time_range_type` value for each UI range toggle. */
+export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
+  '1y': 'last_365_days',
+  '2y': 'last_2_years',
+  all: 'alltime',
+};
+
 /** Hero health badge → lfx-tag severity (green Excellent / blue Healthy / red At Risk), matching HEALTH_SCORE_SEVERITY on the Org Lens Projects page. */
 export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
   excellent: { label: 'Excellent', severity: 'success' },

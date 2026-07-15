@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, PD_TIME_RANGE_TYPE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgLensCardDetailCell,
   OrgLensCardDetailRow,
@@ -20,13 +20,6 @@ import { buildInsightsUrl } from '@lfx-one/shared/utils';
 
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
-
-/** Snowflake `time_range_type` for each UI range toggle value. */
-const TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
-  '1y': 'last_365_days',
-  '2y': 'last_2_years',
-  all: 'alltime',
-};
 
 interface HeroRow {
   PROJECT_NAME: string;
@@ -373,8 +366,8 @@ export class OrgLensProjectDetailService {
     try {
       const [pageResult, countResult] = await Promise.all([
         this.snowflakeService.execute<Record<string, unknown>>(
-          `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ? OFFSET ?`,
-          [orgUid, slug, safeSize, offset],
+          `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ${safeSize} OFFSET ${offset}`,
+          [orgUid, slug],
           { expectMissingObject: true }
         ),
         this.snowflakeService.execute<{ N: number }>(
@@ -404,7 +397,7 @@ export class OrgLensProjectDetailService {
     range: OrgLensLeaderboardTimeRange
   ): Promise<OrgLensProjectDetailResponse | null> {
     const slug = projectSlug.trim().toLowerCase();
-    const timeRangeType = TIME_RANGE_TYPE[range];
+    const timeRangeType = PD_TIME_RANGE_TYPE[range];
 
     const heroResult = await this.snowflakeService.execute<HeroRow>(
       `

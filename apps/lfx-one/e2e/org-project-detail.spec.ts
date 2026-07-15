@@ -109,7 +109,8 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page).toHaveURL(/metric=activity/);
     await expect(page.getByText('Contribution Activities Leaderboard')).toBeVisible();
     await expect(page.getByText('Collaboration Activities Leaderboard')).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Total contributions' })).toHaveCount(2);
+    await expect(page.getByRole('columnheader', { name: 'Total contributions' })).toHaveCount(1);
+    await expect(page.getByRole('columnheader', { name: 'Total collaborations' })).toHaveCount(1);
     await expect(page.getByRole('columnheader', { name: 'Influence Score' })).toHaveCount(0);
   });
 

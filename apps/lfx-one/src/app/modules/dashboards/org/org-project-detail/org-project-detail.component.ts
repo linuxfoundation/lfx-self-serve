@@ -377,13 +377,10 @@ export class OrgProjectDetailComponent {
     this.refreshArrows(el, track === 'tech');
   }
 
-  /**
-   * Right-hand column header for a leaderboard. Influence mode shows the band/score column;
-   * Activity Count mode labels both boards "Total contributions" — org-dashboard parity (both the
-   * Contribution and Collaboration activity boards reuse this header).
-   */
-  protected columnLabel(): string {
-    return this.isActivityMode() ? 'Total contributions' : 'Influence Score';
+  /** Right-hand leaderboard column header: influence mode shows the score; activity mode shows the board's own metric. */
+  protected columnLabel(dimension: LeaderboardDimension): string {
+    if (!this.isActivityMode()) return 'Influence Score';
+    return dimension === 'technical' ? 'Total contributions' : 'Total collaborations';
   }
 
   /** B5 — Lazy-fetch the drawer section for one card, cached per (org, project, card, range); force bypasses the cache for retry. */
