@@ -119,6 +119,10 @@ export class ProjectHealthScoresDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
+  // True while the parent's foundation health-score distribution request is in flight.
+  // The parent zeroes `data`/`total` during this window, so without this gate the header badge and chart would render "no scores" while the independently-loaded projects table can already show scored badges.
+  public readonly distributionLoading = input<boolean>(false);
+
   // Total foundation projects (from FOUNDATION_TOTAL_PROJECTS_MONTHLY) — may exceed
   // the number of scored projects because the two counts come from separate tables.
   public readonly total = input<number>(0);
@@ -225,10 +229,11 @@ export class ProjectHealthScoresDrawerComponent {
           }
           this.tableLoading.set(true);
           // Reset pagination and filters so stale search/status pills from the
-          // previous foundation can't hide the freshly loaded list.
+          // previous foundation can't hide the freshly loaded list. Emit so the
+          // search signal (sourced only from valueChanges) syncs with the input.
           this.page.set(1);
           this.selectedStatuses.set(new Set());
-          this.searchForm.get('query')!.setValue('', { emitEvent: false });
+          this.searchForm.get('query')!.setValue('');
           return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
             tap(() => this.tableLoading.set(false)),
             catchError(() => {

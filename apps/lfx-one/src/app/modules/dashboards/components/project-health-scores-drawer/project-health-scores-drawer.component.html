@@ -18,7 +18,12 @@
       </div>
 
       <!-- Projects Scored Badge -->
-      @if (hasData() || total() > 0) {
+      @if (distributionLoading()) {
+        <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full" data-testid="project-health-scores-drawer-total-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400" aria-hidden="true"></i>
+          <span class="sr-only">Loading scored project count…</span>
+        </div>
+      } @else if (hasData() || total() > 0) {
         <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full" data-testid="project-health-scores-drawer-total">
           <span class="text-sm font-medium text-gray-700">{{ scoredLabel() }}</span>
         </div>
@@ -65,7 +70,12 @@
       </div>
 
       <!-- Chart -->
-      @if (hasData()) {
+      @if (distributionLoading()) {
+        <div class="h-[280px] flex items-center justify-center" role="status" aria-live="polite" data-testid="project-health-scores-drawer-chart-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+          <span class="sr-only">Loading health score distribution…</span>
+        </div>
+      } @else if (hasData()) {
         <div class="h-[280px]" data-testid="project-health-scores-drawer-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
         </div>
@@ -191,7 +201,12 @@
                 ariaLabel="Previous page"></lfx-button>
 
               @for (p of visiblePages(); track p) {
-                <lfx-button [label]="p.toString()" [outlined]="page() !== p" size="small" (onClick)="goToPage(p)" [ariaLabel]="'Page ' + p"></lfx-button>
+                <lfx-button
+                  [label]="p.toString()"
+                  [outlined]="page() !== p"
+                  size="small"
+                  (onClick)="goToPage(p)"
+                  [ariaLabel]="'Page ' + p + (page() === p ? ', current page' : '')"></lfx-button>
               }
 
               <lfx-button

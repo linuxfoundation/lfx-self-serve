@@ -67,5 +67,5 @@ export const PROJECT_HEALTH_STATUS_FILTER_OPTIONS: readonly HealthStatusFilterOp
     label: PROJECT_HEALTH_CATEGORY_LABEL[value],
     ...PROJECT_HEALTH_CATEGORY_BADGE[value],
   })),
-  { value: 'unscored', label: 'Unscored', bg: lfxColors.gray[100], text: lfxColors.gray[600] },
+  { value: 'unscored', ...PROJECT_HEALTH_UNSCORED_BADGE },
 ];

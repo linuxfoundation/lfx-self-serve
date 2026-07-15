@@ -232,6 +232,7 @@
   [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
   (visibleChange)="handleDrawerClose()"
   [data]="reconciledHealthScoresData()"
+  [distributionLoading]="healthScoresLoading()"
   [total]="reconciledTotalProjects()"></lfx-project-health-scores-drawer>
 
 <lfx-org-dependency-drawer

@@ -75,7 +75,7 @@ export class FoundationHealthComponent {
   private readonly softwareValueLoading = signal(true);
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
-  private readonly healthScoresLoading = signal(true);
+  protected readonly healthScoresLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
   private readonly eventsLoading = signal(true);
 
