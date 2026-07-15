@@ -433,7 +433,7 @@ export class MailingListManageComponent {
     const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
     return {
-      group_name: groupName,
+      name: groupName,
       public: formValue.public,
       type: formValue.type,
       audience_access: formValue.audience_access,

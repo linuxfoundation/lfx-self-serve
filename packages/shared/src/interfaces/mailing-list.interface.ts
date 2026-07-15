@@ -148,8 +148,8 @@ export interface MyMailingList extends GroupsIOMailingList {
  * @description Maps to Groups.io API create endpoint
  */
 export interface CreateMailingListRequest {
-  /** Groups.io group name (3-34 chars) */
-  group_name: string;
+  /** Subgroup name (3-34 chars) — maps to `name` in the upstream GroupsioSubgroupRequest API */
+  name: string;
   /** Whether the mailing list is publicly accessible */
   public: boolean;
   /** Mailing list type */
