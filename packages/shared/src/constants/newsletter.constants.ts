@@ -26,6 +26,13 @@ export const NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH = 20_000;
 // pushes back).
 export const NEWSLETTER_AI_MAX_TOKENS = 12_000;
 
+// The list endpoint intentionally omits open_rate/unique_opens (per-newsletter
+// analytics need a separate /analytics call upstream), so the list page fans
+// out one analytics request per sent row. Caps each fan-out batch (initial page
+// or load-more) — batches are user-paced, so this is a per-batch ceiling, not a
+// global one.
+export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
+
 // Per-request timeout for the send endpoint, overriding the API client's 30s
 // default. The new upstream accepts sends in well under a second (202 +
 // background fan-out), but while a pre-async newsletter-service is deployed
