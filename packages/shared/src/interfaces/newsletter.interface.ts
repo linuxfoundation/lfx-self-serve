@@ -146,6 +146,7 @@ export interface NewsletterAnalytics {
 
 export interface NewsletterRow extends NewsletterListItem {
   openRateLabel: string;
+  openRatePending: boolean;
   openRateTooltip: string;
   recipientsLabel: string;
   groupsLabel: string;

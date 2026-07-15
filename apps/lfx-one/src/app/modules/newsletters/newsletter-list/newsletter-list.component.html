@@ -83,9 +83,19 @@
                     <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
                   </td>
                   <td class="text-right">
-                    <span class="text-sm text-gray-700" [pTooltip]="newsletter.openRateTooltip" tooltipPosition="top">
-                      {{ newsletter.openRateLabel }}
-                    </span>
+                    @if (newsletter.openRatePending) {
+                      <span
+                        class="inline-block h-3 w-8 rounded bg-gray-200 animate-pulse"
+                        [attr.data-testid]="'newsletter-open-rate-loading-' + newsletter.id"></span>
+                    } @else {
+                      <span
+                        class="text-sm text-gray-700"
+                        [pTooltip]="newsletter.openRateTooltip"
+                        tooltipPosition="top"
+                        [attr.data-testid]="'newsletter-open-rate-' + newsletter.id">
+                        {{ newsletter.openRateLabel }}
+                      </span>
+                    }
                   </td>
                   <td class="text-right">
                     <div class="flex items-center justify-end gap-2">
