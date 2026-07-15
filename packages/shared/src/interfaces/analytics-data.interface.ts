@@ -2707,6 +2707,13 @@ export interface SocialReachResponse {
   monthlyData: number[];
   monthlyLabels: string[];
   monthlyRoas: number[];
+  /**
+   * Zero-filled monthly ad spend aligned with monthlyData/monthlyRoas.
+   * Distinguishes a truly inactive month (no spend, no impressions) from an
+   * active campaign month that delivered zero impressions — consumers should
+   * treat a month as active when spend OR impressions are non-zero.
+   */
+  monthlySpend?: number[];
   channelGroups: SocialReachChannelGroup[];
   projectBreakdown?: PaidProjectBreakdown[];
   platformBreakdown?: PaidPlatformBreakdown[];

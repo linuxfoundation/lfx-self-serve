@@ -350,11 +350,13 @@ export class EmailCtrDrawerComponent {
       }
 
       if (paidActions.length === 0 && paid.monthlyData.length >= 3) {
-        // The series is calendar zero-filled — all three months must have
-        // actual impressions, or a trailing no-campaign month fabricates a
-        // "3 consecutive months" decline (spend gap, not a trend).
+        // The series is calendar zero-filled — all three months must be
+        // ACTIVE (spend or impressions), or a trailing no-campaign month
+        // fabricates a "3 consecutive months" decline (spend gap, not a
+        // trend). An active month with zero impressions is a real data point.
         const recent3 = paid.monthlyData.slice(-3);
-        if (recent3.every((v) => v > 0) && recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
+        const active3 = recent3.map((v, i) => v > 0 || (paid.monthlySpend?.[paid.monthlyData.length - 3 + i] ?? 0) > 0);
+        if (active3.every(Boolean) && recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
           paidActions.push({
             title: 'Investigate declining paid impressions',
             description: 'Impressions dropped for 3 consecutive months — review budget pacing and bid strategy',
@@ -527,9 +529,11 @@ export class EmailCtrDrawerComponent {
       if (paidInsights.length === 0 && paid.totalReach > 0 && paid.monthlyData.length >= 2) {
         const prev = paid.monthlyData[paid.monthlyData.length - 2];
         const curr = paid.monthlyData[paid.monthlyData.length - 1];
-        // Both months must be active: a zero-filled trailing no-campaign
-        // month reads as ~-100% MoM — a spend gap, not an impressions drop.
-        if (prev > 0 && curr > 0) {
+        // Both months must be ACTIVE (spend or impressions): a zero-filled
+        // no-campaign month reads as ~-100% MoM — a spend gap, not a drop —
+        // while an active month with zero impressions is a real data point.
+        const currActive = curr > 0 || (paid.monthlySpend?.[paid.monthlyData.length - 1] ?? 0) > 0;
+        if (prev > 0 && currActive) {
           const paidMom = ((curr - prev) / prev) * 100;
           if (paidMom > 20) {
             paidInsights.push({ text: `Paid impressions surged ${paidMom.toFixed(0)}% MoM — ${formatNumber(curr)} last month`, type: 'driver' });

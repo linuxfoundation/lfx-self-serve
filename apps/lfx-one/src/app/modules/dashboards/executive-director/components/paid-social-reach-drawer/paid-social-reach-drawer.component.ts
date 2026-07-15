@@ -56,8 +56,13 @@ export class PaidSocialReachDrawerComponent {
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
   // The server zero-fills monthlyData for calendar alignment, so array length
-  // no longer signals "no data" — presence of any actual impressions does.
-  protected readonly hasImpressionData: Signal<boolean> = computed(() => this.drawerData().monthlyData.some((v) => v > 0));
+  // no longer signals "no data" — presence of any campaign activity (spend or
+  // impressions) does; an active window that delivered zero impressions still
+  // warrants the chart rather than a "no data" state.
+  protected readonly hasImpressionData: Signal<boolean> = computed(() => {
+    const { monthlyData, monthlySpend } = this.drawerData();
+    return monthlyData.some((v, i) => v > 0 || (monthlySpend?.[i] ?? 0) > 0);
+  });
   protected readonly roasChartData: Signal<ChartData<'bar'>> = this.initRoasChartData();
   protected readonly hasRoasData: Signal<boolean> = computed(() => {
     const roas = this.drawerData().monthlyRoas;
@@ -192,13 +197,15 @@ export class PaidSocialReachDrawerComponent {
 
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
-      const { roas, totalSpend, totalRevenue, monthlyRoas, monthlyData } = this.drawerData();
+      const { roas, totalSpend, totalRevenue, monthlyRoas, monthlyData, monthlySpend } = this.drawerData();
       // changePercentage from the API is ROAS MoM — impressions MoM must come
       // from the impressions series itself, or reach texts report the wrong metric.
-      // The series is calendar zero-filled: a latest month with no campaigns
-      // reads as ~-100% MoM — that's a spend gap, not a reach decline, so MoM
-      // claims require the latest month to have actual impressions.
-      const impressionsMomPct = (monthlyData.at(-1) ?? 0) > 0 ? computeMomPct(monthlyData) : null;
+      // The series is calendar zero-filled: a month is ACTIVE when it had spend
+      // OR impressions — an active month that delivered zero impressions is a
+      // real observation (its ~-100% MoM is a genuine alert), while a month
+      // with neither is a spend gap that must not read as a reach decline.
+      const monthActive = monthlyData.map((v, i) => v > 0 || (monthlySpend?.[i] ?? 0) > 0);
+      const impressionsMomPct = (monthActive.at(-1) ?? false) ? computeMomPct(monthlyData) : null;
       const actions: MarketingRecommendedAction[] = [];
 
       // Losing money — the most urgent signal (includes 0.00x — spend with no attributed revenue)
@@ -222,13 +229,12 @@ export class PaidSocialReachDrawerComponent {
       }
 
       // ROAS trending down — separate from absolute level. All three months
-      // must be ACTIVE, judged by the aligned zero-filled impressions series:
-      // a month with no impressions is a spend gap (must not fabricate a
-      // "3 months straight" streak), while a measured 0x ROAS in an active
-      // month (spend, no attributed revenue) is a legitimate trend point.
-      if (monthlyRoas && monthlyRoas.length >= 3 && monthlyData.length === monthlyRoas.length) {
+      // must be ACTIVE (spend or impressions): inactive months are spend gaps
+      // that must not fabricate a "3 months straight" streak, while a measured
+      // 0x ROAS in an active month is a legitimate trend point.
+      if (monthlyRoas && monthlyRoas.length >= 3 && monthActive.length === monthlyRoas.length) {
         const recent3 = monthlyRoas.slice(-3);
-        const allActive = monthlyData.slice(-3).every((v) => v > 0);
+        const allActive = monthActive.slice(-3).every(Boolean);
         const falling = allActive && recent3[0] > recent3[1] && recent3[1] > recent3[2];
         const drop = recent3[0] - recent3[2];
         if (falling && drop >= 0.5) {
@@ -259,12 +265,13 @@ export class PaidSocialReachDrawerComponent {
 
   private initKeyInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
-      const { roas, totalReach, totalSpend, totalRevenue, monthlyRoas, monthlyData } = this.drawerData();
+      const { roas, totalReach, totalSpend, totalRevenue, monthlyRoas, monthlyData, monthlySpend } = this.drawerData();
       // changePercentage from the API is ROAS MoM — impressions texts must use
-      // the impressions series' own MoM. A zero-filled trailing no-campaign
-      // month would read as ~-100% MoM — a spend gap, not a reach decline —
-      // so MoM claims require the latest month to have actual impressions.
-      const impressionsMomPct = (monthlyData.at(-1) ?? 0) > 0 ? computeMomPct(monthlyData) : null;
+      // the impressions series' own MoM. A month is ACTIVE when it had spend
+      // OR impressions; only an inactive trailing month (a spend gap) blocks
+      // the MoM claim — active-but-zero-impression months are real data.
+      const monthActive = monthlyData.map((v, i) => v > 0 || (monthlySpend?.[i] ?? 0) > 0);
+      const impressionsMomPct = (monthActive.at(-1) ?? false) ? computeMomPct(monthlyData) : null;
       const insights: MarketingKeyInsight[] = [];
 
       if (totalReach === 0) {
@@ -293,12 +300,12 @@ export class PaidSocialReachDrawerComponent {
         insights.push({ text: `Impressions declined ${Math.abs(impressionsMomPct).toFixed(1)}% MoM`, type: 'warning' });
       }
 
-      // ROAS trend — streak claims require all three months to be ACTIVE per
-      // the aligned impressions series: no-impression months are spend gaps,
-      // while a measured 0x ROAS in an active month is a real trend point.
-      if (monthlyRoas && monthlyRoas.length >= 3 && monthlyData.length === monthlyRoas.length) {
+      // ROAS trend — streak claims require all three months to be ACTIVE
+      // (spend or impressions): inactive months are spend gaps, while a
+      // measured 0x ROAS in an active month is a real trend point.
+      if (monthlyRoas && monthlyRoas.length >= 3 && monthActive.length === monthlyRoas.length) {
         const recent3 = monthlyRoas.slice(-3);
-        const allActive = monthlyData.slice(-3).every((v) => v > 0);
+        const allActive = monthActive.slice(-3).every(Boolean);
         const isDecreasing = allActive && recent3[0] > recent3[1] && recent3[1] > recent3[2];
         const isIncreasing = allActive && recent3[0] < recent3[1] && recent3[1] < recent3[2];
         if (isIncreasing) {

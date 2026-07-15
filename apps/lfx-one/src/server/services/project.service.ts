@@ -2562,7 +2562,7 @@ export class ProjectService {
 
       // Block 4: Monthly impressions (bar chart, period range)
       const monthlyImpressionsQuery = `
-      SELECT CAMPAIGN_MONTH, SUM(IMPRESSIONS) AS IMPRESSIONS
+      SELECT CAMPAIGN_MONTH, SUM(IMPRESSIONS) AS IMPRESSIONS, SUM(SPEND) AS SPEND
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= TO_DATE(?)
         AND CAMPAIGN_MONTH < TO_DATE(?)
@@ -2636,7 +2636,7 @@ export class ProjectService {
           ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number; SPEND: number }>(monthlyImpressionsQuery, [
           this.trendStartDate(resolved),
           resolved.endDate,
           ...foundationParams,
@@ -2746,9 +2746,11 @@ export class ProjectService {
         return match ? match[1] : monthKey(new Date(value));
       };
       const impressionsByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), row.IMPRESSIONS ?? 0]));
+      const spendByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), row.SPEND ?? 0]));
       const roasByMonth = new Map(monthlyRoasResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), Math.round((row.ROAS ?? 0) * 100) / 100]));
       const monthlyData: number[] = [];
       const monthlyRoas: number[] = [];
+      const monthlySpend: number[] = [];
       const monthlyLabels: string[] = [];
       // Walk from trendStartDate, not resolved.startDate — the monthly queries
       // bind trendStartDate (one month earlier for single-month periods, to give
@@ -2760,6 +2762,7 @@ export class ProjectService {
         const key = monthKey(monthCursor);
         monthlyData.push(impressionsByMonth.get(key) ?? 0);
         monthlyRoas.push(roasByMonth.get(key) ?? 0);
+        monthlySpend.push(spendByMonth.get(key) ?? 0);
         monthlyLabels.push(monthCursor.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }));
         monthCursor.setUTCMonth(monthCursor.getUTCMonth() + 1);
       }
@@ -2944,6 +2947,7 @@ export class ProjectService {
         monthlyData,
         monthlyLabels,
         monthlyRoas,
+        monthlySpend,
         channelGroups,
         projectBreakdown,
         platformBreakdown,
