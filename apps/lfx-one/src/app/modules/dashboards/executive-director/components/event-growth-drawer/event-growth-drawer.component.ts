@@ -253,24 +253,33 @@ export class EventGrowthDrawerComponent {
   }
 
   /**
-   * Compact money formatter. USD keeps the `$` prefix; any other currency is
-   * prefixed with its ISO 4217 code (e.g. "INR 4.1M") — per-event revenue is
-   * denominated in the event's LOCAL currency, so labeling it `$` would be wrong.
+   * Compact money formatter in the currency's native SYMBOL (₹4.1M, ₩12.6M,
+   * ¥1.9M, €49.2K, $238.9K) — matching how PCC's event health-metrics tables
+   * display multi-currency revenue. Per-event revenue is denominated in the
+   * event's LOCAL currency, so labeling everything `$` would be wrong.
+   * Locale is pinned to en-US so SSR (Node) and the browser render identical
+   * text — hydration flags a mismatch otherwise.
    */
   private static formatMoney(value: number, currencyCode: string = 'USD'): string {
-    let compact: string;
-    if (value >= 1_000_000) {
-      compact = `${(value / 1_000_000).toFixed(1)}M`;
-    } else if (value >= 1_000) {
-      compact = `${(value / 1_000).toFixed(1)}K`;
-    } else {
-      // Fixed locale: SSR (Node) and the browser must render identical text or
-      // hydration flags a mismatch on non-en-US clients.
-      compact = Math.round(value).toLocaleString('en-US');
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currencyCode || 'USD',
+        notation: 'compact',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      }).format(value);
+    } catch {
+      // Unknown/invalid ISO code — degrade to a code prefix rather than throwing.
+      let compact: string;
+      if (value >= 1_000_000) {
+        compact = `${(value / 1_000_000).toFixed(1)}M`;
+      } else if (value >= 1_000) {
+        compact = `${(value / 1_000).toFixed(1)}K`;
+      } else {
+        compact = Math.round(value).toLocaleString('en-US');
+      }
+      return `${currencyCode} ${compact}`;
     }
-    if (currencyCode === 'USD' || !currencyCode) {
-      return `$${compact}`;
-    }
-    return `${currencyCode} ${compact}`;
   }
 }
