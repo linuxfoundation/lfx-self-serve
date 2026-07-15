@@ -887,7 +887,7 @@ export class ProjectController {
     }
   }
 
-  /** GET /public/api/projects/:id/calendar.ics — PUBLIC non-restricted meetings; serves both foundation and project lenses. */
+  /** GET /public/api/projects/:id/calendar.ics — PUBLIC meetings (any join restriction); serves both foundation and project lenses. */
   public async getProjectCalendar(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const startTime = logger.startOperation(req, 'get_project_calendar', { project_id: id });
@@ -912,8 +912,9 @@ export class ProjectController {
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
       ]);
 
-      // Filter PRIVATE/restricted meetings from the public feed (mirrors PublicMeetingController visibility guard).
-      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC && !m.restricted);
+      // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
+      // still listed so their existence is discoverable; join authorization is enforced separately at join time.
+      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
       const events = meetingsToVEvents(allMeetings);
       const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN');
 

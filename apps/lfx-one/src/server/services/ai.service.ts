@@ -25,7 +25,7 @@ import { logger } from './logger.service';
 export class AiService {
   private readonly model = AI_MODEL;
 
-  // Resolved lazily on first access so dotenv has finished loading,
+  // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _aiProxyUrl: string | undefined;
   private _aiKey: string | undefined;

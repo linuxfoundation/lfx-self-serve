@@ -28,13 +28,13 @@ The "Feature API" is whichever controller fronts the request: `meeting.controlle
 
 ### AI Service Configuration
 
-`MeetingController` constructs `AiService` at **class field initialization** time (during ESM import), which runs **before** `dotenv.config()` in `server.ts`. Reading `process.env` in the constructor or in `readonly` field initializers can therefore capture empty values. `AiService` follows the same pattern as `CdpService`: **lazy private getters** memoized with `??=` on first access (after dotenv has loaded).
+`MeetingController` constructs `AiService` at **class field initialization** time (during ESM import), which runs **before** `process.loadEnvFile()` in `server.ts`. Reading `process.env` in the constructor or in `readonly` field initializers can therefore capture empty values. `AiService` follows the same pattern as `CdpService`: **lazy private getters** memoized with `??=` on first access (after the env file has loaded).
 
 ```typescript
 export class AiService {
   private readonly model = AI_MODEL;
 
-  // Resolved lazily on first access so dotenv has finished loading,
+  // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _aiProxyUrl: string | undefined;
   private _aiKey: string | undefined;

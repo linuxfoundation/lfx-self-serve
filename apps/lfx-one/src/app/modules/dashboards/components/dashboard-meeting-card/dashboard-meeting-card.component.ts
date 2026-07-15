@@ -66,6 +66,7 @@ export class DashboardMeetingCardComponent {
   public readonly meetingStartTime: Signal<string> = this.initMeetingStartTime();
   public readonly formattedTimeWithDuration: Signal<string> = this.initFormattedTimeWithDuration();
   public readonly isPrivate: Signal<boolean> = this.initIsPrivate();
+  public readonly isRestricted: Signal<boolean> = this.initIsRestricted();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
@@ -156,6 +157,10 @@ export class DashboardMeetingCardComponent {
     return computed(() => {
       return this.meeting().visibility === 'private';
     });
+  }
+
+  private initIsRestricted(): Signal<boolean> {
+    return computed(() => !!this.meeting().restricted);
   }
 
   private initHasRecording(): Signal<boolean> {

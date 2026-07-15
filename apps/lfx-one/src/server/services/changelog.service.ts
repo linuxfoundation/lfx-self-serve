@@ -10,7 +10,7 @@ import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 export class ChangelogService {
-  // Resolved lazily on first access so dotenv has finished loading, then memoized.
+  // Resolved lazily on first access so process.loadEnvFile has finished loading, then memoized.
   private _apiUrl: string | undefined;
   private _apiKey: string | undefined;
   private _productId: string | undefined;

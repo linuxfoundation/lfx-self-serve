@@ -10,6 +10,7 @@ export interface InviteTokenPayload {
   jti: string;
   invite_uid: string;
   resource_uid: string;
+  resource_type?: string;
   return_url: string;
   role: string;
 }
