@@ -91,9 +91,11 @@
                     } @else {
                       <span
                         class="text-sm text-gray-700"
+                        role="note"
                         tabindex="0"
                         [pTooltip]="newsletter.openRateTooltip"
                         tooltipPosition="top"
+                        tooltipEvent="both"
                         [attr.aria-label]="newsletter.openRateAria"
                         [attr.data-testid]="'newsletter-open-rate-' + newsletter.id">
                         {{ newsletter.openRateLabel }}

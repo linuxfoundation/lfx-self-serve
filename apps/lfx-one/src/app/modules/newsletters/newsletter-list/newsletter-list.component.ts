@@ -13,7 +13,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY } from '@lfx-one/shared/constants';
-import { FilterPillOption, NewsletterAnalytics, NewsletterListItem, NewsletterRow, NewsletterStatus, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, NewsletterAnalytics, NewsletterListItem, NewsletterRow, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -116,19 +116,23 @@ export class NewsletterListComponent {
 
   protected loadMore(): void {
     const token = this.nextPageToken();
-    if (!token || this.loadingMore() || !this.projectUid()) return;
+    const uid = this.projectUid();
+    const status = this.statusTab();
+    if (!token || this.loadingMore() || !uid) return;
     this.loadingMore.set(true);
     this.newsletterService
-      .listNewsletters(this.projectUid(), {
-        status: this.statusTab() as NewsletterStatus,
-        page_token: token,
-      })
+      .listNewsletters(uid, { status, page_token: token })
       .pipe(
         take(1),
         finalize(() => this.loadingMore.set(false))
       )
       .subscribe({
         next: (response) => {
+          // Discard the page if the tab or project changed while it was in flight —
+          // appending it would clobber the newer context's rows and page token.
+          if (this.projectUid() !== uid || this.statusTab() !== status) {
+            return;
+          }
           this.newsletters.update((current) => [...current, ...response.newsletters]);
           this.nextPageToken.set(response.next_page_token);
           this.loadOpenRates(response.newsletters);
@@ -150,30 +154,6 @@ export class NewsletterListComponent {
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.runDelete(item.id),
     });
-  }
-
-  private runDelete(id: string): void {
-    if (!this.projectUid()) return;
-    this.deletingId.set(id);
-    this.newsletterService
-      .deleteNewsletter(this.projectUid(), id)
-      .pipe(
-        take(1),
-        finalize(() => this.deletingId.set(null))
-      )
-      .subscribe({
-        next: () => {
-          this.newsletters.update((current) => current.filter((n) => n.id !== id));
-          this.messageService.add({ severity: 'success', summary: 'Draft deleted', detail: 'The draft has been removed.' });
-        },
-        error: (err: HttpErrorResponse) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Delete failed',
-            detail: err?.error?.message || err?.message || 'Could not delete the draft. Please try again.',
-          });
-        },
-      });
   }
 
   private initRows(): Signal<NewsletterRow[]> {
@@ -203,11 +183,13 @@ export class NewsletterListComponent {
     });
   }
 
-  // switchMap cancels the in-flight list request when the tab or project changes,
-  // so a slow response can never clobber the newer tab's rows or fan out analytics
-  // for rows that are no longer displayed. Loading is cleared in next/catchError
-  // rather than finalize: a cancelled request's teardown runs after the newer
-  // request sets loading, and must not wipe it.
+  // switchMap cancels the in-flight initial list request when the tab or project
+  // changes, so a slow response can never clobber the newer tab's rows or fan out
+  // analytics for rows that are no longer displayed. (loadMore requests are not
+  // cancelled — loadMore guards its own response against context changes instead.)
+  // Loading is cleared explicitly on every outcome path (empty uid, error, next)
+  // rather than via finalize, so cancellation can never produce a loading write
+  // regardless of operator teardown ordering.
   private initLoadOnContextOrTab(): void {
     combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
       .pipe(
@@ -222,7 +204,7 @@ export class NewsletterListComponent {
             return EMPTY;
           }
           this.loading.set(true);
-          return this.newsletterService.listNewsletters(uid, { status: status as NewsletterStatus }).pipe(
+          return this.newsletterService.listNewsletters(uid, { status }).pipe(
             catchError((err: HttpErrorResponse) => {
               this.loading.set(false);
               this.showLoadError(err);
@@ -240,13 +222,37 @@ export class NewsletterListComponent {
       });
   }
 
+  private runDelete(id: string): void {
+    if (!this.projectUid()) return;
+    this.deletingId.set(id);
+    this.newsletterService
+      .deleteNewsletter(this.projectUid(), id)
+      .pipe(
+        take(1),
+        finalize(() => this.deletingId.set(null))
+      )
+      .subscribe({
+        next: () => {
+          this.newsletters.update((current) => current.filter((n) => n.id !== id));
+          this.messageService.add({ severity: 'success', summary: 'Draft deleted', detail: 'The draft has been removed.' });
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: err?.error?.message || err?.message || 'Could not delete the draft. Please try again.',
+          });
+        },
+      });
+  }
+
   // Fan out one analytics call per newly loaded sent row to fill the Open Rate
   // column. Browser-only: SSR skips the fan-out and the client replay of the
   // list load (via the transfer cache) triggers it. Rows whose analytics are
   // already loaded or in flight are skipped, so tab toggles and load-more never
   // duplicate requests. `sending` rows are excluded rather than negatively
-  // cached — their analytics don't exist yet, and the next list refresh retries
-  // them once they settle to `sent`.
+  // cached — their analytics don't exist yet, and the next list load (tab or
+  // project change) retries them once they settle to `sent`.
   private loadOpenRates(items: NewsletterListItem[]): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
