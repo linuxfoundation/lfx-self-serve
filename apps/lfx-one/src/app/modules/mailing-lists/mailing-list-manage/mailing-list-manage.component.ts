@@ -176,7 +176,12 @@ export class MailingListManageComponent {
     return new FormGroup(
       {
         // Step 1: Basic Information
-        group_name: new FormControl('', [Validators.required, Validators.minLength(3), Validators.maxLength(34), Validators.pattern(/^[a-zA-Z0-9_-]+$/)]),
+        group_name: new FormControl('', [
+          Validators.required,
+          Validators.minLength(3),
+          Validators.maxLength(34),
+          Validators.pattern(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/),
+        ]),
         description: new FormControl('', [htmlRequiredValidator(), htmlMinLengthValidator(11), htmlMaxLengthValidator(500)]),
 
         // Step 2: Settings
