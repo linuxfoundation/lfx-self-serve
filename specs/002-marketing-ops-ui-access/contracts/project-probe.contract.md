@@ -34,7 +34,7 @@ Existing params (`meeting_coordinator`) are unaffected and may be combined.
 
 `ProjectService.getProject(slug, current, options)` gains a `marketing?: boolean` option:
 
-```
+```typescript
 getProject(slug, false, { marketing: true }) → Observable<Project | null>
 ```
 

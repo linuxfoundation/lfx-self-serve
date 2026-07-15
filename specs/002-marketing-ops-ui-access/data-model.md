@@ -16,7 +16,7 @@ The UI checks `marketing_auditor` and `campaign_manager` on `project:<uid>`; it 
 
 ### `AccessCheckAccessType` (interfaces/access-check.interface.ts)
 
-```
+```typescript
 'writer' | 'viewer' | 'organizer' | 'meeting_coordinator'
   + 'marketing_auditor'
   + 'campaign_manager'
