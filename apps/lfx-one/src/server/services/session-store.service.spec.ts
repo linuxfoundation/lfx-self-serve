@@ -69,25 +69,21 @@ describe('SessionStoreService', () => {
       const payload = buildPayload();
       valkeyService.getJson.mockResolvedValue(payload);
 
-      await new Promise<void>((resolve) => {
-        service.get('sid-1', (err, session) => {
-          expect(err).toBeNull();
-          expect(session).toEqual(payload);
-          resolve();
-        });
+      const [err, session] = await new Promise<[unknown, SessionStorePayload | null | undefined]>((resolve) => {
+        service.get('sid-1', (err, session) => resolve([err, session]));
       });
+      expect(err).toBeNull();
+      expect(session).toEqual(payload);
     });
 
     it('invokes the callback form with the error when the read rejects', async () => {
       const boom = new Error('boom');
       valkeyService.getJson.mockRejectedValue(boom);
 
-      await new Promise<void>((resolve) => {
-        service.get('sid-1', (err) => {
-          expect(err).toBe(boom);
-          resolve();
-        });
+      const [err] = await new Promise<[unknown]>((resolve) => {
+        service.get('sid-1', (err) => resolve([err]));
       });
+      expect(err).toBe(boom);
     });
 
     it('fails closed to null without calling Valkey when the session id is not filter-safe', async () => {
@@ -135,12 +131,10 @@ describe('SessionStoreService', () => {
     it('invokes the callback form with no args on a successful write', async () => {
       valkeyService.setJson.mockResolvedValue(true);
 
-      await new Promise<void>((resolve) => {
-        service.set('sid-1', buildPayload(), (err) => {
-          expect(err).toBeUndefined();
-          resolve();
-        });
+      const [err] = await new Promise<[unknown]>((resolve) => {
+        service.set('sid-1', buildPayload(), (err) => resolve([err]));
       });
+      expect(err).toBeUndefined();
     });
 
     it('fails closed with a clearSession AuthenticationError when the session id is not filter-safe', async () => {
@@ -215,12 +209,10 @@ describe('SessionStoreService', () => {
     it('invokes the callback form with no args regardless of delete outcome', async () => {
       valkeyService.del.mockResolvedValue(false);
 
-      await new Promise<void>((resolve) => {
-        service.destroy('sid-1', (err) => {
-          expect(err).toBeUndefined();
-          resolve();
-        });
+      const [err] = await new Promise<[unknown]>((resolve) => {
+        service.destroy('sid-1', (err) => resolve([err]));
       });
+      expect(err).toBeUndefined();
     });
 
     it('is fail-soft: does not throw when the underlying delete fails', async () => {
