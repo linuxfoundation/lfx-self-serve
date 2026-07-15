@@ -1688,7 +1688,7 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
     // Newest health score per project from PROJECT_HEALTH_METRICS_LATEST, which
-    // holds the latest score row per project (DAILY keeps per-date history); null flows through as Unscored.
+    // holds the latest score row per project (DAILY keeps per-date history); absent categories resolve to null and the drawer renders that as "Unscored".
     const query = `
       SELECT
         d.PROJECT_ID,
@@ -1702,6 +1702,7 @@ export class ProjectService {
         d.LAST_UPDATED_TS,
         h.HEALTH_SCORE_CATEGORY
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
+      -- PROJECT_HEALTH_METRICS_LATEST stores slugs lowercased; match the detail slug via LOWER() so mixed-case detail slugs still join.
       LEFT JOIN (
         SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
         FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_LATEST
