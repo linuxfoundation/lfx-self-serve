@@ -26,9 +26,9 @@ export enum MailingListAudienceAccess {
  * @description Type of the Groups.io service
  */
 export enum GroupsIOServiceType {
-  PRIMARY = 'primary',
-  FORMATION = 'formation',
-  SHARED = 'shared',
+  PRIMARY = 'v2_primary',
+  FORMATION = 'v2_formation',
+  SHARED = 'v2_shared',
 }
 
 /**

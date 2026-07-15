@@ -286,7 +286,7 @@ export class MailingListManageComponent {
   }
 
   private initNeedsSharedServiceCreation(): Signal<boolean> {
-    return computed(() => this.parentService() !== null && this.availableServices().filter((service) => service.type === 'shared').length === 0);
+    return computed(() => this.parentService() !== null && this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0);
   }
 
   private initServicePrefix(): Signal<string> {
@@ -364,7 +364,7 @@ export class MailingListManageComponent {
     let groupName = mailingList.group_name;
     const servicePrefix = mailingList.service?.prefix;
 
-    if (servicePrefix && mailingList.service?.type !== 'primary') {
+    if (servicePrefix && mailingList.service?.type !== GroupsIOServiceType.PRIMARY) {
       const prefixWithSeparator = `${servicePrefix}-`;
       if (groupName.startsWith(prefixWithSeparator)) {
         groupName = groupName.slice(prefixWithSeparator.length);
@@ -423,7 +423,7 @@ export class MailingListManageComponent {
   private prepareMailingListData(service: GroupsIOService): CreateMailingListRequest {
     const formValue = this.form().value;
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
-    const groupName = service.type === 'primary' ? formValue.group_name : `${prefix}-${formValue.group_name}`;
+    const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
     return {
       group_name: groupName,
