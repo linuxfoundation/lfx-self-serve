@@ -360,6 +360,10 @@ export class OrgProjectDetailComponent {
     this.resetRoster();
   }
 
+  protected onDrawerVisibleChange(visible: boolean): void {
+    if (!visible) this.closeCardDetail();
+  }
+
   /** lfx-table lazy-load callback: fetch the requested page (and page size) of the open card's roster. */
   protected onRosterLazyLoad(event: { first?: number; rows?: number }): void {
     const cardKey = this.selectedCardKey();

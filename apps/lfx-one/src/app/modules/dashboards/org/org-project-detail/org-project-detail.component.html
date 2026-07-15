@@ -552,7 +552,7 @@
   [modal]="true"
   styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
   data-testid="influence-card-detail-drawer"
-  (visibleChange)="drawerOpen.set($event)">
+  (visibleChange)="onDrawerVisibleChange($event)">
   <ng-template #header>
     @if (selectedCard(); as card) {
       <div class="flex w-full items-start gap-3">
