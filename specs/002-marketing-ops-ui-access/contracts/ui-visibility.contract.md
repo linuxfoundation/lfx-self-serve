@@ -16,6 +16,18 @@ Defines the observable UI behavior each role must experience. These are the acce
 - A non-ED marketing user gains the foundation ("Projects") lens + project selector.
 - `me` lens unchanged; `project`/`org` unchanged.
 
+## Marketing-only foundation mode (FR-017)
+
+When `isRootMarketingAuditor && !(hasBoardRole || isRootWriter)`:
+
+| Surface                         | Behavior                                                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation sidebar              | Dashboard + Marketing section only (no Meetings/Events/Groups/Documents/Governance/Newsletters/Metrics/Projects page)                       |
+| Non-marketing foundation routes | Blocked by `foundationProductGuard` → redirect `/foundation/overview?project=<slug>`                                                        |
+| Board-member dashboard          | Foundation Health, pending actions, meetings, org involvement, staff sidebar hidden; Marketing Overview remains when `canManageCampaigns()` |
+
+Board role and root-writer users keep the full foundation product surface unchanged.
+
 ## Sidebar (`SidebarNavService`, foundation lens)
 
 | Section/entry                | Visible when                                | Notes                          |
@@ -28,11 +40,12 @@ Defines the observable UI behavior each role must experience. These are the acce
 
 ## Routes (`app.routes.ts`)
 
-| Path                          | Guard(s) before                                    | Guard(s) after                                  |
-| ----------------------------- | -------------------------------------------------- | ----------------------------------------------- |
-| `foundation/health-metrics`   | `executiveDirectorGuard`, `projectQueryParamGuard` | UNCHANGED                                       |
-| `foundation/marketing-impact` | `executiveDirectorGuard`, `projectQueryParamGuard` | `marketingViewGuard`, `projectQueryParamGuard`  |
-| `foundation/campaigns`        | `executiveDirectorGuard`, `projectQueryParamGuard` | `campaignAccessGuard`, `projectQueryParamGuard` |
+| Path                          | Guard(s) before                                    | Guard(s) after                                                                  |
+| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `foundation/health-metrics`   | `executiveDirectorGuard`, `projectQueryParamGuard` | UNCHANGED                                                                       |
+| `foundation/marketing-impact` | `executiveDirectorGuard`, `projectQueryParamGuard` | `marketingViewGuard`, `projectQueryParamGuard`                                  |
+| `foundation/campaigns`        | `executiveDirectorGuard`, `projectQueryParamGuard` | `campaignAccessGuard`, `projectQueryParamGuard`                                 |
+| `foundation/meetings` (etc.)  | `projectQueryParamGuard`                           | `foundationProductGuard`, `projectQueryParamGuard` (board/root-writer retained) |
 
 ## Dashboard Marketing Overview section
 

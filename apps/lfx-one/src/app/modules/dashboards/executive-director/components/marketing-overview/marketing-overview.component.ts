@@ -26,9 +26,10 @@ import {
 
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, map, Observable, of, skip, Subject, switchMap, tap } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, skip, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { BrandHealthDrawerComponent } from '../brand-health-drawer/brand-health-drawer.component';
 import { BrandReachDrawerComponent } from '../brand-reach-drawer/brand-reach-drawer.component';
@@ -208,6 +209,7 @@ export class MarketingOverviewComponent {
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
 
   public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
@@ -296,9 +298,15 @@ export class MarketingOverviewComponent {
       this.mentionsTrigger$.pipe(
         switchMap((slug) => {
           if (!slug) return of(null);
-          return this.analyticsService.getBrandHealth(slug, true, 'last-6').pipe(
-            map((res) => ({ topPositiveMentions: res.topPositiveMentions, topNegativeMentions: res.topNegativeMentions })),
-            catchError(() => of(null))
+          // Mentions are marketing analytics — only fetch after campaign_manager for this slug.
+          return this.probeCampaignManager(slug).pipe(
+            switchMap((allowed) => {
+              if (!allowed) return of(null);
+              return this.analyticsService.getBrandHealth(slug, true, 'last-6').pipe(
+                map((res) => ({ topPositiveMentions: res.topPositiveMentions, topNegativeMentions: res.topNegativeMentions })),
+                catchError(() => of(null))
+              );
+            })
           );
         })
       ),
@@ -307,37 +315,58 @@ export class MarketingOverviewComponent {
   }
 
   private initEdEvolutionData(): Signal<EdEvolutionData> {
-    // ED dashboard intentionally falls back to `tlf` (the umbrella foundation) when no specific
-    // foundation is selected — that is the default "all foundations" view for executive directors.
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
+    // Gate analytics on a slug-scoped campaign_manager probe (startWith false) so a granted→denied
+    // foundation switch cannot fire forkJoin for the denied slug before the parent `@if` unmounts.
+    // When no foundation is selected, keep the legacy ED umbrella fallback (`tlf`) but only after
+    // that slug itself passes campaign_manager — Marketing Ops users without a selection get empty
+    // data rather than an unauthorized umbrella fetch.
+    return toSignal(
+      toObservable(this.projectContextService.selectedFoundation).pipe(
+        switchMap((foundation) => {
+          const slug = foundation?.slug || 'tlf';
+          return this.probeCampaignManager(slug).pipe(
+            startWith(false),
+            switchMap((allowed) => {
+              if (!allowed) {
+                return of(EMPTY_ED_EVOLUTION_DATA);
+              }
+              return this.fetchEdEvolutionData(slug);
+            })
+          );
+        })
+      ),
+      { initialValue: EMPTY_ED_EVOLUTION_DATA }
+    ) as Signal<EdEvolutionData>;
+  }
 
+  private probeCampaignManager(slug: string): Observable<boolean> {
+    return this.projectService.getProject(slug, false, { marketing: true }).pipe(
+      map((project) => project?.campaignManager === true),
+      catchError(() => of(false))
+    );
+  }
+
+  private fetchEdEvolutionData(slug: string): Observable<EdEvolutionData> {
     // Per-call catchError ensures a single failing Snowflake query degrades only its own card
     // rather than taking down the whole dashboard. Errors are swallowed client-side — the server
     // logger already records the upstream failure.
     const safe = <T>(key: keyof EdEvolutionData, obs: Observable<T>): Observable<T> => obs.pipe(catchError(() => of(EMPTY_ED_EVOLUTION_DATA[key] as T)));
 
-    return toSignal(
-      foundation$.pipe(
-        switchMap((slug) =>
-          forkJoin({
-            flywheel: safe('flywheel', this.analyticsService.getFlywheelConversion(slug).pipe(map((r) => r ?? EMPTY_ED_EVOLUTION_DATA.flywheel))),
-            memberAcquisition: safe('memberAcquisition', this.analyticsService.getMemberAcquisition(slug)),
-            memberRetention: safe('memberRetention', this.analyticsService.getMemberRetention(slug)),
-            engagedCommunity: safe('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),
-            eventGrowth: safe('eventGrowth', this.analyticsService.getEventGrowth(slug)),
-            brandReach: safe('brandReach', this.analyticsService.getBrandReach(slug)),
-            // Period-aware endpoints get the last-6 preset explicitly: their trend
-            // sections are designed (and labeled) as 6-month windows, and omitting
-            // the period silently falls back to the previous completed month. MoM
-            // KPIs are unaffected — both windows share the same period END.
-            brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug, false, 'last-6')),
-            revenueImpact: safe('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
-            emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
-            paidCampaign: safe('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
-          })
-        )
-      ),
-      { initialValue: EMPTY_ED_EVOLUTION_DATA }
-    ) as Signal<EdEvolutionData>;
+    return forkJoin({
+      flywheel: safe('flywheel', this.analyticsService.getFlywheelConversion(slug).pipe(map((r) => r ?? EMPTY_ED_EVOLUTION_DATA.flywheel))),
+      memberAcquisition: safe('memberAcquisition', this.analyticsService.getMemberAcquisition(slug)),
+      memberRetention: safe('memberRetention', this.analyticsService.getMemberRetention(slug)),
+      engagedCommunity: safe('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),
+      eventGrowth: safe('eventGrowth', this.analyticsService.getEventGrowth(slug)),
+      brandReach: safe('brandReach', this.analyticsService.getBrandReach(slug)),
+      // Period-aware endpoints get the last-6 preset explicitly: their trend
+      // sections are designed (and labeled) as 6-month windows, and omitting
+      // the period silently falls back to the previous completed month. MoM
+      // KPIs are unaffected — both windows share the same period END.
+      brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug, false, 'last-6')),
+      revenueImpact: safe('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
+      emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
+      paidCampaign: safe('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
+    });
   }
 }

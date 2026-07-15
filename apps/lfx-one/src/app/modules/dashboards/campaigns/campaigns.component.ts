@@ -4,10 +4,10 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, EMPTY, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
@@ -27,6 +27,7 @@ export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   protected readonly tabs = CAMPAIGN_TABS;
@@ -51,18 +52,24 @@ export class CampaignsComponent {
   public constructor() {
     // campaignAccessGuard only runs on navigation, but an in-place context switch (setFoundation
     // uses Location.replaceState — no navigation) doesn't re-run it. Redirect (fail closed) when
-    // the newly selected foundation resolves without campaign_manager. This subscription uses
-    // resolved probe values (no startWith), so the transient "resolving" state never triggers a
-    // spurious redirect; the entry foundation was authorized by the guard so its probe is true.
-    toObservable(this.projectContextService.selectedFoundation)
+    // the newly selected foundation resolves without campaign_manager. Slug prefers
+    // selectedFoundation, then `?project=` (same as the guard) so a deep link is not denied while
+    // projectQueryParamGuard is still seeding context. No slug yet → wait (EMPTY), never treat
+    // "pending seed" as denial.
+    combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap])
       .pipe(
-        switchMap((foundation) => this.probeCampaignManager(foundation?.slug)),
+        switchMap(([foundation, params]) => {
+          const slug = foundation?.slug ?? params.get('project') ?? undefined;
+          if (!slug) {
+            return EMPTY;
+          }
+          return this.probeCampaignManager(slug).pipe(map((allowed) => ({ allowed, slug })));
+        }),
         takeUntilDestroyed()
       )
-      .subscribe((allowed) => {
+      .subscribe(({ allowed, slug }) => {
         if (!allowed) {
-          const slug = this.projectContextService.selectedFoundation()?.slug;
-          this.router.navigate(['/foundation/overview'], slug ? { queryParams: { project: slug } } : {});
+          this.router.navigate(['/foundation/overview'], { queryParams: { project: slug } });
         }
       });
   }
@@ -109,8 +116,11 @@ export class CampaignsComponent {
   }
 
   private initAuthorized(): Observable<boolean> {
-    return toObservable(this.projectContextService.selectedFoundation).pipe(
-      switchMap((foundation) => this.probeCampaignManager(foundation?.slug).pipe(startWith(false)))
+    return combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap]).pipe(
+      switchMap(([foundation, params]) => {
+        const slug = foundation?.slug ?? params.get('project') ?? undefined;
+        return this.probeCampaignManager(slug).pipe(startWith(false));
+      })
     );
   }
 

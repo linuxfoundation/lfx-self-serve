@@ -47,6 +47,17 @@ export class PersonaService {
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Marketing auditor on the tenant root project — surfaces the foundation lens to non-board marketing users */
   public readonly isRootMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * Full foundation product surface (Meetings, Events, Groups, …) — the pre-marketing-ops
+   * foundation-lens audience. Marketing-only users get the lens via `isRootMarketingAuditor`
+   * but not this flag (FR-017).
+   */
+  public readonly canAccessFullFoundationProduct: Signal<boolean> = computed(() => this.hasBoardRole() || this.isRootWriter());
+  /**
+   * Foundation lens available only because of a ROOT marketing grant (no board role / root writer).
+   * Drives the marketing-only nav + dashboard mode.
+   */
+  public readonly isMarketingOnlyFoundationUser: Signal<boolean> = computed(() => this.isRootMarketingAuditor() && !this.canAccessFullFoundationProduct());
 
   public constructor() {
     const stored = this.loadFromCookie();

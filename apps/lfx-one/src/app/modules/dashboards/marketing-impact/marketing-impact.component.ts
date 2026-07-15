@@ -4,7 +4,7 @@
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -12,7 +12,7 @@ import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TA
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, EMPTY, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -52,6 +52,7 @@ export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
@@ -91,18 +92,23 @@ export class MarketingImpactComponent {
   public constructor() {
     // marketingViewGuard only runs on navigation, but an in-place context switch (setFoundation uses
     // Location.replaceState — no navigation) doesn't re-run it. Redirect (fail closed) when the newly
-    // selected foundation resolves without marketing_auditor. This subscription uses resolved probe
-    // values (no startWith), so the transient "resolving" state never triggers a spurious redirect;
-    // the entry foundation was authorized by the guard so its probe is true.
-    toObservable(this.projectContextService.selectedFoundation)
+    // selected foundation resolves without marketing_auditor. Slug prefers selectedFoundation, then
+    // `?project=` (same as the guard) so a deep link is not denied while projectQueryParamGuard is
+    // still seeding context. No slug yet → wait (EMPTY), never treat "pending seed" as denial.
+    combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap])
       .pipe(
-        switchMap((foundation) => this.probeMarketingAuditor(foundation?.slug)),
+        switchMap(([foundation, params]) => {
+          const slug = foundation?.slug ?? params.get('project') ?? undefined;
+          if (!slug) {
+            return EMPTY;
+          }
+          return this.probeMarketingAuditor(slug).pipe(map((allowed) => ({ allowed, slug })));
+        }),
         takeUntilDestroyed()
       )
-      .subscribe((allowed) => {
+      .subscribe(({ allowed, slug }) => {
         if (!allowed) {
-          const slug = this.projectContextService.selectedFoundation()?.slug;
-          this.router.navigate(['/foundation/overview'], slug ? { queryParams: { project: slug } } : {});
+          this.router.navigate(['/foundation/overview'], { queryParams: { project: slug } });
         }
       });
   }
@@ -139,8 +145,11 @@ export class MarketingImpactComponent {
   }
 
   private initAuthorized(): Observable<boolean> {
-    return toObservable(this.projectContextService.selectedFoundation).pipe(
-      switchMap((foundation) => this.probeMarketingAuditor(foundation?.slug).pipe(startWith(false)))
+    return combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap]).pipe(
+      switchMap(([foundation, params]) => {
+        const slug = foundation?.slug ?? params.get('project') ?? undefined;
+        return this.probeMarketingAuditor(slug).pipe(startWith(false));
+      })
     );
   }
 

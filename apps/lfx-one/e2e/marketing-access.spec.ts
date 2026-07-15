@@ -223,6 +223,23 @@ test.describe('US1: Marketing Ops (non-ED) — marketing_auditor + campaign_mana
     await expect(page.getByTestId(SIDEBAR.marketingImpact), 'marketing ops lens=foundation item=marketing-impact').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId(SIDEBAR.campaigns), 'marketing ops lens=foundation item=campaigns').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
+
+  test('marketing-only mode hides non-marketing foundation nav and blocks product routes (FR-017)', async ({ page }) => {
+    // Sidebar must not expose the full foundation product surface to marketing-only users.
+    await expect(page.getByRole('link', { name: 'Meetings' }), 'marketing-only ⇒ Meetings nav absent').toHaveCount(0, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByRole('link', { name: 'Events' }), 'marketing-only ⇒ Events nav absent').toHaveCount(0, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('foundation-health-placeholder'), 'marketing-only ⇒ Foundation Health absent').toHaveCount(0, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    await setPersonaCookie(page, ['contributor']);
+    await gotoRoute(page, `/foundation/meetings?project=${MOCK_FOUNDATION_SLUG}`);
+    await expect(page, 'marketing-only ⇒ Meetings route blocked').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+  });
 });
 
 test.describe('US1: Marketing Auditor — marketing_auditor only (no campaign_manager)', () => {
