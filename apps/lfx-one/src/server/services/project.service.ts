@@ -5375,7 +5375,7 @@ export class ProjectService {
       totalMentions: 0,
       sentiment: { positive: 0, neutral: 0, negative: 0 },
       sentimentMomChangePp: 0,
-      mentionMomChangePct: 0,
+      mentionMomChangePct: null,
       trend: 'up',
       monthlyMentions: [],
       topProjects: [],
@@ -5535,7 +5535,7 @@ export class ProjectService {
       // older pair). resolved.endDate is the exclusive first-of-next-month
       // boundary, so the expected newest month is one ordinal below it —
       // wall-clock "now" would permanently zero MoM for historical periods.
-      let mentionMomChangePct = 0;
+      let mentionMomChangePct: number | null = null;
       if (trendResult.rows.length >= 2) {
         const rowOrdinal = (value: string | Date): number => {
           const date = new Date(value);
@@ -5583,7 +5583,7 @@ export class ProjectService {
         sentiment: { positive: positivePct, neutral: neutralPct, negative: negativePct },
         sentimentMomChangePp,
         mentionMomChangePct,
-        trend: mentionMomChangePct >= 0 ? 'up' : 'down',
+        trend: (mentionMomChangePct ?? 0) >= 0 ? 'up' : 'down',
         monthlyMentions,
         topProjects,
         topPositiveMentions: positiveMentionsResult.rows.map(mapMention),

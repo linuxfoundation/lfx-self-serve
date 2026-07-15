@@ -130,7 +130,7 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     totalMentions: 0,
     sentiment: { positive: 0, neutral: 0, negative: 0 },
     sentimentMomChangePp: 0,
-    mentionMomChangePct: 0,
+    mentionMomChangePct: null,
     trend: 'up',
     monthlyMentions: [],
     topProjects: [],

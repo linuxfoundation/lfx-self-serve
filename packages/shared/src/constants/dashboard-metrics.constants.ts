@@ -1064,8 +1064,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           formatNumber(brandHealth.totalMentions),
           brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
           lfxColors.blue[500],
-          formatMomChange(brandHealth.mentionMomChangePct),
-          normalizeTrend(brandHealth.mentionMomChangePct, brandHealth.trend)
+          // null (no genuine MoM available) renders the same as a flat month:
+          // hidden delta, neutral trend.
+          formatMomChange(brandHealth.mentionMomChangePct ?? 0),
+          normalizeTrend(brandHealth.mentionMomChangePct ?? 0, brandHealth.trend)
         ),
         protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
       ],

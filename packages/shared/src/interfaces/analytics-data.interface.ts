@@ -3144,7 +3144,8 @@ export interface BrandHealthResponse {
   sentiment: BrandHealthSentimentBreakdown;
   sentimentMomChangePp: number;
   /** Mention volume MoM change (%), computed from monthly trend data. */
-  mentionMomChangePct: number;
+  /** MoM change in mention volume; null when the trend rows cannot support a genuine MoM (gap or stale pair) — 0 is a measured flat month. */
+  mentionMomChangePct: number | null;
   trend: 'up' | 'down';
   monthlyMentions: NorthStarMonthlyDataPoint[];
   topProjects: BrandHealthTopProject[];
