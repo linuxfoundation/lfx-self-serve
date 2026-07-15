@@ -2672,22 +2672,9 @@ export class ProjectService {
       const roas = periodRoas;
       const roasMomPct = previousRoas > 0 ? ((currentRoas - previousRoas) / previousRoas) * 100 : 0;
 
-      if (monthlyImpressionsResult.rows.length === 0) {
-        return {
-          totalReach,
-          roas: Math.round(roas * 100) / 100,
-          totalSpend,
-          totalRevenue,
-          changePercentage: Math.round(roasMomPct * 10) / 10,
-          trend: roasMomPct >= 0 ? 'up' : 'down',
-          monthlyData: [],
-          monthlyLabels: [],
-          monthlyRoas: [],
-          channelGroups: [],
-          projectBreakdown: [],
-          platformBreakdown: [],
-        };
-      }
+      // NOTE: no early return on an empty month set — a valid period with zero
+      // paid rows still gets a zero-filled series below, so consumers always
+      // receive calendar-complete arrays for the requested window.
 
       // Zero-fill the monthly series across the whole requested period: the
       // queries emit only months that have campaign rows, so gaps would leave
@@ -2702,7 +2689,11 @@ export class ProjectService {
       const monthlyData: number[] = [];
       const monthlyRoas: number[] = [];
       const monthlyLabels: string[] = [];
-      const monthCursor = new Date(`${resolved.startDate}T00:00:00Z`);
+      // Walk from trendStartDate, not resolved.startDate — the monthly queries
+      // bind trendStartDate (one month earlier for single-month periods, to give
+      // the trend charts an MoM reference point), so the fill window must match
+      // the query window or that extra month's data would be silently dropped.
+      const monthCursor = new Date(`${this.trendStartDate(resolved)}T00:00:00Z`);
       const periodEnd = new Date(`${resolved.endDate}T00:00:00Z`);
       while (monthCursor < periodEnd) {
         const key = monthKey(monthCursor);
