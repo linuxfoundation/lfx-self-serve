@@ -4,6 +4,18 @@
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 
+/**
+ * Options for the client-side `ProjectService.getProject` fetch. Each flag is probe-gated: it maps
+ * to a query param that asks the BFF to run an extra FGA relation check and populate the matching
+ * response-only field on {@link Project}. Omitting a flag skips the probe (field stays `undefined`).
+ */
+export interface GetProjectOptions {
+  /** Request the `meeting_coordinator` probe (`?meeting_coordinator=true`) → populates `meetingCoordinator`. */
+  meetingCoordinator?: boolean;
+  /** Request the marketing probes (`?marketing=true`) → populates `marketingAuditor` + `campaignManager`. */
+  marketing?: boolean;
+}
+
 export interface Project {
   uid: string;
   slug: string;

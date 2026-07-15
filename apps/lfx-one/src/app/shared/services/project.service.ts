@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { CreateProjectDocumentRequest, GetProjectOptions, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
 import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
@@ -29,7 +29,7 @@ export class ProjectService {
     return this.projectsCache.get(cacheKey)!;
   }
 
-  public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean; marketing?: boolean }): Observable<Project | null> {
+  public getProject(slug: string, current: boolean = true, options?: GetProjectOptions): Observable<Project | null> {
     const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}${options?.marketing ? ':mktg' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
       let params = new HttpParams();
@@ -41,13 +41,19 @@ export class ProjectService {
       }
       const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
         catchError(() => of(null)),
-        shareReplay(1),
         tap((project) => {
+          // Fail closed for the current request (callers still get `null`), but don't pin a
+          // transient BFF/OpenFGA failure under this cache key — evict so the next call retries.
+          // Otherwise a single blip would keep guards/marketing signals denying until reload.
+          if (project === null) {
+            this.projectCache.delete(cacheKey);
+          }
           if (current) {
             this.project$.next(project);
             this.project.set(project);
           }
-        })
+        }),
+        shareReplay(1)
       );
       this.projectCache.set(cacheKey, project$);
     }

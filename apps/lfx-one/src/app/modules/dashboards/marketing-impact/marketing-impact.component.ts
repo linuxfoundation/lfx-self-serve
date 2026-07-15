@@ -2,15 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
-import { startWith } from 'rxjs';
+import { ProjectService } from '@services/project.service';
+import { catchError, map, of, startWith, switchMap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -49,6 +51,8 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
 export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
@@ -72,6 +76,33 @@ export class MarketingImpactComponent {
   protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
+
+  public constructor() {
+    // marketingViewGuard only runs on navigation. An in-place context switch (setFoundation /
+    // setProject uses Location.replaceState — no navigation) would otherwise leave this read-only
+    // surface mounted for a project the user can't audit, and its child tabs would fetch analytics
+    // for that context. Re-probe marketing_auditor on every context change and redirect (fail
+    // closed) when access is lost. The entry context was already authorized by the guard, so its
+    // probe resolves true and no redirect occurs; the getProject cache is shared with the guard.
+    toObservable(this.projectContextService.activeContext)
+      .pipe(
+        switchMap((ctx) =>
+          ctx?.slug
+            ? this.projectService.getProject(ctx.slug, false, { marketing: true }).pipe(
+                map((project) => project?.marketingAuditor === true),
+                catchError(() => of(false))
+              )
+            : of(false)
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe((allowed) => {
+        if (!allowed) {
+          const slug = this.projectContextService.activeContext()?.slug;
+          this.router.navigate(['/foundation/overview'], slug ? { queryParams: { project: slug } } : {});
+        }
+      });
+  }
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {

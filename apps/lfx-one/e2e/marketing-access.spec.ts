@@ -38,6 +38,26 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
   isFoundation: true,
 };
 
+// A second foundation used for granted→denied in-place context-switch coverage (quickstart Scenario 6).
+const MOCK_DENIED_SLUG = 'denied-foundation';
+const MOCK_DENIED_UID = 'f0000000-0000-0000-0000-000000000002';
+
+const MOCK_DENIED_ITEM: LensItem = {
+  uid: MOCK_DENIED_UID,
+  slug: MOCK_DENIED_SLUG,
+  name: 'Denied Foundation',
+  logoUrl: null,
+  isFoundation: true,
+};
+
+// Project-selector landmarks (project-selector.component.html): the trigger and per-item rows.
+const PROJECT_SELECTOR = {
+  trigger: 'project-selector',
+  item: (slug: string) => `lens-item-${slug}`,
+};
+
+const MARKETING_IMPACT_PAGE = 'marketing-impact-page';
+
 const SIDEBAR = {
   marketingSection: 'sidebar-item-marketing',
   marketingImpact: 'sidebar-marketing-impact',
@@ -104,7 +124,7 @@ async function stubPersona(page: Page, personas: string[], isRootMarketingAudito
   );
 }
 
-async function stubNavLensItems(page: Page): Promise<void> {
+async function stubNavLensItems(page: Page, foundationItems: LensItem[] = [MOCK_FOUNDATION_ITEM]): Promise<void> {
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
     if (!url.includes('lens=foundation')) {
@@ -118,7 +138,7 @@ async function stubNavLensItems(page: Page): Promise<void> {
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ items: [MOCK_FOUNDATION_ITEM], next_page_token: null, upstream_failed: false, lens: 'foundation' }),
+      body: JSON.stringify({ items: foundationItems, next_page_token: null, upstream_failed: false, lens: 'foundation' }),
     });
   });
 }
@@ -314,5 +334,41 @@ test.describe('US3: dashboard Marketing Overview — campaign_manager gated', ()
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page.getByTestId(MARKETING_OVERVIEW_SECTION), 'no campaign_manager ⇒ Marketing Overview absent').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+  });
+});
+
+// ─── Scenario 6: in-place context switch (replaceState, no navigation) fails closed ─────
+
+test.describe('Scenario 6: granted→denied context switch re-checks access (fail closed)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
+    await stubNavLensItems(page, [MOCK_FOUNDATION_ITEM, MOCK_DENIED_ITEM]);
+    // Granted foundation ⇒ full marketing access; denied foundation ⇒ none.
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: true });
+    await stubProjectApi(page, MOCK_DENIED_SLUG, false, { marketingAuditor: false, campaignManager: false });
+    await setPersonaCookie(page, ['contributor']);
+  });
+
+  test('Marketing Impact redirects to overview after switching to a project without marketing_auditor', async ({ page }) => {
+    await gotoAndWaitForSidebar(page, `/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`);
+    await expect(page.getByTestId(MARKETING_IMPACT_PAGE), 'granted project ⇒ Marketing Impact rendered').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Selecting another foundation while on a two-segment lens page uses Location.replaceState
+    // (no Angular navigation), so marketingViewGuard does NOT re-run — the component's reactive
+    // re-probe must catch the lost grant and redirect (quickstart Scenario 6).
+    await page.getByTestId(PROJECT_SELECTOR.trigger).click();
+    await page.getByTestId(PROJECT_SELECTOR.item(MOCK_DENIED_SLUG)).click();
+
+    await expect(page, 'denied context ⇒ redirected off Marketing Impact').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('Campaigns redirects to overview after switching to a project without campaign_manager', async ({ page }) => {
+    await gotoAndWaitForSidebar(page, `/foundation/campaigns?project=${MOCK_FOUNDATION_SLUG}`);
+    await expect(page.getByTestId(CAMPAIGNS_PAGE.root), 'granted project ⇒ Campaigns rendered').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId(PROJECT_SELECTOR.trigger).click();
+    await page.getByTestId(PROJECT_SELECTOR.item(MOCK_DENIED_SLUG)).click();
+
+    await expect(page, 'denied context ⇒ redirected off Campaigns').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
   });
 });

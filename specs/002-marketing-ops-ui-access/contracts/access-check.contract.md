@@ -8,7 +8,7 @@
 
 `AccessCheckService.checkAccess(req, resources)` builds one probe string per resource:
 
-```
+```text
 <resource>:<id>#<access>
 ```
 

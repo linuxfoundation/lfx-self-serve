@@ -3,6 +3,11 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { catchError, map, of, switchMap } from 'rxjs';
 
 import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
@@ -20,6 +25,9 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 })
 export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly router = inject(Router);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -28,6 +36,33 @@ export class CampaignsComponent {
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
+
+  public constructor() {
+    // campaignAccessGuard only runs on navigation. An in-place context switch (setFoundation /
+    // setProject uses Location.replaceState — no navigation) would otherwise leave this managed
+    // surface mounted for a project the user can't manage, and its child tabs would fetch data for
+    // that context. Re-probe campaign_manager on every context change and redirect (fail closed)
+    // when access is lost. The entry context was already authorized by the guard, so its probe
+    // resolves true and no redirect occurs; the getProject cache is shared with the guard's fetch.
+    toObservable(this.projectContextService.activeContext)
+      .pipe(
+        switchMap((ctx) =>
+          ctx?.slug
+            ? this.projectService.getProject(ctx.slug, false, { marketing: true }).pipe(
+                map((project) => project?.campaignManager === true),
+                catchError(() => of(false))
+              )
+            : of(false)
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe((allowed) => {
+        if (!allowed) {
+          const slug = this.projectContextService.activeContext()?.slug;
+          this.router.navigate(['/foundation/overview'], slug ? { queryParams: { project: slug } } : {});
+        }
+      });
+  }
 
   protected selectTab(tab: CampaignTab): void {
     this.selectedTab.set(tab);
