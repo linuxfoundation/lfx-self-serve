@@ -208,6 +208,10 @@ export class ProjectContextService {
    * Shared builder for the marketing-access signals. Fetches the active-context project with the
    * marketing probe flag and projects the requested field. Uses `current=false` so the shared
    * project signal isn't overwritten by these background permission probes.
+   *
+   * `startWith(false)` resets the signal to deny on every context switch so a previous context's
+   * `true` can't briefly leak the Marketing nav/section/overview before the new probe resolves
+   * (fail-closed during the transition; mirrors {@link initSelectedFoundationSfid}'s reset).
    */
   private initMarketingAccess(select: (project: Project | null) => boolean): Signal<boolean> {
     return toSignal(
@@ -218,7 +222,8 @@ export class ProjectContextService {
           }
           return this.projectService.getProject(ctx.slug, false, { marketing: true }).pipe(
             map((project) => select(project)),
-            catchError(() => of(false))
+            catchError(() => of(false)),
+            startWith(false)
           );
         })
       ),

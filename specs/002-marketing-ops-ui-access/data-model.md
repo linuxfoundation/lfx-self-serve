@@ -27,10 +27,10 @@ The UI checks `marketing_auditor` and `campaign_manager` on `project:<uid>`; it 
 
 ### `Project` (interfaces/project.interface.ts) — response-only additions
 
-| Field              | Type       | Semantics                                                                                                                                               |
-| ------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marketingAuditor` | `boolean?` | `true` = user holds `marketing_auditor` on this project; `false` = probed clean, no grant; `undefined` = not probed / transient failure (NOT a denial). |
-| `campaignManager`  | `boolean?` | `true` = user holds `campaign_manager` (⇒ ED or Marketing Ops); `false` = probed clean, no grant; `undefined` = not probed / transient failure.         |
+| Field              | Type       | Semantics                                                                                                                                                                        |
+| ------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketingAuditor` | `boolean?` | `true` = user holds `marketing_auditor` on this project; `false` = no grant **or** transient probe failure (fail-closed deny); `undefined` = probe not requested (NOT a denial). |
+| `campaignManager`  | `boolean?` | `true` = user holds `campaign_manager` (⇒ ED or Marketing Ops); `false` = no grant **or** transient probe failure (fail-closed deny); `undefined` = probe not requested.         |
 
 - Probe-gated: populated only when the caller requests the marketing probe (see `contracts/project-probe.contract.md`), mirroring `meetingCoordinator`.
 - Guards/visibility MUST treat only `=== true` as access; `undefined`/`false` ⇒ no access (fail closed).

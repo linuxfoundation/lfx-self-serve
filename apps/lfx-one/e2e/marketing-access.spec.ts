@@ -44,6 +44,12 @@ const SIDEBAR = {
   campaigns: 'sidebar-marketing-campaigns',
 };
 
+// Campaigns page landmarks (campaigns.component.html) — the page root and a management control.
+const CAMPAIGNS_PAGE = {
+  root: 'campaigns-page',
+  useCaseSelect: 'campaigns-usecase-select',
+};
+
 // Root section of the Marketing Overview dashboard component (marketing-overview.component.html:4).
 const MARKETING_OVERVIEW_SECTION = 'ed-evolution-section';
 
@@ -248,6 +254,20 @@ test.describe('US2: Campaigns access — campaign_manager gates the surface', ()
     await expect(page.getByTestId(SIDEBAR.campaigns), 'campaign_manager ⇒ campaigns entry visible').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
+  test('Marketing Ops (campaign_manager) can open /foundation/campaigns and reach its controls', async ({ page }) => {
+    await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
+    await stubNavLensItems(page);
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: true });
+    await setPersonaCookie(page, ['contributor']);
+    await gotoRoute(page, `/foundation/campaigns?project=${MOCK_FOUNDATION_SLUG}`);
+
+    // campaignAccessGuard passed (no redirect to overview) and the page + a management control rendered —
+    // verifies the guarded route itself, not just the nav entry.
+    await expect(page, 'campaign_manager ⇒ Campaigns route persists').toHaveURL(/\/foundation\/campaigns/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(CAMPAIGNS_PAGE.root), 'campaigns page rendered').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(CAMPAIGNS_PAGE.useCaseSelect), 'campaign management control present').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
   test('Marketing Auditor (no campaign_manager) is blocked from /foundation/campaigns', async ({ page }) => {
     await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
     await stubNavLensItems(page);
@@ -270,6 +290,20 @@ test.describe('US3: dashboard Marketing Overview — campaign_manager gated', ()
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page.getByTestId(MARKETING_OVERVIEW_SECTION), 'campaign_manager ⇒ Marketing Overview visible').toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+  });
+
+  test('non-ED Marketing Ops (campaign_manager) sees Marketing Overview via the board-member dashboard', async ({ page }) => {
+    // A non-board persona on the foundation lens renders BoardMemberDashboardComponent (the US3
+    // placement this branch added), so this exercises that path rather than the ED dashboard.
+    await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
+    await stubNavLensItems(page);
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: true });
+    await setPersonaCookie(page, ['contributor']);
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+
+    await expect(page.getByTestId(MARKETING_OVERVIEW_SECTION), 'non-ED campaign_manager ⇒ Marketing Overview on board-member dashboard').toBeVisible({
+      timeout: SIDEBAR_LOAD_TIMEOUT,
+    });
   });
 
   test('user without campaign_manager does NOT see the Marketing Overview section', async ({ page }) => {

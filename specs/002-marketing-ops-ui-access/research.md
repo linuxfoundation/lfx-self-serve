@@ -88,7 +88,7 @@ This document resolves the open design decisions for gating the Marketing surfac
 **Decision**:
 
 - `AccessCheckAccessType` → `'writer' | 'viewer' | 'organizer' | 'meeting_coordinator' | 'marketing_auditor' | 'campaign_manager'` (`packages/shared/src/interfaces/access-check.interface.ts:45`).
-- `Project` → add `marketingAuditor?: boolean` and `campaignManager?: boolean` as response-only, probe-gated fields with the same "undefined = not probed / unknown, not a denial" semantics documented on `meetingCoordinator` (`packages/shared/src/interfaces/project.interface.ts:12-23`).
+- `Project` → add `marketingAuditor?: boolean` and `campaignManager?: boolean` as response-only, probe-gated fields. When requested they are always boolean and **fail closed** (`false` on no grant or transient upstream failure); `undefined` means only that the probe was not requested (never a transient-failure signal), so guards read `!== true` as no access.
 
 **Rationale**: Keeps all contracts in `@lfx-one/shared` per repo rules; the optional/undefined semantics prevent guards from misreading an un-probed fetch as a denial. Note: `AccessCheckService.addAccessToResource` spreads `{ [accessType]: value }`, so a `campaign_manager` probe yields a `campaign_manager` key — map it to the camelCase `campaignManager` field in `getProjectById` (as done for the writer/meetingCoordinator mapping) rather than relying on the raw snake_case key.
 
