@@ -2137,11 +2137,12 @@ export class ProjectService {
       // to preserve the no-data signal.
       const dailyData: number[] = [];
       const dailyLabels: string[] = [];
-      if (dailyResult.rows.length > 0) {
+      const firstBucketIso = dailyResult.rows.length > 0 ? ProjectService.toIsoDate(dailyResult.rows[0].ACTIVITY_DATE) : null;
+      if (firstBucketIso) {
         const weekRowsByStart = new Map(
           dailyResult.rows.map((row) => [(ProjectService.toIsoDate(row.ACTIVITY_DATE) ?? '').slice(0, 10), row.DAILY_SESSIONS ?? 0])
         );
-        const firstBucket = new Date(`${(ProjectService.toIsoDate(dailyResult.rows[0].ACTIVITY_DATE) ?? '').slice(0, 10)}T00:00:00Z`);
+        const firstBucket = new Date(`${firstBucketIso.slice(0, 10)}T00:00:00Z`);
         const weekCursor = new Date(`${resolved.startDate}T00:00:00Z`);
         weekCursor.setUTCDate(weekCursor.getUTCDate() - ((weekCursor.getUTCDay() - firstBucket.getUTCDay() + 7) % 7));
         const weekFillEnd = new Date(`${resolved.endDate}T00:00:00Z`);
@@ -2150,6 +2151,13 @@ export class ProjectService {
           dailyData.push(weekRowsByStart.get(key) ?? 0);
           dailyLabels.push(weekCursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
           weekCursor.setUTCDate(weekCursor.getUTCDate() + 7);
+        }
+      } else if (dailyResult.rows.length > 0) {
+        // Unparseable bucket dates — fall back to direct row mapping rather
+        // than walking NaN-anchored week cursors and breaking the response.
+        for (const row of dailyResult.rows) {
+          dailyData.push(row.DAILY_SESSIONS ?? 0);
+          dailyLabels.push(new Date(row.ACTIVITY_DATE).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
         }
       }
 
