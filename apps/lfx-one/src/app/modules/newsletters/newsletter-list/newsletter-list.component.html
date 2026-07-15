@@ -84,10 +84,10 @@
                   </td>
                   <td class="text-right">
                     @if (newsletter.openRatePending) {
-                      <span
-                        aria-hidden="true"
-                        class="inline-block h-3 w-8 rounded bg-gray-200 animate-pulse"
-                        [attr.data-testid]="'newsletter-open-rate-loading-' + newsletter.id"></span>
+                      <span aria-hidden="true" class="inline-block" [attr.data-testid]="'newsletter-open-rate-loading-' + newsletter.id">
+                        <p-skeleton width="2rem" height="0.75rem"></p-skeleton>
+                      </span>
+                      <span class="sr-only">Loading open rate</span>
                     } @else {
                       <span
                         class="text-sm text-gray-700"

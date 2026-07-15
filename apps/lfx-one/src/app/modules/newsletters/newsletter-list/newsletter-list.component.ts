@@ -18,6 +18,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
@@ -34,6 +35,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     TableComponent,
     TagComponent,
     ConfirmDialogModule,
+    SkeletonModule,
     TooltipModule,
     NewsletterPreviewDrawerComponent,
   ],
@@ -72,8 +74,10 @@ export class NewsletterListComponent {
   // written back into `newsletters` — so row identity stays stable and results
   // are cached across draft/sent tab toggles. `null` marks a failed fetch for a
   // settled (`sent`) row; those are not retried for the component's lifetime.
+  // The cache is cleared on project change to keep it bounded.
   private readonly openRateAnalytics = signal<Map<string, NewsletterAnalytics | null>>(new Map());
   private readonly openRatePendingIds = signal<Set<string>>(new Set());
+  private lastLoadedUid: string | null = null;
   // Incremented on every context-driven list reload. loadMore captures it at
   // request time and discards responses from an older generation — covering
   // change-and-revert (A→B→A) sequences a value comparison would miss. Not a
@@ -212,6 +216,11 @@ export class NewsletterListComponent {
           this.selectedNewsletter.set(null);
           this.nextPageToken.set(undefined);
           this.newsletters.set([]);
+          if (uid !== this.lastLoadedUid) {
+            this.lastLoadedUid = uid;
+            this.openRateAnalytics.set(new Map());
+            this.openRatePendingIds.set(new Set());
+          }
           if (!uid) {
             this.loading.set(false);
             return EMPTY;
@@ -289,7 +298,10 @@ export class NewsletterListComponent {
             this.newsletterService.getAnalytics(n.project_uid, n.id).pipe(
               map((analytics): { id: string; analytics: NewsletterAnalytics | null } => ({ id: n.id, analytics })),
               // A single failed row keeps its "—" without breaking the rest.
-              catchError(() => of({ id: n.id, analytics: null }))
+              catchError((err: HttpErrorResponse) => {
+                console.error(`Failed to load analytics for newsletter ${n.id}:`, err);
+                return of({ id: n.id, analytics: null });
+              })
             ),
           NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY
         ),
