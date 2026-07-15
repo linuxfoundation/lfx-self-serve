@@ -8,7 +8,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { lfxColors } from '@lfx-one/shared/constants';
-import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatCompact, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -295,25 +295,20 @@ export class EventGrowthDrawerComponent {
    * text — hydration flags a mismatch otherwise.
    */
   private static formatMoney(value: number, currencyCode: string = 'USD'): string {
+    const code = currencyCode || 'USD';
     try {
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
-        currency: currencyCode || 'USD',
+        currency: code,
         notation: 'compact',
         minimumFractionDigits: 0,
         maximumFractionDigits: 1,
       }).format(value);
     } catch {
-      // Unknown/invalid ISO code — degrade to a code prefix rather than throwing.
-      let compact: string;
-      if (value >= 1_000_000) {
-        compact = `${(value / 1_000_000).toFixed(1)}M`;
-      } else if (value >= 1_000) {
-        compact = `${(value / 1_000).toFixed(1)}K`;
-      } else {
-        compact = Math.round(value).toLocaleString('en-US');
-      }
-      return `${currencyCode} ${compact}`;
+      // Unknown/invalid ISO code — degrade to a code prefix via the shared
+      // compact formatter, so thresholds, rounding, and negative handling stay
+      // identical to every other compact number in the app.
+      return formatCompact(Math.abs(value), value < 0 ? '-' : '', `${code} `);
     }
   }
 }

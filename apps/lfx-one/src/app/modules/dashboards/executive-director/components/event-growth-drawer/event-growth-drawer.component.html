@@ -85,7 +85,7 @@
           <span class="text-sm text-gray-500">Revenue Per Attendee (USD)</span>
           @if (data().revenuePerAttendee > 0) {
             <span class="text-2xl font-semibold text-gray-900">${{ data().revenuePerAttendee | number: '1.2-2' }}</span>
-            <span class="text-xs text-gray-400">YTD</span>
+            <span class="text-xs text-gray-400">YTD · all event revenue ÷ attendees</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -172,8 +172,8 @@
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">Quarterly Registrations</h3>
         <p class="text-sm text-gray-600">
-          Registrations by event quarter, from three years back through upcoming events. Current and upcoming quarters are still filling as registrations
-          come in.
+          Registrations by event quarter, from three years back through upcoming events. Current and upcoming quarters are still filling as registrations come
+          in.
         </p>
       </div>
       @if (data().monthlyData.length > 0) {
@@ -192,8 +192,8 @@
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">{{ currentYear }} Events</h3>
         <p class="text-sm text-gray-600">
-          All events this year (past and upcoming), by date. Revenue is shown in each event's local currency; events with mixed or unknown currencies are
-          shown in USD.
+          All events this year (past and upcoming), by date. Revenue is shown in each event's local currency; events with mixed or unknown currencies are shown
+          in USD.
         </p>
       </div>
       @if (data().topEvents.length > 0) {

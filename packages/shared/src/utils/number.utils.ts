@@ -39,7 +39,7 @@ export function formatValueLost(value: number): string {
 }
 
 /** Centralized compact formatter — thresholds, scales, and rounding in one place. */
-function formatCompact(abs: number, sign: string, prefix = ''): string {
+export function formatCompact(abs: number, sign: string, prefix = ''): string {
   if (abs >= 999_950) return `${sign}${prefix}${stripTrailingZero((abs / 1_000_000).toFixed(1))}M`;
   if (abs >= 1_000) return `${sign}${prefix}${stripTrailingZero((abs / 1_000).toFixed(1))}K`;
   return `${sign}${prefix}${abs.toLocaleString()}`;
