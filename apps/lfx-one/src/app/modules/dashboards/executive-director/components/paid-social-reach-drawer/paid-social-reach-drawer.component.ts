@@ -271,8 +271,11 @@ export class PaidSocialReachDrawerComponent {
       }
 
       // Impressions trend
+      // "grew to" must quote the latest MONTH's impressions — totalReach is the
+      // whole window's cumulative figure, a different window than the MoM claim.
+      const latestMonthImpressions = monthlyData.at(-1) ?? 0;
       if (impressionsMomPct !== null && impressionsMomPct >= 10) {
-        insights.push({ text: `Impressions grew ${impressionsMomPct.toFixed(1)}% MoM to ${formatNumber(totalReach)}`, type: 'driver' });
+        insights.push({ text: `Impressions grew ${impressionsMomPct.toFixed(1)}% MoM to ${formatNumber(latestMonthImpressions)}`, type: 'driver' });
       } else if (impressionsMomPct !== null && impressionsMomPct <= -5) {
         insights.push({ text: `Impressions declined ${Math.abs(impressionsMomPct).toFixed(1)}% MoM`, type: 'warning' });
       }

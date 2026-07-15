@@ -371,11 +371,15 @@ export class EmailCtrDrawerComponent {
       }
 
       // --- Email — pick highest-priority ---
-      if (email.changePercentage < 0) {
+      // Use the true MoM figure: with a trailing (last-6) period, changePercentage
+      // compares the window's blended CTR against its own monthly average and sits
+      // near zero by construction.
+      const emailCtrMom = email.momChangePercentage;
+      if (emailCtrMom !== null && emailCtrMom < 0) {
         emailActions.push({
           title: 'Test new call-to-action formats',
-          description: `Email CTR dropped ${Math.abs(email.changePercentage).toFixed(1)}% — experiment with button placement and copy`,
-          priority: email.changePercentage < -10 ? 'high' : 'medium',
+          description: `Email CTR dropped ${Math.abs(emailCtrMom).toFixed(1)}% MoM — experiment with button placement and copy`,
+          priority: emailCtrMom < -10 ? 'high' : 'medium',
           actionType: 'optimize',
         });
       }
@@ -522,15 +526,19 @@ export class EmailCtrDrawerComponent {
       }
 
       // --- Email — pick 1 best ---
-      if (email.currentCtr > 0 || email.monthlyData.length > 0) {
-        if (email.changePercentage > 10) {
-          emailInsights.push({ text: `Email CTR grew ${email.changePercentage.toFixed(1)}% vs 6-month avg — strong improvement`, type: 'driver' });
-        } else if (email.changePercentage < -10) {
-          emailInsights.push({ text: `Email CTR dropped ${Math.abs(email.changePercentage).toFixed(1)}% vs 6-month avg`, type: 'warning' });
-        } else if (email.changePercentage !== 0) {
+      // momChangePercentage is the true MoM (unaffected by the trailing window);
+      // changePercentage under last-6 is the blended-vs-average figure and is
+      // structurally near zero.
+      const emailCtrMomInsight = email.momChangePercentage;
+      if ((email.currentCtr > 0 || email.monthlyData.length > 0) && emailCtrMomInsight !== null) {
+        if (emailCtrMomInsight > 10) {
+          emailInsights.push({ text: `Email CTR grew ${emailCtrMomInsight.toFixed(1)}% MoM — strong improvement`, type: 'driver' });
+        } else if (emailCtrMomInsight < -10) {
+          emailInsights.push({ text: `Email CTR dropped ${Math.abs(emailCtrMomInsight).toFixed(1)}% MoM`, type: 'warning' });
+        } else if (emailCtrMomInsight !== 0) {
           emailInsights.push({
-            text: `Email CTR ${email.changePercentage > 0 ? 'up' : 'down'} ${Math.abs(email.changePercentage).toFixed(1)}% vs 6-month avg`,
-            type: email.changePercentage > 0 ? 'info' : 'warning',
+            text: `Email CTR ${emailCtrMomInsight > 0 ? 'up' : 'down'} ${Math.abs(emailCtrMomInsight).toFixed(1)}% MoM`,
+            type: emailCtrMomInsight > 0 ? 'info' : 'warning',
           });
         }
       }

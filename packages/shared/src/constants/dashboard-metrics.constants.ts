@@ -759,10 +759,10 @@ function flatSparklineData(value: number): number[] {
 }
 
 /** Build a time-window label from the number of data points available.
- *  Returns "Last N months" for any count, capped at 6. */
+ *  Reports the ACTUAL count — capping at 6 mislabeled the 12-month member
+ *  growth series as "Last 6 months". */
 function trendWindow(monthCount: number): string {
   if (monthCount <= 0) return '';
-  if (monthCount >= 6) return 'Last 6 months';
   return `Last ${monthCount} month${monthCount === 1 ? '' : 's'}`;
 }
 
@@ -955,7 +955,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Total paying corporate members with monthly net new over the last 6 months.',
+      tooltipText: 'Total paying corporate members with monthly net new over the last 12 months.',
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
     } as DashboardMetricCard,
     {
@@ -1022,7 +1022,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           normalizeTrend(brandReach.changePercentage, brandReach.trend)
         ),
         protoDualSignal(
-          'Monthly Sessions',
+          'Sessions (30d)',
           formatNumber(brandReach.totalMonthlySessions),
           brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : [],
           lfxColors.violet[500],
@@ -1058,8 +1058,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       ],
       caption:
         brandHealth.monthlyMentions.length > 0
-          ? `${formatNumber(brandHealth.totalMentions)} mentions · ${trendWindow(brandHealth.monthlyMentions.length)}`
-          : `${formatNumber(brandHealth.totalMentions)} mentions`,
+          ? `${formatNumber(brandHealth.totalMentions)} mentions (30d) · trend ${trendWindow(brandHealth.monthlyMentions.length).toLowerCase()}`
+          : `${formatNumber(brandHealth.totalMentions)} mentions (30d)`,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,
