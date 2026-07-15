@@ -2287,8 +2287,24 @@ export class ProjectService {
       // Note: Snowflake values are already percentages (e.g., 2.32 = 2.32%), no conversion needed
       const summaryRow = summaryResult.rows[0];
 
+      // Zero-fill the monthly rows across the query window (trendStartDate →
+      // endDate): EMAIL_CTR_BY_MONTH emits only months that had sends, so gaps
+      // would let every downstream series (CTR, sends, opens) and any MoM
+      // comparison span non-consecutive months. A month with no sends genuinely
+      // had 0 sends and 0 opens.
+      const emailMonthKey = (d: Date): string => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const emailRowsByMonth = new Map(monthlyResult.rows.map((row) => [(ProjectService.toIsoDate(row.PUBLISHED_MONTH_DATE) ?? '').slice(0, 7), row]));
+      const monthlyRows: typeof monthlyResult.rows = [];
+      const emailCursor = new Date(`${this.trendStartDate(resolved)}T00:00:00Z`);
+      const emailFillEnd = new Date(`${resolved.endDate}T00:00:00Z`);
+      while (emailCursor < emailFillEnd) {
+        const key = emailMonthKey(emailCursor);
+        monthlyRows.push(emailRowsByMonth.get(key) ?? { PUBLISHED_MONTH: key, PUBLISHED_MONTH_DATE: `${key}-01`, TOTAL_SENDS: 0, TOTAL_OPENS: 0 });
+        emailCursor.setUTCMonth(emailCursor.getUTCMonth() + 1);
+      }
+
       // Compute unrounded CTR from raw sends/opens for MoM precision
-      const rawMonthlyCtrs = monthlyResult.rows.map((row) => {
+      const rawMonthlyCtrs = monthlyRows.map((row) => {
         const sends = row.TOTAL_SENDS ?? 0;
         const opens = row.TOTAL_OPENS ?? 0;
         return sends > 0 ? (opens * 100) / sends : 0;
@@ -2296,7 +2312,7 @@ export class ProjectService {
       const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
       const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
-      const periodRows = monthlyResult.rows.filter((row) => (ProjectService.toIsoDate(row.PUBLISHED_MONTH_DATE) ?? '') >= resolved.startDate);
+      const periodRows = monthlyRows.filter((row) => (ProjectService.toIsoDate(row.PUBLISHED_MONTH_DATE) ?? '') >= resolved.startDate);
       const periodSends = periodRows.reduce((sum, row) => sum + (row.TOTAL_SENDS ?? 0), 0);
       const periodOpens = periodRows.reduce((sum, row) => sum + (row.TOTAL_OPENS ?? 0), 0);
       const periodCtr = periodSends > 0 ? Math.round(((periodOpens * 100) / periodSends) * 10) / 10 : 0;
@@ -2320,8 +2336,8 @@ export class ProjectService {
           const [year, month] = iso.split('-').map(Number);
           return year * 12 + month;
         };
-        const lastOrd = monthOrdinal(ProjectService.toIsoDate(monthlyResult.rows[monthlyResult.rows.length - 1].PUBLISHED_MONTH_DATE));
-        const priorOrd = monthOrdinal(ProjectService.toIsoDate(monthlyResult.rows[monthlyResult.rows.length - 2].PUBLISHED_MONTH_DATE));
+        const lastOrd = monthOrdinal(ProjectService.toIsoDate(monthlyRows[monthlyRows.length - 1].PUBLISHED_MONTH_DATE));
+        const priorOrd = monthOrdinal(ProjectService.toIsoDate(monthlyRows[monthlyRows.length - 2].PUBLISHED_MONTH_DATE));
         const adjacent = lastOrd !== null && priorOrd !== null && lastOrd - priorOrd === 1;
         const current = rawMonthlyCtrs[rawMonthlyCtrs.length - 1];
         const prior = rawMonthlyCtrs[rawMonthlyCtrs.length - 2];
@@ -2330,11 +2346,11 @@ export class ProjectService {
         }
       }
 
-      const monthlySends = monthlyResult.rows.map((row) => row.TOTAL_SENDS ?? 0);
-      const monthlyOpens = monthlyResult.rows.map((row) => row.TOTAL_OPENS ?? 0);
-      const monthlyLabels = monthlyResult.rows.map((row) => {
+      const monthlySends = monthlyRows.map((row) => row.TOTAL_SENDS ?? 0);
+      const monthlyOpens = monthlyRows.map((row) => row.TOTAL_OPENS ?? 0);
+      const monthlyLabels = monthlyRows.map((row) => {
         const date = new Date(row.PUBLISHED_MONTH_DATE);
-        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
       });
 
       const campaignGroups = campaignResult.rows.map((row) => ({
