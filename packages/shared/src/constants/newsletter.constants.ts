@@ -28,8 +28,9 @@ export const NEWSLETTER_AI_MAX_TOKENS = 12_000;
 
 // The list endpoint intentionally omits open_rate/unique_opens (per-newsletter
 // analytics need a separate /analytics call upstream), so the list page fans
-// out one analytics request per sent row. Cap the concurrency so a full page
-// doesn't stampede the BFF/email-service.
+// out one analytics request per sent row. Caps each fan-out batch (initial page
+// or load-more) — batches are user-paced, so this is a per-batch ceiling, not a
+// global one.
 export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
 
 // Per-request timeout for the send endpoint, overriding the API client's 30s

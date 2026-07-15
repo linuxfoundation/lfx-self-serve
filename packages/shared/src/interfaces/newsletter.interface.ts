@@ -146,8 +146,11 @@ export interface NewsletterAnalytics {
 
 export interface NewsletterRow extends NewsletterListItem {
   openRateLabel: string;
+  /** UI-populated: true while the row's analytics fetch is in flight. */
   openRatePending: boolean;
   openRateTooltip: string;
+  /** UI-populated: screen-reader label combining the open-rate value and its tooltip context. */
+  openRateAria: string;
   recipientsLabel: string;
   groupsLabel: string;
 }

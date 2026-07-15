@@ -85,13 +85,16 @@
                   <td class="text-right">
                     @if (newsletter.openRatePending) {
                       <span
+                        aria-hidden="true"
                         class="inline-block h-3 w-8 rounded bg-gray-200 animate-pulse"
                         [attr.data-testid]="'newsletter-open-rate-loading-' + newsletter.id"></span>
                     } @else {
                       <span
                         class="text-sm text-gray-700"
+                        tabindex="0"
                         [pTooltip]="newsletter.openRateTooltip"
                         tooltipPosition="top"
+                        [attr.aria-label]="newsletter.openRateAria"
                         [attr.data-testid]="'newsletter-open-rate-' + newsletter.id">
                         {{ newsletter.openRateLabel }}
                       </span>

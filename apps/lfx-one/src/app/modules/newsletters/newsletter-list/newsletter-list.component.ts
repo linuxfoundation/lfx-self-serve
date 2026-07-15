@@ -19,7 +19,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, finalize, from, map, mergeMap, of, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -70,7 +70,8 @@ export class NewsletterListComponent {
   // Analytics fetched lazily per sent row (the list endpoint intentionally omits
   // open_rate/unique_opens). Kept in a side map keyed by newsletter id — never
   // written back into `newsletters` — so row identity stays stable and results
-  // are cached across draft/sent tab toggles. `null` marks a failed fetch.
+  // are cached across draft/sent tab toggles. `null` marks a failed fetch for a
+  // settled (`sent`) row; those are not retried for the component's lifetime.
   private readonly openRateAnalytics = signal<Map<string, NewsletterAnalytics | null>>(new Map());
   private readonly openRatePendingIds = signal<Set<string>>(new Set());
 
@@ -80,26 +81,7 @@ export class NewsletterListComponent {
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0);
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
-  protected readonly rows: Signal<NewsletterRow[]> = computed(() => {
-    const analyticsMap = this.openRateAnalytics();
-    const pendingIds = this.openRatePendingIds();
-    return this.newsletters().map((n) => {
-      const analytics = analyticsMap.get(n.id);
-      const total = n.total_recipients ?? 0;
-      const opens = n.unique_opens ?? analytics?.unique_opens ?? 0;
-      const openRate = n.open_rate ?? analytics?.open_rate;
-      const groupCount = n.committee_uids?.length ?? 0;
-      const openRateLabel = openRate === undefined || openRate === null ? '—' : `${Math.round(openRate * 100)}%`;
-      return {
-        ...n,
-        openRateLabel,
-        openRatePending: pendingIds.has(n.id),
-        openRateTooltip: `${opens} of ${total} recipients opened`,
-        recipientsLabel: n.total_recipients !== undefined && n.total_recipients !== null ? String(n.total_recipients) : '—',
-        groupsLabel: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`,
-      };
-    });
-  });
+  protected readonly rows: Signal<NewsletterRow[]> = this.initRows();
 
   public constructor() {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
@@ -194,55 +176,87 @@ export class NewsletterListComponent {
       });
   }
 
+  private initRows(): Signal<NewsletterRow[]> {
+    return computed(() => {
+      const analyticsMap = this.openRateAnalytics();
+      const pendingIds = this.openRatePendingIds();
+      return this.newsletters().map((n) => {
+        const analytics = analyticsMap.get(n.id);
+        const total = n.total_recipients ?? 0;
+        const opens = n.unique_opens ?? analytics?.unique_opens ?? 0;
+        const openRate = n.open_rate ?? analytics?.open_rate;
+        const groupCount = n.committee_uids?.length ?? 0;
+        const hasOpenRate = openRate !== undefined && openRate !== null;
+        const openRateLabel = hasOpenRate ? `${Math.round(openRate * 100)}%` : '—';
+        // Don't fabricate "0 of N opened" when analytics are missing or failed.
+        const openRateTooltip = hasOpenRate ? `${opens} of ${total} recipients opened` : 'Analytics not available';
+        return {
+          ...n,
+          openRateLabel,
+          openRatePending: pendingIds.has(n.id),
+          openRateTooltip,
+          openRateAria: hasOpenRate ? `Open rate ${openRateLabel}, ${openRateTooltip}` : 'Open rate not available',
+          recipientsLabel: n.total_recipients !== undefined && n.total_recipients !== null ? String(n.total_recipients) : '—',
+          groupsLabel: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`,
+        };
+      });
+    });
+  }
+
+  // switchMap cancels the in-flight list request when the tab or project changes,
+  // so a slow response can never clobber the newer tab's rows or fan out analytics
+  // for rows that are no longer displayed. Loading is cleared in next/catchError
+  // rather than finalize: a cancelled request's teardown runs after the newer
+  // request sets loading, and must not wipe it.
   private initLoadOnContextOrTab(): void {
     combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
       .pipe(
         distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
+        switchMap(([uid, status]) => {
+          this.previewVisible.set(false);
+          this.selectedNewsletter.set(null);
+          this.nextPageToken.set(undefined);
+          this.newsletters.set([]);
+          if (!uid) {
+            this.loading.set(false);
+            return EMPTY;
+          }
+          this.loading.set(true);
+          return this.newsletterService.listNewsletters(uid, { status: status as NewsletterStatus }).pipe(
+            catchError((err: HttpErrorResponse) => {
+              this.loading.set(false);
+              this.showLoadError(err);
+              return EMPTY;
+            })
+          );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(([uid, status]) => {
-        this.previewVisible.set(false);
-        this.selectedNewsletter.set(null);
-        if (uid) {
-          this.loadInitial(status as NewsletterStatus);
-        } else {
-          this.newsletters.set([]);
-          this.nextPageToken.set(undefined);
-        }
-      });
-  }
-
-  private loadInitial(status: NewsletterStatus): void {
-    this.loading.set(true);
-    this.nextPageToken.set(undefined);
-    this.newsletters.set([]);
-    this.newsletterService
-      .listNewsletters(this.projectUid(), { status })
-      .pipe(
-        take(1),
-        finalize(() => this.loading.set(false))
-      )
-      .subscribe({
-        next: (response) => {
-          this.newsletters.set(response.newsletters);
-          this.nextPageToken.set(response.next_page_token);
-          this.loadOpenRates(response.newsletters);
-        },
-        error: (err: HttpErrorResponse) => this.showLoadError(err),
+      .subscribe((response) => {
+        this.loading.set(false);
+        this.newsletters.set(response.newsletters);
+        this.nextPageToken.set(response.next_page_token);
+        this.loadOpenRates(response.newsletters);
       });
   }
 
   // Fan out one analytics call per newly loaded sent row to fill the Open Rate
-  // column. Browser-only: SSR skips the fan-out and the client re-run of
-  // loadInitial (via the transfer-cache replay) triggers it. Rows whose
-  // analytics are already loaded or in flight are skipped, so tab toggles and
-  // load-more never duplicate requests.
+  // column. Browser-only: SSR skips the fan-out and the client replay of the
+  // list load (via the transfer cache) triggers it. Rows whose analytics are
+  // already loaded or in flight are skipped, so tab toggles and load-more never
+  // duplicate requests. `sending` rows are excluded rather than negatively
+  // cached — their analytics don't exist yet, and the next list refresh retries
+  // them once they settle to `sent`.
   private loadOpenRates(items: NewsletterListItem[]): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
     const targets = items.filter(
-      (n) => n.status !== 'draft' && n.open_rate === undefined && !this.openRateAnalytics().has(n.id) && !this.openRatePendingIds().has(n.id)
+      (n) =>
+        n.status === 'sent' &&
+        (n.open_rate === undefined || n.open_rate === null) &&
+        !this.openRateAnalytics().has(n.id) &&
+        !this.openRatePendingIds().has(n.id)
     );
     if (targets.length === 0) {
       return;
@@ -254,8 +268,8 @@ export class NewsletterListComponent {
           // Use the item's own project_uid rather than ambient context — see goToRow.
           (n) =>
             this.newsletterService.getAnalytics(n.project_uid, n.id).pipe(
-              map((analytics) => ({ id: n.id, analytics: analytics as NewsletterAnalytics | null })),
-              // A single failed row (e.g. still `sending`) keeps its "—" without breaking the rest.
+              map((analytics): { id: string; analytics: NewsletterAnalytics | null } => ({ id: n.id, analytics })),
+              // A single failed row keeps its "—" without breaking the rest.
               catchError(() => of({ id: n.id, analytics: null }))
             ),
           NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY
