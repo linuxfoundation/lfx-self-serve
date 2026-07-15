@@ -55,6 +55,9 @@ export class PaidSocialReachDrawerComponent {
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
+  // The server zero-fills monthlyData for calendar alignment, so array length
+  // no longer signals "no data" — presence of any actual impressions does.
+  protected readonly hasImpressionData: Signal<boolean> = computed(() => this.drawerData().monthlyData.some((v) => v > 0));
   protected readonly roasChartData: Signal<ChartData<'bar'>> = this.initRoasChartData();
   protected readonly hasRoasData: Signal<boolean> = computed(() => {
     const roas = this.drawerData().monthlyRoas;
