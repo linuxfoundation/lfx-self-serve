@@ -244,6 +244,8 @@ test.describe('US1: Marketing Ops (non-ED) — marketing_auditor + campaign_mana
 
 test.describe('US1: Marketing Auditor — marketing_auditor only (no campaign_manager)', () => {
   test.beforeEach(async ({ page }) => {
+    // ROOT-assigned auditor (isRootMarketingAuditor) — the operational model for this ticket
+    // (research R2 / LFXV2-1760). Child-only grants without ROOT do not unlock the foundation lens.
     await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: false });

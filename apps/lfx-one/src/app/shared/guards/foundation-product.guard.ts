@@ -21,8 +21,9 @@ import { PersonaService } from '../services/persona.service';
  *
  * `isRootWriter` is API-hydrated (not cookie-seeded), so on a cold browser session this
  * guard waits for `personaLoaded` before denying — otherwise a root writer would be
- * redirected from every product route before the personas response arrives. SSR defers
- * the real decision to the browser re-run (same pattern as `orgLensEnabledGuard`).
+ * redirected from every product route before the personas response arrives. If hydration
+ * times out, the guard fails open (allow) rather than deny with a stale `isRootWriter=false`.
+ * SSR defers the real decision to the browser re-run (same pattern as `orgLensEnabledGuard`).
  */
 export const foundationProductGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -47,13 +48,20 @@ export const foundationProductGuard: CanActivateFn = async (route: ActivatedRout
   }
 
   if (!personaService.personaLoaded()) {
-    await firstValueFrom(
+    const loaded = await firstValueFrom(
       toObservable(personaService.personaLoaded).pipe(
-        filter((loaded): loaded is true => loaded === true),
+        filter((ready): ready is true => ready === true),
         timeout(10_000),
-        catchError(() => of(true))
+        // Timeout/error → treat as not loaded (do NOT proceed to decide() with stale false).
+        catchError(() => of(false))
       )
     );
+    // Fail open when hydration never completes: deciding with isRootWriter still false would
+    // redirect legitimate root writers off Meetings/Events/etc. Marketing-only FR-017 is still
+    // enforced by the sidebar (product items hidden) once personas eventually load.
+    if (!loaded) {
+      return true;
+    }
   }
 
   return decide();
