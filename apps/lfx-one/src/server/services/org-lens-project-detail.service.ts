@@ -320,7 +320,7 @@ export class OrgLensProjectDetailService {
     projectSlug: string,
     range: OrgLensLeaderboardTimeRange
   ): Promise<OrgLensProjectDetailResponse | null> {
-    const cacheKey = `project-detail:${this.paramSignature([projectSlug, range])}`;
+    const cacheKey = `project-detail:${this.paramSignature([projectSlug.trim().toLowerCase(), range])}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectDetailResponse>(key, OrgLensProjectDetailService.isDetailResponse);
@@ -354,7 +354,7 @@ export class OrgLensProjectDetailService {
     const safePage = Math.max(Math.trunc(page) || 0, 0);
     const offset = safePage * safeSize;
 
-    const cacheKey = `project-detail-roster:${this.paramSignature([projectSlug, cardKey, range, safePage, safeSize])}`;
+    const cacheKey = `project-detail-roster:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardRosterPage>(key, OrgLensProjectDetailService.isRosterPage);
@@ -489,7 +489,7 @@ export class OrgLensProjectDetailService {
       hero: this.mapHero(heroRow, slug, foundationLabel),
       technical: this.buildTechnicalCards(cards, sparklineIndex, monthAxis),
       ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLfProject, sparklineIndex, monthAxis),
-      leaderboard: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, orgName, isNonLfProject, trendByAccount)),
+      leaderboard: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLfProject, trendByAccount)),
       activityLeaderboards,
       trend: this.buildTrendSeries(trendByAccount),
       // Roster rows page in lazily per card via getCardRoster; the main response carries only definition + column headers.
@@ -1215,16 +1215,10 @@ export class OrgLensProjectDetailService {
     return { key, label, scopeLabel, sparkline, projectSparkline, caption };
   }
 
-  private mapLeaderboardRow(
-    row: LeaderboardRow,
-    orgUid: string,
-    orgName: string,
-    isNonLf: boolean,
-    trendByAccount: Map<string, TrendSeries>
-  ): OrgLensProjectLeaderboardRow {
+  private mapLeaderboardRow(row: LeaderboardRow, orgUid: string, isNonLf: boolean, trendByAccount: Map<string, TrendSeries>): OrgLensProjectLeaderboardRow {
     const series = row.ORG_ACCOUNT_ID ? (trendByAccount.get(row.ORG_ACCOUNT_ID)?.combined ?? []) : [];
     return {
-      orgName: row.ORG_NAME ?? (row.ORG_ACCOUNT_ID === orgUid ? orgName : ''),
+      orgName: row.ORG_NAME ?? '',
       orgLogoUrl: row.ORG_LOGO_URL ?? '',
       scores: {
         combined: this.round1(this.num(row.SCORE_COMBINED)),

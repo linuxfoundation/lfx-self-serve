@@ -160,7 +160,11 @@ export class OrgLensProjectDetailService {
       }
       const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/projects/${encodeURIComponent(projectSlug)}`;
       request = this.http.get<OrgLensProjectDetailResponse>(url, { params: { orgName, range } }).pipe(
-        catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err))),
+        catchError((err: HttpErrorResponse) => {
+          if (err.status === 404) return of(null);
+          this.shared.delete(key);
+          return throwError(() => err);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
       this.shared.set(key, request);
