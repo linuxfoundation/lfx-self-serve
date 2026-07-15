@@ -650,7 +650,7 @@ DD_RUM_CLIENT_ID=your-datadog-rum-client-token
 DD_RUM_APPLICATION_ID=your-datadog-rum-app-id
 ```
 
-The server reads these via `dotenv` in development mode.
+The server reads these via `process.loadEnvFile` in development mode.
 
 **Docker Deployment:**
 

@@ -20,7 +20,7 @@ import {
   TOTAL_STEPS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
-import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRequest,
@@ -52,7 +52,23 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
-import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  concat,
+  filter,
+  finalize,
+  forkJoin,
+  from,
+  mergeMap,
+  Observable,
+  of,
+  pairwise,
+  startWith,
+  switchMap,
+  take,
+  toArray,
+} from 'rxjs';
 
 import { MeetingDetailsComponent } from '../components/meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
@@ -201,6 +217,21 @@ export class MeetingManageComponent {
         }
         titleControl.updateValueAndValidity();
         this.updateCanProceed();
+      });
+
+    // When Board meeting type is selected, default to private + restricted access.
+    // When switching away from Board, reset to public + unrestricted defaults so the
+    // user isn't left with Board-level settings silently applied to a non-Board meeting.
+    // The user can freely override visibility and restriction after the default is applied.
+    this.form()
+      .get('meeting_type')
+      ?.valueChanges.pipe(startWith(this.form().get('meeting_type')?.value as string), pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([previousType, currentType]: [string, string]) => {
+        if (currentType === MeetingType.BOARD) {
+          this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
+        } else if (previousType === MeetingType.BOARD) {
+          this.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
+        }
       });
 
     // Separate subscription for meeting data changes - populates form only once
@@ -921,7 +952,7 @@ export class MeetingManageComponent {
       {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
-        visibility: new FormControl(MeetingVisibility.PRIVATE),
+        visibility: new FormControl(MeetingVisibility.PUBLIC),
         restricted: new FormControl(false),
 
         // Step 2: Meeting Details

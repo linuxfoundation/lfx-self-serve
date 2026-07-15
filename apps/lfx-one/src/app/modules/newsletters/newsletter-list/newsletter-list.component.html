@@ -82,10 +82,25 @@
                   <td class="text-right">
                     <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
                   </td>
-                  <td class="text-right">
-                    <span class="text-sm text-gray-700" [pTooltip]="newsletter.openRateTooltip" tooltipPosition="top">
-                      {{ newsletter.openRateLabel }}
-                    </span>
+                  <td class="text-right" aria-live="polite">
+                    @if (newsletter.openRatePending) {
+                      <span aria-hidden="true" class="inline-block" [attr.data-testid]="'newsletter-open-rate-loading-' + newsletter.id">
+                        <p-skeleton width="2rem" height="0.75rem"></p-skeleton>
+                      </span>
+                      <span class="sr-only">Loading open rate</span>
+                    } @else {
+                      <span
+                        class="text-sm text-gray-700"
+                        role="note"
+                        tabindex="0"
+                        [pTooltip]="newsletter.openRateTooltip"
+                        tooltipPosition="top"
+                        tooltipEvent="both"
+                        [attr.aria-label]="newsletter.openRateAria"
+                        [attr.data-testid]="'newsletter-open-rate-' + newsletter.id">
+                        {{ newsletter.openRateLabel }}
+                      </span>
+                    }
                   </td>
                   <td class="text-right">
                     <div class="flex items-center justify-end gap-2">

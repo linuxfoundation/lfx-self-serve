@@ -101,13 +101,15 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault just leaves the entry to age out via TTL. Never throws. */
-  public async del(key: string | null): Promise<void> {
-    if (key === null || !this.client) return;
+  /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault just leaves the entry to age out via TTL and reports back via the `deleted` boolean rather than throwing. */
+  public async del(key: string | null): Promise<boolean> {
+    if (key === null || !this.client) return false;
     try {
       await this.withTimeout(this.client.del(key));
+      return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_del', 'Cache delete failed — entry will age out via TTL', { err, cache_key: ValkeyService.redactKey(key) });
+      return false;
     }
   }
 
@@ -201,6 +203,12 @@ function keyPrefix(): string {
   return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
 }
 
+/** Session-store cache key for an opaque session id; null (fail-closed) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildSessionCacheKey(sessionId: string): string | null {
+  if (!isFilterSafeIdentifier(sessionId)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.SESSION_NAMESPACE}:${sessionId}`;
+}
+
 /** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildOrgCacheKey(accountId: string, subResource: string): string | null {
   if (!isFilterSafeIdentifier(accountId)) return null;
@@ -225,7 +233,7 @@ export function withOrgCache<T>(
 }
 
 /** Best-effort invalidation of a per-user org key (e.g. after a write so the caller's own next read is fresh); an unsafe identity yields a null key → no-op. */
-export function invalidatePerUserCache(namespace: string, username: string, orgUid: string): Promise<void> {
+export function invalidatePerUserCache(namespace: string, username: string, orgUid: string): Promise<boolean> {
   return valkeyService.del(buildPerUserOrgKey(namespace, username, orgUid));
 }
 

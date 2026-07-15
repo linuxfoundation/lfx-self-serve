@@ -30,7 +30,7 @@ interface SocialTokenResponse {
  * - The `github`, `google-oauth2`, and `linkedin` social connections must be enabled on the Auth0 tenant
  */
 export class SocialVerificationService {
-  // Resolved lazily on first access so dotenv has finished loading,
+  // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _clientId: string | undefined;
   private _clientSecret: string | undefined;

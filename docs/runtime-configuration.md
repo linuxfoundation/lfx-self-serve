@@ -167,10 +167,22 @@ async function initializeOpenFeature(): Promise<void> {
 
 These configure the shared Valkey read-through cache (read by the Express server only; not exposed to the browser):
 
-| Variable               | Description                                                                                                                                                                                                                                                       | Example              |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `VALKEY_URL`           | Shared Valkey connection URL (`rediss://` enables TLS). Unset disables caching (direct-fetch fallback).                                                                                                                                                           | `rediss://host:6379` |
-| `VALKEY_KEY_NAMESPACE` | Optional per-deployment cache-key namespace woven into the key prefix. When multiple deployments share one Valkey instance, set a distinct value per deployment so they never collide on cache keys. Leave unset when the cache is not shared across deployments. | `ui-pr-914`          |
+| Variable                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Example              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| `VALKEY_URL`            | Shared Valkey connection URL (`rediss://` enables TLS). Unset disables caching (direct-fetch fallback).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `rediss://host:6379` |
+| `VALKEY_KEY_NAMESPACE`  | Optional per-deployment cache-key namespace woven into the key prefix. When multiple deployments share one Valkey instance, set a distinct value per deployment so they never collide on cache keys. Leave unset when the cache is not shared across deployments.                                                                                                                                                                                                                                                                                                                                                                    | `ui-pr-914`          |
+| `SESSION_STORE_ENABLED` | Stores the OIDC session (including impersonation/API-gateway/crowdfunding/profile tokens) server-side in Valkey keyed by an opaque session id, instead of the encrypted `appSession` cookie. No-op unless `VALKEY_URL` is also set. Requires a TLS-secured (`rediss://`) `VALKEY_URL` in production — the app refuses to start otherwise, since the session now carries the full bearer-token bundle. Toggling this flag changes what the `appSession` cookie means, which a rolling deploy can't interpret both ways at once — flip it only during a low-traffic window with a `Recreate` (no-overlap) rollout, in both directions. | `"true"`             |
+
+> **Toggling `SESSION_STORE_ENABLED` in a live cluster:** the chart's default `strategy` (`values.yaml`) is `RollingUpdate` with a `rollingUpdate` map already set. Helm deep-merges overrides, so `--set strategy.type=Recreate` alone keeps that existing `rollingUpdate` map — and Kubernetes rejects a Deployment where `strategy.type` is `Recreate` but `strategy.rollingUpdate` is still populated. Null it out explicitly:
+>
+> ```bash
+> helm upgrade lfx-self-serve ./charts/lfx-self-serve \
+>   --set strategy.type=Recreate \
+>   --set strategy.rollingUpdate=null \
+>   --set environment.SESSION_STORE_ENABLED.value=true
+> ```
+>
+> Revert `strategy` back to the chart default (`RollingUpdate` with the existing `rollingUpdate` map) once the flag change has rolled out everywhere.
 
 ### Local Development
 
@@ -184,11 +196,17 @@ DD_RUM_APPLICATION_ID=your-datadog-rum-app-id
 INTERCOM_APP_ID=your-intercom-app-id
 ```
 
-The server reads these via `dotenv` in development mode:
+The server reads these via `process.loadEnvFile` in development mode:
 
 ```typescript
 if (process.env['NODE_ENV'] !== 'production') {
-  dotenv.config();
+  try {
+    process.loadEnvFile();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[loadenvfile] failed to load .env:', err);
+    }
+  }
 }
 ```
 
