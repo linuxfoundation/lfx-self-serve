@@ -505,13 +505,12 @@ export class OrgLensProjectDetailService {
     if (!heroRow) return null;
     const isNonLf = heroRow.IS_LF_PROJECT !== true;
 
-    const [leaderboardRows, activityBoardRows, trendRows] = await Promise.all([
+    const [leaderboardRows, activityBoardRows] = await Promise.all([
       this.fetchLeaderboard(orgUid, slug, timeRangeType),
       this.fetchActivityLeaderboards(orgUid, slug, timeRangeType),
-      this.fetchTrend(slug),
     ]);
 
-    const trendByAccount = this.buildTrendByAccount(trendRows);
+    const trendByAccount = new Map<string, TrendSeries>();
     const activityLeaderboards = this.mapActivityLeaderboards(activityBoardRows, orgUid, trendByAccount);
     const block: OrgLensLeaderboardBlock = {
       influence: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLf, trendByAccount)),
