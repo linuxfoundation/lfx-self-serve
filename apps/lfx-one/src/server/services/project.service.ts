@@ -2316,7 +2316,10 @@ export class ProjectService {
       const periodSends = periodRows.reduce((sum, row) => sum + (row.TOTAL_SENDS ?? 0), 0);
       const periodOpens = periodRows.reduce((sum, row) => sum + (row.TOTAL_OPENS ?? 0), 0);
       const periodCtr = periodSends > 0 ? Math.round(((periodOpens * 100) / periodSends) * 10) / 10 : 0;
-      const currentCtr = periodRows.length > 0 ? periodCtr : summaryCtr;
+      // Fall back to summaryCtr when the period had no sends — zero-filling
+      // makes periodRows always non-empty, so row count no longer signals
+      // whether the monthly view actually had data.
+      const currentCtr = periodSends > 0 ? periodCtr : summaryCtr;
 
       let changePercentage = 0;
       if (monthlyData.length >= 2 && currentCtr > 0) {
