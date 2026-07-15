@@ -405,12 +405,24 @@ export class OrgProjectDetailComponent {
       .subscribe({
         next: (section) => {
           this.drawerCache.set(cacheKey, section);
-          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range) return;
+          if (
+            this.accountContext.selectedAccount()?.uid !== uid ||
+            this.projectSlug() !== slug ||
+            this.selectedCardKey() !== cardKey ||
+            this.timeRange() !== range
+          )
+            return;
           this.drawerState.set(section ? { status: 'ready', data: section } : { status: 'empty', data: null });
         },
         error: (err: unknown) => {
           console.error('[OrgProjectDetail] failed to load card detail', err);
-          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range) return;
+          if (
+            this.accountContext.selectedAccount()?.uid !== uid ||
+            this.projectSlug() !== slug ||
+            this.selectedCardKey() !== cardKey ||
+            this.timeRange() !== range
+          )
+            return;
           this.drawerState.set({ status: 'error', data: null });
         },
       });
@@ -445,7 +457,14 @@ export class OrgProjectDetailComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
-          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range || this.rosterFirst() !== first || this.rosterRowsPerPage() !== rowsPerPage)
+          if (
+            this.accountContext.selectedAccount()?.uid !== uid ||
+            this.projectSlug() !== slug ||
+            this.selectedCardKey() !== cardKey ||
+            this.timeRange() !== range ||
+            this.rosterFirst() !== first ||
+            this.rosterRowsPerPage() !== rowsPerPage
+          )
             return;
           this.rosterRows.set(result.rows);
           this.rosterTotal.set(result.total);
@@ -453,7 +472,14 @@ export class OrgProjectDetailComponent {
         },
         error: (err: unknown) => {
           console.error('[OrgProjectDetail] failed to load card roster', err);
-          if (this.selectedCardKey() !== cardKey || this.timeRange() !== range || this.rosterFirst() !== first || this.rosterRowsPerPage() !== rowsPerPage)
+          if (
+            this.accountContext.selectedAccount()?.uid !== uid ||
+            this.projectSlug() !== slug ||
+            this.selectedCardKey() !== cardKey ||
+            this.timeRange() !== range ||
+            this.rosterFirst() !== first ||
+            this.rosterRowsPerPage() !== rowsPerPage
+          )
             return;
           this.rosterRows.set([]);
           this.rosterTotal.set(0);
