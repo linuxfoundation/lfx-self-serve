@@ -397,6 +397,8 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth.organizations = personaResult.organizations ?? [];
     auth.projects = personaResult.projects;
     auth.personaProjects = personaResult.personaProjects;
+    auth.isRootWriter = personaResult.isRootWriter === true;
+    auth.isRootMarketingAuditor = personaResult.isRootMarketingAuditor === true;
   }
 
   if (req.oidc?.accessToken?.access_token) {

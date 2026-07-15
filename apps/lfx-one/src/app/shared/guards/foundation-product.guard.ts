@@ -19,11 +19,9 @@ import { PersonaService } from '../services/persona.service';
  * routes use `marketingViewGuard` / `campaignAccessGuard` instead. Overview stays open so
  * Marketing Ops can land on the dashboard Marketing Overview section.
  *
- * `isRootWriter` is API-hydrated (not cookie-seeded), so on a cold browser session this
- * guard waits for `personaLoaded` before denying — otherwise a root writer would be
- * redirected from every product route before the personas response arrives. If hydration
- * times out, the guard fails open (allow) rather than deny with a stale `isRootWriter=false`.
- * SSR defers the real decision to the browser re-run (same pattern as `orgLensEnabledGuard`).
+ * `isRootWriter` / `isRootMarketingAuditor` are TransferState- and cookie-seeded so SSR can
+ * decide fail-closed without awaiting the personas API. On the browser, cold sessions wait for
+ * `personaLoaded` before denying. Hydration timeout fails closed (FR-015 / FR-017).
  */
 export const foundationProductGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -37,30 +35,29 @@ export const foundationProductGuard: CanActivateFn = async (route: ActivatedRout
 
   const decide = () => (personaService.hasBoardRole() || personaService.isRootWriter() ? true : deny());
 
-  // Fast path: board persona is cookie-seeded and available immediately.
+  // Fast path: board persona / seeded root writer available immediately (cookie or TransferState).
   if (personaService.hasBoardRole() || personaService.isRootWriter()) {
     return true;
   }
 
-  // SSR cannot await the personas API — allow match and let the browser guard decide.
+  // SSR: decide from seeded entitlements (fail closed for marketing-only / anonymous).
+  // Do not await personaLoaded — afterNextRender never runs on the server.
   if (!isPlatformBrowser(platformId)) {
-    return true;
+    return decide();
   }
 
+  // Browser: wait for API hydration before denying — cold sessions may still be loading root-writer.
   if (!personaService.personaLoaded()) {
     const loaded = await firstValueFrom(
       toObservable(personaService.personaLoaded).pipe(
         filter((ready): ready is true => ready === true),
         timeout(10_000),
-        // Timeout/error → treat as not loaded (do NOT proceed to decide() with stale false).
+        // Timeout/error → treat as not loaded; fail closed below (FR-015).
         catchError(() => of(false))
       )
     );
-    // Fail open when hydration never completes: deciding with isRootWriter still false would
-    // redirect legitimate root writers off Meetings/Events/etc. Marketing-only FR-017 is still
-    // enforced by the sidebar (product items hidden) once personas eventually load.
     if (!loaded) {
-      return true;
+      return deny();
     }
   }
 

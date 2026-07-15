@@ -44,9 +44,9 @@ export class PersonaService {
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
   /** Writer on the tenant root project — bypasses nav persona filtering */
-  public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
+  public readonly isRootWriter: WritableSignal<boolean>;
   /** Marketing auditor on the tenant root project — surfaces the foundation lens to non-board marketing users */
-  public readonly isRootMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
+  public readonly isRootMarketingAuditor: WritableSignal<boolean>;
   /**
    * Full foundation product surface (Meetings, Events, Groups, …) — the pre-marketing-ops
    * foundation-lens audience. Marketing-only users get the lens via `isRootMarketingAuditor`
@@ -67,6 +67,10 @@ export class PersonaService {
     const authState = this.transferState.get(makeStateKey<AuthContext>('auth'), { authenticated: false, user: null });
     this.personaProjects = signal<Partial<Record<PersonaType, PersonaProject[]>>>(authState.personaProjects ?? {});
     this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
+    // Prefer TransferState (SSR NATS) then cookie so product guards can decide on the server
+    // and on the first browser paint without awaiting /api/user/personas.
+    this.isRootWriter = signal<boolean>(authState.isRootWriter === true || stored?.isRootWriter === true);
+    this.isRootMarketingAuditor = signal<boolean>(authState.isRootMarketingAuditor === true || stored?.isRootMarketingAuditor === true);
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();
@@ -176,6 +180,9 @@ export class PersonaService {
     } else if (response.organizations) {
       this.lastKnownOrganizations.set(response.organizations);
       this.persistCurrentState();
+    } else {
+      // Persist ROOT entitlement flags even when personas/orgs are unchanged.
+      this.persistCurrentState();
     }
 
     if (response.organizations) {
@@ -194,6 +201,8 @@ export class PersonaService {
       all: this.allPersonas(),
       organizations: this.lastKnownOrganizations(),
       userSelected: this.userSelected(),
+      isRootWriter: this.isRootWriter(),
+      isRootMarketingAuditor: this.isRootMarketingAuditor(),
     });
   }
 

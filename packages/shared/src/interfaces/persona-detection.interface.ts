@@ -69,6 +69,8 @@ export interface SsrPersonaResult {
   organizations?: Account[];
   projects?: EnrichedPersonaProject[];
   personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
+  isRootWriter?: boolean;
+  isRootMarketingAuditor?: boolean;
 }
 
 /** Stores in-flight promise to collapse concurrent lookups. */
