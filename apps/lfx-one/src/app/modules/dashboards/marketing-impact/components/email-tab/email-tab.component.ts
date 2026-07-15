@@ -84,9 +84,12 @@ export class EmailTabComponent {
       const lastOpens = minLen > 0 ? (opens[minLen - 1] ?? 0) : 0;
       const prevOpens = minLen > 1 ? (opens[minLen - 2] ?? 0) : 0;
 
-      const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : 0;
-      const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : 0;
-      const openRateMom = prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
+      // Open rate is undefined without sends — the series is calendar
+      // zero-filled, so a no-send month must suppress the value and the MoM
+      // delta rather than read as a measured 0% (a false -100% decline).
+      const currentOpenRate = lastSends !== undefined && lastSends > 0 ? (lastOpens / lastSends) * 100 : null;
+      const prevOpenRate = prevSends !== undefined && prevSends > 0 ? (prevOpens / prevSends) * 100 : null;
+      const openRateMom = currentOpenRate !== null && prevOpenRate !== null && prevOpenRate > 0 ? ((currentOpenRate - prevOpenRate) / prevOpenRate) * 100 : null;
 
       return [
         {
@@ -122,7 +125,7 @@ export class EmailTabComponent {
           label: 'Open Rate',
           icon: 'fa-light fa-chart-simple',
           iconClass: 'bg-amber-100 text-amber-600',
-          value: `${currentOpenRate.toFixed(1)}%`,
+          value: currentOpenRate !== null ? `${currentOpenRate.toFixed(1)}%` : '—',
           momChange: formatChangePct(openRateMom, 'MoM'),
           momTrend: trendDirection(openRateMom),
           momTrendClass: trendColorClass(openRateMom),
