@@ -1687,9 +1687,8 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
-    // Latest daily row per project (keyed on PROJECT_SLUG — different PROJECT_ID
-    // systems); a null category on the newest row flows through as Unscored,
-    // matching normalizeHealthScoreCategory and the FOUNDATION_HEALTH_SCORE_DISTRIBUTION counts.
+    // Newest health score per project from PROJECT_HEALTH_METRICS_LATEST (keeps the
+    // latest row regardless of age, unlike the 30-day DAILY table); null flows through as Unscored.
     const query = `
       SELECT
         d.PROJECT_ID,
@@ -1705,9 +1704,8 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
       LEFT JOIN (
         SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
-        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_LATEST
         WHERE FOUNDATION_SLUG = ?
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY PROJECT_SLUG ORDER BY METRIC_DATE DESC) = 1
       ) h ON d.PROJECT_SLUG = h.PROJECT_SLUG
       WHERE d.FOUNDATION_SLUG = ?
       ORDER BY d.PROJECT_NAME ASC

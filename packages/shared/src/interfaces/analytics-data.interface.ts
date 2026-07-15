@@ -2224,7 +2224,7 @@ export interface FoundationProjectsDetailRow {
   STARS_YTD_COUNT: number;
   STARS_12M_COUNT: number;
   LAST_UPDATED_TS: Date | string | null;
-  // Joined from PROJECT_HEALTH_METRICS_DAILY (latest row per project); null when unscored.
+  // Joined from PROJECT_HEALTH_METRICS_LATEST (newest score per project); null when unscored.
   HEALTH_SCORE_CATEGORY: string | null;
 }
 
