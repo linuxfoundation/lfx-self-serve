@@ -147,7 +147,12 @@
                         class="flex-shrink-0 w-7 h-7 rounded-md bg-slate-100 text-slate-500 text-xs font-semibold flex items-center justify-center uppercase">
                         {{ project.projectName.charAt(0) || '·' }}
                       </span>
-                      <span class="font-medium text-slate-900">{{ project.projectName }}</span>
+                      <span class="flex flex-col">
+                        <span class="font-medium text-slate-900">{{ project.projectName }}</span>
+                        @if (project.lastUpdated) {
+                          <span class="text-xs text-slate-500">Updated {{ project.lastUpdated }}</span>
+                        }
+                      </span>
                     </div>
                   </td>
                   <td class="text-right py-3 px-4 text-slate-700">{{ project.maintainers | number }}</td>
