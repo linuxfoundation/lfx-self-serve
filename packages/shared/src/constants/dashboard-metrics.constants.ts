@@ -886,6 +886,9 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   const emailTotalOpens = emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0);
   const emailOpenRate = emailTotalSends > 0 ? (emailTotalOpens / emailTotalSends) * 100 : 0;
 
+  // Paid month activity: spend OR impressions (a spend-only month is active).
+  const paidActivity = paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0));
+
   return [
     // === Campaign Performance (dual-signal: Email Opens + Paid Impressions) ===
     // Categorised as 'memberships' (North Star) intentionally — campaigns directly
@@ -913,8 +916,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           formatNumber(paidCampaign.totalReach) + ' impressions',
           paidCampaign.monthlyData,
           lfxColors.violet[500],
-          seriesMomChange(paidCampaign.monthlyData),
-          seriesTrendDirection(paidCampaign.monthlyData)
+          // Activity = spend OR impressions per month: an active month that
+          // delivered zero impressions keeps its real MoM, while zero-filled
+          // no-campaign months stay suppressed.
+          seriesMomChange(paidCampaign.monthlyData, paidActivity),
+          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
         ),
       ],
       caption: trendWindow(Math.max(emailCtr.monthlyOpens.length, paidCampaign.monthlyData.length)),
