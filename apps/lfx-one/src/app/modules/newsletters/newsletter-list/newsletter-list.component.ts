@@ -73,8 +73,8 @@ export class NewsletterListComponent {
   // open_rate/unique_opens). Kept in a side map keyed by newsletter id — never
   // written back into `newsletters` — so row identity stays stable and results
   // are cached across draft/sent tab toggles. `null` marks a failed fetch for a
-  // settled (`sent`) row; those are not retried for the component's lifetime.
-  // The cache is cleared on project change to keep it bounded.
+  // settled (`sent`) row; those are not retried while the project context is
+  // unchanged. The cache is cleared on project change to keep it bounded.
   private readonly openRateAnalytics = signal<Map<string, NewsletterAnalytics | null>>(new Map());
   private readonly openRatePendingIds = signal<Set<string>>(new Set());
   private lastLoadedUid: string | null = null;
@@ -308,7 +308,15 @@ export class NewsletterListComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ id, analytics }) => {
-        this.openRateAnalytics.update((current) => new Map(current).set(id, analytics));
+        // A late failure must not clobber a value a competing fetch already loaded
+        // (possible on rapid project change-and-revert, where the cache prune drops
+        // the pending-set dedupe for in-flight ids).
+        this.openRateAnalytics.update((current) => {
+          if (analytics === null && current.get(id)) {
+            return current;
+          }
+          return new Map(current).set(id, analytics);
+        });
         this.openRatePendingIds.update((ids) => {
           const next = new Set(ids);
           next.delete(id);
