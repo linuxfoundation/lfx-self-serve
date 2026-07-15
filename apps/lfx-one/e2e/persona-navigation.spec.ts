@@ -524,6 +524,41 @@ test.describe('S7: Route guards — non-ED / non-marketing redirected from gated
   });
 });
 
+test.describe('S7b: Route guards — non-ED writer/owner without marketing grants', () => {
+  // A project writer/owner (writer:true, isRootWriter so the foundation lens is available) who holds
+  // neither marketing_auditor nor campaign_manager. Distinct from the ED case in S1b: proves marketing
+  // is FGA-gated per project, not widened by writer/owner status on a non-ED persona.
+  test.beforeEach(async ({ page }) => {
+    await stubPersona(page, ['contributor'], /* isRootWriter */ true);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true, { marketingAuditor: false, campaignManager: false });
+    await setPersonaCookie(page, ['contributor']);
+  });
+
+  test('hides the entire Marketing section in the sidebar', async ({ page }) => {
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'writer w/o marketing grant ⇒ marketing section absent').toHaveCount(0, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+
+  test('is redirected from /foundation/marketing-impact to /foundation/overview', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page, 'writer w/o marketing_auditor ⇒ blocked from Marketing Impact').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('is redirected from /foundation/campaigns to /foundation/overview', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/campaigns?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page, 'writer w/o campaign_manager ⇒ blocked from Campaigns').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+  });
+});
+
 test.describe('S8: Route guard — executiveDirectorGuard passes for ED persona', () => {
   test('ED navigating to /foundation/health-metrics is NOT redirected', async ({ page }) => {
     await stubPersona(page, ['executive-director']);

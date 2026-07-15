@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, map, of, switchMap } from 'rxjs';
+import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
@@ -37,26 +37,26 @@ export class CampaignsComponent {
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
 
+  /**
+   * campaign_manager access for the currently selected foundation. Gates the template so the
+   * management panels never render (and their child tabs never fire requests) for a context the
+   * user can't manage — the marketing APIs are not yet server-enforced, so this is the fail-closed
+   * front stop. `startWith(false)` resets it on every switch: the panels unmount immediately, then
+   * re-render only once the probe returns true. Keyed off `selectedFoundation` (seeded from
+   * `?project=` by projectQueryParamGuard, matching the guard's slug source) rather than the
+   * lens-dependent `activeContext`, which trails the lens on cold deep links.
+   */
+  protected readonly authorized: Signal<boolean> = toSignal(this.initAuthorized(), { initialValue: false });
+
   public constructor() {
-    // campaignAccessGuard only runs on navigation. An in-place context switch (setFoundation uses
-    // Location.replaceState — no navigation) would otherwise leave this managed surface mounted for
-    // a project the user can't manage, and its child tabs would fetch data for that context.
-    // Re-probe campaign_manager on every foundation change and redirect (fail closed) when access
-    // is lost. Key off `selectedFoundation` — not the lens-dependent `activeContext` — to match the
-    // guard's slug source: projectQueryParamGuard seeds the foundation from `?project=` before this
-    // page mounts, whereas `activeContext` still trails the lens on a cold deep-link (would give a
-    // null/project slug and redirect a legitimately-authorized user). The entry foundation was
-    // already authorized by the guard, so its probe resolves true; the getProject cache is shared.
+    // campaignAccessGuard only runs on navigation, but an in-place context switch (setFoundation
+    // uses Location.replaceState — no navigation) doesn't re-run it. Redirect (fail closed) when
+    // the newly selected foundation resolves without campaign_manager. This subscription uses
+    // resolved probe values (no startWith), so the transient "resolving" state never triggers a
+    // spurious redirect; the entry foundation was authorized by the guard so its probe is true.
     toObservable(this.projectContextService.selectedFoundation)
       .pipe(
-        switchMap((foundation) =>
-          foundation?.slug
-            ? this.projectService.getProject(foundation.slug, false, { marketing: true }).pipe(
-                map((project) => project?.campaignManager === true),
-                catchError(() => of(false))
-              )
-            : of(false)
-        ),
+        switchMap((foundation) => this.probeCampaignManager(foundation?.slug)),
         takeUntilDestroyed()
       )
       .subscribe((allowed) => {
@@ -106,5 +106,21 @@ export class CampaignsComponent {
   protected onProceedToImplementation(brief: CampaignBriefOutput): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
+  }
+
+  private initAuthorized(): Observable<boolean> {
+    return toObservable(this.projectContextService.selectedFoundation).pipe(
+      switchMap((foundation) => this.probeCampaignManager(foundation?.slug).pipe(startWith(false)))
+    );
+  }
+
+  private probeCampaignManager(slug: string | undefined): Observable<boolean> {
+    if (!slug) {
+      return of(false);
+    }
+    return this.projectService.getProject(slug, false, { marketing: true }).pipe(
+      map((project) => project?.campaignManager === true),
+      catchError(() => of(false))
+    );
   }
 }

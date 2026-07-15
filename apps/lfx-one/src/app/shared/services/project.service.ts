@@ -42,9 +42,11 @@ export class ProjectService {
       const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
         catchError(() => of(null)),
         tap((project) => {
-          // Fail closed for the current request (callers still get `null`), but don't pin a
-          // transient BFF/OpenFGA failure under this cache key — evict so the next call retries.
-          // Otherwise a single blip would keep guards/marketing signals denying until reload.
+          // Only a failed project HTTP request lands here as `null` (catchError above) — evict so a
+          // transient network/5xx blip isn't pinned under this cache key and the next call retries.
+          // NOTE: an upstream OpenFGA failure does NOT reach this branch — the BFF still returns a
+          // non-null Project with the marketing grants set to `false`, which stays cached as a deny
+          // until reload (accepted trade-off; see LFXV2-2707).
           if (project === null) {
             this.projectCache.delete(cacheKey);
           }

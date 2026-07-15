@@ -33,7 +33,11 @@ Example batched payload for one project (both relations in a single round-trip):
 }
 ```
 
-Parsed to a `Map<id, boolean>` per relation by the existing parser.
+Because both probes target the same project UID, the two marketing relations MUST be parsed
+**positionally** into a `boolean[]` (results align to the request order) via
+`AccessCheckService.checkAccessOrdered`, NOT the id-keyed `Map<id, boolean>` returned by
+`checkAccess` — an id-keyed map would collapse the two same-UID entries into one. `checkAccess`
+(the map form) remains correct only when each request targets a distinct id.
 
 ## Behavioral guarantees
 

@@ -12,7 +12,7 @@ import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TA
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -77,26 +77,26 @@ export class MarketingImpactComponent {
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
 
+  /**
+   * marketing_auditor access for the currently selected foundation. Gates the tab content so the
+   * analytics child tabs never mount (and never fire requests) for a context the user can't audit —
+   * the marketing APIs are not yet server-enforced, so this is the fail-closed front stop.
+   * `startWith(false)` resets it on every switch: the tabs unmount immediately, then re-render only
+   * once the probe returns true. Keyed off `selectedFoundation` (seeded from `?project=` by
+   * projectQueryParamGuard, matching the guard's slug source) rather than the lens-dependent
+   * `activeContext`, which trails the lens on cold deep links.
+   */
+  protected readonly authorized: Signal<boolean> = toSignal(this.initAuthorized(), { initialValue: false });
+
   public constructor() {
-    // marketingViewGuard only runs on navigation. An in-place context switch (setFoundation uses
-    // Location.replaceState — no navigation) would otherwise leave this read-only surface mounted
-    // for a project the user can't audit, and its child tabs would fetch analytics for that context.
-    // Re-probe marketing_auditor on every foundation change and redirect (fail closed) when access
-    // is lost. Key off `selectedFoundation` — not the lens-dependent `activeContext` — to match the
-    // guard's slug source: projectQueryParamGuard seeds the foundation from `?project=` before this
-    // page mounts, whereas `activeContext` still trails the lens on a cold deep-link (would give a
-    // null/project slug and redirect a legitimately-authorized user). The entry foundation was
-    // already authorized by the guard, so its probe resolves true; the getProject cache is shared.
+    // marketingViewGuard only runs on navigation, but an in-place context switch (setFoundation uses
+    // Location.replaceState — no navigation) doesn't re-run it. Redirect (fail closed) when the newly
+    // selected foundation resolves without marketing_auditor. This subscription uses resolved probe
+    // values (no startWith), so the transient "resolving" state never triggers a spurious redirect;
+    // the entry foundation was authorized by the guard so its probe is true.
     toObservable(this.projectContextService.selectedFoundation)
       .pipe(
-        switchMap((foundation) =>
-          foundation?.slug
-            ? this.projectService.getProject(foundation.slug, false, { marketing: true }).pipe(
-                map((project) => project?.marketingAuditor === true),
-                catchError(() => of(false))
-              )
-            : of(false)
-        ),
+        switchMap((foundation) => this.probeMarketingAuditor(foundation?.slug)),
         takeUntilDestroyed()
       )
       .subscribe((allowed) => {
@@ -136,6 +136,22 @@ export class MarketingImpactComponent {
       const allowed = FOCUS_VISIBLE_TABS[this.selectedFocus()];
       return this.tabs.filter((t) => allowed.has(t.id));
     });
+  }
+
+  private initAuthorized(): Observable<boolean> {
+    return toObservable(this.projectContextService.selectedFoundation).pipe(
+      switchMap((foundation) => this.probeMarketingAuditor(foundation?.slug).pipe(startWith(false)))
+    );
+  }
+
+  private probeMarketingAuditor(slug: string | undefined): Observable<boolean> {
+    if (!slug) {
+      return of(false);
+    }
+    return this.projectService.getProject(slug, false, { marketing: true }).pipe(
+      map((project) => project?.marketingAuditor === true),
+      catchError(() => of(false))
+    );
   }
 
   private initContextLabel(): Signal<string> {

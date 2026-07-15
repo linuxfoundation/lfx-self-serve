@@ -370,6 +370,9 @@ test.describe('Scenario 6: granted→denied context switch re-checks access (fai
     await page.getByTestId(PROJECT_SELECTOR.item(MOCK_DENIED_SLUG)).click();
 
     await expect(page, 'denied context ⇒ redirected off Marketing Impact').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+    // The redirect must carry the DENIED slug — proves it followed the switched-to context, not a
+    // stale grant on the previously granted project.
+    await expect.poll(() => new URL(page.url()).searchParams.get('project'), { timeout: ELEMENT_TIMEOUT }).toBe(MOCK_DENIED_SLUG);
   });
 
   test('Campaigns redirects to overview after switching to a project without campaign_manager', async ({ page }) => {
@@ -380,6 +383,7 @@ test.describe('Scenario 6: granted→denied context switch re-checks access (fai
     await page.getByTestId(PROJECT_SELECTOR.item(MOCK_DENIED_SLUG)).click();
 
     await expect(page, 'denied context ⇒ redirected off Campaigns').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
+    await expect.poll(() => new URL(page.url()).searchParams.get('project'), { timeout: ELEMENT_TIMEOUT }).toBe(MOCK_DENIED_SLUG);
   });
 
   test('Marketing section toggles on in-session foundation switch (no reload)', async ({ page }) => {
