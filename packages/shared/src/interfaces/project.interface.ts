@@ -22,25 +22,25 @@ export interface Project {
    */
   meetingCoordinator?: boolean;
   /**
-   * Response-only — present only when the caller requested the marketing checks
-   * (`?marketing=true`).
+   * Response-only — present (boolean) only when the caller requested the marketing checks
+   * (`?marketing=true`); omitted (`undefined`) otherwise.
    *
    * - `true`      — user holds the `marketing_auditor` role on this project (read access
    *   to marketing dashboards; cascades from parent projects upstream).
-   * - `false`     — check ran clean; user does not hold the role.
-   * - `undefined` — check was not requested or failed transiently. Do NOT treat as a
-   *   definitive role denial.
+   * - `false`     — user does not hold the role, OR the upstream access check failed
+   *   transiently (the check is fail-closed, so a transient error denies rather than throws).
+   * - `undefined` — check was not requested (`?marketing=true` absent).
    */
   marketingAuditor?: boolean;
   /**
-   * Response-only — present only when the caller requested the marketing checks
-   * (`?marketing=true`).
+   * Response-only — present (boolean) only when the caller requested the marketing checks
+   * (`?marketing=true`); omitted (`undefined`) otherwise.
    *
    * - `true`      — user holds the `campaign_manager` role on this project (manage campaigns;
    *   resolves as `executive_director or marketing_ops` upstream).
-   * - `false`     — check ran clean; user does not hold the role.
-   * - `undefined` — check was not requested or failed transiently. Do NOT treat as a
-   *   definitive role denial.
+   * - `false`     — user does not hold the role, OR the upstream access check failed
+   *   transiently (the check is fail-closed, so a transient error denies rather than throws).
+   * - `undefined` — check was not requested (`?marketing=true` absent).
    */
   campaignManager?: boolean;
   public: boolean;

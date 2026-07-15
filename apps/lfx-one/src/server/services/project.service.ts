@@ -326,24 +326,13 @@ export class ProjectService {
       // Marketing probes are independent of writer status (marketing_auditor / campaign_manager
       // are distinct FGA relations), so run them whenever the caller asks — even for writers.
       // Two relations on the same resource id can't be distinguished by checkAccess's id-keyed
-      // result map, so run parallel single checks. On failure leave the field undefined (unknown)
-      // rather than false — a false-negative would wrongly assert the role was checked and denied.
+      // result map, so run parallel single checks. checkSingleAccess is already fail-closed:
+      // upstream errors are swallowed inside checkAccess and surface as `false`, so on any
+      // transient failure the fields resolve to `false` (deny) rather than throwing.
       if (includeMarketing) {
         const [marketingAuditor, campaignManager] = await Promise.all([
-          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'marketing_auditor' }).catch((error) => {
-            logger.warning(req, 'get_project_by_id', 'marketing_auditor check failed, skipping field', {
-              project_uid: project.uid,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return undefined;
-          }),
-          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'campaign_manager' }).catch((error) => {
-            logger.warning(req, 'get_project_by_id', 'campaign_manager check failed, skipping field', {
-              project_uid: project.uid,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return undefined;
-          }),
+          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'marketing_auditor' }),
+          this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'campaign_manager' }),
         ]);
         writerProject = { ...writerProject, marketingAuditor, campaignManager };
       }
