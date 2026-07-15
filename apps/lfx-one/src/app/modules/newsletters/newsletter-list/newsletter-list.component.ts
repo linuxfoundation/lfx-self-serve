@@ -78,6 +78,11 @@ export class NewsletterListComponent {
   private readonly openRateAnalytics = signal<Map<string, NewsletterAnalytics | null>>(new Map());
   private readonly openRatePendingIds = signal<Set<string>>(new Set());
   private lastLoadedUid: string | null = null;
+  // Incremented whenever the analytics cache is cleared (project change). Each
+  // fan-out batch captures it at start; results from an older generation are
+  // discarded so a stale batch can't repopulate the pruned cache or race a
+  // newer batch's entries and pending markers (A→B→A project toggles).
+  private analyticsCacheGeneration = 0;
   // Incremented on every context-driven list reload. loadMore captures it at
   // request time and discards responses from an older generation — covering
   // change-and-revert (A→B→A) sequences a value comparison would miss. Not a
@@ -218,6 +223,7 @@ export class NewsletterListComponent {
           this.newsletters.set([]);
           if (uid !== this.lastLoadedUid) {
             this.lastLoadedUid = uid;
+            this.analyticsCacheGeneration++;
             this.openRateAnalytics.set(new Map());
             this.openRatePendingIds.set(new Set());
           }
@@ -289,6 +295,7 @@ export class NewsletterListComponent {
     if (targets.length === 0) {
       return;
     }
+    const cacheGeneration = this.analyticsCacheGeneration;
     this.openRatePendingIds.update((ids) => new Set([...ids, ...targets.map((n) => n.id)]));
     from(targets)
       .pipe(
@@ -308,15 +315,13 @@ export class NewsletterListComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ id, analytics }) => {
-        // A late failure must not clobber a value a competing fetch already loaded
-        // (possible on rapid project change-and-revert, where the cache prune drops
-        // the pending-set dedupe for in-flight ids).
-        this.openRateAnalytics.update((current) => {
-          if (analytics === null && current.get(id)) {
-            return current;
-          }
-          return new Map(current).set(id, analytics);
-        });
+        // A result from before the last cache clear is stale — writing it would
+        // repopulate the pruned cache and race the newer batch for the same ids.
+        // Within a generation the pending-set dedupe guarantees one fetch per id.
+        if (cacheGeneration !== this.analyticsCacheGeneration) {
+          return;
+        }
+        this.openRateAnalytics.update((current) => new Map(current).set(id, analytics));
         this.openRatePendingIds.update((ids) => {
           const next = new Set(ids);
           next.delete(id);

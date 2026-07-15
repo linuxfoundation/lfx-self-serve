@@ -82,7 +82,7 @@
                   <td class="text-right">
                     <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
                   </td>
-                  <td class="text-right">
+                  <td class="text-right" aria-live="polite">
                     @if (newsletter.openRatePending) {
                       <span aria-hidden="true" class="inline-block" [attr.data-testid]="'newsletter-open-rate-loading-' + newsletter.id">
                         <p-skeleton width="2rem" height="0.75rem"></p-skeleton>
