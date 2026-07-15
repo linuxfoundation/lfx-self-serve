@@ -949,7 +949,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       trend: normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend),
       subtitle:
         memberAcquisition.totalMembersMonthlyData.length > 0
-          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · ${trendWindow(memberAcquisition.totalMembersMonthlyData.length)}`
+          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · Last 12 months`
           : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%`,
       chartData: protoSparkline(
         memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : flatSparklineData(memberAcquisition.totalMembers),
@@ -991,7 +991,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       trend: trendFromChange(eventGrowth.registrantYoyChange),
       subtitle:
         eventGrowth.monthlyData.length > 0
-          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: last ${eventGrowth.monthlyData.length} quarter${eventGrowth.monthlyData.length === 1 ? '' : 's'}`
+          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
           : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
       chartData: protoSparkline(
         eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
