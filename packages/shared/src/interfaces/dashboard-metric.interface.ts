@@ -275,6 +275,20 @@ export interface ProjectTableRow {
   maintainers: number;
   stars: number;
   lastUpdated: string | null;
+  // Latest health-score category from PROJECT_HEALTH_METRICS_DAILY; null when the
+  // project has no computed score yet (it comes from a separate Snowflake table).
+  healthScoreCategory: FoundationHealthScore | null;
+}
+
+// Health-status filter value for the drawer table; 'unscored' covers null-category rows.
+export type HealthStatusFilterValue = FoundationHealthScore | 'unscored';
+
+export interface HealthStatusFilterOption {
+  value: HealthStatusFilterValue;
+  label: string;
+  // lfxColors-derived hex pair so filter pills share the badge color source of truth.
+  bg: string;
+  text: string;
 }
 
 /**

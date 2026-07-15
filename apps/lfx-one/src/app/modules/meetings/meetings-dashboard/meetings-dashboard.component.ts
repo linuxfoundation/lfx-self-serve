@@ -293,10 +293,10 @@ export class MeetingsDashboardComponent {
 
   /** FullCalendar event click → navigate to the meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean };
+    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean; password?: string };
     if (props.cancelled) return;
     if (props.type === 'meeting' && props.meetingId) {
-      void this.router.navigate(['/meetings', props.meetingId]);
+      void this.router.navigate(['/meetings', props.meetingId], props.password ? { queryParams: { password: props.password } } : {});
     }
   }
 
@@ -1106,7 +1106,7 @@ export class MeetingsDashboardComponent {
           display: 'block',
           // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
           classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
-          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
+          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled, password: meeting.password },
         };
       });
     }
@@ -1122,7 +1122,7 @@ export class MeetingsDashboardComponent {
         textColor: '#ffffff',
         display: 'block',
         classNames: ['meeting-event'],
-        extendedProps: { type: 'meeting', meetingId: meeting.id },
+        extendedProps: { type: 'meeting', meetingId: meeting.id, password: meeting.password },
       },
     ];
   }

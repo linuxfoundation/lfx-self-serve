@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility } from '../enums';
-import type { MeetingTypeConfig } from '../interfaces/meeting.interface';
+import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import type { CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -73,16 +73,6 @@ export const MEETING_FEATURES = [
     recommended: false,
     color: lfxColors.red[500],
   },
-  {
-    key: 'visibility',
-    icon: 'fa-light fa-calendar-check',
-    title: 'Show in Public Calendar',
-    description: 'Make this meeting visible in the public project calendar',
-    recommended: true,
-    color: lfxColors.amber[500],
-    trueValue: 'public',
-    falseValue: 'private',
-  },
 ];
 
 /**
@@ -93,6 +83,56 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
   { label: 'Meeting Hosts Only', value: ArtifactVisibility.MEETING_HOSTS },
   { label: 'Meeting Guests', value: ArtifactVisibility.MEETING_PARTICIPANTS },
   { label: 'Public', value: ArtifactVisibility.PUBLIC },
+];
+
+/**
+ * Meeting visibility card-selector options
+ * @description Controls who can find the meeting in calendars and listings (maps to the `visibility` API field)
+ */
+export const MEETING_VISIBILITY_OPTIONS: CardSelectorOption<MeetingVisibility>[] = [
+  {
+    label: 'Public',
+    value: MeetingVisibility.PUBLIC,
+    info: {
+      icon: 'fa-light fa-globe',
+      description: 'Listed on the public project calendar and discoverable in the app',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: 'Private',
+    value: MeetingVisibility.PRIVATE,
+    info: {
+      icon: 'fa-light fa-eye-slash',
+      description: 'Hidden from the public calendar; only guests with the meeting link can find it',
+      color: lfxColors.gray[500],
+    },
+  },
+];
+
+/**
+ * Meeting join restriction card-selector options
+ * @description Controls who can join the meeting (maps to the `restricted` API field)
+ */
+export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
+  {
+    label: 'Anyone with the link',
+    value: false,
+    info: {
+      icon: 'fa-light fa-link',
+      description: 'Anyone who has the meeting link can join',
+      color: lfxColors.blue[500],
+    },
+  },
+  {
+    label: 'Invited guests only',
+    value: true,
+    info: {
+      icon: 'fa-light fa-lock',
+      description: 'Only invited guests can join',
+      color: lfxColors.amber[500],
+    },
+  },
 ];
 
 /**
