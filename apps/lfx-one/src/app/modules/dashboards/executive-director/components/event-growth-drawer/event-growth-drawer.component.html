@@ -59,6 +59,7 @@
             <span class="text-2xl font-semibold" [class.text-green-600]="data().registrantYoyChange > 0" [class.text-red-600]="data().registrantYoyChange < 0">
               {{ formattedRegistrantYoyChange() }}%
             </span>
+            <span class="text-xs text-gray-400">YTD vs same period last year</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -84,6 +85,7 @@
           <span class="text-sm text-gray-500">Revenue Per Attendee (USD)</span>
           @if (data().revenuePerAttendee > 0) {
             <span class="text-2xl font-semibold text-gray-900">${{ data().revenuePerAttendee | number: '1.2-2' }}</span>
+            <span class="text-xs text-gray-400">YTD</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -96,6 +98,7 @@
             <span class="text-2xl font-semibold" [class.text-green-600]="data().revenueYoyChange > 0" [class.text-red-600]="data().revenueYoyChange < 0">
               {{ formattedRevenueYoyChange() }}%
             </span>
+            <span class="text-xs text-gray-400">YTD vs same period last year</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
           }
@@ -168,7 +171,7 @@
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="event-growth-drawer-monthly-trend">
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">Quarterly Registrations</h3>
-        <p class="text-sm text-gray-600">Total event registrations per quarter</p>
+        <p class="text-sm text-gray-600">Total event registrations per quarter over the last 3 years</p>
       </div>
       @if (data().monthlyData.length > 0) {
         <div class="h-[240px]" data-testid="event-growth-drawer-monthly-chart">
