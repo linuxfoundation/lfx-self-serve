@@ -29,7 +29,7 @@ import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, map, of, take, tap } from 'rxjs';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
@@ -144,6 +144,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
     const existing$ = committeeId
       ? this.committeeService.getCommitteeInvites(committeeId).pipe(
           take(1),
+          // Only pending invites should block re-inviting — accepted invitees are already members,
+          // and declined/revoked ones must be re-invitable. Matches committee-view.component.ts.
+          map((invites) => invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')),
           catchError((error) => {
             console.error('Failed to load existing invites for dedupe:', error);
             return of([] as CommitteeInvite[]);
