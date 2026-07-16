@@ -184,7 +184,10 @@ test.describe('Linux.com email — verified emails fetch failure', () => {
     });
     await page.route('**/api/profile/linux-email', (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
-      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: `${ALIAS}@${DOMAIN}`, forwardTo: null };
+      // A preserved forwardTo (from before the emails fetch started failing) would make
+      // forwardOptions() non-empty even though emails failed — the retry panel must still
+      // win over the select in that case.
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: `${ALIAS}@${DOMAIN}`, forwardTo: PRIMARY_EMAIL };
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
@@ -195,6 +198,7 @@ test.describe('Linux.com email — verified emails fetch failure', () => {
     await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-forward-load-error')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-forward-retry-button')).toBeVisible();
   });
 });

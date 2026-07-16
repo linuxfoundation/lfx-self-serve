@@ -107,21 +107,7 @@
 
               <div class="flex flex-col gap-1">
                 <label class="block text-sm font-medium text-gray-700">Forward to</label>
-                @if (hasForwardOptions()) {
-                  <lfx-select
-                    [form]="claimForm"
-                    control="forwardTo"
-                    [options]="forwardOptions()"
-                    placeholder="Select a verified email"
-                    size="small"
-                    styleClass="w-full"
-                    appendTo="body"
-                    data-testid="linux-email-claim-forward-select"></lfx-select>
-                  <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
-                  @if (claimForm.controls.forwardTo.touched && claimForm.controls.forwardTo.invalid) {
-                    <div class="text-red-600 text-xs" data-testid="linux-email-claim-forward-error">Please choose a forwarding address.</div>
-                  }
-                } @else if (emailsLoadFailed()) {
+                @if (emailsLoadFailed()) {
                   <lfx-message severity="warn" styleClass="!p-3" data-testid="linux-email-claim-forward-load-error">
                     <ng-template #content>
                       <div class="flex flex-col gap-3 items-start">
@@ -141,6 +127,20 @@
                       </div>
                     </ng-template>
                   </lfx-message>
+                } @else if (hasForwardOptions()) {
+                  <lfx-select
+                    [form]="claimForm"
+                    control="forwardTo"
+                    [options]="forwardOptions()"
+                    placeholder="Select a verified email"
+                    size="small"
+                    styleClass="w-full"
+                    appendTo="body"
+                    data-testid="linux-email-claim-forward-select"></lfx-select>
+                  <p class="text-xs text-gray-500">Choose one of your verified email addresses.</p>
+                  @if (claimForm.controls.forwardTo.touched && claimForm.controls.forwardTo.invalid) {
+                    <div class="text-red-600 text-xs" data-testid="linux-email-claim-forward-error">Please choose a forwarding address.</div>
+                  }
                 } @else {
                   <lfx-message
                     severity="warn"
@@ -190,7 +190,7 @@
             <form [formGroup]="editForm" (ngSubmit)="updateForward()" class="flex flex-col gap-3 pt-5" data-testid="linux-email-forward-form">
               <div class="flex flex-col gap-0.5">
                 <span class="text-sm font-medium text-gray-700">Forward to</span>
-                @if (forwardOptions().length) {
+                @if (!emailsLoadFailed() && forwardOptions().length) {
                   <p class="text-xs text-gray-500">
                     @if (hasForwardOptions()) {
                       Choose one of your verified email addresses.
@@ -200,20 +200,7 @@
                   </p>
                 }
               </div>
-              @if (forwardOptions().length) {
-                <lfx-select
-                  [form]="editForm"
-                  control="forwardTo"
-                  [options]="forwardOptions()"
-                  placeholder="Select a verified email"
-                  size="small"
-                  styleClass="w-full"
-                  appendTo="body"
-                  data-testid="linux-email-forward-select"></lfx-select>
-                @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
-                  <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
-                }
-              } @else if (emailsLoadFailed()) {
+              @if (emailsLoadFailed()) {
                 <lfx-message severity="warn" styleClass="!p-3" data-testid="linux-email-forward-load-error">
                   <ng-template #content>
                     <div class="flex flex-col gap-3 items-start">
@@ -233,6 +220,19 @@
                     </div>
                   </ng-template>
                 </lfx-message>
+              } @else if (forwardOptions().length) {
+                <lfx-select
+                  [form]="editForm"
+                  control="forwardTo"
+                  [options]="forwardOptions()"
+                  placeholder="Select a verified email"
+                  size="small"
+                  styleClass="w-full"
+                  appendTo="body"
+                  data-testid="linux-email-forward-select"></lfx-select>
+                @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
+                  <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
+                }
               } @else {
                 <lfx-message
                   severity="warn"
