@@ -20,13 +20,7 @@ function buildLogArgs(args: any[]): [Record<string, unknown>, string] {
   for (const arg of args) {
     if (arg instanceof Error) {
       errValue = arg;
-    } else if (
-      arg !== null &&
-      typeof arg === 'object' &&
-      'status' in arg &&
-      'statusText' in arg &&
-      'url' in arg
-    ) {
+    } else if (arg !== null && typeof arg === 'object' && 'status' in arg && 'statusText' in arg && 'url' in arg) {
       // Angular HttpErrorResponse shape — convert to a structured err entry.
       // Include the error body regardless of type (string or object) so upstream
       // failure text is not lost in production logs.
