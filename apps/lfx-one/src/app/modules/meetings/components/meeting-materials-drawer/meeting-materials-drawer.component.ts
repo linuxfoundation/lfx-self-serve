@@ -25,7 +25,8 @@ export class MeetingMaterialsDrawerComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
-  public readonly meetingId = input.required<string>();
+  public readonly meetingId = input<string>();
+  public readonly pastMeetingId = input<string>();
   public visible = model<boolean>(false);
   public readonly materialsChanged = output<void>();
 
@@ -45,6 +46,7 @@ export class MeetingMaterialsDrawerComponent {
   // === Computed Signals ===
   public readonly fileAttachments = computed(() => this.existingAttachments().filter((a) => a.type === 'file'));
   public readonly linkAttachments = computed(() => this.existingAttachments().filter((a) => a.type === 'link'));
+  private readonly isPastMode = computed(() => !!this.pastMeetingId());
 
   // Lazy load attachments when drawer opens
   private readonly attachments$ = toObservable(this.visible).pipe(
@@ -54,16 +56,25 @@ export class MeetingMaterialsDrawerComponent {
         return of([]);
       }
       this.loading.set(true);
-      return this.meetingService.getMeetingAttachments(this.meetingId()).pipe(
-        tap(() => this.loading.set(false)),
-        catchError(() => {
-          this.loading.set(false);
-          return of([] as MeetingAttachment[]);
-        })
-      );
+      const load$ = this.isPastMode()
+        ? this.meetingService.getPastMeetingAttachments(this.pastMeetingId()!).pipe(
+            tap(() => this.loading.set(false)),
+            catchError(() => {
+              this.loading.set(false);
+              return of([] as MeetingAttachment[]);
+            })
+          )
+        : this.meetingService.getMeetingAttachments(this.meetingId()!).pipe(
+            tap(() => this.loading.set(false)),
+            catchError(() => {
+              this.loading.set(false);
+              return of([] as MeetingAttachment[]);
+            })
+          );
+      return load$;
     }),
     tap((attachments) => {
-      this.existingAttachments.set(attachments);
+      this.existingAttachments.set(attachments as MeetingAttachment[]);
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
       this.newLinkTitle.set('');
@@ -144,28 +155,32 @@ export class MeetingMaterialsDrawerComponent {
     if (!title || !url) return;
 
     this.saving.set(true);
-    this.meetingService
-      .createMeetingAttachment(this.meetingId(), { type: 'link', category: 'Other', name: title, link: url })
-      .pipe(take(1))
-      .subscribe({
-        next: (attachment) => {
-          this.existingAttachments.update((current) => [...current, attachment]);
-          this.newLinkTitle.set('');
-          this.newLinkUrl.set('');
-          this.saving.set(false);
-          this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
-          this.materialsChanged.emit();
-        },
-        error: () => {
-          this.saving.set(false);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add link. Please try again.' });
-        },
-      });
+    const isPast = this.isPastMode();
+    const id = isPast ? this.pastMeetingId()! : this.meetingId()!;
+    const create$ = isPast
+      ? this.meetingService.createPastMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url })
+      : this.meetingService.createMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url });
+
+    create$.pipe(take(1)).subscribe({
+      next: (attachment) => {
+        this.existingAttachments.update((current) => [...current, attachment as MeetingAttachment]);
+        this.newLinkTitle.set('');
+        this.newLinkUrl.set('');
+        this.saving.set(false);
+        this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
+        this.materialsChanged.emit();
+      },
+      error: () => {
+        this.saving.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add link. Please try again.' });
+      },
+    });
   }
 
   public onSave(): void {
     this.saving.set(true);
-    const meetingId = this.meetingId();
+    const isPast = this.isPastMode();
+    const id = isPast ? this.pastMeetingId()! : this.meetingId()!;
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
 
@@ -173,7 +188,11 @@ export class MeetingMaterialsDrawerComponent {
     const delete$ =
       deletions.length > 0
         ? from(deletions).pipe(
-            mergeMap((uid) => this.meetingService.deleteMeetingAttachment(meetingId, uid).pipe(catchError(() => of(null)))),
+            mergeMap((uid) =>
+              (isPast ? this.meetingService.deletePastMeetingAttachment(id, uid) : this.meetingService.deleteMeetingAttachment(id, uid)).pipe(
+                catchError(() => of(null))
+              )
+            ),
             toArray()
           )
         : of([]);
@@ -184,13 +203,18 @@ export class MeetingMaterialsDrawerComponent {
           if (uploads.length === 0) return of([]);
           return from(uploads).pipe(
             mergeMap((attachment) =>
-              this.meetingService
-                .uploadMeetingFile(meetingId, attachment.file, {
-                  name: attachment.fileName,
-                  file_size: attachment.fileSize,
-                  file_type: attachment.mimeType,
-                })
-                .pipe(catchError(() => of(null)))
+              (isPast
+                ? this.meetingService.uploadPastMeetingFile(id, attachment.file, {
+                    name: attachment.fileName,
+                    file_size: attachment.fileSize,
+                    file_type: attachment.mimeType,
+                  })
+                : this.meetingService.uploadMeetingFile(id, attachment.file, {
+                    name: attachment.fileName,
+                    file_size: attachment.fileSize,
+                    file_type: attachment.mimeType,
+                  })
+              ).pipe(catchError(() => of(null)))
             ),
             toArray()
           );

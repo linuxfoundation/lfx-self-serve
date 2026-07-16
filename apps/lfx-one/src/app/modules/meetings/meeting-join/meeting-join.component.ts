@@ -184,6 +184,7 @@ export class MeetingJoinComponent implements OnInit {
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public emailError: Signal<boolean>;
 
   public meetingTitle: Signal<string>;
@@ -409,10 +410,17 @@ export class MeetingJoinComponent implements OnInit {
     // Immediate refresh + delayed retry: upload writes to meeting-service via ITX,
     // reads come from query-service indexed asynchronously via NATS, so a single
     // immediate fetch can return stale data before the NATS event propagates.
-    this.refreshTrigger$.next();
-    timer(1000)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.refreshTrigger$.next());
+    if (this.loadedViaPastMeetingId()) {
+      this.pastMeetingAttachmentsRefresh$.next();
+      timer(1000)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.pastMeetingAttachmentsRefresh$.next());
+    } else {
+      this.refreshTrigger$.next();
+      timer(1000)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.refreshTrigger$.next());
+    }
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -1099,7 +1107,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingAttachments(): Signal<PastMeetingAttachment[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
+      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), this.pastMeetingAttachmentsRefresh$]).pipe(
         switchMap(([hasAccess, meeting]) => {
           const id = meeting ? getPastMeetingResourceId(meeting) : null;
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
