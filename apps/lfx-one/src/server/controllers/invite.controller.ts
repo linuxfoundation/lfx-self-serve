@@ -164,8 +164,8 @@ export class InviteController {
    * {@link PendingCommitteeInviteForOrg} when an invite requires an
    * organization that was not pre-filled — the client must collect the org and re-submit.
    *
-   * Requires the session email to match the email claim in the JWT. Throws on unrecoverable
-   * failures so the caller can surface the error rather than silently redirecting.
+   * Requires the session email to match the email claim in the JWT. Committee auto-accept is
+   * best-effort — failures are caught by the caller, logged, and do not block the redirect.
    */
   private async autoAcceptCommitteeInvite(req: Request, payload: InviteTokenPayload): Promise<PendingCommitteeInviteForOrg | null> {
     const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
@@ -220,15 +220,16 @@ export class InviteController {
             committee_uid: committeeUid,
             committee_invite_uid: committeeInviteUid,
           });
+          const orgId = typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null;
+          const orgWebsite = typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null;
           return {
             committee_uid: committeeUid,
             invite_uid: committeeInviteUid,
             committee_name: committeeName,
-            organization: {
-              id: typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null,
-              name: null,
-              website: typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null,
-            },
+            // Only pass an organization object when there is at least one field to pre-fill.
+            // An all-null object is truthy and would suppress the current-employer fallback
+            // in InvitationAcceptFlowService.
+            organization: orgId || orgWebsite ? { id: orgId, name: null, website: orgWebsite } : null,
           };
         }
         await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, {
