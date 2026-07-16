@@ -14,7 +14,7 @@
     }">
     <!-- Lens Switcher Column (48px) -->
     <div class="w-[48px] flex-shrink-0" data-testid="lens-switcher-column">
-      <lfx-lens-switcher [showLensButtons]="false"></lfx-lens-switcher>
+      <lfx-lens-switcher [showLensButtons]="false" [bannerOffset]="userService.impersonating()"></lfx-lens-switcher>
     </div>
     <!-- Nav Panel (300px) -->
     <div class="w-[300px] flex-shrink-0">
