@@ -27,7 +27,7 @@
 
     <!-- Sidebar body: the active tab's panel. -->
     <div class="flex min-w-0 flex-1 flex-col gap-3 p-3" data-testid="newsletter-composer-panel">
-      <!-- Blocks tab: the palette (search-ready, categorized, draggable). ----- -->
+      <!-- Blocks tab: the palette (searchable, categorized, draggable). ------- -->
       @if (isActiveTab('blocks')) {
         <h3 class="text-sm font-semibold text-gray-700">Blocks</h3>
 
@@ -36,6 +36,19 @@
         } @else if (manifestError()) {
           <p class="text-sm text-red-600" data-testid="newsletter-composer-palette-error">Could not load the block palette. Please refresh.</p>
         } @else {
+          <!-- Search box: filters the palette to matching blocks (label or type). -->
+          <div class="relative">
+            <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400" aria-hidden="true"></i>
+            <input
+              type="search"
+              class="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-7 pr-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-200"
+              placeholder="Search blocks…"
+              aria-label="Search blocks"
+              data-testid="newsletter-composer-palette-search"
+              [value]="blockSearch()"
+              (input)="blockSearch.set($any($event.target).value)" />
+          </div>
+
           <div
             class="flex flex-col gap-4"
             cdkDropList
@@ -44,7 +57,7 @@
             [cdkDropListConnectedTo]="paletteConnectedTo()"
             [cdkDropListSortingDisabled]="true"
             data-testid="newsletter-composer-palette">
-            @for (group of paletteGroups(); track group.category) {
+            @for (group of displayGroups(); track group.category) {
               <div class="flex flex-col gap-2" [attr.data-testid]="'newsletter-composer-palette-group-' + group.category">
                 <span class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ group.category }}</span>
 
@@ -69,6 +82,8 @@
                   </button>
                 }
               </div>
+            } @empty {
+              <p class="text-sm text-gray-500" data-testid="newsletter-composer-palette-no-results">No blocks match "{{ blockSearch() }}".</p>
             }
           </div>
         }
@@ -78,9 +93,9 @@
       @if (isActiveTab('outline')) {
         <h3 class="text-sm font-semibold text-gray-700">Outline</h3>
         @if (outline().length) {
-          <ul class="flex flex-col gap-0.5" data-testid="newsletter-composer-outline">
+          <ul class="flex flex-col gap-0.5" cdkDropList (cdkDropListDropped)="onOutlineDrop($event)" data-testid="newsletter-composer-outline">
             @for (node of outline(); track node.id) {
-              <li>
+              <li cdkDrag [cdkDragData]="node" [cdkDragDisabled]="node.depth !== 0 || !isBrowser()">
                 <button
                   type="button"
                   class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100"
@@ -90,9 +105,11 @@
                   [attr.aria-pressed]="isSelected(node.id)"
                   [attr.data-testid]="'newsletter-composer-outline-' + node.id"
                   (click)="selectBlock(node.id)">
-                  <i
-                    class="{{ node.isContainer ? 'fa-light fa-layer-group' : 'fa-light fa-grip-dots-vertical' }} text-xs text-gray-400"
-                    aria-hidden="true"></i>
+                  @if (isBrowser() && node.depth === 0) {
+                    <i cdkDragHandle class="fa-light fa-grip-vertical cursor-grab text-xs text-gray-400 active:cursor-grabbing" aria-hidden="true" (click)="$event.stopPropagation()"></i>
+                  } @else {
+                    <i class="{{ node.isContainer ? 'fa-light fa-layer-group' : 'fa-light fa-grip-dots-vertical' }} text-xs text-gray-400" aria-hidden="true"></i>
+                  }
                   <span class="flex-1 truncate">{{ node.label }}</span>
                 </button>
               </li>

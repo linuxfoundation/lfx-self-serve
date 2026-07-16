@@ -111,6 +111,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // === Computed Signals ===
   // Manifest blocks grouped by category for the palette rendering.
   protected readonly paletteGroups: Signal<NewsletterBlockPaletteGroup[]> = this.initPaletteGroups();
+  // The palette as rendered: the category groups when there's no search, or a
+  // single flat "Results" group of matching blocks while searching (Gatewaze
+  // block-search parity — match on label or block type).
+  protected readonly displayGroups: Signal<NewsletterBlockPaletteGroup[]> = this.initDisplayGroups();
   protected readonly hasBlocks: Signal<boolean> = computed(() => this.blocks().length > 0);
   // One stable drop-list id per container block, so the palette / canvas / other
   // containers can connect to it for cross-list drag-and-drop.
@@ -141,13 +145,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return entries;
   });
 
-  // The left-rail tab definitions (icons + labels; AI is a disabled placeholder).
-  // Fields is NOT a tab — it's the always-on right sidebar.
+  // The left-rail tab definitions (icons + labels). Fields is NOT a tab — it's
+  // the always-on right sidebar.
   protected readonly tabs: NewsletterComposerTabDef[] = [
     { id: 'blocks', label: 'Blocks', icon: 'fa-light fa-cube' },
     { id: 'outline', label: 'Outline', icon: 'fa-light fa-list-tree' },
-    { id: 'ai', label: 'AI', icon: 'fa-light fa-sparkles', disabled: true },
   ];
+
+  // Palette search query. When non-empty, the palette collapses its categories
+  // into a single flat list of blocks whose label or type matches (Gatewaze
+  // block-search parity).
+  protected readonly blockSearch = signal<string>('');
 
   // The wrapper chrome (header above / footer below the blocks), rendered from
   // the manifest's wrapper template. Recomputes when the manifest loads.
@@ -223,6 +231,34 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected setTab(tab: NewsletterComposerTab): void {
     if (this.tabs.find((t) => t.id === tab)?.disabled) return;
     this.activeTab.set(tab);
+  }
+
+  /**
+   * Reorder top-level blocks from the Outline tab (Gatewaze DraggableOutline
+   * parity — root blocks only). The outline is a flat list of top-level blocks
+   * plus their container children; only depth-0 rows are draggable, so both the
+   * dragged row and the drop position map cleanly onto the top-level `blocks`
+   * array by counting the depth-0 rows above the drop index.
+   */
+  protected onOutlineDrop(event: CdkDragDrop<NewsletterOutlineEntry[]>): void {
+    const entries = this.outline();
+    const dragged = entries[event.previousIndex];
+    if (!dragged || dragged.depth !== 0) return;
+
+    const from = this.blocks().findIndex((block) => block.id === dragged.id);
+    if (from === -1) return;
+
+    // Target index among top-level blocks = number of depth-0 rows strictly
+    // before the drop position (excluding the dragged row itself).
+    let to = 0;
+    for (let i = 0; i < event.currentIndex; i++) {
+      if (i !== event.previousIndex && entries[i]?.depth === 0) to++;
+    }
+
+    const next = [...this.blocks()];
+    moveItemInArray(next, from, to);
+    this.blocks.set(next);
+    this.emit();
   }
 
   /** True when the given rail tab is the active one. */
@@ -583,6 +619,23 @@ export class NewsletterBlockComposerComponent implements OnInit {
         groups.set(category, bucket);
       }
       return Array.from(groups.entries()).map(([category, entries]) => ({ category, entries }));
+    });
+  }
+
+  /**
+   * The palette groups actually rendered: the category groups when the search
+   * box is empty, or a single flat "Results" group of blocks whose label or
+   * block type contains the query (case-insensitive) while searching.
+   */
+  private initDisplayGroups(): Signal<NewsletterBlockPaletteGroup[]> {
+    return computed(() => {
+      const query = this.blockSearch().trim().toLowerCase();
+      const groups = this.paletteGroups();
+      if (!query) return groups;
+      const matches = groups
+        .flatMap((group) => group.entries)
+        .filter((entry) => entry.label.toLowerCase().includes(query) || entry.block_type.toLowerCase().includes(query));
+      return matches.length ? [{ category: 'Results', entries: matches }] : [];
     });
   }
 
