@@ -5,7 +5,7 @@
 //
 // All fixtures use synthetic placeholder data — never real user data.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { EnrollmentMembership, IndividualEnrollment } from '../interfaces';
 import { deriveEnrollmentStatus, enrollmentStatusSeverity } from './enrollment.utils';
@@ -15,8 +15,19 @@ function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-const now = new Date();
-const daysFromNow = (days: number): string => isoDate(new Date(now.getTime() + days * 24 * 60 * 60 * 1000));
+// Freeze the clock so fixture dates (computed here) and the resolver's own `new Date()` calls
+// always agree — otherwise a UTC-midnight crossing between fixture setup and assertion could
+// flip the day-boundary tests below nondeterministically.
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2024-01-15T12:00:00Z'));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
+
+const daysFromNow = (days: number): string => isoDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
 
 /** Minimal membership builder — only the fields the resolver reads. */
 function membership(overrides: Partial<EnrollmentMembership> = {}): EnrollmentMembership {
