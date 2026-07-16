@@ -139,9 +139,7 @@ export class ManageMemberModalComponent {
         // Update existing member - PUT requires full payload
         // Only job_title and organization are editable, preserve other fields from existing member
         const updateData = {
-          username: this.member!.username || null,
-          first_name: this.member!.first_name || null,
-          last_name: this.member!.last_name || null,
+          name: this.member!.name || [this.member!.first_name, this.member!.last_name].filter(Boolean).join(' ') || undefined,
           organization: formValue.organization || null,
           job_title: formValue.job_title || null,
           delivery_mode: this.member!.delivery_mode,
@@ -160,8 +158,7 @@ export class ManageMemberModalComponent {
         // Create new member - explicitly set member_type to DIRECT since this is manual addition
         const createData = {
           email: formValue.email,
-          first_name: formValue.first_name || null,
-          last_name: formValue.last_name || null,
+          name: [formValue.first_name, formValue.last_name].filter(Boolean).join(' ') || null,
           job_title: formValue.job_title || null,
           organization: formValue.organization || null,
           member_type: MailingListMemberType.DIRECT,
