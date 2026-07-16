@@ -15,6 +15,7 @@ export class ValkeyService implements CachePort {
 
   private readonly client: Redis | null = null;
   private shutdownHookRegistered = false;
+  private connectingPromise: Promise<void> | null = null;
 
   private constructor() {
     const url = process.env['VALKEY_URL'];
@@ -64,7 +65,7 @@ export class ValkeyService implements CachePort {
   public async getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null> {
     if (!this.client) return null;
     try {
-      const raw = (await this.withTimeout(this.client.get(key))) as string | null;
+      const raw = (await this.withTimeout(this.runWhenConnected(() => this.client!.get(key)))) as string | null;
       if (raw == null) return null;
       // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
       // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
@@ -85,6 +86,11 @@ export class ValkeyService implements CachePort {
     }
   }
 
+  /**
+   * Writes a JSON-serialized value with a TTL. `timeoutMs` (default `VALKEY_CACHE.OP_TIMEOUT_MS`)
+   * bounds the whole operation, including establishing the connection on a cold client. Fails soft:
+   * a timeout, an oversized value, or any cache fault returns `false` rather than throwing.
+   */
   public async setJson(key: string, value: unknown, ttlSeconds: number, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (!this.client) return false;
     try {
@@ -93,7 +99,10 @@ export class ValkeyService implements CachePort {
         logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', { cache_key: ValkeyService.redactKey(key) });
         return false;
       }
-      await this.withTimeout(this.client.set(key, serialized, 'EX', ttlSeconds), timeoutMs);
+      await this.withTimeout(
+        this.runWhenConnected(() => this.client!.set(key, serialized, 'EX', ttlSeconds)),
+        timeoutMs
+      );
       return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_set', 'Cache write failed — continuing without caching', { err, cache_key: ValkeyService.redactKey(key) });
@@ -105,7 +114,10 @@ export class ValkeyService implements CachePort {
   public async del(key: string | null, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (key === null || !this.client) return false;
     try {
-      await this.withTimeout(this.client.del(key), timeoutMs);
+      await this.withTimeout(
+        this.runWhenConnected(() => this.client!.del(key)),
+        timeoutMs
+      );
       return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_del', 'Cache delete failed — entry will age out via TTL', { err, cache_key: ValkeyService.redactKey(key) });
@@ -162,6 +174,28 @@ export class ValkeyService implements CachePort {
     const versionIdx = parts.findIndex((p) => /^v\d+$/.test(p));
     if (versionIdx === -1 || versionIdx >= parts.length - 1) return key;
     return `${parts.slice(0, versionIdx + 1).join(':')}:***`;
+  }
+
+  /**
+   * Awaits a live connection before issuing `command`. Needed because `lazyConnect` + `enableOfflineQueue:
+   * false` means ioredis's own implicit reconnect on a "wait"-status client fires `connect()` without
+   * awaiting it, so the very next command is rejected synchronously ("Stream isn't writeable...") instead
+   * of waiting out the TLS handshake — the per-op timeout never gets a chance to apply. Explicitly awaiting
+   * `connect()` first (deduped via `connectingPromise` so concurrent callers share one in-flight connect)
+   * closes that gap; the whole thing still races against the caller's `withTimeout`.
+   */
+  private async runWhenConnected<T>(command: () => Promise<T>): Promise<T> {
+    if (this.client && (this.client.status === 'wait' || this.client.status === 'end')) {
+      if (!this.connectingPromise) {
+        this.connectingPromise = this.client.connect().finally(() => {
+          this.connectingPromise = null;
+        });
+      }
+      await this.connectingPromise;
+    } else if (this.connectingPromise) {
+      await this.connectingPromise;
+    }
+    return command();
   }
 
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */

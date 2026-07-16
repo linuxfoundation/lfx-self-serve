@@ -337,6 +337,7 @@ app.use('/api/ossprey', (req, res) => {
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
 
+app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
 
 // Profile auth callback registered in Auth0 Profile Client.
@@ -504,10 +505,11 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
     return;
   }
 
-  // Everything reaching this handler (as opposed to the dedicated `/api/*` mount above) is a
-  // browser navigation — /login, /callback and its siblings, or the SSR catch-all — so an
-  // AuthenticationError here means a person is looking at the response, not a script. Redirect to
-  // the branded error page instead of handing back apiErrorHandler's raw JSON body.
+  // Everything reaching this handler (as opposed to the dedicated `/api/*` and `/public/api/*`
+  // mounts above) is a browser navigation — /login, /callback and its siblings, or the SSR
+  // catch-all — so an AuthenticationError here means a person is looking at the response, not a
+  // script. Redirect to the branded error page instead of handing back apiErrorHandler's raw JSON
+  // body.
   if (error instanceof AuthenticationError) {
     const reason = error.operation?.startsWith('session_store') ? 'session' : 'failed';
     res.redirect(`/auth-error?reason=${reason}`);
