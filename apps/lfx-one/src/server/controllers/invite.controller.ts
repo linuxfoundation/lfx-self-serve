@@ -99,11 +99,6 @@ export class InviteController {
         );
       }
 
-      // Accept committee invite before publishing INVITE_ACCEPTED — if committee accept
-      // throws, NATS must not have fired yet so downstream services aren't left with a
-      // partially-processed state.
-      const pendingCommitteeInvite = await this.autoAcceptCommitteeInvite(req, payload);
-
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
 
@@ -112,6 +107,20 @@ export class InviteController {
         username,
         resource_uid: payload.resource_uid,
       });
+
+      // Best-effort — committee auto-accept failures must not block LFID invite acceptance.
+      // The LFID invite is already accepted at this point (user has registered/logged in);
+      // INVITE_ACCEPTED has been published above. Committee auto-accept is a separate side
+      // effect that runs after.
+      let pendingCommitteeInvite: PendingCommitteeInviteForOrg | undefined;
+      try {
+        pendingCommitteeInvite = (await this.autoAcceptCommitteeInvite(req, payload)) ?? undefined;
+      } catch (error) {
+        logger.warning(req, 'accept_invite', 'Committee invite auto-accept failed — LFID invite already accepted', {
+          invite_uid: payload.invite_uid,
+          err: error,
+        });
+      }
 
       res.json({ return_url: safeReturnUrl, ...(pendingCommitteeInvite && { pending_committee_invite: pendingCommitteeInvite }) });
     } catch (error) {
