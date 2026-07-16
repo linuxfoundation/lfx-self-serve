@@ -702,121 +702,75 @@ export class CommitteeService {
   }
 
   /**
-   * After LFID invite acceptance, auto-accept pending committee invitations addressed to
-   * {@link invitedEmail}. Callers must verify the session email matches the invite token
-   * email before invoking. {@link resourceUid} (from the LFID invite JWT) disambiguates
-   * when multiple pending invites exist — matched against committee_invite UID first, then
-   * committee UID; if neither matches, returns undefined so the caller can retry while the
-   * target invite's FGA invitee tuple propagates.
+   * After LFID invite acceptance, accepts the specific pending committee_invite identified by
+   * {@link params.committeeInviteUid}. Callers must verify the session email matches the invite
+   * token email before invoking.
    *
-   * Returns the first invite that requires an organization but had none pre-filled — the
-   * caller must surface this to the user to collect their organization and complete acceptance.
-   * Other invites (those that can be auto-accepted) are still processed before returning.
+   * Returns {@link PendingCommitteeInviteForOrg} when the invite requires an organization that
+   * was not pre-filled — the caller must surface this to the user to collect the org and complete
+   * acceptance manually. Returns null when the invite was accepted successfully. Returns undefined
+   * when the invite is not yet visible in the email index (FGA invitee tuple still propagating),
+   * signalling the caller to retry.
    *
-   * Other failures are logged and swallowed so LFID acceptance still succeeds.
+   * Accept failures propagate as thrown errors so the caller can surface them to the client.
    */
   public async acceptPendingCommitteeInvitesAfterLfidAccept(
     req: Request,
-    params: { invitedEmail: string; resourceUid?: string; committeeInviteUid?: string }
+    params: { invitedEmail: string; committeeInviteUid: string }
   ): Promise<PendingCommitteeInviteForOrg | null | undefined> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
     if (pendingInvites.length === 0) {
       logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
-      // undefined signals "not found" to the caller so it can retry while FGA propagates.
       return undefined;
     }
 
-    let toAccept: CommitteeInvite[];
-    const trimmedCommitteeInviteUid = params.committeeInviteUid?.trim();
-
-    if (trimmedCommitteeInviteUid) {
-      // JWT carries the exact committee invite UID — accept only that invite; no fuzzy matching needed.
-      const target = pendingInvites.find((invite) => invite.uid === trimmedCommitteeInviteUid);
-      if (!target) {
-        // The invite isn't visible yet — FGA invitee tuple may still be propagating; retry.
-        logger.debug(req, 'accept_invite', 'Target committee invite not yet visible — will retry', {
-          committee_invite_uid: trimmedCommitteeInviteUid,
-        });
-        return undefined;
-      }
-      toAccept = [target];
-    } else {
-      toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
-      if (toAccept.length === 0) {
-        logger.warning(req, 'accept_invite', 'Pending committee invitations found but none selected for auto-accept', {
-          pending_count: pendingInvites.length,
-          resource_uid: params.resourceUid,
-        });
-        return undefined;
-      }
+    const invite = pendingInvites.find((i) => i.uid === params.committeeInviteUid);
+    if (!invite) {
+      // The invite isn't visible yet — FGA invitee tuple may still be propagating; retry.
+      logger.debug(req, 'accept_invite', 'Target committee invite not yet visible — will retry', {
+        committee_invite_uid: params.committeeInviteUid,
+      });
+      return undefined;
     }
 
-    logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
-      accept_count: toAccept.length,
-      committee_invite_uid: trimmedCommitteeInviteUid,
-      resource_uid: params.resourceUid,
+    logger.info(req, 'accept_invite', 'Auto-accepting committee invitation after LFID invite', {
+      committee_uid: invite.committee_uid,
+      committee_invite_uid: params.committeeInviteUid,
     });
 
-    let pendingForOrg: PendingCommitteeInviteForOrg | null = null;
-    let anyAccepted = false;
+    // organization_required is carried on the invite itself (committee-service ≥ v1.1) so no
+    // committee/settings fetch is needed — those fail the access check for non-viewer invitees.
+    // Fail-closed when the field is absent: treat as org-required so we skip rather than
+    // auto-accept without the required organization.
+    const requiresOrganization = invitationRequiresOrganization({ organization_required: invite.organization_required });
 
-    for (const invite of toAccept) {
-      try {
-        // organization_required is carried on the invite itself (committee-service ≥ v1.1) so no
-        // committee/settings fetch is needed — those fail the access check for non-viewer invitees.
-        // Fail-closed when the field is absent: treat as org-required so we skip rather than
-        // auto-accept without the required organization.
-        const requiresOrganization = invitationRequiresOrganization({ organization_required: invite.organization_required });
-
-        if (requiresOrganization) {
-          const orgName = invite.organization?.name?.trim() || null;
-          if (!orgName) {
-            // Return the first such invite so the client can collect the org and complete acceptance.
-            // Keep processing other invites — those that don't need org can still be auto-accepted.
-            if (!pendingForOrg) {
-              logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
-                committee_uid: invite.committee_uid,
-                invite_uid: invite.uid,
-              });
-              pendingForOrg = {
-                committee_uid: invite.committee_uid,
-                invite_uid: invite.uid,
-                committee_name: invite.committee_name?.trim() || invite.committee_uid,
-                organization: invite.organization ?? null,
-              };
-            }
-            continue;
-          }
-          // Build an explicit allowlist payload — trim fields and coerce empty strings to null
-          // rather than forwarding the raw query-service organization reference upstream.
-          const orgPayload = {
-            name: orgName,
-            id: invite.organization?.id?.trim() || null,
-            website: invite.organization?.website?.trim() || null,
-          };
-          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: orgPayload });
-        } else {
-          await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
-        }
-        anyAccepted = true;
-      } catch (error) {
-        logger.warning(req, 'accept_invite', 'Failed to auto-accept committee invitation after LFID invite', {
+    if (requiresOrganization) {
+      const orgName = invite.organization?.name?.trim() || null;
+      if (!orgName) {
+        logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
           committee_uid: invite.committee_uid,
           invite_uid: invite.uid,
-          err: error,
         });
+        return {
+          committee_uid: invite.committee_uid,
+          invite_uid: invite.uid,
+          committee_name: invite.committee_name?.trim() || invite.committee_uid,
+          organization: invite.organization ?? null,
+        };
       }
+      // Build an explicit allowlist payload — trim fields and coerce empty strings to null
+      // rather than forwarding the raw query-service organization reference upstream.
+      const orgPayload = {
+        name: orgName,
+        id: invite.organization?.id?.trim() || null,
+        website: invite.organization?.website?.trim() || null,
+      };
+      await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: orgPayload });
+    } else {
+      await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
     }
 
-    // Return the org-required signal whenever it is set — the org-required case is surfaced to
-    // the user regardless of whether other invites succeeded or failed.
-    if (pendingForOrg) {
-      return pendingForOrg;
-    }
-    // If every acceptCommitteeInvite call threw, return undefined so the controller retries —
-    // the acceptance failure may be transient, and the committee-service accept endpoint is
-    // idempotent so retrying is safe.
-    return anyAccepted ? null : undefined;
+    return null;
   }
 
   /**
@@ -1740,28 +1694,4 @@ export class CommitteeService {
     return invites.filter((invite) => invite.status === 'pending');
   }
 
-  /**
-   * Narrows pending committee invites using the LFID invite JWT {@link resourceUid} when present.
-   */
-  private selectCommitteeInvitesForLfidAccept(pending: CommitteeInvite[], resourceUid?: string): CommitteeInvite[] {
-    const trimmedResourceUid = resourceUid?.trim();
-    if (!trimmedResourceUid) {
-      return pending;
-    }
-
-    const byInviteUid = pending.filter((invite) => invite.uid === trimmedResourceUid);
-    if (byInviteUid.length > 0) {
-      return byInviteUid;
-    }
-
-    const byCommitteeUid = pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
-    if (byCommitteeUid.length > 0) {
-      return byCommitteeUid;
-    }
-
-    // When resource_uid is specified, require a positive match — the single-invite fallback
-    // could accept an unrelated invite while the target's FGA invitee tuple is still
-    // propagating, which would stop the retry loop before the correct invite is processed.
-    return [];
-  }
 }

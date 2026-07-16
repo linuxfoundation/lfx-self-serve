@@ -103,16 +103,7 @@ export class InviteController {
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
 
-      let pendingCommitteeInvite: PendingCommitteeInviteForOrg | undefined;
-      try {
-        pendingCommitteeInvite = (await this.autoAcceptPendingCommitteeInvites(req, payload)) ?? undefined;
-      } catch (error) {
-        // Best-effort — committee auto-accept failures must not block LFID invite acceptance.
-        logger.warning(req, 'accept_invite', 'Committee invite auto-accept failed; LFID accept continues', {
-          invite_uid: payload.invite_uid,
-          err: error,
-        });
-      }
+      const pendingCommitteeInvite = (await this.autoAcceptPendingCommitteeInvites(req, payload)) ?? undefined;
 
       logger.success(req, 'accept_invite', startTime, {
         invite_uid: payload.invite_uid,
@@ -149,15 +140,24 @@ export class InviteController {
   }
 
   /**
-   * When an LFID invite is accepted for a committee invitee, accept any matching pending
-   * committee_invite so a committee_member is created with the session username. Requires
-   * the authenticated user's email to match the email embedded in the LFID invite JWT.
+   * When the LFID invite JWT carries a {@link InviteTokenPayload.committee_invite_uid} claim,
+   * accepts that specific committee_invite so a committee_member is created with the session
+   * username. No-ops if the claim is absent — the LFID invite may be unrelated to any committee.
    *
-   * Returns a {@link PendingCommitteeInviteForOrg} when an invite requires an organization
+   * Returns a {@link PendingCommitteeInviteForOrg} when the invite requires an organization
    * that was not pre-filled — the caller should surface this to the client for manual org
-   * collection. Returns null when all invites were handled or the flow was skipped.
+   * collection. Returns null when the invite was accepted or the flow was skipped.
+   *
+   * Throws when the invite cannot be found or accepted after all FGA-propagation retries so
+   * the caller can surface the failure rather than silently redirecting to a stale committee page.
    */
   private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<PendingCommitteeInviteForOrg | null> {
+    // committee_invite_uid is the source of truth. Without it we cannot know which committee
+    // invite to accept — the LFID invite may be unrelated to any committee, so we skip.
+    if (!payload.committee_invite_uid) {
+      return null;
+    }
+
     const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
     const sessionEmail = getEffectiveEmail(req)?.trim() ?? null;
 
@@ -182,12 +182,6 @@ export class InviteController {
       return null;
     }
 
-    // When resource_type is present: 'group' means committee invite (retry while FGA propagates),
-    // any other value means not a committee invite (skip retry).
-    // When resource_type is absent we can't rule out a committee invite, so still attempt
-    // auto-accept rather than silently skip it.
-    const isCommitteeInvite = payload.resource_type ? payload.resource_type === 'group' : !!payload.resource_uid?.trim();
-
     for (let attempt = 0; attempt <= FGA_PROPAGATION_MAX_RETRIES; attempt++) {
       if (attempt > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, FGA_PROPAGATION_DELAY_MS));
@@ -195,17 +189,18 @@ export class InviteController {
 
       const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
         invitedEmail,
-        resourceUid: payload.resource_uid,
         committeeInviteUid: payload.committee_invite_uid,
       });
 
-      // undefined = no pending invites found yet; the FGA tuple may still be in-flight — retry.
       // null or PendingCommitteeInviteForOrg = invite was found and processed; return immediately.
-      if (result !== undefined || !isCommitteeInvite) {
+      // undefined = invite not visible yet — FGA invitee tuple may still be propagating; retry.
+      if (result !== undefined) {
         return result ?? null;
       }
     }
 
-    return null;
+    throw new Error(
+      `Committee invite ${payload.committee_invite_uid} could not be accepted: not found after ${FGA_PROPAGATION_MAX_RETRIES} retries — FGA propagation may have stalled`
+    );
   }
 }
