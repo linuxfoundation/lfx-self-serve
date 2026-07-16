@@ -152,9 +152,12 @@ export class InviteController {
    * the caller can surface the failure rather than silently redirecting to a stale committee page.
    */
   private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<PendingCommitteeInviteForOrg | null> {
-    // committee_invite_uid is the source of truth. Without it we cannot know which committee
-    // invite to accept — the LFID invite may be unrelated to any committee, so we skip.
-    if (!payload.committee_invite_uid) {
+    // JWT.verify only validates the signature — committee_invite_uid can be null, a non-string,
+    // or whitespace if the token was crafted with malformed custom claims. Normalize to a trimmed
+    // string and treat only a non-empty result as an actionable claim.
+    const committeeInviteUid = typeof payload.committee_invite_uid === 'string' ? payload.committee_invite_uid.trim() : '';
+    if (!committeeInviteUid) {
+      // No committee_invite_uid means the LFID invite is unrelated to any committee.
       return null;
     }
 
@@ -189,18 +192,30 @@ export class InviteController {
 
       const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
         invitedEmail,
-        committeeInviteUid: payload.committee_invite_uid,
+        committeeInviteUid,
       });
 
       // null or PendingCommitteeInviteForOrg = invite was found and processed; return immediately.
-      // undefined = invite not visible yet — FGA invitee tuple may still be propagating; retry.
+      // undefined = invite not visible yet in the email index — FGA invitee tuple may still be
+      // propagating; retry.
       if (result !== undefined) {
         return result ?? null;
       }
     }
 
+    // All retries returned undefined — the invite was never found in the pending email index.
+    // This can happen when the invite was already accepted (response lost, page refreshed) and
+    // is no longer pending, OR when FGA propagation has not completed. Call accept directly:
+    // the committee-service AcceptInvite endpoint is idempotent (already-accepted → success),
+    // so this covers both cases. resource_uid carries the committee UID for committee LFID invites.
+    const committeeUid = typeof payload.resource_uid === 'string' ? payload.resource_uid.trim() : '';
+    if (committeeUid) {
+      await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
+      return null;
+    }
+
     throw new Error(
-      `Committee invite ${payload.committee_invite_uid} could not be accepted: not found after ${FGA_PROPAGATION_MAX_RETRIES} retries — FGA propagation may have stalled`
+      `Committee invite ${committeeInviteUid} could not be accepted: not found after ${FGA_PROPAGATION_MAX_RETRIES} retries and resource_uid (committee UID) is absent from the JWT`
     );
   }
 }
