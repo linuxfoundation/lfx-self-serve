@@ -54,8 +54,9 @@ function buildLogArgs(args: any[]): [Record<string, unknown>, string] {
 }
 
 /**
- * Redirects `console.error`, `console.warn`, and `console.log` through Pino's
- * `serverLogger` so all output in production is single-line structured JSON.
+ * Redirects `console.error`, `console.warn`, `console.log`, and `console.info`
+ * through Pino's `serverLogger` so all output in production is single-line
+ * structured JSON.
  *
  * Only activates in production (`NODE_ENV === 'production'`). In development,
  * pino-pretty already formats structured logs in a human-readable way and the
@@ -77,6 +78,14 @@ export function initializeServerConsoleOverride(): void {
   };
 
   console.log = (...args: any[]) => {
+    const [data, msg] = buildLogArgs(args);
+    serverLogger.info(data, msg);
+  };
+
+  // console.info is used in several Angular components (app.component.ts,
+  // header.component.ts, persona.service.ts, intercom.service.ts, etc.) and
+  // would otherwise bypass Pino during SSR.
+  console.info = (...args: any[]) => {
     const [data, msg] = buildLogArgs(args);
     serverLogger.info(data, msg);
   };
