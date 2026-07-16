@@ -508,12 +508,12 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
   // Everything reaching this handler (as opposed to the dedicated `/api/*` and `/public/api/*`
   // mounts above) is either a browser navigation — /login, /callback and its siblings, or the SSR
   // catch-all — or a non-GET SSR request that auth.middleware deliberately routed to a 401 instead
-  // of a redirect (so XHR/Fetch clients aren't handed an HTML redirect they can't follow). Only
-  // redirect the GET case to the branded error page; anything else falls through to
+  // of a redirect (so XHR/Fetch clients aren't handed an HTML redirect they can't follow). Redirect
+  // to the branded error page only for the session-store failures this page exists for, and only
+  // on GET (so XHR/Fetch clients still get JSON); everything else falls through to
   // apiErrorHandler's structured JSON response.
-  if (error instanceof AuthenticationError && req.method === 'GET') {
-    const reason = error.operation?.startsWith('session_store') ? 'session' : 'failed';
-    res.redirect(`/auth-error?reason=${reason}`);
+  if (error instanceof AuthenticationError && req.method === 'GET' && error.operation?.startsWith('session_store')) {
+    res.redirect(`/auth-error?reason=session&returnTo=${encodeURIComponent(req.originalUrl)}`);
     return;
   }
 

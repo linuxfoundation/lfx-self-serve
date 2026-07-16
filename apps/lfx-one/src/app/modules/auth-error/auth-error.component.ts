@@ -19,11 +19,13 @@ export class AuthErrorComponent {
 
   protected readonly title: string;
   protected readonly description: string;
+  protected readonly loginHref: string;
 
   public constructor() {
     this.reason = this.route.snapshot.queryParamMap.get('reason') ?? 'failed';
     this.title = this.initTitle();
     this.description = this.initDescription();
+    this.loginHref = this.initLoginHref();
   }
 
   private initTitle(): string {
@@ -42,5 +44,10 @@ export class AuthErrorComponent {
       default:
         return 'Your sign-in could not be completed. Please sign in again to continue.';
     }
+  }
+
+  private initLoginHref(): string {
+    const returnTo = this.route.snapshot.queryParamMap.get('returnTo');
+    return returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login';
   }
 }
