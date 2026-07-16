@@ -2886,22 +2886,54 @@ export class ProjectService {
             impressions: data.impressions,
             clicks: data.clicks,
             performance: getPaidPerformance(projectRoas),
-            campaigns: [...data.campaigns]
-              .sort((a, b) => (b.SPEND ?? 0) - (a.SPEND ?? 0))
-              .slice(0, CAMPAIGN_TOP_N)
-              .map((c) => ({
-                campaignName: c.CAMPAIGN_NAME,
-                funnelStage: c.FUNNEL_STAGE ?? 'Unknown',
-                spend: Math.round((c.SPEND ?? 0) * 100) / 100,
-                revenue: Math.round((c.REVENUE ?? 0) * 100) / 100,
-                roas: c.ROAS ?? 0,
-                conversions: c.CONVERSIONS ?? 0,
-                convRate: c.CONV_RATE ?? 0,
-                cpc: c.CPC ?? 0,
-                sessions: c.SESSIONS ?? 0,
-                impressions: c.IMPRESSIONS ?? 0,
-                clicks: c.CLICKS ?? 0,
-              })),
+            // The query's grain is campaign × funnel stage; the UI shows one
+            // row per campaign, so stages are dissolved here — sums first,
+            // then ratios recomputed from the sums (averaging per-stage
+            // ratios would be statistically incorrect), then the top-N cap
+            // so a multi-stage campaign consumes one slot, not three.
+            campaigns: (() => {
+              const byCampaign = new Map<
+                string,
+                { spend: number; revenue: number; conversions: number; sessions: number; impressions: number; clicks: number; stages: Set<string> }
+              >();
+              for (const c of data.campaigns) {
+                const agg = byCampaign.get(c.CAMPAIGN_NAME) ?? {
+                  spend: 0,
+                  revenue: 0,
+                  conversions: 0,
+                  sessions: 0,
+                  impressions: 0,
+                  clicks: 0,
+                  stages: new Set<string>(),
+                };
+                agg.spend += c.SPEND ?? 0;
+                agg.revenue += c.REVENUE ?? 0;
+                agg.conversions += c.CONVERSIONS ?? 0;
+                agg.sessions += c.SESSIONS ?? 0;
+                agg.impressions += c.IMPRESSIONS ?? 0;
+                agg.clicks += c.CLICKS ?? 0;
+                if (c.FUNNEL_STAGE) {
+                  agg.stages.add(c.FUNNEL_STAGE);
+                }
+                byCampaign.set(c.CAMPAIGN_NAME, agg);
+              }
+              return [...byCampaign.entries()]
+                .sort((a, b) => b[1].spend - a[1].spend)
+                .slice(0, CAMPAIGN_TOP_N)
+                .map(([campaignName, c]) => ({
+                  campaignName,
+                  funnelStage: formatFunnel(c.stages),
+                  spend: Math.round(c.spend * 100) / 100,
+                  revenue: Math.round(c.revenue * 100) / 100,
+                  roas: c.spend > 0 ? Math.round((c.revenue / c.spend) * 100) / 100 : 0,
+                  conversions: c.conversions,
+                  convRate: c.clicks > 0 ? Math.round((c.conversions / c.clicks) * 10000) / 100 : 0,
+                  cpc: c.clicks > 0 ? Math.round((c.spend / c.clicks) * 100) / 100 : 0,
+                  sessions: c.sessions,
+                  impressions: c.impressions,
+                  clicks: c.clicks,
+                }));
+            })(),
           };
         })
         .sort((a, b) => b.spend - a.spend);
