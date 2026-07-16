@@ -6,7 +6,10 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
+import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { foundationProductGuard } from './shared/guards/foundation-product.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
+import { marketingViewGuard } from './shared/guards/marketing-view.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
@@ -42,25 +45,25 @@ export const routes: Routes = [
         canActivate: [executiveDirectorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
-      // Foundation Lens — Marketing Impact page (ED-only)
+      // Foundation Lens — Marketing Impact page (FGA marketing_auditor: ED / Marketing Ops / Marketing Auditor)
       {
         path: 'foundation/marketing-impact',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [marketingViewGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
-      // Foundation Lens — Campaigns page (ED-only)
+      // Foundation Lens — Campaigns page (FGA campaign_manager: ED / Marketing Ops)
       {
         path: 'foundation/campaigns',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
       },
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
@@ -186,35 +189,38 @@ export const routes: Routes = [
           },
         ],
       },
-      // Foundation Lens — feature routes (lens-tagged so deep links restore the foundation lens)
+      // Foundation Lens — feature routes (lens-tagged so deep links restore the foundation lens).
+      // Non-marketing product routes: foundationProductGuard denies marketing-only users only
+      // (isMarketingOnlyFoundationUser) so they cannot inherit Meetings/Events/etc. (FR-017).
+      // Everyone else retains pre-existing projectQueryParamGuard-only access.
       {
         path: 'foundation/meetings',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'foundation/events',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
         path: 'foundation/mailing-lists',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'foundation/groups',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'foundation/documents',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
@@ -222,31 +228,31 @@ export const routes: Routes = [
         path: `foundation/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
         data: { lens: 'foundation' },
         canMatch: [mktgOsAgentsEnabledGuard],
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mktg-os-agents/mktg-os-agents.routes').then((m) => m.MKTG_OS_AGENTS_ROUTES),
       },
       {
         path: 'foundation/votes',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'foundation/surveys',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
         path: 'foundation/newsletters',
         data: { lens: 'foundation' },
-        canActivate: [newsletterAccessGuard, projectQueryParamGuard],
+        canActivate: [foundationProductGuard, newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
         path: 'foundation/settings',
         data: { lens: 'foundation' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [foundationProductGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       // Project Lens — feature routes (lens-tagged so deep links restore the project lens)
