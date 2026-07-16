@@ -62,6 +62,34 @@ export class ProjectService {
     return this.projectCache.get(cacheKey)!;
   }
 
+  /**
+   * Fail-closed `marketing_auditor` probe for a foundation slug (shared by Marketing Impact + guards).
+   * Uses the `:mktg` project cache — no extra HTTP when another marketing surface already probed.
+   */
+  public hasMarketingAuditor(slug: string | undefined): Observable<boolean> {
+    if (!slug) {
+      return of(false);
+    }
+    return this.getProject(slug, false, { marketing: true }).pipe(
+      map((project) => project?.marketingAuditor === true),
+      catchError(() => of(false))
+    );
+  }
+
+  /**
+   * Fail-closed `campaign_manager` probe for a foundation slug (shared by Campaigns + Marketing Overview).
+   * Uses the `:mktg` project cache — no extra HTTP when another marketing surface already probed.
+   */
+  public hasCampaignManager(slug: string | undefined): Observable<boolean> {
+    if (!slug) {
+      return of(false);
+    }
+    return this.getProject(slug, false, { marketing: true }).pipe(
+      map((project) => project?.campaignManager === true),
+      catchError(() => of(false))
+    );
+  }
+
   public getProjectSfid(uid: string): Observable<string | null> {
     return this.http.get<{ sfid: string | null }>(`/api/projects/${encodeURIComponent(uid)}/sfid`).pipe(
       map((res) => res.sfid ?? null),

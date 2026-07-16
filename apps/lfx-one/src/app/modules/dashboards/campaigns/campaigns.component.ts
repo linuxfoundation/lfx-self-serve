@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, combineLatest, EMPTY, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { combineLatest, EMPTY, map, Observable, startWith, switchMap } from 'rxjs';
 
 import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
@@ -63,7 +63,7 @@ export class CampaignsComponent {
           if (!slug) {
             return EMPTY;
           }
-          return this.probeCampaignManager(slug).pipe(map((allowed) => ({ allowed, slug })));
+          return this.projectService.hasCampaignManager(slug).pipe(map((allowed) => ({ allowed, slug })));
         }),
         takeUntilDestroyed()
       )
@@ -119,18 +119,8 @@ export class CampaignsComponent {
     return combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap]).pipe(
       switchMap(([foundation, params]) => {
         const slug = foundation?.slug ?? params.get('project') ?? undefined;
-        return this.probeCampaignManager(slug).pipe(startWith(false));
+        return this.projectService.hasCampaignManager(slug).pipe(startWith(false));
       })
-    );
-  }
-
-  private probeCampaignManager(slug: string | undefined): Observable<boolean> {
-    if (!slug) {
-      return of(false);
-    }
-    return this.projectService.getProject(slug, false, { marketing: true }).pipe(
-      map((project) => project?.campaignManager === true),
-      catchError(() => of(false))
     );
   }
 }

@@ -147,8 +147,8 @@ export class PersonaService {
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
-      this.isRootWriter.set(false);
-      this.isRootMarketingAuditor.set(false);
+      // Keep TransferState/cookie-seeded ROOT flags — wiping them to false would let a marketing-only
+      // user through foundationProductGuard after a transient personas failure (FR-017).
       this.personaLoaded.set(true);
       return;
     }

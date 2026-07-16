@@ -299,7 +299,7 @@ export class MarketingOverviewComponent {
         switchMap((slug) => {
           if (!slug) return of(null);
           // Mentions are marketing analytics — only fetch after campaign_manager for this slug.
-          return this.probeCampaignManager(slug).pipe(
+          return this.projectService.hasCampaignManager(slug).pipe(
             switchMap((allowed) => {
               if (!allowed) return of(null);
               return this.analyticsService.getBrandHealth(slug, true, 'last-6').pipe(
@@ -324,7 +324,7 @@ export class MarketingOverviewComponent {
       toObservable(this.projectContextService.selectedFoundation).pipe(
         switchMap((foundation) => {
           const slug = foundation?.slug || 'tlf';
-          return this.probeCampaignManager(slug).pipe(
+          return this.projectService.hasCampaignManager(slug).pipe(
             startWith(false),
             switchMap((allowed) => {
               if (!allowed) {
@@ -337,13 +337,6 @@ export class MarketingOverviewComponent {
       ),
       { initialValue: EMPTY_ED_EVOLUTION_DATA }
     ) as Signal<EdEvolutionData>;
-  }
-
-  private probeCampaignManager(slug: string): Observable<boolean> {
-    return this.projectService.getProject(slug, false, { marketing: true }).pipe(
-      map((project) => project?.campaignManager === true),
-      catchError(() => of(false))
-    );
   }
 
   private fetchEdEvolutionData(slug: string): Observable<EdEvolutionData> {

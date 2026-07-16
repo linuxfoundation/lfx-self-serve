@@ -79,10 +79,13 @@ interface MarketingGrants {
 }
 
 function buildProjectStub(slug: string, writer: boolean, marketing?: MarketingGrants) {
+  // Distinct UIDs per slug so granted→denied context switches are not treated as the same foundation.
+  const uid = slug === MOCK_DENIED_SLUG ? MOCK_DENIED_UID : MOCK_FOUNDATION_UID;
+  const name = slug === MOCK_DENIED_SLUG ? 'Denied Foundation' : 'Test Foundation';
   return {
-    uid: MOCK_FOUNDATION_UID,
+    uid,
     slug,
-    name: 'Test Foundation',
+    name,
     description: 'Test foundation for marketing access regression tests',
     public: true,
     parent_uid: '',
@@ -122,6 +125,8 @@ async function stubPersona(page: Page, personas: string[], isRootMarketingAudito
       }),
     })
   );
+  // Keep cookie in sync with the stub so SSR / cold navigations see the same ROOT flags as production.
+  await setPersonaCookie(page, personas, { isRootMarketingAuditor });
 }
 
 async function stubNavLensItems(page: Page, foundationItems: LensItem[] = [MOCK_FOUNDATION_ITEM]): Promise<void> {
@@ -160,10 +165,12 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean, marketi
   );
 }
 
-async function setPersonaCookie(page: Page, personas: string[]): Promise<void> {
+async function setPersonaCookie(page: Page, personas: string[], opts?: { isRootWriter?: boolean; isRootMarketingAuditor?: boolean }): Promise<void> {
   const state: PersistedPersonaState = {
     primary: personas[0] as PersonaType,
     all: personas as PersonaType[],
+    isRootWriter: opts?.isRootWriter === true,
+    isRootMarketingAuditor: opts?.isRootMarketingAuditor === true,
   };
   await page.context().addCookies([
     {
@@ -236,7 +243,7 @@ test.describe('US1: Marketing Ops (non-ED) — marketing_auditor + campaign_mana
       timeout: ELEMENT_TIMEOUT,
     });
 
-    await setPersonaCookie(page, ['contributor']);
+    // stubPersona already seeded isRootMarketingAuditor on the cookie; keep it for the cold navigate.
     await gotoRoute(page, `/foundation/meetings?project=${MOCK_FOUNDATION_SLUG}`);
     await expect(page, 'marketing-only ⇒ Meetings route blocked').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
   });
@@ -259,7 +266,6 @@ test.describe('US1: Marketing Auditor — marketing_auditor only (no campaign_ma
   });
 
   test('can open /foundation/marketing-impact and the page renders (granted deep link)', async ({ page }) => {
-    await setPersonaCookie(page, ['contributor']);
     await gotoRoute(page, `/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`);
 
     // marketingViewGuard passed (no redirect) and the page rendered — verifies the guarded route
@@ -284,7 +290,6 @@ test.describe('US1: non-granted project — no marketing_auditor', () => {
     await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: false, campaignManager: false });
-    await setPersonaCookie(page, ['contributor']);
     await gotoRoute(page, `/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page, 'no marketing_auditor ⇒ blocked from Marketing Impact').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
@@ -307,7 +312,6 @@ test.describe('US2: Campaigns access — campaign_manager gates the surface', ()
     await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: true });
-    await setPersonaCookie(page, ['contributor']);
     await gotoRoute(page, `/foundation/campaigns?project=${MOCK_FOUNDATION_SLUG}`);
 
     // campaignAccessGuard passed (no redirect to overview) and the page + a management control rendered —
@@ -321,7 +325,6 @@ test.describe('US2: Campaigns access — campaign_manager gates the surface', ()
     await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: false });
-    await setPersonaCookie(page, ['contributor']);
     await gotoRoute(page, `/foundation/campaigns?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page, 'auditor lacks campaign_manager ⇒ blocked from Campaigns').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
@@ -335,7 +338,6 @@ test.describe('US3: dashboard Marketing Overview — campaign_manager gated', ()
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true, { marketingAuditor: true, campaignManager: true });
-    await setPersonaCookie(page, ['executive-director']);
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page.getByTestId(MARKETING_OVERVIEW_SECTION), 'campaign_manager ⇒ Marketing Overview visible').toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
@@ -347,7 +349,6 @@ test.describe('US3: dashboard Marketing Overview — campaign_manager gated', ()
     await stubPersona(page, ['contributor'], /* isRootMarketingAuditor */ true);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: true });
-    await setPersonaCookie(page, ['contributor']);
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page.getByTestId(MARKETING_OVERVIEW_SECTION), 'non-ED campaign_manager ⇒ Marketing Overview on board-member dashboard').toBeVisible({
@@ -359,7 +360,6 @@ test.describe('US3: dashboard Marketing Overview — campaign_manager gated', ()
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page);
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: false, campaignManager: false });
-    await setPersonaCookie(page, ['board-member']);
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page.getByTestId(MARKETING_OVERVIEW_SECTION), 'no campaign_manager ⇒ Marketing Overview absent').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
@@ -375,7 +375,6 @@ test.describe('Scenario 6: granted→denied context switch re-checks access (fai
     // Granted foundation ⇒ full marketing access; denied foundation ⇒ none.
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false, { marketingAuditor: true, campaignManager: true });
     await stubProjectApi(page, MOCK_DENIED_SLUG, false, { marketingAuditor: false, campaignManager: false });
-    await setPersonaCookie(page, ['contributor']);
   });
 
   test('Marketing Impact redirects to overview after switching to a project without marketing_auditor', async ({ page }) => {

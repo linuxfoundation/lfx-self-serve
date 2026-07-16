@@ -64,9 +64,10 @@ export const foundationProductGuard: CanActivateFn = async (route: ActivatedRout
       )
     );
     if (!loaded) {
-      // Unknown state: do not narrow pre-existing access (FR-017). Seeded marketing-only
-      // already hit the fast-path deny above.
-      return true;
+      // Prefer seeded entitlements (decide): marketing-only still denied; everyone else keeps
+      // pre-existing access (FR-017). Do not blanket-allow — that would widen product routes if
+      // isRootMarketingAuditor was seeded after the fast-path checks above ran as false.
+      return decide();
     }
   }
 

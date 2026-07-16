@@ -12,7 +12,7 @@ import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TA
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, combineLatest, EMPTY, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { combineLatest, EMPTY, map, Observable, startWith, switchMap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -102,7 +102,7 @@ export class MarketingImpactComponent {
           if (!slug) {
             return EMPTY;
           }
-          return this.probeMarketingAuditor(slug).pipe(map((allowed) => ({ allowed, slug })));
+          return this.projectService.hasMarketingAuditor(slug).pipe(map((allowed) => ({ allowed, slug })));
         }),
         takeUntilDestroyed()
       )
@@ -148,18 +148,8 @@ export class MarketingImpactComponent {
     return combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap]).pipe(
       switchMap(([foundation, params]) => {
         const slug = foundation?.slug ?? params.get('project') ?? undefined;
-        return this.probeMarketingAuditor(slug).pipe(startWith(false));
+        return this.projectService.hasMarketingAuditor(slug).pipe(startWith(false));
       })
-    );
-  }
-
-  private probeMarketingAuditor(slug: string | undefined): Observable<boolean> {
-    if (!slug) {
-      return of(false);
-    }
-    return this.projectService.getProject(slug, false, { marketing: true }).pipe(
-      map((project) => project?.marketingAuditor === true),
-      catchError(() => of(false))
     );
   }
 
