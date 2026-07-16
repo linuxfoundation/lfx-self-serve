@@ -42,6 +42,8 @@ function resolveFromCookie(req: Request, cookieHeader: string): SsrPersonaResult
           persona: parsed.primary,
           personas: parsed.all,
           organizations: parsed.organizations ?? [],
+          isRootWriter: parsed.isRootWriter === true,
+          isRootMarketingAuditor: parsed.isRootMarketingAuditor === true,
         };
       }
     }
@@ -61,12 +63,17 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
     const organizations = personaResult.organizations ?? [];
 
     // Don't cache on error so transient NATS failures don't pin user to contributor.
+    const isRootWriter = personaResult.isRootWriter === true;
+    const isRootMarketingAuditor = personaResult.isRootMarketingAuditor === true;
+
     if (!personaResult.error) {
       const cookieState: PersistedPersonaState = {
         primary: persona,
         all: personas,
         organizations,
         userSelected: false,
+        isRootWriter,
+        isRootMarketingAuditor,
       };
       res.cookie(PERSONA_COOKIE_KEY, JSON.stringify(cookieState), {
         maxAge: 30 * 24 * 60 * 60 * 1000,
@@ -80,6 +87,8 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
     logger.debug(req, 'ssr_persona', 'Persona resolved via NATS for first-time SSR', {
       persona,
       personas,
+      isRootWriter,
+      isRootMarketingAuditor,
     });
 
     return {
@@ -88,6 +97,8 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
       organizations,
       projects: personaResult.projects,
       personaProjects: personaResult.personaProjects,
+      isRootWriter,
+      isRootMarketingAuditor,
     };
   } catch (error) {
     logger.warning(req, 'ssr_persona', 'Persona detection failed during SSR, defaulting to contributor', {

@@ -10,6 +10,10 @@ export interface PersistedPersonaState {
   all: PersonaType[];
   organizations?: Account[];
   userSelected?: boolean;
+  /** Writer on tenant ROOT — cookie-seeded so SSR foundation-product guard can decide without awaiting personas API. */
+  isRootWriter?: boolean;
+  /** Marketing auditor on tenant ROOT — cookie-seeded for SSR lens / marketing-only product gating. */
+  isRootMarketingAuditor?: boolean;
 }
 
 export interface DevPersonaPreset {
