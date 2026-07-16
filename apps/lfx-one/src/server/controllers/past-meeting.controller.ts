@@ -499,6 +499,7 @@ export class PastMeetingController {
 
   /**
    * POST /past-meetings/:uid/attachments
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
    */
   public async createPastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -542,6 +543,7 @@ export class PastMeetingController {
 
   /**
    * POST /past-meetings/:uid/attachments/presign
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
    */
   public async presignPastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -595,6 +597,7 @@ export class PastMeetingController {
 
   /**
    * POST /past-meetings/:uid/attachments/upload
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
    */
   public async uploadPastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -670,6 +673,7 @@ export class PastMeetingController {
 
   /**
    * DELETE /past-meetings/:uid/attachments/:attachmentId
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
    */
   public async deletePastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, attachmentId } = req.params;

@@ -25,7 +25,9 @@ export class MeetingMaterialsDrawerComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /** ID of a scheduled meeting. Leave undefined when using pastMeetingId for past-meeting mode. */
   public readonly meetingId = input<string>();
+  /** Composite meeting_and_occurrence_id of a past meeting. When set, all API calls target the past meeting attachments endpoint. */
   public readonly pastMeetingId = input<string>();
   public visible = model<boolean>(false);
   public readonly materialsChanged = output<void>();
@@ -56,15 +58,20 @@ export class MeetingMaterialsDrawerComponent {
         return of([]);
       }
       this.loading.set(true);
+      const id = this.isPastMode() ? this.pastMeetingId() : this.meetingId();
+      if (!id) {
+        this.loading.set(false);
+        return of([] as MeetingAttachment[]);
+      }
       const load$ = this.isPastMode()
-        ? this.meetingService.getPastMeetingAttachments(this.pastMeetingId()!).pipe(
+        ? this.meetingService.getPastMeetingAttachments(id).pipe(
             tap(() => this.loading.set(false)),
             catchError(() => {
               this.loading.set(false);
               return of([] as MeetingAttachment[]);
             })
           )
-        : this.meetingService.getMeetingAttachments(this.meetingId()!).pipe(
+        : this.meetingService.getMeetingAttachments(id).pipe(
             tap(() => this.loading.set(false)),
             catchError(() => {
               this.loading.set(false);
