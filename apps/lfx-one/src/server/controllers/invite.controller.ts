@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { InviteTokenPayload, PendingCommitteeInviteForOrg } from '@lfx-one/shared/interfaces';
+import { InviteTokenPayload } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 import { errors as JoseErrors, JWK, JWT } from 'jose';
 
@@ -12,11 +12,6 @@ import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
 import { NatsService } from '../services/nats.service';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
-
-/** Delay between auto-accept retries while waiting for FGA invitee tuple propagation. */
-const FGA_PROPAGATION_DELAY_MS = 3_000;
-/** Maximum number of retries after the initial attempt (total wait: up to 9 s). */
-const FGA_PROPAGATION_MAX_RETRIES = 3;
 
 /** Controller for non-LF user invite acceptance via signed JWT. */
 export class InviteController {
@@ -103,7 +98,7 @@ export class InviteController {
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
 
-      const pendingCommitteeInvite = (await this.autoAcceptPendingCommitteeInvites(req, payload)) ?? undefined;
+      await this.autoAcceptCommitteeInvite(req, payload);
 
       logger.success(req, 'accept_invite', startTime, {
         invite_uid: payload.invite_uid,
@@ -111,7 +106,7 @@ export class InviteController {
         resource_uid: payload.resource_uid,
       });
 
-      res.json({ return_url: safeReturnUrl, ...(pendingCommitteeInvite && { pending_committee_invite: pendingCommitteeInvite }) });
+      res.json({ return_url: safeReturnUrl });
     } catch (error) {
       next(error);
     }
@@ -141,24 +136,19 @@ export class InviteController {
 
   /**
    * When the LFID invite JWT carries a {@link InviteTokenPayload.committee_invite_uid} claim,
-   * accepts that specific committee_invite so a committee_member is created with the session
-   * username. No-ops if the claim is absent — the LFID invite may be unrelated to any committee.
+   * accepts that specific committee_invite directly via the committee API. No-ops when the claim
+   * is absent — the LFID invite is unrelated to any committee.
    *
-   * Returns a {@link PendingCommitteeInviteForOrg} when the invite requires an organization
-   * that was not pre-filled — the caller should surface this to the client for manual org
-   * collection. Returns null when the invite was accepted or the flow was skipped.
-   *
-   * Throws when the invite cannot be found or accepted after all FGA-propagation retries so
-   * the caller can surface the failure rather than silently redirecting to a stale committee page.
+   * Requires the authenticated session email to match the email embedded in the JWT.
+   * Throws on acceptance failure so the caller can surface it rather than silently redirecting.
    */
-  private async autoAcceptPendingCommitteeInvites(req: Request, payload: InviteTokenPayload): Promise<PendingCommitteeInviteForOrg | null> {
-    // JWT.verify only validates the signature — committee_invite_uid can be null, a non-string,
-    // or whitespace if the token was crafted with malformed custom claims. Normalize to a trimmed
-    // string and treat only a non-empty result as an actionable claim.
+  private async autoAcceptCommitteeInvite(req: Request, payload: InviteTokenPayload): Promise<void> {
+    // JWT.verify only validates the signature — claims can be null, non-strings, or whitespace.
     const committeeInviteUid = typeof payload.committee_invite_uid === 'string' ? payload.committee_invite_uid.trim() : '';
+    const committeeUid = typeof payload.resource_uid === 'string' ? payload.resource_uid.trim() : '';
+
     if (!committeeInviteUid) {
-      // No committee_invite_uid means the LFID invite is unrelated to any committee.
-      return null;
+      return; // LFID invite is unrelated to any committee — nothing to accept
     }
 
     const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
@@ -168,54 +158,32 @@ export class InviteController {
       logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — LFID invite token has no email claim', {
         invite_uid: payload.invite_uid,
       });
-      return null;
+      return;
     }
 
     if (!sessionEmail) {
       logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — session email unavailable', {
         invite_uid: payload.invite_uid,
       });
-      return null;
+      return;
     }
 
     if (invitedEmail !== sessionEmail) {
       logger.info(req, 'accept_invite', 'Skipping committee invite auto-accept — session email does not match LFID invite token email', {
         invite_uid: payload.invite_uid,
       });
-      return null;
+      return;
     }
 
-    for (let attempt = 0; attempt <= FGA_PROPAGATION_MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, FGA_PROPAGATION_DELAY_MS));
-      }
-
-      const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
-        invitedEmail,
-        committeeInviteUid,
-      });
-
-      // null or PendingCommitteeInviteForOrg = invite was found and processed; return immediately.
-      // undefined = invite not visible yet in the email index — FGA invitee tuple may still be
-      // propagating; retry.
-      if (result !== undefined) {
-        return result ?? null;
-      }
+    if (!committeeUid) {
+      throw new Error(`Cannot accept committee invite ${committeeInviteUid}: resource_uid (committee UID) is absent from the JWT`);
     }
 
-    // All retries returned undefined — the invite was never found in the pending email index.
-    // This can happen when the invite was already accepted (response lost, page refreshed) and
-    // is no longer pending, OR when FGA propagation has not completed. Call accept directly:
-    // the committee-service AcceptInvite endpoint is idempotent (already-accepted → success),
-    // so this covers both cases. resource_uid carries the committee UID for committee LFID invites.
-    const committeeUid = typeof payload.resource_uid === 'string' ? payload.resource_uid.trim() : '';
-    if (committeeUid) {
-      await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
-      return null;
-    }
+    await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
 
-    throw new Error(
-      `Committee invite ${committeeInviteUid} could not be accepted: not found after ${FGA_PROPAGATION_MAX_RETRIES} retries and resource_uid (committee UID) is absent from the JWT`
-    );
+    logger.info(req, 'accept_invite', 'Committee invite accepted directly after LFID invite', {
+      committee_uid: committeeUid,
+      committee_invite_uid: committeeInviteUid,
+    });
   }
 }
