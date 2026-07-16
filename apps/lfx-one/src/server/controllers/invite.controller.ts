@@ -214,6 +214,8 @@ export class InviteController {
       const committeeName = typeof payload.committee_name === 'string' ? payload.committee_name.trim() || committeeUid : committeeUid;
 
       if (organizationRequired) {
+        // If no org name was pre-filled on the invite, we can't auto-accept — return to
+        // the client so the user can supply one via the org-collection dialog.
         const orgName = typeof payload.organization_name === 'string' ? payload.organization_name.trim() || null : null;
         if (!orgName) {
           logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
@@ -231,16 +233,13 @@ export class InviteController {
             },
           };
         }
-        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, {
-          organization: {
-            name: orgName,
-            id: typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null,
-            website: typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null,
-          },
-        });
-      } else {
-        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
       }
+
+      // Do not relay JWT org claims back to the committee service. The JWT claims are an
+      // immutable snapshot and can be stale (e.g. invite revoked and reinstated with a
+      // different org). The committee service's acceptInvite falls back to its stored invite
+      // organization when no body org is supplied, ensuring the live value is always used.
+      await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
 
       logger.info(req, 'accept_invite', 'Committee invite accepted directly after LFID invite', {
         committee_uid: committeeUid,
