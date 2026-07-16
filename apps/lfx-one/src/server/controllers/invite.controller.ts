@@ -149,9 +149,10 @@ export class InviteController {
    * invite UID (`committee_invite_uid`) are embedded in the JWT.
    *
    * **Legacy path** (JWT pre-dates `committee_invite_uid`): falls back to searching pending
-   * invites by email. Waits {@link FGA_PROPAGATION_DELAY_MS} before each attempt so that the
-   * FGA invitee tuple has time to propagate; retries up to {@link FGA_LEGACY_MAX_ATTEMPTS}
-   * times total. Returns a {@link PendingCommitteeInviteForOrg} when an invite requires an
+   * invites by email. Waits {@link InviteController.fgaPropagationDelayMs} before each attempt
+   * so that the FGA invitee tuple has time to propagate; retries up to
+   * {@link InviteController.fgaLegacyMaxAttempts} times total. Returns a
+   * {@link PendingCommitteeInviteForOrg} when an invite requires an
    * organization that was not pre-filled — the client must collect the org and re-submit.
    *
    * Requires the session email to match the email claim in the JWT. Throws on unrecoverable
@@ -245,6 +246,17 @@ export class InviteController {
     if (!committeeUid) {
       logger.warning(req, 'accept_invite', 'Skipping legacy committee invite auto-accept — resource_uid (committee UID) is absent from the JWT', {
         invite_uid: payload.invite_uid,
+      });
+      return null;
+    }
+
+    // Skip the committee path entirely for explicitly non-committee resource types. Omitting
+    // resource_type (very old JWTs) still enters this path for backward compatibility.
+    const resourceType = typeof payload.resource_type === 'string' ? payload.resource_type.trim() : '';
+    if (resourceType && resourceType !== 'group') {
+      logger.info(req, 'accept_invite', 'Skipping legacy committee invite auto-accept — resource is not a committee', {
+        invite_uid: payload.invite_uid,
+        resource_type: resourceType,
       });
       return null;
     }

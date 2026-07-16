@@ -736,7 +736,6 @@ export class CommitteeService {
     });
 
     let pendingForOrg: PendingCommitteeInviteForOrg | null = null;
-    let anyAccepted = false;
 
     for (const invite of toAccept) {
       try {
@@ -772,7 +771,6 @@ export class CommitteeService {
         } else {
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
         }
-        anyAccepted = true;
       } catch (error) {
         logger.warning(req, 'accept_invite', 'Failed to auto-accept committee invitation after LFID invite', {
           committee_uid: invite.committee_uid,
@@ -786,8 +784,7 @@ export class CommitteeService {
     if (pendingForOrg) {
       return pendingForOrg;
     }
-    // If every accept threw, return undefined so the controller can retry — accept is idempotent.
-    return anyAccepted ? null : undefined;
+    return null;
   }
 
   /**
