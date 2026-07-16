@@ -6,6 +6,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { EditorComponent } from '@components/editor/editor.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { GroupsIOServiceType } from '@lfx-one/shared/enums';
 import { GroupsIOService } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -38,10 +39,10 @@ export class MailingListBasicInfoComponent {
     const currentProjectUid = this.projectContextService.activeContextUid();
 
     // If service type is explicitly 'shared', it's a shared service
-    if (service.type === 'shared') return true;
+    if (service.type === GroupsIOServiceType.SHARED) return true;
 
     // If current project UID doesn't match service project UID, and service is primary, it's being used as shared
-    if (currentProjectUid !== service.project_uid && service.type === 'primary') return true;
+    if (currentProjectUid !== service.project_uid && service.type === GroupsIOServiceType.PRIMARY) return true;
 
     return false;
   });

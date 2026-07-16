@@ -20,10 +20,6 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingRsvp,
-  GetOrgUpcomingMeetingsOptions,
-  OrgMeetingsProjectsResponse,
-  OrgMeetingsSummary,
-  OrgUpcomingMeetingsResponse,
   PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
@@ -61,24 +57,6 @@ export class MeetingService {
         return of({ data: [] as Meeting[], page_token: undefined });
       })
     );
-  }
-
-  /** Org Lens Meetings stat strip: upcoming + recurring counts (with foundation breadth) for the selected org, from Snowflake. */
-  public getOrgMeetingsSummary(accountId: string): Observable<OrgMeetingsSummary> {
-    return this.http.get<OrgMeetingsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/summary`);
-  }
-
-  public getOrgUpcomingMeetings(accountId: string, options: GetOrgUpcomingMeetingsOptions): Observable<OrgUpcomingMeetingsResponse> {
-    let params = new HttpParams().set('pageSize', String(options.pageSize)).set('offset', String(options.offset));
-    if (options.searchQuery) params = params.set('searchQuery', options.searchQuery);
-    if (options.project) params = params.set('project', options.project);
-    if (options.type) params = params.set('type', options.type);
-    if (options.pendingRsvpOnly) params = params.set('pendingRsvpOnly', 'true');
-    return this.http.get<OrgUpcomingMeetingsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings`, { params });
-  }
-
-  public getOrgMeetingProjects(accountId: string): Observable<OrgMeetingsProjectsResponse> {
-    return this.http.get<OrgMeetingsProjectsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/projects`);
   }
 
   public getPastMeetings(params?: HttpParams): Observable<PaginatedResponse<PastMeeting>> {

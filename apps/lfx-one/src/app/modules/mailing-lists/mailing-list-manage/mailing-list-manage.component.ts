@@ -176,7 +176,12 @@ export class MailingListManageComponent {
     return new FormGroup(
       {
         // Step 1: Basic Information
-        group_name: new FormControl('', [Validators.required, Validators.minLength(3), Validators.maxLength(34), Validators.pattern(/^[a-zA-Z0-9_-]+$/)]),
+        group_name: new FormControl('', [
+          Validators.required,
+          Validators.minLength(3),
+          Validators.maxLength(34),
+          Validators.pattern(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/),
+        ]),
         description: new FormControl('', [htmlRequiredValidator(), htmlMinLengthValidator(11), htmlMaxLengthValidator(500)]),
 
         // Step 2: Settings
@@ -286,7 +291,9 @@ export class MailingListManageComponent {
   }
 
   private initNeedsSharedServiceCreation(): Signal<boolean> {
-    return computed(() => this.parentService() !== null && this.availableServices().filter((service) => service.type === 'shared').length === 0);
+    return computed(
+      () => this.parentService() !== null && this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0
+    );
   }
 
   private initServicePrefix(): Signal<string> {
@@ -302,8 +309,10 @@ export class MailingListManageComponent {
 
   private initMaxGroupNameLength(): Signal<number> {
     return computed(() => {
-      const prefix = this.servicePrefix() + '-';
-      return 34 - prefix.length;
+      const willPrefix = this.needsSharedServiceCreation() || this.selectedService()?.type !== GroupsIOServiceType.PRIMARY;
+      if (!willPrefix) return 34;
+      const prefix = this.servicePrefix();
+      return prefix ? 34 - prefix.length - 1 : 34;
     });
   }
 
@@ -364,7 +373,7 @@ export class MailingListManageComponent {
     let groupName = mailingList.group_name;
     const servicePrefix = mailingList.service?.prefix;
 
-    if (servicePrefix && mailingList.service?.type !== 'primary') {
+    if (servicePrefix && mailingList.service?.type !== GroupsIOServiceType.PRIMARY) {
       const prefixWithSeparator = `${servicePrefix}-`;
       if (groupName.startsWith(prefixWithSeparator)) {
         groupName = groupName.slice(prefixWithSeparator.length);
@@ -379,6 +388,12 @@ export class MailingListManageComponent {
       public: mailingList.public ?? true,
       committees: mailingList.committees || [],
     });
+
+    // The name is immutable after creation — clear its validators so existing names
+    // that predate the stricter creation rules don't block edits to other fields.
+    const groupNameControl = this.form().get('group_name');
+    groupNameControl?.clearValidators();
+    groupNameControl?.updateValueAndValidity();
   }
 
   private canNavigateToStep(step: number): boolean {
@@ -423,10 +438,10 @@ export class MailingListManageComponent {
   private prepareMailingListData(service: GroupsIOService): CreateMailingListRequest {
     const formValue = this.form().value;
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
-    const groupName = service.type === 'primary' ? formValue.group_name : `${prefix}-${formValue.group_name}`;
+    const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
     return {
-      group_name: groupName,
+      name: groupName,
       public: formValue.public,
       type: formValue.type,
       audience_access: formValue.audience_access,

@@ -29,6 +29,9 @@ export interface SnowflakeQueryOptions {
    * Array of data types to fetch as strings (for large numbers, etc.)
    */
   fetchAsString?: DataType[];
+
+  /** When true, an "object does not exist" error is expected (e.g. a table not yet created) and is not counted toward the circuit breaker; the query still rejects so the caller can degrade gracefully. */
+  expectMissingObject?: boolean;
 }
 
 /**

@@ -10,7 +10,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatNumber, hexToRgba, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -187,7 +187,7 @@ export class SocialMediaDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getSocialMedia(foundationSlug).pipe(
+          this.analyticsService.getSocialMedia(foundationSlug, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -308,11 +308,27 @@ export class SocialMediaDrawerComponent {
         }
       }
 
-      // Monthly trend
+      // Monthly trend. The series only contains months with snapshots, so the
+      // last three points can span gaps — "3 consecutive months" is only
+      // claimable when they are truly adjacent calendar months. (Follower
+      // counts are snapshots, so zero-filling gaps would be wrong here.)
+      // point.month is the server's en-US "MMM YYYY" label; parse it
+      // explicitly rather than via implementation-defined new Date(string).
       if (monthlyData.length >= 3) {
         const recent3 = monthlyData.slice(-3);
-        const isGrowing = recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
-        const isShrinking = recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
+        const ordinals = recent3.map((point) => monthLabelOrdinal(point.month));
+        // Freshness: the newest point must be the latest completed month —
+        // this drawer always requests a last-6 window anchored at now, and a
+        // stale Jan–Mar streak must not read as a present-tense claim in July.
+        const now = new Date();
+        const latestCompletedOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth() - 1;
+        const consecutive =
+          ordinals.every((ord) => Number.isFinite(ord)) &&
+          ordinals[1] === ordinals[0] + 1 &&
+          ordinals[2] === ordinals[1] + 1 &&
+          ordinals[2] >= latestCompletedOrdinal;
+        const isGrowing = consecutive && recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
+        const isShrinking = consecutive && recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
         if (isGrowing) {
           insights.push({ text: 'Follower count growing for 3 consecutive months', type: 'driver' });
         } else if (isShrinking) {
