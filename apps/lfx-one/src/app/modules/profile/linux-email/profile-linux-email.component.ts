@@ -121,6 +121,12 @@ export class ProfileLinuxEmailComponent {
     return this.forwardOptions().some((option) => option.value !== saved);
   });
 
+  // True only on a failed getUserEmails() fetch, not a genuine lack of a primary
+  // email — a successful /api/profile/emails response always has a non-empty
+  // primary_email (server-side fallback), so `emails === null` here only ever
+  // means the request errored (see initData's catchError).
+  public emailsLoadFailed = computed((): boolean => this.data().emails === null);
+
   // Public methods
 
   public purchase(): void {

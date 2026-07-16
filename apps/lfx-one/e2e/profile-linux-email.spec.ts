@@ -146,3 +146,55 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     await expect(page.getByText('Choose one of your verified email addresses.')).toBeVisible();
   });
 });
+
+test.describe('Linux.com email — verified emails fetch failure', () => {
+  test('shows a retry panel instead of the empty-state message on the claim form', async ({ page }) => {
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'upstream unavailable' }) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-forward-load-error')).toBeVisible();
+    await expect(page.getByTestId('linux-email-claim-forward-empty')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-claim-forward-retry-button')).toBeVisible();
+  });
+
+  test('shows a retry panel instead of the empty-state message on the edit form', async ({ page }) => {
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'upstream unavailable' }) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: `${ALIAS}@${DOMAIN}`, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-load-error')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-forward-retry-button')).toBeVisible();
+  });
+});
