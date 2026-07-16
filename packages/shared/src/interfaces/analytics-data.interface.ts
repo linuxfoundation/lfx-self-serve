@@ -2707,6 +2707,13 @@ export interface SocialReachResponse {
   monthlyData: number[];
   monthlyLabels: string[];
   monthlyRoas: number[];
+  /**
+   * Zero-filled monthly ad spend aligned with monthlyData/monthlyRoas.
+   * Distinguishes a truly inactive month (no spend, no impressions) from an
+   * active campaign month that delivered zero impressions — consumers should
+   * treat a month as active when spend OR impressions are non-zero.
+   */
+  monthlySpend?: number[];
   channelGroups: SocialReachChannelGroup[];
   projectBreakdown?: PaidProjectBreakdown[];
   platformBreakdown?: PaidPlatformBreakdown[];
@@ -3137,7 +3144,8 @@ export interface BrandHealthResponse {
   sentiment: BrandHealthSentimentBreakdown;
   sentimentMomChangePp: number;
   /** Mention volume MoM change (%), computed from monthly trend data. */
-  mentionMomChangePct: number;
+  /** MoM change in mention volume; null when the trend rows cannot support a genuine MoM (gap or stale pair) — 0 is a measured flat month. */
+  mentionMomChangePct: number | null;
   trend: 'up' | 'down';
   monthlyMentions: NorthStarMonthlyDataPoint[];
   topProjects: BrandHealthTopProject[];

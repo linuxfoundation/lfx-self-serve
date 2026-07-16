@@ -42,7 +42,7 @@
       </lfx-card>
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Monthly Sessions</span>
+          <span class="text-sm text-gray-500">Sessions (last 30 days)</span>
           @if (data().totalMonthlySessions > 0) {
             <span class="text-2xl font-semibold text-gray-900">{{ data().totalMonthlySessions | number }}</span>
           } @else {
@@ -152,7 +152,7 @@
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-reach-drawer-website-sessions">
       <div class="flex flex-col gap-1">
         <h3 class="text-sm font-semibold text-gray-900">Website Sessions by Domain</h3>
-        <p class="text-sm text-gray-600">Monthly sessions across foundation web properties</p>
+        <p class="text-sm text-gray-600">Sessions across foundation web properties over the last 30 days</p>
       </div>
       @if (data().websiteDomains.length > 0) {
         <div class="flex flex-col gap-0">
