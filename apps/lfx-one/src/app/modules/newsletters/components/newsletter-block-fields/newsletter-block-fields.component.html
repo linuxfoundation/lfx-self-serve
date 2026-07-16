@@ -35,6 +35,16 @@
                 <lfx-input-number [form]="fg" [control]="entry.key" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + entry.key">
                 </lfx-input-number>
               }
+              @case ('select') {
+                <lfx-select
+                  [form]="fg"
+                  [control]="entry.key"
+                  [options]="entry.options ?? []"
+                  [showClear]="true"
+                  placeholder="Select…"
+                  [dataTest]="'newsletter-composer-field-input-' + entry.key">
+                </lfx-select>
+              }
               @case ('array') {
                 <div class="flex flex-col gap-3" [attr.data-testid]="'newsletter-composer-field-array-' + entry.key">
                   @for (item of arrayItems(entry.key); track trackByIndex($index)) {
@@ -81,6 +91,16 @@
                                 styleClass="w-full"
                                 [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
                               </lfx-input-number>
+                            }
+                            @case ('select') {
+                              <lfx-select
+                                [form]="item"
+                                [control]="nested.key"
+                                [options]="nested.options ?? []"
+                                [showClear]="true"
+                                placeholder="Select…"
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                              </lfx-select>
                             }
                             @default {
                               <lfx-input-text

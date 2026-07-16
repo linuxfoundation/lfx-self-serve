@@ -8,6 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputNumberComponent } from '@components/input-number/input-number.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import { NewsletterComposerBlock, NewsletterFieldDefinition, NewsletterFieldEntry, NewsletterFieldSchema } from '@lfx-one/shared/interfaces';
@@ -23,6 +24,7 @@ import { humanizeFieldKey } from '@lfx-one/shared/utils';
  *   - textarea → lfx-textarea
  *   - richtext → lfx-rich-editor (Tiptap)
  *   - number   → lfx-input-number
+ *   - select   → lfx-select (options from the field's schema `options`)
  *   - array    → a repeatable list of nested field groups (add / remove item)
  *   - image    → lfx-input-text (URL string; no upload widget yet)
  *
@@ -36,7 +38,7 @@ import { humanizeFieldKey } from '@lfx-one/shared/utils';
  */
 @Component({
   selector: 'lfx-newsletter-block-fields',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, RichEditorComponent, InputNumberComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, RichEditorComponent, InputNumberComponent, SelectComponent],
   templateUrl: './newsletter-block-fields.component.html',
 })
 export class NewsletterBlockFieldsComponent implements OnDestroy {

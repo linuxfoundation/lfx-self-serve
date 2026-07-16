@@ -185,7 +185,13 @@ export interface NewsletterChartData {
  * Mirrors the `type` discriminator in each block's parsed SCHEMA comment.
  * `slot` is the container child-list marker and is not rendered as an input.
  */
-export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'array' | 'image' | 'slot';
+export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'array' | 'image' | 'select' | 'slot';
+
+/** One option of a `select` field: the value stored and the label shown. */
+export interface NewsletterFieldOption {
+  label: string;
+  value: string;
+}
 
 /**
  * A single editable field in a block's schema. `fields` describes the per-item
@@ -198,6 +204,8 @@ export interface NewsletterFieldDefinition {
   default?: unknown;
   /** For `array` fields: the nested per-item field definitions. */
   fields?: Record<string, NewsletterFieldDefinition>;
+  /** For `select` fields: the selectable options. */
+  options?: NewsletterFieldOption[];
 }
 
 /**
