@@ -18,6 +18,7 @@ import {
   Impersonator,
   LinuxAliasData,
   Meeting,
+  MeetingInviteEmail,
   PastMeeting,
   ProfileAuthStatus,
   ProfileUpdateRequest,
@@ -124,6 +125,22 @@ export class UserService {
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
     return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+  }
+
+  /**
+   * Get the user's preferred meeting-invitation email from meeting-service via NATS.
+   * Null fields mean no override (invitations fall back to the primary email).
+   */
+  public getMeetingInviteEmail(): Observable<MeetingInviteEmail> {
+    return this.http.get<MeetingInviteEmail>('/api/profile/emails/meeting-invite').pipe(catchError(() => of({ email_id: null, email: null })));
+  }
+
+  /**
+   * Set the user's preferred meeting-invitation email.
+   * @param email - The verified email address to receive meeting invitations
+   */
+  public setMeetingInviteEmail(email: string): Observable<MeetingInviteEmail> {
+    return this.http.put<MeetingInviteEmail>('/api/profile/emails/meeting-invite', { email }).pipe(take(1));
   }
 
   // Linux.com email alias methods

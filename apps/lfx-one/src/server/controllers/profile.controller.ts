@@ -22,6 +22,7 @@ import {
   EnrichedIdentity,
   IdentityDisplayState,
   LinuxAliasData,
+  MeetingInviteEmail,
   ProfileAuthStatus,
   ProfileUpdateRequest,
   UpdateForwardRequest,
@@ -42,6 +43,7 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { EnrollmentService } from '../services/enrollment.service';
 import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
+import { MeetingPreferenceService } from '../services/meeting-preference.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
 import { UserService } from '../services/user.service';
@@ -96,6 +98,7 @@ export class ProfileController {
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private enrollmentService: EnrollmentService = new EnrollmentService();
   private forwardsService: ForwardsService = new ForwardsService();
+  private meetingPreferenceService: MeetingPreferenceService = new MeetingPreferenceService();
   private profileAuthService: ProfileAuthService = new ProfileAuthService();
   private socialVerificationService: SocialVerificationService = new SocialVerificationService();
   private userService: UserService = new UserService();
@@ -528,6 +531,96 @@ export class ProfileController {
       logger.success(req, 'set_primary_email', startTime, { email: emailAddress });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/emails/meeting-invite - Resolve the user's preferred meeting-invitation
+   * email from the meeting-service. Null fields mean the user has no override (invitations fall
+   * back to the primary email). Requires the user's v1 API-gateway token, which the
+   * meeting-service forwards to v1 /v1/me.
+   */
+  public async getMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_invite_email');
+
+    try {
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        res.status(503).json({
+          error: 'v1_token_unavailable',
+          message: 'Meeting invitation email settings are not available in this environment.',
+        });
+        return;
+      }
+
+      const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
+      const result: MeetingInviteEmail = preference ?? { email_id: null, email: null };
+
+      logger.success(req, 'get_meeting_invite_email', startTime, { has_override: Boolean(result.email) });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/profile/emails/meeting-invite - Set the user's preferred meeting-invitation email.
+   * Body: { email }. Requires the user's v1 API-gateway token.
+   */
+  public async setMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const emailAddress = (req.body?.email as string) ?? '';
+    const startTime = logger.startOperation(req, 'set_meeting_invite_email', { email: emailAddress });
+
+    try {
+      if (!emailAddress) {
+        return next(
+          ServiceValidationError.forField('email', 'Email address is required', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      if (!EMAIL_REGEX.test(emailAddress)) {
+        return next(
+          ServiceValidationError.forField('email', 'Invalid email format', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        res.status(503).json({
+          error: 'v1_token_unavailable',
+          message: 'Meeting invitation email settings are not available in this environment.',
+        });
+        return;
+      }
+
+      const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress);
+
+      if (!result.success) {
+        return next(
+          new MicroserviceError(result.message || 'Failed to set meeting invitation email', 502, 'BAD_GATEWAY', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      // success() emits at INFO in production for writes; omit the raw email to avoid persisting PII.
+      logger.success(req, 'set_meeting_invite_email', startTime);
+
+      res.status(200).json(result.data);
     } catch (error) {
       next(error);
     }
