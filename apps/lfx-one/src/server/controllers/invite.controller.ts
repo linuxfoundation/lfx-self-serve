@@ -100,10 +100,13 @@ export class InviteController {
         );
       }
 
+      // Accept committee invite before publishing INVITE_ACCEPTED — if committee accept
+      // throws, NATS must not have fired yet so downstream services aren't left with a
+      // partially-processed state.
+      const pendingCommitteeInvite = await this.autoAcceptCommitteeInvite(req, payload);
+
       const codec = this.natsService.getCodec();
       await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
-
-      const pendingCommitteeInvite = await this.autoAcceptCommitteeInvite(req, payload);
 
       logger.success(req, 'accept_invite', startTime, {
         invite_uid: payload.invite_uid,
@@ -157,7 +160,7 @@ export class InviteController {
    */
   private async autoAcceptCommitteeInvite(req: Request, payload: InviteTokenPayload): Promise<PendingCommitteeInviteForOrg | null> {
     const invitedEmail = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
-    const sessionEmail = getEffectiveEmail(req)?.trim() ?? null;
+    const sessionEmail = getEffectiveEmail(req)?.trim().toLowerCase() ?? null;
 
     if (!invitedEmail) {
       logger.warning(req, 'accept_invite', 'Skipping committee invite auto-accept — LFID invite token has no email claim', {
@@ -187,7 +190,11 @@ export class InviteController {
     if (committeeInviteUid) {
       // Both UIDs are known — call accept directly without searching.
       if (!committeeUid) {
-        throw new Error(`Cannot accept committee invite ${committeeInviteUid}: resource_uid (committee UID) is absent from the JWT`);
+        throw ServiceValidationError.forField('resource_uid', 'Invite token is missing the committee UID required to accept this invite', {
+          operation: 'accept_invite',
+          service: 'invite_controller',
+          path: req.path,
+        });
       }
       await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
       logger.info(req, 'accept_invite', 'Committee invite accepted directly after LFID invite', {
@@ -198,6 +205,15 @@ export class InviteController {
     }
 
     // Legacy path: JWT pre-dates committee_invite_uid — search pending invites by email.
+    // Require committeeUid so the search is scoped to the specific committee; without it we
+    // cannot safely identify which pending invite to accept and must skip.
+    if (!committeeUid) {
+      logger.warning(req, 'accept_invite', 'Skipping legacy committee invite auto-accept — resource_uid (committee UID) is absent from the JWT', {
+        invite_uid: payload.invite_uid,
+      });
+      return null;
+    }
+
     // Wait before every attempt (including the first) so the FGA invitee tuple can propagate.
     for (let attempt = 0; attempt < FGA_LEGACY_MAX_ATTEMPTS; attempt++) {
       await new Promise<void>((resolve) => setTimeout(resolve, FGA_PROPAGATION_DELAY_MS));
