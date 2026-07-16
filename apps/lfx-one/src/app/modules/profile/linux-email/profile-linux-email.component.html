@@ -156,7 +156,7 @@
                 icon="fa-light fa-check"
                 severity="info"
                 size="small"
-                [disabled]="claimForm.invalid || claiming() || impersonating()"
+                [disabled]="claimForm.invalid || claiming() || impersonating() || emailsLoadFailed()"
                 [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
                 [loading]="claiming()"
                 data-testid="linux-email-claim-button"></lfx-button>

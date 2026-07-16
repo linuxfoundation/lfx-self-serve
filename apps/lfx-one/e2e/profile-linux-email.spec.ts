@@ -129,6 +129,34 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     await expect(page.getByText('Add another verified email to change this.')).toBeVisible();
   });
 
+  test('shows the empty-state message and hides the select when no verified email can be forwarded to', async ({ page }) => {
+    // Genuine-empty case: the only verified email is the claimed alias itself (so it's
+    // excluded from forwardOptions) and no external forwardTo is saved — zero options.
+    const aliasEmail = `${ALIAS}@${DOMAIN}`;
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: EmailManagementData = { primary_email: aliasEmail, alternate_emails: [] };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: aliasEmail, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-empty')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
+  });
+
   test('shows the normal hint on a first-time claim with a single verified email', async ({ page }) => {
     await stubProfileContext(page);
     await page.route('**/api/profile/linux-email', (route) => {
