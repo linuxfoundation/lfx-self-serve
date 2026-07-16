@@ -303,19 +303,6 @@ export interface NewsletterComposerTabDef {
 }
 
 /**
- * A flattened outline entry for the composer's Outline tab: one row per canvas
- * block (top-level or container child), with a `depth` for indentation and the
- * block's stable local id for selection.
- */
-export interface NewsletterOutlineEntry {
-  id: string;
-  label: string;
-  blockType: string;
-  depth: number;
-  isContainer: boolean;
-}
-
-/**
  * Block-composer canvas view-model: a NewsletterBlock plus a stable local `id`
  * (for CDK drag-drop trackBy / drop-list correlation), the resolved palette
  * `label`, and an `isContainer` convenience flag. Projected back to a
