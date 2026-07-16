@@ -172,8 +172,8 @@ export class ProfileLinuxEmailComponent {
       .pipe(finalize(() => this.savingForward.set(false)))
       .subscribe({
         next: () => {
-          // Defensive: this refresh isn't the FORWARD_SET_FAILED recovery refetch, so it
-          // must not consume a stale pending flag from an earlier claim() failure.
+          // Defensive: a successful save isn't the FORWARD_SET_FAILED recovery refetch, so
+          // it must not consume a stale pending flag from an earlier claim() failure.
           this.pendingForwardRecoveryToast = false;
           this.refresh.next();
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Forwarding address updated.' });
@@ -187,8 +187,8 @@ export class ProfileLinuxEmailComponent {
     if (isPlatformBrowser(this.platformId)) {
       sessionStorage.removeItem(this.reauthFlagKey);
     }
-    // Defensive: this refresh isn't the FORWARD_SET_FAILED recovery refetch, so it must
-    // not consume a stale pending flag from an earlier claim() failure.
+    // Defensive: a user-initiated retry isn't the FORWARD_SET_FAILED recovery refetch, so
+    // it must not consume a stale pending flag from an earlier claim() failure.
     this.pendingForwardRecoveryToast = false;
     this.refresh.next();
   }
