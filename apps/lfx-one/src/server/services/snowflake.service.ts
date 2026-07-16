@@ -87,6 +87,11 @@ export class SnowflakeService {
     }
   }
 
+  public static isMissingObjectError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /does not exist or not authorized/i.test(message);
+  }
+
   private constructor() {
     // Configure Snowflake SDK logging (defaults to ERROR to minimize verbose logs)
     // Valid levels: 'OFF', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'
@@ -217,7 +222,12 @@ export class SnowflakeService {
             });
             span.recordException(error instanceof Error ? error : new Error(String(error)));
 
-            this.recordFailure();
+            const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
+            if (expectedMissing) {
+              this.recordSuccess();
+            } else {
+              this.recordFailure();
+            }
 
             logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
               query_hash: queryHash,
