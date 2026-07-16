@@ -193,7 +193,7 @@
     }
 
     <!-- Resources (always shown for organizers; hidden for non-organizers when empty) -->
-    @if (attachments().length > 0 || meeting()?.organizer) {
+    @if (attachments().length > 0 || meeting.organizer) {
       <lfx-card data-testid="resources-card">
         <div class="flex items-center gap-2 mb-3">
           <i class="fa-light fa-paperclip text-gray-500 text-sm"></i>
@@ -201,7 +201,7 @@
           @if (attachments().length > 0) {
             <span class="text-xs font-medium text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">{{ attachments().length }}</span>
           }
-          @if (meeting()?.organizer) {
+          @if (meeting.organizer) {
             <button
               type="button"
               (click)="openMaterialsDrawer()"
@@ -241,8 +241,8 @@
       </lfx-card>
     }
 
-    @if (meeting()?.organizer) {
-      <lfx-meeting-materials-drawer [pastMeetingId]="meeting()!.id" [(visible)]="materialsDrawerVisible" (materialsChanged)="onMaterialsChanged()">
+    @if (meeting.organizer) {
+      <lfx-meeting-materials-drawer [pastMeetingId]="meeting.id" [(visible)]="materialsDrawerVisible" (materialsChanged)="onMaterialsChanged()">
       </lfx-meeting-materials-drawer>
     }
 
