@@ -16,15 +16,16 @@ import { PersonaService } from '../services/persona.service';
  * reach Marketing surfaces, but MUST NOT inherit Meetings, Events, Groups, Documents, etc.
  * Overview stays open (no this guard) so they can land on Marketing Overview.
  *
- * FR-017 also requires that non-marketing product permissions stay unchanged: before this
- * feature those routes used only `projectQueryParamGuard`. This guard therefore denies
- * **only** `isMarketingOnlyFoundationUser` and allows everyone else (board, root writer,
- * project-scoped deep links, etc.).
+ * Steady-state: deny **only** `isMarketingOnlyFoundationUser` so pre-existing
+ * `projectQueryParamGuard`-only access stays unchanged for everyone else (FR-017).
  *
- * `isRootWriter` / `isRootMarketingAuditor` are TransferState- and cookie-seeded so SSR can
- * decide without awaiting the personas API. On the browser, cold sessions wait for
- * `personaLoaded` before deciding. Hydration timeout uses seeded flags (deny only when
- * already known marketing-only).
+ * Hydration failure / timeout (FR-015): fail closed for anyone who is not already confirmed
+ * full-product (board / root writer). That covers unseeded marketing-only users when the
+ * personas API is slow or unavailable, at the cost of a transient redirect for other
+ * non-full-product deep links until personas recovers.
+ *
+ * `isRootWriter` / `isRootMarketingAuditor` are TransferState- and cookie-seeded so SSR and
+ * the browser fast paths can decide without awaiting the personas API when seeds are present.
  */
 export const foundationProductGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -36,7 +37,7 @@ export const foundationProductGuard: CanActivateFn = async (route: ActivatedRout
     return slug ? router.createUrlTree(['/foundation/overview'], { queryParams: { project: slug } }) : router.parseUrl('/foundation/overview');
   };
 
-  // Deny only the newly admitted marketing-only audience; preserve pre-existing access otherwise.
+  // Steady-state: deny only the newly admitted marketing-only audience.
   const decide = () => (personaService.isMarketingOnlyFoundationUser() ? deny() : true);
 
   // Fast path: full product audience never blocked here.
@@ -64,11 +65,15 @@ export const foundationProductGuard: CanActivateFn = async (route: ActivatedRout
       )
     );
     if (!loaded) {
-      // Prefer seeded entitlements (decide): marketing-only still denied; everyone else keeps
-      // pre-existing access (FR-017). Do not blanket-allow — that would widen product routes if
-      // isRootMarketingAuditor was seeded after the fast-path checks above ran as false.
-      return decide();
+      // Timeout with no confirmation of entitlements → fail closed (FR-015).
+      return deny();
     }
+  }
+
+  // Personas API failed: fail closed for unconfirmed non-full-product users (covers unseeded
+  // marketing-only). Seeded marketing-only already denied above; board/root-writer already allowed.
+  if (personaService.personaHydrationFailed()) {
+    return deny();
   }
 
   return decide();

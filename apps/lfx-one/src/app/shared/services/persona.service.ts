@@ -41,6 +41,11 @@ export class PersonaService {
   public readonly hasBoardRole: Signal<boolean>;
   public readonly hasProjectRole: Signal<boolean>;
   public readonly personaLoaded: WritableSignal<boolean>;
+  /**
+   * True when the personas API returned null/error. Auth-critical guards should fail closed for
+   * non-full-product users rather than deciding with incomplete hydration (FR-015 / FR-017).
+   */
+  public readonly personaHydrationFailed: WritableSignal<boolean> = signal<boolean>(false);
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
   /** Writer on the tenant root project — bypasses nav persona filtering */
@@ -149,11 +154,14 @@ export class PersonaService {
       });
       // Keep TransferState/cookie-seeded ROOT flags — wiping them to false would let a marketing-only
       // user through foundationProductGuard after a transient personas failure (FR-017).
+      // Mark hydration failed so auth guards can fail closed for unconfirmed non-full-product users.
+      this.personaHydrationFailed.set(true);
       this.personaLoaded.set(true);
       return;
     }
 
     console.info('[PersonaService] Persona detection response:', response);
+    this.personaHydrationFailed.set(false);
     this.personaProjects.set(response.personaProjects);
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
