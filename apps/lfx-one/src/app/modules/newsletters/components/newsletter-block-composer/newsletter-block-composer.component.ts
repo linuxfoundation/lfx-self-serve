@@ -4,8 +4,11 @@
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { isPlatformBrowser } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, input, OnInit, output, PLATFORM_ID, signal, Signal, untracked, viewChild } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import {
@@ -18,7 +21,6 @@ import {
   NewsletterComposerToolbarState,
   NewsletterFieldSchema,
   NewsletterLayout,
-  NewsletterOutlineEntry,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 
@@ -58,7 +60,7 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
-  imports: [DragDropModule, ButtonComponent, NewsletterBlockFieldsComponent],
+  imports: [DragDropModule, ReactiveFormsModule, ButtonComponent, InputTextComponent, NewsletterBlockFieldsComponent],
   templateUrl: './newsletter-block-composer.component.html',
   styleUrl: './newsletter-block-composer.component.scss',
 })
@@ -133,18 +135,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return this.manifestService.getBlock(block.block_type)?.schema ?? null;
   });
 
-  // Flattened canvas outline (top-level + container children) for the Outline tab.
-  protected readonly outline: Signal<NewsletterOutlineEntry[]> = computed(() => {
-    const entries: NewsletterOutlineEntry[] = [];
-    for (const block of this.blocks()) {
-      entries.push({ id: block.id, label: block.label, blockType: block.block_type, depth: 0, isContainer: block.isContainer });
-      for (const child of block.children ?? []) {
-        entries.push({ id: child.id, label: child.label, blockType: child.block_type, depth: 1, isContainer: child.isContainer });
-      }
-    }
-    return entries;
-  });
-
   // The left-rail tab definitions (icons + labels). Fields is NOT a tab — it's
   // the always-on right sidebar.
   protected readonly tabs: NewsletterComposerTabDef[] = [
@@ -152,10 +142,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
     { id: 'outline', label: 'Outline', icon: 'fa-light fa-list-tree' },
   ];
 
-  // Palette search query. When non-empty, the palette collapses its categories
-  // into a single flat list of blocks whose label or type matches (Gatewaze
-  // block-search parity).
-  protected readonly blockSearch = signal<string>('');
+  // Palette search. Backed by a FormControl (LFX wrappers are FormGroup-bound);
+  // `blockSearch` mirrors the control value as a signal for the filter computed.
+  // When non-empty, the palette collapses its categories into a single flat list
+  // of blocks whose label or type matches (Gatewaze block-search parity).
+  protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
+  protected readonly blockSearch: Signal<string> = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
   // The wrapper chrome (header above / footer below the blocks), rendered from
   // the manifest's wrapper template. Recomputes when the manifest loads.
@@ -235,28 +227,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   /**
    * Reorder top-level blocks from the Outline tab (Gatewaze DraggableOutline
-   * parity — root blocks only). The outline is a flat list of top-level blocks
-   * plus their container children; only depth-0 rows are draggable, so both the
-   * dragged row and the drop position map cleanly onto the top-level `blocks`
-   * array by counting the depth-0 rows above the drop index.
+   * parity — root blocks only). The outline list contains only the top-level
+   * blocks as draggable rows (container children render nested and static), so
+   * CDK's indices map 1:1 onto the `blocks` array.
    */
-  protected onOutlineDrop(event: CdkDragDrop<NewsletterOutlineEntry[]>): void {
-    const entries = this.outline();
-    const dragged = entries[event.previousIndex];
-    if (!dragged || dragged.depth !== 0) return;
-
-    const from = this.blocks().findIndex((block) => block.id === dragged.id);
-    if (from === -1) return;
-
-    // Target index among top-level blocks = number of depth-0 rows strictly
-    // before the drop position (excluding the dragged row itself).
-    let to = 0;
-    for (let i = 0; i < event.currentIndex; i++) {
-      if (i !== event.previousIndex && entries[i]?.depth === 0) to++;
-    }
-
+  protected onOutlineDrop(event: CdkDragDrop<NewsletterComposerBlock[]>): void {
     const next = [...this.blocks()];
-    moveItemInArray(next, from, to);
+    moveItemInArray(next, event.previousIndex, event.currentIndex);
     this.blocks.set(next);
     this.emit();
   }

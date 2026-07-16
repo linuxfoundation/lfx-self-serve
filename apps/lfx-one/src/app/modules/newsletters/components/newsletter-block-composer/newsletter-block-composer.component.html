@@ -37,17 +37,14 @@
           <p class="text-sm text-red-600" data-testid="newsletter-composer-palette-error">Could not load the block palette. Please refresh.</p>
         } @else {
           <!-- Search box: filters the palette to matching blocks (label or type). -->
-          <div class="relative">
-            <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400" aria-hidden="true"></i>
-            <input
-              type="search"
-              class="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-7 pr-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-200"
-              placeholder="Search blocks…"
-              aria-label="Search blocks"
-              data-testid="newsletter-composer-palette-search"
-              [value]="blockSearch()"
-              (input)="blockSearch.set($any($event.target).value)" />
-          </div>
+          <lfx-input-text
+            [form]="searchForm"
+            control="search"
+            icon="fa-light fa-magnifying-glass"
+            placeholder="Search blocks…"
+            styleClass="w-full"
+            dataTest="newsletter-composer-palette-search">
+          </lfx-input-text>
 
           <div
             class="flex flex-col gap-4"
@@ -92,26 +89,49 @@
       <!-- Outline tab: a flat tree of the canvas blocks; click to select. ----- -->
       @if (isActiveTab('outline')) {
         <h3 class="text-sm font-semibold text-gray-700">Outline</h3>
-        @if (outline().length) {
+        @if (hasBlocks()) {
+          <!-- Only top-level blocks are draggable rows (Gatewaze DraggableOutline
+               parity — root reorder); container children render nested + static. -->
           <ul class="flex flex-col gap-0.5" cdkDropList (cdkDropListDropped)="onOutlineDrop($event)" data-testid="newsletter-composer-outline">
-            @for (node of outline(); track node.id) {
-              <li cdkDrag [cdkDragData]="node" [cdkDragDisabled]="node.depth !== 0 || !isBrowser()">
+            @for (block of blocks(); track block.id) {
+              <li cdkDrag [cdkDragData]="block" [cdkDragDisabled]="!isBrowser()">
                 <button
                   type="button"
                   class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100"
-                  [class.bg-blue-50]="isSelected(node.id)"
-                  [class.text-blue-700]="isSelected(node.id)"
-                  [style.padding-left.px]="8 + node.depth * 16"
-                  [attr.aria-pressed]="isSelected(node.id)"
-                  [attr.data-testid]="'newsletter-composer-outline-' + node.id"
-                  (click)="selectBlock(node.id)">
-                  @if (isBrowser() && node.depth === 0) {
+                  [class.bg-blue-50]="isSelected(block.id)"
+                  [class.text-blue-700]="isSelected(block.id)"
+                  [attr.aria-pressed]="isSelected(block.id)"
+                  [attr.data-testid]="'newsletter-composer-outline-' + block.id"
+                  (click)="selectBlock(block.id)">
+                  @if (isBrowser()) {
                     <i cdkDragHandle class="fa-light fa-grip-vertical cursor-grab text-xs text-gray-400 active:cursor-grabbing" aria-hidden="true" (click)="$event.stopPropagation()"></i>
                   } @else {
-                    <i class="{{ node.isContainer ? 'fa-light fa-layer-group' : 'fa-light fa-grip-dots-vertical' }} text-xs text-gray-400" aria-hidden="true"></i>
+                    <i class="{{ block.isContainer ? 'fa-light fa-layer-group' : 'fa-light fa-grip-dots-vertical' }} text-xs text-gray-400" aria-hidden="true"></i>
                   }
-                  <span class="flex-1 truncate">{{ node.label }}</span>
+                  <span class="flex-1 truncate">{{ block.label }}</span>
                 </button>
+
+                <!-- Container children, nested and static (reordered on the canvas). -->
+                @if (block.isContainer) {
+                  <ul class="flex flex-col gap-0.5">
+                    @for (child of block.children ?? []; track child.id) {
+                      <li>
+                        <button
+                          type="button"
+                          class="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100"
+                          style="padding-left: 24px"
+                          [class.bg-blue-50]="isSelected(child.id)"
+                          [class.text-blue-700]="isSelected(child.id)"
+                          [attr.aria-pressed]="isSelected(child.id)"
+                          [attr.data-testid]="'newsletter-composer-outline-' + child.id"
+                          (click)="selectBlock(child.id)">
+                          <i class="fa-light fa-grip-dots-vertical text-xs text-gray-400" aria-hidden="true"></i>
+                          <span class="flex-1 truncate">{{ child.label }}</span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                }
               </li>
             }
           </ul>
