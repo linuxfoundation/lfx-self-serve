@@ -178,24 +178,43 @@ export class ValkeyService implements CachePort {
 
   /**
    * Awaits a live connection before issuing `command`. Needed because `lazyConnect` + `enableOfflineQueue:
-   * false` means ioredis's own implicit reconnect on a "wait"-status client fires `connect()` without
-   * awaiting it, so the very next command is rejected synchronously ("Stream isn't writeable...") instead
-   * of waiting out the TLS handshake — the per-op timeout never gets a chance to apply. Explicitly awaiting
-   * `connect()` first (deduped via `connectingPromise` so concurrent callers share one in-flight connect)
-   * closes that gap; the whole thing still races against the caller's `withTimeout`.
+   * false` means ioredis rejects a command synchronously ("Stream isn't writeable...") on any client that
+   * isn't already `ready` — whether it's the initial `wait` state (cold pod) or `connecting`/`reconnecting`
+   * after a dropped connection (ioredis's own retry timer, not something we trigger) — instead of waiting
+   * out the handshake, so the per-op timeout never gets a chance to apply. Awaiting readiness first (deduped
+   * via `connectingPromise` so concurrent callers share one in-flight wait) closes that gap for every
+   * non-`ready` state; the whole thing still races against the caller's `withTimeout`.
    */
   private async runWhenConnected<T>(command: () => Promise<T>): Promise<T> {
-    if (this.client && (this.client.status === 'wait' || this.client.status === 'end')) {
+    if (this.client && this.client.status !== 'ready') {
       if (!this.connectingPromise) {
-        this.connectingPromise = this.client.connect().finally(() => {
+        this.connectingPromise = this.waitUntilReady(this.client).finally(() => {
           this.connectingPromise = null;
         });
       }
       await this.connectingPromise;
-    } else if (this.connectingPromise) {
-      await this.connectingPromise;
     }
     return command();
+  }
+
+  /** `wait`/`end` need an explicit `connect()`; any other non-`ready` status (`connecting`/`reconnecting`) is
+   * already being driven by ioredis's own retry timer, so we just await its next `ready` or `error`. */
+  private waitUntilReady(client: Redis): Promise<void> {
+    if (client.status === 'wait' || client.status === 'end') {
+      return client.connect();
+    }
+    return new Promise((resolve, reject) => {
+      const onReady = (): void => {
+        client.off('error', onError);
+        resolve();
+      };
+      const onError = (err: Error): void => {
+        client.off('ready', onReady);
+        reject(err);
+      };
+      client.once('ready', onReady);
+      client.once('error', onError);
+    });
   }
 
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */

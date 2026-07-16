@@ -29,7 +29,7 @@ export class AuthErrorComponent {
   private initTitle(): string {
     switch (this.reason) {
       case 'session':
-        return 'Session Could Not Be Saved';
+        return 'Session Invalid or Expired';
       default:
         return 'Sign-In Required';
     }
@@ -38,7 +38,7 @@ export class AuthErrorComponent {
   private initDescription(): string {
     switch (this.reason) {
       case 'session':
-        return "We couldn't save your session. This is usually temporary — please sign in again.";
+        return 'Your session is invalid or has expired. Please sign in again to continue.';
       default:
         return 'Your sign-in could not be completed. Please sign in again to continue.';
     }
