@@ -309,8 +309,8 @@ export class MailingListManageComponent {
 
   private initMaxGroupNameLength(): Signal<number> {
     return computed(() => {
-      const prefix = this.servicePrefix() + '-';
-      return 34 - prefix.length;
+      const prefix = this.servicePrefix();
+      return prefix ? 34 - prefix.length - 1 : 34;
     });
   }
 
@@ -386,6 +386,12 @@ export class MailingListManageComponent {
       public: mailingList.public ?? true,
       committees: mailingList.committees || [],
     });
+
+    // The name is immutable after creation — clear its validators so existing names
+    // that predate the stricter creation rules don't block edits to other fields.
+    const groupNameControl = this.form().get('group_name');
+    groupNameControl?.clearValidators();
+    groupNameControl?.updateValueAndValidity();
   }
 
   private canNavigateToStep(step: number): boolean {

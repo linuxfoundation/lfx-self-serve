@@ -239,7 +239,7 @@ export class MailingListMembersComponent {
 
     // Build the complete update payload - PUT requires all fields
     const updatePayload: UpdateMailingListMemberRequest = {
-      name: [updatedMember.first_name, updatedMember.last_name].filter(Boolean).join(' ') || updatedMember.name || null,
+      name: updatedMember.name || [updatedMember.first_name, updatedMember.last_name].filter(Boolean).join(' ') || undefined,
       organization: updatedMember.organization || null,
       job_title: updatedMember.job_title || null,
       delivery_mode: updatedMember.delivery_mode,

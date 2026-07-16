@@ -139,7 +139,7 @@ export class ManageMemberModalComponent {
         // Update existing member - PUT requires full payload
         // Only job_title and organization are editable, preserve other fields from existing member
         const updateData = {
-          name: [this.member!.first_name, this.member!.last_name].filter(Boolean).join(' ') || this.member!.name || null,
+          name: this.member!.name || [this.member!.first_name, this.member!.last_name].filter(Boolean).join(' ') || undefined,
           organization: formValue.organization || null,
           job_title: formValue.job_title || null,
           delivery_mode: this.member!.delivery_mode,
