@@ -190,8 +190,9 @@ export const routes: Routes = [
         ],
       },
       // Foundation Lens — feature routes (lens-tagged so deep links restore the foundation lens).
-      // Non-marketing product routes keep foundationProductGuard so marketing-only users who gain
-      // the foundation lens (isRootMarketingAuditor) cannot inherit Meetings/Events/etc. (FR-017).
+      // Non-marketing product routes: foundationProductGuard denies marketing-only users only
+      // (isMarketingOnlyFoundationUser) so they cannot inherit Meetings/Events/etc. (FR-017).
+      // Everyone else retains pre-existing projectQueryParamGuard-only access.
       {
         path: 'foundation/meetings',
         data: { lens: 'foundation' },

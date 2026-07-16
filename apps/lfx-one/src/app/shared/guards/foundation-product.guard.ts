@@ -10,18 +10,21 @@ import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 import { PersonaService } from '../services/persona.service';
 
 /**
- * Retains the pre-marketing-ops foundation product gate (board role or root writer) on
- * non-marketing foundation routes.
+ * Blocks marketing-only foundation users from non-marketing product routes (FR-017).
  *
- * Marketing Ops / Marketing Auditors gain the foundation lens via `isRootMarketingAuditor`
- * so they can reach Marketing surfaces (FR/SC-008), but MUST NOT inherit Meetings, Events,
- * Groups, Documents, Governance, etc. (FR-017). Those routes keep this guard; marketing
- * routes use `marketingViewGuard` / `campaignAccessGuard` instead. Overview stays open so
- * Marketing Ops can land on the dashboard Marketing Overview section.
+ * Marketing Ops / Auditors gain the foundation lens via `isRootMarketingAuditor` so they can
+ * reach Marketing surfaces, but MUST NOT inherit Meetings, Events, Groups, Documents, etc.
+ * Overview stays open (no this guard) so they can land on Marketing Overview.
+ *
+ * FR-017 also requires that non-marketing product permissions stay unchanged: before this
+ * feature those routes used only `projectQueryParamGuard`. This guard therefore denies
+ * **only** `isMarketingOnlyFoundationUser` and allows everyone else (board, root writer,
+ * project-scoped deep links, etc.).
  *
  * `isRootWriter` / `isRootMarketingAuditor` are TransferState- and cookie-seeded so SSR can
- * decide fail-closed without awaiting the personas API. On the browser, cold sessions wait for
- * `personaLoaded` before denying. Hydration timeout fails closed (FR-015 / FR-017).
+ * decide without awaiting the personas API. On the browser, cold sessions wait for
+ * `personaLoaded` before deciding. Hydration timeout uses seeded flags (deny only when
+ * already known marketing-only).
  */
 export const foundationProductGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -33,31 +36,37 @@ export const foundationProductGuard: CanActivateFn = async (route: ActivatedRout
     return slug ? router.createUrlTree(['/foundation/overview'], { queryParams: { project: slug } }) : router.parseUrl('/foundation/overview');
   };
 
-  const decide = () => (personaService.hasBoardRole() || personaService.isRootWriter() ? true : deny());
+  // Deny only the newly admitted marketing-only audience; preserve pre-existing access otherwise.
+  const decide = () => (personaService.isMarketingOnlyFoundationUser() ? deny() : true);
 
-  // Fast path: board persona / seeded root writer available immediately (cookie or TransferState).
-  if (personaService.hasBoardRole() || personaService.isRootWriter()) {
+  // Fast path: full product audience never blocked here.
+  if (personaService.canAccessFullFoundationProduct()) {
     return true;
   }
 
-  // SSR: decide from seeded entitlements (fail closed for marketing-only / anonymous).
-  // Do not await personaLoaded — afterNextRender never runs on the server.
+  // Fast path: seeded marketing-only → deny without waiting for API.
+  if (personaService.isMarketingOnlyFoundationUser()) {
+    return deny();
+  }
+
+  // SSR: decide from seeded entitlements (no personaLoaded on server).
   if (!isPlatformBrowser(platformId)) {
     return decide();
   }
 
-  // Browser: wait for API hydration before denying — cold sessions may still be loading root-writer.
+  // Browser: wait for hydration so a late-arriving ROOT marketing flag still blocks product routes.
   if (!personaService.personaLoaded()) {
     const loaded = await firstValueFrom(
       toObservable(personaService.personaLoaded).pipe(
         filter((ready): ready is true => ready === true),
         timeout(10_000),
-        // Timeout/error → treat as not loaded; fail closed below (FR-015).
         catchError(() => of(false))
       )
     );
     if (!loaded) {
-      return deny();
+      // Unknown state: do not narrow pre-existing access (FR-017). Seeded marketing-only
+      // already hit the fast-path deny above.
+      return true;
     }
   }
 

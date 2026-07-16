@@ -41,12 +41,12 @@ Board role and root-writer users keep the full foundation product surface unchan
 
 ## Routes (`app.routes.ts`)
 
-| Path                          | Guard(s) before                                    | Guard(s) after                                                                  |
-| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `foundation/health-metrics`   | `executiveDirectorGuard`, `projectQueryParamGuard` | UNCHANGED                                                                       |
-| `foundation/marketing-impact` | `executiveDirectorGuard`, `projectQueryParamGuard` | `marketingViewGuard`, `projectQueryParamGuard`                                  |
-| `foundation/campaigns`        | `executiveDirectorGuard`, `projectQueryParamGuard` | `campaignAccessGuard`, `projectQueryParamGuard`                                 |
-| `foundation/meetings` (etc.)  | `projectQueryParamGuard`                           | `foundationProductGuard`, `projectQueryParamGuard` (board/root-writer retained) |
+| Path                          | Guard(s) before                                    | Guard(s) after                                                                                    |
+| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `foundation/health-metrics`   | `executiveDirectorGuard`, `projectQueryParamGuard` | UNCHANGED                                                                                         |
+| `foundation/marketing-impact` | `executiveDirectorGuard`, `projectQueryParamGuard` | `marketingViewGuard`, `projectQueryParamGuard`                                                    |
+| `foundation/campaigns`        | `executiveDirectorGuard`, `projectQueryParamGuard` | `campaignAccessGuard`, `projectQueryParamGuard`                                                   |
+| `foundation/meetings` (etc.)  | `projectQueryParamGuard`                           | `foundationProductGuard`, `projectQueryParamGuard` (denies marketing-only only; others unchanged) |
 
 ## Dashboard Marketing Overview section
 
