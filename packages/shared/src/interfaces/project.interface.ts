@@ -4,6 +4,18 @@
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 
+/**
+ * Options for the client-side `ProjectService.getProject` fetch. Each flag is probe-gated: it maps
+ * to a query param that asks the BFF to run an extra FGA relation check and populate the matching
+ * response-only field on {@link Project}. Omitting a flag skips the probe (field stays `undefined`).
+ */
+export interface GetProjectOptions {
+  /** Request the `meeting_coordinator` probe (`?meeting_coordinator=true`) → populates `meetingCoordinator`. */
+  meetingCoordinator?: boolean;
+  /** Request the marketing probes (`?marketing=true`) → populates `marketingAuditor` + `campaignManager`. */
+  marketing?: boolean;
+}
+
 export interface Project {
   uid: string;
   slug: string;
@@ -21,6 +33,28 @@ export interface Project {
    *   transiently. Do NOT treat as a definitive role denial.
    */
   meetingCoordinator?: boolean;
+  /**
+   * Response-only — present (boolean) only when the caller requested the marketing checks
+   * (`?marketing=true`); omitted (`undefined`) otherwise.
+   *
+   * - `true`      — user holds the `marketing_auditor` role on this project (read access
+   *   to marketing dashboards; cascades from parent projects upstream).
+   * - `false`     — user does not hold the role, OR the upstream access check failed
+   *   transiently (the check is fail-closed, so a transient error denies rather than throws).
+   * - `undefined` — check was not requested (`?marketing=true` absent).
+   */
+  marketingAuditor?: boolean;
+  /**
+   * Response-only — present (boolean) only when the caller requested the marketing checks
+   * (`?marketing=true`); omitted (`undefined`) otherwise.
+   *
+   * - `true`      — user holds the `campaign_manager` role on this project (manage campaigns;
+   *   resolves as `executive_director or marketing_ops` upstream).
+   * - `false`     — user does not hold the role, OR the upstream access check failed
+   *   transiently (the check is fail-closed, so a transient error denies rather than throws).
+   * - `undefined` — check was not requested (`?marketing=true` absent).
+   */
+  campaignManager?: boolean;
   public: boolean;
   parent_uid: string;
   stage: ProjectStage | string;

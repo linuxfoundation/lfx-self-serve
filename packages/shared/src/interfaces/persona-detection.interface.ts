@@ -59,6 +59,8 @@ export interface PersonaDetections {
 export interface PersonaApiResponse extends PersonaDetections {
   /** Writer on the tenant root project — bypasses nav persona filtering. Request-scoped, not cached. */
   isRootWriter: boolean;
+  /** Marketing auditor on the tenant root project — surfaces the foundation lens to non-board marketing users. Request-scoped, not cached. */
+  isRootMarketingAuditor: boolean;
 }
 
 export interface SsrPersonaResult {
@@ -67,6 +69,8 @@ export interface SsrPersonaResult {
   organizations?: Account[];
   projects?: EnrichedPersonaProject[];
   personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
+  isRootWriter?: boolean;
+  isRootMarketingAuditor?: boolean;
 }
 
 /** Stores in-flight promise to collapse concurrent lookups. */
