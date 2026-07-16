@@ -15,7 +15,8 @@ import { HeaderComponent } from '@components/header/header.component';
 export class AuthErrorComponent {
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly reason: string;
+  private readonly reason: string;
+
   protected readonly title: string;
   protected readonly description: string;
 
