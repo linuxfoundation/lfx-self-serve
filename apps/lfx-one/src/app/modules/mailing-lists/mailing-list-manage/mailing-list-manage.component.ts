@@ -309,6 +309,8 @@ export class MailingListManageComponent {
 
   private initMaxGroupNameLength(): Signal<number> {
     return computed(() => {
+      const willPrefix = this.needsSharedServiceCreation() || this.selectedService()?.type !== GroupsIOServiceType.PRIMARY;
+      if (!willPrefix) return 34;
       const prefix = this.servicePrefix();
       return prefix ? 34 - prefix.length - 1 : 34;
     });
