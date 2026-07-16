@@ -779,6 +779,7 @@ export class CommitteeService {
           invite_uid: invite.uid,
           err: error,
         });
+        throw error;
       }
     }
 

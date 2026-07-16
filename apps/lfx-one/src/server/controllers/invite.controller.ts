@@ -3,7 +3,6 @@
 
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { InviteTokenPayload, PendingCommitteeInviteForOrg } from '@lfx-one/shared/interfaces';
-import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { errors as JoseErrors, JWK, JWT } from 'jose';
 
@@ -14,13 +13,12 @@ import { CommitteeService } from '../services/committee.service';
 import { NatsService } from '../services/nats.service';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
-/** Delay before each legacy email-search attempt while waiting for FGA tuple propagation. */
-const FGA_PROPAGATION_DELAY_MS = 3_000;
-/** Total number of legacy email-search attempts (each preceded by FGA_PROPAGATION_DELAY_MS). */
-const FGA_LEGACY_MAX_ATTEMPTS = 3;
-
 /** Controller for non-LF user invite acceptance via signed JWT. */
 export class InviteController {
+  /** Delay before each legacy email-search attempt while waiting for FGA tuple propagation. */
+  private static readonly fgaPropagationDelayMs = 3_000;
+  /** Total number of legacy email-search attempts (each preceded by fgaPropagationDelayMs). */
+  private static readonly fgaLegacyMaxAttempts = 3;
   private readonly natsService = new NatsService();
   private readonly committeeService = new CommitteeService();
 
@@ -198,39 +196,39 @@ export class InviteController {
         });
       }
 
-      // Fetch the specific pending invite to check whether an organization is required.
-      // getPendingInviteForUser returns null when the invite is not yet visible in the email
-      // index (FGA propagation delay) or when it has already been accepted (idempotent retry).
-      // In both cases we attempt accept directly and let the upstream enforce org requirements.
-      const pendingInvite = await this.committeeService.getPendingInviteForUser(req, invitedEmail, committeeUid, committeeInviteUid);
+      // Read org context directly from JWT claims — no email fetch needed. Claims are
+      // map[string]string in Go so organization_required is the string "true" or "false".
+      // Claims are absent on JWTs issued before the committee service v0.4.17 deploy;
+      // in that transitional window we accept directly without org check.
+      const organizationRequired = payload.organization_required === 'true';
+      const committeeName = typeof payload.committee_name === 'string' ? payload.committee_name.trim() || committeeUid : committeeUid;
 
-      if (pendingInvite) {
-        const requiresOrganization = invitationRequiresOrganization({ organization_required: pendingInvite.organization_required });
-        if (requiresOrganization) {
-          const orgName = pendingInvite.organization?.name?.trim() || null;
-          if (!orgName) {
-            logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
-              committee_uid: committeeUid,
-              committee_invite_uid: committeeInviteUid,
-            });
-            return {
-              committee_uid: committeeUid,
-              invite_uid: committeeInviteUid,
-              committee_name: pendingInvite.committee_name?.trim() || committeeUid,
-              organization: pendingInvite.organization ?? null,
-            };
-          }
-          const orgPayload = {
-            name: orgName,
-            id: pendingInvite.organization?.id?.trim() || null,
-            website: pendingInvite.organization?.website?.trim() || null,
+      if (organizationRequired) {
+        const orgName = typeof payload.organization_name === 'string' ? payload.organization_name.trim() || null : null;
+        if (!orgName) {
+          logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
+            committee_uid: committeeUid,
+            committee_invite_uid: committeeInviteUid,
+          });
+          return {
+            committee_uid: committeeUid,
+            invite_uid: committeeInviteUid,
+            committee_name: committeeName,
+            organization: {
+              id: typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null,
+              name: null,
+              website: typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null,
+            },
           };
-          await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, { organization: orgPayload });
-        } else {
-          await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
         }
+        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, {
+          organization: {
+            name: orgName,
+            id: typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null,
+            website: typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null,
+          },
+        });
       } else {
-        // Invite not in pending index — accept directly (idempotent if already accepted).
         await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
       }
 
@@ -252,8 +250,8 @@ export class InviteController {
     }
 
     // Wait before every attempt (including the first) so the FGA invitee tuple can propagate.
-    for (let attempt = 0; attempt < FGA_LEGACY_MAX_ATTEMPTS; attempt++) {
-      await new Promise<void>((resolve) => setTimeout(resolve, FGA_PROPAGATION_DELAY_MS));
+    for (let attempt = 0; attempt < InviteController.fgaLegacyMaxAttempts; attempt++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, InviteController.fgaPropagationDelayMs));
 
       const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
         invitedEmail,
