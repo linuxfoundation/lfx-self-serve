@@ -717,7 +717,7 @@ export class CommitteeService {
    */
   public async acceptPendingCommitteeInvitesAfterLfidAccept(
     req: Request,
-    params: { invitedEmail: string; resourceUid?: string }
+    params: { invitedEmail: string; resourceUid?: string; committeeInviteUid?: string }
   ): Promise<PendingCommitteeInviteForOrg | null | undefined> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
     if (pendingInvites.length === 0) {
@@ -726,17 +726,34 @@ export class CommitteeService {
       return undefined;
     }
 
-    const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
-    if (toAccept.length === 0) {
-      logger.warning(req, 'accept_invite', 'Pending committee invitations found but none selected for auto-accept', {
-        pending_count: pendingInvites.length,
-        resource_uid: params.resourceUid,
-      });
-      return undefined;
+    let toAccept: CommitteeInvite[];
+    const trimmedCommitteeInviteUid = params.committeeInviteUid?.trim();
+
+    if (trimmedCommitteeInviteUid) {
+      // JWT carries the exact committee invite UID — accept only that invite; no fuzzy matching needed.
+      const target = pendingInvites.find((invite) => invite.uid === trimmedCommitteeInviteUid);
+      if (!target) {
+        // The invite isn't visible yet — FGA invitee tuple may still be propagating; retry.
+        logger.debug(req, 'accept_invite', 'Target committee invite not yet visible — will retry', {
+          committee_invite_uid: trimmedCommitteeInviteUid,
+        });
+        return undefined;
+      }
+      toAccept = [target];
+    } else {
+      toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
+      if (toAccept.length === 0) {
+        logger.warning(req, 'accept_invite', 'Pending committee invitations found but none selected for auto-accept', {
+          pending_count: pendingInvites.length,
+          resource_uid: params.resourceUid,
+        });
+        return undefined;
+      }
     }
 
     logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
       accept_count: toAccept.length,
+      committee_invite_uid: trimmedCommitteeInviteUid,
       resource_uid: params.resourceUid,
     });
 

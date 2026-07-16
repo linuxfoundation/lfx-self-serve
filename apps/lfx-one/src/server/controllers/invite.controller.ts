@@ -196,6 +196,7 @@ export class InviteController {
       const result = await this.committeeService.acceptPendingCommitteeInvitesAfterLfidAccept(req, {
         invitedEmail,
         resourceUid: payload.resource_uid,
+        committeeInviteUid: payload.committee_invite_uid,
       });
 
       // undefined = no pending invites found yet; the FGA tuple may still be in-flight — retry.
