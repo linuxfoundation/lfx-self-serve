@@ -2,17 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
-import { ProjectService } from '@services/project.service';
-import { combineLatest, EMPTY, map, Observable, startWith, switchMap } from 'rxjs';
+import { startWith } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -51,9 +49,6 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
 export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly projectService = inject(ProjectService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
@@ -77,41 +72,6 @@ export class MarketingImpactComponent {
   protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
-
-  /**
-   * marketing_auditor access for the currently selected foundation. Gates the tab content so the
-   * analytics child tabs never mount (and never fire requests) for a context the user can't audit —
-   * the marketing APIs are not yet server-enforced, so this is the fail-closed front stop.
-   * `startWith(false)` resets it on every switch: the tabs unmount immediately, then re-render only
-   * once the probe returns true. Keyed off `selectedFoundation` (seeded from `?project=` by
-   * projectQueryParamGuard, matching the guard's slug source) rather than the lens-dependent
-   * `activeContext`, which trails the lens on cold deep links.
-   */
-  protected readonly authorized: Signal<boolean> = toSignal(this.initAuthorized(), { initialValue: false });
-
-  public constructor() {
-    // marketingViewGuard only runs on navigation, but an in-place context switch (setFoundation uses
-    // Location.replaceState — no navigation) doesn't re-run it. Redirect (fail closed) when the newly
-    // selected foundation resolves without marketing_auditor. Slug prefers selectedFoundation, then
-    // `?project=` (same as the guard) so a deep link is not denied while projectQueryParamGuard is
-    // still seeding context. No slug yet → wait (EMPTY), never treat "pending seed" as denial.
-    combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap])
-      .pipe(
-        switchMap(([foundation, params]) => {
-          const slug = foundation?.slug ?? params.get('project') ?? undefined;
-          if (!slug) {
-            return EMPTY;
-          }
-          return this.projectService.hasMarketingAuditor(slug).pipe(map((allowed) => ({ allowed, slug })));
-        }),
-        takeUntilDestroyed()
-      )
-      .subscribe(({ allowed, slug }) => {
-        if (!allowed) {
-          this.router.navigate(['/foundation/overview'], { queryParams: { project: slug } });
-        }
-      });
-  }
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
@@ -142,15 +102,6 @@ export class MarketingImpactComponent {
       const allowed = FOCUS_VISIBLE_TABS[this.selectedFocus()];
       return this.tabs.filter((t) => allowed.has(t.id));
     });
-  }
-
-  private initAuthorized(): Observable<boolean> {
-    return combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap]).pipe(
-      switchMap(([foundation, params]) => {
-        const slug = foundation?.slug ?? params.get('project') ?? undefined;
-        return this.projectService.hasMarketingAuditor(slug).pipe(startWith(false));
-      })
-    );
   }
 
   private initContextLabel(): Signal<string> {

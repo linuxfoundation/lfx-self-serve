@@ -6,7 +6,7 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
@@ -43,20 +43,6 @@ export class ProjectContextService {
 
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
   public readonly canWrite: Signal<boolean> = this.initCanWrite();
-
-  /**
-   * Marketing read access (`marketing_auditor`) for the current active context — gates the
-   * Marketing nav section and the Marketing Impact surface. Reactive to context changes.
-   * Fails closed (false) while resolving, on error, or when no context is selected.
-   */
-  public readonly canViewMarketing: Signal<boolean> = this.initMarketingAccess((p) => p?.marketingAuditor === true);
-
-  /**
-   * Campaign management access (`campaign_manager`) for the current active context — gates the
-   * Campaigns nav entry and the dashboard Marketing Overview section. Reactive to context changes.
-   * Fails closed (false) while resolving, on error, or when no context is selected.
-   */
-  public readonly canManageCampaigns: Signal<boolean> = this.initMarketingAccess((p) => p?.campaignManager === true);
 
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
@@ -197,33 +183,6 @@ export class ProjectContextService {
           return this.projectService.getProject(ctx.slug, false).pipe(
             map((project) => project?.writer === true),
             catchError(() => of(false))
-          );
-        })
-      ),
-      { initialValue: false }
-    );
-  }
-
-  /**
-   * Shared builder for the marketing-access signals. Fetches the active-context project with the
-   * marketing probe flag and projects the requested field. Uses `current=false` so the shared
-   * project signal isn't overwritten by these background permission probes.
-   *
-   * `startWith(false)` resets the signal to deny on every context switch so a previous context's
-   * `true` can't briefly leak the Marketing nav/section/overview before the new probe resolves
-   * (fail-closed during the transition; mirrors {@link initSelectedFoundationSfid}'s reset).
-   */
-  private initMarketingAccess(select: (project: Project | null) => boolean): Signal<boolean> {
-    return toSignal(
-      toObservable(this.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) {
-            return of(false);
-          }
-          return this.projectService.getProject(ctx.slug, false, { marketing: true }).pipe(
-            map((project) => select(project)),
-            catchError(() => of(false)),
-            startWith(false)
           );
         })
       ),

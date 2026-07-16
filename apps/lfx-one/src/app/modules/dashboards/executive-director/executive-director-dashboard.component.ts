@@ -41,9 +41,6 @@ export class ExecutiveDirectorDashboardComponent {
 
   protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
   protected readonly showOrgInvolvement = computed(() => this.lensService.activeLens() !== 'me');
-  // Marketing Overview is read-only and gated on `campaign_manager` (ED / Marketing Ops) for the
-  // active context — not on the ED persona — so per-project correctness holds across foundations.
-  protected readonly canManageCampaigns = this.projectContextService.canManageCampaigns;
 
   // === Configuration ===
   private readonly refresh$ = new BehaviorSubject<void>(undefined);

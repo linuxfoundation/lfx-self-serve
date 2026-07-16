@@ -41,7 +41,6 @@ export class PersonaDetectionService {
   private readonly affiliatedUidsCache = new Map<string, AffiliatedProjectUidsCacheEntry>();
   private readonly personasCache = new Map<string, PersonaApiResponseCacheEntry>();
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
-  private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   private rootProjectUidCache: { uid: string | null; expiresAt: number } | null = null;
 
   public constructor() {
@@ -96,12 +95,8 @@ export class PersonaDetectionService {
     const email = getEffectiveEmail(req) || '';
     const cacheKey = username || email;
 
-    // isRootWriter / isRootMarketingAuditor are request-scoped (bearer-token dependent) — resolve per-request and merge.
-    const [detections, isRootWriter, isRootMarketingAuditor] = await Promise.all([
-      this.getPersonaDetections(req, username, email, cacheKey),
-      this.checkRootWriter(req),
-      this.checkRootMarketingAuditor(req),
-    ]);
+    // isRootWriter is request-scoped (bearer-token dependent) — resolve per-request and merge.
+    const [detections, isRootWriter] = await Promise.all([this.getPersonaDetections(req, username, email, cacheKey), this.checkRootWriter(req)]);
 
     // Compute the per-request persona list without mutating the cached detections object.
     let personas = detections.personas;
@@ -116,7 +111,7 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
-    return { ...detections, personas, isRootWriter, isRootMarketingAuditor };
+    return { ...detections, personas, isRootWriter };
   }
 
   public async checkRootWriter(req: Request): Promise<boolean> {
@@ -134,29 +129,6 @@ export class PersonaDetectionService {
         return false;
       });
     this.rootWriterRequestCache.set(req, promise);
-    return promise;
-  }
-
-  /**
-   * Checks whether the current user holds `marketing_auditor` on the tenant ROOT project. A ROOT
-   * grant cascades to every sub-project upstream, so this signal is used to surface the foundation
-   * lens to non-board marketing users. Mirrors {@link checkRootWriter}: request-cached, resolves the
-   * ROOT uid via NATS, and fails closed to `false` so transient errors never widen access.
-   */
-  public async checkRootMarketingAuditor(req: Request): Promise<boolean> {
-    const cached = this.rootMarketingAuditorRequestCache.get(req);
-    if (cached) return cached;
-
-    const promise = this.resolveRootUid(req)
-      .then((rootUid) => {
-        if (!rootUid) return false;
-        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access: 'marketing_auditor' });
-      })
-      .catch((error) => {
-        logger.warning(req, 'check_root_marketing_auditor', 'Root marketing-auditor check failed, assuming no access', { err: error });
-        return false;
-      });
-    this.rootMarketingAuditorRequestCache.set(req, promise);
     return promise;
   }
 

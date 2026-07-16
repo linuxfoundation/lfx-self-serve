@@ -22,39 +22,89 @@ export class AccessCheckService {
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @returns Map of resource IDs to their access status
-   *
-   * NOTE: results are keyed by resource `id`, so multiple relations on the same id collapse to a
-   * single entry (last write wins). When probing several relations on ONE resource, use
-   * {@link checkAccessOrdered} instead, which preserves one result per request.
    */
   public async checkAccess(req: Request, resources: AccessCheckRequest[]): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
       return new Map();
     }
 
-    const results = await this.performAccessCheck(req, resources);
+    const resourceTypes = [...new Set(resources.map((r) => r.resource))];
+    const operationName = `check_access_permissions_${resourceTypes.join('_')}`;
+    const startTime = logger.startOperation(req, operationName, {
+      request_count: resources.length,
+      resource_types: resourceTypes,
+      access_types: [...new Set(resources.map((r) => r.access))],
+    });
 
-    const resultMap = new Map<string, boolean>();
-    resources.forEach((resource, i) => resultMap.set(resource.id, results[i]));
-    return resultMap;
-  }
+    try {
+      // Transform requests to the expected API format
+      const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
 
-  /**
-   * Check access permissions for multiple resource/relation tuples in a single upstream call,
-   * returning results positionally (aligned to the input array). Unlike {@link checkAccess}, this
-   * does not key by resource id, so it safely distinguishes multiple relations on the same resource
-   * (e.g. `marketing_auditor` and `campaign_manager` on one project uid). Fails closed: on upstream
-   * error every entry is `false`.
-   * @param req Express request object with auth context
-   * @param resources Array of resource/relation tuples to check
-   * @returns Boolean array in the same order as `resources`
-   */
-  public async checkAccessOrdered(req: Request, resources: AccessCheckRequest[]): Promise<boolean[]> {
-    if (resources.length === 0) {
-      return [];
+      const requestPayload: AccessCheckApiRequest = {
+        requests: apiRequests,
+      };
+
+      // Make the API request
+      const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        '/access-check',
+        'POST',
+        undefined,
+        requestPayload
+      );
+
+      // Create result map
+      const resultMap = new Map<string, boolean>();
+      const userAccessInfo: { resourceId: string; username?: string; hasAccess: boolean }[] = [];
+
+      // Map results back to resource IDs
+      for (let i = 0; i < resources.length; i++) {
+        const resource = resources[i];
+        const resultString = response.results[i];
+
+        // Parse the result string format: "resource:id#access@user:username\ttrue/false"
+        let hasAccess = false;
+        let username: string | undefined;
+
+        if (resultString && typeof resultString === 'string') {
+          // Split by tab to get the boolean part
+          const parts = resultString.split('\t');
+          if (parts.length >= 2) {
+            hasAccess = parts[1]?.toLowerCase() === 'true';
+
+            // Extract username from the first part: "resource:id#access@user:username"
+            const accessPart = parts[0];
+            const userMatch = accessPart?.match(/@user:(.+)$/);
+            if (userMatch) {
+              username = userMatch[1];
+            }
+          }
+        }
+
+        resultMap.set(resource.id, hasAccess);
+        userAccessInfo.push({ resourceId: resource.id, username, hasAccess });
+      }
+
+      logger.success(req, operationName, startTime, {
+        request_count: resources.length,
+        granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+      });
+
+      return resultMap;
+    } catch (error) {
+      logger.error(req, operationName, startTime, error, {
+        request_count: resources.length,
+        fallback_behavior: 'returning no access',
+      });
+
+      // Return map with all false values as fallback
+      const fallbackMap = new Map<string, boolean>();
+      for (const resource of resources) {
+        fallbackMap.set(resource.id, false);
+      }
+      return fallbackMap;
     }
-
-    return this.performAccessCheck(req, resources);
   }
 
   /**
@@ -64,8 +114,8 @@ export class AccessCheckService {
    * @returns Boolean indicating whether user has access
    */
   public async checkSingleAccess(req: Request, resource: AccessCheckRequest): Promise<boolean> {
-    const [hasAccess] = await this.performAccessCheck(req, [resource]);
-    return hasAccess ?? false;
+    const results = await this.checkAccess(req, [resource]);
+    return results.get(resource.id) || false;
   }
 
   /**
@@ -138,67 +188,5 @@ export class AccessCheckService {
 
   private getResourceId(resource: { uid: string } | { id: string }): string {
     return 'uid' in resource ? resource.uid : resource.id;
-  }
-
-  /**
-   * Shared core for the access-check variants: issues the batched `/access-check` request and parses
-   * the tab-delimited results positionally (`"resource:id#access@user:username\ttrue/false"`).
-   * Fails closed — any upstream error resolves every entry to `false` — so callers never throw on a
-   * transient failure.
-   */
-  private async performAccessCheck(req: Request, resources: AccessCheckRequest[]): Promise<boolean[]> {
-    const resourceTypes = [...new Set(resources.map((r) => r.resource))];
-    const operationName = `check_access_permissions_${resourceTypes.join('_')}`;
-    const startTime = logger.startOperation(req, operationName, {
-      request_count: resources.length,
-      resource_types: resourceTypes,
-      access_types: [...new Set(resources.map((r) => r.access))],
-    });
-
-    try {
-      // Transform requests to the expected API format
-      const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
-
-      const requestPayload: AccessCheckApiRequest = {
-        requests: apiRequests,
-      };
-
-      // Make the API request
-      const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        '/access-check',
-        'POST',
-        undefined,
-        requestPayload
-      );
-
-      // Parse each result positionally: "resource:id#access@user:username\ttrue/false"
-      const results = resources.map((_, i) => {
-        const resultString = response.results[i];
-        if (resultString && typeof resultString === 'string') {
-          const parts = resultString.split('\t');
-          if (parts.length >= 2) {
-            return parts[1]?.toLowerCase() === 'true';
-          }
-        }
-        return false;
-      });
-
-      logger.success(req, operationName, startTime, {
-        request_count: resources.length,
-        granted_count: results.filter(Boolean).length,
-      });
-
-      return results;
-    } catch (error) {
-      logger.error(req, operationName, startTime, error, {
-        request_count: resources.length,
-        fallback_behavior: 'returning no access',
-      });
-
-      // Fail closed — deny every requested tuple on a transient upstream failure.
-      return resources.map(() => false);
-    }
   }
 }
