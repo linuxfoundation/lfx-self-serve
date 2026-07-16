@@ -109,3 +109,40 @@ test.describe('Linux.com email — partial claim failure recovery', () => {
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
   });
 });
+
+test.describe('Linux.com email — forwarding target visibility', () => {
+  test('keeps the forward dropdown visible with a hint when the saved target is the only verified option', async ({ page }) => {
+    await stubProfileContext(page);
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: `${ALIAS}@${DOMAIN}`, forwardTo: PRIMARY_EMAIL };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-select')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+    await expect(page.getByText('Add another verified email to change this.')).toBeVisible();
+  });
+
+  test('shows the normal hint on a first-time claim with a single verified email', async ({ page }) => {
+    await stubProfileContext(page);
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-forward-select')).toBeVisible();
+    await expect(page.getByText('Choose one of your verified email addresses.')).toBeVisible();
+  });
+});
