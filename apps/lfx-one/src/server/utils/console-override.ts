@@ -32,7 +32,7 @@ function buildLogArgs(args: any[]): [Record<string, unknown>, string] {
       // failure text is not lost in production logs.
       errValue = {
         type: 'HttpErrorResponse',
-        message: `Http failure response for ${arg.url}: ${arg.status} ${arg.statusText}`,
+        message: arg.message || `Http failure response for ${arg.url}: ${arg.status} ${arg.statusText}`,
         statusCode: arg.status,
         statusText: arg.statusText,
         url: arg.url,

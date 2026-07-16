@@ -46,6 +46,7 @@ const otelLog = {
   info: (msg, extra) => otelWrite('INFO', msg, extra),
   warn: (msg, extra) => otelWrite('WARN', msg, extra),
   error: (msg, extra) => otelWrite('ERROR', msg, extra),
+  debug: (msg, extra) => otelWrite('DEBUG', msg, extra),
 };
 
 if (!otlpEndpoint) {
@@ -67,8 +68,8 @@ if (!otlpEndpoint) {
     error: (msg, ...args) => otelLog.error(`[otel] ${msg}`, args.length ? { args } : undefined),
     warn: (msg, ...args) => otelLog.warn(`[otel] ${msg}`, args.length ? { args } : undefined),
     info: (msg, ...args) => otelLog.info(`[otel] ${msg}`, args.length ? { args } : undefined),
-    debug: (msg, ...args) => otelLog.info(`[otel] ${msg}`, args.length ? { args } : undefined),
-    verbose: (msg, ...args) => otelLog.info(`[otel] ${msg}`, args.length ? { args } : undefined),
+    debug: (msg, ...args) => otelLog.debug(`[otel] ${msg}`, args.length ? { args } : undefined),
+    verbose: (msg, ...args) => otelLog.debug(`[otel] ${msg}`, args.length ? { args } : undefined),
   };
   if (diagLevelMap[logLevel] !== undefined) {
     diag.setLogger(jsonDiagLogger, diagLevelMap[logLevel]);
