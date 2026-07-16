@@ -197,23 +197,34 @@ export class ValkeyService implements CachePort {
     return command();
   }
 
-  /** `wait`/`end` need an explicit `connect()`; any other non-`ready` status (`connecting`/`reconnecting`) is
-   * already being driven by ioredis's own retry timer, so we just await its next `ready` or `error`. */
+  /** `wait`/`end` need an explicit `connect()`; any other non-`ready` status (`close`/`connecting`/`reconnecting`)
+   * is already being driven by ioredis's own retry timer, so we just await its next `ready`. ioredis's `error`
+   * event fires on every failed retry attempt while the client keeps retrying — it is not terminal — so it's
+   * not treated as a rejection here; only `end` (ioredis giving up on reconnecting) is. The `client.status ===
+   * 'ready'` re-check inside the executor closes the race where `ready` fires between `runWhenConnected`'s
+   * status check and this listener being attached. */
   private waitUntilReady(client: Redis): Promise<void> {
     if (client.status === 'wait' || client.status === 'end') {
       return client.connect();
     }
+    if (client.status === 'ready') {
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
+      if (client.status === 'ready') {
+        resolve();
+        return;
+      }
       const onReady = (): void => {
-        client.off('error', onError);
+        client.off('end', onEnd);
         resolve();
       };
-      const onError = (err: Error): void => {
+      const onEnd = (): void => {
         client.off('ready', onReady);
-        reject(err);
+        reject(new Error('valkey_connection_ended'));
       };
       client.once('ready', onReady);
-      client.once('error', onError);
+      client.once('end', onEnd);
     });
   }
 
