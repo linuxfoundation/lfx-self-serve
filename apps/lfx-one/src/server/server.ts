@@ -513,7 +513,12 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
   // on GET (so XHR/Fetch clients still get JSON); everything else falls through to
   // apiErrorHandler's structured JSON response.
   if (error instanceof AuthenticationError && req.method === 'GET' && error.operation?.startsWith('session_store')) {
-    res.redirect(`/auth-error?reason=session&returnTo=${encodeURIComponent(req.originalUrl)}`);
+    // A session-store write can fail while handling an OAuth callback (/callback and its
+    // /*.../callback siblings), whose query string carries a one-time `code`/`state` pair. Forwarding
+    // that URL as `returnTo` would send the user back to an already-consumed callback after re-login
+    // instead of a fresh OAuth round trip, so omit it there — only carry `returnTo` for ordinary pages.
+    const returnTo = /\/callback$/.test(req.path) ? '' : `&returnTo=${encodeURIComponent(req.originalUrl)}`;
+    res.redirect(`/auth-error?reason=session${returnTo}`);
     return;
   }
 
