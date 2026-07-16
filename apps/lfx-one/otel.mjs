@@ -27,9 +27,17 @@ const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 // this module runs via --import before the server module loads.
 // JSON.stringify is wrapped in try/catch so non-serializable values (bigint,
 // circular structures) never crash the process; falls back to a minimal line.
+// The replacer normalizes Error instances so their message and stack are
+// captured — by default JSON.stringify serializes Error as {}.
+function otelReplacer(_key, value) {
+  if (value instanceof Error) {
+    return { message: value.message, stack: value.stack, name: value.name };
+  }
+  return value;
+}
 function otelWrite(level, msg, extra) {
   try {
-    process.stdout.write(JSON.stringify({ level, msg, ...extra }) + '\n');
+    process.stdout.write(JSON.stringify({ level, msg, ...extra }, otelReplacer) + '\n');
   } catch {
     process.stdout.write(JSON.stringify({ level, msg }) + '\n');
   }
