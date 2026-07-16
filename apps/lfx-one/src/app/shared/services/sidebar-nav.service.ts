@@ -495,7 +495,12 @@ export class SidebarNavService {
       icon: 'fa-light fa-folder-bookmark',
       routerLink: '/org/memberships',
     },
-    // INFO: Future Epic implementation — Projects, ROI, and Governance pages are hidden until
+    {
+      label: 'Projects',
+      icon: 'fa-light fa-folder',
+      routerLink: '/org/projects',
+    },
+    // INFO: Future Epic implementation — ROI and Governance pages are hidden until
     // built. Restore as top-level items or a section when re-enabled.
     {
       label: 'Organization Engagement',

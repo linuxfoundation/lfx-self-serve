@@ -125,7 +125,14 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/projects/search', (req, res, next) => orgLensProjectsController.searchProjects(req, res, next));
   router.get('/:orgUid/lens/projects', (req, res, next) => orgLensProjectsController.getProjects(req, res, next));
   // LFXV2-1885 — Org Lens Project Detail sub-page.
-  router.get('/:orgUid/lens/projects/:projectSlug', (req, res, next) => orgLensProjectDetailController.getProjectDetail(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/hero', (req, res, next) => orgLensProjectDetailController.getHeroBlock(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/influence', (req, res, next) => orgLensProjectDetailController.getInfluenceBlock(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/trend', (req, res, next) => orgLensProjectDetailController.getTrendBlock(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/technical', (req, res, next) => orgLensProjectDetailController.getTechnicalBoard(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem', (req, res, next) => orgLensProjectDetailController.getEcosystemBoard(req, res, next));
+  // LFXV2-1885 DN9 — per-card drawer roster (server-side paginated), fetched lazily on drawer open.
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', (req, res, next) => orgLensProjectDetailController.getCardRoster(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey', (req, res, next) => orgLensProjectDetailController.getCardDrawer(req, res, next));
   router.get('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.getWorkspaces(req, res, next));
   router.post('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.createWorkspace(req, res, next));
   router.put('/:orgUid/lens/workspaces/:workspaceId', (req, res, next) => orgLensProjectsController.renameWorkspace(req, res, next));

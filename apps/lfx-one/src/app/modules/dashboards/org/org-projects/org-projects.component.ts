@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   DEFAULT_ORG_PROJECTS_PAGE_SIZE,
   DEFAULT_ORG_PROJECTS_SORT_DIR,
@@ -81,6 +81,7 @@ import { PersonaService } from '@shared/services/persona.service';
     MenuComponent,
     MultiSelectComponent,
     PopoverModule,
+    RouterLink,
     SelectComponent,
     SkeletonModule,
     TableComponent,
