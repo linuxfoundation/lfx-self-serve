@@ -105,6 +105,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Gatewaze parity for previewing how the email reads on each.
   protected readonly previewViewport = signal<'desktop' | 'mobile'>('desktop');
   protected readonly previewBackdrop = signal<'light' | 'dark'>('light');
+  // When true, the preview swaps the live canvas for a read-only view of the
+  // rendered email HTML (Gatewaze HTML-source parity).
+  protected readonly showSource = signal<boolean>(false);
 
   // The canvas container — the positioned ancestor the floating toolbar is
   // measured against, and the root we scan for `data-nl-field` elements.
@@ -125,6 +128,23 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly hasBlocks: Signal<boolean> = computed(() => this.blocks().length > 0);
   // The email-card width for the active viewport (Gatewaze uses 682 / 375).
   protected readonly viewportWidth: Signal<number> = computed(() => (this.previewViewport() === 'mobile' ? 375 : 682));
+  // The full assembled email HTML (wrapper + all blocks), the same render path a
+  // send uses (editMode off, so no inline-edit markers). Browser-only; feeds the
+  // HTML-source view and the email-size indicator.
+  protected readonly fullHtml: Signal<string> = this.initFullHtml();
+  // Byte size of the rendered email, and the Gmail-clipping status derived from
+  // it (Gmail clips messages over ~102 KB, warning as it approaches).
+  protected readonly emailBytes: Signal<number> = computed(() => {
+    const html = this.fullHtml();
+    return html ? new TextEncoder().encode(html).length : 0;
+  });
+  protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1024).toFixed(1)} KB`);
+  protected readonly emailSizeStatus: Signal<'ok' | 'warn' | 'clip'> = computed(() => {
+    const bytes = this.emailBytes();
+    if (bytes >= GMAIL_CLIP_BYTES) return 'clip';
+    if (bytes >= GMAIL_WARN_BYTES) return 'warn';
+    return 'ok';
+  });
   // One stable drop-list id per container block, so the palette / canvas / other
   // containers can connect to it for cross-list drag-and-drop.
   protected readonly containerListIds: Signal<string[]> = this.initContainerListIds();
@@ -259,6 +279,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Toggle the preview backdrop between light and dark. */
   protected toggleBackdrop(): void {
     this.previewBackdrop.update((mode) => (mode === 'light' ? 'dark' : 'light'));
+  }
+
+  /** Toggle the read-only HTML-source view of the rendered email. */
+  protected toggleSource(): void {
+    this.showSource.update((on) => !on);
   }
 
   /**
@@ -575,6 +600,20 @@ export class NewsletterBlockComposerComponent implements OnInit {
         // the blur commit re-renders and repositions anyway).
         if (!this.editingBlockId()) this.repositionToolbar();
       });
+    });
+  }
+
+  /**
+   * The full assembled email HTML (wrapper chrome + every block), rendered the
+   * same way a send does (`editMode` off). Recomputes when the canvas blocks or
+   * the manifest change. Browser-only (the renderer no-ops on the server).
+   */
+  private initFullHtml(): Signal<string> {
+    return computed(() => {
+      const manifest = this.manifest();
+      if (!manifest) return '';
+      const templateOf = (blockType: string): string | undefined => this.manifestService.getBlock(blockType)?.template;
+      return this.renderer.renderNewsletter(manifest.wrapper, this.toLayout().blocks, templateOf, this.wrapperPreviewContent(), false);
     });
   }
 
@@ -946,6 +985,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
 /** Vertical gap (px) between the floating toolbar and the top of its block. */
 const TOOLBAR_OFFSET = 32;
+
+/**
+ * Gmail clips a message once its HTML exceeds ~102 KB (hiding everything past
+ * the cut behind a "[Message clipped] View entire message" link). We warn as
+ * the rendered email approaches that ceiling. Matches Gatewaze's thresholds.
+ */
+const GMAIL_WARN_BYTES = 90 * 1024;
+const GMAIL_CLIP_BYTES = 102 * 1024;
 
 /**
  * Read a dotted/indexed path out of a content object (`jobs.0.company`). A bare
