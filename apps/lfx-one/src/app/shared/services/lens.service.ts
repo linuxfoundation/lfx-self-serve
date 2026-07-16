@@ -112,9 +112,12 @@ export class LensService {
     const hasBoardRole = this.personaService.hasBoardRole();
     const hasProjectRole = this.personaService.hasProjectRole();
     const isRootWriter = this.personaService.isRootWriter();
+    const isRootMarketingAuditor = this.personaService.isRootMarketingAuditor();
 
     // Root writers bypass persona filtering and see both foundation + project lenses.
-    const showFoundation = hasBoardRole || isRootWriter;
+    // Root marketing auditors (non-board marketing users) get the foundation lens so they can
+    // reach the per-project Marketing surfaces, but not the project lens.
+    const showFoundation = hasBoardRole || isRootWriter || isRootMarketingAuditor;
     const showProject = hasProjectRole || isRootWriter;
 
     const lenses: Lens[] = ['me'];

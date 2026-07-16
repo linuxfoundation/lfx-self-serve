@@ -41,10 +41,28 @@ export class PersonaService {
   public readonly hasBoardRole: Signal<boolean>;
   public readonly hasProjectRole: Signal<boolean>;
   public readonly personaLoaded: WritableSignal<boolean>;
+  /**
+   * True when the personas API returned null/error. Auth-critical guards should fail closed for
+   * non-full-product users rather than deciding with incomplete hydration (FR-015 / FR-017).
+   */
+  public readonly personaHydrationFailed: WritableSignal<boolean> = signal<boolean>(false);
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
   /** Writer on the tenant root project — bypasses nav persona filtering */
-  public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
+  public readonly isRootWriter: WritableSignal<boolean>;
+  /** Marketing auditor on the tenant root project — surfaces the foundation lens to non-board marketing users */
+  public readonly isRootMarketingAuditor: WritableSignal<boolean>;
+  /**
+   * Full foundation product surface (Meetings, Events, Groups, …) — the pre-marketing-ops
+   * foundation-lens audience. Marketing-only users get the lens via `isRootMarketingAuditor`
+   * but not this flag (FR-017).
+   */
+  public readonly canAccessFullFoundationProduct: Signal<boolean> = computed(() => this.hasBoardRole() || this.isRootWriter());
+  /**
+   * Foundation lens available only because of a ROOT marketing grant (no board role / root writer).
+   * Drives the marketing-only nav + dashboard mode.
+   */
+  public readonly isMarketingOnlyFoundationUser: Signal<boolean> = computed(() => this.isRootMarketingAuditor() && !this.canAccessFullFoundationProduct());
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -54,6 +72,10 @@ export class PersonaService {
     const authState = this.transferState.get(makeStateKey<AuthContext>('auth'), { authenticated: false, user: null });
     this.personaProjects = signal<Partial<Record<PersonaType, PersonaProject[]>>>(authState.personaProjects ?? {});
     this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
+    // Prefer TransferState (SSR NATS) then cookie so product guards can decide on the server
+    // and on the first browser paint without awaiting /api/user/personas.
+    this.isRootWriter = signal<boolean>(authState.isRootWriter === true || stored?.isRootWriter === true);
+    this.isRootMarketingAuditor = signal<boolean>(authState.isRootMarketingAuditor === true || stored?.isRootMarketingAuditor === true);
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();
@@ -130,15 +152,20 @@ export class PersonaService {
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
-      this.isRootWriter.set(false);
+      // Keep TransferState/cookie-seeded ROOT flags — wiping them to false would let a marketing-only
+      // user through foundationProductGuard after a transient personas failure (FR-017).
+      // Mark hydration failed so auth guards can fail closed for unconfirmed non-full-product users.
+      this.personaHydrationFailed.set(true);
       this.personaLoaded.set(true);
       return;
     }
 
     console.info('[PersonaService] Persona detection response:', response);
+    this.personaHydrationFailed.set(false);
     this.personaProjects.set(response.personaProjects);
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
+    this.isRootMarketingAuditor.set(response.isRootMarketingAuditor ?? false);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();
@@ -161,6 +188,9 @@ export class PersonaService {
     } else if (response.organizations) {
       this.lastKnownOrganizations.set(response.organizations);
       this.persistCurrentState();
+    } else {
+      // Persist ROOT entitlement flags even when personas/orgs are unchanged.
+      this.persistCurrentState();
     }
 
     if (response.organizations) {
@@ -179,6 +209,8 @@ export class PersonaService {
       all: this.allPersonas(),
       organizations: this.lastKnownOrganizations(),
       userSelected: this.userSelected(),
+      isRootWriter: this.isRootWriter(),
+      isRootMarketingAuditor: this.isRootMarketingAuditor(),
     });
   }
 

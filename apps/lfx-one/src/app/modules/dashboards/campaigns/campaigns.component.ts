@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { combineLatest, EMPTY, map, Observable, startWith, switchMap } from 'rxjs';
 
 import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
@@ -20,6 +25,10 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 })
 export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -28,6 +37,42 @@ export class CampaignsComponent {
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
+
+  /**
+   * campaign_manager access for the currently selected foundation. Gates the template so the
+   * management panels never render (and their child tabs never fire requests) for a context the
+   * user can't manage — the marketing APIs are not yet server-enforced, so this is the fail-closed
+   * front stop. `startWith(false)` resets it on every switch: the panels unmount immediately, then
+   * re-render only once the probe returns true. Keyed off `selectedFoundation` (seeded from
+   * `?project=` by projectQueryParamGuard, matching the guard's slug source) rather than the
+   * lens-dependent `activeContext`, which trails the lens on cold deep links.
+   */
+  protected readonly authorized: Signal<boolean> = toSignal(this.initAuthorized(), { initialValue: false });
+
+  public constructor() {
+    // campaignAccessGuard only runs on navigation, but an in-place context switch (setFoundation
+    // uses Location.replaceState — no navigation) doesn't re-run it. Redirect (fail closed) when
+    // the newly selected foundation resolves without campaign_manager. Slug prefers
+    // selectedFoundation, then `?project=` (same as the guard) so a deep link is not denied while
+    // projectQueryParamGuard is still seeding context. No slug yet → wait (EMPTY), never treat
+    // "pending seed" as denial.
+    combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap])
+      .pipe(
+        switchMap(([foundation, params]) => {
+          const slug = foundation?.slug ?? params.get('project') ?? undefined;
+          if (!slug) {
+            return EMPTY;
+          }
+          return this.projectService.hasCampaignManager(slug).pipe(map((allowed) => ({ allowed, slug })));
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe(({ allowed, slug }) => {
+        if (!allowed) {
+          this.router.navigate(['/foundation/overview'], { queryParams: { project: slug } });
+        }
+      });
+  }
 
   protected selectTab(tab: CampaignTab): void {
     this.selectedTab.set(tab);
@@ -68,5 +113,14 @@ export class CampaignsComponent {
   protected onProceedToImplementation(brief: CampaignBriefOutput): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
+  }
+
+  private initAuthorized(): Observable<boolean> {
+    return combineLatest([toObservable(this.projectContextService.selectedFoundation), this.route.queryParamMap]).pipe(
+      switchMap(([foundation, params]) => {
+        const slug = foundation?.slug ?? params.get('project') ?? undefined;
+        return this.projectService.hasCampaignManager(slug).pipe(startWith(false));
+      })
+    );
   }
 }
