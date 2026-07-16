@@ -25,10 +25,19 @@ const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 
 // Minimal JSON logger for otel.mjs — serverLogger is not available here since
 // this module runs via --import before the server module loads.
+// JSON.stringify is wrapped in try/catch so non-serializable values (bigint,
+// circular structures) never crash the process; falls back to a minimal line.
+function otelWrite(level, msg, extra) {
+  try {
+    process.stdout.write(JSON.stringify({ level, msg, ...extra }) + '\n');
+  } catch {
+    process.stdout.write(JSON.stringify({ level, msg }) + '\n');
+  }
+}
 const otelLog = {
-  info: (msg, extra) => process.stdout.write(JSON.stringify({ level: 'INFO', msg, ...extra }) + '\n'),
-  warn: (msg, extra) => process.stdout.write(JSON.stringify({ level: 'WARN', msg, ...extra }) + '\n'),
-  error: (msg, extra) => process.stdout.write(JSON.stringify({ level: 'ERROR', msg, ...extra }) + '\n'),
+  info: (msg, extra) => otelWrite('INFO', msg, extra),
+  warn: (msg, extra) => otelWrite('WARN', msg, extra),
+  error: (msg, extra) => otelWrite('ERROR', msg, extra),
 };
 
 if (!otlpEndpoint) {
@@ -184,7 +193,7 @@ if (!otlpEndpoint) {
     await sdk.start();
     otelLog.info('[otel] Tracing enabled', { service: serviceName, version: serviceVersion, sampler: samplerName, ratio: traceRatio });
   } catch (err) {
-    otelLog.error('[otel] Failed to start SDK', { err: { message: err.message, stack: err.stack } });
+    otelLog.error('[otel] Failed to start SDK', { err: err instanceof Error ? { message: err.message, stack: err.stack } : { message: String(err) } });
   }
 
   const shutdown = async () => {
@@ -192,7 +201,7 @@ if (!otlpEndpoint) {
       await sdk.shutdown();
       otelLog.info('[otel] SDK shut down successfully');
     } catch (err) {
-      otelLog.error('[otel] Error shutting down SDK', { err: { message: err.message, stack: err.stack } });
+      otelLog.error('[otel] Error shutting down SDK', { err: err instanceof Error ? { message: err.message, stack: err.stack } : { message: String(err) } });
     }
   };
 

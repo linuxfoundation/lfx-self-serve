@@ -28,18 +28,22 @@ function buildLogArgs(args: any[]): [Record<string, unknown>, string] {
       'url' in arg
     ) {
       // Angular HttpErrorResponse shape — convert to a structured err entry.
+      // Include the error body regardless of type (string or object) so upstream
+      // failure text is not lost in production logs.
       errValue = {
         type: 'HttpErrorResponse',
         message: `Http failure response for ${arg.url}: ${arg.status} ${arg.statusText}`,
         statusCode: arg.status,
         statusText: arg.statusText,
         url: arg.url,
-        ...(arg.error && typeof arg.error === 'object' ? { detail: arg.error } : {}),
+        ...(arg.error != null ? { detail: arg.error } : {}),
       };
     } else if (arg !== null && typeof arg === 'object') {
       Object.assign(extra, arg);
     } else {
-      parts.push(typeof arg === 'string' ? arg : JSON.stringify(arg));
+      // Use String() instead of JSON.stringify() — JSON.stringify throws on bigint
+      // and symbol, which would crash SSR rendering for a single bad console call.
+      parts.push(typeof arg === 'string' ? arg : String(arg));
     }
   }
 
