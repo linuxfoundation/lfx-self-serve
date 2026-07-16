@@ -3,6 +3,7 @@
 
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { InviteTokenPayload, PendingCommitteeInviteForOrg } from '@lfx-one/shared/interfaces';
+import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { errors as JoseErrors, JWK, JWT } from 'jose';
 
@@ -196,7 +197,43 @@ export class InviteController {
           path: req.path,
         });
       }
-      await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
+
+      // Fetch the specific pending invite to check whether an organization is required.
+      // getPendingInviteForUser returns null when the invite is not yet visible in the email
+      // index (FGA propagation delay) or when it has already been accepted (idempotent retry).
+      // In both cases we attempt accept directly and let the upstream enforce org requirements.
+      const pendingInvite = await this.committeeService.getPendingInviteForUser(req, invitedEmail, committeeUid, committeeInviteUid);
+
+      if (pendingInvite) {
+        const requiresOrganization = invitationRequiresOrganization({ organization_required: pendingInvite.organization_required });
+        if (requiresOrganization) {
+          const orgName = pendingInvite.organization?.name?.trim() || null;
+          if (!orgName) {
+            logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
+              committee_uid: committeeUid,
+              committee_invite_uid: committeeInviteUid,
+            });
+            return {
+              committee_uid: committeeUid,
+              invite_uid: committeeInviteUid,
+              committee_name: pendingInvite.committee_name?.trim() || committeeUid,
+              organization: pendingInvite.organization ?? null,
+            };
+          }
+          const orgPayload = {
+            name: orgName,
+            id: pendingInvite.organization?.id?.trim() || null,
+            website: pendingInvite.organization?.website?.trim() || null,
+          };
+          await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, { organization: orgPayload });
+        } else {
+          await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
+        }
+      } else {
+        // Invite not in pending index — accept directly (idempotent if already accepted).
+        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
+      }
+
       logger.info(req, 'accept_invite', 'Committee invite accepted directly after LFID invite', {
         committee_uid: committeeUid,
         committee_invite_uid: committeeInviteUid,

@@ -1721,7 +1721,7 @@ export class CommitteeService {
   private selectCommitteeInvitesForLfidAccept(pending: CommitteeInvite[], resourceUid: string): CommitteeInvite[] {
     const trimmedResourceUid = resourceUid.trim();
     if (!trimmedResourceUid) {
-      return pending;
+      return [];
     }
     return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
   }

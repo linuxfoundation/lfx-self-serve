@@ -15,8 +15,9 @@ export interface InviteTokenPayload {
   role: string;
   /**
    * UID of the specific committee_invite record to accept, embedded by the committee service
-   * as a custom JWT claim. When present, the BFF accepts this exact invite directly instead of
-   * fetching all pending invites by email and fuzzy-selecting by resource_uid.
+   * as a custom JWT claim. When present, the BFF resolves the exact pending invite by both
+   * `committee_invite_uid` and `resource_uid` (committee UID) and accepts it directly, rather
+   * than searching all pending invites by email and matching by committee UID.
    */
   committee_invite_uid?: string;
 }
