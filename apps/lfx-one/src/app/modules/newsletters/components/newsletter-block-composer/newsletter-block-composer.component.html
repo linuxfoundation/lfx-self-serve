@@ -144,11 +144,61 @@
 
   <!-- Canvas / live preview ----------------------------------------------- -->
   <section class="flex min-h-64 w-full min-w-0 flex-1 flex-col gap-3" data-testid="newsletter-composer-canvas-wrapper">
-    <h3 class="text-sm font-semibold text-gray-700">Newsletter</h3>
+    <!-- Preview controls: viewport (desktop / mobile) + backdrop (light / dark). -->
+    <div class="flex items-center justify-between gap-2">
+      <h3 class="text-sm font-semibold text-gray-700">Newsletter</h3>
+      <div class="flex items-center gap-1">
+        <div class="flex overflow-hidden rounded-md border border-gray-200" role="group" aria-label="Preview viewport">
+          <button
+            type="button"
+            class="flex h-7 w-8 items-center justify-center text-gray-500 transition-colors hover:bg-gray-100"
+            [class.bg-blue-50]="previewViewport() === 'desktop'"
+            [class.text-blue-600]="previewViewport() === 'desktop'"
+            title="Desktop width"
+            aria-label="Desktop width"
+            [attr.aria-pressed]="previewViewport() === 'desktop'"
+            data-testid="newsletter-composer-viewport-desktop"
+            (click)="setViewport('desktop')">
+            <i class="fa-light fa-desktop text-xs" aria-hidden="true"></i>
+          </button>
+          <button
+            type="button"
+            class="flex h-7 w-8 items-center justify-center border-l border-gray-200 text-gray-500 transition-colors hover:bg-gray-100"
+            [class.bg-blue-50]="previewViewport() === 'mobile'"
+            [class.text-blue-600]="previewViewport() === 'mobile'"
+            title="Mobile width"
+            aria-label="Mobile width"
+            [attr.aria-pressed]="previewViewport() === 'mobile'"
+            data-testid="newsletter-composer-viewport-mobile"
+            (click)="setViewport('mobile')">
+            <i class="fa-light fa-mobile-notch text-xs" aria-hidden="true"></i>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="flex h-7 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:bg-gray-100"
+          [title]="previewBackdrop() === 'light' ? 'Switch to dark backdrop' : 'Switch to light backdrop'"
+          [attr.aria-label]="previewBackdrop() === 'light' ? 'Switch to dark backdrop' : 'Switch to light backdrop'"
+          data-testid="newsletter-composer-backdrop-toggle"
+          (click)="toggleBackdrop()">
+          <i class="{{ previewBackdrop() === 'light' ? 'fa-light fa-moon' : 'fa-light fa-sun-bright' }} text-xs" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
 
     <!-- The preview frame reads like the real email: wrapper header + the live
-         block canvas in the body slot + wrapper footer. -->
-    <div class="nl-preview flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-testid="newsletter-composer-preview" (click)="onPreviewClick($event)">
+         block canvas in the body slot + wrapper footer. The backdrop swaps
+         light/dark; the inner email column constrains to the viewport width. -->
+    <div
+      class="nl-preview flex flex-col rounded-lg border p-4 shadow-sm transition-colors"
+      [class.border-gray-200]="previewBackdrop() === 'light'"
+      [class.bg-white]="previewBackdrop() === 'light'"
+      [class.border-gray-800]="previewBackdrop() === 'dark'"
+      [class.bg-gray-900]="previewBackdrop() === 'dark'"
+      data-testid="newsletter-composer-preview"
+      [attr.data-backdrop]="previewBackdrop()"
+      (click)="onPreviewClick($event)">
+      <div class="mx-auto w-full" [style.max-width.px]="viewportWidth()" data-testid="newsletter-composer-preview-column">
       <!-- Wrapper header chrome (banner / view-online / date). -->
       @if (wrapperHeader()) {
         <div class="nl-chrome" [innerHTML]="wrapperHeader()" data-testid="newsletter-composer-wrapper-header"></div>
@@ -355,10 +405,11 @@
         }
       </div>
 
-      <!-- Wrapper footer chrome (unsubscribe / manage preferences). -->
-      @if (wrapperFooter()) {
-        <div class="nl-chrome" [innerHTML]="wrapperFooter()" data-testid="newsletter-composer-wrapper-footer"></div>
-      }
+        <!-- Wrapper footer chrome (unsubscribe / manage preferences). -->
+        @if (wrapperFooter()) {
+          <div class="nl-chrome" [innerHTML]="wrapperFooter()" data-testid="newsletter-composer-wrapper-footer"></div>
+        }
+      </div>
     </div>
   </section>
 

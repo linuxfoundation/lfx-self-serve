@@ -100,6 +100,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly editingBlockId = signal<string | null>(null);
   // The floating block toolbar's position + state (null when hidden).
   protected readonly toolbar = signal<NewsletterComposerToolbarState | null>(null);
+  // Preview chrome: the viewport the canvas is constrained to (desktop / mobile
+  // email widths) and the backdrop behind the email card (light / dark) —
+  // Gatewaze parity for previewing how the email reads on each.
+  protected readonly previewViewport = signal<'desktop' | 'mobile'>('desktop');
+  protected readonly previewBackdrop = signal<'light' | 'dark'>('light');
 
   // The canvas container — the positioned ancestor the floating toolbar is
   // measured against, and the root we scan for `data-nl-field` elements.
@@ -118,6 +123,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // block-search parity — match on label or block type).
   protected readonly displayGroups: Signal<NewsletterBlockPaletteGroup[]> = this.initDisplayGroups();
   protected readonly hasBlocks: Signal<boolean> = computed(() => this.blocks().length > 0);
+  // The email-card width for the active viewport (Gatewaze uses 682 / 375).
+  protected readonly viewportWidth: Signal<number> = computed(() => (this.previewViewport() === 'mobile' ? 375 : 682));
   // One stable drop-list id per container block, so the palette / canvas / other
   // containers can connect to it for cross-list drag-and-drop.
   protected readonly containerListIds: Signal<string[]> = this.initContainerListIds();
@@ -241,6 +248,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** True when the given rail tab is the active one. */
   protected isActiveTab(tab: NewsletterComposerTab): boolean {
     return this.activeTab() === tab;
+  }
+
+  /** Constrain the preview to a desktop or mobile email width. */
+  protected setViewport(viewport: 'desktop' | 'mobile'): void {
+    this.previewViewport.set(viewport);
+    this.scheduleToolbarReposition();
+  }
+
+  /** Toggle the preview backdrop between light and dark. */
+  protected toggleBackdrop(): void {
+    this.previewBackdrop.update((mode) => (mode === 'light' ? 'dark' : 'light'));
   }
 
   /**
