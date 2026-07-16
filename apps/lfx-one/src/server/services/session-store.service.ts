@@ -95,7 +95,7 @@ export class SessionStoreService {
       });
     }
     const ttlSeconds = this.ttlSecondsFor(session);
-    const persisted = await valkeyService.setJson(key, session, ttlSeconds);
+    const persisted = await valkeyService.setJson(key, session, ttlSeconds, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
     if (!persisted) {
       // setJson is a `SET key val EX ttl` — a failed write leaves any prior value at this key
       // untouched, so a stale session (e.g. a cleared impersonation token) would otherwise survive
@@ -106,9 +106,9 @@ export class SessionStoreService {
       // `set` and `del` are independent Redis commands — a transient blip can fail both back-to-back
       // while a later `get` succeeds against a since-recovered connection, resurrecting the stale
       // entry. One immediate retry closes most of that window without adding real latency.
-      let invalidated = await valkeyService.del(key);
+      let invalidated = await valkeyService.del(key, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
       if (!invalidated) {
-        invalidated = await valkeyService.del(key);
+        invalidated = await valkeyService.del(key, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
       }
       if (!invalidated) {
         logger.error(undefined, 'session_store_set', startTime, new Error('Valkey write and fallback invalidation both failed'), {
@@ -139,7 +139,7 @@ export class SessionStoreService {
     if (key === null) {
       return;
     }
-    const deleted = await valkeyService.del(key);
+    const deleted = await valkeyService.del(key, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
     if (!deleted) {
       logger.error(undefined, 'session_store_destroy', startTime, new Error('Valkey delete failed'), {
         message: 'Session delete failed on logout — session will remain valid in Valkey until it expires via TTL',

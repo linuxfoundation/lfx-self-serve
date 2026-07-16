@@ -504,6 +504,16 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
     return;
   }
 
+  // Everything reaching this handler (as opposed to the dedicated `/api/*` mount above) is a
+  // browser navigation — /login, /callback and its siblings, or the SSR catch-all — so an
+  // AuthenticationError here means a person is looking at the response, not a script. Redirect to
+  // the branded error page instead of handing back apiErrorHandler's raw JSON body.
+  if (error instanceof AuthenticationError) {
+    const reason = error.operation?.startsWith('session_store') ? 'session' : 'failed';
+    res.redirect(`/auth-error?reason=${reason}`);
+    return;
+  }
+
   apiErrorHandler(error, req, res, next);
 });
 

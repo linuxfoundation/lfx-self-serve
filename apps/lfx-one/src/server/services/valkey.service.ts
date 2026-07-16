@@ -85,7 +85,7 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  public async setJson(key: string, value: unknown, ttlSeconds: number): Promise<boolean> {
+  public async setJson(key: string, value: unknown, ttlSeconds: number, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (!this.client) return false;
     try {
       const serialized = JSON.stringify(value);
@@ -93,7 +93,7 @@ export class ValkeyService implements CachePort {
         logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', { cache_key: ValkeyService.redactKey(key) });
         return false;
       }
-      await this.withTimeout(this.client.set(key, serialized, 'EX', ttlSeconds));
+      await this.withTimeout(this.client.set(key, serialized, 'EX', ttlSeconds), timeoutMs);
       return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_set', 'Cache write failed — continuing without caching', { err, cache_key: ValkeyService.redactKey(key) });
@@ -102,10 +102,10 @@ export class ValkeyService implements CachePort {
   }
 
   /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault just leaves the entry to age out via TTL and reports back via the `deleted` boolean rather than throwing. */
-  public async del(key: string | null): Promise<boolean> {
+  public async del(key: string | null, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (key === null || !this.client) return false;
     try {
-      await this.withTimeout(this.client.del(key));
+      await this.withTimeout(this.client.del(key), timeoutMs);
       return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_del', 'Cache delete failed — entry will age out via TTL', { err, cache_key: ValkeyService.redactKey(key) });
@@ -165,10 +165,10 @@ export class ValkeyService implements CachePort {
   }
 
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */
-  private async withTimeout<T>(op: Promise<T>): Promise<T> {
+  private async withTimeout<T>(op: Promise<T>, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T> {
     let timer: NodeJS.Timeout;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('valkey_op_timeout')), VALKEY_CACHE.OP_TIMEOUT_MS);
+      timer = setTimeout(() => reject(new Error('valkey_op_timeout')), timeoutMs);
     });
     // If the timeout wins the race, the underlying op is abandoned; swallow its eventual settlement
     // so a late rejection from a slow/faulty backend never surfaces as an unhandled rejection.
