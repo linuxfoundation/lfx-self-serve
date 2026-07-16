@@ -163,7 +163,11 @@ export class MeetingMaterialsDrawerComponent {
 
     this.saving.set(true);
     const isPast = this.isPastMode();
-    const id = isPast ? this.pastMeetingId()! : this.meetingId()!;
+    const id = isPast ? this.pastMeetingId() : this.meetingId();
+    if (!id) {
+      this.saving.set(false);
+      return;
+    }
     const create$ = isPast
       ? this.meetingService.createPastMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url })
       : this.meetingService.createMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url });
@@ -187,7 +191,11 @@ export class MeetingMaterialsDrawerComponent {
   public onSave(): void {
     this.saving.set(true);
     const isPast = this.isPastMode();
-    const id = isPast ? this.pastMeetingId()! : this.meetingId()!;
+    const id = isPast ? this.pastMeetingId() : this.meetingId();
+    if (!id) {
+      this.saving.set(false);
+      return;
+    }
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
 
