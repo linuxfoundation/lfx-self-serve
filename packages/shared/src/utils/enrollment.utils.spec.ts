@@ -81,9 +81,10 @@ describe('deriveEnrollmentStatus', () => {
   });
 
   it('returns Active for a free-tier item (price null) regardless of EndDate', () => {
-    // `price` is typed as `number | undefined`, but the resolver also guards against `null` —
-    // cast to exercise that branch since upstream data can still carry a literal null.
-    const item = enrollment({ price: null as unknown as undefined, membership: membership({ EndDate: daysFromNow(-10) }) });
+    // `price` is typed as `number | undefined`, but the resolver also guards against a runtime
+    // `null` — cast through `number` (not `undefined`) so the test doesn't misrepresent the value
+    // it's actually passing.
+    const item = enrollment({ price: null as unknown as number, membership: membership({ EndDate: daysFromNow(-10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
