@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateProjectDocumentRequest, GetProjectOptions, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
 import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
@@ -29,65 +29,23 @@ export class ProjectService {
     return this.projectsCache.get(cacheKey)!;
   }
 
-  public getProject(slug: string, current: boolean = true, options?: GetProjectOptions): Observable<Project | null> {
-    const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}${options?.marketing ? ':mktg' : ''}`;
+  public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
+    const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
-      let params = new HttpParams();
-      if (options?.meetingCoordinator) {
-        params = params.set('meeting_coordinator', 'true');
-      }
-      if (options?.marketing) {
-        params = params.set('marketing', 'true');
-      }
+      const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
       const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
         catchError(() => of(null)),
+        shareReplay(1),
         tap((project) => {
-          // Only a failed project HTTP request lands here as `null` (catchError above) — evict so a
-          // transient network/5xx blip isn't pinned under this cache key and the next call retries.
-          // NOTE: an upstream OpenFGA failure does NOT reach this branch — the BFF still returns a
-          // non-null Project with the marketing grants set to `false`, which stays cached as a deny
-          // until reload (accepted trade-off; see LFXV2-2707).
-          if (project === null) {
-            this.projectCache.delete(cacheKey);
-          }
           if (current) {
             this.project$.next(project);
             this.project.set(project);
           }
-        }),
-        shareReplay(1)
+        })
       );
       this.projectCache.set(cacheKey, project$);
     }
     return this.projectCache.get(cacheKey)!;
-  }
-
-  /**
-   * Fail-closed `marketing_auditor` probe for a foundation slug (shared by Marketing Impact + guards).
-   * Uses the `:mktg` project cache — no extra HTTP when another marketing surface already probed.
-   */
-  public hasMarketingAuditor(slug: string | undefined): Observable<boolean> {
-    if (!slug) {
-      return of(false);
-    }
-    return this.getProject(slug, false, { marketing: true }).pipe(
-      map((project) => project?.marketingAuditor === true),
-      catchError(() => of(false))
-    );
-  }
-
-  /**
-   * Fail-closed `campaign_manager` probe for a foundation slug (shared by Campaigns + Marketing Overview).
-   * Uses the `:mktg` project cache — no extra HTTP when another marketing surface already probed.
-   */
-  public hasCampaignManager(slug: string | undefined): Observable<boolean> {
-    if (!slug) {
-      return of(false);
-    }
-    return this.getProject(slug, false, { marketing: true }).pipe(
-      map((project) => project?.campaignManager === true),
-      catchError(() => of(false))
-    );
   }
 
   public getProjectSfid(uid: string): Observable<string | null> {

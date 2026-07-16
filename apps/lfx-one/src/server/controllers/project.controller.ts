@@ -111,18 +111,17 @@ export class ProjectController {
       }
 
       const includeMeetingCoordinator = req.query['meeting_coordinator'] === 'true';
-      const includeMarketing = req.query['marketing'] === 'true';
 
       // Check if slug is a uuid
       if (isUuid(slug)) {
         // If the slug is a uuid, get the project by id
-        const project = await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator, includeMarketing);
+        const project = await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator);
         res.json(project);
         return;
       }
 
       // If the slug is not a uuid, get the project by slug
-      const project = await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator, includeMarketing);
+      const project = await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator);
 
       // Log the success
       logger.success(req, 'get_project_by_slug', startTime, {
