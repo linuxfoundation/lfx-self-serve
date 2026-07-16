@@ -1693,5 +1693,4 @@ export class CommitteeService {
 
     return invites.filter((invite) => invite.status === 'pending');
   }
-
 }
