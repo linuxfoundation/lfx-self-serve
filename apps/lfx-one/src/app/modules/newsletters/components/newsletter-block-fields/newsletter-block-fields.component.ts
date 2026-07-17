@@ -151,10 +151,6 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     return entry.key;
   }
 
-  protected trackByIndex(index: number): number {
-    return index;
-  }
-
   // === Private Initializers ===
   private initFieldEntries(): Signal<NewsletterFieldEntry[]> {
     return computed(() => {

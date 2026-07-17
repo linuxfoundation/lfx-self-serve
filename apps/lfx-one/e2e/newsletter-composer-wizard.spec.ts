@@ -78,6 +78,20 @@ const DRAFT_LAYOUT: NewsletterLayout = {
   blocks: [{ block_type: 'intro_paragraph', content: { text: 'Hello from the saved draft' } }],
 };
 
+// A draft whose layout nests a child inside a container block. Reopen must keep
+// the nested child even though hydration runs before the manifest resolves —
+// container-ness is derived from the persisted `blocks` array, not the manifest.
+const CONTAINER_DRAFT_LAYOUT: NewsletterLayout = {
+  wrapper_key: 'default',
+  blocks: [
+    {
+      block_type: 'mlops_community',
+      content: {},
+      blocks: [{ block_type: 'intro_paragraph', content: { text: 'Nested child survives reopen' } }],
+    },
+  ],
+};
+
 function buildProjectStub() {
   return {
     uid: MOCK_FOUNDATION_UID,
@@ -273,6 +287,27 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     await expect(page.getByTestId('newsletter-composer')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     // The empty-canvas placeholder must not show when a layout hydrated.
+    await expect(page.getByTestId('newsletter-composer-canvas-empty')).toHaveCount(0);
+  });
+
+  test('reopening a container draft keeps its nested children', async ({ page }) => {
+    // Serve a draft whose layout nests a child inside a container. Registered in
+    // the test so it takes precedence over the beforeEach draft stub.
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_ID}`, (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildDraft({ body_layout: CONTAINER_DRAFT_LAYOUT })) });
+      }
+      return route.fallback();
+    });
+
+    await gotoContentStep(page);
+
+    // The container hydrated as a container (children preserved), so the nested
+    // child renders inside it — the regression the manifest-independent
+    // container detection guards against (children were previously dropped when
+    // hydration ran before the manifest loaded).
+    await expect(page.getByTestId('newsletter-composer-block-mlops_community')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-child-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('newsletter-composer-canvas-empty')).toHaveCount(0);
   });
 

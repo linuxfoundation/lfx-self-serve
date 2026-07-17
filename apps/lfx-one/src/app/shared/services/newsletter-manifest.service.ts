@@ -129,7 +129,6 @@ export class NewsletterManifestService {
     const stream = this.http
       .get<NewsletterTemplateManifest>(`/api/projects/${encodeURIComponent(projectUid)}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`)
       .pipe(
-        tap((manifest) => this.manifestSignal.set(manifest)),
         catchError((err: unknown) => {
           console.error('NewsletterManifestService: manifest load failed', { templateKey, err });
           this.errorSignal.set(true);
@@ -138,7 +137,14 @@ export class NewsletterManifestService {
           return of(null);
         }),
         finalize(() => this.loadingSignal.set(false)),
-        shareReplay({ bufferSize: 1, refCount: false })
+        shareReplay({ bufferSize: 1, refCount: false }),
+        // Activate this key's manifest AFTER shareReplay, so switching back to an
+        // already-loaded key — which replays the cached manifest to the new
+        // subscriber without re-running the source — still makes it the active
+        // manifest (a tap upstream of shareReplay only runs on the first load).
+        tap((manifest) => {
+          if (manifest) this.manifestSignal.set(manifest);
+        })
       );
 
     this.manifestStreams.set(templateKey, stream);

@@ -85,6 +85,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Emits the current layout whenever the canvas changes.
   public readonly layoutChange = output<NewsletterLayout>();
 
+  // === Forms ===
+  // Palette search. Backed by a FormControl (LFX wrappers are FormGroup-bound);
+  // `blockSearch` mirrors the control value as a signal for the filter computed.
+  protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
+  // Block-library picker. Form-bound (LFX select wrappers are FormGroup-bound);
+  // the control mirrors `selectedTemplateKey`. Seeded in ngOnInit.
+  protected readonly libraryForm = new FormGroup({ library: new FormControl<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY, { nonNullable: true }) });
+
   // === Writable Signals ===
   protected readonly isBrowser = signal<boolean>(false);
   // The canvas: the ordered top-level blocks the user has composed.
@@ -182,16 +190,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
     { id: 'outline', label: 'Outline', icon: 'fa-light fa-list-tree' },
   ];
 
-  // Palette search. Backed by a FormControl (LFX wrappers are FormGroup-bound);
-  // `blockSearch` mirrors the control value as a signal for the filter computed.
-  // When non-empty, the palette collapses its categories into a single flat list
-  // of blocks whose label or type matches (Gatewaze block-search parity).
-  protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
+  // Palette search mirror: when non-empty, the palette collapses its categories
+  // into a single flat list of blocks whose label or type matches (Gatewaze
+  // block-search parity). Backed by `searchForm` (declared in the Forms slot).
   protected readonly blockSearch: Signal<string> = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
-  // Block-library picker. Form-bound (LFX select wrappers are FormGroup-bound);
-  // the control mirrors `selectedTemplateKey`. Seeded in ngOnInit.
-  protected readonly libraryForm = new FormGroup({ library: new FormControl<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY, { nonNullable: true }) });
   // The libraries the picker offers: the loaded catalog, or a single synthesized
   // entry for the active key when the catalog is empty / its endpoint is absent,
   // so the picker always renders the current library.
@@ -863,12 +866,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Rehydrate a persisted layout block (and its children) into a canvas block. */
   private hydrate(block: { block_type: string; content?: Record<string, unknown>; blocks?: unknown[] }): NewsletterComposerBlock {
     const entry = this.manifestService.getBlock(block.block_type);
-    const isContainer = !!entry?.is_container;
     const childLayout = Array.isArray(block.blocks) ? (block.blocks as { block_type: string; content?: Record<string, unknown>; blocks?: unknown[] }[]) : [];
+    // Container-ness is derived from the persisted layout (a `blocks` array)
+    // as well as the manifest. `hydrate` runs synchronously in ngOnInit, which
+    // can be BEFORE the manifest resolves on a fresh mount — relying on the
+    // manifest alone would treat a reopened container as a leaf and silently
+    // drop its nested children on the next save.
+    const isContainer = !!entry?.is_container || Array.isArray(block.blocks);
     return {
       id: `block-${this.blockIdCounter++}`,
       block_type: block.block_type,
-      label: entry?.label ?? block.block_type,
+      label: entry?.label ?? humanizeFieldKey(block.block_type),
       isContainer,
       content: block.content ?? {},
       children: isContainer ? childLayout.map((child) => this.hydrate(child)) : undefined,

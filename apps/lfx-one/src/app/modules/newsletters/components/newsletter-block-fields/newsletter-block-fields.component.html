@@ -47,7 +47,7 @@
               }
               @case ('array') {
                 <div class="flex flex-col gap-3" [attr.data-testid]="'newsletter-composer-field-array-' + entry.key">
-                  @for (item of arrayItems(entry.key); track trackByIndex($index)) {
+                  @for (item of arrayItems(entry.key); track item) {
                     <div
                       class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3"
                       [attr.data-testid]="'newsletter-composer-field-array-' + entry.key + '-item-' + $index">
