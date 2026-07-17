@@ -76,6 +76,7 @@ import {
   merge,
   Observable,
   of,
+  skip,
   startWith,
   Subject,
   switchMap,
@@ -314,6 +315,15 @@ export class MeetingJoinComponent implements OnInit {
       const pending = added.filter((a) => !rawUids.has(a.uid) && !deleted.has(a.uid));
       return pending.length > 0 ? [...pending, ...filtered] : filtered;
     });
+    // Clear optimistic state when navigating to a different past meeting so stale
+    // entries from the previous meeting don't bleed into the next one's attachment list.
+    toObservable(this.pastMeetingResourceId)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.optimisticDeletedUids.set(new Set());
+        this.optimisticAddedAttachments.set([]);
+      });
+
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
     this.pastMeetingParticipants = this.initializePastMeetingParticipants();

@@ -102,7 +102,12 @@ export class PastMeetingController {
 
       if (req.oidc?.isAuthenticated()) {
         try {
-          const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_past_meeting', 'organizer');
+          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+            req,
+            { ...meeting, id: meeting.meeting_and_occurrence_id ?? uid },
+            'v1_past_meeting',
+            'organizer'
+          );
           meeting.organizer = meetingWithAccess.organizer ?? false;
         } catch {
           meeting.organizer = false;
