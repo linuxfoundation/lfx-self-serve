@@ -303,13 +303,7 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(
-    req: Request,
-    uid: string,
-    access: boolean = true,
-    includeMeetingCoordinator: boolean = false,
-    includeMarketing: boolean = false
-  ): Promise<Project> {
+  public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
     if (!project) {
@@ -321,22 +315,7 @@ export class ProjectService {
     }
 
     if (access) {
-      let writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-
-      // Marketing probes are independent of writer status (marketing_auditor / campaign_manager
-      // are distinct FGA relations), so run them whenever the caller asks — even for writers.
-      // Both relations sit on the same project uid, so use the positional `checkAccessOrdered`
-      // (one batched /access-check round-trip) rather than two calls — the id-keyed `checkAccess`
-      // map would collapse them. It is fail-closed: any transient upstream error resolves both
-      // entries to `false` (deny) rather than throwing.
-      if (includeMarketing) {
-        const [marketingAuditor, campaignManager] = await this.accessCheckService.checkAccessOrdered(req, [
-          { resource: 'project', id: project.uid, access: 'marketing_auditor' },
-          { resource: 'project', id: project.uid, access: 'campaign_manager' },
-        ]);
-        writerProject = { ...writerProject, marketingAuditor, campaignManager };
-      }
-
+      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
       // Skip meeting_coordinator check when already a writer — the guard allows writer OR
       // meeting_coordinator, so the extra round trip can't change the outcome.
       // Return the field as undefined (omitted) rather than false — false would be a
@@ -438,12 +417,7 @@ export class ProjectService {
    * Fetches a single project by slug using NATS for slug resolution
    * First resolves slug to ID via NATS, then fetches project data
    */
-  public async getProjectBySlug(
-    req: Request,
-    projectSlug: string,
-    includeMeetingCoordinator: boolean = false,
-    includeMarketing: boolean = false
-  ): Promise<Project> {
+  public async getProjectBySlug(req: Request, projectSlug: string, includeMeetingCoordinator: boolean = false): Promise<Project> {
     const natsResult = await this.getProjectIdBySlug(req, projectSlug);
 
     if (!natsResult.exists || !natsResult.uid) {
@@ -455,7 +429,7 @@ export class ProjectService {
     }
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator, includeMarketing);
+    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {

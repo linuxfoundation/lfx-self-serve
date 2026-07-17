@@ -498,7 +498,7 @@ export const JOIN_MODE_LABELS: Record<JoinMode, string> = {
 export const JOIN_MODE_OPTIONS = [
   { label: 'Open — anyone can join', value: 'open' },
   { label: 'Invite Only — members send invites', value: 'invite_only' },
-  { label: 'Apply & Review — admin approves', value: 'application' },
+  { label: 'Apply to Join — Coming Soon', value: 'application', disabled: true },
   { label: 'Closed — admin adds members', value: 'closed' },
 ];
 

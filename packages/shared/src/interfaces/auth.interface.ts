@@ -68,10 +68,6 @@ export interface AuthContext {
   projects?: EnrichedPersonaProject[];
   /** Persona-to-project mapping from persona detection — hydrated via TransferState */
   personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
-  /** Writer on tenant ROOT — hydrated via TransferState for SSR product guards */
-  isRootWriter?: boolean;
-  /** Marketing auditor on tenant ROOT — hydrated via TransferState for SSR product guards */
-  isRootMarketingAuditor?: boolean;
   /** Whether the user has permission to impersonate other users */
   canImpersonate?: boolean;
   /** Whether the current session is impersonating another user */
