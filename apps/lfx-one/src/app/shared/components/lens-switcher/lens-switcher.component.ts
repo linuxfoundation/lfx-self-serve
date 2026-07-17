@@ -133,6 +133,9 @@ export class LensSwitcherComponent {
     this.dialogService.open(CreateArtifactDialogComponent, {
       // No PrimeNG header — the dialog body renders its own "Create <Type>" header.
       showHeader: false,
+      // Name the role="dialog" for assistive tech: with showHeader:false PrimeNG emits no
+      // generated title, so point ariaLabelledBy at the body's own <h2 id="create-artifact-heading">.
+      ariaLabelledBy: 'create-artifact-heading',
       width: '480px',
       // Uniform padding all around — PrimeNG's default content padding zeroes the top
       // (normally supplied by the header we removed), so set it explicitly here.

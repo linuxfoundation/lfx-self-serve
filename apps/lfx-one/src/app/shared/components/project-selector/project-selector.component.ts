@@ -42,6 +42,13 @@ export class ProjectSelectorComponent {
    * The create-artifact dialog uses it to present a writer-scoped list in the familiar
    * selector UI. When null (the default, and every sidebar caller), nav-backed behavior is
    * unchanged. Intended to be paired with `hybridMode` so the All/Foundations/Projects tabs show.
+   *
+   * Divergence to note: role badges (`resolveRolePersona`) and All-tab parent nesting
+   * (`buildAllTabItems`) key off persona-detection data (`personaService.personaProjects()` /
+   * `detectedProjects()`), NOT the curated `items`. A curated entry that is writer-reachable but
+   * not persona-detected therefore renders without a role badge and flat (un-nested) in the All
+   * tab. It remains fully selectable — this is a cosmetic divergence from the nav-backed sidebar
+   * UX, accepted for the writer-scoped create list.
    */
   public readonly items = input<LensItem[] | null>(null);
 

@@ -77,6 +77,7 @@
 // padding, pinned beside the rail). The Create button sits near the top of the
 // rail, so this panel is top-anchored and opens downward, mirroring how the
 // bottom-anchored apps menu opens upward from its button.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
 ::ng-deep .lfx-create-popover.p-popover {
   // Hide arrow
   &::before,
@@ -119,6 +120,7 @@
 // Both classes are stacked deliberately: matching only `.lfx-create-popover-banner-offset` ties
 // the base rule on specificity, so this would win on source order alone and silently revert to
 // 58px if either block moved.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
 ::ng-deep .lfx-create-popover.lfx-create-popover-banner-offset.p-popover {
   // stylelint-disable-next-line declaration-no-important
   top: 106px !important;

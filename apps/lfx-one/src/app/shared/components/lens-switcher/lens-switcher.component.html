@@ -69,13 +69,15 @@
       <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="w-6 h-6" />
     </button>
 
-    <!-- Create quick-link — opens a menu of creatable artifact types; only shown when the user can create at least one somewhere. -->
+    <!-- Create quick-link — opens a menu of creatable artifact types; only shown when the user can create at least one somewhere.
+         Desktop rail only by design (this @else branch): the popover is positioned against the vertical rail, so the mobile
+         horizontal strip has no equivalent yet. Mobile affordance is deferred to a follow-up (see PR description). -->
     @if (createPermissionService.canShowCreateButton()) {
       <button
         type="button"
         (click)="toggleCreateMenu($event)"
         data-testid="create-rail-button"
-        aria-label="New"
+        aria-label="Create new artifact"
         pTooltip="New"
         tooltipPosition="right"
         class="group mb-3 flex flex-col items-center gap-1 w-full">

@@ -21,6 +21,7 @@
  *       feeding the curated `creatableProjects` (verified in production-code review), not asserted here.
  * - S5: a single eligible project is auto-selected on open (Continue enabled without a pick); with
  *       multiple eligible projects nothing is pre-selected and Continue stays gated until the user picks
+ * - S6: Continue routes into the create flow — lands on the lens-prefixed create URL carrying ?project=<slug>
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
@@ -179,5 +180,27 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
       // Multiple options: nothing pre-selected, Continue gated until the user picks.
       await expect(continueButton(page)).toBeDisabled();
     }
+  });
+
+  // S6 — Continue exercises the create-navigation path: lands on the lens-prefixed create URL carrying ?project=<slug>
+  test('S6: Continue navigates to the create page carrying the selected project slug', async ({ page }) => {
+    await openDialogForType(page, 'meeting');
+    const dialog = page.getByTestId('create-artifact-dialog');
+    await dialog.getByTestId('project-selector').click();
+    const panel = page.getByTestId('project-selector-panel');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+
+    // Capture the picked project's slug from its data-testid (`lens-item-<slug>`).
+    const firstItem = panel.locator('[data-testid^="lens-item-"]').first();
+    await expect(firstItem).toBeVisible({ timeout: 5_000 });
+    const slug = (await firstItem.getAttribute('data-testid'))?.replace('lens-item-', '') ?? '';
+    expect(slug).not.toBe('');
+    await firstItem.click();
+
+    await continueButton(page).click();
+
+    // onContinue aligns the lens then navigates; lensRedirectGuard forwards to the lens-prefixed mount,
+    // preserving ?project=. Assert we land on the meetings create page carrying that project slug.
+    await expect(page).toHaveURL(new RegExp(`/meetings/create\\?.*project=${slug}`), { timeout: 15_000 });
   });
 });
