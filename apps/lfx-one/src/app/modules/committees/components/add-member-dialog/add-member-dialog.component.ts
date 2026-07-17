@@ -160,7 +160,7 @@ export class AddMemberDialogComponent {
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe((employer) => {
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
-            this.form.patchValue({ organization: employer.name });
+            this.form.patchValue({ organization: employer.name, organization_url: employer.website ?? '' });
           }
         });
     }
@@ -293,7 +293,11 @@ export class AddMemberDialogComponent {
     return computed(() => {
       if (!this.showOrganizationField()) return false;
       const vals = this.orgFormValues();
-      return !!(vals.organization ?? '').trim() && !vals.organization_id;
+      const hasName = !!(vals.organization ?? '').trim();
+      if (!hasName) return false;
+      const hasOrgId = !!vals.organization_id;
+      const hasUrl = !!(vals.organization_url ?? '').trim();
+      return !hasOrgId && !hasUrl;
     });
   }
 
