@@ -1129,7 +1129,18 @@ export class MeetingJoinComponent implements OnInit {
           const id = meeting ? getPastMeetingResourceId(meeting) : null;
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
           return this.meetingService.getPastMeetingAttachments(id).pipe(
-            tap(() => this.optimisticDeletedUids.set(new Set())),
+            tap((attachments) => {
+              // Only drop a UID from the optimistic exclusion set when the server
+              // confirms it is no longer present. Stale fetches (NATS not yet
+              // propagated) will still return the UID, so we leave it filtered
+              // until the next retry brings clean data.
+              this.optimisticDeletedUids.update((deleted) => {
+                if (deleted.size === 0) return deleted;
+                const fetchedUids = new Set(attachments.map((a) => a.uid));
+                const remaining = new Set([...deleted].filter((uid) => fetchedUids.has(uid)));
+                return remaining.size === deleted.size ? deleted : remaining;
+              });
+            }),
             catchError(() => of([] as PastMeetingAttachment[]))
           );
         })
