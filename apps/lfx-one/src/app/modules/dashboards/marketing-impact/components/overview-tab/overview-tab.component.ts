@@ -80,48 +80,54 @@ export class OverviewTabComponent {
       const changeSuffix: 'MoM' | 'Period' = isMonth ? 'MoM' : 'Period';
       const cards: PerformanceSummaryKpi[] = [];
 
+      // Attributed Revenue is driven by the attribution response, not revenueImpact.
+      // They are fetched independently and revenueImpact is intentionally null for
+      // projectWebsites, so guarding this card on revenueImpact would hide it even
+      // when attribution data exists. An empty/unavailable channel list renders as a
+      // dash — matching the "No attribution data available" state of the table below —
+      // rather than a misleading $0.
+      if (data.attribution) {
+        const channels = data.attribution.channels ?? [];
+        // Linear-attributed revenue from the same source as the "Marketing
+        // attribution" table, so the headline agrees with that table. The
+        // attribution response carries no time dimension, so there is no honest
+        // period delta to show here.
+        const attributedRevenue = channels.reduce((sum, ch) => sum + (ch.linearRevenue ?? 0), 0);
+        cards.push({
+          id: 'attributed-revenue',
+          label: 'Attributed Revenue',
+          icon: 'fa-light fa-dollar-sign',
+          iconClass: 'bg-green-100 text-green-600',
+          value: channels.length ? formatCurrency(attributedRevenue) : '—',
+          momChange: null,
+          momTrend: 'neutral',
+          momTrendClass: 'text-gray-500',
+          yoyChange: null,
+          yoyTrend: 'neutral',
+          yoyTrendClass: 'text-gray-500',
+        });
+      }
+
       if (data.revenueImpact) {
         const ri = data.revenueImpact;
-        // Attributed Revenue reports Linear-attributed revenue from the same
-        // source as the "Marketing attribution" table below, so the headline
-        // agrees with that table. The attribution response carries no time
-        // dimension, so there is no honest period delta to show here — the
-        // prior wiring borrowed a paid-media monthly-trend delta that tracked
-        // a different metric than the value.
-        const attributedRevenue = (data.attribution?.channels ?? []).reduce((sum, ch) => sum + (ch.linearRevenue ?? 0), 0);
-        cards.push(
-          {
-            id: 'attributed-revenue',
-            label: 'Attributed Revenue',
-            icon: 'fa-light fa-dollar-sign',
-            iconClass: 'bg-green-100 text-green-600',
-            value: formatCurrency(attributedRevenue),
-            momChange: null,
-            momTrend: 'neutral',
-            momTrendClass: 'text-gray-500',
-            yoyChange: null,
-            yoyTrend: 'neutral',
-            yoyTrendClass: 'text-gray-500',
-          },
-          {
-            id: 'roas',
-            label: 'Return on Ad Spend',
-            icon: 'fa-light fa-chart-line-up',
-            iconClass: 'bg-blue-100 text-blue-600',
-            value: `${(ri.paidMedia?.roas ?? 0).toFixed(2)}x`,
-            // No MoM delta: paid spend is lumpy and event-driven, so a
-            // month-over-month ROAS swing mostly reflects a change in campaign
-            // volume/mix (e.g. fewer campaigns when events wind down), not a
-            // change in ad efficiency. Showing it as a performance delta
-            // misrepresents a volume shift as a decline.
-            momChange: null,
-            momTrend: 'neutral',
-            momTrendClass: 'text-gray-500',
-            yoyChange: null,
-            yoyTrend: 'neutral',
-            yoyTrendClass: 'text-gray-500',
-          }
-        );
+        cards.push({
+          id: 'roas',
+          label: 'Return on Ad Spend',
+          icon: 'fa-light fa-chart-line-up',
+          iconClass: 'bg-blue-100 text-blue-600',
+          value: `${(ri.paidMedia?.roas ?? 0).toFixed(2)}x`,
+          // No MoM delta: paid spend is lumpy and event-driven, so a
+          // month-over-month ROAS swing mostly reflects a change in campaign
+          // volume/mix (e.g. fewer campaigns when events wind down), not a
+          // change in ad efficiency. Showing it as a performance delta
+          // misrepresents a volume shift as a decline.
+          momChange: null,
+          momTrend: 'neutral',
+          momTrendClass: 'text-gray-500',
+          yoyChange: null,
+          yoyTrend: 'neutral',
+          yoyTrendClass: 'text-gray-500',
+        });
       }
 
       if (data.brandReach) {

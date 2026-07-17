@@ -44,6 +44,10 @@ export class AttributionSectionComponent {
   public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
+  // When a parent has already fetched the same attribution response (e.g. the
+  // Overview tab, which also renders this section), it passes it in so we reuse
+  // it instead of issuing a duplicate request. `undefined` means "self-fetch".
+  public readonly attributionOverride = input<MarketingAttributionResponse | null | undefined>(undefined);
 
   // === Forms ===
   protected readonly modelForm = this.fb.nonNullable.group({
@@ -70,13 +74,19 @@ export class AttributionSectionComponent {
 
   // === Private Initializers ===
   private initAttributionData(): Signal<MarketingAttributionResponse | null> {
+    const override$ = toObservable(this.attributionOverride);
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
     const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, focus$, period$]).pipe(
-        switchMap(([slug, focus, period]) => {
+      combineLatest([override$, slug$, focus$, period$]).pipe(
+        switchMap(([override, slug, focus, period]) => {
+          // A parent-supplied response short-circuits our own fetch (no duplicate query).
+          if (override !== undefined) {
+            this.loading.set(false);
+            return of(override);
+          }
           if (!slug) {
             this.loading.set(false);
             return of(null);
