@@ -265,9 +265,38 @@ export class NewsletterManageComponent {
   }
 
   protected onSaveAsDraft(): void {
-    if (!this.canSaveDraft()) return;
+    if (!this.canSaveDraft()) {
+      // A save was already in flight — the button shows its loading state, so
+      // there's nothing to explain.
+      if (this.savingDraft()) return;
+      const missing = this.missingDraftRequirements();
+      if (missing.length > 0) {
+        this.messageService.add({
+          severity: 'warn',
+          summary: "Can't save draft yet",
+          detail: `Add ${this.formatMissing(missing)} before saving your draft.`,
+        });
+      }
+      return;
+    }
     this.manualSaving.set(true);
     this.saveTrigger$.next(true);
+  }
+
+  /** The still-missing requirements that block a draft save, for user feedback. */
+  private missingDraftRequirements(): string[] {
+    const missing: string[] = [];
+    if (!this.audienceFilled()) missing.push('an audience');
+    if (!this.subjectFilled()) missing.push('a subject');
+    if (!this.bodyFilled()) missing.push('some newsletter content');
+    if (this.edEmail().length === 0) missing.push('a reply-to email');
+    return missing;
+  }
+
+  /** Join a list into readable prose: "a", "a and b", or "a, b, and c". */
+  private formatMissing(items: string[]): string {
+    if (items.length === 1) return items[0];
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   }
 
   protected openPreviewDrawer(): void {
