@@ -13,6 +13,7 @@ import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExp
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
+import { PENDING_PROFILE_SAVE_KEY } from '@app/shared/utils/pending-profile-save.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { finalize } from 'rxjs';
@@ -196,7 +197,7 @@ export class ProfileEditDialogComponent {
           if (error.status === 403 && error.error?.error === 'management_token_required') {
             // Stamp with a timestamp so the parent shell can discard a stale pending-save if this
             // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
-            sessionStorage.setItem('lfx_profile_pending_save', JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
+            sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
             window.location.href = error.error.authorize_url;
             return;
           }

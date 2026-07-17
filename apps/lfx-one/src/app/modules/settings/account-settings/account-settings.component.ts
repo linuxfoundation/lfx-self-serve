@@ -12,6 +12,7 @@ import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/toke
 import { markFormControlsAsTouched } from '@lfx-one/shared';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
+import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
 import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -244,7 +245,7 @@ export class AccountSettingsComponent {
         },
         error: (error) => {
           if (error.status === 403 && error.error?.error === 'management_token_required') {
-            window.location.href = error.error.authorize_url;
+            this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Verification failed. Please try again.' });
@@ -272,7 +273,7 @@ export class AccountSettingsComponent {
       },
       error: (err: HttpErrorResponse) => {
         if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
-          window.location.href = err.error.authorize_url;
+          this.redirectToProfileAuth(err.error.authorize_url);
           return;
         }
         this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update primary email' });
@@ -292,7 +293,7 @@ export class AccountSettingsComponent {
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
-          window.location.href = '/api/profile/auth/start?returnTo=/profile/settings';
+          this.redirectToProfileAuth('/api/profile/auth/start?returnTo=/profile/settings');
           return;
         }
 
@@ -315,7 +316,7 @@ export class AccountSettingsComponent {
                 },
                 error: (err: HttpErrorResponse) => {
                   if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
-                    window.location.href = err.error.authorize_url;
+                    this.redirectToProfileAuth(err.error.authorize_url);
                     return;
                   }
                   this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to delete email address' });
@@ -354,7 +355,7 @@ export class AccountSettingsComponent {
         },
         error: (error: HttpErrorResponse) => {
           if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
-            window.location.href = error.error.authorize_url;
+            this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
           this.messageService.add({
@@ -380,7 +381,7 @@ export class AccountSettingsComponent {
         },
         error: (error: HttpErrorResponse) => {
           if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
-            window.location.href = error.error.authorize_url;
+            this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
           this.resetResultSuccess.set(false);
@@ -443,6 +444,18 @@ export class AccountSettingsComponent {
   // ══════════════════════════════════════════
   // PRIVATE INITIALIZERS
   // ══════════════════════════════════════════
+
+  /**
+   * Redirect into a profile-auth (Flow C) flow for an email/password operation.
+   * Clears any stored profile-edit pending-save first so an abandoned edit
+   * authorization can't be silently replayed when this flow returns to the
+   * profile shell (these settings now live at /profile/settings).
+   */
+  private redirectToProfileAuth(url: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    clearPendingProfileSave();
+    window.location.href = url;
+  }
 
   private initEmailData(): Signal<EmailManagementData | null> {
     return toSignal(

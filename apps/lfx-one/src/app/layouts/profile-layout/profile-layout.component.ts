@@ -15,6 +15,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
+import { PENDING_PROFILE_SAVE_KEY } from '@app/shared/utils/pending-profile-save.util';
 import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
 
 // Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
@@ -43,7 +44,7 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileLayoutComponent {
-  private static readonly formStateKey = 'lfx_profile_pending_save';
+  private static readonly formStateKey = PENDING_PROFILE_SAVE_KEY;
   // Discard a stored pending-save older than this. Prevents an abandoned profile-edit authorization
   // from being silently replayed by a later, unrelated profile-auth return (e.g. an email-delete
   // authorization that now lands on /profile/settings inside this shell).
