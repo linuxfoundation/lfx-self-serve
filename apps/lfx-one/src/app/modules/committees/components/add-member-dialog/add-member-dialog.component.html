@@ -142,6 +142,12 @@
           dataTestId="add-member-organization-search"
           (onOrganizationResolved)="onOrgResolved($event)">
         </lfx-organization-search>
+        @if (showOrgError()) {
+          <p class="text-xs text-red-600" data-testid="add-member-org-error">
+            <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+            Organization not found. Please select an organization from the search results.
+          </p>
+        }
       </div>
     }
 

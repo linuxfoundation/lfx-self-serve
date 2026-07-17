@@ -92,8 +92,10 @@ export class AddMemberDialogComponent {
 
   public submitting = signal(false);
   public searchLoading = signal(false);
+  private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+  private readonly orgFormValues = toSignal(this.form.valueChanges.pipe(startWith(this.form.value)), { initialValue: this.form.value });
 
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
   public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
@@ -110,6 +112,13 @@ export class AddMemberDialogComponent {
     return result;
   });
   public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
+  /** True when the org field is shown, a name is entered, but no org ID has been resolved from the search. */
+  public readonly orgInvalid = computed(() => {
+    if (!this.showOrganizationField()) return false;
+    const vals = this.orgFormValues();
+    return !!(vals.organization ?? '').trim() && !vals.organization_id;
+  });
+  public readonly showOrgError = computed(() => this.orgInvalid() && this.orgSubmitAttempted());
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
@@ -176,6 +185,13 @@ export class AddMemberDialogComponent {
     const emails = this.categorized().toInvite;
     if (!committeeId || emails.length === 0) {
       return;
+    }
+
+    if (this.showOrganizationField()) {
+      this.orgSubmitAttempted.set(true);
+      if (this.orgInvalid()) {
+        return;
+      }
     }
 
     this.submitting.set(true);
