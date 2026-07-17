@@ -6,7 +6,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
-import { MeetingAttachment, PendingAttachment } from '@lfx-one/shared/interfaces';
+import { MaterialsChangedEvent, MeetingAttachment, PastMeetingAttachment, PendingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -30,8 +30,8 @@ export class MeetingMaterialsDrawerComponent {
   /** Composite meeting_and_occurrence_id of a past meeting. When set, all API calls target the past meeting attachments endpoint. */
   public readonly pastMeetingId = input<string>();
   public visible = model<boolean>(false);
-  /** Emits the UIDs of attachments that were successfully deleted, so callers can optimistically remove them from local state. Empty when no deletions occurred. */
-  public readonly materialsChanged = output<string[]>();
+  /** Emits deleted UIDs and newly created attachments so callers can apply optimistic UI updates without waiting for NATS propagation to the query service. */
+  public readonly materialsChanged = output<MaterialsChangedEvent>();
 
   // === Constants ===
   public readonly acceptString = generateAcceptString();
@@ -180,7 +180,8 @@ export class MeetingMaterialsDrawerComponent {
         this.newLinkUrl.set('');
         this.saving.set(false);
         this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
-        this.materialsChanged.emit([]);
+        const addedAttachments: PastMeetingAttachment[] = isPast ? [attachment as PastMeetingAttachment] : [];
+        this.materialsChanged.emit({ deletedUids: [], addedAttachments });
       },
       error: () => {
         this.saving.set(false);
@@ -247,7 +248,25 @@ export class MeetingMaterialsDrawerComponent {
           this.saving.set(false);
           const successfullyDeletedUids = deleteResults.filter((r) => r.ok).map((r) => r.uid);
           const hasPartialFailure = deleteResults.some((r) => !r.ok) || uploadResults.some((r) => r === null);
-          this.materialsChanged.emit(successfullyDeletedUids);
+          const addedAttachments: PastMeetingAttachment[] = isPast
+            ? uploadResults
+                .filter((r): r is PresignAttachmentResponse => r !== null)
+                .map((r) => ({
+                  uid: r.uid,
+                  meeting_and_occurrence_id: id!,
+                  meeting_id: r.meeting_id ?? '',
+                  type: r.type,
+                  name: r.name,
+                  category: r.category,
+                  file_name: r.file_name,
+                  file_size: r.file_size,
+                  file_upload_status: r.file_upload_status,
+                  file_content_type: r.file_content_type,
+                  created_at: r.created_at,
+                  created_by: r.created_by,
+                }))
+            : [];
+          this.materialsChanged.emit({ deletedUids: successfullyDeletedUids, addedAttachments });
           if (hasPartialFailure) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });
           } else {

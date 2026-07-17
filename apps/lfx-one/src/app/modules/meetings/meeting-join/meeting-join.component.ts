@@ -31,6 +31,7 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
+  MaterialsChangedEvent,
   MeetingAttachment,
   MeetingOccurrence,
   MeetingRecurrence,
@@ -186,6 +187,7 @@ export class MeetingJoinComponent implements OnInit {
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   private readonly optimisticDeletedUids = signal(new Set<string>());
+  private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
 
   public meetingTitle: Signal<string>;
@@ -304,8 +306,13 @@ export class MeetingJoinComponent implements OnInit {
     const pastMeetingAttachmentsRaw = this.initializePastMeetingAttachments();
     this.pastMeetingAttachments = computed(() => {
       const deleted = this.optimisticDeletedUids();
-      if (deleted.size === 0) return pastMeetingAttachmentsRaw();
-      return pastMeetingAttachmentsRaw().filter((a) => !deleted.has(a.uid));
+      const added = this.optimisticAddedAttachments();
+      const raw = pastMeetingAttachmentsRaw();
+      const rawUids = new Set(raw.map((a) => a.uid));
+      const filtered = deleted.size > 0 ? raw.filter((a) => !deleted.has(a.uid)) : raw;
+      // Prepend optimistic additions not yet confirmed by the server
+      const pending = added.filter((a) => !rawUids.has(a.uid) && !deleted.has(a.uid));
+      return pending.length > 0 ? [...pending, ...filtered] : filtered;
     });
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
@@ -414,12 +421,11 @@ export class MeetingJoinComponent implements OnInit {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(deletedUids: string[] = []): void {
+  public onMaterialsChanged({ deletedUids = [], addedAttachments = [] }: MaterialsChangedEvent = { deletedUids: [], addedAttachments: [] }): void {
     // Immediate refresh + delayed retry: upload writes to meeting-service via ITX,
     // reads come from query-service indexed asynchronously via NATS, so a single
     // immediate fetch can return stale data before the NATS event propagates.
-    // Optimistically filter deleted UIDs from the signal immediately so the UI
-    // updates without waiting for NATS propagation.
+    // Optimistic updates apply immediately; the re-fetch corrects state once indexed.
     if (this.loadedViaPastMeetingId()) {
       if (deletedUids.length > 0) {
         this.optimisticDeletedUids.update((set) => {
@@ -427,6 +433,9 @@ export class MeetingJoinComponent implements OnInit {
           deletedUids.forEach((uid) => next.add(uid));
           return next;
         });
+      }
+      if (addedAttachments.length > 0) {
+        this.optimisticAddedAttachments.update((current) => [...addedAttachments, ...current]);
       }
       this.pastMeetingAttachmentsRefresh$.next();
       timer(1000)
@@ -1130,16 +1139,16 @@ export class MeetingJoinComponent implements OnInit {
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
           return this.meetingService.getPastMeetingAttachments(id).pipe(
             tap((attachments) => {
-              // Only drop a UID from the optimistic exclusion set when the server
-              // confirms it is no longer present. Stale fetches (NATS not yet
-              // propagated) will still return the UID, so we leave it filtered
-              // until the next retry brings clean data.
+              const fetchedUids = new Set(attachments.map((a) => a.uid));
+              // Only drop a deleted UID from the exclusion set when the server confirms
+              // it is absent — stale fetches leave the filter intact.
               this.optimisticDeletedUids.update((deleted) => {
                 if (deleted.size === 0) return deleted;
-                const fetchedUids = new Set(attachments.map((a) => a.uid));
                 const remaining = new Set([...deleted].filter((uid) => fetchedUids.has(uid)));
                 return remaining.size === deleted.size ? deleted : remaining;
               });
+              // Drop optimistic additions that the server now confirms are indexed.
+              this.optimisticAddedAttachments.update((added) => added.filter((a) => !fetchedUids.has(a.uid)));
             }),
             catchError(() => of([] as PastMeetingAttachment[]))
           );
