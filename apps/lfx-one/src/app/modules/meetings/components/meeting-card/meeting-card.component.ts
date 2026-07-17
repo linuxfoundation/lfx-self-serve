@@ -38,7 +38,6 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   COMMITTEE_LABEL,
-  MaterialsChangedEvent,
   resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
@@ -278,7 +277,7 @@ export class MeetingCardComponent implements OnInit {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(_event?: MaterialsChangedEvent): void {
+  public onMaterialsChanged(): void {
     this.refreshAttachments$.next();
     timer(1000)
       .pipe(takeUntilDestroyed(this.destroyRef))

@@ -16,7 +16,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
-  MaterialsChangedEvent,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
@@ -137,7 +136,7 @@ export class PastMeetingDetailsComponent {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(_event?: MaterialsChangedEvent): void {
+  public onMaterialsChanged(): void {
     this.attachmentRefresh$.next();
     timer(1000)
       .pipe(takeUntilDestroyed(this.destroyRef))
