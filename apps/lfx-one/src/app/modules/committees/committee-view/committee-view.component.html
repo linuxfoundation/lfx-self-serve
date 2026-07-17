@@ -134,6 +134,27 @@
           </div>
         </div>
       }
+      <!-- Application-only join mode coming soon notice -->
+      @if (committee()?.join_mode === 'application') {
+        <div
+          class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4"
+          role="region"
+          aria-label="Join mode notice"
+          data-testid="committee-view-application-mode-banner">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-lg text-amber-600 shrink-0" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm font-semibold text-gray-900">Apply to Join — Coming Soon</span>
+            <p class="text-sm text-gray-600">
+              Reviewing and approving join requests is not yet available in LFX. Members who apply to join this group cannot currently be
+              approved.
+              @if (canEdit()) {
+                If you manage this group, consider changing the join mode to <strong>Open</strong>, <strong>Invite Only</strong>, or
+                <strong>Closed</strong> in the Settings tab below to continue letting members in while this feature is being built.
+              }
+            </p>
+          </div>
+        </div>
+      }
       <!-- Header Section -->
       <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-view-header">
         <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
