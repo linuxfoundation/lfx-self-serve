@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
+  GenerateNewsletterResponse,
   Newsletter,
   NewsletterLayout,
   NewsletterManageViewMode,
@@ -147,7 +148,12 @@ export class NewsletterManageComponent {
   private readonly bodyHtmlValue = signal<string>('');
 
   // === Save dedup ===
-  private readonly lastSavedSnapshot = signal<{ subject: string; bodyLayout: string; committeeUids: string[] } | null>(null);
+  // bodyHtml is tracked alongside body_layout so the simple editor (which
+  // authors body_html directly) autosaves. In blocks mode body_html is
+  // server-derived, so the snapshot's bodyHtml is always taken from the SAVE
+  // RESPONSE — the rendered value — which is what the form then holds; comparing
+  // against it never loops.
+  private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[] } | null>(null);
   private readonly saveTrigger$ = new Subject<boolean>();
 
   // === Recipient summary ===
@@ -301,6 +307,19 @@ export class NewsletterManageComponent {
 
   protected openPreviewDrawer(): void {
     this.previewDrawerVisible.set(true);
+  }
+
+  /**
+   * Apply an AI-generated newsletter to the form (simple-editor path). The
+   * content step already confirmed any overwrite; keep the current subject when
+   * the model returned none. Editing body_html marks the draft dirty via the
+   * body_html snapshot axis, so the next autosave persists it.
+   */
+  protected onGenerated(result: GenerateNewsletterResponse): void {
+    this.form.patchValue({
+      subject: result.subject ?? this.form.controls.subject.value,
+      bodyHtml: result.bodyHtml,
+    });
   }
 
   protected onSendTest(): void {
@@ -653,7 +672,7 @@ export class NewsletterManageComponent {
     // A freshly loaded draft matches the server, so seed the saved snapshot —
     // otherwise isDirty would read true on reopen and gate preview/send off until
     // the first autosave.
-    this.recordSavedSnapshot({ subject, bodyLayout: this.serializeLayout(bodyLayout), committeeUids });
+    this.recordSavedSnapshot({ subject, bodyHtml, bodyLayout: this.serializeLayout(bodyLayout), committeeUids });
     this.fetchRecipientCountFor(committeeUids);
   }
 
@@ -688,6 +707,7 @@ export class NewsletterManageComponent {
     if (!saved) return false;
     return (
       saved.subject === this.form.controls.subject.value &&
+      saved.bodyHtml === this.form.controls.bodyHtml.value &&
       saved.bodyLayout === this.serializeLayout(this.form.controls.bodyLayout.value) &&
       this.uidsEqual(saved.committeeUids, this.form.controls.committeeUids.value)
     );
@@ -701,6 +721,7 @@ export class NewsletterManageComponent {
     if (!saved) return true;
     return !(
       saved.subject === this.subjectValue() &&
+      saved.bodyHtml === this.bodyHtmlValue() &&
       saved.bodyLayout === this.serializeLayout(this.bodyLayoutValue()) &&
       this.uidsEqual(saved.committeeUids, this.committeeUidsValue())
     );
@@ -794,7 +815,10 @@ export class NewsletterManageComponent {
           this.version.set(draft.version);
           this.syncDerivedBodyHtml(draft);
           this.savedAt.set(new Date());
-          this.recordSavedSnapshot(snapshotKey);
+          // bodyHtml from the SERVER response (in blocks mode the rendered value
+          // the form now holds), so the post-save state compares equal and
+          // doesn't immediately re-trigger.
+          this.recordSavedSnapshot({ ...snapshotKey, bodyHtml: draft.body_html ?? '' });
           if (isManual) this.notifyDraftSaved();
           return draft;
         }),
@@ -811,7 +835,7 @@ export class NewsletterManageComponent {
         this.version.set(draft.version);
         this.syncDerivedBodyHtml(draft);
         this.savedAt.set(new Date());
-        this.recordSavedSnapshot(snapshotKey);
+        this.recordSavedSnapshot({ ...snapshotKey, bodyHtml: draft.body_html ?? '' });
         this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { step: this.internalStep() },
@@ -825,9 +849,10 @@ export class NewsletterManageComponent {
     );
   }
 
-  private recordSavedSnapshot(payload: { subject: string; bodyLayout: string; committeeUids: string[] }): void {
+  private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[] }): void {
     this.lastSavedSnapshot.set({
       subject: payload.subject,
+      bodyHtml: payload.bodyHtml,
       bodyLayout: payload.bodyLayout,
       committeeUids: [...payload.committeeUids],
     });

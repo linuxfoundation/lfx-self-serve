@@ -304,6 +304,14 @@ export interface NewsletterBlockPaletteGroup {
  */
 export type NewsletterComposerTab = 'blocks' | 'outline';
 
+/**
+ * Which body editor the content step shows: the structured block composer
+ * (authors `body_layout`) or the simple rich-text + AI editor (authors
+ * `body_html`). Selectable per newsletter; the two are mutually exclusive so
+ * only one body representation is ever the source of truth.
+ */
+export type NewsletterEditorMode = 'blocks' | 'simple';
+
 /** One rail tab descriptor (id, label, icon, disabled state). */
 export interface NewsletterComposerTabDef {
   id: NewsletterComposerTab;

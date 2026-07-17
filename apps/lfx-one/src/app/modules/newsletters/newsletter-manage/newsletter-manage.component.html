@@ -173,7 +173,13 @@
 
               <p-step-panel [value]="2" data-testid="newsletter-manage-panel-2">
                 <ng-template #content>
-                  <lfx-newsletter-content-step [form]="form"></lfx-newsletter-content-step>
+                  <lfx-newsletter-content-step
+                    [form]="form"
+                    [contextName]="displayName()"
+                    [hasContext]="hasContext()"
+                    [savedLabel]="savedLabel()"
+                    (generated)="onGenerated($event)">
+                  </lfx-newsletter-content-step>
                 </ng-template>
               </p-step-panel>
 
