@@ -11,15 +11,14 @@ import { LensService } from '../services/lens.service';
  *
  * - Foundation / project lens: redirect to the lens-prefixed equivalent
  *   (`/foundation/settings`, `/project/settings`) — same behavior as `lensRedirectGuard`.
- * - Me lens: redirect under `/profile` (canonical home for account settings now that
- *   they live as a Profile & Account tab). Prefixing `state.url` maps `/settings` →
- *   `/profile/settings` while carrying query params and fragments (e.g. the header's
- *   `/settings#developer-settings` anchor link) through the redirect.
+ * - Me lens: redirect to `/profile/settings` (canonical home for account settings now
+ *   that they live as a Profile & Account tab), carrying the query params and fragment
+ *   through so the header's `/settings#developer-settings` anchor link still lands on
+ *   the right section. `RouterStateSnapshot.url` omits the fragment, so build the tree
+ *   from the snapshot's `queryParams`/`fragment` rather than string-prefixing `state.url`.
  * - Any other lens (e.g. org): let the request through unchanged.
- *
- * Reads `state.url` so query params and trailing segments survive the lens redirect.
  */
-export const settingsLensRedirectGuard: CanActivateFn = (_route, state) => {
+export const settingsLensRedirectGuard: CanActivateFn = (route, state) => {
   const lensService = inject(LensService);
   const router = inject(Router);
 
@@ -28,7 +27,10 @@ export const settingsLensRedirectGuard: CanActivateFn = (_route, state) => {
     return router.parseUrl(`/${lens}${state.url}`);
   }
   if (lens === 'me') {
-    return router.parseUrl(`/profile${state.url}`);
+    return router.createUrlTree(['/profile/settings'], {
+      queryParams: route.queryParams,
+      fragment: route.fragment ?? undefined,
+    });
   }
   return true;
 };
