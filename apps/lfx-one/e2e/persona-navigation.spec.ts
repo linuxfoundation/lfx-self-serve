@@ -23,6 +23,7 @@
  *   S11 Settings page — view-only banner shown to non-writer
  *   S12 Settings page — view-only banner hidden for writer
  *   S13 Settings lens redirect — me lens → /profile/settings (fragment preserved); foundation keeps prefixed route
+ *   S14 Legacy transactions redirect — /me/transactions → /profile/transactions, embedded in the Profile shell
  *
  * Failure messages include the persona × lens × page combination so CI output
  * pinpoints the exact regression without digging through traces.
@@ -629,5 +630,34 @@ test.describe('S13: Settings lens redirect — me lens → /profile/settings', (
       /\/foundation\/settings\?project=test-foundation/,
       { timeout: ELEMENT_TIMEOUT }
     );
+  });
+});
+
+// ─── S14: Legacy transactions redirect (/me/transactions → /profile/transactions) ──
+
+test.describe('S14: Legacy transactions redirect — /me/transactions → /profile/transactions', () => {
+  test('redirects the legacy path and renders the dashboard embedded in the Profile shell', async ({ page }) => {
+    await stubPersona(page, ['contributor']);
+    await setPersonaCookie(page, ['contributor']);
+
+    // Me lens is the default; establish it, then hit the legacy transactions path.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto('/me/transactions', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // The route redirects the former /me/transactions page to the canonical Profile tab.
+    await expect(page, 'legacy /me/transactions should redirect to /profile/transactions').toHaveURL(/\/profile\/transactions$/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // The transactions dashboard renders inside the Profile shell, which owns the page header…
+    await expect(page.getByTestId('transactions-dashboard'), 'transactions dashboard should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-page-title'), 'Profile shell header should own the page title').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    // …so the dashboard's own standalone header is suppressed in embedded mode.
+    await expect(page.getByTestId('transactions-title'), 'embedded dashboard should not render its standalone header').toHaveCount(0);
   });
 });

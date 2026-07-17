@@ -178,7 +178,7 @@ export class ProfileLayoutComponent {
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
-          detail: 'Profile authorization failed. Please try saving again.',
+          detail: 'Authorization failed. Please try again.',
         });
         this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
       }
