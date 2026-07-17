@@ -31,6 +31,7 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
+  MaterialsChangedEvent,
   MeetingAttachment,
   MeetingOccurrence,
   MeetingRecurrence,
@@ -75,6 +76,7 @@ import {
   merge,
   Observable,
   of,
+  skip,
   startWith,
   Subject,
   switchMap,
@@ -184,6 +186,9 @@ export class MeetingJoinComponent implements OnInit {
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
+  private readonly optimisticDeletedUids = signal(new Set<string>());
+  private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
 
   public meetingTitle: Signal<string>;
@@ -199,6 +204,8 @@ export class MeetingJoinComponent implements OnInit {
   protected transcriptUrl: Signal<string | null>;
   // Past meetings badge on a real fetched recording; upcoming keep the recording_enabled config flag.
   protected showRecordingBadge = computed(() => (this.loadedViaPastMeetingId() ? !!this.primaryRecordingUrl() : !!this.meeting()?.recording_enabled));
+  // Returns meeting_and_occurrence_id when set (occurrences use a composite key for attachment API calls).
+  protected pastMeetingResourceId = computed(() => (this.loadedViaPastMeetingId() && this.meeting() ? getPastMeetingResourceId(this.meeting()!) : undefined));
   protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
@@ -297,7 +304,26 @@ export class MeetingJoinComponent implements OnInit {
     this.hasSummaryContent = this.initializeHasSummaryContent();
     this.summaryAwaitingApproval = this.initializeSummaryAwaitingApproval();
     this.pastMeetingRecording = this.initializePastMeetingRecording();
-    this.pastMeetingAttachments = this.initializePastMeetingAttachments();
+    const pastMeetingAttachmentsRaw = this.initializePastMeetingAttachments();
+    this.pastMeetingAttachments = computed(() => {
+      const deleted = this.optimisticDeletedUids();
+      const added = this.optimisticAddedAttachments();
+      const raw = pastMeetingAttachmentsRaw();
+      const rawUids = new Set(raw.map((a) => a.uid));
+      const filtered = deleted.size > 0 ? raw.filter((a) => !deleted.has(a.uid)) : raw;
+      // Prepend optimistic additions not yet confirmed by the server
+      const pending = added.filter((a) => !rawUids.has(a.uid) && !deleted.has(a.uid));
+      return pending.length > 0 ? [...pending, ...filtered] : filtered;
+    });
+    // Clear optimistic state when navigating to a different past meeting so stale
+    // entries from the previous meeting don't bleed into the next one's attachment list.
+    toObservable(this.pastMeetingResourceId)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.optimisticDeletedUids.set(new Set());
+        this.optimisticAddedAttachments.set([]);
+      });
+
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
     this.pastMeetingParticipants = this.initializePastMeetingParticipants();
@@ -405,14 +431,35 @@ export class MeetingJoinComponent implements OnInit {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(): void {
+  public onMaterialsChanged({ deletedUids = [], addedAttachments = [] }: MaterialsChangedEvent = { deletedUids: [], addedAttachments: [] }): void {
     // Immediate refresh + delayed retry: upload writes to meeting-service via ITX,
     // reads come from query-service indexed asynchronously via NATS, so a single
     // immediate fetch can return stale data before the NATS event propagates.
-    this.refreshTrigger$.next();
-    timer(1000)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.refreshTrigger$.next());
+    // Optimistic updates apply immediately; the re-fetch corrects state once indexed.
+    if (this.loadedViaPastMeetingId()) {
+      if (deletedUids.length > 0) {
+        this.optimisticDeletedUids.update((set) => {
+          const next = new Set(set);
+          deletedUids.forEach((uid) => next.add(uid));
+          return next;
+        });
+        // Remove from optimistic additions too: a link added then deleted in the same
+        // drawer session must not reappear once the deletion exclusion is cleared.
+        this.optimisticAddedAttachments.update((current) => current.filter((a) => !deletedUids.includes(a.uid)));
+      }
+      if (addedAttachments.length > 0) {
+        this.optimisticAddedAttachments.update((current) => [...addedAttachments, ...current]);
+      }
+      this.pastMeetingAttachmentsRefresh$.next();
+      timer(1000)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.pastMeetingAttachmentsRefresh$.next());
+    } else {
+      this.refreshTrigger$.next();
+      timer(1000)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.refreshTrigger$.next());
+    }
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -1099,11 +1146,25 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingAttachments(): Signal<PastMeetingAttachment[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
+      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), this.pastMeetingAttachmentsRefresh$]).pipe(
         switchMap(([hasAccess, meeting]) => {
           const id = meeting ? getPastMeetingResourceId(meeting) : null;
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
-          return this.meetingService.getPastMeetingAttachments(id).pipe(catchError(() => of([] as PastMeetingAttachment[])));
+          return this.meetingService.getPastMeetingAttachments(id).pipe(
+            tap((attachments) => {
+              const fetchedUids = new Set(attachments.map((a) => a.uid));
+              // Only drop a deleted UID from the exclusion set when the server confirms
+              // it is absent — stale fetches leave the filter intact.
+              this.optimisticDeletedUids.update((deleted) => {
+                if (deleted.size === 0) return deleted;
+                const remaining = new Set([...deleted].filter((uid) => fetchedUids.has(uid)));
+                return remaining.size === deleted.size ? deleted : remaining;
+              });
+              // Drop optimistic additions that the server now confirms are indexed.
+              this.optimisticAddedAttachments.update((added) => added.filter((a) => !fetchedUids.has(a.uid)));
+            }),
+            catchError(() => of([] as PastMeetingAttachment[]))
+          );
         })
       ),
       { initialValue: [] }

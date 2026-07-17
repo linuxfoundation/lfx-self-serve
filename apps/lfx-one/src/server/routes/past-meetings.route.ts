@@ -32,12 +32,22 @@ router.get('/:uid/summary', (req, res, next) => pastMeetingController.getPastMee
 // Update past meeting summary
 router.put('/:uid/summary/:summaryUid', (req, res, next) => pastMeetingController.updatePastMeetingSummary(req, res, next));
 
-// Past meeting attachment routes (read-only — no upload UX yet)
+// Past meeting attachment routes
 router.get('/:uid/attachments', (req, res, next) => pastMeetingController.getPastMeetingAttachments(req, res, next));
+
+router.post('/:uid/attachments', (req, res, next) => pastMeetingController.createPastMeetingAttachment(req, res, next));
+
+router.post('/:uid/attachments/upload', express.raw({ type: '*/*', limit: '100mb' }), (req, res, next) =>
+  pastMeetingController.uploadPastMeetingAttachment(req, res, next)
+);
+
+router.post('/:uid/attachments/presign', (req, res, next) => pastMeetingController.presignPastMeetingAttachment(req, res, next));
 
 router.get('/:uid/attachments/:attachmentId', (req, res, next) => pastMeetingController.getPastMeetingAttachment(req, res, next));
 
 router.get('/:uid/attachments/:attachmentId/download', (req, res, next) => pastMeetingController.getPastMeetingAttachmentDownloadUrl(req, res, next));
+
+router.delete('/:uid/attachments/:attachmentId', (req, res, next) => pastMeetingController.deletePastMeetingAttachment(req, res, next));
 
 // Get a single past meeting by UID (must be after all /:uid/* routes)
 router.get('/:uid', (req, res, next) => pastMeetingController.getPastMeetingById(req, res, next));

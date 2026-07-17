@@ -2,18 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  AttachmentCategory,
   AttachmentDownloadUrlResponse,
+  CreateMeetingAttachmentRequest,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingRecording,
   PastMeetingSummary,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
+  PresignAttachmentRequest,
+  PresignAttachmentResponse,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 
@@ -22,6 +28,7 @@ import { MeetingService } from '../services/meeting.service';
  */
 export class PastMeetingController {
   private meetingService: MeetingService = new MeetingService();
+  private accessCheckService: AccessCheckService = new AccessCheckService();
 
   /**
    * GET /past-meetings
@@ -92,6 +99,20 @@ export class PastMeetingController {
       }
 
       const meeting = await this.meetingService.getPastMeetingById(req, uid);
+
+      if (req.oidc?.isAuthenticated()) {
+        try {
+          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+            req,
+            { ...meeting, id: meeting.meeting_and_occurrence_id ?? uid },
+            'v1_past_meeting',
+            'organizer'
+          );
+          meeting.organizer = meetingWithAccess.organizer ?? false;
+        } catch {
+          meeting.organizer = false;
+        }
+      }
 
       const counts = await this.addParticipantsCount(req, uid);
       meeting.individual_registrants_count = counts.individual_registrants_count;
@@ -487,6 +508,223 @@ export class PastMeetingController {
       });
 
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/attachments
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async createPastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const attachmentData: CreateMeetingAttachmentRequest = req.body;
+    const startTime = logger.startOperation(req, 'create_past_meeting_attachment', {
+      past_meeting_id: uid,
+      type: attachmentData.type,
+      name: attachmentData.name,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'create_past_meeting_attachment',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!attachmentData.type || !attachmentData.name) {
+        const errors: Record<string, string> = {};
+        if (!attachmentData.type) errors['type'] = 'type is required';
+        if (!attachmentData.name) errors['name'] = 'name is required';
+        return next(ServiceValidationError.fromFieldErrors(errors));
+      }
+
+      const attachment = await this.meetingService.createPastMeetingAttachment(req, uid, attachmentData);
+
+      logger.success(req, 'create_past_meeting_attachment', startTime, {
+        attachment_uid: attachment.uid,
+        past_meeting_id: uid,
+        type: attachment.type,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/attachments/presign
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async presignPastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const presignData: PresignAttachmentRequest = req.body;
+    const startTime = logger.startOperation(req, 'presign_past_meeting_attachment', {
+      past_meeting_id: uid,
+      file_name: presignData.name,
+      file_size: presignData.file_size,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'presign_past_meeting_attachment',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!presignData.name || !presignData.file_size || !presignData.file_type) {
+        const errors: Record<string, string> = {};
+        if (!presignData.name) errors['name'] = 'name is required';
+        if (!presignData.file_size) errors['file_size'] = 'file_size is required';
+        if (!presignData.file_type) errors['file_type'] = 'file_type is required';
+        return next(ServiceValidationError.fromFieldErrors(errors));
+      }
+
+      if (typeof presignData.file_size !== 'number' || isNaN(presignData.file_size) || presignData.file_size <= 0) {
+        return next(
+          ServiceValidationError.forField('file_size', 'File size must be a positive number', {
+            operation: 'presign_past_meeting_attachment',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const result: PresignAttachmentResponse = await this.meetingService.presignPastMeetingAttachment(req, uid, presignData);
+
+      logger.success(req, 'presign_past_meeting_attachment', startTime, {
+        past_meeting_id: uid,
+        attachment_uid: result.uid,
+        file_name: presignData.name,
+      });
+
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/attachments/upload
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async uploadPastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const { name, file_size, file_type, category, description } = req.query as Record<string, string>;
+    const startTime = logger.startOperation(req, 'upload_past_meeting_attachment', {
+      past_meeting_id: uid,
+      file_name: name,
+      file_size,
+      file_type,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'upload_past_meeting_attachment',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!name || !file_size || !file_type) {
+        const errors: Record<string, string> = {};
+        if (!name) errors['name'] = 'name is required';
+        if (!file_size) errors['file_size'] = 'file_size is required';
+        if (!file_type) errors['file_type'] = 'file_type is required';
+        return next(ServiceValidationError.fromFieldErrors(errors));
+      }
+
+      const fileBuffer = req.body as Buffer;
+      const fileSizeNum = parseInt(file_size, 10);
+
+      if (isNaN(fileSizeNum) || fileSizeNum <= 0) {
+        return next(
+          ServiceValidationError.forField('file_size', 'File size must be a positive number', {
+            operation: 'upload_past_meeting_attachment',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
+        return next(
+          ServiceValidationError.forField('body', 'Request body must contain file data', {
+            operation: 'upload_past_meeting_attachment',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const presignData: PresignAttachmentRequest = {
+        name,
+        file_size: fileSizeNum,
+        file_type,
+        ...(category && { category: category as AttachmentCategory }),
+        ...(description && { description }),
+      };
+
+      const result = await this.meetingService.uploadPastMeetingAttachment(req, uid, fileBuffer, presignData);
+
+      logger.success(req, 'upload_past_meeting_attachment', startTime, {
+        past_meeting_id: uid,
+        attachment_uid: result.uid,
+        file_name: name,
+        file_size: fileSizeNum,
+      });
+
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /past-meetings/:uid/attachments/:attachmentId
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async deletePastMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, attachmentId } = req.params;
+    const startTime = logger.startOperation(req, 'delete_past_meeting_attachment', {
+      past_meeting_id: uid,
+      attachment_id: attachmentId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'delete_past_meeting_attachment',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!attachmentId) {
+        return next(
+          ServiceValidationError.forField('attachmentId', 'Attachment ID is required', {
+            operation: 'delete_past_meeting_attachment',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      await this.meetingService.deletePastMeetingAttachment(req, uid, attachmentId);
+
+      logger.success(req, 'delete_past_meeting_attachment', startTime, {
+        past_meeting_id: uid,
+        attachment_id: attachmentId,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
