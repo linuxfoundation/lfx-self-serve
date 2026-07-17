@@ -1363,7 +1363,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
       'GET'
     );
   }
@@ -1377,8 +1377,101 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}/download`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}/download`,
       'GET'
+    );
+  }
+
+  /**
+   * Creates a new past meeting attachment (link or file record) via ITX proxy
+   */
+  public async createPastMeetingAttachment(
+    req: Request,
+    pastMeetingUid: string,
+    attachmentData: CreateMeetingAttachmentRequest
+  ): Promise<PastMeetingAttachment> {
+    logger.debug(req, 'create_past_meeting_attachment', 'Creating past meeting attachment', { past_meeting_id: pastMeetingUid, type: attachmentData.type });
+
+    return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments`,
+      'POST',
+      undefined,
+      attachmentData
+    );
+  }
+
+  /**
+   * Generates a presigned upload URL for a past meeting file attachment
+   */
+  public async presignPastMeetingAttachment(req: Request, pastMeetingUid: string, presignData: PresignAttachmentRequest): Promise<PresignAttachmentResponse> {
+    logger.debug(req, 'presign_past_meeting_attachment', 'Generating presigned upload URL', { past_meeting_id: pastMeetingUid, file_name: presignData.name });
+
+    return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/presign`,
+      'POST',
+      undefined,
+      presignData
+    );
+  }
+
+  /**
+   * Presigns a past meeting file attachment then uploads the binary directly to S3.
+   */
+  public async uploadPastMeetingAttachment(
+    req: Request,
+    pastMeetingUid: string,
+    fileBuffer: Buffer,
+    presignData: PresignAttachmentRequest
+  ): Promise<PresignAttachmentResponse> {
+    logger.debug(req, 'upload_past_meeting_attachment', 'Presigning attachment', { past_meeting_id: pastMeetingUid, file_name: presignData.name });
+
+    const presignResponse = await this.presignPastMeetingAttachment(req, pastMeetingUid, presignData);
+
+    logger.debug(req, 'upload_past_meeting_attachment', 'Uploading file to S3', {
+      past_meeting_id: pastMeetingUid,
+      attachment_uid: presignResponse.uid,
+      file_size: presignData.file_size,
+    });
+
+    const s3Response = await fetch(presignResponse.file_url, {
+      method: 'PUT',
+      body: new Uint8Array(fileBuffer),
+      headers: {
+        'Content-Type': presignData.file_type,
+        'Content-Length': String(presignData.file_size),
+      },
+      signal: AbortSignal.timeout(5 * 60 * 1000),
+    });
+
+    if (!s3Response.ok) {
+      const errorText = await s3Response.text().catch(() => '');
+      throw new Error(`S3 upload failed with status ${s3Response.status}: ${errorText}`);
+    }
+
+    logger.info(req, 'upload_past_meeting_attachment', 'File uploaded to S3 successfully', {
+      past_meeting_id: pastMeetingUid,
+      attachment_uid: presignResponse.uid,
+      file_name: presignData.name,
+    });
+
+    return presignResponse;
+  }
+
+  /**
+   * Deletes a past meeting attachment via ITX proxy
+   */
+  public async deletePastMeetingAttachment(req: Request, pastMeetingUid: string, attachmentUid: string): Promise<void> {
+    logger.debug(req, 'delete_past_meeting_attachment', 'Deleting past meeting attachment', { past_meeting_id: pastMeetingUid, attachment_uid: attachmentUid });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      'DELETE'
     );
   }
 
