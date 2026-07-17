@@ -49,11 +49,6 @@ export class SidebarNavService {
 
   private readonly activeLens = this.lensService.activeLens;
 
-  // Marketing nav visibility is FGA-driven off the active context (reactive to context switches):
-  // `marketing_auditor` gates Marketing Impact + the section; `campaign_manager` gates Campaigns.
-  private readonly canViewMarketing = this.projectContextService.canViewMarketing;
-  private readonly canManageCampaigns = this.projectContextService.canManageCampaigns;
-
   // Newsletter nav visibility: ED persona always sees it; non-ED users see it
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
@@ -256,153 +251,131 @@ export class SidebarNavService {
       },
     ];
 
-    // Full foundation product nav (Meetings, Events, …) stays on the pre-marketing-ops audience
-    // (board role or root writer). Marketing-only users get Dashboard + Marketing section only
-    // so granting the foundation lens for SC-008 does not widen other product permissions (FR-017).
-    const fullProduct = this.personaService.canAccessFullFoundationProduct();
-
-    if (fullProduct) {
-      if (this.foundationHasProjects()) {
-        items.push({
-          label: 'Projects',
-          icon: 'fa-light fa-diagram-project',
-          routerLink: '/foundation/projects',
-          testId: 'sidebar-foundation-projects',
-        });
-      }
-
-      items.push(
-        {
-          label: 'Meetings',
-          icon: 'fa-light fa-calendar',
-          routerLink: '/foundation/meetings',
-        },
-        {
-          label: 'Events',
-          icon: 'fa-light fa-ticket',
-          routerLink: '/foundation/events',
-        },
-        {
-          label: MAILING_LIST_LABEL.plural,
-          icon: 'fa-light fa-envelope',
-          routerLink: '/foundation/mailing-lists',
-        },
-        {
-          label: COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
-          routerLink: '/foundation/groups',
-        },
-        {
-          label: DOCUMENT_LABEL.plural,
-          icon: 'fa-light fa-folder-open',
-          routerLink: '/foundation/documents',
-        },
-        {
-          label: 'Governance',
-          isSection: true,
-          expanded: true,
-          items: [
-            {
-              label: VOTE_LABEL.plural,
-              icon: 'fa-light fa-check-to-slot',
-              routerLink: '/foundation/votes',
-            },
-            {
-              label: SURVEY_LABEL.plural,
-              icon: 'fa-light fa-clipboard-list',
-              routerLink: '/foundation/surveys',
-            },
-            {
-              label: 'Permissions',
-              icon: 'fa-light fa-shield',
-              routerLink: '/foundation/settings',
-            },
-          ],
-        }
-      );
-
-      if (this.canSeeNewsletters()) {
-        items.push({
-          label: 'Communications',
-          isSection: true,
-          expanded: true,
-          items: [
-            {
-              label: 'Newsletters',
-              icon: 'fa-light fa-paper-plane',
-              routerLink: '/foundation/newsletters',
-              testId: 'sidebar-foundation-newsletters',
-            },
-          ],
-        });
-      }
-
-      // Metrics (Health Metrics + Social Listening) stays ED-only — it is not part of the
-      // FGA-gated Marketing surface.
-      if (this.personaService.currentPersona() === 'executive-director') {
-        const metricsItems: SidebarMenuItem[] = [
-          {
-            label: 'Health Metrics',
-            icon: 'fa-light fa-chart-line-up',
-            routerLink: '/foundation/health-metrics',
-            testId: 'sidebar-metrics-health-metrics',
-          },
-        ];
-
-        const foundationSfid = this.projectContextService.selectedFoundationSfid();
-        if (foundationSfid) {
-          const pccBaseUrl = environment.urls.pcc;
-          const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
-          metricsItems.push({
-            label: 'Social Listening',
-            icon: 'fa-light fa-ear-listen',
-            url: `${baseUrl}/project/${foundationSfid}/reports/social-listening`,
-            target: '_blank',
-            rel: 'noopener noreferrer',
-            testId: 'sidebar-metrics-social-listening',
-          });
-        }
-
-        items.push({
-          label: 'Metrics',
-          isSection: true,
-          expanded: true,
-          items: metricsItems,
-        });
-      }
+    if (this.foundationHasProjects()) {
+      items.push({
+        label: 'Projects',
+        icon: 'fa-light fa-diagram-project',
+        routerLink: '/foundation/projects',
+        testId: 'sidebar-foundation-projects',
+      });
     }
 
-    // Marketing section is FGA-gated per active context (not persona-gated):
-    //  - Marketing Impact appears with `marketing_auditor` (ED / Marketing Ops / Marketing Auditor).
-    //  - Campaigns appears with `campaign_manager` (ED / Marketing Ops only).
-    // campaign_manager implies marketing_auditor upstream, so canViewMarketing() gates the section.
-    if (this.canViewMarketing() || this.canManageCampaigns()) {
-      const marketingItems: SidebarMenuItem[] = [];
-      if (this.canViewMarketing()) {
-        marketingItems.push({
-          label: 'Marketing Impact',
-          icon: 'fa-light fa-bullhorn',
-          routerLink: '/foundation/marketing-impact',
-          testId: 'sidebar-marketing-impact',
-        });
+    items.push(
+      {
+        label: 'Meetings',
+        icon: 'fa-light fa-calendar',
+        routerLink: '/foundation/meetings',
+      },
+      {
+        label: 'Events',
+        icon: 'fa-light fa-ticket',
+        routerLink: '/foundation/events',
+      },
+      {
+        label: MAILING_LIST_LABEL.plural,
+        icon: 'fa-light fa-envelope',
+        routerLink: '/foundation/mailing-lists',
+      },
+      {
+        label: COMMITTEE_LABEL.plural,
+        icon: 'fa-light fa-users-rectangle',
+        routerLink: '/foundation/groups',
+      },
+      {
+        label: DOCUMENT_LABEL.plural,
+        icon: 'fa-light fa-folder-open',
+        routerLink: '/foundation/documents',
+      },
+      {
+        label: 'Governance',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: VOTE_LABEL.plural,
+            icon: 'fa-light fa-check-to-slot',
+            routerLink: '/foundation/votes',
+          },
+          {
+            label: SURVEY_LABEL.plural,
+            icon: 'fa-light fa-clipboard-list',
+            routerLink: '/foundation/surveys',
+          },
+          {
+            label: 'Permissions',
+            icon: 'fa-light fa-shield',
+            routerLink: '/foundation/settings',
+          },
+        ],
       }
-      if (this.canManageCampaigns()) {
-        marketingItems.push({
-          label: 'Campaigns',
-          icon: 'fa-light fa-megaphone',
-          routerLink: '/foundation/campaigns',
-          testId: 'sidebar-marketing-campaigns',
+    );
+
+    if (this.canSeeNewsletters()) {
+      items.push({
+        label: 'Communications',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'Newsletters',
+            icon: 'fa-light fa-paper-plane',
+            routerLink: '/foundation/newsletters',
+            testId: 'sidebar-foundation-newsletters',
+          },
+        ],
+      });
+    }
+
+    if (this.personaService.currentPersona() === 'executive-director') {
+      const metricsItems: SidebarMenuItem[] = [
+        {
+          label: 'Health Metrics',
+          icon: 'fa-light fa-chart-line-up',
+          routerLink: '/foundation/health-metrics',
+          testId: 'sidebar-metrics-health-metrics',
+        },
+      ];
+
+      const foundationSfid = this.projectContextService.selectedFoundationSfid();
+      if (foundationSfid) {
+        const pccBaseUrl = environment.urls.pcc;
+        const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
+        metricsItems.push({
+          label: 'Social Listening',
+          icon: 'fa-light fa-ear-listen',
+          url: `${baseUrl}/project/${foundationSfid}/reports/social-listening`,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          testId: 'sidebar-metrics-social-listening',
         });
       }
 
-      if (marketingItems.length > 0) {
-        items.push({
-          label: 'Marketing',
-          isSection: true,
-          expanded: true,
-          items: marketingItems,
-        });
-      }
+      items.push({
+        label: 'Metrics',
+        isSection: true,
+        expanded: true,
+        items: metricsItems,
+      });
+
+      items.push({
+        label: 'Marketing',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'Marketing Impact',
+            icon: 'fa-light fa-bullhorn',
+            routerLink: '/foundation/marketing-impact',
+            testId: 'sidebar-marketing-impact',
+          },
+          {
+            label: 'Campaigns',
+            icon: 'fa-light fa-megaphone',
+            routerLink: '/foundation/campaigns',
+            testId: 'sidebar-marketing-campaigns',
+          },
+        ],
+      });
     }
 
     return items;

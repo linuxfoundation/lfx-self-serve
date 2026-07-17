@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, model } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
@@ -12,11 +12,10 @@ import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
-import { PersonaService } from '@services/persona.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, take } from 'rxjs';
+import { filter } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
@@ -30,7 +29,6 @@ export class MainLayoutComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly appService = inject(AppService);
   private readonly lensService = inject(LensService);
-  private readonly personaService = inject(PersonaService);
   private readonly sidebarNavService = inject(SidebarNavService);
   protected readonly userService = inject(UserService);
 
@@ -58,17 +56,6 @@ export class MainLayoutComponent {
         this.selectorPanelOpen.set(false);
         this.syncLensFromRoute();
       });
-
-    // `isRootWriter` / `isRootMarketingAuditor` hydrate after first paint. A cold deep link to
-    // /foundation/* can hit syncLensFromRoute before those signals are true, so setLens rejects
-    // and the user stays on Me. Re-apply the route lens once personas are loaded.
-    toObservable(this.personaService.personaLoaded)
-      .pipe(
-        filter((loaded): loaded is true => loaded === true),
-        take(1),
-        takeUntilDestroyed()
-      )
-      .subscribe(() => this.syncLensFromRoute());
   }
 
   public toggleMobileSidebar(): void {

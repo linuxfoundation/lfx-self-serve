@@ -11,7 +11,6 @@
  *
  * Coverage:
  *   S1  Foundation lens — executive-director sees Metrics + Marketing sections
- *   S1b Foundation lens — writer/owner without marketing grant sees zero marketing surfaces
  *   S2  Foundation lens — board-member does NOT see Metrics / Marketing
  *   S3  Foundation lens — board-member with canWrite sees Newsletters
  *   S4  Foundation lens — board-member without canWrite hides Newsletters
@@ -67,12 +66,7 @@ const MOCK_PROJECT_ITEM: LensItem = {
   isFoundation: false,
 };
 
-interface MarketingGrants {
-  marketingAuditor?: boolean;
-  campaignManager?: boolean;
-}
-
-function buildProjectStub(slug: string, writer: boolean, marketing?: MarketingGrants) {
+function buildProjectStub(slug: string, writer: boolean) {
   return {
     uid: MOCK_PROJECT_UID,
     slug,
@@ -96,8 +90,6 @@ function buildProjectStub(slug: string, writer: boolean, marketing?: MarketingGr
     updated_at: new Date().toISOString(),
     mailing_list_count: 0,
     writer,
-    marketingAuditor: marketing?.marketingAuditor ?? false,
-    campaignManager: marketing?.campaignManager ?? false,
   };
 }
 
@@ -134,7 +126,7 @@ const SIDEBAR = {
 
 // ─── Stub helpers ─────────────────────────────────────────────────────────────
 
-async function stubPersona(page: Page, personas: string[], isRootWriter = false, isRootMarketingAuditor = false): Promise<void> {
+async function stubPersona(page: Page, personas: string[], isRootWriter = false): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
       status: 200,
@@ -145,7 +137,6 @@ async function stubPersona(page: Page, personas: string[], isRootWriter = false,
         projects: [],
         organizations: [],
         isRootWriter,
-        isRootMarketingAuditor,
       }),
     })
   );
@@ -174,12 +165,12 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
   });
 }
 
-async function stubProjectApi(page: Page, slug: string, writer: boolean, marketing?: MarketingGrants): Promise<void> {
+async function stubProjectApi(page: Page, slug: string, writer: boolean): Promise<void> {
   await page.route(`**/api/projects/${slug}*`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildProjectStub(slug, writer, marketing)),
+      body: JSON.stringify(buildProjectStub(slug, writer)),
     })
   );
   // Stub the UID-based sfid lookup (ProjectContextService.selectedFoundationSfid).
@@ -252,9 +243,7 @@ test.describe('S1: Foundation lens — executive-director persona', () => {
   test.beforeEach(async ({ page }) => {
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'foundation');
-    // ED resolves both marketing relations upstream (campaign_manager ⇒ marketing_auditor), so the
-    // Marketing section is FGA-gated on these fields, not on the ED persona.
-    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true, { marketingAuditor: true, campaignManager: true });
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
   });
 
@@ -293,7 +282,7 @@ test.describe('S1: Foundation lens — executive-director persona', () => {
     });
   });
 
-  test('shows Marketing section with Marketing Impact and Campaigns (FGA marketing grants)', async ({ page }) => {
+  test('shows Marketing section with Marketing Impact and Campaigns (ED-only)', async ({ page }) => {
     await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=executive-director lens=foundation section=marketing').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
@@ -301,28 +290,6 @@ test.describe('S1: Foundation lens — executive-director persona', () => {
       timeout: ELEMENT_TIMEOUT,
     });
     await expect(page.getByTestId(SIDEBAR.campaigns), 'persona=executive-director lens=foundation item=campaigns').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-  });
-});
-
-// ─── S1b: Marketing surfaces are FGA-gated, not persona-gated ───────────────────
-
-test.describe('S1b: Foundation lens — writer/owner without marketing grant sees zero marketing surfaces', () => {
-  test.beforeEach(async ({ page }) => {
-    // ED persona (so Metrics still shows) but NO marketing grants on this project — represents a
-    // project writer/owner who was never granted marketing_auditor / campaign_manager.
-    await stubPersona(page, ['executive-director']);
-    await stubNavLensItems(page, 'foundation');
-    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true, { marketingAuditor: false, campaignManager: false });
-    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
-  });
-
-  test('shows Metrics (Health Metrics stays ED-only) but hides the entire Marketing section', async ({ page }) => {
-    await expect(page.getByTestId(SIDEBAR.metricsSection), 'ED metrics section stays persona-gated').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId(SIDEBAR.healthMetrics), 'ED health metrics stays persona-gated').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-
-    await expect(page.getByTestId(SIDEBAR.marketingSection), 'no marketing grant ⇒ marketing section absent').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId(SIDEBAR.marketingImpact), 'no marketing grant ⇒ marketing impact absent').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId(SIDEBAR.campaigns), 'no marketing grant ⇒ campaigns absent').toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
   });
 });
 
@@ -470,7 +437,7 @@ test.describe('S5b: Project lens — standard items visible to all project users
 
 // ─── S7–S10: Route guards ──────────────────────────────────────────────────────
 
-test.describe('S7: Route guards — non-ED / non-marketing redirected from gated foundation pages', () => {
+test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () => {
   test('board-member navigating to /foundation/health-metrics is redirected to /foundation/overview', async ({ page }) => {
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page, 'foundation');
@@ -521,41 +488,6 @@ test.describe('S7: Route guards — non-ED / non-marketing redirected from gated
     await expect(page, 'persona=board-member should be redirected away from /foundation/campaigns').toHaveURL(/\/foundation\/overview/, {
       timeout: ELEMENT_TIMEOUT,
     });
-  });
-});
-
-test.describe('S7b: Route guards — non-ED writer/owner without marketing grants', () => {
-  // A project writer/owner (writer:true, isRootWriter so the foundation lens is available) who holds
-  // neither marketing_auditor nor campaign_manager. Distinct from the ED case in S1b: proves marketing
-  // is FGA-gated per project, not widened by writer/owner status on a non-ED persona.
-  test.beforeEach(async ({ page }) => {
-    await stubPersona(page, ['contributor'], /* isRootWriter */ true);
-    await stubNavLensItems(page, 'foundation');
-    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true, { marketingAuditor: false, campaignManager: false });
-    await setPersonaCookie(page, ['contributor']);
-  });
-
-  test('hides the entire Marketing section in the sidebar', async ({ page }) => {
-    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
-    await expect(page.getByTestId(SIDEBAR.marketingSection), 'writer w/o marketing grant ⇒ marketing section absent').toHaveCount(0, {
-      timeout: ELEMENT_TIMEOUT,
-    });
-  });
-
-  test('is redirected from /foundation/marketing-impact to /foundation/overview', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await page.goto(`/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page, 'writer w/o marketing_auditor ⇒ blocked from Marketing Impact').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
-  });
-
-  test('is redirected from /foundation/campaigns to /foundation/overview', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await page.goto(`/foundation/campaigns?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page, 'writer w/o campaign_manager ⇒ blocked from Campaigns').toHaveURL(/\/foundation\/overview/, { timeout: ELEMENT_TIMEOUT });
   });
 });
 
