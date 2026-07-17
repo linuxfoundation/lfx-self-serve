@@ -468,6 +468,7 @@
         [(visible)]="materialsDrawerVisible"
         [meetingId]="pastMeeting() ? undefined : meeting().id"
         [pastMeetingId]="pastMeeting() ? pastMeetingResourceId() : undefined"
+        (materialsChanged)="onMaterialsChanged()"
         data-testid="meeting-materials-drawer-card">
       </lfx-meeting-materials-drawer>
     }

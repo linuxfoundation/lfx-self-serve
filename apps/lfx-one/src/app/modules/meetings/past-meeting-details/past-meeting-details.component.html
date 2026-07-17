@@ -242,7 +242,7 @@
     }
 
     @if (meeting.organizer) {
-      <lfx-meeting-materials-drawer [pastMeetingId]="meeting.id" [(visible)]="materialsDrawerVisible" (materialsChanged)="onMaterialsChanged()">
+      <lfx-meeting-materials-drawer [pastMeetingId]="pastMeetingResourceId()" [(visible)]="materialsDrawerVisible" (materialsChanged)="onMaterialsChanged()">
       </lfx-meeting-materials-drawer>
     }
 

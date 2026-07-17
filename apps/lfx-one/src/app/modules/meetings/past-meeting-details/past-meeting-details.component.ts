@@ -16,6 +16,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
+  getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
   MEETING_TYPE_CONFIGS,
@@ -89,6 +90,7 @@ export class PastMeetingDetailsComponent {
   public participants: Signal<EnrichedPastMeetingParticipant[]> = this.initParticipants();
 
   // Computed signals
+  protected readonly pastMeetingResourceId: Signal<string> = computed(() => (this.meeting() ? getPastMeetingResourceId(this.meeting()!) : ''));
   public attendeeCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_attended).length);
   public absenteeCount: Signal<number> = computed(() => this.participants().filter((p) => !p.is_attended).length);
   public invitedCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_invited).length);
@@ -160,7 +162,7 @@ export class PastMeetingDetailsComponent {
     if (!meeting) return;
 
     this.meetingService
-      .getPastMeetingAttachmentDownloadUrl(meeting.id, attachment.uid)
+      .getPastMeetingAttachmentDownloadUrl(getPastMeetingResourceId(meeting), attachment.uid)
       .pipe(take(1))
       .subscribe({
         next: (res) => {
@@ -297,7 +299,7 @@ export class PastMeetingDetailsComponent {
       combineLatest([
         toObservable(this.meeting).pipe(
           filter((m): m is PastMeeting => !!m?.id),
-          map((m) => m.id),
+          map((m) => getPastMeetingResourceId(m)),
           distinctUntilChanged()
         ),
         this.attachmentRefresh$,
