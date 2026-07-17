@@ -38,6 +38,16 @@ import { map } from 'rxjs';
  * only advertises it. A `GET /api/projects/creatable` endpoint encoding the per-type
  * grants would make the list exact and let the create flows resolve their target
  * without the lens, removing that constraint.
+ *
+ * Persona note (ED): gating is purely the FGA `writer` relation, with NO ED fast-path —
+ * unlike `writerGuard`, which synchronously allows the `executive-director` persona
+ * because an ED is not reliably granted a per-project `writer` relation. So an ED whose
+ * `GET /api/projects` returns no `writer: true` project sees no "Create" shortcut at all.
+ * This is an accepted trade-off (LFXV2-2721): the shortcut is deliberately a writer-scoped
+ * affordance, and EDs still create through the in-page flows, which carry their own ED
+ * fast-path. Reinstating the button for those EDs would mean sourcing their foundations
+ * from persona/lens data — the writer-scoped list is empty for them — which loosens the
+ * writer filter this feature is scoped to; out of scope here by design.
  */
 @Injectable({
   providedIn: 'root',

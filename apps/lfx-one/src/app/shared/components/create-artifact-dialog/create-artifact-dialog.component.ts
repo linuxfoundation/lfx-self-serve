@@ -39,13 +39,13 @@ export class CreateArtifactDialogComponent {
     project: new FormControl<string | null>(null, { validators: [Validators.required] }),
   });
 
+  // The picked project — drives the selector's trigger label/checkmark. Set on itemSelected.
+  protected readonly selectedContext: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
+
   // Reactive by reference: the rail button only renders once this list is non-empty, so the
   // dialog always opens populated — but reading the signal keeps it correct if it widens
   // (e.g. persona data resolving and unlocking another lens) while the dialog is open.
   protected readonly projectOptions: Signal<CreatableProject[]> = this.createPermissionService.creatableProjects;
-
-  // The picked project — drives the selector's trigger label/checkmark. Set on itemSelected.
-  protected readonly selectedContext: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
 
   // Writer-scoped options mapped to the selector's `LensItem` shape. Feeding this as the selector's
   // curated `items` input keeps the list scoped to projects the user holds `writer` on — never the
