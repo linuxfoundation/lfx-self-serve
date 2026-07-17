@@ -22,6 +22,7 @@
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
  *   S12 Settings page — view-only banner hidden for writer
+ *   S13 Settings lens redirect — me lens → /profile/settings (fragment preserved); foundation keeps prefixed route
  *
  * Failure messages include the persona × lens × page combination so CI output
  * pinpoints the exact regression without digging through traces.
@@ -587,5 +588,45 @@ test.describe('S12: Settings / Permissions page — no banner for writer', () =>
       page.getByText('You have view-only access to this project'),
       'persona=contributor canWrite=true lens=project page=settings should NOT show view-only banner'
     ).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+  });
+});
+
+// ─── S13: Settings lens redirect (settingsLensRedirectGuard) ───────────────────
+
+test.describe('S13: Settings lens redirect — me lens → /profile/settings', () => {
+  test('me lens redirects /settings#developer-settings to /profile/settings with the fragment intact', async ({ page }) => {
+    await stubPersona(page, ['contributor']);
+    await setPersonaCookie(page, ['contributor']);
+
+    // Me lens is the default; no project context needed.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto('/settings#developer-settings', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // settingsLensRedirectGuard maps me-lens /settings → /profile/settings, carrying the fragment
+    // through so the header's Developer Settings anchor link still lands on the right section.
+    await expect(page, 'me lens should redirect /settings to /profile/settings with #developer-settings preserved').toHaveURL(
+      /\/profile\/settings#developer-settings$/,
+      { timeout: ELEMENT_TIMEOUT }
+    );
+  });
+
+  test('foundation lens keeps the lens-prefixed /foundation/settings route', async ({ page }) => {
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
+    await setPersonaCookie(page, ['executive-director']);
+
+    // Establish the foundation lens first, then hit the flat /settings route.
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+
+    await page.goto(`/settings?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'foundation lens should redirect /settings to /foundation/settings').toHaveURL(/\/foundation\/settings/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
   });
 });

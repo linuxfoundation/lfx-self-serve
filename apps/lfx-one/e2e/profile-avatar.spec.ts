@@ -56,7 +56,7 @@ function skipWhenAuthMissing(page: Page): void {
 test.describe('Profile header avatar', () => {
   test('renders user_metadata.picture as the avatar image when set', async ({ page }) => {
     await mockProfile(page, PNG_DATA_URI);
-    await page.goto('/profile/attribution', { waitUntil: 'domcontentloaded' });
+    await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
     await expect(page.getByTestId('profile-display-name')).toContainText('Ada Lovelace', { timeout: 10000 });
@@ -68,7 +68,7 @@ test.describe('Profile header avatar', () => {
 
   test('falls back to initials when no picture is set', async ({ page }) => {
     await mockProfile(page, null);
-    await page.goto('/profile/attribution', { waitUntil: 'domcontentloaded' });
+    await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
     await expect(page.getByTestId('profile-display-name')).toContainText('Ada Lovelace', { timeout: 10000 });
@@ -82,7 +82,7 @@ test.describe('Profile header avatar', () => {
     // Force the image request to fail so the (error) handler fires.
     await page.route(BROKEN_PICTURE_URL, (route) => route.abort());
 
-    await page.goto('/profile/attribution', { waitUntil: 'domcontentloaded' });
+    await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
     await expect(page.getByTestId('profile-display-name')).toContainText('Ada Lovelace', { timeout: 10000 });
