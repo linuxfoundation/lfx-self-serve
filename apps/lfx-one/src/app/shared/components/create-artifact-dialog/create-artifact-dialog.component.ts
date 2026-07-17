@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { SelectComponent } from '@components/select/select.component';
+import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
-import { CreatableArtifactConfig, CreatableArtifactType, CreatableProject, ProjectContext } from '@lfx-one/shared/interfaces';
+import { CreatableArtifactConfig, CreatableArtifactType, CreatableProject, LensItem, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -16,7 +16,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-create-artifact-dialog',
-  imports: [ReactiveFormsModule, SelectComponent, ButtonComponent],
+  imports: [ReactiveFormsModule, ProjectSelectorComponent, ButtonComponent],
   templateUrl: './create-artifact-dialog.component.html',
 })
 export class CreateArtifactDialogComponent {
@@ -43,6 +43,32 @@ export class CreateArtifactDialogComponent {
   // dialog always opens populated — but reading the signal keeps it correct if it widens
   // (e.g. persona data resolving and unlocking another lens) while the dialog is open.
   protected readonly projectOptions: Signal<CreatableProject[]> = this.createPermissionService.creatableProjects;
+
+  // The picked project — drives the selector's trigger label/checkmark. Set on itemSelected.
+  protected readonly selectedContext: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
+
+  // Writer-scoped options mapped to the selector's `LensItem` shape. Feeding this as the selector's
+  // curated `items` input keeps the list scoped to projects the user holds `writer` on — never the
+  // view-scoped NavigationService catalog the sidebar selector pulls by default.
+  protected readonly selectorItems: Signal<LensItem[]> = computed(() =>
+    this.projectOptions().map((project) => ({
+      uid: project.uid,
+      slug: project.slug,
+      name: project.name,
+      logoUrl: project.logoUrl ?? null,
+      isFoundation: project.isFoundation,
+    }))
+  );
+
+  /** Bridge the selector's `itemSelected` output into the form control that gates the Continue CTA. */
+  public onItemSelected(item: LensItem): void {
+    const project = this.projectOptions().find((option) => option.uid === item.uid);
+    this.selectedContext.set(
+      project ? { uid: project.uid, name: project.name, slug: project.slug, parent_uid: project.parent_uid, logoUrl: project.logoUrl } : null
+    );
+    this.form.controls.project.setValue(item.uid);
+    this.form.controls.project.markAsTouched();
+  }
 
   public onContinue(): void {
     const projectUid = this.form.controls.project.value;

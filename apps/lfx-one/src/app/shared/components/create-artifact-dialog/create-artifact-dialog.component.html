@@ -13,30 +13,23 @@
     </div>
   </div>
 
-  <!-- Foundation / project -->
+  <!-- Foundation / project — reuses the sidebar project-selector (search + All/Foundations/Projects tabs,
+       logos, role badges). Fed the writer-scoped `selectorItems` via the curated `items` input so the list
+       is only projects the user holds `writer` on, not the view-scoped nav catalog. -->
   <div class="flex flex-col gap-1">
-    <label for="create-artifact-project" class="text-sm text-slate-900">
+    <label class="text-sm text-gray-900">
       Select Foundation/Project
       <span class="text-red-500">*</span>
     </label>
-    <lfx-select
-      size="small"
-      [form]="form"
-      control="project"
-      [options]="projectOptions()"
-      optionLabel="name"
-      optionValue="uid"
-      [filter]="true"
-      filterBy="name"
-      placeholder="Select option"
-      emptyMessage="No projects available"
-      emptyFilterMessage="No matching projects"
-      inputId="create-artifact-project"
-      styleClass="w-full"
-      dataTest="create-artifact-project-select" />
-    @if (form.controls.project.errors?.['required'] && form.controls.project.touched) {
-      <span class="text-red-500 text-xs">Please select a Foundation or a Project in order to create the {{ artifact.label }}</span>
-    }
+    <lfx-project-selector
+      [lens]="'project'"
+      [hybridMode]="true"
+      [items]="selectorItems()"
+      [selectedProject]="selectedContext()"
+      searchPlaceholder="Search foundations and projects..."
+      emptyMessage="No foundations or projects available"
+      (itemSelected)="onItemSelected($event)"
+      data-testid="create-artifact-project-select" />
   </div>
 
   <!-- Actions -->

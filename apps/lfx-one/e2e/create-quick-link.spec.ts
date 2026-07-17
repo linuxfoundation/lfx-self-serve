@@ -14,8 +14,10 @@
  * Coverage map:
  * - S1: rail "Create" button renders for a create-capable user
  * - S2: clicking it opens a popover listing the six artifact types, in grouped order, with descriptions
- * - S3: picking a type opens the dialog (header + project select) with Continue disabled,
- *       and choosing an eligible project enables Continue
+ * - S3: picking a type opens the dialog (header + project selector) with Continue disabled,
+ *       and choosing an eligible project via the selector enables Continue
+ * - S4: the dialog's project selector reuses the sidebar pattern (search + All/Foundations/Projects
+ *       tabs) and lists only writer-scoped projects, not the global catalog
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
@@ -111,21 +113,41 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(page.getByTestId('create-menu-option-meeting')).toContainText('Schedule a recurring or one-time meeting');
   });
 
-  // S3 — picking a type opens the dialog; choosing an eligible project enables Continue
-  test('S3: picking "Meeting" opens the dialog and enabling Continue requires a project', async ({ page }) => {
+  // S3 — picking a type opens the dialog; choosing an eligible project via the selector enables Continue
+  test('S3: picking "Meeting" opens the dialog and choosing a project enables Continue', async ({ page }) => {
     await openDialogForType(page, 'meeting');
 
     // Nothing chosen yet — Continue disabled.
     await expect(continueButton(page)).toBeDisabled();
 
-    // The dropdown is populated from the user's real eligible projects; pick the first.
-    // `lfx-select` emits the id as `data-test` (not Playwright's default `data-testid`), so
-    // target the attribute the wrapper actually renders.
-    await page.locator('[data-test="create-artifact-project-select"]').click();
-    const firstOption = page.getByRole('option').first();
-    await expect(firstOption).toBeVisible({ timeout: 5_000 });
-    await firstOption.click();
+    // Open the reused project-selector (same UI as the sidebar) and pick the first writer-scoped item.
+    await page.getByTestId('project-selector').click();
+    await expect(page.getByTestId('project-selector-panel')).toBeVisible({ timeout: 5_000 });
+    const firstItem = page.locator('[data-testid^="lens-item-"]').first();
+    await expect(firstItem).toBeVisible({ timeout: 5_000 });
+    await firstItem.click();
 
     await expect(continueButton(page)).toBeEnabled();
+  });
+
+  // S4 — the project selector reuses the sidebar pattern and is writer-scoped, not the global catalog
+  test('S4: the project selector shows search + tabs and excludes non-member catalog projects', async ({ page }) => {
+    await openDialogForType(page, 'meeting');
+
+    await page.getByTestId('project-selector').click();
+    const panel = page.getByTestId('project-selector-panel');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+
+    // Familiar sidebar pattern: search input + All/Foundations/Projects tabs.
+    await expect(page.getByTestId('project-search-input')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'All', exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Foundations', exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Projects', exact: true })).toBeVisible();
+
+    // Writer-scoped, not the view-scoped nav catalog: sentinel catalog entries the test user holds
+    // no writer role on must be absent. Passes as long as the user isn't a writer on these names.
+    for (const nonMember of ['AAA', 'QHTTPX']) {
+      await expect(panel.getByText(nonMember, { exact: true })).toHaveCount(0);
+    }
   });
 });

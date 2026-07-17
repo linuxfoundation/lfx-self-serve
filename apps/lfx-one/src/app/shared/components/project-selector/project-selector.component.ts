@@ -36,6 +36,14 @@ export class ProjectSelectorComponent {
   public readonly searchPlaceholder = input<string>('Search...');
   public readonly emptyMessage = input<string>('No results found');
   public readonly hybridMode = input<boolean>(false);
+  /**
+   * Optional curated item list. When non-null, the selector renders THIS list with local
+   * search + tab filtering and no pagination, instead of pulling from `NavigationService`.
+   * The create-artifact dialog uses it to present a writer-scoped list in the familiar
+   * selector UI. When null (the default, and every sidebar caller), nav-backed behavior is
+   * unchanged. Intended to be paired with `hybridMode` so the All/Foundations/Projects tabs show.
+   */
+  public readonly items = input<LensItem[] | null>(null);
 
   public readonly itemSelected = output<LensItem>();
   public readonly isPanelOpen = model<boolean>(false);
@@ -43,6 +51,11 @@ export class ProjectSelectorComponent {
   protected readonly activeTab = signal<SelectorTab>('all');
   protected readonly selectorTabs: readonly SelectorTab[] = ['all', 'foundations', 'projects'];
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
+
+  /** True when a curated `items` list is supplied — switches sourcing/search/pagination to local mode. */
+  protected readonly isCurated: Signal<boolean> = computed(() => this.items() !== null);
+  /** Curated-mode search term (nav mode routes search through NavigationService instead). */
+  private readonly localSearchTerm = signal<string>('');
 
   protected readonly panelStyleClass = 'project-selector-panel';
   protected readonly lensTypeLabel: Signal<string> = this.initLensTypeLabel();
@@ -68,6 +81,10 @@ export class ProjectSelectorComponent {
 
   public constructor() {
     this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((term) => {
+      if (this.isCurated()) {
+        this.localSearchTerm.set(term);
+        return;
+      }
       if (this.hybridMode()) {
         this.navigationService.setSearchTerm('foundation', term);
         this.navigationService.setSearchTerm('project', term);
@@ -95,6 +112,10 @@ export class ProjectSelectorComponent {
     this.isPanelOpen.set(false);
     this.activeTab.set('all');
     this.searchControl.setValue('', { emitEvent: false });
+    if (this.isCurated()) {
+      this.localSearchTerm.set('');
+      return;
+    }
     if (this.hybridMode()) {
       this.navigationService.setSearchTerm('foundation', '');
       this.navigationService.setSearchTerm('project', '');
@@ -104,6 +125,10 @@ export class ProjectSelectorComponent {
   }
 
   protected loadMore(): void {
+    // Curated mode is fully loaded up-front — no pagination.
+    if (this.isCurated()) {
+      return;
+    }
     if (this.hybridMode()) {
       const tab = this.activeTab();
       // All-tab drains foundations first so the higher-priority group completes before standalone projects appear.
@@ -182,16 +207,39 @@ export class ProjectSelectorComponent {
   }
 
   private initFoundationItems(): Signal<LensItem[]> {
-    return computed(() => (this.hybridMode() ? this.navigationService.items('foundation')() : []));
+    return computed(() => {
+      if (this.isCurated()) {
+        return this.curatedItems(true);
+      }
+      return this.hybridMode() ? this.navigationService.items('foundation')() : [];
+    });
   }
 
   private initRawProjectItems(): Signal<LensItem[]> {
-    // NavigationService.applyVisibilityFilters already filters foundations from the project lens when the foundation lens is available; re-filtering here would hide rows project-only users are meant to select.
-    return computed(() => this.navigationService.items(this.hybridMode() ? 'project' : this.lens())());
+    return computed(() => {
+      if (this.isCurated()) {
+        // Hybrid curated: non-foundations only (foundations come from foundationItems).
+        // Non-hybrid curated: the whole curated list is the single projects column.
+        return this.hybridMode() ? this.curatedItems(false) : this.curatedItems(null);
+      }
+      // NavigationService.applyVisibilityFilters already filters foundations from the project lens when the foundation lens is available; re-filtering here would hide rows project-only users are meant to select.
+      return this.navigationService.items(this.hybridMode() ? 'project' : this.lens())();
+    });
+  }
+
+  /** Curated-mode source: the `items` input filtered by kind (null = any) and the local search term. */
+  private curatedItems(foundation: boolean | null): LensItem[] {
+    const term = this.localSearchTerm().trim().toLowerCase();
+    return (this.items() ?? [])
+      .filter((item) => foundation === null || item.isFoundation === foundation)
+      .filter((item) => !term || (item.name ?? '').toLowerCase().includes(term) || (item.slug ?? '').toLowerCase().includes(term));
   }
 
   private initLoading(): Signal<boolean> {
     return computed(() => {
+      if (this.isCurated()) {
+        return false;
+      }
       if (this.hybridMode()) {
         return this.navigationService.loading('foundation')() || this.navigationService.loading('project')();
       }
@@ -201,6 +249,9 @@ export class ProjectSelectorComponent {
 
   private initHasMore(): Signal<boolean> {
     return computed(() => {
+      if (this.isCurated()) {
+        return false;
+      }
       if (this.hybridMode()) {
         const tab = this.activeTab();
         if (tab === 'foundations') return this.navigationService.hasMore('foundation')();
