@@ -10,8 +10,9 @@
     </div>
   }
 
-  <!-- Read-only notice while impersonating — account changes act on the real account and are disabled -->
-  @if (impersonating()) {
+  <!-- Read-only notice while impersonating — account changes act on the real account and are disabled.
+       Suppressed when embedded: the Profile & Account shell already renders this banner. -->
+  @if (impersonating() && !embedded) {
     <div
       class="mb-6 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
       role="status"

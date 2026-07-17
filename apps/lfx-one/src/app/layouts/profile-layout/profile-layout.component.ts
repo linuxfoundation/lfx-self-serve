@@ -44,6 +44,10 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
 })
 export class ProfileLayoutComponent {
   private static readonly formStateKey = 'lfx_profile_pending_save';
+  // Discard a stored pending-save older than this. Prevents an abandoned profile-edit authorization
+  // from being silently replayed by a later, unrelated profile-auth return (e.g. an email-delete
+  // authorization that now lands on /profile/settings inside this shell).
+  private static readonly pendingSaveTtlMs = 10 * 60 * 1000;
 
   // Private injections
   private readonly route = inject(ActivatedRoute);
@@ -253,9 +257,15 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
+    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
+    // authorization isn't silently replayed by a later, unrelated profile-auth return.
     let formData: Partial<UserMetadata>;
     try {
-      formData = JSON.parse(savedState);
+      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
+      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+        return;
+      }
+      formData = envelope.form;
     } catch {
       return;
     }

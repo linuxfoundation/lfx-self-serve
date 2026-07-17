@@ -194,7 +194,9 @@ export class ProfileEditDialogComponent {
         error: (error: HttpErrorResponse) => {
           // Flow C: Management token required — save form state and redirect to authorize
           if (error.status === 403 && error.error?.error === 'management_token_required') {
-            sessionStorage.setItem('lfx_profile_pending_save', JSON.stringify(this.profileForm.value));
+            // Stamp with a timestamp so the parent shell can discard a stale pending-save if this
+            // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
+            sessionStorage.setItem('lfx_profile_pending_save', JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
             window.location.href = error.error.authorize_url;
             return;
           }
