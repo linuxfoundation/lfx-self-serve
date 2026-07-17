@@ -806,7 +806,7 @@
         <lfx-meeting-materials-drawer
           [(visible)]="materialsDrawerVisible"
           [meetingId]="loadedViaPastMeetingId() ? undefined : meeting().id"
-          [pastMeetingId]="loadedViaPastMeetingId() ? meeting().id : undefined"
+          [pastMeetingId]="pastMeetingResourceId()"
           (materialsChanged)="onMaterialsChanged()">
         </lfx-meeting-materials-drawer>
       }
