@@ -341,6 +341,36 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     expect(blockTypes).toContain('sponsored_ad');
   });
 
+  test('switching to the simple editor confirms before discarding in-session blocks', async ({ page }) => {
+    // Open a draft with no saved body, so it starts on an empty Blocks canvas —
+    // the initial layout has zero blocks, which is exactly the case where a
+    // frozen initial-layout read would wrongly skip the discard confirm.
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_ID}`, (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildDraft({ body_layout: undefined, body_html: '' })) });
+      }
+      return route.fallback();
+    });
+
+    await gotoContentStep(page);
+    await expect(page.getByTestId('newsletter-content-editor-toggle')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Build a block in-session (not present in the loaded draft).
+    const paletteItem = page.getByTestId('newsletter-composer-palette-item-sponsored_ad');
+    await expect(paletteItem).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await paletteItem.click();
+    await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Switching to Simple must confirm first — the in-session block would be lost.
+    await page.getByTestId('newsletter-content-editor-simple').click();
+    await expect(page.getByText('Switching to the simple editor discards')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Accepting swaps to the rich-text body and clears the blocks.
+    await page.getByRole('button', { name: 'Switch' }).click();
+    await expect(page.getByTestId('newsletter-content-body')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toHaveCount(0);
+  });
+
   test('clicking the active rail tab collapses and re-opens its panel', async ({ page }) => {
     await gotoContentStep(page);
     // Blocks is active by default, so its panel body is visible.
