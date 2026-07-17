@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { NewsletterLayout } from '@lfx-one/shared/interfaces';
 import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
+import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
 @Component({
@@ -15,9 +16,10 @@ import { EMPTY, startWith, switchMap } from 'rxjs';
   imports: [ButtonComponent, TagComponent],
   templateUrl: './newsletter-review.component.html',
 })
-export class NewsletterReviewComponent {
+export class NewsletterReviewComponent implements OnInit {
   // === Services ===
   private readonly destroyRef = inject(DestroyRef);
+  private readonly manifestService = inject(NewsletterManifestService);
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
@@ -60,11 +62,15 @@ export class NewsletterReviewComponent {
     if (count === null) return null;
     return `${count} ${count === 1 ? 'recipient' : 'recipients'}`;
   });
-  // Human label for the newsletter's block library (blocks-mode drafts only);
-  // empty for html-only drafts, which have no template.
+  // Label for the newsletter's block library (blocks-mode drafts only; empty for
+  // html-only drafts). Prefer the catalog's curated label so the name matches
+  // the composer picker exactly; fall back to humanizing the key when the
+  // catalog hasn't loaded (e.g. landing straight on review without opening the
+  // editor this session).
   protected readonly templateLabel = computed(() => {
     const key = this.bodyLayoutValue()?.template_key;
-    return key ? humanizeFieldKey(key) : '';
+    if (!key) return '';
+    return this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
   });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
   protected readonly hasSubject = computed(() => this.subjectValue().trim().length > 0);
@@ -77,6 +83,13 @@ export class NewsletterReviewComponent {
   });
   protected readonly audienceEmpty = computed(() => this.committeeCount() === 0);
   protected readonly contentIncomplete = computed(() => !this.hasSubject() || !this.hasBody());
+
+  public ngOnInit(): void {
+    // Ensure the template catalog is available so `templateLabel` can show the
+    // curated label. Cached + browser-only in the service, so this is a cheap
+    // no-op when the composer already loaded it.
+    this.manifestService.loadTemplates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+  }
 
   private initControlValue<T>(controlName: string, fallback: T): Signal<T> {
     return toSignal(
