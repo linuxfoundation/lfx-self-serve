@@ -136,7 +136,7 @@ export class PastMeetingDetailsComponent {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(): void {
+  public onMaterialsChanged(_deletedUids: string[] = []): void {
     this.attachmentRefresh$.next();
     timer(1000)
       .pipe(takeUntilDestroyed(this.destroyRef))

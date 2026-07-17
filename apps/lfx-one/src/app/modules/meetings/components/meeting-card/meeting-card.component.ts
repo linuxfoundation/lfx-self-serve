@@ -277,7 +277,7 @@ export class MeetingCardComponent implements OnInit {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(): void {
+  public onMaterialsChanged(_deletedUids: string[] = []): void {
     this.refreshAttachments$.next();
     timer(1000)
       .pipe(takeUntilDestroyed(this.destroyRef))
