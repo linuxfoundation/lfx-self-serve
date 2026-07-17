@@ -91,13 +91,7 @@ export class CreateArtifactDialogComponent {
       return;
     }
 
-    const context: ProjectContext = {
-      uid: project.uid,
-      name: project.name,
-      slug: project.slug,
-      parent_uid: project.parent_uid,
-      logoUrl: project.logoUrl,
-    };
+    const context: ProjectContext = this.toContext(project);
 
     // `activeContext` is lens-gated: under `me`/`org` it reads the slot matching the user's
     // *persona*, not the kind picked here, so the create page would resolve the other slot.
@@ -136,11 +130,14 @@ export class CreateArtifactDialogComponent {
 
   /** Set (or clear) the current selection — drives the selector's display and the Continue-gating control. */
   private applySelection(project: CreatableProject | null): void {
-    this.selectedContext.set(
-      project ? { uid: project.uid, name: project.name, slug: project.slug, parent_uid: project.parent_uid, logoUrl: project.logoUrl } : null
-    );
+    this.selectedContext.set(project ? this.toContext(project) : null);
     this.form.controls.project.setValue(project?.uid ?? null);
     this.form.controls.project.markAsTouched();
+  }
+
+  /** Project a writer-scoped `CreatableProject` down to the `ProjectContext` the context service stores. */
+  private toContext(project: CreatableProject): ProjectContext {
+    return { uid: project.uid, name: project.name, slug: project.slug, parent_uid: project.parent_uid, logoUrl: project.logoUrl };
   }
 
   /** Surface a dead-end to the user and close, rather than leaving the CTA silently inert. */
