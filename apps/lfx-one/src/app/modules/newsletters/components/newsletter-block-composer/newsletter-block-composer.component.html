@@ -1,8 +1,31 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4 lg:flex-row lg:items-stretch" data-testid="newsletter-composer">
-  <!-- Left editor: icon rail + switchable sidebar (Gatewaze-Puck parity). The
+<div class="flex flex-col gap-4" data-testid="newsletter-composer">
+  <!-- Template (block-library) picker — the newsletter's overall template. Kept
+       at the top of the editor (not inside the collapsible Blocks panel) so it's
+       always visible. Which library feeds the palette AND the email render;
+       switching clears the canvas (block types differ between libraries). -->
+  <div
+    class="flex flex-col gap-1.5 rounded-lg border border-gray-200 bg-white p-3 sm:flex-row sm:items-center sm:gap-3"
+    data-testid="newsletter-composer-template-bar">
+    <label id="newsletter-composer-library-label" class="text-sm font-medium text-gray-700 sm:w-28 sm:shrink-0">Template</label>
+    <lfx-select
+      [form]="libraryForm"
+      control="library"
+      [options]="availableTemplates()"
+      optionLabel="label"
+      optionValue="key"
+      placeholder="Select a template"
+      styleClass="w-full sm:max-w-xs"
+      ariaLabelledBy="newsletter-composer-library-label"
+      dataTest="newsletter-composer-library-select"
+      (onChange)="onLibraryChange($event.value)">
+    </lfx-select>
+  </div>
+
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+    <!-- Left editor: icon rail + switchable sidebar (Gatewaze-Puck parity). The
        panel body collapses (rail stays) to hand its width to the preview. ---- -->
   <div
     class="flex overflow-hidden rounded-lg border border-gray-200 bg-white lg:shrink-0"
@@ -38,25 +61,6 @@
       <!-- Blocks tab: the palette (searchable, categorized, draggable). ------- -->
       @if (isActiveTab('blocks')) {
         <h3 class="text-sm font-semibold text-gray-700">Blocks</h3>
-
-        <!-- Block-library picker: which embedded template set feeds the palette
-             and the email render. Switching clears the canvas (block types can
-             differ between libraries). -->
-        <div class="flex flex-col gap-1">
-          <label id="newsletter-composer-library-label" class="text-xs font-medium uppercase tracking-wide text-gray-400">Library</label>
-          <lfx-select
-            [form]="libraryForm"
-            control="library"
-            [options]="availableTemplates()"
-            optionLabel="label"
-            optionValue="key"
-            placeholder="Select a library"
-            styleClass="w-full"
-            ariaLabelledBy="newsletter-composer-library-label"
-            dataTest="newsletter-composer-library-select"
-            (onChange)="onLibraryChange($event.value)">
-          </lfx-select>
-        </div>
 
         @if (manifestLoading()) {
           <p class="text-sm text-gray-500" data-testid="newsletter-composer-palette-loading">Loading blocks…</p>
@@ -511,4 +515,5 @@
       }
     }
   </aside>
+  </div>
 </div>

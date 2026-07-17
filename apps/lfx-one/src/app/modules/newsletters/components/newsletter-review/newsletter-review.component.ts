@@ -6,7 +6,8 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { stripHtml } from '@lfx-one/shared/utils';
+import { NewsletterLayout } from '@lfx-one/shared/interfaces';
+import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
 @Component({
@@ -46,6 +47,7 @@ export class NewsletterReviewComponent {
   protected readonly committeeUids: Signal<string[]> = this.initControlValue<string[]>('committeeUids', []);
   protected readonly subjectValue: Signal<string> = this.initControlValue<string>('subject', '');
   protected readonly bodyValue: Signal<string> = this.initControlValue<string>('bodyHtml', '');
+  protected readonly bodyLayoutValue: Signal<NewsletterLayout | null> = this.initControlValue<NewsletterLayout | null>('bodyLayout', null);
 
   // === Derived display values ===
   protected readonly committeeCount = computed(() => this.committeeUids().length);
@@ -57,6 +59,12 @@ export class NewsletterReviewComponent {
     const count = this.recipientCount();
     if (count === null) return null;
     return `${count} ${count === 1 ? 'recipient' : 'recipients'}`;
+  });
+  // Human label for the newsletter's block library (blocks-mode drafts only);
+  // empty for html-only drafts, which have no template.
+  protected readonly templateLabel = computed(() => {
+    const key = this.bodyLayoutValue()?.template_key;
+    return key ? humanizeFieldKey(key) : '';
   });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
   protected readonly hasSubject = computed(() => this.subjectValue().trim().length > 0);
