@@ -206,8 +206,13 @@
   <!-- Create Popover — pick an artifact type, then a dialog resolves the project/foundation -->
   <p-popover #createMenu appendTo="body" [styleClass]="bannerOffset() ? 'w-72 lfx-create-popover lfx-create-popover-banner-offset' : 'w-72 lfx-create-popover'">
     <ng-template #content>
+      @let creatables = creatableArtifacts();
       <div class="py-1" data-testid="create-menu">
-        @for (artifact of creatableArtifacts(); track artifact.type) {
+        @for (artifact of creatables; track artifact.type; let i = $index) {
+          <!-- Thin separator wherever the semantic group changes (Engage | Decide | Organize) -->
+          @if (i > 0 && artifact.group !== creatables[i - 1].group) {
+            <div role="separator" class="my-1 border-t border-gray-100"></div>
+          }
           <button
             type="button"
             (click)="openCreateDialog(artifact)"

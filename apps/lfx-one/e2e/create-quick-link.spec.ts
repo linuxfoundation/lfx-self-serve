@@ -13,7 +13,7 @@
  *
  * Coverage map:
  * - S1: rail "Create" button renders for a create-capable user
- * - S2: clicking it opens a popover listing the four artifact types with descriptions
+ * - S2: clicking it opens a popover listing the six artifact types, in grouped order, with descriptions
  * - S3: picking a type opens the dialog (header + project select) with Continue disabled,
  *       and choosing an eligible project enables Continue
  *
@@ -63,7 +63,7 @@ async function openCreateMenu(page: Page): Promise<void> {
   await expect(page.getByTestId('create-menu')).toBeVisible({ timeout: 5_000 });
 }
 
-async function openDialogForType(page: Page, type: 'meeting' | 'group' | 'mailing-list' | 'newsletter'): Promise<void> {
+async function openDialogForType(page: Page, type: 'meeting' | 'newsletter' | 'vote' | 'survey' | 'group' | 'mailing-list'): Promise<void> {
   await openCreateMenu(page);
   await page.getByTestId(`create-menu-option-${type}`).click();
   await expect(page.getByTestId('create-artifact-dialog')).toBeVisible({ timeout: 5_000 });
@@ -90,14 +90,24 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(page.getByTestId('create-rail-button')).toBeVisible({ timeout: RAIL_TIMEOUT });
   });
 
-  // S2 — the button opens a popover listing all four types with descriptions
-  test('S2: clicking the button opens a popover with the four artifact types', async ({ page }) => {
+  // S2 — the button opens a popover listing all six types, in the grouped sequence
+  test('S2: clicking the button opens a popover with the six artifact types in grouped order', async ({ page }) => {
     await openCreateMenu(page);
 
-    await expect(page.getByTestId('create-menu-option-meeting')).toBeVisible();
-    await expect(page.getByTestId('create-menu-option-group')).toBeVisible();
-    await expect(page.getByTestId('create-menu-option-mailing-list')).toBeVisible();
-    await expect(page.getByTestId('create-menu-option-newsletter')).toBeVisible();
+    // Grouped sequence: Engage (meeting, newsletter) | Decide (vote, survey) | Organize (group, mailing-list).
+    const expectedOrder = ['meeting', 'newsletter', 'vote', 'survey', 'group', 'mailing-list'];
+
+    for (const type of expectedOrder) {
+      await expect(page.getByTestId(`create-menu-option-${type}`)).toBeVisible();
+    }
+
+    // Assert render order matches the constant order, not just presence.
+    const renderedOrder = await page
+      .getByTestId('create-menu')
+      .locator('[data-testid^="create-menu-option-"]')
+      .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-testid')?.replace('create-menu-option-', '')));
+    expect(renderedOrder).toEqual(expectedOrder);
+
     await expect(page.getByTestId('create-menu-option-meeting')).toContainText('Schedule a recurring or one-time meeting');
   });
 
