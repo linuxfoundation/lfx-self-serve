@@ -60,7 +60,16 @@ export class CreatePermissionService {
     return this.writerProjects().filter((project) => lenses.some((lens) => lens.id === (project.isFoundation ? 'foundation' : 'project')));
   });
 
-  /** Artifact types offered to the user — all types when they can create anywhere, else none. */
+  /**
+   * Artifact types offered to the user — all types when they can create anywhere, else none.
+   *
+   * All-or-nothing by design: a `writer` grant is not per-type, so every type is offered together.
+   * A new `CREATABLE_ARTIFACTS` entry therefore inherits visibility for free — it does NOT get
+   * independent gating. Do not assume adding a type here narrows who sees it. The per-type
+   * intersection this feeds (`lens-switcher`'s `creatableArtifacts` filter) is consequently a
+   * no-op today; it exists so the switcher stays correct if a future `GET /api/projects/creatable`
+   * endpoint makes this list a genuine per-type subset (see class doc).
+   */
   public readonly creatableTypes: Signal<CreatableArtifactType[]> = computed(() =>
     this.creatableProjects().length > 0 ? CREATABLE_ARTIFACTS.map((artifact) => artifact.type) : []
   );
