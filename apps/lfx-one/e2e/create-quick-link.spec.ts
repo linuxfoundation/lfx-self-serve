@@ -200,7 +200,8 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await continueButton(page).click();
 
     // onContinue aligns the lens then navigates; lensRedirectGuard forwards to the lens-prefixed mount,
-    // preserving ?project=. Assert we land on the meetings create page carrying that project slug.
-    await expect(page).toHaveURL(new RegExp(`/meetings/create\\?.*project=${slug}`), { timeout: 15_000 });
+    // preserving ?project=. Require the lens prefix explicitly (foundation|project) — a bare
+    // /meetings/create would mean setLens/lensRedirectGuard didn't run, so it must NOT match.
+    await expect(page).toHaveURL(new RegExp(`/(foundation|project)/meetings/create\\?.*project=${slug}`), { timeout: 15_000 });
   });
 });

@@ -64,7 +64,9 @@ export class ProjectSelectorComponent {
   /** Curated-mode search term (nav mode routes search through NavigationService instead). */
   private readonly localSearchTerm = signal<string>('');
 
-  protected readonly panelStyleClass = 'project-selector-panel';
+  // Sidebar panel pins fixed to the right of the rail; the curated (dialog) variant drops that
+  // sidebar-only positioning so PrimeNG anchors the popover to its own trigger inside the dialog.
+  protected readonly panelStyleClass: Signal<string> = computed(() => (this.isCurated() ? 'project-selector-panel-curated' : 'project-selector-panel'));
   protected readonly lensTypeLabel: Signal<string> = this.initLensTypeLabel();
   protected readonly displayName: Signal<string> = this.initDisplayName();
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedProject()?.logoUrl || '');
@@ -163,6 +165,11 @@ export class ProjectSelectorComponent {
    * positioning, so a viewport-relative top would mis-place the panel on scroll.
    */
   private alignPanelTop(): void {
+    // Curated (dialog) mode positions the popover against its own trigger via PrimeNG defaults —
+    // the sidebar-relative top alignment (paired with the fixed left) would mis-place it in a dialog.
+    if (this.isCurated()) {
+      return;
+    }
     if (!isPlatformBrowser(this.platformId) || !window.matchMedia('(min-width: 1024px)').matches) {
       return;
     }
