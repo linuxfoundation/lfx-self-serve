@@ -2822,7 +2822,7 @@ export class ProjectService {
           impressions: number;
           clicks: number;
           sessions: number;
-          funnelStages: Set<string>;
+          funnelStages: Map<string, number>;
           campaigns: typeof projectPerfResult.rows;
         }
       >();
@@ -2834,7 +2834,7 @@ export class ProjectService {
           impressions: 0,
           clicks: 0,
           sessions: 0,
-          funnelStages: new Set<string>(),
+          funnelStages: new Map<string, number>(),
           campaigns: [] as typeof projectPerfResult.rows,
         };
         existing.spend += row.SPEND ?? 0;
@@ -2844,7 +2844,7 @@ export class ProjectService {
         existing.clicks += row.CLICKS ?? 0;
         existing.sessions += row.SESSIONS ?? 0;
         if (row.FUNNEL_STAGE) {
-          existing.funnelStages.add(row.FUNNEL_STAGE);
+          existing.funnelStages.set(row.FUNNEL_STAGE, (existing.funnelStages.get(row.FUNNEL_STAGE) ?? 0) + (row.SPEND ?? 0));
         }
         existing.campaigns.push(row);
         projectMap.set(row.PROJECT_NAME, existing);
@@ -2859,12 +2859,20 @@ export class ProjectService {
 
       const CAMPAIGN_TOP_N = 10;
 
-      const formatFunnel = (stages: Set<string>): string => {
+      // Picks the funnel stage that received the most spend. Presence alone is
+      // misleading: a campaign with 95% ToFU spend and a trace of BoFU should
+      // read ToFU, not BoFU. Ties fall back to a fixed priority for determinism.
+      const formatFunnel = (stageSpend: Map<string, number>): string => {
         const priority = ['BoFU', 'MoFU', 'ToFU', 'ToFU2', 'Unknown'];
-        for (const p of priority) {
-          if (stages.has(p)) return p;
+        let dominant = '';
+        let maxSpend = -Infinity;
+        for (const [stage, spend] of stageSpend) {
+          if (spend > maxSpend || (spend === maxSpend && priority.indexOf(stage) < priority.indexOf(dominant))) {
+            dominant = stage;
+            maxSpend = spend;
+          }
         }
-        return [...stages][0] ?? 'Unknown';
+        return dominant || 'Unknown';
       };
 
       const projectBreakdown = Array.from(projectMap.entries())
@@ -2894,7 +2902,7 @@ export class ProjectService {
             campaigns: (() => {
               const byCampaign = new Map<
                 string,
-                { spend: number; revenue: number; conversions: number; sessions: number; impressions: number; clicks: number; stages: Set<string> }
+                { spend: number; revenue: number; conversions: number; sessions: number; impressions: number; clicks: number; stages: Map<string, number> }
               >();
               for (const c of data.campaigns) {
                 const agg = byCampaign.get(c.CAMPAIGN_NAME) ?? {
@@ -2904,7 +2912,7 @@ export class ProjectService {
                   sessions: 0,
                   impressions: 0,
                   clicks: 0,
-                  stages: new Set<string>(),
+                  stages: new Map<string, number>(),
                 };
                 agg.spend += c.SPEND ?? 0;
                 agg.revenue += c.REVENUE ?? 0;
@@ -2913,7 +2921,7 @@ export class ProjectService {
                 agg.impressions += c.IMPRESSIONS ?? 0;
                 agg.clicks += c.CLICKS ?? 0;
                 if (c.FUNNEL_STAGE) {
-                  agg.stages.add(c.FUNNEL_STAGE);
+                  agg.stages.set(c.FUNNEL_STAGE, (agg.stages.get(c.FUNNEL_STAGE) ?? 0) + (c.SPEND ?? 0));
                 }
                 byCampaign.set(c.CAMPAIGN_NAME, agg);
               }
