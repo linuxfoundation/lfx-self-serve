@@ -19,6 +19,8 @@
  * - S4: the dialog's project selector reuses the sidebar pattern (search + All/Foundations/Projects
  *       tabs) and renders a selectable list. Writer-scoping of that list is guaranteed by the dialog
  *       feeding the curated `creatableProjects` (verified in production-code review), not asserted here.
+ * - S5: a single eligible project is auto-selected on open (Continue enabled without a pick); with
+ *       multiple eligible projects nothing is pre-selected and Continue stays gated until the user picks
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
@@ -155,5 +157,28 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     // selectable lens items — rather than hardcoding prod catalog names: this suite is real-API and
     // name-agnostic (see file docstring + testing-best-practices "assert on shape, not fixtures").
     await expect(panel.locator('[data-testid^="lens-item-"]').first()).toBeVisible({ timeout: 5_000 });
+  });
+
+  // S5 — auto-select single: a lone eligible project is pre-selected so Continue is enabled without a pick
+  test('S5: a single eligible project is auto-selected; multiple require an explicit pick', async ({ page }) => {
+    await openDialogForType(page, 'meeting');
+    const dialog = page.getByTestId('create-artifact-dialog');
+    const trigger = dialog.getByTestId('project-selector');
+
+    // Count eligible options, then toggle the panel closed via the trigger (Escape could close the dialog).
+    await trigger.click();
+    const panel = page.getByTestId('project-selector-panel');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+    const itemCount = await panel.locator('[data-testid^="lens-item-"]').count();
+    await trigger.click();
+    await expect(panel).toBeHidden();
+
+    if (itemCount === 1) {
+      // Auto-selected on open — no manual pick needed.
+      await expect(continueButton(page)).toBeEnabled();
+    } else {
+      // Multiple options: nothing pre-selected, Continue gated until the user picks.
+      await expect(continueButton(page)).toBeDisabled();
+    }
   });
 });

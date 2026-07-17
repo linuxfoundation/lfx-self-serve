@@ -60,14 +60,21 @@ export class CreateArtifactDialogComponent {
     }))
   );
 
+  public constructor() {
+    // Auto-select when the user can create on exactly one project/foundation: pre-fill the choice so the
+    // dialog opens with Continue enabled and the picker just shows the locked-in row — no redundant
+    // open-and-pick for a list of one. The rail button only renders once the list is non-empty, so this
+    // reflects the state the dialog opened in; if it later widens (persona data resolving), the user can
+    // still change the selection via the selector.
+    const options = this.projectOptions();
+    if (options.length === 1) {
+      this.applySelection(options[0]);
+    }
+  }
+
   /** Bridge the selector's `itemSelected` output into the form control that gates the Continue CTA. */
   public onItemSelected(item: LensItem): void {
-    const project = this.projectOptions().find((option) => option.uid === item.uid);
-    this.selectedContext.set(
-      project ? { uid: project.uid, name: project.name, slug: project.slug, parent_uid: project.parent_uid, logoUrl: project.logoUrl } : null
-    );
-    this.form.controls.project.setValue(item.uid);
-    this.form.controls.project.markAsTouched();
+    this.applySelection(this.projectOptions().find((option) => option.uid === item.uid) ?? null);
   }
 
   public onContinue(): void {
@@ -125,6 +132,15 @@ export class CreateArtifactDialogComponent {
 
   public cancel(): void {
     this.dialogRef.close(false);
+  }
+
+  /** Set (or clear) the current selection — drives the selector's display and the Continue-gating control. */
+  private applySelection(project: CreatableProject | null): void {
+    this.selectedContext.set(
+      project ? { uid: project.uid, name: project.name, slug: project.slug, parent_uid: project.parent_uid, logoUrl: project.logoUrl } : null
+    );
+    this.form.controls.project.setValue(project?.uid ?? null);
+    this.form.controls.project.markAsTouched();
   }
 
   /** Surface a dead-end to the user and close, rather than leaving the CTA silently inert. */
