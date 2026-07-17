@@ -13,7 +13,7 @@
  *
  * Coverage map:
  * - S1: rail "Create" button renders for a create-capable user
- * - S2: clicking it opens a popover listing the three artifact types with descriptions
+ * - S2: clicking it opens a popover listing the four artifact types with descriptions
  * - S3: picking a type opens the dialog (header + project select) with Continue disabled,
  *       and choosing an eligible project enables Continue
  *
@@ -63,7 +63,7 @@ async function openCreateMenu(page: Page): Promise<void> {
   await expect(page.getByTestId('create-menu')).toBeVisible({ timeout: 5_000 });
 }
 
-async function openDialogForType(page: Page, type: 'meeting' | 'group' | 'mailing-list'): Promise<void> {
+async function openDialogForType(page: Page, type: 'meeting' | 'group' | 'mailing-list' | 'newsletter'): Promise<void> {
   await openCreateMenu(page);
   await page.getByTestId(`create-menu-option-${type}`).click();
   await expect(page.getByTestId('create-artifact-dialog')).toBeVisible({ timeout: 5_000 });
@@ -90,13 +90,14 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(page.getByTestId('create-rail-button')).toBeVisible({ timeout: RAIL_TIMEOUT });
   });
 
-  // S2 — the button opens a popover listing all three types with descriptions
-  test('S2: clicking the button opens a popover with the three artifact types', async ({ page }) => {
+  // S2 — the button opens a popover listing all four types with descriptions
+  test('S2: clicking the button opens a popover with the four artifact types', async ({ page }) => {
     await openCreateMenu(page);
 
     await expect(page.getByTestId('create-menu-option-meeting')).toBeVisible();
     await expect(page.getByTestId('create-menu-option-group')).toBeVisible();
     await expect(page.getByTestId('create-menu-option-mailing-list')).toBeVisible();
+    await expect(page.getByTestId('create-menu-option-newsletter')).toBeVisible();
     await expect(page.getByTestId('create-menu-option-meeting')).toContainText('Schedule a recurring or one-time meeting');
   });
 

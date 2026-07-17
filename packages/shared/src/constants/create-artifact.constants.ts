@@ -29,4 +29,11 @@ export const CREATABLE_ARTIFACTS: CreatableArtifactConfig[] = [
     icon: 'fa-light fa-envelope',
     createRoute: '/mailing-lists/create',
   },
+  {
+    type: 'newsletter',
+    label: 'Newsletter',
+    description: 'Publish a newsletter to keep a project community informed.',
+    icon: 'fa-light fa-paper-plane',
+    createRoute: '/newsletters/create',
+  },
 ];

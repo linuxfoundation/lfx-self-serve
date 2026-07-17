@@ -7,7 +7,7 @@ import { ProjectContext } from './project.interface';
  * Artifact types a permitted user can create from the rail "Create" quick-link.
  * Values map 1:1 to the existing creation routes (see `CREATABLE_ARTIFACTS`).
  */
-export type CreatableArtifactType = 'meeting' | 'group' | 'mailing-list';
+export type CreatableArtifactType = 'meeting' | 'group' | 'mailing-list' | 'newsletter';
 
 /**
  * Static, non-permission config for a creatable artifact type — drives the
