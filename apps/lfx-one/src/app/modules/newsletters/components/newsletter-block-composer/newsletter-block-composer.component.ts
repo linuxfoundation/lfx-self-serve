@@ -7,7 +7,6 @@ import { afterRenderEffect, Component, computed, ElementRef, inject, input, OnIn
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
@@ -52,15 +51,17 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  * SELECTED block, an after-render effect makes those elements `contentEditable`.
  * On focus the element selects the block; while it's focused the rendered HTML
  * for that block is FROZEN (`editingBlockId`) so a keystroke / a panel edit can
- * never re-render under the caret. On blur the element's `textContent` (or
- * `innerHTML` for richtext) is patched into `block.content` and the layout
- * re-emits. A floating dark toolbar tracks the selected block (label +
+ * never re-render under the caret. On every `input` the element's `textContent`
+ * (or `innerHTML` for richtext) is committed into `block.content` and the layout
+ * re-emits — live, so the Fields panel mirrors the edit instantly while the
+ * frozen canvas keeps the caret. Blur just releases the freeze. A floating dark
+ * toolbar tracks the selected block (label +
  * duplicate / delete, plus B/I/U/link when a richtext field has focus). URL /
  * attribute fields stay panel-only — never marked inline-editable.
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
-  imports: [DragDropModule, ReactiveFormsModule, ButtonComponent, InputTextComponent, NewsletterBlockFieldsComponent],
+  imports: [DragDropModule, ReactiveFormsModule, InputTextComponent, NewsletterBlockFieldsComponent],
   templateUrl: './newsletter-block-composer.component.html',
   styleUrl: './newsletter-block-composer.component.scss',
 })
@@ -108,6 +109,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // When true, the preview swaps the live canvas for a read-only view of the
   // rendered email HTML (Gatewaze HTML-source parity).
   protected readonly showSource = signal<boolean>(false);
+  // Collapse state for the two side panels — collapsing either hands its width
+  // back to the center preview (which is otherwise squeezed by the app's own
+  // left nav). The left rail's icons stay visible when its panel is collapsed;
+  // the right Fields sidebar shrinks to a thin re-open strip.
+  protected readonly leftPanelCollapsed = signal<boolean>(false);
+  protected readonly fieldsCollapsed = signal<boolean>(false);
 
   // The canvas container — the positioned ancestor the floating toolbar is
   // measured against, and the root we scan for `data-nl-field` elements.
@@ -246,10 +253,28 @@ export class NewsletterBlockComposerComponent implements OnInit {
     this.scheduleToolbarReposition();
   }
 
-  /** Switch the active left-rail tab. Selection persists across tab changes. */
+  /**
+   * Switch the active left-rail tab — or, when the tab is already active, toggle
+   * the panel collapsed/expanded (a second click on Blocks/Outline hides the
+   * panel to widen the preview; a third re-opens it). Selection persists across
+   * tab changes.
+   */
   protected setTab(tab: NewsletterComposerTab): void {
     if (this.tabs.find((t) => t.id === tab)?.disabled) return;
-    this.activeTab.set(tab);
+    if (this.activeTab() === tab) {
+      this.leftPanelCollapsed.update((collapsed) => !collapsed);
+    } else {
+      this.activeTab.set(tab);
+      this.leftPanelCollapsed.set(false);
+    }
+    // The canvas width changes with the panel — keep the toolbar pinned.
+    this.scheduleToolbarReposition();
+  }
+
+  /** Collapse / re-open the right-hand Fields sidebar to reclaim preview width. */
+  protected toggleFields(): void {
+    this.fieldsCollapsed.update((collapsed) => !collapsed);
+    this.scheduleToolbarReposition();
   }
 
   /**
@@ -852,6 +877,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
       this.toolbar.update((t) => (t ? { ...t, richtextActive: richtext } : t));
     });
 
+    // Commit on every keystroke so the Fields panel (and any other consumer of
+    // block.content) mirrors the inline edit LIVE — matching the panel→canvas
+    // direction, which already updates instantly. Safe under the caret: the
+    // block is frozen (`editingBlockId` set), so its re-render reuses the cached
+    // HTML while the separate sidebar form patches its controls in place.
+    el.addEventListener('input', () => this.commitInlineEdit(el, blockId));
+
     el.addEventListener('blur', () => {
       this.commitInlineEdit(el, blockId);
       this.editingBlockId.set(null);
@@ -863,8 +895,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * Read the edited element back into `block.content[field]` and re-emit. Text
    * fields round-trip via `textContent`; richtext fields via `innerHTML`. No-op
    * when the value is unchanged, so a focus-with-no-edit doesn't churn the
-   * layout. The patch re-renders the (now-unfrozen) block — fine, the caret is
-   * already gone.
+   * layout. Called live on every `input` (the block is frozen, so the re-render
+   * reuses cached HTML and the caret is untouched) and once more on blur.
    */
   private commitInlineEdit(el: HTMLElement, blockId: string): void {
     const field = el.getAttribute('data-nl-field');

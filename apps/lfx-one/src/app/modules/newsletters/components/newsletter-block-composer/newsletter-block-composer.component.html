@@ -2,19 +2,25 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4 lg:flex-row lg:items-stretch" data-testid="newsletter-composer">
-  <!-- Left editor: icon rail + switchable sidebar (Gatewaze-Puck parity). ---- -->
-  <div class="flex w-full overflow-hidden rounded-lg border border-gray-200 bg-white lg:w-96 lg:shrink-0" data-testid="newsletter-composer-sidebar">
+  <!-- Left editor: icon rail + switchable sidebar (Gatewaze-Puck parity). The
+       panel body collapses (rail stays) to hand its width to the preview. ---- -->
+  <div
+    class="flex overflow-hidden rounded-lg border border-gray-200 bg-white lg:shrink-0"
+    [class.w-full]="!leftPanelCollapsed()"
+    [class.lg:w-96]="!leftPanelCollapsed()"
+    data-testid="newsletter-composer-sidebar">
     <!-- Icon rail: vertical tabs. -->
     <nav class="flex shrink-0 flex-col gap-1 border-r border-gray-200 bg-gray-50 p-2" aria-label="Editor panels" data-testid="newsletter-composer-rail">
       @for (tab of tabs; track tab.id) {
         <button
           type="button"
           class="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-md text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-          [class.bg-blue-50]="isActiveTab(tab.id)"
-          [class.text-blue-600]="isActiveTab(tab.id)"
-          [class.hover:bg-blue-50]="isActiveTab(tab.id)"
+          [class.bg-blue-50]="isActiveTab(tab.id) && !leftPanelCollapsed()"
+          [class.text-blue-600]="isActiveTab(tab.id) && !leftPanelCollapsed()"
+          [class.hover:bg-blue-50]="isActiveTab(tab.id) && !leftPanelCollapsed()"
           [disabled]="tab.disabled"
-          [attr.aria-pressed]="isActiveTab(tab.id)"
+          [attr.aria-pressed]="isActiveTab(tab.id) && !leftPanelCollapsed()"
+          [attr.aria-expanded]="isActiveTab(tab.id) && !leftPanelCollapsed()"
           [attr.aria-label]="tab.label + (tab.disabled ? ' (coming soon)' : '')"
           [title]="tab.label + (tab.disabled ? ' (coming soon)' : '')"
           [attr.data-testid]="'newsletter-composer-tab-' + tab.id"
@@ -25,7 +31,9 @@
       }
     </nav>
 
-    <!-- Sidebar body: the active tab's panel. -->
+    <!-- Sidebar body: the active tab's panel. Hidden when collapsed (the rail
+         stays), so a second click on the active tab reclaims the width. -->
+    @if (!leftPanelCollapsed()) {
     <div class="flex min-w-0 flex-1 flex-col gap-3 p-3" data-testid="newsletter-composer-panel">
       <!-- Blocks tab: the palette (searchable, categorized, draggable). ------- -->
       @if (isActiveTab('blocks')) {
@@ -140,6 +148,7 @@
         }
       }
     </div>
+    }
   </div>
 
   <!-- Canvas / live preview ----------------------------------------------- -->
@@ -324,39 +333,23 @@
             (click)="selectBlock(block.id)"
             [attr.data-testid]="'newsletter-composer-block-' + block.block_type"
             [attr.aria-pressed]="isSelected(block.id)">
-            <!-- Floating per-block toolbar (select / drag / remove) so the
-                 rendered email HTML below stays clean. -->
-            <div
-              class="absolute -top-3 right-2 z-10 flex items-center gap-1 rounded-md border border-gray-200 bg-white px-1 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/block:opacity-100"
-              [class.!opacity-100]="isSelected(block.id)">
-              @if (isBrowser()) {
+            <!-- Drag-handle chip (browser-only). Label + duplicate / delete /
+                 rich-text controls live on the floating dark toolbar for the
+                 SELECTED block, so this chip carries only the grip — the one
+                 affordance that must sit inside the cdkDrag element. -->
+            @if (isBrowser()) {
+              <div
+                class="absolute -top-3 right-2 z-10 flex items-center rounded-md border border-gray-200 bg-white px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/block:opacity-100"
+                [class.!opacity-100]="isSelected(block.id)">
                 <i
                   cdkDragHandle
-                  class="fa-light fa-grip-vertical cursor-grab px-1 text-gray-400 active:cursor-grabbing"
-                  aria-hidden="true"
+                  class="fa-light fa-grip-vertical cursor-grab px-1.5 py-0.5 text-gray-400 active:cursor-grabbing"
+                  aria-label="Drag to reorder"
+                  title="Drag to reorder"
+                  [attr.data-testid]="'newsletter-composer-drag-' + block.block_type"
                   (click)="$event.stopPropagation()"></i>
-              }
-              <span class="px-1 text-xs font-medium text-gray-500">{{ block.label }}</span>
-              @if (block.isContainer) {
-                <span class="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">Container</span>
-              }
-              <lfx-button
-                icon="fa-light fa-pen"
-                severity="secondary"
-                [text]="true"
-                size="small"
-                ariaLabel="Edit block fields"
-                [attr.data-testid]="'newsletter-composer-edit-' + block.block_type"
-                (onClick)="selectBlock(block.id)" />
-              <lfx-button
-                icon="fa-light fa-trash-can"
-                severity="danger"
-                [text]="true"
-                size="small"
-                ariaLabel="Remove block"
-                [attr.data-testid]="'newsletter-composer-remove-' + block.block_type"
-                (onClick)="removeBlock(block.id); $event.stopPropagation()" />
-            </div>
+              </div>
+            }
 
             <!-- Rendered email HTML for this block. `data-nl-block` lets the
                  inline-editing effect + toolbar locate this block's region. -->
@@ -388,22 +381,19 @@
                     (click)="selectBlock(child.id); $event.stopPropagation()"
                     [attr.data-testid]="'newsletter-composer-child-' + child.block_type"
                     [attr.aria-pressed]="isSelected(child.id)">
-                    <div
-                      class="absolute -top-3 right-2 z-10 flex items-center gap-1 rounded-md border border-gray-200 bg-white px-1 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/child:opacity-100"
-                      [class.!opacity-100]="isSelected(child.id)">
-                      @if (isBrowser()) {
-                        <i cdkDragHandle class="fa-light fa-grip-vertical cursor-grab px-1 text-gray-400" aria-hidden="true" (click)="$event.stopPropagation()"></i>
-                      }
-                      <span class="px-1 text-xs font-medium text-gray-500">{{ child.label }}</span>
-                      <lfx-button
-                        icon="fa-light fa-xmark"
-                        severity="danger"
-                        [text]="true"
-                        size="small"
-                        ariaLabel="Remove nested block"
-                        [attr.data-testid]="'newsletter-composer-remove-child-' + child.block_type"
-                        (onClick)="removeChild(block.id, child.id); $event.stopPropagation()" />
-                    </div>
+                    @if (isBrowser()) {
+                      <div
+                        class="absolute -top-3 right-2 z-10 flex items-center rounded-md border border-gray-200 bg-white px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/child:opacity-100"
+                        [class.!opacity-100]="isSelected(child.id)">
+                        <i
+                          cdkDragHandle
+                          class="fa-light fa-grip-vertical cursor-grab px-1.5 py-0.5 text-gray-400 active:cursor-grabbing"
+                          aria-label="Drag to reorder"
+                          title="Drag to reorder"
+                          [attr.data-testid]="'newsletter-composer-drag-child-' + child.block_type"
+                          (click)="$event.stopPropagation()"></i>
+                      </div>
+                    }
                     <div
                       [innerHTML]="renderedBlocks().get(child.id)"
                       [attr.data-nl-block]="child.id"
@@ -460,18 +450,48 @@
        and edit at the same time; its contents swap to the block selected on the
        canvas (or an empty prompt when nothing is selected). -->
   <aside
-    class="flex w-full flex-col gap-3 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 lg:w-96 lg:shrink-0"
+    class="flex flex-col gap-3 overflow-hidden rounded-lg border border-gray-200 bg-white lg:shrink-0"
+    [class.w-full]="!fieldsCollapsed()"
+    [class.lg:w-96]="!fieldsCollapsed()"
+    [class.p-4]="!fieldsCollapsed()"
+    [class.p-2]="fieldsCollapsed()"
     data-testid="newsletter-composer-fields-sidebar">
-    @if (selectedBlock(); as block) {
-      <h3 class="text-base font-semibold text-gray-900" data-testid="newsletter-composer-fields-title">{{ block.label }}</h3>
-      <lfx-newsletter-block-fields [block]="block" [schema]="selectedSchema()" (contentChange)="onContentChange($event)" />
+    @if (fieldsCollapsed()) {
+      <!-- Collapsed: a thin strip that re-opens the Fields sidebar. -->
+      <button
+        type="button"
+        class="flex h-10 w-10 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100"
+        title="Show fields"
+        aria-label="Show fields"
+        [attr.aria-expanded]="false"
+        data-testid="newsletter-composer-fields-expand"
+        (click)="toggleFields()">
+        <i class="fa-light fa-sliders text-base" aria-hidden="true"></i>
+      </button>
     } @else {
-      <div
-        class="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 bg-gray-50 py-10 text-center"
-        data-testid="newsletter-composer-fields-empty">
-        <i class="fa-light fa-sliders text-2xl text-gray-300" aria-hidden="true"></i>
-        <p class="text-sm text-gray-500">Select a block to edit its fields.</p>
+      <div class="flex items-center justify-between gap-2">
+        <h3 class="text-base font-semibold text-gray-900" data-testid="newsletter-composer-fields-title">{{ selectedBlock()?.label ?? 'Fields' }}</h3>
+        <button
+          type="button"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          title="Minimize fields"
+          aria-label="Minimize fields"
+          [attr.aria-expanded]="true"
+          data-testid="newsletter-composer-fields-collapse"
+          (click)="toggleFields()">
+          <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+        </button>
       </div>
+      @if (selectedBlock(); as block) {
+        <lfx-newsletter-block-fields [block]="block" [schema]="selectedSchema()" (contentChange)="onContentChange($event)" />
+      } @else {
+        <div
+          class="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 bg-gray-50 py-10 text-center"
+          data-testid="newsletter-composer-fields-empty">
+          <i class="fa-light fa-sliders text-2xl text-gray-300" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">Select a block to edit its fields.</p>
+        </div>
+      }
     }
   </aside>
 </div>
