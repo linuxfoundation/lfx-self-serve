@@ -443,6 +443,9 @@ export class MeetingJoinComponent implements OnInit {
           deletedUids.forEach((uid) => next.add(uid));
           return next;
         });
+        // Remove from optimistic additions too: a link added then deleted in the same
+        // drawer session must not reappear once the deletion exclusion is cleared.
+        this.optimisticAddedAttachments.update((current) => current.filter((a) => !deletedUids.includes(a.uid)));
       }
       if (addedAttachments.length > 0) {
         this.optimisticAddedAttachments.update((current) => [...addedAttachments, ...current]);

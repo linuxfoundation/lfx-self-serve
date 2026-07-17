@@ -1363,7 +1363,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
       'GET'
     );
   }
@@ -1377,7 +1377,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}/download`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}/download`,
       'GET'
     );
   }
@@ -1395,7 +1395,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments`,
       'POST',
       undefined,
       attachmentData
@@ -1411,7 +1411,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/presign`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/presign`,
       'POST',
       undefined,
       presignData
@@ -1467,7 +1467,7 @@ export class MeetingService {
   public async deletePastMeetingAttachment(req: Request, pastMeetingUid: string, attachmentUid: string): Promise<void> {
     logger.debug(req, 'delete_past_meeting_attachment', 'Deleting past meeting attachment', { past_meeting_id: pastMeetingUid, attachment_uid: attachmentUid });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`, 'DELETE');
   }
 
   /**

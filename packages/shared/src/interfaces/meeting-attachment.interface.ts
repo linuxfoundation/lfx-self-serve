@@ -226,10 +226,6 @@ export interface AttachmentDownloadUrlResponse {
 }
 
 /**
- * Temporary attachment during upload process
- * @description Represents an attachment being uploaded with status tracking
- */
-/**
  * Payload emitted by MeetingMaterialsDrawerComponent on each save or link-add operation.
  * Carries enough information for parents to apply optimistic UI updates without waiting
  * for NATS propagation to the query service.
@@ -241,6 +237,10 @@ export interface MaterialsChangedEvent {
   addedAttachments: PastMeetingAttachment[];
 }
 
+/**
+ * Temporary attachment during upload process
+ * @description Represents an attachment being uploaded with status tracking
+ */
 export interface PendingAttachment {
   /** Temporary identifier for the pending attachment */
   id: string;
