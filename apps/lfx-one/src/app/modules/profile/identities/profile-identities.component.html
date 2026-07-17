@@ -23,8 +23,8 @@
     </lfx-message>
   }
 
-  <!-- Two-column layout: Identities (left) + Linux.com Email (right) -->
-  <div class="grid grid-cols-1 gap-8 items-start lg:grid-cols-[minmax(0,1fr)_360px]">
+  <!-- Stacked layout: Identities on top, Linux.com Email below -->
+  <div class="flex flex-col gap-10">
     <!-- Identities -->
     <div class="flex flex-col gap-5">
       <!-- Header with Add Button -->
@@ -173,7 +173,7 @@
     </div>
 
     <!-- Linux.com Email -->
-    <div class="flex flex-col gap-5">
+    <div class="flex w-full max-w-xl flex-col gap-5">
       <h2>Linux.com email</h2>
       <lfx-profile-linux-email [identities]="enrichedIdentities()" />
     </div>
