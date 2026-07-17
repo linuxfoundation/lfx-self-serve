@@ -345,7 +345,6 @@
                   cdkDragHandle
                   class="fa-light fa-grip-vertical cursor-grab px-1.5 py-0.5 text-gray-400 active:cursor-grabbing"
                   aria-label="Drag to reorder"
-                  title="Drag to reorder"
                   [attr.data-testid]="'newsletter-composer-drag-' + block.block_type"
                   (click)="$event.stopPropagation()"></i>
               </div>
@@ -389,7 +388,6 @@
                           cdkDragHandle
                           class="fa-light fa-grip-vertical cursor-grab px-1.5 py-0.5 text-gray-400 active:cursor-grabbing"
                           aria-label="Drag to reorder"
-                          title="Drag to reorder"
                           [attr.data-testid]="'newsletter-composer-drag-child-' + child.block_type"
                           (click)="$event.stopPropagation()"></i>
                       </div>
