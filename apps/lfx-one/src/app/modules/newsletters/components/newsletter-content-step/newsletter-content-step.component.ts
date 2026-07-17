@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, OnInit, output, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -51,8 +51,10 @@ export class NewsletterContentStepComponent implements OnInit {
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
 
-  // === Model signals ===
-  public readonly generateDrawerVisible = model<boolean>(false);
+  // === Writable signals ===
+  // Internal-only drawer visibility (the parent never binds it), so a plain
+  // signal, not model(). Two-way [(visible)] to the drawer still works.
+  protected readonly generateDrawerVisible = signal<boolean>(false);
 
   // === Writable signals ===
   // Which body editor is showing. Seeded from the loaded draft in ngOnInit.
@@ -62,10 +64,19 @@ export class NewsletterContentStepComponent implements OnInit {
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
   protected readonly bodyValue: Signal<string> = this.initControlValue('bodyHtml');
   protected readonly bodyFilled = computed(() => stripHtml(this.bodyValue()).length > 0);
-  // Seed the composer from the form's current body_layout so drafts and step
-  // revisits rehydrate the canvas. body_layout is the authored source of truth
-  // in blocks mode; the server derives body_html from it on save.
-  protected readonly initialLayout: Signal<NewsletterLayout | null> = computed(() => (this.form().get('bodyLayout')?.value as NewsletterLayout | null) ?? null);
+  // Bumped on a mode switch to force `initialLayout` to re-read the live control
+  // (a plain `form()`-only computed would freeze at the draft's initial layout —
+  // the FormGroup identity never changes and in-session edits arrive via
+  // setValue). The composer only reads `initialLayout` at mount, so re-reading on
+  // toggle is exactly when it matters; per-keystroke edits need no re-read.
+  private readonly layoutSeedVersion = signal<number>(0);
+  // Seed the composer from the CURRENT body_layout so drafts, step revisits, and
+  // a toggle back to Blocks rehydrate the canvas correctly. Read synchronously
+  // (not via toObservable, which would emit a microtask late and seed empty).
+  protected readonly initialLayout: Signal<NewsletterLayout | null> = computed(() => {
+    this.layoutSeedVersion();
+    return (this.form().get('bodyLayout')?.value as NewsletterLayout | null) ?? null;
+  });
 
   public ngOnInit(): void {
     // Infer the editor from the draft: a saved layout means the composer, a
@@ -92,7 +103,9 @@ export class NewsletterContentStepComponent implements OnInit {
   protected setMode(mode: NewsletterEditorMode): void {
     if (mode === this.editorMode()) return;
     const leavingBlocks = this.editorMode() === 'blocks';
-    const outgoingHasContent = leavingBlocks ? (this.initialLayout()?.blocks?.length ?? 0) > 0 : this.bodyFilled();
+    // Read the LIVE control, not the memoized signal, so in-session blocks count.
+    const currentLayout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
+    const outgoingHasContent = leavingBlocks ? (currentLayout?.blocks?.length ?? 0) > 0 : this.bodyFilled();
 
     if (outgoingHasContent) {
       this.confirmationService.confirm({
@@ -149,6 +162,9 @@ export class NewsletterContentStepComponent implements OnInit {
       // re-derives body_html on save.
       this.form().get('bodyHtml')?.setValue('');
     }
+    // Force initialLayout to re-read the live control so the composer re-seeds
+    // from the cleared/current layout rather than the frozen initial value.
+    this.layoutSeedVersion.update((v) => v + 1);
     this.editorMode.set(mode);
   }
 

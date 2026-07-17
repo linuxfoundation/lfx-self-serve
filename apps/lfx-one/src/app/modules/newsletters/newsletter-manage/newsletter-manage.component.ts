@@ -394,6 +394,11 @@ export class NewsletterManageComponent {
     this.form.controls.committeeUids.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.committeeUidsValue.set(v ?? []));
     this.form.controls.subject.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.subjectValue.set(v ?? ''));
     this.form.controls.bodyLayout.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyLayoutValue.set(v ?? null));
+    // Mirror body_html too, so the simple editor's live typing registers as
+    // content (bodyFilled) and dirtiness. Server-derived writes use
+    // setValue(emitEvent:false) and set bodyHtmlValue directly, so they don't
+    // double-fire this and never re-trigger autosave.
+    this.form.controls.bodyHtml.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyHtmlValue.set(v ?? ''));
   }
 
   private initRecipientCount(): void {
@@ -755,7 +760,16 @@ export class NewsletterManageComponent {
 
   // Keep body_html in sync with the server-rendered output so the preview drawer
   // and test-send use the authoritative MJML render derived from body_layout.
+  // ONLY in blocks mode is body_html server-derived; in the simple editor it is
+  // user-authored and the save response just echoes the request-time value, so
+  // overwriting would revert any keystrokes typed during the in-flight save (and
+  // the emitEvent:false suppression would drop the delta rather than re-queue
+  // it). Detect blocks mode by a rendered layout and skip the overwrite for
+  // simple-mode saves; a mid-flight edit then stays in the control and the next
+  // autosave persists it.
   private syncDerivedBodyHtml(draft: Newsletter): void {
+    const renderedFromLayout = (draft.body_layout?.blocks?.length ?? 0) > 0;
+    if (!renderedFromLayout) return;
     const bodyHtml = draft.body_html ?? '';
     this.form.controls.bodyHtml.setValue(bodyHtml, { emitEvent: false });
     this.bodyHtmlValue.set(bodyHtml);
