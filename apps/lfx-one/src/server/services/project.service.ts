@@ -2864,10 +2864,16 @@ export class ProjectService {
       // read ToFU, not BoFU. Ties fall back to a fixed priority for determinism.
       const formatFunnel = (stageSpend: Map<string, number>): string => {
         const priority = ['BoFU', 'MoFU', 'ToFU', 'ToFU2', 'Unknown'];
+        // Unrecognized stages rank last so they lose spend ties to known stages,
+        // rather than winning them (indexOf would return -1, the lowest index).
+        const rank = (stage: string): number => {
+          const i = priority.indexOf(stage);
+          return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+        };
         let dominant = '';
         let maxSpend = -Infinity;
         for (const [stage, spend] of stageSpend) {
-          if (spend > maxSpend || (spend === maxSpend && priority.indexOf(stage) < priority.indexOf(dominant))) {
+          if (spend > maxSpend || (spend === maxSpend && rank(stage) < rank(dominant))) {
             dominant = stage;
             maxSpend = spend;
           }
