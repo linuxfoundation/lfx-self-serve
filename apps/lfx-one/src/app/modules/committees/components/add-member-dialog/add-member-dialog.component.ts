@@ -161,9 +161,13 @@ export class AddMemberDialogComponent {
         .subscribe((employer) => {
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
             // Set resolvedOrganizationName before patching so the name-change subscription
-            // does not clear organization_url immediately after the autofill writes it.
+            // does not clear organization_id / organization_url immediately after autofill.
             this.resolvedOrganizationName = employer.name;
-            this.form.patchValue({ organization: employer.name, organization_url: employer.website ?? '' });
+            this.form.patchValue({
+              organization: employer.name,
+              organization_id: employer.id ?? null,
+              organization_url: employer.website ?? '',
+            });
           }
         });
     }
