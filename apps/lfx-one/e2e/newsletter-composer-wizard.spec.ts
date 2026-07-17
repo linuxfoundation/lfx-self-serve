@@ -124,9 +124,22 @@ function buildDraft(overrides: Partial<Newsletter> = {}): Newsletter {
   };
 }
 
+// Two libraries so the picker has a real choice to switch between; the manifest
+// stub returns the same deterministic palette for either key.
+const MOCK_TEMPLATES = [
+  { key: 'aaif-user-community', label: 'AAIF User Community' },
+  { key: 'jim-community', label: 'Jim Community' },
+];
+
 async function stubManifest(page: Page): Promise<void> {
   await page.route('**/api/projects/*/newsletters/templates/*/manifest', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_MANIFEST) })
+  );
+  // The library catalog (no `/manifest` suffix — a distinct route). Registered
+  // after the manifest route; the glob ends at `/templates`, so the manifest
+  // URL's extra segments never match this one.
+  await page.route('**/api/projects/*/newsletters/templates', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ templates: MOCK_TEMPLATES }) })
   );
 }
 
@@ -268,9 +281,12 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     // Adding a block from the palette appends it to the canvas and updates the
-    // form's body_layout. Ensure we're on the Blocks tab before clicking.
-    await page.getByTestId('newsletter-composer-tab-blocks').click();
-    await page.getByTestId('newsletter-composer-palette-item-sponsored_ad').click();
+    // form's body_layout. Blocks is the default active tab, so the palette is
+    // already visible — no need to click the rail tab (clicking the active tab
+    // now toggles the panel collapsed).
+    const paletteItem = page.getByTestId('newsletter-composer-palette-item-sponsored_ad');
+    await expect(paletteItem).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await paletteItem.click();
     await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     // Saving flushes the composed layout to the update endpoint. The PUT body must
@@ -288,5 +304,49 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     const blockTypes = (payload.body_layout?.blocks ?? []).map((b) => b.block_type);
     expect(blockTypes).toContain('intro_paragraph');
     expect(blockTypes).toContain('sponsored_ad');
+  });
+
+  test('clicking the active rail tab collapses and re-opens its panel', async ({ page }) => {
+    await gotoContentStep(page);
+    // Blocks is active by default, so its panel body is visible.
+    await expect(page.getByTestId('newsletter-composer-panel')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // A second click on the active Blocks tab collapses the panel (the rail stays).
+    await page.getByTestId('newsletter-composer-tab-blocks').click();
+    await expect(page.getByTestId('newsletter-composer-panel')).toHaveCount(0);
+    await expect(page.getByTestId('newsletter-composer-rail')).toBeVisible();
+
+    // A third click re-opens it.
+    await page.getByTestId('newsletter-composer-tab-blocks').click();
+    await expect(page.getByTestId('newsletter-composer-panel')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('the Fields sidebar minimizes to a re-open strip and restores', async ({ page }) => {
+    await gotoContentStep(page);
+    // The Fields header (with its minimize control) is present by default.
+    await expect(page.getByTestId('newsletter-composer-fields-collapse')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId('newsletter-composer-fields-collapse').click();
+    await expect(page.getByTestId('newsletter-composer-fields-expand')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-fields-collapse')).toHaveCount(0);
+
+    await page.getByTestId('newsletter-composer-fields-expand').click();
+    await expect(page.getByTestId('newsletter-composer-fields-collapse')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('switching the block library clears the canvas after confirmation', async ({ page }) => {
+    await gotoContentStep(page);
+    // The reopened draft hydrates one block, and the library picker is present.
+    await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-library-select')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Switching libraries with blocks present prompts a confirm; accept it.
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByTestId('newsletter-composer-library-select').locator('.p-select, [role="combobox"]').first().click();
+    await page.getByRole('option', { name: 'Jim Community', exact: true }).click();
+
+    // The canvas is cleared, since block types can differ between libraries.
+    await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toHaveCount(0);
+    await expect(page.getByTestId('newsletter-composer-canvas-empty')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });
