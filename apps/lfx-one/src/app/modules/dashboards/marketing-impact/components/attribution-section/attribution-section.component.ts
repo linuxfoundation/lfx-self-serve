@@ -48,6 +48,10 @@ export class AttributionSectionComponent {
   // Overview tab, which also renders this section), it passes it in so we reuse
   // it instead of issuing a duplicate request. `undefined` means "self-fetch".
   public readonly attributionOverride = input<MarketingAttributionResponse | null | undefined>(undefined);
+  // When using a parent override, the parent also passes its in-flight state so
+  // we show the skeleton (not the empty state) while the parent request runs and
+  // its override is still the initial/previous-period `null`.
+  public readonly loadingOverride = input<boolean>(false);
 
   // === Forms ===
   protected readonly modelForm = this.fb.nonNullable.group({
@@ -57,7 +61,9 @@ export class AttributionSectionComponent {
   protected readonly modelOptions: AttributionModelOption[] = ATTRIBUTION_MODEL_OPTIONS;
 
   // === WritableSignals ===
-  protected readonly loading = signal(false);
+  // Tracks the component's own fetch; the template reads `loading` (below), which
+  // also folds in the parent's loadingOverride when running in override mode.
+  private readonly selfLoading = signal(false);
 
   // === Computed Signals ===
   protected readonly attributionData: Signal<MarketingAttributionResponse | null> = this.initAttributionData();
@@ -65,6 +71,8 @@ export class AttributionSectionComponent {
   protected readonly channelRows: Signal<AttributionChannelRow[]> = this.initChannelRows();
   protected readonly totalRevenue: Signal<string> = this.initTotalRevenue();
   protected readonly hasData = computed(() => this.channelRows().length > 0);
+  // In override mode, defer to the parent's in-flight state; otherwise use our own.
+  protected readonly loading = computed(() => (this.attributionOverride() !== undefined ? this.loadingOverride() : this.selfLoading()));
 
   // === Protected Methods ===
   /** Tooltip text describing what a consolidated channel groups; empty when no definition exists (no tooltip shown). */
@@ -82,20 +90,21 @@ export class AttributionSectionComponent {
     return toSignal(
       combineLatest([override$, slug$, focus$, period$]).pipe(
         switchMap(([override, slug, focus, period]) => {
-          // A parent-supplied response short-circuits our own fetch (no duplicate query).
+          // A parent-supplied response short-circuits our own fetch (no duplicate
+          // query). Loading is driven by the parent's loadingOverride in this mode.
           if (override !== undefined) {
-            this.loading.set(false);
+            this.selfLoading.set(false);
             return of(override);
           }
           if (!slug) {
-            this.loading.set(false);
+            this.selfLoading.set(false);
             return of(null);
           }
-          this.loading.set(true);
+          this.selfLoading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
           return this.analyticsService.getMarketingAttribution(slug, classification, period || undefined).pipe(
             catchError(() => of(null)),
-            finalize(() => this.loading.set(false))
+            finalize(() => this.selfLoading.set(false))
           );
         })
       ),
