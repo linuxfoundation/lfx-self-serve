@@ -8,12 +8,12 @@ export const PROFILE_ROUTES: Routes = [
     path: '',
     loadComponent: () => import('@app/layouts/profile-layout/profile-layout.component').then((m) => m.ProfileLayoutComponent),
     children: [
-      // Default redirect to attribution
-      { path: '', redirectTo: 'attribution', pathMatch: 'full' },
+      // Default redirect to attributions
+      { path: '', redirectTo: 'attributions', pathMatch: 'full' },
 
-      // Attribution tab (merges affiliations + work experience)
+      // Work history & Affiliations tab (merges affiliations + work experience)
       {
-        path: 'attribution',
+        path: 'attributions',
         loadComponent: () => import('./attribution/profile-attribution.component').then((m) => m.ProfileAttributionComponent),
       },
 
@@ -27,6 +27,22 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'individual-enrollment',
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
+      },
+
+      // Transactions tab — canonical home for the former /me/transactions page.
+      // `embedded` suppresses the component's own page header inside the profile shell.
+      {
+        path: 'transactions',
+        data: { embedded: true },
+        loadComponent: () => import('../transactions/transactions-dashboard/transactions-dashboard.component').then((m) => m.TransactionsDashboardComponent),
+      },
+
+      // Settings tab — canonical home for the former me-context /settings page.
+      // `embedded` suppresses the component's own page header inside the profile shell.
+      {
+        path: 'settings',
+        data: { embedded: true },
+        loadComponent: () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent),
       },
 
       // linux-email is now embedded in the Identities tab — redirect for backward compat
@@ -43,15 +59,16 @@ export const PROFILE_ROUTES: Routes = [
       },
 
       // Backward-compat redirects for old URLs
-      { path: 'overview', redirectTo: 'attribution' },
-      { path: 'edit', redirectTo: 'attribution' },
-      { path: 'affiliations', redirectTo: 'attribution' },
-      { path: 'work-experience', redirectTo: 'attribution' },
+      { path: 'attribution', redirectTo: 'attributions' },
+      { path: 'overview', redirectTo: 'attributions' },
+      { path: 'edit', redirectTo: 'attributions' },
+      { path: 'affiliations', redirectTo: 'attributions' },
+      { path: 'work-experience', redirectTo: 'attributions' },
       { path: 'identity-services', redirectTo: 'identities' },
-      { path: 'badges', redirectTo: 'attribution' },
-      { path: 'certificates', redirectTo: 'attribution' },
-      { path: 'visibility', redirectTo: 'attribution' },
-      { path: 'manage', redirectTo: 'attribution' },
+      { path: 'badges', redirectTo: 'attributions' },
+      { path: 'certificates', redirectTo: 'attributions' },
+      { path: 'visibility', redirectTo: 'attributions' },
+      { path: 'manage', redirectTo: 'attributions' },
     ],
   },
 ];

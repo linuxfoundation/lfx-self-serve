@@ -197,12 +197,12 @@ export class SidebarNavService {
         {
           label: 'Settings',
           icon: 'fa-light fa-gear',
-          routerLink: '/settings',
+          routerLink: '/profile/settings',
         },
         {
           label: 'Transactions',
           icon: 'fa-light fa-receipt',
-          routerLink: '/me/transactions',
+          routerLink: '/profile/transactions',
         },
       ],
     },

@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
+import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
@@ -48,6 +49,10 @@ export class AccountSettingsComponent {
   private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+
+  // Hosted inside the Profile & Account shell (route data `embedded`), which owns the page header.
+  public readonly embedded = this.route.snapshot.data['embedded'] === true;
 
   // ── Refresh mechanisms ──
   private emailRefresh = new BehaviorSubject<void>(undefined);
@@ -287,7 +292,7 @@ export class AccountSettingsComponent {
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
-          window.location.href = '/api/profile/auth/start?returnTo=/settings';
+          window.location.href = '/api/profile/auth/start?returnTo=/profile/settings';
           return;
         }
 

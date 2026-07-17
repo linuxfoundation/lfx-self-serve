@@ -71,7 +71,7 @@ export class ProfileLayoutComponent {
 
   // Form for mobile tab selection
   public readonly tabForm = this.fb.group({
-    selectedTab: ['attribution'],
+    selectedTab: ['attributions'],
   });
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent

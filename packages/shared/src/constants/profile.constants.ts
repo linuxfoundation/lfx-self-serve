@@ -7,9 +7,11 @@ import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab }
  * Profile tab configuration
  */
 export const PROFILE_TABS: ProfileTab[] = [
-  { id: 'attribution', label: 'Work history & Affiliations', route: 'attribution' },
+  { id: 'attribution', label: 'Work history & Affiliations', route: 'attributions' },
   { id: 'identities', label: 'Identities', route: 'identities' },
   { id: 'individual-enrollment', label: 'Individual Enrollment', route: 'individual-enrollment' },
+  { id: 'transactions', label: 'Transactions', route: 'transactions' },
+  { id: 'settings', label: 'Settings', route: 'settings' },
 ];
 
 /**
