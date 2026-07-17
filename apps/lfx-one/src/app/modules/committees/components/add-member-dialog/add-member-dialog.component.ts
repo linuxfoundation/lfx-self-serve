@@ -135,7 +135,8 @@ export class AddMemberDialogComponent {
       .subscribe((name) => {
         const normalizedName = (name ?? '').trim();
         if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
-          this.form.patchValue({ organization_id: null, organization_url: '' }, { emitEvent: false });
+          this.resolvedOrganizationName = '';
+          this.form.patchValue({ organization_id: null, organization_url: '' });
         }
       });
   }
