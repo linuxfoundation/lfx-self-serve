@@ -39,6 +39,25 @@
       @if (isActiveTab('blocks')) {
         <h3 class="text-sm font-semibold text-gray-700">Blocks</h3>
 
+        <!-- Block-library picker: which embedded template set feeds the palette
+             and the email render. Switching clears the canvas (block types can
+             differ between libraries). -->
+        <div class="flex flex-col gap-1">
+          <label id="newsletter-composer-library-label" class="text-xs font-medium uppercase tracking-wide text-gray-400">Library</label>
+          <lfx-select
+            [form]="libraryForm"
+            control="library"
+            [options]="availableTemplates()"
+            optionLabel="label"
+            optionValue="key"
+            placeholder="Select a library"
+            styleClass="w-full"
+            ariaLabelledBy="newsletter-composer-library-label"
+            dataTest="newsletter-composer-library-select"
+            (onChange)="onLibraryChange($event.value)">
+          </lfx-select>
+        </div>
+
         @if (manifestLoading()) {
           <p class="text-sm text-gray-500" data-testid="newsletter-composer-palette-loading">Loading blocks…</p>
         } @else if (manifestError()) {

@@ -8,8 +8,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
-import { isValidUrl } from '@lfx-one/shared/utils';
+import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
   NewsletterBlockManifestEntry,
@@ -20,6 +21,7 @@ import {
   NewsletterComposerToolbarState,
   NewsletterFieldSchema,
   NewsletterLayout,
+  NewsletterTemplateInfo,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 
@@ -61,7 +63,7 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
-  imports: [DragDropModule, ReactiveFormsModule, InputTextComponent, NewsletterBlockFieldsComponent],
+  imports: [DragDropModule, ReactiveFormsModule, InputTextComponent, SelectComponent, NewsletterBlockFieldsComponent],
   templateUrl: './newsletter-block-composer.component.html',
   styleUrl: './newsletter-block-composer.component.scss',
 })
@@ -115,6 +117,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // the right Fields sidebar shrinks to a thin re-open strip.
   protected readonly leftPanelCollapsed = signal<boolean>(false);
   protected readonly fieldsCollapsed = signal<boolean>(false);
+  // The block library (embedded template set) the palette + emitted layout use.
+  // Seeded in ngOnInit from the saved layout's `template_key`, then the
+  // `templateKey` input, then the default. Changing it swaps the palette.
+  protected readonly selectedTemplateKey = signal<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
 
   // The canvas container — the positioned ancestor the floating toolbar is
   // measured against, and the root we scan for `data-nl-field` elements.
@@ -183,6 +189,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
   protected readonly blockSearch: Signal<string> = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
+  // Block-library picker. Form-bound (LFX select wrappers are FormGroup-bound);
+  // the control mirrors `selectedTemplateKey`. Seeded in ngOnInit.
+  protected readonly libraryForm = new FormGroup({ library: new FormControl<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY, { nonNullable: true }) });
+  // The libraries the picker offers: the loaded catalog, or a single synthesized
+  // entry for the active key when the catalog is empty / its endpoint is absent,
+  // so the picker always renders the current library.
+  protected readonly availableTemplates: Signal<NewsletterTemplateInfo[]> = this.initAvailableTemplates();
+
   // The wrapper chrome (header above / footer below the blocks), rendered from
   // the manifest's wrapper template. Recomputes when the manifest loads.
   protected readonly wrapperHeader: Signal<SafeHtml> = this.initWrapperHeader();
@@ -221,13 +235,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
     this.isBrowser.set(isPlatformBrowser(this.platformId));
 
     const seed = this.initialLayout();
+    // Resolve the active library: the saved layout's key wins (a reopened draft
+    // keeps its library), then the bound input, then the default.
+    const activeKey = seed?.template_key ?? this.templateKey();
+    this.selectedTemplateKey.set(activeKey);
+    this.libraryForm.controls.library.setValue(activeKey, { emitEvent: false });
+
     if (seed?.blocks?.length) {
       this.blocks.set(seed.blocks.map((block) => this.hydrate(block)));
     }
 
-    // Browser-only: fetch the palette manifest.
+    // Browser-only: fetch the palette manifest for the active library and the
+    // catalog of libraries for the picker.
     if (isPlatformBrowser(this.platformId)) {
-      this.manifestService.ensureLoaded(this.templateKey()).subscribe();
+      this.manifestService.ensureLoaded(activeKey).subscribe();
+      this.manifestService.loadTemplates().subscribe();
     }
   }
 
@@ -275,6 +297,39 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected toggleFields(): void {
     this.fieldsCollapsed.update((collapsed) => !collapsed);
     this.scheduleToolbarReposition();
+  }
+
+  /**
+   * Switch the active block library. Libraries can define different block types,
+   * so an existing canvas would orphan blocks the new library doesn't know (the
+   * server render hard-fails on an unknown type). When the canvas has blocks we
+   * confirm first and clear them on switch; cancelling reverts the picker. The
+   * new library's manifest is (re)loaded and the layout re-emits with the key.
+   */
+  protected onLibraryChange(key: string): void {
+    const current = this.selectedTemplateKey();
+    if (!key || key === current) return;
+
+    if (this.blocks().length > 0) {
+      const confirmed =
+        !isPlatformBrowser(this.platformId) ||
+        window.confirm('Switching the blocks library clears the blocks already in this newsletter, since they may not exist in the new library. Continue?');
+      if (!confirmed) {
+        // Revert the control without re-firing this handler.
+        this.libraryForm.controls.library.setValue(current, { emitEvent: false });
+        return;
+      }
+      this.blocks.set([]);
+      this.selectedBlockId.set(null);
+      this.editingBlockId.set(null);
+      this.toolbar.set(null);
+    }
+
+    this.selectedTemplateKey.set(key);
+    if (isPlatformBrowser(this.platformId)) {
+      this.manifestService.ensureLoaded(key).subscribe();
+    }
+    this.emit();
   }
 
   /**
@@ -666,6 +721,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
     );
   }
 
+  /**
+   * The libraries offered by the picker: the loaded catalog, or a single
+   * synthesized entry for the active key (label humanized from the key) when the
+   * catalog is empty — so the picker always shows the current library even
+   * before the catalog endpoint responds (or when it isn't available).
+   */
+  private initAvailableTemplates(): Signal<NewsletterTemplateInfo[]> {
+    return computed(() => {
+      const catalog = this.manifestService.templates();
+      if (catalog.length) return catalog;
+      const key = this.selectedTemplateKey();
+      return [{ key, label: humanizeFieldKey(key) }];
+    });
+  }
+
   private initPaletteGroups(): Signal<NewsletterBlockPaletteGroup[]> {
     return computed(() => {
       const manifest = this.manifest();
@@ -999,6 +1069,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
   private toLayout(): NewsletterLayout {
     return {
       wrapper_key: this.manifest()?.wrapper_key ?? 'default',
+      template_key: this.selectedTemplateKey(),
       blocks: this.blocks().map((block) => this.toLayoutBlock(block)),
     };
   }

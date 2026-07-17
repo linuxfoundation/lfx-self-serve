@@ -240,6 +240,13 @@ export interface NewsletterBlock {
  */
 export interface NewsletterLayout {
   wrapper_key: string;
+  /**
+   * Which embedded block library (template set) this layout was composed from —
+   * drives the composer palette and, once the renderer is key-aware upstream,
+   * the server render. Optional for back-compat with layouts saved before
+   * per-newsletter library selection; consumers fall back to the default key.
+   */
+  template_key?: string;
   blocks: NewsletterBlock[];
 }
 

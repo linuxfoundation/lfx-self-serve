@@ -4,8 +4,8 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { NewsletterBlockManifestEntry, NewsletterTemplateManifest } from '@lfx-one/shared/interfaces';
-import { catchError, finalize, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { NewsletterBlockManifestEntry, NewsletterTemplateInfo, NewsletterTemplatesResponse, NewsletterTemplateManifest } from '@lfx-one/shared/interfaces';
+import { catchError, finalize, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 import { ProjectContextService } from './project-context.service';
 
@@ -33,9 +33,15 @@ export class NewsletterManifestService {
   private readonly manifestSignal = signal<NewsletterTemplateManifest | null>(null);
   private readonly loadingSignal = signal<boolean>(false);
   private readonly errorSignal = signal<boolean>(false);
+  // The available template sets (block libraries) the user can pick from. Empty
+  // until loaded / on failure — the composer synthesizes a single entry for the
+  // active key so its library picker still renders.
+  private readonly templatesSignal = signal<NewsletterTemplateInfo[]>([]);
 
   // One cached request per template key, shared across subscribers.
   private readonly manifestStreams = new Map<string, Observable<NewsletterTemplateManifest | null>>();
+  // The template-catalog request, shared across subscribers once issued.
+  private templatesStream: Observable<NewsletterTemplateInfo[]> | null = null;
 
   /** Read-only view of the loaded manifest (null until loaded / on failure). */
   public get manifest(): Signal<NewsletterTemplateManifest | null> {
@@ -50,6 +56,45 @@ export class NewsletterManifestService {
   /** True when the most recent load attempt failed. */
   public get error(): Signal<boolean> {
     return this.errorSignal.asReadonly();
+  }
+
+  /** The available template sets (block libraries), empty until loaded. */
+  public get templates(): Signal<NewsletterTemplateInfo[]> {
+    return this.templatesSignal.asReadonly();
+  }
+
+  /**
+   * Fetch and cache the catalog of template sets (block libraries) for the
+   * picker. Shared across subscribers; browser-only. On failure (or on the
+   * server) it resolves to an empty list — the composer then shows just the
+   * active library — rather than surfacing an error, so a missing catalog
+   * endpoint never blocks composing.
+   */
+  public loadTemplates(): Observable<NewsletterTemplateInfo[]> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return of([]);
+    }
+    if (this.templatesStream) {
+      return this.templatesStream;
+    }
+
+    const projectUid = this.projectContext.activeContextUid();
+    if (!projectUid) {
+      return of([]);
+    }
+
+    this.templatesStream = this.http.get<NewsletterTemplatesResponse>(`/api/projects/${encodeURIComponent(projectUid)}/newsletters/templates`).pipe(
+      map((response) => response.templates ?? []),
+      tap((templates) => this.templatesSignal.set(templates)),
+      catchError((err: unknown) => {
+        console.warn('NewsletterManifestService: template catalog load failed; picker will show the active library only', { err });
+        // Reset so a later call can retry once the endpoint is available.
+        this.templatesStream = null;
+        return of([]);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    return this.templatesStream;
   }
 
   /**
