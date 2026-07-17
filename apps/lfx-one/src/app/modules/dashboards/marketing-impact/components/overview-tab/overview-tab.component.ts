@@ -5,16 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import {
-  computeMomPct,
-  formatChangePct,
-  formatCurrency,
-  formatNumber,
-  isPeriodMonth,
-  resolvePeriodRange,
-  trendColorClass,
-  trendDirection,
-} from '@lfx-one/shared/utils';
+import { formatChangePct, formatCurrency, formatNumber, isPeriodMonth, resolvePeriodRange, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -59,7 +50,7 @@ export class OverviewTabComponent {
         switchMap(([slug, focus, period]) => {
           if (!slug) {
             this.loading.set(false);
-            return of({ revenueImpact: null, brandReach: null, emailCtr: null });
+            return of({ revenueImpact: null, brandReach: null, emailCtr: null, attribution: null });
           }
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
@@ -71,10 +62,14 @@ export class OverviewTabComponent {
             // getBrandReach uses pre-computed _30D columns that cannot be period-filtered
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
             emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(catchError(() => of(null))),
+            // Attributed Revenue KPI reports Linear attribution to match the
+            // "Marketing attribution" table below (same source, same model),
+            // not pipeline-won CRM revenue which is a different metric.
+            attribution: this.analyticsService.getMarketingAttribution(slug, classification, period || undefined).pipe(catchError(() => of(null))),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
-      { initialValue: { revenueImpact: null, brandReach: null, emailCtr: null } }
+      { initialValue: { revenueImpact: null, brandReach: null, emailCtr: null, attribution: null } }
     );
   }
 
@@ -87,23 +82,26 @@ export class OverviewTabComponent {
 
       if (data.revenueImpact) {
         const ri = data.revenueImpact;
-        const yoyPct = isMonth ? ri.changePercentage : null;
-        const trend = ri.paidMedia?.monthlyTrend ?? [];
-        const revMomPct = computeMomPct(trend.map((m) => m.revenue));
-        const roasMomPct = computeMomPct(trend.map((m) => m.roas));
+        // Attributed Revenue reports Linear-attributed revenue from the same
+        // source as the "Marketing attribution" table below, so the headline
+        // agrees with that table. The attribution response carries no time
+        // dimension, so there is no honest period delta to show here — the
+        // prior wiring borrowed a paid-media monthly-trend delta that tracked
+        // a different metric than the value.
+        const attributedRevenue = (data.attribution?.channels ?? []).reduce((sum, ch) => sum + (ch.linearRevenue ?? 0), 0);
         cards.push(
           {
             id: 'attributed-revenue',
             label: 'Attributed Revenue',
             icon: 'fa-light fa-dollar-sign',
             iconClass: 'bg-green-100 text-green-600',
-            value: formatCurrency(ri.revenueAttributed),
-            momChange: formatChangePct(revMomPct, changeSuffix),
-            momTrend: trendDirection(revMomPct),
-            momTrendClass: trendColorClass(revMomPct),
-            yoyChange: formatChangePct(yoyPct, 'YoY'),
-            yoyTrend: trendDirection(yoyPct),
-            yoyTrendClass: trendColorClass(yoyPct),
+            value: formatCurrency(attributedRevenue),
+            momChange: null,
+            momTrend: 'neutral',
+            momTrendClass: 'text-gray-500',
+            yoyChange: null,
+            yoyTrend: 'neutral',
+            yoyTrendClass: 'text-gray-500',
           },
           {
             id: 'roas',
@@ -111,9 +109,14 @@ export class OverviewTabComponent {
             icon: 'fa-light fa-chart-line-up',
             iconClass: 'bg-blue-100 text-blue-600',
             value: `${(ri.paidMedia?.roas ?? 0).toFixed(2)}x`,
-            momChange: formatChangePct(roasMomPct, changeSuffix),
-            momTrend: trendDirection(roasMomPct),
-            momTrendClass: trendColorClass(roasMomPct),
+            // No MoM delta: paid spend is lumpy and event-driven, so a
+            // month-over-month ROAS swing mostly reflects a change in campaign
+            // volume/mix (e.g. fewer campaigns when events wind down), not a
+            // change in ad efficiency. Showing it as a performance delta
+            // misrepresents a volume shift as a decline.
+            momChange: null,
+            momTrend: 'neutral',
+            momTrendClass: 'text-gray-500',
             yoyChange: null,
             yoyTrend: 'neutral',
             yoyTrendClass: 'text-gray-500',
@@ -123,7 +126,12 @@ export class OverviewTabComponent {
 
       if (data.brandReach) {
         const br = data.brandReach;
-        const momPct = br.sessionMomChangePct;
+        // sessionMomChangePct defaults to 0 when there is no valid prior window
+        // to compare against (fewer than 8 weeks of trend, or an empty prior
+        // period), so a bare 0 is indistinguishable from "no comparison". Treat
+        // 0 as "nothing to report" and suppress the delta rather than show a
+        // misleading "0.0% MoM".
+        const momPct = br.sessionMomChangePct !== 0 ? br.sessionMomChangePct : null;
         cards.push({
           id: 'web-sessions',
           label: 'Total Web Sessions',
@@ -141,13 +149,17 @@ export class OverviewTabComponent {
 
       if (data.emailCtr) {
         const ec = data.emailCtr;
-        const momPct = ec.momChangePercentage;
+        // No email sent in the selected scope means CTR is undefined, not 0% —
+        // rendering 0.00% reads as poor performance rather than "no sends", so
+        // show a dash and suppress the delta/badge in that case.
+        const hasSends = (ec.monthlySends ?? []).some((s) => s > 0);
+        const momPct = hasSends ? ec.momChangePercentage : null;
         cards.push({
           id: 'email-ctr',
           label: 'Email CTR',
           icon: 'fa-light fa-envelope-open',
           iconClass: 'bg-amber-100 text-amber-600',
-          value: `${(ec.currentCtr ?? 0).toFixed(2)}%`,
+          value: hasSends ? `${(ec.currentCtr ?? 0).toFixed(2)}%` : '—',
           momChange: formatChangePct(momPct, changeSuffix),
           momTrend: trendDirection(momPct),
           momTrendClass: trendColorClass(momPct),

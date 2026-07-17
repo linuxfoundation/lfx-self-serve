@@ -7,9 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { ATTRIBUTION_MODEL_OPTIONS, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
+import { ATTRIBUTION_CHANNEL_DESCRIPTIONS, ATTRIBUTION_MODEL_OPTIONS, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import type {
@@ -22,7 +23,7 @@ import type {
 
 @Component({
   selector: 'lfx-attribution-section',
-  imports: [DecimalPipe, ReactiveFormsModule, SelectComponent, ButtonComponent],
+  imports: [DecimalPipe, ReactiveFormsModule, SelectComponent, ButtonComponent, TooltipModule],
   templateUrl: './attribution-section.component.html',
   styleUrl: './attribution-section.component.scss',
 })
@@ -60,6 +61,12 @@ export class AttributionSectionComponent {
   protected readonly channelRows: Signal<AttributionChannelRow[]> = this.initChannelRows();
   protected readonly totalRevenue: Signal<string> = this.initTotalRevenue();
   protected readonly hasData = computed(() => this.channelRows().length > 0);
+
+  // === Protected Methods ===
+  /** Tooltip text describing what a consolidated channel groups; empty when no definition exists (no tooltip shown). */
+  protected channelDescription(channel: string): string {
+    return ATTRIBUTION_CHANNEL_DESCRIPTIONS[channel] ?? '';
+  }
 
   // === Private Initializers ===
   private initAttributionData(): Signal<MarketingAttributionResponse | null> {

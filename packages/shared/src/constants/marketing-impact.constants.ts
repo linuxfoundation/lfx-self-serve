@@ -39,6 +39,20 @@ export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
   { label: 'Time Decay', value: 'timeDecay' },
 ];
 
+/**
+ * Human-readable definitions for each consolidated attribution channel label, keyed by the UI
+ * label produced server-side (see mapChannel in project.service.ts). Surfaced as per-channel
+ * tooltips in the Marketing attribution table so viewers know what each grouping includes.
+ */
+export const ATTRIBUTION_CHANNEL_DESCRIPTIONS: Record<string, string> = {
+  'Paid Performance': 'Paid search and paid social campaigns.',
+  Email: 'Email and HubSpot marketing sends.',
+  'Internal & Banner': 'Internal cross-site links and on-site promotional banners.',
+  Organic: 'Unpaid organic search traffic.',
+  Other: 'Other tracked sources that do not fall into a primary channel.',
+  'Direct & Unknown': 'Direct visits plus sessions with no identifiable referring source.',
+};
+
 /** Maps MarketingImpactFocusProgram IDs to Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. 'all' maps to undefined (no filter). */
 export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string | undefined> = {
   all: undefined,
@@ -58,11 +72,3 @@ export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet
   lfTraining: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
   projectWebsites: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'web-activity']),
 };
-
-/** Funnel stage filter options for the Performance Marketing tab. */
-export const FUNNEL_STAGE_OPTIONS: FilterPillOption[] = [
-  { id: 'all', label: 'All stages' },
-  { id: 'tofu', label: 'Top of funnel' },
-  { id: 'mofu', label: 'Middle of funnel' },
-  { id: 'bofu', label: 'Bottom of funnel' },
-];
