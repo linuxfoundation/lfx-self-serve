@@ -95,7 +95,7 @@ export class AddMemberDialogComponent {
   private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
-  private readonly orgFormValues = toSignal(this.form.valueChanges.pipe(startWith(this.form.value)), { initialValue: this.form.value });
+  private readonly orgFormValues = this.initOrgFormValues();
 
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
   public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
@@ -112,13 +112,8 @@ export class AddMemberDialogComponent {
     return result;
   });
   public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
-  /** True when the org field is shown, a name is entered, but no org ID has been resolved from the search. */
-  public readonly orgInvalid = computed(() => {
-    if (!this.showOrganizationField()) return false;
-    const vals = this.orgFormValues();
-    return !!(vals.organization ?? '').trim() && !vals.organization_id;
-  });
-  public readonly showOrgError = computed(() => this.orgInvalid() && this.orgSubmitAttempted());
+  public readonly orgInvalid: Signal<boolean> = this.initOrgInvalid();
+  public readonly showOrgError: Signal<boolean> = this.initShowOrgError();
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
@@ -288,6 +283,22 @@ export class AddMemberDialogComponent {
     }
     const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
     return upstream ?? 'invite failed';
+  }
+
+  private initOrgFormValues() {
+    return toSignal(this.form.valueChanges.pipe(startWith(this.form.value)), { initialValue: this.form.value });
+  }
+
+  private initOrgInvalid(): Signal<boolean> {
+    return computed(() => {
+      if (!this.showOrganizationField()) return false;
+      const vals = this.orgFormValues();
+      return !!(vals.organization ?? '').trim() && !vals.organization_id;
+    });
+  }
+
+  private initShowOrgError(): Signal<boolean> {
+    return computed(() => this.orgInvalid() && this.orgSubmitAttempted());
   }
 
   private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {
