@@ -171,7 +171,7 @@ export class ProfileLayoutComponent {
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       if (params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
-        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        this.clearAuthQueryParams();
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
@@ -180,7 +180,7 @@ export class ProfileLayoutComponent {
           summary: 'Authorization Error',
           detail: 'Authorization failed. Please try again.',
         });
-        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        this.clearAuthQueryParams();
       }
     });
   }
@@ -307,6 +307,14 @@ export class ProfileLayoutComponent {
         });
       },
     });
+  }
+
+  // Strip the Flow C query params (success/error) while staying on the current tab.
+  // Navigating relative to this.route would resolve to the parent /profile route and
+  // bounce the user to the default tab — so re-navigate to the current path sans query.
+  private clearAuthQueryParams(): void {
+    const path = this.router.url.split('?')[0];
+    this.router.navigateByUrl(path, { replaceUrl: true });
   }
 
   // Private init functions
