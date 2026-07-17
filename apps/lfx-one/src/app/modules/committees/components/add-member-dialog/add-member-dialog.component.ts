@@ -135,7 +135,7 @@ export class AddMemberDialogComponent {
       .subscribe((name) => {
         const normalizedName = (name ?? '').trim();
         if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
-          this.form.patchValue({ organization_id: null }, { emitEvent: false });
+          this.form.patchValue({ organization_id: null, organization_url: '' }, { emitEvent: false });
         }
       });
   }
@@ -160,6 +160,9 @@ export class AddMemberDialogComponent {
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe((employer) => {
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
+            // Set resolvedOrganizationName before patching so the name-change subscription
+            // does not clear organization_url immediately after the autofill writes it.
+            this.resolvedOrganizationName = employer.name;
             this.form.patchValue({ organization: employer.name, organization_url: employer.website ?? '' });
           }
         });
