@@ -88,6 +88,7 @@ export class ProfileController {
     '/profile/identities',
     '/profile/password',
     '/profile/linux-email',
+    '/profile/settings',
     '/settings',
   ]);
 
