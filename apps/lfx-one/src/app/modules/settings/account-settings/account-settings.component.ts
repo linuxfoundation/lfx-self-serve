@@ -52,7 +52,7 @@ export class AccountSettingsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
 
-  // Hosted inside the Profile & Account shell (route data `embedded`), which owns the page header.
+  // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
 
   // ── Refresh mechanisms ──

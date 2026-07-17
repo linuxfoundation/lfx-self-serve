@@ -12,7 +12,7 @@ import { LensService } from '../services/lens.service';
  * - Foundation / project lens: redirect to the lens-prefixed equivalent
  *   (`/foundation/settings`, `/project/settings`) — same behavior as `lensRedirectGuard`.
  * - Me lens: redirect to `/profile/settings` (canonical home for account settings now
- *   that they live as a Profile & Account tab), carrying the query params and fragment
+ *   that they live as a Profile tab), carrying the query params and fragment
  *   through so the header's `/settings#developer-settings` anchor link still lands on
  *   the right section. `RouterStateSnapshot.url` omits the fragment, so build the tree
  *   from the snapshot's `queryParams`/`fragment` rather than string-prefixing `state.url`.

@@ -27,5 +27,5 @@ Go to **app.lfx.dev** and select **Settings** from the left navigation sidebar. 
 
 ## Related sections
 
-- [Profile](../profile/) — for personal account information such as name, photo, and email
+- [Profile](../profile/) — for personal account information such as name, photo, work history, and affiliations
 - [Dashboard](../dashboards/) — lens and persona controls are in the top navigation, not Settings

@@ -59,7 +59,7 @@ export class TransactionsDashboardComponent {
   // ─── Configuration ─────────────────────────────────────────────────────────
   protected readonly subtitle = PAGE_SUBTITLE;
   protected readonly tabOptions = TAB_OPTIONS;
-  // Hosted inside the Profile & Account shell (route data `embedded`), which owns the page header.
+  // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   protected readonly embedded = this.route.snapshot.data['embedded'] === true;
 
   // ─── Writable Signals ──────────────────────────────────────────────────────

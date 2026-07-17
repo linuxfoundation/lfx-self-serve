@@ -365,7 +365,7 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/badges/badges.routes').then((m) => m.BADGE_ROUTES),
       },
       {
-        // Transactions now live as a Profile & Account tab — redirect the legacy path.
+        // Transactions now live as a Profile tab — redirect the legacy path.
         path: 'me/transactions',
         redirectTo: 'profile/transactions',
         pathMatch: 'full',
