@@ -1099,7 +1099,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingAttachments(): Signal<PastMeetingAttachment[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
+      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), this.refreshTrigger$]).pipe(
         switchMap(([hasAccess, meeting]) => {
           const id = meeting ? getPastMeetingResourceId(meeting) : null;
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
