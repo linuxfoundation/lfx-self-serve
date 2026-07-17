@@ -1076,15 +1076,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /**
    * Map the canvas blocks back to the shared NewsletterLayout shape.
    *
-   * `template_key` is deliberately NOT emitted: the upstream newsletter-service
-   * decodes the layout with `DisallowUnknownFields`, so any field beyond
-   * `wrapper_key` / `blocks` makes every save 400. The selected library is kept
-   * as client-side session state until upstream accepts (and renders from) a
-   * per-newsletter `template_key`.
+   * `template_key` records the selected block library so the newsletter renders
+   * from it server-side and reopens into the same library. The newsletter-service
+   * accepts and renders from this key (LFXV2-2747); an empty/omitted key renders
+   * from the default library.
    */
   private toLayout(): NewsletterLayout {
     return {
       wrapper_key: this.manifest()?.wrapper_key ?? 'default',
+      template_key: this.selectedTemplateKey(),
       blocks: this.blocks().map((block) => this.toLayoutBlock(block)),
     };
   }

@@ -241,13 +241,10 @@ export interface NewsletterBlock {
 export interface NewsletterLayout {
   wrapper_key: string;
   /**
-   * RESERVED — which embedded block library (template set) this layout was
-   * composed from. NOT currently sent to the server: the upstream
-   * newsletter-service decodes the layout with `DisallowUnknownFields` and its
-   * struct is `{ wrapper_key, blocks }` only, so emitting this 400s every save.
-   * Wire it into the emitted layout once upstream accepts and renders from a
-   * per-newsletter template_key; until then the composer keeps the selected
-   * library as client-side session state.
+   * Which embedded block library (template set) this layout was composed from.
+   * The newsletter-service persists it and renders the email from that library
+   * (LFXV2-2747); an empty/omitted key renders from the default library, so
+   * layouts saved before per-newsletter selection stay valid.
    */
   template_key?: string;
   blocks: NewsletterBlock[];

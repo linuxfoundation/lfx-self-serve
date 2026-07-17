@@ -339,6 +339,8 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     const blockTypes = (payload.body_layout?.blocks ?? []).map((b) => b.block_type);
     expect(blockTypes).toContain('intro_paragraph');
     expect(blockTypes).toContain('sponsored_ad');
+    // The layout records the selected block library so the server renders from it.
+    expect(payload.body_layout?.template_key).toBeTruthy();
   });
 
   test('switching to the simple editor confirms before discarding in-session blocks', async ({ page }) => {
