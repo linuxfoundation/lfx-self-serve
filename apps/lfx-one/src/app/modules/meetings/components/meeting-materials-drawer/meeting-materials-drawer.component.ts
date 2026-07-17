@@ -200,17 +200,20 @@ export class MeetingMaterialsDrawerComponent {
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
 
     // Delete first (parallel), then upload (parallel). null in results signals a caught error.
+    // map(() => true) converts the void/null 204 body to a truthy sentinel so that
+    // catchError's null can be reliably distinguished from a successful delete.
     const delete$ =
       deletions.length > 0
         ? from(deletions).pipe(
             mergeMap((uid) =>
               (isPast ? this.meetingService.deletePastMeetingAttachment(id, uid) : this.meetingService.deleteMeetingAttachment(id, uid)).pipe(
+                map(() => true as const),
                 catchError(() => of(null))
               )
             ),
             toArray()
           )
-        : of([] as (void | null)[]);
+        : of([] as (true | null)[]);
 
     delete$
       .pipe(
