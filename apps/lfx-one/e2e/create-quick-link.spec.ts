@@ -116,12 +116,11 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(page.getByTestId('create-menu-option-meeting')).toContainText('Schedule a recurring or one-time meeting');
   });
 
-  // S3 — picking a type opens the dialog; choosing an eligible project via the selector enables Continue
+  // S3 — picking a project via the selector enables Continue. (On-open enabled/disabled state is S5's
+  // job; asserting "disabled on open" here would be wrong for a single-eligible-project account, where
+  // the dialog auto-selects and Continue is already enabled.)
   test('S3: picking "Meeting" opens the dialog and choosing a project enables Continue', async ({ page }) => {
     await openDialogForType(page, 'meeting');
-
-    // Nothing chosen yet — Continue disabled.
-    await expect(continueButton(page)).toBeDisabled();
 
     // Open the reused project-selector (same UI as the sidebar). Scope the trigger to the dialog —
     // the same `project-selector` testid is emitted by the sidebar's instance in project/foundation lens.
