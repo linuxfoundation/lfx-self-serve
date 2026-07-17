@@ -11,7 +11,7 @@ import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayNa
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, from, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
+import { catchError, from, map, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
@@ -199,7 +199,7 @@ export class MeetingMaterialsDrawerComponent {
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
 
-    // Delete first (parallel), then upload (parallel)
+    // Delete first (parallel), then upload (parallel). null in results signals a caught error.
     const delete$ =
       deletions.length > 0
         ? from(deletions).pipe(
@@ -210,12 +210,12 @@ export class MeetingMaterialsDrawerComponent {
             ),
             toArray()
           )
-        : of([]);
+        : of([] as (void | null)[]);
 
     delete$
       .pipe(
-        switchMap(() => {
-          if (uploads.length === 0) return of([]);
+        switchMap((deleteResults) => {
+          if (uploads.length === 0) return of({ deleteResults, uploadResults: [] as (object | null)[] });
           return from(uploads).pipe(
             mergeMap((attachment) =>
               (isPast
@@ -231,17 +231,23 @@ export class MeetingMaterialsDrawerComponent {
                   })
               ).pipe(catchError(() => of(null)))
             ),
-            toArray()
+            toArray(),
+            map((uploadResults) => ({ deleteResults, uploadResults }))
           );
         }),
         take(1)
       )
       .subscribe({
-        next: () => {
+        next: ({ deleteResults, uploadResults }) => {
           this.saving.set(false);
-          this.messageService.add({ severity: 'success', summary: 'Materials Updated', detail: 'Meeting materials have been saved.' });
+          const hasPartialFailure = [...deleteResults, ...uploadResults].some((r) => r === null);
           this.materialsChanged.emit();
-          this.visible.set(false);
+          if (hasPartialFailure) {
+            this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });
+          } else {
+            this.messageService.add({ severity: 'success', summary: 'Materials Updated', detail: 'Meeting materials have been saved.' });
+            this.visible.set(false);
+          }
         },
         error: () => {
           this.saving.set(false);

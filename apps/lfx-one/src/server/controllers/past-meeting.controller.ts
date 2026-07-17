@@ -19,6 +19,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 
@@ -27,6 +28,7 @@ import { MeetingService } from '../services/meeting.service';
  */
 export class PastMeetingController {
   private meetingService: MeetingService = new MeetingService();
+  private accessCheckService: AccessCheckService = new AccessCheckService();
 
   /**
    * GET /past-meetings
@@ -97,6 +99,15 @@ export class PastMeetingController {
       }
 
       const meeting = await this.meetingService.getPastMeetingById(req, uid);
+
+      if (req.oidc?.isAuthenticated()) {
+        try {
+          const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_past_meeting', 'organizer');
+          meeting.organizer = meetingWithAccess.organizer ?? false;
+        } catch {
+          meeting.organizer = false;
+        }
+      }
 
       const counts = await this.addParticipantsCount(req, uid);
       meeting.individual_registrants_count = counts.individual_registrants_count;

@@ -77,6 +77,9 @@ export class PastMeetingDetailsComponent {
   public votingOnly = signal(false);
   public materialsDrawerVisible = signal(false);
 
+  // Must be declared before initAttachments() is called so combineLatest receives the subject, not undefined.
+  private readonly attachmentRefresh$ = new BehaviorSubject<void>(undefined);
+
   // Complex signals via init functions
   public meeting: Signal<PastMeeting | null> = this.initMeeting();
   public recording: Signal<PastMeetingRecording | null> = this.initRecording();
@@ -121,8 +124,6 @@ export class PastMeetingDetailsComponent {
   public summaryContent = this.initSummaryContent();
   public summaryApproved = this.initSummaryApproved();
   public summaryAwaitingApproval = this.initSummaryAwaitingApproval();
-
-  private readonly attachmentRefresh$ = new BehaviorSubject<void>(undefined);
 
   // Public methods
   public goBack(): void {
