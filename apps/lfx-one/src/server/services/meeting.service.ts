@@ -1467,7 +1467,12 @@ export class MeetingService {
   public async deletePastMeetingAttachment(req: Request, pastMeetingUid: string, attachmentUid: string): Promise<void> {
     logger.debug(req, 'delete_past_meeting_attachment', 'Deleting past meeting attachment', { past_meeting_id: pastMeetingUid, attachment_uid: attachmentUid });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      'DELETE'
+    );
   }
 
   /**
