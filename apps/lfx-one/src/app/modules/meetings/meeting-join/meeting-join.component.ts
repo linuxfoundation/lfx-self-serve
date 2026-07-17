@@ -185,6 +185,7 @@ export class MeetingJoinComponent implements OnInit {
   protected pastMeetingFullAccess = signal(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
+  private readonly optimisticDeletedUids = signal(new Set<string>());
   public emailError: Signal<boolean>;
 
   public meetingTitle: Signal<string>;
@@ -300,7 +301,12 @@ export class MeetingJoinComponent implements OnInit {
     this.hasSummaryContent = this.initializeHasSummaryContent();
     this.summaryAwaitingApproval = this.initializeSummaryAwaitingApproval();
     this.pastMeetingRecording = this.initializePastMeetingRecording();
-    this.pastMeetingAttachments = this.initializePastMeetingAttachments();
+    const pastMeetingAttachmentsRaw = this.initializePastMeetingAttachments();
+    this.pastMeetingAttachments = computed(() => {
+      const deleted = this.optimisticDeletedUids();
+      if (deleted.size === 0) return pastMeetingAttachmentsRaw();
+      return pastMeetingAttachmentsRaw().filter((a) => !deleted.has(a.uid));
+    });
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
     this.pastMeetingParticipants = this.initializePastMeetingParticipants();
@@ -408,11 +414,20 @@ export class MeetingJoinComponent implements OnInit {
     this.materialsDrawerVisible.set(true);
   }
 
-  public onMaterialsChanged(): void {
+  public onMaterialsChanged(deletedUids: string[] = []): void {
     // Immediate refresh + delayed retry: upload writes to meeting-service via ITX,
     // reads come from query-service indexed asynchronously via NATS, so a single
     // immediate fetch can return stale data before the NATS event propagates.
+    // Optimistically filter deleted UIDs from the signal immediately so the UI
+    // updates without waiting for NATS propagation.
     if (this.loadedViaPastMeetingId()) {
+      if (deletedUids.length > 0) {
+        this.optimisticDeletedUids.update((set) => {
+          const next = new Set(set);
+          deletedUids.forEach((uid) => next.add(uid));
+          return next;
+        });
+      }
       this.pastMeetingAttachmentsRefresh$.next();
       timer(1000)
         .pipe(takeUntilDestroyed(this.destroyRef))
@@ -1113,7 +1128,10 @@ export class MeetingJoinComponent implements OnInit {
         switchMap(([hasAccess, meeting]) => {
           const id = meeting ? getPastMeetingResourceId(meeting) : null;
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
-          return this.meetingService.getPastMeetingAttachments(id).pipe(catchError(() => of([] as PastMeetingAttachment[])));
+          return this.meetingService.getPastMeetingAttachments(id).pipe(
+            tap(() => this.optimisticDeletedUids.set(new Set())),
+            catchError(() => of([] as PastMeetingAttachment[]))
+          );
         })
       ),
       { initialValue: [] }

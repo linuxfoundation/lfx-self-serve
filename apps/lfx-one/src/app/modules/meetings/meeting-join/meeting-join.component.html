@@ -807,7 +807,7 @@
           [(visible)]="materialsDrawerVisible"
           [meetingId]="loadedViaPastMeetingId() ? undefined : meeting().id"
           [pastMeetingId]="pastMeetingResourceId()"
-          (materialsChanged)="onMaterialsChanged()">
+          (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
       }
     </div>

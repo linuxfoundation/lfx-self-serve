@@ -30,7 +30,8 @@ export class MeetingMaterialsDrawerComponent {
   /** Composite meeting_and_occurrence_id of a past meeting. When set, all API calls target the past meeting attachments endpoint. */
   public readonly pastMeetingId = input<string>();
   public visible = model<boolean>(false);
-  public readonly materialsChanged = output<void>();
+  /** Emits the UIDs of attachments that were successfully deleted, so callers can optimistically remove them from local state. Empty when no deletions occurred. */
+  public readonly materialsChanged = output<string[]>();
 
   // === Constants ===
   public readonly acceptString = generateAcceptString();
@@ -179,7 +180,7 @@ export class MeetingMaterialsDrawerComponent {
         this.newLinkUrl.set('');
         this.saving.set(false);
         this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
-        this.materialsChanged.emit();
+        this.materialsChanged.emit([]);
       },
       error: () => {
         this.saving.set(false);
@@ -199,21 +200,22 @@ export class MeetingMaterialsDrawerComponent {
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
 
-    // Delete first (parallel), then upload (parallel). null in results signals a caught error.
-    // map(() => true) converts the void/null 204 body to a truthy sentinel so that
-    // catchError's null can be reliably distinguished from a successful delete.
+    // Delete first (parallel), then upload (parallel).
+    // Each delete returns {uid, ok} so we can identify which succeeded
+    // and emit them for optimistic removal on the parent, independent of
+    // NATS propagation delay to the query service.
     const delete$ =
       deletions.length > 0
         ? from(deletions).pipe(
             mergeMap((uid) =>
               (isPast ? this.meetingService.deletePastMeetingAttachment(id, uid) : this.meetingService.deleteMeetingAttachment(id, uid)).pipe(
-                map(() => true as const),
-                catchError(() => of(null))
+                map(() => ({ uid, ok: true as const })),
+                catchError(() => of({ uid, ok: false as const }))
               )
             ),
             toArray()
           )
-        : of([] as (true | null)[]);
+        : of([] as { uid: string; ok: boolean }[]);
 
     delete$
       .pipe(
@@ -243,8 +245,9 @@ export class MeetingMaterialsDrawerComponent {
       .subscribe({
         next: ({ deleteResults, uploadResults }) => {
           this.saving.set(false);
-          const hasPartialFailure = [...deleteResults, ...uploadResults].some((r) => r === null);
-          this.materialsChanged.emit();
+          const successfullyDeletedUids = deleteResults.filter((r) => r.ok).map((r) => r.uid);
+          const hasPartialFailure = deleteResults.some((r) => !r.ok) || uploadResults.some((r) => r === null);
+          this.materialsChanged.emit(successfullyDeletedUids);
           if (hasPartialFailure) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });
           } else {
