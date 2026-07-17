@@ -594,7 +594,7 @@ test.describe('S12: Settings / Permissions page — no banner for writer', () =>
 // ─── S13: Settings lens redirect (settingsLensRedirectGuard) ───────────────────
 
 test.describe('S13: Settings lens redirect — me lens → /profile/settings', () => {
-  test('me lens redirects /settings#developer-settings to /profile/settings with the fragment intact', async ({ page }) => {
+  test('me lens redirects /settings?src=nav#developer-settings to /profile/settings preserving query + fragment', async ({ page }) => {
     await stubPersona(page, ['contributor']);
     await setPersonaCookie(page, ['contributor']);
 
@@ -602,13 +602,13 @@ test.describe('S13: Settings lens redirect — me lens → /profile/settings', (
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    await page.goto('/settings#developer-settings', { waitUntil: 'domcontentloaded' });
+    await page.goto('/settings?src=nav#developer-settings', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    // settingsLensRedirectGuard maps me-lens /settings → /profile/settings, carrying the fragment
-    // through so the header's Developer Settings anchor link still lands on the right section.
-    await expect(page, 'me lens should redirect /settings to /profile/settings with #developer-settings preserved').toHaveURL(
-      /\/profile\/settings#developer-settings$/,
+    // settingsLensRedirectGuard maps me-lens /settings → /profile/settings, carrying both the query
+    // param and the fragment through so the header's Developer Settings anchor link still lands right.
+    await expect(page, 'me lens should redirect /settings to /profile/settings with ?src=nav and #developer-settings preserved').toHaveURL(
+      /\/profile\/settings\?src=nav#developer-settings$/,
       { timeout: ELEMENT_TIMEOUT }
     );
   });
@@ -625,8 +625,9 @@ test.describe('S13: Settings lens redirect — me lens → /profile/settings', (
     await page.goto(`/settings?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    await expect(page, 'foundation lens should redirect /settings to /foundation/settings').toHaveURL(/\/foundation\/settings/, {
-      timeout: ELEMENT_TIMEOUT,
-    });
+    await expect(page, 'foundation lens should redirect /settings to /foundation/settings with ?project preserved').toHaveURL(
+      /\/foundation\/settings\?project=test-foundation/,
+      { timeout: ELEMENT_TIMEOUT }
+    );
   });
 });
