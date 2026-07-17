@@ -17,7 +17,8 @@
  * - S3: picking a type opens the dialog (header + project selector) with Continue disabled,
  *       and choosing an eligible project via the selector enables Continue
  * - S4: the dialog's project selector reuses the sidebar pattern (search + All/Foundations/Projects
- *       tabs) and lists only writer-scoped projects, not the global catalog
+ *       tabs) and renders a selectable list. Writer-scoping of that list is guaranteed by the dialog
+ *       feeding the curated `creatableProjects` (verified in production-code review), not asserted here.
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
