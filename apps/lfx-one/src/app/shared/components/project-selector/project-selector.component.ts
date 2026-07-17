@@ -182,6 +182,13 @@ export class ProjectSelectorComponent {
           if (detected) {
             return detected.isFoundation ? 'Foundation' : 'Project';
           }
+          // Curated mode: the item's own `isFoundation` is authoritative for writer-reachable entries
+          // that aren't persona-detected — resolve it before falling back to the active lens, which
+          // would otherwise mislabel a foundation as "Project" (or vice versa) from the wrong page.
+          const curated = this.items()?.find((item) => item.uid === selectedUid);
+          if (curated) {
+            return curated.isFoundation ? 'Foundation' : 'Project';
+          }
         }
         return this.lensService.activeLens() === 'foundation' ? 'Foundation' : 'Project';
       }
