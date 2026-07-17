@@ -189,6 +189,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly showTranscriptBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasTranscript() : !!this.meeting().transcript_enabled));
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
+  protected readonly pastMeetingResourceId = computed(() => getPastMeetingResourceId(this.meeting()));
   public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
     const meeting = this.meeting();
     const params: Record<string, string> = {};
