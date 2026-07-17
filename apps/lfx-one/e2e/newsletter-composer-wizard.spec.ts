@@ -30,7 +30,7 @@ import type {
   PersonaType,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -340,7 +340,8 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     expect(blockTypes).toContain('intro_paragraph');
     expect(blockTypes).toContain('sponsored_ad');
     // The layout records the selected block library so the server renders from it.
-    expect(payload.body_layout?.template_key).toBeTruthy();
+    // The draft carries no template_key, so the composer emits the default.
+    expect(payload.body_layout?.template_key).toBe(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
   });
 
   test('switching to the simple editor confirms before discarding in-session blocks', async ({ page }) => {
