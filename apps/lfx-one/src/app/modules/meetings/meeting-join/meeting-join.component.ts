@@ -205,7 +205,7 @@ export class MeetingJoinComponent implements OnInit {
   // Past meetings badge on a real fetched recording; upcoming keep the recording_enabled config flag.
   protected showRecordingBadge = computed(() => (this.loadedViaPastMeetingId() ? !!this.primaryRecordingUrl() : !!this.meeting()?.recording_enabled));
   // Returns meeting_and_occurrence_id when set (occurrences use a composite key for attachment API calls).
-  protected pastMeetingResourceId = computed(() => (this.loadedViaPastMeetingId() ? getPastMeetingResourceId(this.meeting()!) : undefined));
+  protected pastMeetingResourceId = computed(() => (this.loadedViaPastMeetingId() && this.meeting() ? getPastMeetingResourceId(this.meeting()!) : undefined));
   protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
