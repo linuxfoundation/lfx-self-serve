@@ -145,7 +145,8 @@
           <div class="flex flex-col gap-1">
             <span class="text-sm font-semibold text-gray-900">Apply to Join — Coming Soon</span>
             <p class="text-sm text-gray-600">
-              Reviewing and approving join requests is not yet available in LFX. Members who apply to join this group cannot currently be approved.
+              This group uses "Apply to Join" mode, but join request management is not yet available in LFX. New join requests are currently disabled and
+              existing applications cannot be reviewed or approved.
               @if (canEdit()) {
                 If you manage this group, consider changing the join mode to <strong>Open</strong>, <strong>Invite Only</strong>, or <strong>Closed</strong> in
                 the Settings tab below to continue letting members in while this feature is being built.
@@ -171,9 +172,9 @@
             @if (!committee()?.public) {
               <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
             }
-            <!-- Join / Request to Join / Contact Admin / Leave actions.
+            <!-- Join / Contact Admin / Leave actions.
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
-                 Suppressed for invite-only groups — visitors must wait for an invitation. -->
+                 Suppressed for invite-only and application-only groups — visitors must wait for an invitation or admin add. -->
             <div class="ml-auto flex items-center gap-2">
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
@@ -185,16 +186,6 @@
                     [loading]="joiningOrLeaving()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-join-btn" />
-                } @else if (committee()?.join_mode === 'application') {
-                  <lfx-button
-                    label="Request to Join"
-                    icon="fa-light fa-paper-plane"
-                    severity="secondary"
-                    [outlined]="true"
-                    size="small"
-                    [loading]="joiningOrLeaving()"
-                    (onClick)="handleJoinRequest()"
-                    data-testid="committee-view-request-to-join-btn" />
                 } @else if (committee()?.join_mode === 'closed') {
                   <lfx-button
                     label="Contact Admin"
