@@ -160,17 +160,20 @@ export class OverviewTabComponent {
 
       if (data.emailCtr) {
         const ec = data.emailCtr;
-        // No email sent in the current month means CTR is undefined, not 0% —
-        // rendering 0.00% reads as poor performance rather than "no sends", so
-        // show a dash and suppress the delta/badge in that case. The series is
-        // calendar zero-filled, so only the trailing (current) month determines
-        // activity — matching the server's momChangePercentage contract and the
-        // sibling email-tab pattern (an earlier month with sends must not make
-        // a zero current month read as active).
+        // No sends in scope means CTR is undefined, not 0% — a 0.00% reads as
+        // poor performance rather than "no sends", so suppress the value in that
+        // case. What "in scope" means depends on the selection: the series is
+        // calendar zero-filled, so for a single-month view only the trailing
+        // (current) month counts, but for a preset range (last-3, YTD) currentCtr
+        // is a period aggregate that is valid if ANY month in the range had sends.
         const sends = ec.monthlySends ?? [];
         const lastSends = sends.length > 0 ? sends[sends.length - 1] : undefined;
-        const hasSends = lastSends !== undefined && lastSends > 0;
-        const momPct = hasSends ? ec.momChangePercentage : null;
+        const lastMonthActive = lastSends !== undefined && lastSends > 0;
+        const hasSends = isMonth ? lastMonthActive : sends.some((s) => s > 0);
+        // The MoM delta always requires the latest month to be active (the
+        // server's momChangePercentage compares the trailing two months), so it
+        // stays gated on lastMonthActive regardless of the selection type.
+        const momPct = lastMonthActive ? ec.momChangePercentage : null;
         cards.push({
           id: 'email-ctr',
           label: 'Email CTR',
