@@ -53,7 +53,7 @@ export class OrgNavigationService {
     const sortedItems = this.applySort(filteredItems, name);
     // LFXV2-2750 — append view-only member orgs of foundations the caller audits that match the search term.
     // Runs after the grants filter/sort so grants-derived rows always rank first; no-ops without a search term.
-    const withFoundationAuditors = await this.appendFoundationAuditorMatches(req, sortedItems, name);
+    const withFoundationAuditors = await this.appendFoundationAuditorMatches(req, username, sortedItems, name);
     const pinnedItems = this.applySelectedUidPin(withFoundationAuditors, items, selectedUid, pageToken);
 
     logger.debug(req, 'build_org_items', 'Built access-aware org items', {
@@ -75,13 +75,16 @@ export class OrgNavigationService {
    * Gated by the env kill-switch (default off) and no-ops for a too-short term, so the default dropdown stays
    * exactly today's grants-only list. Fail-soft: any lookup failure returns the grants-only rows unchanged.
    */
-  private async appendFoundationAuditorMatches(req: Request, baseItems: OrgItem[], name: string | undefined): Promise<OrgItem[]> {
+  private async appendFoundationAuditorMatches(req: Request, username: string, baseItems: OrgItem[], name: string | undefined): Promise<OrgItem[]> {
     if (!isFoundationAuditorOrgSelectorEnabled()) {
+      logger.debug(req, 'append_foundation_auditor_items', 'Skipped — FOUNDATION_AUDITOR_ORG_SELECTOR_ENABLED is not enabled', {
+        flag_value: process.env['FOUNDATION_AUDITOR_ORG_SELECTOR_ENABLED'] ?? '<unset>',
+      });
       return baseItems;
     }
 
     try {
-      const matches = await this.foundationAuditorOrgs.findAuditedMemberOrgs(req, name);
+      const matches = await this.foundationAuditorOrgs.findAuditedMemberOrgs(req, username, name);
       if (matches.length === 0) {
         return baseItems;
       }
