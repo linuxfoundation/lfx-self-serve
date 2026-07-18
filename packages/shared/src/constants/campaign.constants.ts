@@ -204,8 +204,8 @@ export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget
   'hong kong': { label: 'Hong Kong', urn: 'urn:li:geo:103291313' },
   'united states': { label: 'United States', urn: 'urn:li:geo:103644278' },
   usa: { label: 'United States', urn: 'urn:li:geo:103644278' },
-  germany: { label: 'Germany', urn: 'urn:li:geo:101165590' },
-  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+  germany: { label: 'Germany', urn: 'urn:li:geo:101282230' },
+  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
 } as const;
 
 // ---------------------------------------------------------------------------
