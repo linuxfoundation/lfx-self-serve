@@ -72,6 +72,22 @@ const MOCK_MANIFEST: NewsletterTemplateManifest = {
   ],
 };
 
+// jim-community's library: a different block set (sponsored_ad but no
+// intro_paragraph), so switching to it drops the incompatible block while
+// keeping the shared one.
+const JIM_MANIFEST: NewsletterTemplateManifest = {
+  wrapper_key: 'default',
+  blocks: [
+    {
+      block_type: 'sponsored_ad',
+      label: 'Sponsored Ad',
+      category: 'block',
+      schema: { headline: { type: 'text', label: 'Headline' } },
+      template: '<heading class="title">{{headline}}</heading>',
+    },
+  ],
+};
+
 // A draft that already carries a composed layout, so reopen exercises hydration.
 const DRAFT_LAYOUT: NewsletterLayout = {
   wrapper_key: 'default',
@@ -146,9 +162,12 @@ const MOCK_TEMPLATES = [
 ];
 
 async function stubManifest(page: Page): Promise<void> {
-  await page.route('**/api/projects/*/newsletters/templates/*/manifest', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_MANIFEST) })
-  );
+  await page.route('**/api/projects/*/newsletters/templates/*/manifest', (route) => {
+    // jim-community serves a different, smaller library so a switch exercises the
+    // keep-supported / drop-incompatible path; every other key gets MOCK_MANIFEST.
+    const manifest = route.request().url().includes('/jim-community/') ? JIM_MANIFEST : MOCK_MANIFEST;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manifest) });
+  });
   // The library catalog (no `/manifest` suffix — a distinct route). Registered
   // after the manifest route; the glob ends at `/templates`, so the manifest
   // URL's extra segments never match this one.
@@ -402,19 +421,26 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     await expect(page.getByTestId('newsletter-composer-fields-collapse')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
-  test('switching the block library clears the canvas after confirmation', async ({ page }) => {
+  test('switching template keeps supported blocks and drops the rest', async ({ page }) => {
     await gotoContentStep(page);
-    // The reopened draft hydrates one block, and the library picker is present.
+    // The reopened draft hydrates an intro_paragraph block; the picker is present.
     await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('newsletter-composer-library-select')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
-    // Switching libraries with blocks present prompts a confirm; accept it.
+    // Add a sponsored_ad — a block Jim's library also defines, so it must carry
+    // over the switch (intro_paragraph does not and must drop).
+    const paletteItem = page.getByTestId('newsletter-composer-palette-item-sponsored_ad');
+    await expect(paletteItem).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await paletteItem.click();
+    await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Switching to Jim's library drops the unsupported block and notes it via an alert.
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByTestId('newsletter-composer-library-select').locator('.p-select, [role="combobox"]').first().click();
     await page.getByRole('option', { name: 'Jim Community', exact: true }).click();
 
-    // The canvas is cleared, since block types can differ between libraries.
+    // intro_paragraph (absent from Jim's library) is dropped; sponsored_ad carries over.
     await expect(page.getByTestId('newsletter-composer-block-intro_paragraph')).toHaveCount(0);
-    await expect(page.getByTestId('newsletter-composer-canvas-empty')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });

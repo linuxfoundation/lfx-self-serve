@@ -303,36 +303,70 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
-   * Switch the active block library. Libraries can define different block types,
-   * so an existing canvas would orphan blocks the new library doesn't know (the
-   * server render hard-fails on an unknown type). When the canvas has blocks we
-   * confirm first and clear them on switch; cancelling reverts the picker. The
-   * new library's manifest is (re)loaded and the layout re-emits with the key.
+   * Switch the active block library (template). Libraries define different block
+   * types, so we load the new library's manifest and KEEP the blocks it
+   * supports — the author's compatible content carries over and re-renders in
+   * the new template's styling — dropping only blocks the new library doesn't
+   * define (the server render hard-fails on an unknown type). The layout
+   * re-emits with the new key; a note reports any dropped blocks.
    */
   protected onLibraryChange(key: string): void {
     const current = this.selectedTemplateKey();
     if (!key || key === current) return;
 
-    if (this.blocks().length > 0) {
-      const confirmed =
-        !isPlatformBrowser(this.platformId) ||
-        window.confirm('Switching the blocks library clears the blocks already in this newsletter, since they may not exist in the new library. Continue?');
-      if (!confirmed) {
-        // Revert the control without re-firing this handler.
-        this.libraryForm.controls.library.setValue(current, { emitEvent: false });
-        return;
-      }
-      this.blocks.set([]);
-      this.selectedBlockId.set(null);
-      this.editingBlockId.set(null);
-      this.toolbar.set(null);
+    this.selectedTemplateKey.set(key);
+
+    if (!isPlatformBrowser(this.platformId)) {
+      this.emit();
+      return;
     }
 
-    this.selectedTemplateKey.set(key);
-    if (isPlatformBrowser(this.platformId)) {
-      this.manifestService.ensureLoaded(key).subscribe();
+    // Load the new library's manifest FIRST (its tap sets the manifest signal),
+    // then retain the blocks it supports so compatible content survives.
+    this.manifestService.ensureLoaded(key).subscribe(() => {
+      const dropped = this.retainSupportedBlocks();
+      if (dropped > 0) {
+        window.alert(`Removed ${dropped} block${dropped === 1 ? '' : 's'} not available in this template; the rest carried over.`);
+      }
+      this.emit();
+    });
+  }
+
+  /**
+   * Keep only the canvas blocks (and container children) whose block_type exists
+   * in the current library's manifest; drop the rest. Returns the number of
+   * blocks dropped, and clears the selection when the selected block was one.
+   */
+  private retainSupportedBlocks(): number {
+    const before = this.countBlocks(this.blocks());
+    const manifest = this.manifest();
+    if (!manifest) {
+      this.blocks.set([]);
+      this.clearSelectionState();
+      return before;
     }
-    this.emit();
+    const supported = new Set(manifest.blocks.map((entry) => entry.block_type));
+    const next = this.blocks()
+      .filter((block) => supported.has(block.block_type))
+      .map((block) => (block.children ? { ...block, children: block.children.filter((child) => supported.has(child.block_type)) } : block));
+    this.blocks.set(next);
+    const selected = this.selectedBlockId();
+    if (selected && !this.findBlock(next, selected)) {
+      this.clearSelectionState();
+    }
+    return before - this.countBlocks(next);
+  }
+
+  /** Total blocks including container children. */
+  private countBlocks(blocks: NewsletterComposerBlock[]): number {
+    return blocks.reduce((total, block) => total + 1 + (block.children?.length ?? 0), 0);
+  }
+
+  /** Drop the current block selection + inline-edit + toolbar state. */
+  private clearSelectionState(): void {
+    this.selectedBlockId.set(null);
+    this.editingBlockId.set(null);
+    this.toolbar.set(null);
   }
 
   /**
