@@ -3,6 +3,7 @@
 
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import {
+  FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE,
   FOUNDATION_AUDITOR_ENUMERATION_HARD_CAP,
   FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP,
   FOUNDATION_AUDITOR_MEMBERSHIP_FETCH_CONCURRENCY,
@@ -31,10 +32,20 @@ export function isFoundationAuditorOrgSelectorEnabled(): boolean {
 
 /**
  * LFXV2-2750 — resolves the member organizations of every foundation the caller audits, so the org-selector
- * can list them view-only. All reads are fail-hard here (thrown errors bubble to the caller, which fails
- * closed to the grants-only list). The member-org display fetch is M2M-elevated because a project auditor
- * does NOT inherit `auditor` on the underlying `b2b_org` (and `b2b_org` has no public viewer), so the
- * caller's own token cannot see member-org display docs.
+ * can list them view-only.
+ *
+ * Failure model (both branches resolve to the grants-only fallback in `OrgRoleGrantsService`):
+ * - Query-service reads (`enumerateFoundations`, `fetchFoundationMemberships`) are **fail-hard**: they use
+ *   `failOnPartial: true`, so a first- or later-page failure throws and bubbles to the augmentation's
+ *   try/catch (never a silently-partial foundation/member-org set).
+ * - The `project:<uid>#auditor` access-check step **fails closed in-band**: `AccessCheckService.checkAccess`
+ *   catches upstream errors and returns an all-`false` map (it does not throw), so an access-check outage
+ *   silently resolves to zero audited foundations.
+ *
+ * The member-org display fetch is M2M-elevated because a project auditor does NOT inherit `auditor` on the
+ * underlying `b2b_org` (and `b2b_org` has no public viewer), so the caller's own token cannot see member-org
+ * display docs. Batched upstream calls are chunked (`FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE`) to avoid oversized
+ * single requests hitting gateway URL-length / access-check batch limits.
  */
 export class FoundationAuditorOrgsService {
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -48,18 +59,25 @@ export class FoundationAuditorOrgsService {
   /**
    * Enumerate all foundations (public `viewer` on projects makes this an access-blind list) and batch
    * access-check `project:<uid>#auditor` on the caller's USER token; return the ones that pass. The
-   * access-check auto-folds ED / writer / parent-auditor inheritance per the FGA model.
+   * access-check auto-folds ED / writer / parent-auditor inheritance per the FGA model. The check is
+   * chunked so a large foundation set never sends one oversized `/access-check` batch.
    */
   public async discoverAuditedFoundations(req: Request): Promise<AuditedFoundation[]> {
     const foundations = await this.enumerateFoundations(req);
     if (foundations.length === 0) return [];
 
-    const accessResults = await this.accessCheck.checkAccess(
-      req,
-      foundations.map((f) => ({ resource: 'project', id: f.uid, access: 'auditor' }))
-    );
-
-    return foundations.filter((f) => accessResults.get(f.uid) === true);
+    const audited: AuditedFoundation[] = [];
+    for (let i = 0; i < foundations.length; i += FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE) {
+      const chunk = foundations.slice(i, i + FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE);
+      const accessResults = await this.accessCheck.checkAccess(
+        req,
+        chunk.map((f) => ({ resource: 'project', id: f.uid, access: 'auditor' }))
+      );
+      for (const foundation of chunk) {
+        if (accessResults.get(foundation.uid) === true) audited.push(foundation);
+      }
+    }
+    return audited;
   }
 
   /**
@@ -89,17 +107,22 @@ export class FoundationAuditorOrgsService {
     }
   }
 
-  /** Foundation-lens enumeration (mirrors NavigationService's foundation query), paged to completion, then capped. */
+  /** Foundation-lens enumeration (mirrors NavigationService's foundation query), paged to completion (fail-hard), then capped. */
   private async enumerateFoundations(req: Request): Promise<AuditedFoundation[]> {
-    const projects = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project',
-        // Funding + membership required (AND); Active or Formation - Engaged accepted (OR).
-        filters: [`funding:${ProjectFunding.Funded}`, 'funding_model:Membership'],
-        filters_or: [`stage:${ProjectStage.Active}`, `stage:${ProjectStage.FormationEngaged}`],
-        per_page: FOUNDATION_MEMBERSHIP_PAGE_SIZE,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const projects = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project',
+          // Funding + membership required (AND); Active or Formation - Engaged accepted (OR).
+          filters: [`funding:${ProjectFunding.Funded}`, 'funding_model:Membership'],
+          filters_or: [`stage:${ProjectStage.Active}`, `stage:${ProjectStage.FormationEngaged}`],
+          per_page: FOUNDATION_MEMBERSHIP_PAGE_SIZE,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      // Completeness matters — a partial foundation set would miss foundations the caller audits. Fail hard
+      // so the augmentation falls back to the grants-only list rather than a silently-incomplete result.
+      { failOnPartial: true }
     );
 
     const seen = new Set<string>();
@@ -163,31 +186,39 @@ export class FoundationAuditorOrgsService {
     return orderedUids;
   }
 
-  /** Paginate one foundation's project_membership roster to completion (M2M token already in place). */
+  /** Paginate one foundation's project_membership roster to completion, fail-hard (M2M token already in place). */
   private fetchFoundationMemberships(req: Request, slug: string): Promise<ProjectMembershipDoc[]> {
-    return fetchAllQueryResources<ProjectMembershipDoc>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project_membership',
-        filters_all: `project_slug:${slug}`,
-        per_page: FOUNDATION_MEMBERSHIP_PAGE_SIZE,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    return fetchAllQueryResources<ProjectMembershipDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project_membership',
+          filters_all: `project_slug:${slug}`,
+          per_page: FOUNDATION_MEMBERSHIP_PAGE_SIZE,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      // A partial roster would drop member orgs — fail hard so the augmentation falls back to grants-only.
+      { failOnPartial: true }
     );
   }
 
-  /** Batch-fetch b2b_org display docs by uid tag; returns `uid → doc`. Uids are already filter-safe + bounded by the member-org cap. */
+  /** Batch-fetch b2b_org display docs by uid tag (chunked to bound request size); returns `uid → doc`. Uids are already filter-safe + bounded by the member-org cap. */
   private async fetchOrgDocsByUids(req: Request, uids: string[]): Promise<Map<string, B2bOrgIndexedDoc>> {
-    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'b2b_org',
-      tags: uids.map((uid) => `b2b_org_uid:${uid}`),
-      per_page: Math.min(uids.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
-    });
-
     const map = new Map<string, B2bOrgIndexedDoc>();
-    for (const resource of response?.resources ?? []) {
-      const uid = this.extractUid(resource.id);
-      if (uid && resource.data) {
-        map.set(uid, resource.data);
+
+    for (let i = 0; i < uids.length; i += FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE) {
+      const chunk = uids.slice(i, i + FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE);
+      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'b2b_org',
+        tags: chunk.map((uid) => `b2b_org_uid:${uid}`),
+        per_page: Math.min(chunk.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
+      });
+
+      for (const resource of response?.resources ?? []) {
+        const uid = this.extractUid(resource.id);
+        if (uid && resource.data) {
+          map.set(uid, resource.data);
+        }
       }
     }
     return map;

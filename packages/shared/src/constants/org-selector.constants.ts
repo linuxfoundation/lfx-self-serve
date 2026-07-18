@@ -32,3 +32,10 @@ export const FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP = ORG_ROLE_GRANTS_HARD_CAP;
 
 /** LFXV2-2750 — max concurrent per-foundation `project_membership` pagination loops during the M2M member-org enumeration. */
 export const FOUNDATION_AUDITOR_MEMBERSHIP_FETCH_CONCURRENCY = 8;
+
+/**
+ * LFXV2-2750 — chunk size for the batched upstream calls (the `project:<uid>#auditor` access-check POST and the
+ * `b2b_org_uid:` tags GET), so a large audited-foundation set never sends one oversized request that could hit a
+ * gateway URL-length limit or an access-check batch limit.
+ */
+export const FOUNDATION_AUDITOR_BATCH_CHUNK_SIZE = 200;
