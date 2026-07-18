@@ -86,6 +86,12 @@ export interface RoleGrantsResponse {
   cascadingWriters: CascadingRoleGrant[];
   /** Spec 022 — analogous to `cascadingWriters` for the auditor role. Disjoint from `auditors`. */
   cascadingAuditors: CascadingRoleGrant[];
+  /**
+   * LFXV2-2750 — `b2b_org.uid` values surfaced because the caller holds the FGA `auditor` relation on the
+   * org's foundation (member orgs of every foundation the caller audits). View-only; disjoint from
+   * `writers`/`auditors`/cascading sets (a direct or inherited grant on the same org always wins).
+   */
+  foundationAuditors: string[];
   /** Caller's resolved username (from JWT). */
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
@@ -268,8 +274,13 @@ export interface MemberServiceB2bOrgResponse {
   is_member?: boolean;
 }
 
-/** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
-export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
+/**
+ * Per-row caller role persona (spec 022 D-005 + FR-011a). The variants are pairwise disjoint per uid;
+ * `direct-*` rows get the Edit (pen) affordance, `inherited-*` rows get a tooltip-only disclosure, and
+ * `foundation-auditor` rows (LFXV2-2750) are view-only member orgs surfaced because the caller holds the
+ * FGA `auditor` relation on the org's foundation — always rendered with the eye (never the pen).
+ */
+export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor' | 'foundation-auditor';
 
 /** Resolved per-uid role with source qualifier and the parent uid it inherits from (cascading rows only) — spec 022 D-005. Crossed-service payload between `OrgRoleGrantsService` and `OrgNavigationService`. */
 export interface ResolvedOrgRole {
@@ -301,4 +312,40 @@ export interface AccessAwareOrgsCacheEntry {
   upstreamFailed: boolean;
   loadedAt: string;
   username: string;
+}
+
+/** LFXV2-2750 — a foundation (project) the caller holds the FGA `auditor` relation on. */
+export interface AuditedFoundation {
+  /** Project uid — interpolated into the `project:<uid>#auditor` access-check tuple. */
+  uid: string;
+  /** Project slug — interpolated into the `project_slug:<slug>` project_membership filter. */
+  slug: string;
+}
+
+/** LFXV2-2750 — member orgs resolved across every audited foundation, ready to fold into the resolved map. */
+export interface FoundationMemberOrgs {
+  /** Distinct member-org uids, in enumeration order (bounded by the member-org hard cap). */
+  orgUids: string[];
+  /** uid → b2b_org indexed display doc (name/logo/domain), fetched via the M2M-elevated read. */
+  orgDocByUid: Map<string, B2bOrgIndexedDoc>;
+}
+
+/** LFXV2-2750 — a member org of an audited foundation, ready to merge into the resolved access-aware map. */
+export interface FoundationAuditorOrgEntry {
+  /** b2b_org uid (18-char SFID). */
+  uid: string;
+  /** b2b_org indexed display doc (name/logo/domain). */
+  doc: B2bOrgIndexedDoc;
+}
+
+/** LFXV2-2750 — result of merging foundation-auditor member orgs into the base (direct + cascading) resolved map. */
+export interface MergeFoundationAuditorOrgsResult {
+  /** Base resolved map plus the added `foundation-auditor` rows (base rows are never dropped or overridden). */
+  resolved: Map<string, ResolvedOrgRole>;
+  /** Base org-doc lookup extended with the added member-org docs. */
+  orgDocByUid: Map<string, B2bOrgIndexedDoc>;
+  /** True when the cap was reached and one or more foundation-auditor rows were dropped. */
+  truncated: boolean;
+  /** Number of `foundation-auditor` rows actually added. */
+  addedCount: number;
 }

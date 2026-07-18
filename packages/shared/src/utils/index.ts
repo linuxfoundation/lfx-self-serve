@@ -41,6 +41,7 @@ export * from './identity.utils';
 export * from './org-leaderboard-detail.utils';
 export * from './enrollment.utils';
 export * from './org-selector.utils';
+export * from './foundation-auditor.utils';
 export * from './org.utils';
 export * from './search.utils';
 export * from './email.utils';
