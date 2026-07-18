@@ -48,6 +48,10 @@ export function isFoundationAuditorOrgSelectorEnabled(): boolean {
  * single requests hitting gateway URL-length / access-check batch limits.
  */
 export class FoundationAuditorOrgsService {
+  // Active membership statuses (case-insensitive) — mirrors OrgMembershipResolverService and
+  // OrgPeopleKeyContactsService so terminated/expired memberships don't surface stale member orgs.
+  private static readonly activeMembershipStatuses = new Set(['active', 'purchased']);
+
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
 
@@ -167,7 +171,11 @@ export class FoundationAuditorOrgsService {
     for (const memberships of membershipsByIndex) {
       for (const membership of memberships ?? []) {
         const uid = membership.b2b_org_uid;
-        if (!uid || seen.has(uid) || !isFilterSafeIdentifier(uid)) continue;
+        if (!uid || !isFilterSafeIdentifier(uid)) continue;
+        // Only active/purchased memberships count — an org with a terminated membership is no longer a
+        // member. Status is checked BEFORE dedup so a stale row can't shadow the same org's active row.
+        if (!FoundationAuditorOrgsService.activeMembershipStatuses.has((membership.status ?? '').toLowerCase())) continue;
+        if (seen.has(uid)) continue;
         seen.add(uid);
         orderedUids.push(uid);
         if (orderedUids.length >= FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP) {
