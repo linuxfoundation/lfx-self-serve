@@ -20,3 +20,15 @@ export const ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY = 8;
 
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
+
+/** LFXV2-2750 — `per_page` when paginating a foundation's `project_membership` roster (member-org enumeration). */
+export const FOUNDATION_MEMBERSHIP_PAGE_SIZE = 500;
+
+/** LFXV2-2750 — hard cap on foundations enumerated for the `project:<uid>#auditor` batch check, to bound the org-selector hot-path cost. */
+export const FOUNDATION_AUDITOR_ENUMERATION_HARD_CAP = 1000;
+
+/** LFXV2-2750 — hard cap on distinct member-org uids collected across all audited foundations before the b2b_org display fetch (bounds the M2M read + the additive merge). */
+export const FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP = ORG_ROLE_GRANTS_HARD_CAP;
+
+/** LFXV2-2750 — max concurrent per-foundation `project_membership` pagination loops during the M2M member-org enumeration. */
+export const FOUNDATION_AUDITOR_MEMBERSHIP_FETCH_CONCURRENCY = 8;

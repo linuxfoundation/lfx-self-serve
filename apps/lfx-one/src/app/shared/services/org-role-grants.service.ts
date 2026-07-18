@@ -24,6 +24,9 @@ export class OrgRoleGrantsService {
   // Spec 022 — additive, dropdown-only surface for the inherited badge + tooltip. Disjoint from writerSet / auditorSet.
   private readonly inheritedWriterSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly inheritedAuditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
+  // LFXV2-2750 — view-only member orgs surfaced via a foundation-level auditor grant. Additive + dropdown-only;
+  // disjoint from every set above (a direct or inherited grant on the same org always wins server-side).
+  private readonly foundationAuditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly parentNameByUidInternal: WritableSignal<Map<string, string>> = signal<Map<string, string>>(new Map());
   private readonly loadedInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
@@ -34,6 +37,8 @@ export class OrgRoleGrantsService {
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
   public readonly inheritedWriterSet: Signal<Set<string>> = this.inheritedWriterSetInternal.asReadonly();
   public readonly inheritedAuditorSet: Signal<Set<string>> = this.inheritedAuditorSetInternal.asReadonly();
+  /** LFXV2-2750 — uids surfaced view-only because the caller audits the org's foundation. */
+  public readonly foundationAuditorSet: Signal<Set<string>> = this.foundationAuditorSetInternal.asReadonly();
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
   public readonly parentNameByUid: Signal<Map<string, string>> = this.parentNameByUidInternal.asReadonly();
   public readonly loaded: Signal<boolean> = this.loadedInternal.asReadonly();
@@ -57,6 +62,7 @@ export class OrgRoleGrantsService {
         this.auditorSetInternal.set(new Set(response.auditors));
         this.inheritedWriterSetInternal.set(new Set((response.cascadingWriters ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.inheritedAuditorSetInternal.set(new Set((response.cascadingAuditors ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
+        this.foundationAuditorSetInternal.set(new Set(response.foundationAuditors ?? []));
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
@@ -71,6 +77,7 @@ export class OrgRoleGrantsService {
         this.auditorSetInternal.set(new Set());
         this.inheritedWriterSetInternal.set(new Set());
         this.inheritedAuditorSetInternal.set(new Set());
+        this.foundationAuditorSetInternal.set(new Set());
         this.parentNameByUidInternal.set(new Map());
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);

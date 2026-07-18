@@ -67,12 +67,17 @@ export class AccountContextService {
 
   /**
    * Whether the caller may see the org-selector / Org Lens surfaces: a direct writer or auditor
-   * grant, or at least one persona-seeded account. Single source of truth shared by the sidebar
-   * selector visibility gate and the Org Overview no-access gate so the two cannot drift apart.
-   * Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   * grant, a foundation-level auditor grant (LFXV2-2750, view-only member orgs), or at least one
+   * persona-seeded account. Single source of truth shared by the sidebar selector visibility gate
+   * and the Org Overview no-access gate so the two cannot drift apart. Inherited-only grants
+   * intentionally do not count — the selector itself is direct-only.
    */
   public readonly hasOrgSelectorAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.writerSet().size > 0 || this.orgRoleGrantsService.auditorSet().size > 0 || this.availableAccounts().length > 0
+    () =>
+      this.orgRoleGrantsService.writerSet().size > 0 ||
+      this.orgRoleGrantsService.auditorSet().size > 0 ||
+      this.orgRoleGrantsService.foundationAuditorSet().size > 0 ||
+      this.availableAccounts().length > 0
   );
 
   public constructor() {
