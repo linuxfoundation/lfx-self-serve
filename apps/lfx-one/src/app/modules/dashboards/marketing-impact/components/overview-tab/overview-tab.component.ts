@@ -136,13 +136,14 @@ export class OverviewTabComponent {
       if (data.brandReach) {
         const br = data.brandReach;
         // sessionMomChangePct is 0 both for a genuine flat month AND when there is
-        // no valid prior window (the server needs recent-4 vs prior-4 weeks). Use
-        // the trend length to tell them apart: with a full comparison window (>= 8
-        // weeks) a 0 is a real "0.0% MoM"; without one, a 0 means "no comparison"
-        // and the delta is suppressed.
-        const hasComparisonWindow = (br.weeklyTrend?.length ?? 0) >= 8;
-        const noComparison = !hasComparisonWindow && br.sessionMomChangePct === 0;
-        const momPct = noComparison ? null : br.sessionMomChangePct;
+        // no valid comparison (the server needs >= 8 weeks of trend AND a positive
+        // prior-4-week total — it leaves the pct at 0 on a zero prior window to
+        // avoid divide-by-zero). Replicate both server conditions so a 0 is only
+        // shown when it is a real "0.0% MoM"; otherwise suppress the delta.
+        const trend = br.weeklyTrend ?? [];
+        const priorWindowSessions = trend.length >= 8 ? trend.slice(-8, -4).reduce((sum, d) => sum + (d.sessions ?? 0), 0) : 0;
+        const hasComparison = priorWindowSessions > 0;
+        const momPct = hasComparison ? br.sessionMomChangePct : null;
         cards.push({
           id: 'web-sessions',
           label: 'Total Web Sessions',
