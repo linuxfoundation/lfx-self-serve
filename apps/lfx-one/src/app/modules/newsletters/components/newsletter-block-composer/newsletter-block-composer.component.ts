@@ -170,8 +170,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // One stable drop-list id per container block, so the palette / canvas / other
   // containers can connect to it for cross-list drag-and-drop.
   protected readonly containerListIds: Signal<string[]> = this.initContainerListIds();
-  // The palette feeds the canvas and every container drop list (drag a chip in).
-  protected readonly paletteConnectedTo: Signal<string[]> = computed(() => [this.canvasListId, ...this.containerListIds()]);
+  // The palette feeds every container drop list AND the canvas (drag a chip in).
+  // Containers come FIRST: CDK routes a drop to the first connected list whose
+  // rect contains the pointer, and the canvas rect contains every (nested)
+  // container — so listing the canvas first would swallow drops meant for a
+  // container. Inner-first lets a drop onto a container's nest zone win.
+  protected readonly paletteConnectedTo: Signal<string[]> = computed(() => [...this.containerListIds(), this.canvasListId]);
   // The selected block resolved from its id (searches top-level + children).
   protected readonly selectedBlock: Signal<NewsletterComposerBlock | null> = computed(() => {
     const id = this.selectedBlockId();
@@ -598,10 +602,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return `newsletter-composer-container-${blockId}`;
   }
 
-  /** Lists a container connects to: the canvas plus every other container. */
+  /**
+   * Lists a container connects to: every OTHER container, then the canvas.
+   * Containers come first so a drag from this container onto a sibling container
+   * lands there (CDK first-match by rect); the canvas rect contains them all, so
+   * canvas-last is the fallback for a drop outside every container.
+   */
   protected containerConnectedTo(blockId: string): string[] {
     const ownId = this.containerListId(blockId);
-    return [this.canvasListId, ...this.containerListIds().filter((id) => id !== ownId)];
+    return [...this.containerListIds().filter((id) => id !== ownId), this.canvasListId];
   }
 
   // === Private Initializers ===
