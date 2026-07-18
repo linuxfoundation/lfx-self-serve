@@ -157,10 +157,16 @@ export class OverviewTabComponent {
 
       if (data.emailCtr) {
         const ec = data.emailCtr;
-        // No email sent in the selected scope means CTR is undefined, not 0% —
+        // No email sent in the current month means CTR is undefined, not 0% —
         // rendering 0.00% reads as poor performance rather than "no sends", so
-        // show a dash and suppress the delta/badge in that case.
-        const hasSends = (ec.monthlySends ?? []).some((s) => s > 0);
+        // show a dash and suppress the delta/badge in that case. The series is
+        // calendar zero-filled, so only the trailing (current) month determines
+        // activity — matching the server's momChangePercentage contract and the
+        // sibling email-tab pattern (an earlier month with sends must not make
+        // a zero current month read as active).
+        const sends = ec.monthlySends ?? [];
+        const lastSends = sends.length > 0 ? sends[sends.length - 1] : undefined;
+        const hasSends = lastSends !== undefined && lastSends > 0;
         const momPct = hasSends ? ec.momChangePercentage : null;
         cards.push({
           id: 'email-ctr',
