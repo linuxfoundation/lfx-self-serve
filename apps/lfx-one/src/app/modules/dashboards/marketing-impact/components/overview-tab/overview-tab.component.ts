@@ -65,7 +65,10 @@ export class OverviewTabComponent {
             // Attributed Revenue KPI reports Linear attribution to match the
             // "Marketing attribution" table below (same source, same model),
             // not pipeline-won CRM revenue which is a different metric.
-            attribution: this.analyticsService.getMarketingAttribution(slug, classification, period || undefined).pipe(catchError(() => of(null))),
+            // No catchError here: getMarketingAttribution already swallows HTTP
+            // errors and emits { channels: [], projects: [] }, which the card
+            // renders as a dash — a component-level handler would be unreachable.
+            attribution: this.analyticsService.getMarketingAttribution(slug, classification, period || undefined),
           }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
