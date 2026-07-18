@@ -72,3 +72,56 @@
   // stylelint-disable-next-line declaration-no-important
   margin-bottom: 0 !important;
 }
+
+// Create menu — same treatment as the LFX Apps menu (arrow hidden, no content
+// padding, pinned beside the rail). The Create button sits near the top of the
+// rail, so this panel is top-anchored and opens downward, mirroring how the
+// bottom-anchored apps menu opens upward from its button.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
+::ng-deep .lfx-create-popover.p-popover {
+  // Hide arrow
+  &::before,
+  &::after {
+    display: none !important;
+  }
+
+  // Remove default content padding (the menu supplies its own via `py-1`).
+  .p-popover-content {
+    @apply p-0;
+  }
+
+  // PrimeNG sets position/left/top inline via absolutePosition(); !important is
+  // required to override. Fixed keeps the menu put while the page scrolls.
+  // stylelint-disable-next-line declaration-no-important
+  position: fixed !important;
+
+  // Just to the right of the rail: 56px = 48px rail + 8px gap.
+  // stylelint-disable-next-line declaration-no-important
+  left: 56px !important;
+
+  // Align the menu's top edge with the Create button's top edge:
+  // rail padding (18) + LF logo (24) + gap (≈16) ≈ 58px from the viewport top.
+  // Unlike the bottom-anchored apps/user menus, a top-anchored panel is not immune to the
+  // impersonation banner, which shifts the rail down by `top-12` (48px) — see the variant below.
+  // stylelint-disable-next-line declaration-no-important
+  top: 58px !important;
+
+  // stylelint-disable-next-line declaration-no-important
+  bottom: auto !important;
+
+  // stylelint-disable-next-line declaration-no-important
+  margin-top: 0 !important;
+}
+
+// Applied when the host layout declares it shifts the rail down to clear a banner — `main-layout`
+// under impersonation (`top-12`, 48px), taking the Create button with it. Driven by the
+// `bannerOffset` input rather than the impersonation flag, because the shift is layout-local: the
+// docs shell pins the rail at `top-0` and renders no banner even while impersonating. 58 + 48 = 106px.
+// Both classes are stacked deliberately: matching only `.lfx-create-popover-banner-offset` ties
+// the base rule on specificity, so this would win on source order alone and silently revert to
+// 58px if either block moved.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
+::ng-deep .lfx-create-popover.lfx-create-popover-banner-offset.p-popover {
+  // stylelint-disable-next-line declaration-no-important
+  top: 106px !important;
+}
