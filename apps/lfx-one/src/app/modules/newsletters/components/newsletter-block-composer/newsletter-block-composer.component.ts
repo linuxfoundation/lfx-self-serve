@@ -22,6 +22,7 @@ import {
   NewsletterFieldSchema,
   NewsletterLayout,
   NewsletterTemplateInfo,
+  NewsletterTemplateManifest,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 
@@ -314,59 +315,31 @@ export class NewsletterBlockComposerComponent implements OnInit {
     const current = this.selectedTemplateKey();
     if (!key || key === current) return;
 
-    this.selectedTemplateKey.set(key);
-
     if (!isPlatformBrowser(this.platformId)) {
+      this.selectedTemplateKey.set(key);
       this.emit();
       return;
     }
 
-    // Load the new library's manifest FIRST (its tap sets the manifest signal),
-    // then retain the blocks it supports so compatible content survives.
-    this.manifestService.ensureLoaded(key).subscribe(() => {
-      const dropped = this.retainSupportedBlocks();
+    // Load the new library's manifest, then retain the blocks IT supports (use
+    // the emitted manifest, not the shared signal, so a failed load can't filter
+    // the canvas against the stale previous library and orphan blocks).
+    this.manifestService.ensureLoaded(key).subscribe((manifest) => {
+      if (!manifest) {
+        // The new library's manifest failed to load — keep the current library
+        // rather than switching to one we can't validate blocks against. Revert
+        // the picker and tell the author; nothing is emitted.
+        this.libraryForm.controls.library.setValue(current, { emitEvent: false });
+        window.alert('Could not load that template. Please try again.');
+        return;
+      }
+      this.selectedTemplateKey.set(key);
+      const dropped = this.retainSupportedBlocks(manifest);
       if (dropped > 0) {
         window.alert(`Removed ${dropped} block${dropped === 1 ? '' : 's'} not available in this template; the rest carried over.`);
       }
       this.emit();
     });
-  }
-
-  /**
-   * Keep only the canvas blocks (and container children) whose block_type exists
-   * in the current library's manifest; drop the rest. Returns the number of
-   * blocks dropped, and clears the selection when the selected block was one.
-   */
-  private retainSupportedBlocks(): number {
-    const before = this.countBlocks(this.blocks());
-    const manifest = this.manifest();
-    if (!manifest) {
-      this.blocks.set([]);
-      this.clearSelectionState();
-      return before;
-    }
-    const supported = new Set(manifest.blocks.map((entry) => entry.block_type));
-    const next = this.blocks()
-      .filter((block) => supported.has(block.block_type))
-      .map((block) => (block.children ? { ...block, children: block.children.filter((child) => supported.has(child.block_type)) } : block));
-    this.blocks.set(next);
-    const selected = this.selectedBlockId();
-    if (selected && !this.findBlock(next, selected)) {
-      this.clearSelectionState();
-    }
-    return before - this.countBlocks(next);
-  }
-
-  /** Total blocks including container children. */
-  private countBlocks(blocks: NewsletterComposerBlock[]): number {
-    return blocks.reduce((total, block) => total + 1 + (block.children?.length ?? 0), 0);
-  }
-
-  /** Drop the current block selection + inline-edit + toolbar state. */
-  private clearSelectionState(): void {
-    this.selectedBlockId.set(null);
-    this.editingBlockId.set(null);
-    this.toolbar.set(null);
   }
 
   /**
@@ -930,6 +903,37 @@ export class NewsletterBlockComposerComponent implements OnInit {
       if (child) return child;
     }
     return null;
+  }
+
+  /**
+   * Keep only the canvas blocks (and container children) whose block_type exists
+   * in the given (new library's) manifest; drop the rest. Returns the number of
+   * blocks dropped, and clears the selection when the selected block was one.
+   */
+  private retainSupportedBlocks(manifest: NewsletterTemplateManifest): number {
+    const before = this.countBlocks(this.blocks());
+    const supported = new Set(manifest.blocks.map((entry) => entry.block_type));
+    const next = this.blocks()
+      .filter((block) => supported.has(block.block_type))
+      .map((block) => (block.children ? { ...block, children: block.children.filter((child) => supported.has(child.block_type)) } : block));
+    this.blocks.set(next);
+    const selected = this.selectedBlockId();
+    if (selected && !this.findBlock(next, selected)) {
+      this.clearSelectionState();
+    }
+    return before - this.countBlocks(next);
+  }
+
+  /** Total blocks including container children. */
+  private countBlocks(blocks: NewsletterComposerBlock[]): number {
+    return blocks.reduce((total, block) => total + 1 + (block.children?.length ?? 0), 0);
+  }
+
+  /** Drop the current block selection + inline-edit + toolbar state. */
+  private clearSelectionState(): void {
+    this.selectedBlockId.set(null);
+    this.editingBlockId.set(null);
+    this.toolbar.set(null);
   }
 
   /** Immutably replace the `content` of the block matching `id` (top-level or child). */
