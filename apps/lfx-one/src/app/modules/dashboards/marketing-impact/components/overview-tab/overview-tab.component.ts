@@ -171,10 +171,12 @@ export class OverviewTabComponent {
         const lastSends = sends.length > 0 ? sends[sends.length - 1] : undefined;
         const lastMonthActive = lastSends !== undefined && lastSends > 0;
         const hasSends = isMonth ? lastMonthActive : sends.some((s) => s > 0);
-        // The MoM delta always requires the latest month to be active (the
-        // server's momChangePercentage compares the trailing two months), so it
-        // stays gated on lastMonthActive regardless of the selection type.
-        const momPct = lastMonthActive ? ec.momChangePercentage : null;
+        // The MoM delta only applies to the single-month view: momChangePercentage
+        // always compares the trailing two months, so pairing it with a range's
+        // period-aggregate value would place a monthly delta beside a period value
+        // — the exact metric mismatch this refinement removes. Show it only for a
+        // month selection with an active trailing month; suppress it for ranges.
+        const momPct = isMonth && lastMonthActive ? ec.momChangePercentage : null;
         cards.push({
           id: 'email-ctr',
           label: 'Email CTR',
