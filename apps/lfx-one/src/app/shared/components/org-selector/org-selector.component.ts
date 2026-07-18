@@ -60,8 +60,7 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.writerSet(),
       this.orgRoleGrantsService.auditorSet(),
       this.orgRoleGrantsService.inheritedWriterSet(),
-      this.orgRoleGrantsService.inheritedAuditorSet(),
-      this.orgRoleGrantsService.foundationAuditorSet()
+      this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
   protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona()));
@@ -80,10 +79,11 @@ export class OrgSelectorComponent {
     const auditorSet = this.orgRoleGrantsService.auditorSet();
     const inheritedWriterSet = this.orgRoleGrantsService.inheritedWriterSet();
     const inheritedAuditorSet = this.orgRoleGrantsService.inheritedAuditorSet();
-    const foundationAuditorSet = this.orgRoleGrantsService.foundationAuditorSet();
     const parentNameByUid = this.orgRoleGrantsService.parentNameByUid();
     return this.items().map((item) => {
-      const persona = this.resolvePersona(item.uid, writerSet, auditorSet, inheritedWriterSet, inheritedAuditorSet, foundationAuditorSet);
+      // LFXV2-2750 — foundation-auditor rows are resolved per-search and carry their role source on the row
+      // itself (they're absent from the cached grants sets), so the row wins when present.
+      const persona = item.roleSource ?? this.resolvePersona(item.uid, writerSet, auditorSet, inheritedWriterSet, inheritedAuditorSet);
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
@@ -188,20 +188,18 @@ export class OrgSelectorComponent {
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 
-  /** Spec 022 — direct sources take precedence over inherited so the Edit Profile gate (FR-011a) stays direct-only. LFXV2-2750 adds `foundation-auditor` at the lowest precedence (view-only). Defense-in-depth alongside the BFF's disjointness merge. */
+  /** Spec 022 — direct sources take precedence over inherited so the Edit Profile gate (FR-011a) stays direct-only. Defense-in-depth alongside the BFF's disjointness merge. */
   private resolvePersona(
     uid: string,
     writerSet: Set<string>,
     auditorSet: Set<string>,
     inheritedWriterSet: Set<string>,
-    inheritedAuditorSet: Set<string>,
-    foundationAuditorSet: Set<string>
+    inheritedAuditorSet: Set<string>
   ): OrgRolePersona | null {
     if (writerSet.has(uid)) return 'direct-writer';
     if (auditorSet.has(uid)) return 'direct-auditor';
     if (inheritedWriterSet.has(uid)) return 'inherited-writer';
     if (inheritedAuditorSet.has(uid)) return 'inherited-auditor';
-    if (foundationAuditorSet.has(uid)) return 'foundation-auditor';
     return null;
   }
 

@@ -24,14 +24,14 @@ export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
 /** LFXV2-2750 — `per_page` when paginating a foundation's `project_membership` roster (member-org enumeration). */
 export const FOUNDATION_MEMBERSHIP_PAGE_SIZE = 500;
 
-/** LFXV2-2750 — hard cap on foundations enumerated for the `project:<uid>#auditor` batch check, to bound the org-selector hot-path cost. */
-export const FOUNDATION_AUDITOR_ENUMERATION_HARD_CAP = 1000;
-
-/** LFXV2-2750 — hard cap on distinct member-org uids collected across all audited foundations before the b2b_org display fetch (bounds the M2M read + the additive merge). */
+/** LFXV2-2750 — hard cap on foundation-auditor member-org rows appended to a single org-selector page. */
 export const FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP = ORG_ROLE_GRANTS_HARD_CAP;
 
-/** LFXV2-2750 — max concurrent per-foundation `project_membership` pagination loops during the M2M member-org enumeration. */
-export const FOUNDATION_AUDITOR_MEMBERSHIP_FETCH_CONCURRENCY = 8;
+/** LFXV2-2750 — max `b2b_org` name-search candidates considered per typeahead query. Bounds the whole search-driven lookup: the membership fetch and the `project:<uid>#auditor` batch check both scale off this set, never off the caller's access breadth. */
+export const FOUNDATION_AUDITOR_SEARCH_CANDIDATE_CAP = 50;
+
+/** LFXV2-2750 — minimum typeahead term length before the foundation-auditor lookup runs (avoids a broad upstream search on every keystroke). */
+export const FOUNDATION_AUDITOR_SEARCH_MIN_TERM_LENGTH = 2;
 
 /**
  * LFXV2-2750 — chunk size for the batched upstream calls (the `project:<uid>#auditor` access-check POST and the

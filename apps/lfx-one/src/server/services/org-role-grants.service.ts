@@ -14,16 +14,14 @@ import {
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
   CascadingRoleGrant,
-  FoundationAuditorOrgEntry,
   OrgRolePersona,
   QueryServiceResponse,
   ResolvedOrgRole,
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername, mergeFoundationAuditorOrgs } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { FoundationAuditorOrgsService, isFoundationAuditorOrgSelectorEnabled } from './foundation-auditor-orgs.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { cacheKeyNamespace, valkeyService } from './valkey.service';
@@ -36,11 +34,9 @@ export class OrgRoleGrantsService {
   private static readonly accessInFlight = new Map<string, Promise<AccessAwareOrgsResult>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
-  private readonly foundationAuditorOrgs: FoundationAuditorOrgsService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
-    this.foundationAuditorOrgs = new FoundationAuditorOrgsService();
   }
 
   /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; only successful resolutions are cached and the cache is fail-soft. */
@@ -219,89 +215,33 @@ export class OrgRoleGrantsService {
     }
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
-
-    // Base = direct grants + their cascading children. Empty when the caller has no direct org grants
-    // (the foundation-only auditor case) — we still fall through to the LFXV2-2750 augmentation below.
-    let baseResolved = new Map<string, ResolvedOrgRole>();
-    let baseOrgDocByUid = new Map<string, B2bOrgIndexedDoc>();
-
-    if (directWriters.size > 0 || directAuditors.size > 0) {
-      const directUids = new Set<string>([...directWriters, ...directAuditors]);
-
-      let directOrgDocs: Map<string, B2bOrgIndexedDoc>;
-      try {
-        directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
-      } catch (error) {
-        logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error });
-        return { ...empty, upstreamFailed: true };
-      }
-
-      let cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>;
-      try {
-        const parentUids = Array.from(directUids).filter((uid) => directOrgDocs.get(uid)?.is_parent === true);
-        cascadingChildrenByParent = await this.fetchCascadingChildren(req, parentUids);
-      } catch (error) {
-        logger.warning(req, 'get_org_role_grants', 'Upstream cascading-children fetch failed', { err: error });
-        return { ...empty, upstreamFailed: true };
-      }
-
-      baseResolved = this.buildResolvedMap(directWriters, directAuditors, directOrgDocs, cascadingChildrenByParent);
-      baseOrgDocByUid = this.mergeOrgDocs(directOrgDocs, cascadingChildrenByParent);
+    if (directWriters.size === 0 && directAuditors.size === 0) {
+      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username };
     }
 
-    // LFXV2-2750 — additively surface member orgs of every foundation the caller audits (view-only).
-    // Fail-soft: any error falls back to the grants-only base, preserving today's behaviour for everyone.
-    const { resolved, orgDocByUid } = await this.augmentWithFoundationAuditorOrgs(req, baseResolved, baseOrgDocByUid);
+    const directUids = new Set<string>([...directWriters, ...directAuditors]);
+
+    let directOrgDocs: Map<string, B2bOrgIndexedDoc>;
+    try {
+      directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
+    } catch (error) {
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error });
+      return { ...empty, upstreamFailed: true };
+    }
+
+    let cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>;
+    try {
+      const parentUids = Array.from(directUids).filter((uid) => directOrgDocs.get(uid)?.is_parent === true);
+      cascadingChildrenByParent = await this.fetchCascadingChildren(req, parentUids);
+    } catch (error) {
+      logger.warning(req, 'get_org_role_grants', 'Upstream cascading-children fetch failed', { err: error });
+      return { ...empty, upstreamFailed: true };
+    }
+
+    const resolved = this.buildResolvedMap(directWriters, directAuditors, directOrgDocs, cascadingChildrenByParent);
+    const orgDocByUid = this.mergeOrgDocs(directOrgDocs, cascadingChildrenByParent);
 
     return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username };
-  }
-
-  /**
-   * LFXV2-2750 — merge the member orgs of every foundation the caller audits into the resolved map with a
-   * `foundation-auditor` role source (view-only). Gated by the env kill-switch (default off). Fail-closed:
-   * any FGA / M2M / query-service failure falls back to the unmodified grants-only base. Existing direct or
-   * inherited grants always win, and the additive rows are capped at `ORG_ROLE_GRANTS_HARD_CAP`.
-   */
-  private async augmentWithFoundationAuditorOrgs(
-    req: Request,
-    baseResolved: Map<string, ResolvedOrgRole>,
-    baseOrgDocByUid: Map<string, B2bOrgIndexedDoc>
-  ): Promise<{ resolved: Map<string, ResolvedOrgRole>; orgDocByUid: Map<string, B2bOrgIndexedDoc> }> {
-    if (!isFoundationAuditorOrgSelectorEnabled()) {
-      return { resolved: baseResolved, orgDocByUid: baseOrgDocByUid };
-    }
-
-    try {
-      const foundations = await this.foundationAuditorOrgs.discoverAuditedFoundations(req);
-      if (foundations.length === 0) {
-        return { resolved: baseResolved, orgDocByUid: baseOrgDocByUid };
-      }
-
-      const memberOrgs = await this.foundationAuditorOrgs.fetchMemberOrgs(req, foundations);
-      const entries: FoundationAuditorOrgEntry[] = [];
-      for (const uid of memberOrgs.orgUids) {
-        const doc = memberOrgs.orgDocByUid.get(uid);
-        if (doc) entries.push({ uid, doc });
-      }
-
-      const merged = mergeFoundationAuditorOrgs(baseResolved, baseOrgDocByUid, entries, ORG_ROLE_GRANTS_HARD_CAP);
-      if (merged.truncated) {
-        logger.warning(req, 'augment_foundation_auditor_orgs', 'Foundation-auditor org cap reached — truncating', {
-          cap: ORG_ROLE_GRANTS_HARD_CAP,
-          added: merged.addedCount,
-        });
-      }
-      logger.debug(req, 'augment_foundation_auditor_orgs', 'Merged foundation-auditor orgs', {
-        audited_foundations: foundations.length,
-        added: merged.addedCount,
-      });
-      return { resolved: merged.resolved, orgDocByUid: merged.orgDocByUid };
-    } catch (error) {
-      logger.warning(req, 'augment_foundation_auditor_orgs', 'Foundation-auditor augmentation failed — falling back to grants-only list', {
-        err: error,
-      });
-      return { resolved: baseResolved, orgDocByUid: baseOrgDocByUid };
-    }
   }
 
   private partitionDirectGrants(
@@ -533,7 +473,6 @@ export class OrgRoleGrantsService {
     const auditors: string[] = [];
     const cascadingWriters: CascadingRoleGrant[] = [];
     const cascadingAuditors: CascadingRoleGrant[] = [];
-    const foundationAuditors: string[] = [];
 
     for (const [uid, role] of resolved) {
       switch (role.roleSource) {
@@ -552,13 +491,13 @@ export class OrgRoleGrantsService {
           cascadingAuditors.push({ uid, parentUid: role.parentUid ?? '', parentName: role.parentName ?? '' });
           break;
         case 'foundation-auditor':
-          // LFXV2-2750 — view-only member org surfaced via a foundation-level auditor grant.
-          foundationAuditors.push(uid);
+          // LFXV2-2750 — foundation-auditor rows are resolved per-search in OrgNavigationService and
+          // carry their role source on the row itself; they never enter this grants-only resolution.
           break;
       }
     }
 
-    return { writers, auditors, cascadingWriters, cascadingAuditors, foundationAuditors, username, loaded_at: loadedAt };
+    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt };
   }
 
   /** Strip uids that would break query-service tag grammar before interpolating into `b2b_org_uid:` / `parent_b2b_org_uid:` tags. */
