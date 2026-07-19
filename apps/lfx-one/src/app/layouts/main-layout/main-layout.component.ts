@@ -116,14 +116,24 @@ export class MainLayoutComponent {
       currentRoute = currentRoute.firstChild;
       lens = currentRoute.snapshot.data['lens'] ?? lens;
     }
-    // Keep the context service's route-kind override in step with the route on *every* navigation.
-    // `projectQueryParamGuard` sets it earlier — before child components construct — but is not
-    // attached to every route (`/profile`, `/badges` and friends have none), so without this an
-    // override from a previous lens-prefixed route would leak into them. This runs on
-    // NavigationEnd, so on those unguarded routes there is a brief window during construction where
-    // the previous value is still visible; they are `me`-scoped pages that do not read the active
-    // context, and the guard already covers every route that does.
-    this.projectContextService.setRouteLensKind(lens === 'foundation' || lens === 'project' ? lens : null);
+    const hasProjectParam = currentRoute.snapshot.queryParamMap.has('project');
+
+    // Clear the context service's route-kind override on routes the guard does not own, so a
+    // foundation/project override from a previous route cannot leak into them.
+    //
+    // `projectQueryParamGuard` is the authoritative setter: it runs on every lens-prefixed route
+    // AND every flat write route carrying a `?project=` param, and derives the kind from the route
+    // or from the resolved project. This handler runs on NavigationEnd — *after* the guard — so it
+    // must not overwrite what the guard just established. It therefore only acts on routes the guard
+    // does not touch: no declared lens and no `?project=` param (e.g. `/profile`, `/badges`), where
+    // it resets to `null`. On a lens route it re-asserts the value the guard set (idempotent); on a
+    // flat `?project=` route it leaves the guard's derived kind alone — clobbering it there is the
+    // bug that made a direct hit on `/meetings/create?project=<foundation>` resolve a null context.
+    if (lens === 'foundation' || lens === 'project') {
+      this.projectContextService.setRouteLensKind(lens);
+    } else if (!hasProjectParam) {
+      this.projectContextService.setRouteLensKind(null);
+    }
 
     // Assigned on every navigation, including routes that carry no lens, so a pending retry from an
     // earlier route can never outlive it. Without that, switching lens from the switcher (which
