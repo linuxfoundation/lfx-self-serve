@@ -38,5 +38,6 @@ export * from './org.utils';
 export * from './search.utils';
 export * from './email.utils';
 export * from './invitation.utils';
+export * from './lens.utils';
 export * from './crowdfunding.utils';
 export * from './persona.utils';

@@ -95,10 +95,15 @@ export class CreateArtifactDialogComponent {
 
     // `activeContext` is lens-gated: under `me`/`org` it reads the slot matching the user's
     // *persona*, not the kind picked here, so the create page would resolve the other slot.
-    // Aligning the lens first makes it read the slot seeded below. `setLens` refuses a lens the
-    // persona doesn't hold — `writer` and lens roles are independent grants — and there is no way
-    // to align the context in that case, so bail before mutating anything rather than create
-    // against a stale project (writerGuard's ED fast-path would not catch it).
+    // Aligning the lens first makes it read the slot seeded below.
+    //
+    // This should now always succeed: the options are exactly the user's `writer` grants, and
+    // `getAllowedLensIds` admits any lens they hold `writer` within (LFXV2-2754), so the lens
+    // for a listed project is available by construction. It previously failed for real users —
+    // the lens came from persona alone, which a writer grant does not imply — which is the bug
+    // this path was fixed for. Kept as a defensive bail because the alternative on an
+    // unexpected refusal is creating against a stale project, which `writerGuard`'s ED
+    // fast-path would not catch.
     if (!this.lensService.setLens(project.isFoundation ? 'foundation' : 'project')) {
       console.error('Cannot align lens to the selected project; aborting create navigation.', {
         slug: project.slug,

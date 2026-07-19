@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, model } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, model, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -44,6 +44,17 @@ export class MainLayoutComponent {
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
 
+  /**
+   * A route lens that {@link LensService.setLens} refused, held for retry.
+   *
+   * The allowed lens set is partly derived from `writer` grants, which arrive after hydration
+   * (LFXV2-2754), so a deep link or hard refresh onto a lens-prefixed route can run before the
+   * grants land. Dropping the refusal there would strand the user on a `/foundation/...` URL with
+   * the lens still `me` — `activeContext` would then resolve the wrong slot and the page would act
+   * on the wrong project. Retried by the effect below once the set widens.
+   */
+  private readonly pendingRouteLens = signal<Lens | null>(null);
+
   public constructor() {
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
@@ -56,6 +67,17 @@ export class MainLayoutComponent {
         this.selectorPanelOpen.set(false);
         this.syncLensFromRoute();
       });
+
+    // Re-assert a refused route lens when the allowed set widens. Reading `availableLenses`
+    // registers the dependency, so this re-runs exactly when the grants resolve. The set only
+    // ever widens, so this settles after one successful pass and cannot loop.
+    effect(() => {
+      this.lensService.availableLenses();
+      const pending = this.pendingRouteLens();
+      if (pending && this.lensService.setLens(pending)) {
+        this.pendingRouteLens.set(null);
+      }
+    });
   }
 
   public toggleMobileSidebar(): void {
@@ -80,7 +102,8 @@ export class MainLayoutComponent {
       lens = currentRoute.snapshot.data['lens'] ?? lens;
     }
     if (lens && lens in ALL_LENSES) {
-      this.lensService.setLens(lens);
+      // Hold a refusal for retry rather than dropping it — the allowed set may still be widening.
+      this.pendingRouteLens.set(this.lensService.setLens(lens) ? null : lens);
     }
   }
 }
