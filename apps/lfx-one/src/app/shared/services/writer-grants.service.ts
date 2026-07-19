@@ -63,6 +63,13 @@ export class WriterGrantsService {
   }
 }
 
+/**
+ * Project a raw `Project` down to the fields the create picker and lens derivation need.
+ *
+ * `isFoundation` is computed from the project's own attributes rather than read from any
+ * viewer-scoped field, so it stays correct regardless of the caller's persona — it decides both
+ * which lens the project requires and which slot a selection is dispatched to.
+ */
 function toCreatableProject(project: Project): CreatableProject {
   return {
     uid: project.uid,

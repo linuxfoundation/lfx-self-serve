@@ -12,6 +12,7 @@ import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -29,6 +30,7 @@ export class MainLayoutComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly appService = inject(AppService);
   private readonly lensService = inject(LensService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
   protected readonly userService = inject(UserService);
 
@@ -91,10 +93,12 @@ export class MainLayoutComponent {
       });
   }
 
+  /** Toggle the mobile sidebar drawer from the header control. */
   public toggleMobileSidebar(): void {
     this.appService.toggleMobileSidebar();
   }
 
+  /** Mirror the PrimeNG drawer's visibility back into app state when it closes itself (backdrop, Esc). */
   public onDrawerVisibilityChange(visible: boolean): void {
     if (!visible) {
       this.appService.closeMobileSidebar();
@@ -112,6 +116,15 @@ export class MainLayoutComponent {
       currentRoute = currentRoute.firstChild;
       lens = currentRoute.snapshot.data['lens'] ?? lens;
     }
+    // Keep the context service's route-kind override in step with the route on *every* navigation.
+    // `projectQueryParamGuard` sets it earlier — before child components construct — but is not
+    // attached to every route (`/profile`, `/badges` and friends have none), so without this an
+    // override from a previous lens-prefixed route would leak into them. This runs on
+    // NavigationEnd, so on those unguarded routes there is a brief window during construction where
+    // the previous value is still visible; they are `me`-scoped pages that do not read the active
+    // context, and the guard already covers every route that does.
+    this.projectContextService.setRouteLensKind(lens === 'foundation' || lens === 'project' ? lens : null);
+
     // Assigned on every navigation, including routes that carry no lens, so a pending retry from an
     // earlier route can never outlive it. Without that, switching lens from the switcher (which
     // navigates to a route that may carry no lens data) would leave the old value armed, and the
