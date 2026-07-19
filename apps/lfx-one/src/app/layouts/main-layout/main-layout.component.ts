@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, model, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, model, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
@@ -15,7 +15,7 @@ import { LensService } from '@services/lens.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
@@ -51,7 +51,7 @@ export class MainLayoutComponent {
    * (LFXV2-2754), so a deep link or hard refresh onto a lens-prefixed route can run before the
    * grants land. Dropping the refusal there would strand the user on a `/foundation/...` URL with
    * the lens still `me` — `activeContext` would then resolve the wrong slot and the page would act
-   * on the wrong project. Retried by the effect below once the set widens.
+   * on the wrong project. Retried by the subscription below once the set widens.
    */
   private readonly pendingRouteLens = signal<Lens | null>(null);
 
@@ -68,16 +68,27 @@ export class MainLayoutComponent {
         this.syncLensFromRoute();
       });
 
-    // Re-assert a refused route lens when the allowed set widens. Reading `availableLenses`
-    // registers the dependency, so this re-runs exactly when the grants resolve. The set only
-    // ever widens, so this settles after one successful pass and cannot loop.
-    effect(() => {
-      this.lensService.availableLenses();
-      const pending = this.pendingRouteLens();
-      if (pending && this.lensService.setLens(pending)) {
-        this.pendingRouteLens.set(null);
-      }
-    });
+    // Re-assert a refused route lens when the allowed set changes, i.e. when the writer grants
+    // resolve. This terminates because `pendingRouteLens` is cleared on the successful pass and
+    // re-armed only by a later navigation — not because the set is monotonic. It isn't: the
+    // persona half can narrow when `PersonaService.refreshFromApi()` drops a cookie-claimed role.
+    //
+    // `availableLenses` is a computed returning a fresh array each recompute, so it re-emits on
+    // unrelated persona/flag churn with identical content. Comparing the projected lens ids keeps
+    // this to genuine changes — re-running on every churn would re-assert a lens the user may have
+    // since changed by another path.
+    toObservable(this.lensService.availableLenses)
+      .pipe(
+        map((lenses) => lenses.map((option) => option.id).join(',')),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        const pending = this.pendingRouteLens();
+        if (pending && this.lensService.setLens(pending)) {
+          this.pendingRouteLens.set(null);
+        }
+      });
   }
 
   public toggleMobileSidebar(): void {
@@ -101,9 +112,11 @@ export class MainLayoutComponent {
       currentRoute = currentRoute.firstChild;
       lens = currentRoute.snapshot.data['lens'] ?? lens;
     }
-    if (lens && lens in ALL_LENSES) {
-      // Hold a refusal for retry rather than dropping it — the allowed set may still be widening.
-      this.pendingRouteLens.set(this.lensService.setLens(lens) ? null : lens);
-    }
+    // Assigned on every navigation, including routes that carry no lens, so a pending retry from an
+    // earlier route can never outlive it. Without that, switching lens from the switcher (which
+    // navigates to a route that may carry no lens data) would leave the old value armed, and the
+    // retry below would later clobber the user's explicit choice.
+    const pending = lens && lens in ALL_LENSES && !this.lensService.setLens(lens) ? lens : null;
+    this.pendingRouteLens.set(pending);
   }
 }

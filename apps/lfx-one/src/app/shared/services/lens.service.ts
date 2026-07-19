@@ -115,10 +115,16 @@ export class LensService {
    * Lenses the current user may use. Persona roles and `writer` grants each confer access
    * independently (LFXV2-2754) — see `deriveAllowedLenses` for why either suffices.
    *
-   * The `writer` half arrives after hydration (see {@link WriterGrantsService}), so this set
-   * only ever widens as grants land — it never narrows. A caller that acts on a lens before
-   * then must re-assert once it widens rather than treat a `false` from {@link setLens} as
-   * final; `MainLayoutComponent.syncLensFromRoute` is the one such caller.
+   * This set is not stable across a session, in two different ways:
+   *  - the `writer` half arrives after hydration (see {@link WriterGrantsService}) and only ever
+   *    widens as grants land;
+   *  - the persona half can *narrow*. It is seeded from a cookie and then replaced by
+   *    `PersonaService.refreshFromApi()`, which may drop a role the cookie claimed and clears
+   *    `isRootWriter` on its error path.
+   *
+   * So a caller must treat a `false` from {@link setLens} as provisional rather than final, and
+   * must not assume a lens it holds now will still be allowed later.
+   * `MainLayoutComponent.syncLensFromRoute` is the one caller that re-asserts.
    */
   private getAllowedLensIds(): readonly Lens[] {
     return deriveAllowedLenses({

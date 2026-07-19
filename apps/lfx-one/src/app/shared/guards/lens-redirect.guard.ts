@@ -19,6 +19,13 @@ export const lensRedirectGuard: CanActivateFn = (_route, state) => {
   const lensService = inject(LensService);
   const router = inject(Router);
 
+  // Reads `activeLens` synchronously, and the allowed lens set is partly derived from `writer`
+  // grants that resolve after hydration (LFXV2-2754). A user whose only route to a lens is a
+  // writer grant therefore gets no redirect on the first navigation after load, and the redirect
+  // on subsequent ones — the same URL resolving differently by timing. Accepted rather than fixed:
+  // gating this guard on a readiness signal would block every flat-route navigation on the grants
+  // request, and the un-redirected flat route is a correct, functional page rather than a wrong
+  // one. Revisit if the grants move into the SSR payload, which removes the asymmetry outright.
   const lens = lensService.activeLens();
   if (lens === 'foundation' || lens === 'project') {
     return router.parseUrl(`/${lens}${state.url}`);
