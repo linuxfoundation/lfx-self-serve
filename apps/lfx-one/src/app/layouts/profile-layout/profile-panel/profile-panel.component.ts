@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, effect, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 /**
  * ProfilePanelComponent is the fixed right-hand panel of the Profile & Account hub.
@@ -41,17 +41,16 @@ export class ProfilePanelComponent {
   // Outputs
   public readonly editRequested = output<void>();
 
-  // Tracks failed avatar image loads so we can fall back to initials
-  public readonly avatarLoadError = signal<boolean>(false);
+  // The avatar URL that failed to load, if any. Tracking the URL (rather than a plain boolean)
+  // lets a newly-set/refreshed picture re-attempt to load without an effect(): once avatarUrl
+  // changes, it no longer matches the errored URL, so showAvatarImage flips back to true.
+  private readonly avatarErrorUrl = signal<string | null>(null);
 
-  public constructor() {
-    // Reset the avatar error flag whenever the picture URL changes so a newly-set
-    // (or refreshed) avatar re-attempts to load instead of staying on the initials fallback
-    effect(() => {
-      this.avatarUrl();
-      this.avatarLoadError.set(false);
-    });
-  }
+  // Show the picture when we have a URL that hasn't errored; otherwise fall back to initials.
+  public readonly showAvatarImage = computed(() => {
+    const url = this.avatarUrl();
+    return !!url && this.avatarErrorUrl() !== url;
+  });
 
   // Editing acts on the real account and is blocked while impersonating.
   public onEdit(): void {
@@ -59,5 +58,10 @@ export class ProfilePanelComponent {
       return;
     }
     this.editRequested.emit();
+  }
+
+  // Called by the avatar <img> (error) handler — record the failed URL so we fall back to initials.
+  public onAvatarError(): void {
+    this.avatarErrorUrl.set(this.avatarUrl());
   }
 }

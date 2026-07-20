@@ -20,11 +20,11 @@
       <div
         class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 text-xl font-semibold text-white"
         data-testid="profile-avatar">
-        @if (avatarUrl() && !avatarLoadError()) {
+        @if (showAvatarImage()) {
           <img
             [src]="avatarUrl()"
             [alt]="displayName()"
-            (error)="avatarLoadError.set(true)"
+            (error)="onAvatarError()"
             class="h-full w-full rounded-2xl object-cover"
             data-testid="profile-avatar-image" />
         } @else {
@@ -140,13 +140,13 @@
         @if (githubHandle()) {
           <div class="flex items-center gap-2 text-[12.5px] text-slate-700" data-testid="profile-panel-github">
             <i class="fa-brands fa-github text-slate-800"></i>
-            <span class="truncate">{{ githubHandle() }}</span>
+            <span class="break-all">{{ githubHandle() }}</span>
           </div>
         }
         @if (linkedinHandle()) {
           <div class="flex items-center gap-2 text-[12.5px] text-slate-700" data-testid="profile-panel-linkedin">
             <i class="fa-brands fa-linkedin text-blue-700"></i>
-            <span class="truncate">{{ linkedinHandle() }}</span>
+            <span class="break-all">{{ linkedinHandle() }}</span>
           </div>
         }
       </div>
