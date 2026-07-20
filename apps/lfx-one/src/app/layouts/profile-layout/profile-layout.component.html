@@ -49,6 +49,7 @@
           <a
             [routerLink]="tab.route"
             routerLinkActive="!border-blue-600 !text-blue-600"
+            ariaCurrentWhenActive="page"
             class="-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 pb-3 pt-2 text-[13px] font-medium text-slate-500 transition-colors hover:text-slate-800"
             [attr.data-testid]="'profile-tab-' + tab.id">
             {{ tab.label }}

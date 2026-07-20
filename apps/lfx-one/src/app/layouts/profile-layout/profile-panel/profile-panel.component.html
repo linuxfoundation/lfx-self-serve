@@ -9,6 +9,7 @@
   class="flex flex-col border-b border-slate-200 bg-slate-50 px-6 py-7 lg:fixed lg:right-0 lg:bottom-0 lg:w-80 lg:overflow-y-auto lg:border-b-0 lg:border-l"
   [class.lg:top-12]="impersonating()"
   [class.lg:top-0]="!impersonating()"
+  aria-label="Profile summary"
   data-testid="profile-panel">
   @if (loading()) {
     <div class="flex items-center justify-center py-8">
