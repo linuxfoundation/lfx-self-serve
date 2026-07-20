@@ -66,7 +66,7 @@ async function gotoOrgMeetingsPage(page: Page): Promise<void> {
 }
 
 test.describe('Org Meetings insights (6a redesign)', () => {
-  test('renders the page shell with default 90-day KPI values', async ({ page }) => {
+  test('renders the page shell with default 365-day KPI values', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgMeetingsPage(page);
 

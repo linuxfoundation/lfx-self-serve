@@ -24,7 +24,7 @@
       </ng-template>
 
       <ng-template #body let-row>
-        <tr [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identity">
+        <tr [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug">
           <td>
             <div class="flex items-center gap-2">
               <lfx-person-avatar [name]="row.employee" [identity]="row.identity" />
@@ -32,15 +32,18 @@
             </div>
           </td>
           <td>
-            <div class="relative flex flex-wrap items-center gap-1" [class.group]="row.foundationsGroup.overflowCount > 0">
+            <div
+              class="relative flex flex-wrap items-center gap-1"
+              [class.group]="row.foundationsGroup.overflowCount > 0"
+              [attr.tabindex]="row.foundationsGroup.overflowCount > 0 ? 0 : null">
               @for (pill of row.foundationsGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
               @if (row.foundationsGroup.overflowCount > 0) {
                 <lfx-tag [value]="'+' + row.foundationsGroup.overflowCount" severity="secondary" />
                 <div
-                  class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block"
-                  [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identity + '-foundations-popover'">
+                  class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
+                  [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover'">
                   <p class="mb-2 text-xs font-medium text-gray-500">All foundations</p>
                   <div class="flex flex-wrap gap-1">
                     @for (pill of row.foundationsGroup.all; track $index) {
@@ -54,15 +57,18 @@
           <td class="text-gray-900">{{ row.attended }}</td>
           <td class="text-gray-900">{{ row.upcoming }}</td>
           <td>
-            <div class="relative flex flex-wrap items-center gap-1" [class.group]="row.typeGroup.overflowCount > 0">
+            <div
+              class="relative flex flex-wrap items-center gap-1"
+              [class.group]="row.typeGroup.overflowCount > 0"
+              [attr.tabindex]="row.typeGroup.overflowCount > 0 ? 0 : null">
               @for (pill of row.typeGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="info" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
               @if (row.typeGroup.overflowCount > 0) {
                 <lfx-tag [value]="'+' + row.typeGroup.overflowCount" severity="info" />
                 <div
-                  class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block"
-                  [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identity + '-type-popover'">
+                  class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
+                  [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug + '-type-popover'">
                   <p class="mb-2 text-xs font-medium text-gray-500">All meeting types</p>
                   <div class="flex flex-wrap gap-1">
                     @for (pill of row.typeGroup.all; track $index) {
@@ -74,15 +80,18 @@
             </div>
           </td>
           <td>
-            <div class="relative flex flex-wrap items-center gap-1" [class.group]="row.roleGroup.overflowCount > 0">
+            <div
+              class="relative flex flex-wrap items-center gap-1"
+              [class.group]="row.roleGroup.overflowCount > 0"
+              [attr.tabindex]="row.roleGroup.overflowCount > 0 ? 0 : null">
               @for (pill of row.roleGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
               @if (row.roleGroup.overflowCount > 0) {
                 <lfx-tag [value]="'+' + row.roleGroup.overflowCount" severity="secondary" />
                 <div
-                  class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block"
-                  [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identity + '-role-popover'">
+                  class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
+                  [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug + '-role-popover'">
                   <p class="mb-2 text-xs font-medium text-gray-500">All roles</p>
                   <div class="flex flex-wrap gap-1">
                     @for (pill of row.roleGroup.all; track $index) {

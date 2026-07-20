@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { DEMO_ORG_LEADERBOARD } from '@lfx-one/shared/constants';
+import { DEMO_ORG_LEADERBOARD, ORG_LEADERBOARD_PRIVATE_MEETING_LABEL, ORG_LEADERBOARD_VISIBLE_PILL_COUNT } from '@lfx-one/shared/constants';
 import type {
   OrgLeaderboardDisplayRow,
   OrgLeaderboardMaskedValue,
@@ -10,14 +10,12 @@ import type {
   OrgLeaderboardPillValue,
   OrgMeetingsTimeRange,
 } from '@lfx-one/shared/interfaces';
+import { slugify } from '@lfx-one/shared/utils';
 
 import { CardComponent } from '@components/card/card.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-
-const VISIBLE_PILL_COUNT = 2;
-export const PRIVATE_MEETING_LABEL = 'Private';
 
 @Component({
   selector: 'lfx-org-meetings-leaderboard',
@@ -36,6 +34,7 @@ export class OrgMeetingsLeaderboardComponent {
     return computed(() =>
       DEMO_ORG_LEADERBOARD.map((row) => ({
         ...row,
+        identitySlug: slugify(row.identity),
         foundationsGroup: this.toPillGroup(this.maskPrivateValues(row.foundationMeetings)),
         typeGroup: this.toPillGroup(this.maskPrivateValues(row.typeMeetings)),
         roleGroup: this.toPillGroup(this.maskPrivateValues(row.roleMeetings)),
@@ -63,7 +62,7 @@ export class OrgMeetingsLeaderboardComponent {
       pills.push({ label: value, isPrivate: false, count });
     }
     for (const [, count] of privateCountByValue) {
-      pills.push({ label: PRIVATE_MEETING_LABEL, isPrivate: true, count });
+      pills.push({ label: ORG_LEADERBOARD_PRIVATE_MEETING_LABEL, isPrivate: true, count });
     }
 
     return pills.sort((a, b) => b.count - a.count).map(({ label, isPrivate }) => ({ label, isPrivate }));
@@ -71,8 +70,8 @@ export class OrgMeetingsLeaderboardComponent {
 
   private toPillGroup(values: OrgLeaderboardPillValue[]): OrgLeaderboardPillGroup {
     return {
-      visible: values.slice(0, VISIBLE_PILL_COUNT),
-      overflowCount: Math.max(0, values.length - VISIBLE_PILL_COUNT),
+      visible: values.slice(0, ORG_LEADERBOARD_VISIBLE_PILL_COUNT),
+      overflowCount: Math.max(0, values.length - ORG_LEADERBOARD_VISIBLE_PILL_COUNT),
       all: values,
     };
   }

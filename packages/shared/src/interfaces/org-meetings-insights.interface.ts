@@ -4,6 +4,7 @@
 import { ORG_MEETINGS_TIME_RANGES } from '@lfx-one/shared/constants';
 
 import type { OrgLensProjectBand } from './org-lens-project-detail.interface';
+import type { StatCardDeltaDirection } from './stat-card.interface';
 
 /** Window over which Org Lens meeting-insights data is aggregated. */
 export type OrgMeetingsTimeRange = (typeof ORG_MEETINGS_TIME_RANGES)[number];
@@ -16,8 +17,8 @@ export interface OrgMeetingsTimeRangeOption {
   rangeLabel: string | null;
 }
 
-/** Direction of a period-over-period delta, drives arrow icon + color. */
-export type OrgMeetingsDeltaDirection = 'up' | 'down' | 'flat';
+/** Direction of a period-over-period delta, drives arrow icon + color. Same domain as `StatCardDeltaDirection`. */
+export type OrgMeetingsDeltaDirection = StatCardDeltaDirection;
 
 /** One of the four org-level KPI totals shown at the top of the page. */
 export interface OrgMeetingsKpiSummary {
@@ -106,6 +107,8 @@ export interface OrgLeaderboardPillGroup {
 
 /** An `OrgLeaderboardRow` with its multi-value cells pre-collapsed into pill groups for display. */
 export interface OrgLeaderboardDisplayRow extends OrgLeaderboardRow {
+  /** Kebab-case slug derived from `identity`, safe to use in `data-testid` attributes. */
+  identitySlug: string;
   foundationsGroup: OrgLeaderboardPillGroup;
   typeGroup: OrgLeaderboardPillGroup;
   roleGroup: OrgLeaderboardPillGroup;

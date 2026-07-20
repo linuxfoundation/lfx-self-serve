@@ -12,19 +12,15 @@ import {
   DELTA_DIRECTION_ICON,
   DELTA_DIRECTION_TEXT_CLASS,
   DEMO_ORG_INFLUENCE_ROWS,
+  ORG_INFLUENCE_MEASURE_LABEL_MEETING_ATTENDANCE,
+  ORG_INFLUENCE_SIGNAL_BAR_GAP,
+  ORG_INFLUENCE_SIGNAL_BAR_HEIGHTS,
+  ORG_INFLUENCE_SIGNAL_BAR_WIDTH,
   ORG_MEETINGS_ATTENDANCE_BAR_SCALE,
   PD_BAND_TAG,
 } from '@lfx-one/shared/constants';
 import type { OrgInfluenceBandBar, OrgInfluenceDisplayRow, OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-
-// Signal-bar geometry, matching the Org Lens Project Detail band chip (PR #1028): four ascending
-// bars, filled up to the band's rank and greyed beyond it.
-const SIGNAL_BAR_HEIGHTS = [5, 8.3, 11.6, 15];
-const SIGNAL_BAR_WIDTH = 2.6;
-const SIGNAL_BAR_GAP = 1.8;
-
-const MEASURE_LABEL_MEETING_ATTENDANCE = 'Meeting Attendance';
 
 @Component({
   selector: 'lfx-org-meetings-influence',
@@ -82,14 +78,14 @@ export class OrgMeetingsInfluenceComponent {
         bandBars: this.buildSignalBars(BAND_SIGNAL_RANK[row.band], BAND_SIGNAL_FILL[row.band], BAND_SIGNAL_FILL_LIGHT[row.band]),
         breakdown: [...row.breakdown]
           .sort((a, b) => b.pct - a.pct)
-          .map((segment) => ({ ...segment, isAttendance: segment.label === MEASURE_LABEL_MEETING_ATTENDANCE })),
+          .map((segment) => ({ ...segment, isAttendance: segment.label === ORG_INFLUENCE_MEASURE_LABEL_MEETING_ATTENDANCE })),
       }))
     );
   }
 
   private buildSignalBars(rank: number, fill: string, fillLight: string): OrgInfluenceBandBar[] {
-    return SIGNAL_BAR_HEIGHTS.map((h, index) => ({
-      x: index * (SIGNAL_BAR_WIDTH + SIGNAL_BAR_GAP),
+    return ORG_INFLUENCE_SIGNAL_BAR_HEIGHTS.map((h, index) => ({
+      x: index * (ORG_INFLUENCE_SIGNAL_BAR_WIDTH + ORG_INFLUENCE_SIGNAL_BAR_GAP),
       y: 15 - h,
       h,
       fillClass: index < rank ? fill : fillLight,

@@ -66,6 +66,20 @@ export const ORG_MEETINGS_TREND_SUBTITLE: Record<string, string> = {
  */
 export const ORG_MEETINGS_ATTENDANCE_BAR_SCALE = 2.2;
 
+/** Signal-bar geometry for the influence accordion's band chip icon, matching the Org Lens Project Detail band chip (PR #1028): four ascending bars, filled up to the band's rank and greyed beyond it. */
+export const ORG_INFLUENCE_SIGNAL_BAR_HEIGHTS = [5, 8.3, 11.6, 15];
+export const ORG_INFLUENCE_SIGNAL_BAR_WIDTH = 2.6;
+export const ORG_INFLUENCE_SIGNAL_BAR_GAP = 1.8;
+
+/** Breakdown measure label highlighted (as the section's subject) in the influence accordion's expanded detail row. */
+export const ORG_INFLUENCE_MEASURE_LABEL_MEETING_ATTENDANCE = 'Meeting Attendance';
+
+/** Visible pill count before a leaderboard multi-value cell (foundations/type/role) collapses to "+N". */
+export const ORG_LEADERBOARD_VISIBLE_PILL_COUNT = 2;
+
+/** Chip label shown for meetings the viewer isn't authorized to see the real value for. */
+export const ORG_LEADERBOARD_PRIVATE_MEETING_LABEL = 'Private';
+
 /** Demo KPI summary — matches the 6a design spec's mock numbers (63 employees / 512 meetings / 47 projects / 30 foundations). */
 export const DEMO_ORG_MEETINGS_KPI_SUMMARY: OrgMeetingsKpiSummary = {
   employeesActive: 63,
