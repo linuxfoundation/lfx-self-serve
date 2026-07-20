@@ -57,6 +57,13 @@ export class OrgMeetingsInfluenceComponent {
   // section's subject stays visually dominant even when it isn't the largest measure.
   protected readonly rows: Signal<OrgInfluenceDisplayRow[]> = this.initRows();
 
+  protected onRowKeydown(event: KeyboardEvent, projectSlug: string): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.toggleExpansion(projectSlug);
+    }
+  }
+
   protected toggleExpansion(projectSlug: string): void {
     this.expansionState.update((state) => {
       const next = { ...state };

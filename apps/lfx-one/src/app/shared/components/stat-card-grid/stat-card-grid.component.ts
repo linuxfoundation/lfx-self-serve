@@ -3,14 +3,8 @@
 
 import { Component, computed, input } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
-import { DELTA_DIRECTION_ICON, DELTA_DIRECTION_TEXT_CLASS } from '@lfx-one/shared/constants';
+import { DELTA_DIRECTION_ICON, DELTA_DIRECTION_TEXT_CLASS, GRID_COLS_CLASS } from '@lfx-one/shared/constants';
 import { StatCardItem } from '@lfx-one/shared/interfaces';
-
-const GRID_COLS_CLASS: Record<2 | 3 | 4, string> = {
-  2: 'sm:grid-cols-2',
-  3: 'sm:grid-cols-3',
-  4: 'sm:grid-cols-2 lg:grid-cols-4',
-};
 
 @Component({
   selector: 'lfx-stat-card-grid',
