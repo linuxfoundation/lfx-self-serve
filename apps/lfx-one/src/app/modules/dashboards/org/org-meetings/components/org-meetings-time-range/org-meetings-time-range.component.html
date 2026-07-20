@@ -19,6 +19,7 @@
           <button
             type="button"
             class="flex items-center justify-between gap-4 rounded-md px-3 py-2 text-left hover:bg-gray-50"
+            [attr.aria-pressed]="option.value === value()"
             (click)="select(option)"
             [attr.data-testid]="'org-meetings-time-range-option-' + option.value">
             <span class="flex items-center gap-2 text-sm" [class.font-medium]="option.value === value()" [class.text-gray-900]="option.value === value()">

@@ -5,8 +5,8 @@
 // scrolling), which clips the absolutely-positioned "+N" hover popovers in the leaderboard cells.
 // `!important` is required here to win over that inline style. This table doesn't need scroll
 // behavior (7 columns fit the card width), so overflow is opened up for this instance only.
-::ng-deep {
-  .p-datatable-table-container {
+:host ::ng-deep {
+  [data-testid='org-meetings-leaderboard-table'] .p-datatable-table-container {
     overflow: visible !important;
   }
 }

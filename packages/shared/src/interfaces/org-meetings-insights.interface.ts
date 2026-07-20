@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_MEETINGS_TIME_RANGES } from '@lfx-one/shared/constants';
+import { ORG_MEETINGS_TIME_RANGES } from '../constants/org-meetings-insights.constants';
 
 import type { OrgLensProjectBand } from './org-lens-project-detail.interface';
 import type { StatCardDeltaDirection } from './stat-card.interface';

@@ -18,7 +18,7 @@
     </h2>
     <div class="flex-1 self-center border-t border-gray-200"></div>
   </div>
-  <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-meetings-influence-table">
+  <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white" data-testid="org-meetings-influence-table">
     <table class="w-full text-sm">
       <thead class="bg-gray-50">
         <tr class="border-b border-gray-200 text-left text-xs tracking-wide text-gray-500 uppercase">
@@ -27,7 +27,7 @@
           <th class="px-4 py-2 font-medium">Ecosystem Influence</th>
           <th class="px-4 py-2 font-medium">Attendance's contribution</th>
           <th class="px-4 py-2 font-medium">Δ this period</th>
-          <th class="px-4 py-2 font-medium"></th>
+          <th class="px-4 py-2 font-medium"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
@@ -115,8 +115,8 @@
                     }
                   </div>
                   <p class="text-sm text-gray-600">
-                    {{ row.fromAttendancePct }}% of {{ orgName() }}'s ecosystem influence score of {{ row.bandLabel }} in {{ row.project }} comes from your
-                    organization's meeting attendance.
+                    {{ row.fromAttendancePct }}% of {{ row.project }}'s ecosystem influence score of {{ row.ecosystemInfluence }} comes from
+                    {{ orgName() }}'s meeting attendance.
                   </p>
                 </div>
               </td>
