@@ -8,6 +8,7 @@ import {
   NewsletterAnalytics,
   NewsletterListParams,
   NewsletterListResponse,
+  NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
@@ -143,5 +144,9 @@ export class NewsletterServiceClient {
       `/projects/${projectUid}/newsletters/${newsletterUid}/analytics`,
       'GET'
     );
+  }
+
+  public async listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterOptOutListResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs`, 'GET');
   }
 }
