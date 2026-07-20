@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Location, NgClass } from '@angular/common';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MeetingMaterialsDrawerComponent } from '@app/modules/meetings/components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,6 +16,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
+  getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
   MEETING_TYPE_CONFIGS,
@@ -35,7 +37,7 @@ import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap, timer } from 'rxjs';
 
 @Component({
   selector: 'lfx-past-meeting-details',
@@ -53,6 +55,7 @@ import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switc
     TableComponent,
     AvatarComponent,
     TooltipModule,
+    MeetingMaterialsDrawerComponent,
   ],
   templateUrl: './past-meeting-details.component.html',
 })
@@ -65,6 +68,7 @@ export class PastMeetingDetailsComponent {
   private readonly messageService = inject(MessageService);
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Simple writable signals
   public loading = signal(true);
@@ -72,6 +76,10 @@ export class PastMeetingDetailsComponent {
   public invitationFilter = signal<'all' | 'invited' | 'uninvited'>('all');
   public attendanceFilter = signal<'all' | 'attended' | 'absent'>('all');
   public votingOnly = signal(false);
+  public materialsDrawerVisible = signal(false);
+
+  // Must be declared before initAttachments() is called so combineLatest receives the subject, not undefined.
+  private readonly attachmentRefresh$ = new BehaviorSubject<void>(undefined);
 
   // Complex signals via init functions
   public meeting: Signal<PastMeeting | null> = this.initMeeting();
@@ -82,6 +90,7 @@ export class PastMeetingDetailsComponent {
   public participants: Signal<EnrichedPastMeetingParticipant[]> = this.initParticipants();
 
   // Computed signals
+  protected readonly pastMeetingResourceId: Signal<string> = computed(() => (this.meeting() ? getPastMeetingResourceId(this.meeting()!) : ''));
   public attendeeCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_attended).length);
   public absenteeCount: Signal<number> = computed(() => this.participants().filter((p) => !p.is_attended).length);
   public invitedCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_invited).length);
@@ -123,6 +132,17 @@ export class PastMeetingDetailsComponent {
     this.location.back();
   }
 
+  public openMaterialsDrawer(): void {
+    this.materialsDrawerVisible.set(true);
+  }
+
+  public onMaterialsChanged(): void {
+    this.attachmentRefresh$.next();
+    timer(1000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.attachmentRefresh$.next());
+  }
+
   public openSummaryModal(): void {
     const summary = this.summary();
     if (!summary) return;
@@ -142,7 +162,7 @@ export class PastMeetingDetailsComponent {
     if (!meeting) return;
 
     this.meetingService
-      .getPastMeetingAttachmentDownloadUrl(meeting.id, attachment.uid)
+      .getPastMeetingAttachmentDownloadUrl(getPastMeetingResourceId(meeting), attachment.uid)
       .pipe(take(1))
       .subscribe({
         next: (res) => {
@@ -276,13 +296,14 @@ export class PastMeetingDetailsComponent {
 
   private initAttachments(): Signal<PastMeetingAttachment[]> {
     return toSignal(
-      toObservable(this.meeting).pipe(
-        filter((m): m is PastMeeting => !!m?.id),
-        map((m) => m.id),
-        distinctUntilChanged(),
-        take(1),
-        switchMap((id) => this.meetingService.getPastMeetingAttachments(id).pipe(catchError(() => of([] as PastMeetingAttachment[]))))
-      ),
+      combineLatest([
+        toObservable(this.meeting).pipe(
+          filter((m): m is PastMeeting => !!m?.id),
+          map((m) => getPastMeetingResourceId(m)),
+          distinctUntilChanged()
+        ),
+        this.attachmentRefresh$,
+      ]).pipe(switchMap(([id]) => this.meetingService.getPastMeetingAttachments(id).pipe(catchError(() => of([] as PastMeetingAttachment[]))))),
       { initialValue: [] }
     );
   }
