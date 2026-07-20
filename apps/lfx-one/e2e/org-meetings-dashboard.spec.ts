@@ -104,6 +104,11 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await expect(page.getByTestId('org-meetings-trend-meetings-attended')).toBeVisible();
     await expect(page.getByTestId('org-meetings-trend-employees-active')).toBeVisible();
     await expect(page.getByTestId('org-meetings-trend-projects-supported')).toBeVisible();
+
+    // Each card must actually render its sparkline chart, not just the card shell.
+    await expect(page.getByTestId('org-meetings-trend-meetings-attended').locator('canvas')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-employees-active').locator('canvas')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-projects-supported').locator('canvas')).toBeVisible();
   });
 
   test('renders the influence table with all rows collapsed by default', async ({ page }) => {

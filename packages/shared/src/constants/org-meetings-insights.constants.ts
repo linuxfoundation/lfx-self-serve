@@ -89,7 +89,7 @@ export const ORG_LEADERBOARD_PRIVATE_MEETING_LABEL = 'Private';
 
 /** Influence table rank pill text color, keyed by `OrgInfluenceRankTier`: top → emerald, down → red, neutral → gray. */
 export const ORG_INFLUENCE_RANK_TIER_TEXT_CLASS: Record<OrgInfluenceRankTier, string> = {
-  top: 'text-emerald-600',
+  top: 'text-emerald-700',
   down: 'text-red-600',
   neutral: 'text-gray-500',
 };

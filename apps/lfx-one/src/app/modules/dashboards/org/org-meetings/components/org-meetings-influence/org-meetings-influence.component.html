@@ -8,7 +8,7 @@
       <span>How attendance impacts project influence</span>
       <button
         type="button"
-        class="cursor-help text-xs text-gray-400 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+        class="cursor-help text-xs text-gray-500 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         [pTooltip]="infoTooltip"
         tooltipPosition="top"
         tooltipEvent="both"
@@ -95,8 +95,9 @@
             </td>
             <td class="px-4 py-3 text-right align-middle">
               <a
-                class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                class="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
                 [routerLink]="row.projectLink"
+                [attr.aria-label]="'View ' + row.project + ' in Projects'"
                 (click)="$event.stopPropagation()">
                 Projects
                 <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i>
@@ -116,7 +117,7 @@
                             <div class="h-1.5 rounded-full" [class]="segment.isAttendance ? 'bg-blue-600' : 'bg-gray-300'" [style.width.%]="segment.pct"></div>
                           </div>
                         </div>
-                        <span class="text-right text-xs font-medium" [class]="segment.isAttendance ? 'text-gray-900' : 'text-gray-400'"
+                        <span class="text-right text-xs font-medium" [class]="segment.isAttendance ? 'text-gray-900' : 'text-gray-500'"
                           >{{ segment.pct }}%</span
                         >
                       </div>
