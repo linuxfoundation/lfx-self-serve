@@ -198,13 +198,18 @@ export class NewsletterManageComponent {
       this.audienceFilled() &&
       this.subjectFilled() &&
       this.bodyRendered() &&
+      // Also require actual content, not just a non-empty body_html: bodyRendered
+      // is a trim() check, so a markup-only simple draft (e.g. an empty rich-text
+      // "<p></p>") passes it; bodyFilled strips markup so a visually-empty body
+      // can't be sent.
+      this.bodyFilled() &&
       !this.isDirty() &&
       this.hasContext() &&
       !this.submitting() &&
       !this.resolvingSend()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyUsable() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
+    () => this.subjectFilled() && this.bodyUsable() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
   );
   public readonly canProceed = computed(() => this.computeCanProceed(this.currentStep()));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);

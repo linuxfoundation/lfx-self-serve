@@ -62,11 +62,12 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  * blocks within the canvas, and remove blocks. The component emits the current
  * `NewsletterLayout` (wrapper_key from the manifest + the canvas blocks).
  *
- * Phase-1 scope: blocks carry an empty `content: {}` — per-field editing lands in
- * a later ticket. Single-level container nesting IS implemented: a container
- * block exposes its own connected drop list, and blocks can be dragged between
- * the palette, the canvas, and any container (a container cannot nest inside
- * another container). See `onChildDrop` / `detachFromSource` / the nested list.
+ * Blocks carry per-field content edited through the schema-driven Fields panel
+ * (see `newsletter-block-fields`) and inline on the canvas. Single-level
+ * container nesting IS implemented: a container block exposes its own connected
+ * drop list, and blocks can be dragged between the palette, the canvas, and any
+ * container (a container cannot nest inside another container). See `onChildDrop`
+ * / `detachFromSource` / the nested list.
  *
  * SSR: CDK drag-drop is browser-only, so the canvas drag affordances render only
  * after `isPlatformBrowser`. The manifest is fetched browser-side via the loader
