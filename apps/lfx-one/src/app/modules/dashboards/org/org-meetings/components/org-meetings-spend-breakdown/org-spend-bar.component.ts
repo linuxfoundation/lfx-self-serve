@@ -3,6 +3,7 @@
 
 import { Component, computed, input, Signal } from '@angular/core';
 import type { OrgMeetingsSpendSegment, OrgSpendBarSegment } from '@lfx-one/shared/interfaces';
+import { slugify } from '@lfx-one/shared/utils';
 
 // Presentational ranked mini-bar list for "Where your people spend time" — each named item gets its
 // own bar so adjacent segments never need to be visually distinguished; the trailing "others" bucket
@@ -17,6 +18,8 @@ export class OrgSpendBarComponent {
   public readonly title = input.required<string>();
   public readonly icon = input.required<string>();
   public readonly segments = input.required<OrgMeetingsSpendSegment[]>();
+
+  protected readonly titleSlug: Signal<string> = computed(() => slugify(this.title()));
 
   protected readonly rows: Signal<OrgSpendBarSegment[]> = this.initRows();
 

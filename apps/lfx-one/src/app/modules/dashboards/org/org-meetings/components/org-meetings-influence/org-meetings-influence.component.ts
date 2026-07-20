@@ -4,21 +4,19 @@
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TooltipModule } from 'primeng/tooltip';
-import { BAND_CHIP_CLASS, BAND_SIGNAL_FILL, BAND_SIGNAL_FILL_LIGHT, BAND_SIGNAL_RANK, DEMO_ORG_INFLUENCE_ROWS, PD_BAND_TAG } from '@lfx-one/shared/constants';
-import type { OrgMeetingsDeltaDirection, OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
+import {
+  BAND_CHIP_CLASS,
+  BAND_SIGNAL_FILL,
+  BAND_SIGNAL_FILL_LIGHT,
+  BAND_SIGNAL_RANK,
+  DELTA_DIRECTION_ICON,
+  DELTA_DIRECTION_TEXT_CLASS,
+  DEMO_ORG_INFLUENCE_ROWS,
+  ORG_MEETINGS_ATTENDANCE_BAR_SCALE,
+  PD_BAND_TAG,
+} from '@lfx-one/shared/constants';
+import type { OrgInfluenceBandBar, OrgInfluenceDisplayRow, OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-
-const DELTA_TEXT_CLASS: Record<OrgMeetingsDeltaDirection, string> = {
-  up: 'text-emerald-600',
-  down: 'text-red-600',
-  flat: 'text-gray-400',
-};
-
-const DELTA_ICON: Record<OrgMeetingsDeltaDirection, string> = {
-  up: 'fa-light fa-arrow-up',
-  down: 'fa-light fa-arrow-down',
-  flat: 'fa-light fa-minus',
-};
 
 // Signal-bar geometry, matching the Org Lens Project Detail band chip (PR #1028): four ascending
 // bars, filled up to the band's rank and greyed beyond it.
@@ -41,35 +39,27 @@ export class OrgMeetingsInfluenceComponent {
   public readonly timeRange = input.required<OrgMeetingsTimeRange>();
 
   // Configuration
-  protected readonly deltaTextClass = DELTA_TEXT_CLASS;
-  protected readonly deltaIcon = DELTA_ICON;
-
-  // Selected organization's display name, used in the attendance-contribution explanatory sentence.
-  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName || 'Your organization');
+  protected readonly deltaTextClass = DELTA_DIRECTION_TEXT_CLASS;
+  protected readonly deltaIcon = DELTA_DIRECTION_ICON;
+  protected readonly attendanceBarScale = ORG_MEETINGS_ATTENDANCE_BAR_SCALE;
 
   // Explanatory copy surfaced via the info-icon tooltip next to the section heading.
   protected readonly infoTooltip =
     "Meeting attendance is one of the signals behind each project's Ecosystem Influence Score. See the full breakdown on the Projects page, or review project health on the Governance page.";
 
-  // Rows enriched with the qualitative band chip (label + signal-bar icon) and a breakdown of
-  // ecosystem-influence measures sorted descending, with meeting attendance highlighted so the
-  // section's subject stays visually dominant even when it isn't the largest measure.
-  protected readonly rows = computed(() =>
-    DEMO_ORG_INFLUENCE_ROWS.map((row) => ({
-      ...row,
-      bandChipClass: BAND_CHIP_CLASS[row.band],
-      bandLabel: PD_BAND_TAG[row.band].label,
-      bandBars: this.buildSignalBars(BAND_SIGNAL_RANK[row.band], BAND_SIGNAL_FILL[row.band], BAND_SIGNAL_FILL_LIGHT[row.band]),
-      breakdown: [...row.breakdown]
-        .sort((a, b) => b.pct - a.pct)
-        .map((segment) => ({ ...segment, isAttendance: segment.label === MEASURE_LABEL_MEETING_ATTENDANCE })),
-    }))
-  );
-
   // Expansion state is owned here as a slug -> boolean map, mirroring the /org/overview
   // foundations table pattern. All rows are collapsed by default.
   private readonly expansionState = signal<Record<string, boolean>>({});
+
+  // Selected organization's display name, used in the attendance-contribution explanatory sentence.
+  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName || 'Your organization');
+
   protected readonly expansionMap: Signal<Record<string, boolean>> = computed(() => this.expansionState());
+
+  // Rows enriched with the qualitative band chip (label + signal-bar icon) and a breakdown of
+  // ecosystem-influence measures sorted descending, with meeting attendance highlighted so the
+  // section's subject stays visually dominant even when it isn't the largest measure.
+  protected readonly rows: Signal<OrgInfluenceDisplayRow[]> = this.initRows();
 
   protected toggleExpansion(projectSlug: string): void {
     this.expansionState.update((state) => {
@@ -83,7 +73,21 @@ export class OrgMeetingsInfluenceComponent {
     });
   }
 
-  private buildSignalBars(rank: number, fill: string, fillLight: string): { x: number; y: number; h: number; fillClass: string }[] {
+  private initRows(): Signal<OrgInfluenceDisplayRow[]> {
+    return computed(() =>
+      DEMO_ORG_INFLUENCE_ROWS.map((row) => ({
+        ...row,
+        bandChipClass: BAND_CHIP_CLASS[row.band],
+        bandLabel: PD_BAND_TAG[row.band].label,
+        bandBars: this.buildSignalBars(BAND_SIGNAL_RANK[row.band], BAND_SIGNAL_FILL[row.band], BAND_SIGNAL_FILL_LIGHT[row.band]),
+        breakdown: [...row.breakdown]
+          .sort((a, b) => b.pct - a.pct)
+          .map((segment) => ({ ...segment, isAttendance: segment.label === MEASURE_LABEL_MEETING_ATTENDANCE })),
+      }))
+    );
+  }
+
+  private buildSignalBars(rank: number, fill: string, fillLight: string): OrgInfluenceBandBar[] {
     return SIGNAL_BAR_HEIGHTS.map((h, index) => ({
       x: index * (SIGNAL_BAR_WIDTH + SIGNAL_BAR_GAP),
       y: 15 - h,

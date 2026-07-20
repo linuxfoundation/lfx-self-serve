@@ -88,10 +88,10 @@ test.describe('Org Meetings insights (6a redesign)', () => {
 
     const spend = page.getByTestId('org-meetings-spend-breakdown');
     await expect(spend).toBeVisible();
-    await expect(page.getByTestId('org-spend-bar-By foundation')).toBeVisible();
-    await expect(page.getByTestId('org-spend-bar-By project')).toBeVisible();
-    await expect(page.getByTestId('org-spend-bar-By meeting type')).toBeVisible();
-    await expect(page.getByTestId('org-spend-bar-By role')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-foundation')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-project')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-meeting-type')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-role')).toBeVisible();
     await expect(spend).toContainText('CNCF');
   });
 
@@ -101,9 +101,9 @@ test.describe('Org Meetings insights (6a redesign)', () => {
 
     const trends = page.getByTestId('org-meetings-trends');
     await expect(trends).toBeVisible();
-    await expect(page.getByTestId('org-meetings-trend-Meetings Attended')).toBeVisible();
-    await expect(page.getByTestId('org-meetings-trend-Employees Active')).toBeVisible();
-    await expect(page.getByTestId('org-meetings-trend-Projects Supported')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-meetings-attended')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-employees-active')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-projects-supported')).toBeVisible();
   });
 
   test('renders the influence table with all rows collapsed by default', async ({ page }) => {

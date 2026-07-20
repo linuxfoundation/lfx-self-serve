@@ -35,14 +35,8 @@
         @for (row of rows(); track row.projectSlug) {
           <tr
             class="cursor-pointer border-b border-gray-200 transition-colors hover:bg-gray-50"
-            role="button"
-            tabindex="0"
-            [attr.aria-expanded]="!!expansionMap()[row.projectSlug]"
             [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug"
-            (mousedown)="$event.preventDefault()"
-            (click)="toggleExpansion(row.projectSlug)"
-            (keydown.enter)="toggleExpansion(row.projectSlug)"
-            (keydown.space)="toggleExpansion(row.projectSlug); $event.preventDefault()">
+            (click)="toggleExpansion(row.projectSlug)">
             <td class="px-4 py-3 align-middle">
               <div class="flex items-center gap-3">
                 <button
@@ -78,7 +72,7 @@
             <td class="px-4 py-3 align-middle">
               <div class="flex items-center gap-2.5">
                 <div class="h-1.5 w-24 overflow-hidden rounded-full bg-blue-100">
-                  <div class="h-1.5 rounded-full bg-blue-600" [style.width.%]="row.fromAttendancePct * 2.2"></div>
+                  <div class="h-1.5 rounded-full bg-blue-600" [style.width.%]="row.fromAttendancePct * attendanceBarScale"></div>
                 </div>
                 <span class="text-xs font-medium whitespace-nowrap text-gray-900">{{ row.fromAttendancePct }}% of score</span>
               </div>

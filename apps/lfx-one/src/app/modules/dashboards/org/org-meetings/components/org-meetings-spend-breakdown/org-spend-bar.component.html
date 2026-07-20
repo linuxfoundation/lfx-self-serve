@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'org-spend-bar-' + title()">
+<div class="rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'org-spend-bar-' + titleSlug()">
   <div class="mb-3.5 flex items-center gap-2">
     <i [class]="icon()" class="text-base text-blue-600" aria-hidden="true"></i>
     <span class="text-sm font-medium text-gray-900">{{ title() }}</span>
@@ -26,7 +26,7 @@
         @if (segment.others?.length) {
           <div
             class="pointer-events-none absolute top-full right-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block"
-            [attr.data-testid]="'org-spend-bar-' + title() + '-others-popover'">
+            [attr.data-testid]="'org-spend-bar-' + titleSlug() + '-others-popover'">
             <p class="mb-2 text-xs font-medium text-gray-500">Breakdown</p>
             <div class="flex flex-col gap-1.5">
               @for (item of segment.others; track item.label) {

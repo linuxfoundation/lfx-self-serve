@@ -37,6 +37,35 @@ export const ORG_MEETINGS_TIME_RANGE_GROUPS: (typeof ORG_MEETINGS_TIME_RANGES)[n
   ['custom'],
 ];
 
+/** Per-card icon-tile tint, matching the /events and /org/overview stat-strip convention (varied tints rather than a single uniform blue). */
+export const ORG_MEETINGS_KPI_ICON_CLASS = {
+  employeesActive: 'bg-blue-100 text-blue-600',
+  meetingsAttended: 'bg-emerald-100 text-emerald-600',
+  projectsSupported: 'bg-violet-100 text-violet-600',
+  foundationsSupported: 'bg-amber-100 text-amber-600',
+} as const;
+
+/** Per-metric header icon for the "How this has changed over time" trend cards, keyed by trend label. */
+export const ORG_MEETINGS_TREND_ICON: Record<string, string> = {
+  'Meetings Attended': 'fa-light fa-video',
+  'Employees Active': 'fa-light fa-users',
+  'Projects Supported': 'fa-light fa-diagram-project',
+};
+
+/** Descriptive footer subtitle per trend card, matching the org-overview involvement cards' subtitle line. */
+export const ORG_MEETINGS_TREND_SUBTITLE: Record<string, string> = {
+  'Meetings Attended': 'Meetings your employees attended',
+  'Employees Active': 'Employees active in project meetings',
+  'Projects Supported': 'Projects your employees support',
+};
+
+/**
+ * Visual amplification factor for the influence table's "attendance contribution" bar. Real
+ * `fromAttendancePct` values cluster well under 50%, so the raw percentage reads as nearly empty —
+ * this scales the fill width for legibility without affecting the displayed percentage text.
+ */
+export const ORG_MEETINGS_ATTENDANCE_BAR_SCALE = 2.2;
+
 /** Demo KPI summary — matches the 6a design spec's mock numbers (63 employees / 512 meetings / 47 projects / 30 foundations). */
 export const DEMO_ORG_MEETINGS_KPI_SUMMARY: OrgMeetingsKpiSummary = {
   employeesActive: 63,

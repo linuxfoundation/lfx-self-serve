@@ -145,3 +145,19 @@ export interface OrgInfluenceRow {
   deltaDirection: OrgMeetingsDeltaDirection;
   breakdown: OrgInfluenceBreakdownSegment[];
 }
+
+/** One bar of the band's signal-bar icon, positioned and filled per its rank. */
+export interface OrgInfluenceBandBar {
+  x: number;
+  y: number;
+  h: number;
+  fillClass: string;
+}
+
+/** An `OrgInfluenceRow` enriched with display-ready band chip/bar and highlighted breakdown, as rendered by the influence accordion. */
+export interface OrgInfluenceDisplayRow extends Omit<OrgInfluenceRow, 'breakdown'> {
+  bandChipClass: string;
+  bandLabel: string;
+  bandBars: OrgInfluenceBandBar[];
+  breakdown: OrgInfluenceBreakdownRow[];
+}
