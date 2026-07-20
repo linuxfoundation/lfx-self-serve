@@ -86,19 +86,23 @@ export const INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT: Record<InfluenceBand, string> 
   'non-lf': 'fill-gray-200',
 };
 
-/** Display labels for health scores. */
+/** Display labels for health scores (5 Insights bands + Unavailable). */
 export const HEALTH_SCORE_LABELS: Record<HealthScore, string> = {
   excellent: 'Excellent',
   healthy: 'Healthy',
-  'at-risk': 'At Risk',
+  stable: 'Stable',
+  unsteady: 'Unsteady',
+  critical: 'Critical',
   unavailable: 'Unavailable',
 };
 
-/** Tag/badge severity per health score (drives health-badge color). */
+/** Tag/badge severity per health score (drives health-badge color), matching the Insights health-score component intent. */
 export const HEALTH_SCORE_SEVERITY: Record<HealthScore, TagSeverity> = {
   excellent: 'success',
   healthy: 'info',
-  'at-risk': 'danger',
+  stable: 'info',
+  unsteady: 'warn',
+  critical: 'danger',
   unavailable: 'secondary',
 };
 

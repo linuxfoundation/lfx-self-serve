@@ -6,8 +6,8 @@ import { TagSeverity } from './components.interface';
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
 export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
-/** CHAOSS-derived project health classification (via LFX Insights). */
-export type HealthScore = 'excellent' | 'healthy' | 'at-risk' | 'unavailable';
+/** LFX Insights project health classification — the 5 bands of the Insights project Health Score component, plus `unavailable` when no score exists. */
+export type HealthScore = 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'critical' | 'unavailable';
 
 /** Direction of a one-year influence trend, used for color-coding the sparkline + delta. */
 export type InfluenceTrendDirection = 'up' | 'down' | 'flat';

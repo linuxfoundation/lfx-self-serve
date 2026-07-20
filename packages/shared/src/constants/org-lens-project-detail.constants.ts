@@ -27,11 +27,13 @@ export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
   all: 'alltime',
 };
 
-/** Hero health badge → lfx-tag severity (green Excellent / blue Healthy / red At Risk), matching HEALTH_SCORE_SEVERITY on the Org Lens Projects page. */
+/** Hero health badge → lfx-tag severity (5 Insights bands), matching HEALTH_SCORE_LABELS / HEALTH_SCORE_SEVERITY on the Org Lens Projects page. */
 export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
   excellent: { label: 'Excellent', severity: 'success' },
   healthy: { label: 'Healthy', severity: 'info' },
-  'at-risk': { label: 'At Risk', severity: 'danger' },
+  stable: { label: 'Stable', severity: 'info' },
+  unsteady: { label: 'Unsteady', severity: 'warn' },
+  critical: { label: 'Critical', severity: 'danger' },
 };
 
 /** Leaderboard band chip → lfx-tag severity. */

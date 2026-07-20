@@ -13,6 +13,7 @@ import {
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
+import { classifyHealthScore } from '@lfx-one/shared/utils';
 import type {
   HealthScore,
   InfluenceBand,
@@ -447,10 +448,7 @@ export class OrgLensProjectsService {
   }
 
   private mapHealthScore(score: number): HealthScore {
-    if (score >= 80) {
-      return 'excellent';
-    }
-    return score >= 60 ? 'healthy' : 'at-risk';
+    return classifyHealthScore(score);
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {
