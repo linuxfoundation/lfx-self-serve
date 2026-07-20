@@ -512,7 +512,15 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
   // to the branded error page only for the session-store failures this page exists for, and only
   // on GET (so XHR/Fetch clients still get JSON); everything else falls through to
   // apiErrorHandler's structured JSON response.
-  if (error instanceof AuthenticationError && req.method === 'GET' && error.operation?.startsWith('session_store')) {
+  //
+  // `auth()` is mounted globally (no path filter), so it attempts the same rolling session write on
+  // every request — including a GET to /auth-error itself. Without the path guard below, a Valkey
+  // outage would make /auth-error fail exactly the same way it just redirected here for, issuing
+  // another redirect to itself (with a growing `returnTo`) until the browser's redirect limit kicks
+  // in. Skip the redirect for that one case and fall through to apiErrorHandler's JSON response
+  // instead — an edge case (Valkey still down on the very next request to the error page) that's a
+  // fair trade for not looping.
+  if (error instanceof AuthenticationError && req.method === 'GET' && error.operation?.startsWith('session_store') && !/^\/auth-error\/?$/.test(req.path)) {
     // A session-store write can fail while handling an OAuth callback (/callback and its
     // /*.../callback siblings), whose query string carries a one-time `code`/`state` pair. Forwarding
     // that URL as `returnTo` would send the user back to an already-consumed callback after re-login

@@ -62,10 +62,13 @@ export class ValkeyService implements CachePort {
     return this.client !== null;
   }
 
-  public async getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null> {
+  public async getJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T | null> {
     if (!this.client) return null;
     try {
-      const raw = (await this.withTimeout(this.runWhenConnected(() => this.client!.get(key)))) as string | null;
+      const raw = (await this.withTimeout(
+        this.runWhenConnected(() => this.client!.get(key), timeoutMs),
+        timeoutMs
+      )) as string | null;
       if (raw == null) return null;
       // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
       // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
@@ -100,7 +103,7 @@ export class ValkeyService implements CachePort {
         return false;
       }
       await this.withTimeout(
-        this.runWhenConnected(() => this.client!.set(key, serialized, 'EX', ttlSeconds)),
+        this.runWhenConnected(() => this.client!.set(key, serialized, 'EX', ttlSeconds), timeoutMs),
         timeoutMs
       );
       return true;
@@ -115,7 +118,7 @@ export class ValkeyService implements CachePort {
     if (key === null || !this.client) return false;
     try {
       await this.withTimeout(
-        this.runWhenConnected(() => this.client!.del(key)),
+        this.runWhenConnected(() => this.client!.del(key), timeoutMs),
         timeoutMs
       );
       return true;
@@ -183,16 +186,23 @@ export class ValkeyService implements CachePort {
    * after a dropped connection (ioredis's own retry timer, not something we trigger) — instead of waiting
    * out the handshake, so the per-op timeout never gets a chance to apply. Awaiting readiness first (deduped
    * via `connectingPromise` so concurrent callers share one in-flight wait) closes that gap for every
-   * non-`ready` state; the whole thing still races against the caller's `withTimeout`.
+   * non-`ready` state.
+   *
+   * The wait is bounded by this caller's own `timeoutMs` rather than left to race only the outer
+   * `withTimeout`: `Promise.race` never cancels the loser, so during a prolonged reconnect every
+   * timed-out caller's `command()` would otherwise stay attached to the shared `connectingPromise` and
+   * fire — all at once, with a potentially stale payload — the moment `ready` eventually arrives
+   * (unbounded memory retention plus a write/delete storm right as Valkey recovers). Racing the wait
+   * against this caller's own deadline means a caller that times out never reaches `command()` at all.
    */
-  private async runWhenConnected<T>(command: () => Promise<T>): Promise<T> {
+  private async runWhenConnected<T>(command: () => Promise<T>, timeoutMs: number): Promise<T> {
     if (this.client && this.client.status !== 'ready') {
       if (!this.connectingPromise) {
         this.connectingPromise = this.waitUntilReady(this.client).finally(() => {
           this.connectingPromise = null;
         });
       }
-      await this.connectingPromise;
+      await this.withTimeout(this.connectingPromise, timeoutMs);
     }
     return command();
   }

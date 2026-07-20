@@ -95,6 +95,12 @@ export class SessionStoreService {
       });
     }
     const ttlSeconds = this.ttlSecondsFor(session);
+    // One shared deadline for the whole fail-closed sequence (the SET plus its fallback DEL
+    // retries below) — rather than handing each call its own fresh SESSION_OP_TIMEOUT_MS budget,
+    // which could chain into ~3x the intended latency (a hard outage timing out all three) before
+    // the request is failed. The retries still get a chance to run against a since-recovered
+    // connection, just within what's left of the one budget instead of a brand new one each time.
+    const deadline = Date.now() + VALKEY_CACHE.SESSION_OP_TIMEOUT_MS;
     const persisted = await valkeyService.setJson(key, session, ttlSeconds, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
     if (!persisted) {
       // setJson is a `SET key val EX ttl` — a failed write leaves any prior value at this key
@@ -105,10 +111,10 @@ export class SessionStoreService {
       // prior entry in place.
       // `set` and `del` are independent Redis commands — a transient blip can fail both back-to-back
       // while a later `get` succeeds against a since-recovered connection, resurrecting the stale
-      // entry. One immediate retry closes most of that window without adding real latency.
-      let invalidated = await valkeyService.del(key, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
+      // entry. One immediate retry closes most of that window, within the remaining budget.
+      let invalidated = await valkeyService.del(key, this.remainingMs(deadline));
       if (!invalidated) {
-        invalidated = await valkeyService.del(key, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
+        invalidated = await valkeyService.del(key, this.remainingMs(deadline));
       }
       if (!invalidated) {
         logger.error(undefined, 'session_store_set', startTime, new Error('Valkey write and fallback invalidation both failed'), {
@@ -145,6 +151,11 @@ export class SessionStoreService {
         message: 'Session delete failed on logout — session will remain valid in Valkey until it expires via TTL',
       });
     }
+  }
+
+  /** Time left until `deadline`, floored at 0 — never hands a downstream timeout a negative budget. */
+  private remainingMs(deadline: number): number {
+    return Math.max(0, deadline - Date.now());
   }
 
   /** Fail-closed on an unsafe/oversized session id — express-openid-connect then treats the session as missing rather than reading/writing a corrupt key. */
