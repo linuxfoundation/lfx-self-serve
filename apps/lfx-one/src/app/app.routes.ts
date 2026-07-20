@@ -442,4 +442,11 @@ export const routes: Routes = [
     path: 'invite/error',
     loadComponent: () => import('./modules/invite/invite-error/invite-error.component').then((m) => m.InviteErrorComponent),
   },
+  // Branded landing for browser-navigation auth failures (e.g. a Valkey session-store write
+  // fault) redirected here by the server instead of receiving a raw JSON error body. Outside the
+  // auth guard since the whole point is reaching it without a valid session.
+  {
+    path: 'auth-error',
+    loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
+  },
 ];
