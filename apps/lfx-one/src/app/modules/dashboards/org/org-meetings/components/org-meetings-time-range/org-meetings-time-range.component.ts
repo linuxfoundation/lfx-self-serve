@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, makeStateKey, model, Signal, TransferState, viewChild } from '@angular/core';
+import { isPlatformServer } from '@angular/common';
+import { Component, computed, inject, makeStateKey, model, PLATFORM_ID, Signal, TransferState, viewChild } from '@angular/core';
 import { ORG_MEETINGS_TIME_RANGE_GROUPS, ORG_MEETINGS_TIME_RANGE_LABELS } from '@lfx-one/shared/constants';
 import type { OrgMeetingsTimeRange, OrgMeetingsTimeRangeOption } from '@lfx-one/shared/interfaces';
 import { formatShortDate } from '@lfx-one/shared/utils';
@@ -14,6 +15,7 @@ import { Popover, PopoverModule } from 'primeng/popover';
 })
 export class OrgMeetingsTimeRangeComponent {
   private readonly transferState = inject(TransferState);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Server renders `rangeLabel`s off `Date.now()` at request time; without pinning that timestamp,
   // the client would recompute a different `now` during hydration (different clock/tick), producing
@@ -59,7 +61,9 @@ export class OrgMeetingsTimeRangeComponent {
       return new Date(timestamp);
     }
     const now = Date.now();
-    this.transferState.set(this.todayTimestampKey, now);
+    if (isPlatformServer(this.platformId)) {
+      this.transferState.set(this.todayTimestampKey, now);
+    }
     return new Date(now);
   }
 
