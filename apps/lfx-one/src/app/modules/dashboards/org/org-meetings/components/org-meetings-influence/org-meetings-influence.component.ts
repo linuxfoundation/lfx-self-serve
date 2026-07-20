@@ -43,7 +43,7 @@ export class OrgMeetingsInfluenceComponent {
 
   // Explanatory copy surfaced via the info-icon tooltip next to the section heading.
   protected readonly infoTooltip =
-    "Meeting attendance is one of the signals behind each project's Ecosystem Influence Score. See the full breakdown on the Projects page, or review project health on the Governance page.";
+    "Meeting attendance is one of the signals behind each project's Ecosystem Influence Score. See the full breakdown on the Projects page.";
 
   // Expansion state is owned here as a slug -> boolean map, mirroring the /org/overview
   // foundations table pattern. All rows are collapsed by default.
