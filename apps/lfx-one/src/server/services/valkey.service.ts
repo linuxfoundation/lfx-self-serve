@@ -15,6 +15,7 @@ export class ValkeyService implements CachePort {
 
   private readonly client: Redis | null = null;
   private shutdownHookRegistered = false;
+  private connectingPromise: Promise<void> | null = null;
 
   private constructor() {
     const url = process.env['VALKEY_URL'];
@@ -61,10 +62,13 @@ export class ValkeyService implements CachePort {
     return this.client !== null;
   }
 
-  public async getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null> {
+  public async getJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T | null> {
     if (!this.client) return null;
     try {
-      const raw = (await this.withTimeout(this.client.get(key))) as string | null;
+      const raw = (await this.withTimeout(
+        this.runWhenConnected(() => this.client!.get(key), timeoutMs),
+        timeoutMs
+      )) as string | null;
       if (raw == null) return null;
       // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
       // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
@@ -85,7 +89,12 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  public async setJson(key: string, value: unknown, ttlSeconds: number): Promise<boolean> {
+  /**
+   * Writes a JSON-serialized value with a TTL. `timeoutMs` (default `VALKEY_CACHE.OP_TIMEOUT_MS`)
+   * bounds the whole operation, including establishing the connection on a cold client. Fails soft:
+   * a timeout, an oversized value, or any cache fault returns `false` rather than throwing.
+   */
+  public async setJson(key: string, value: unknown, ttlSeconds: number, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (!this.client) return false;
     try {
       const serialized = JSON.stringify(value);
@@ -93,7 +102,10 @@ export class ValkeyService implements CachePort {
         logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', { cache_key: ValkeyService.redactKey(key) });
         return false;
       }
-      await this.withTimeout(this.client.set(key, serialized, 'EX', ttlSeconds));
+      await this.withTimeout(
+        this.runWhenConnected(() => this.client!.set(key, serialized, 'EX', ttlSeconds), timeoutMs),
+        timeoutMs
+      );
       return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_set', 'Cache write failed — continuing without caching', { err, cache_key: ValkeyService.redactKey(key) });
@@ -102,10 +114,13 @@ export class ValkeyService implements CachePort {
   }
 
   /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault just leaves the entry to age out via TTL and reports back via the `deleted` boolean rather than throwing. */
-  public async del(key: string | null): Promise<boolean> {
+  public async del(key: string | null, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (key === null || !this.client) return false;
     try {
-      await this.withTimeout(this.client.del(key));
+      await this.withTimeout(
+        this.runWhenConnected(() => this.client!.del(key), timeoutMs),
+        timeoutMs
+      );
       return true;
     } catch (err) {
       logger.warning(undefined, 'valkey_del', 'Cache delete failed — entry will age out via TTL', { err, cache_key: ValkeyService.redactKey(key) });
@@ -164,11 +179,70 @@ export class ValkeyService implements CachePort {
     return `${parts.slice(0, versionIdx + 1).join(':')}:***`;
   }
 
+  /**
+   * Awaits a live connection before issuing `command`. Needed because `lazyConnect` + `enableOfflineQueue:
+   * false` means ioredis rejects a command synchronously ("Stream isn't writeable...") on any client that
+   * isn't already `ready` — whether it's the initial `wait` state (cold pod) or `connecting`/`reconnecting`
+   * after a dropped connection (ioredis's own retry timer, not something we trigger) — instead of waiting
+   * out the handshake, so the per-op timeout never gets a chance to apply. Awaiting readiness first (deduped
+   * via `connectingPromise` so concurrent callers share one in-flight wait) closes that gap for every
+   * non-`ready` state.
+   *
+   * The wait is bounded by this caller's own `timeoutMs` rather than left to race only the outer
+   * `withTimeout`: `Promise.race` never cancels the loser, so during a prolonged reconnect every
+   * timed-out caller's `command()` would otherwise stay attached to the shared `connectingPromise` and
+   * fire — all at once, with a potentially stale payload — the moment `ready` eventually arrives
+   * (unbounded memory retention plus a write/delete storm right as Valkey recovers). Racing the wait
+   * against this caller's own deadline means a caller that times out never reaches `command()` at all.
+   */
+  private async runWhenConnected<T>(command: () => Promise<T>, timeoutMs: number): Promise<T> {
+    if (this.client && this.client.status !== 'ready') {
+      if (!this.connectingPromise) {
+        this.connectingPromise = this.waitUntilReady(this.client).finally(() => {
+          this.connectingPromise = null;
+        });
+      }
+      await this.withTimeout(this.connectingPromise, timeoutMs);
+    }
+    return command();
+  }
+
+  /** `wait`/`end` need an explicit `connect()`; any other non-`ready` status (`close`/`connecting`/`reconnecting`)
+   * is already being driven by ioredis's own retry timer, so we just await its next `ready`. ioredis's `error`
+   * event fires on every failed retry attempt while the client keeps retrying — it is not terminal — so it's
+   * not treated as a rejection here; only `end` (ioredis giving up on reconnecting) is. The `client.status ===
+   * 'ready'` re-check inside the executor closes the race where `ready` fires between `runWhenConnected`'s
+   * status check and this listener being attached. */
+  private waitUntilReady(client: Redis): Promise<void> {
+    if (client.status === 'wait' || client.status === 'end') {
+      return client.connect();
+    }
+    if (client.status === 'ready') {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      if (client.status === 'ready') {
+        resolve();
+        return;
+      }
+      const onReady = (): void => {
+        client.off('end', onEnd);
+        resolve();
+      };
+      const onEnd = (): void => {
+        client.off('ready', onReady);
+        reject(new Error('valkey_connection_ended'));
+      };
+      client.once('ready', onReady);
+      client.once('end', onEnd);
+    });
+  }
+
   /** Races a cache op against the per-op cap; a lost race rejects and the caller treats it as a miss. */
-  private async withTimeout<T>(op: Promise<T>): Promise<T> {
+  private async withTimeout<T>(op: Promise<T>, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T> {
     let timer: NodeJS.Timeout;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('valkey_op_timeout')), VALKEY_CACHE.OP_TIMEOUT_MS);
+      timer = setTimeout(() => reject(new Error('valkey_op_timeout')), timeoutMs);
     });
     // If the timeout wins the race, the underlying op is abandoned; swallow its eventual settlement
     // so a late rejection from a slow/faulty backend never surfaces as an unhandled rejection.
