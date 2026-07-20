@@ -2,13 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Stacked full-width above the content on mobile; fixed to the viewport's right edge on lg+.
-  Top offset mirrors the main-layout sidebar so the fixed panel clears the impersonation banner.
+  Full-width separator card when stacked (below xl); at xl it fills the sticky right column
+  set up by the layout, with its own scroll if the content exceeds the viewport height.
 -->
 <aside
-  class="flex flex-col border-b border-slate-200 bg-slate-50 px-6 py-7 lg:fixed lg:right-0 lg:bottom-0 lg:w-80 lg:overflow-y-auto lg:border-b-0 lg:border-l"
-  [class.lg:top-12]="impersonating()"
-  [class.lg:top-0]="!impersonating()"
+  class="flex flex-col border-b border-slate-200 bg-slate-50 px-6 py-7 xl:max-h-[calc(100vh-4rem)] xl:overflow-y-auto xl:rounded-xl xl:border"
   aria-label="Profile summary"
   data-testid="profile-panel">
   @if (loading()) {
