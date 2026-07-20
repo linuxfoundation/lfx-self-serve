@@ -33,6 +33,9 @@
       </thead>
       <tbody>
         @for (row of rows(); track row.projectSlug) {
+          <!-- Row click is mouse-only convenience; the caret button below is the sole keyboard-operable
+               control (already has aria-expanded/aria-label). Don't add role/tabindex/keydown here —
+               that nests one interactive element inside another (the caret button). -->
           <tr
             class="cursor-pointer border-b border-gray-200 transition-colors hover:bg-gray-50"
             [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug"
