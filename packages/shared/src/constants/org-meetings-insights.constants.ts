@@ -211,9 +211,9 @@ export const DEMO_ORG_MEETINGS_TRENDS: OrgMeetingsTrend[] = [
   {
     label: 'Projects Supported',
     value: 47,
-    deltaLabel: '-4% vs. prior period',
-    deltaDirection: 'down',
-    sparkline: [53, 52, 54, 51, 50, 51, 49, 48, 49, 48, 47, 47],
+    deltaLabel: '+3% vs. prior period',
+    deltaDirection: 'up',
+    sparkline: [42, 43, 42, 44, 43, 45, 44, 46, 45, 46, 46, 47],
   },
 ];
 
