@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
-import { AVATAR_COLORS, GRID_DIVIDER_CLASS, lfxColors, lfxFontSizes } from '@lfx-one/shared';
+import { AVATAR_COLORS, GRID_COLS_CLASS, GRID_DIVIDER_CLASS, lfxColors, lfxFontSizes } from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
@@ -16,9 +16,10 @@ export default {
     // Person-avatar palette: built at runtime by avatarColorClass() from AVATAR_COLORS in
     // @lfx-one/shared (outside `content`), so it would be purged. Spread the source list to avoid drift.
     ...AVATAR_COLORS,
-    // Stat card grid dividers: `GRID_DIVIDER_CLASS` is defined in @lfx-one/shared (outside
-    // `content`), and its arbitrary `nth-child`/responsive utilities need to be scanned directly
-    // since they never appear as literal strings inside `content`.
+    // Stat card grid columns/dividers: `GRID_COLS_CLASS`/`GRID_DIVIDER_CLASS` are defined in
+    // @lfx-one/shared (outside `content`), and their responsive/arbitrary utilities need to be
+    // scanned directly since they never appear as literal strings inside `content`.
+    ...Object.values(GRID_COLS_CLASS).flatMap((classes) => classes.split(' ')),
     ...Object.values(GRID_DIVIDER_CLASS).flatMap((classes) => classes.split(' ')),
     // Meeting summary modal — dynamic section border/icon colors (applied via [ngClass])
     'border-l-blue-400',
