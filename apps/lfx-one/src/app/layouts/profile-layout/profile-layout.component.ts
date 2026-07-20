@@ -30,7 +30,7 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  * ProfileLayoutComponent is the two-column shell for the Profile & Account hub.
  * It provides:
  * - Left column: page head, subtab navigation, and the router outlet for child pages
- * - Right column: the fixed profile panel (lfx-profile-panel) bound to the user's CombinedProfile
+ * - Right column: the sticky profile panel (lfx-profile-panel) bound to the user's CombinedProfile
  *
  * The layout owns the profile data fetch, optimistic updates, the edit dialog, and the
  * Flow C (management-token) auth-return handling; the panel is presentational and emits

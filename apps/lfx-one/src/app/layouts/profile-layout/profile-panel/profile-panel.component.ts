@@ -4,7 +4,8 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 /**
- * ProfilePanelComponent is the fixed right-hand panel of the Profile & Account hub.
+ * ProfilePanelComponent is the sticky right-hand panel of the Profile & Account hub
+ * (a sticky side column at 2xl, stacked full-width above the content below that).
  * It is purely presentational: all values arrive via signal inputs (sourced from the
  * parent ProfileLayoutComponent's CombinedProfile) and the edit affordances emit
  * `editRequested` so the parent — which owns the profile data, edit dialog, and
