@@ -146,8 +146,8 @@ export class SidebarComponent {
     this.expandedGroupOverrides.set({ itemsRef: items, overrides: { ...baseOverrides, [label]: !current } });
   }
 
-  // Toggle the me-lens card overflow dropdown. Stops propagation so the click doesn't also
-  // trigger the card's stretched link to /profile.
+  // Toggle the me-lens card overflow popover. stopPropagation keeps the click from
+  // reaching document-level outside-click handlers, not the (sibling) stretched link.
   protected toggleProfileMenu(event: Event): void {
     event.stopPropagation();
     this.profileMenu()?.toggle(event);
