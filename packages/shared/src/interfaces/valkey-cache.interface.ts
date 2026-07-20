@@ -12,8 +12,8 @@ export interface CachePort {
   /** True when a cache backend is configured and the client is usable. */
   isEnabled(): boolean;
 
-  /** Parsed value on hit; `null` on miss, disabled, timeout, fault, or when `accept` rejects the shape. Never throws. */
-  getJson<T>(key: string, accept?: (value: unknown) => boolean): Promise<T | null>;
+  /** Parsed value on hit; `null` on miss, disabled, timeout, fault, or when `accept` rejects the shape. Never throws. `timeoutMs` overrides the default per-op cap — callers with a fail-closed use (e.g. the session store's authoritative reads) can widen it beyond the cache's fail-soft default. */
+  getJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs?: number): Promise<T | null>;
 
   /** Best-effort write with a TTL in seconds. Returns whether it persisted. Never throws. `timeoutMs` overrides the default per-op cap — callers with a fail-closed use (e.g. the session store) can widen it beyond the cache's fail-soft default. */
   setJson(key: string, value: unknown, ttlSeconds: number, timeoutMs?: number): Promise<boolean>;

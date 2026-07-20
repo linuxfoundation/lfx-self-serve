@@ -48,7 +48,7 @@ export const VALKEY_CACHE = {
   /** Per-op cap; a slower cache resolves to a miss so the request fetches directly (well below the ~30s upstream timeout). */
   OP_TIMEOUT_MS: 250,
 
-  /** Per-op cap for the session store (writes/deletes only). Session ops are fail-closed — a timeout forces re-login rather than falling back to a direct fetch — so this is deliberately much larger than the cache's OP_TIMEOUT_MS to absorb the lazy client's cold-connect (TLS handshake) cost on the first op after a pod start, instead of racing that handshake against a cache-tuned budget. */
+  /** Per-op cap for the session store (reads, writes, and deletes). Session ops are fail-closed — a timeout forces re-login rather than falling back to a direct fetch — so this is deliberately much larger than the cache's OP_TIMEOUT_MS to absorb the lazy client's cold-connect (TLS handshake) cost on the first op after a pod start, instead of racing that handshake against a cache-tuned budget. */
   SESSION_OP_TIMEOUT_MS: 3000,
 
   /** Connection timeout for the lazy client (ioredis's own `connectTimeout`) — this is the real ceiling on a cold `.connect()` handshake, independent of any outer per-op `withTimeout()` race. Matches `SESSION_OP_TIMEOUT_MS` so the session store's larger op budget can actually be spent on the handshake instead of being truncated by a shorter internal connect cap. */
