@@ -138,10 +138,12 @@ test.describe('Org Meetings insights (6a redesign)', () => {
 
     await page.getByTestId('org-meetings-time-range').click();
     await page.getByTestId('org-meetings-time-range-option-previousYear').click();
+    await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('Previous year');
     await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
 
     await page.getByTestId('org-meetings-time-range').click();
     await page.getByTestId('org-meetings-time-range-option-allTime').click();
+    await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('All time');
     await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
   });
 });
