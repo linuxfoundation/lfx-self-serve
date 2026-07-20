@@ -28,7 +28,14 @@
 
       <div class="px-5 py-5 flex flex-col gap-4">
         @if (statusTab() === 'optout') {
-          @if (!loading() && !hasOptOuts()) {
+          @if (optOutsLoadFailed()) {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-triangle-exclamation"
+              title="Could not load opt-outs"
+              subtitle="Something went wrong loading this list. Please try again later.">
+            </lfx-empty-state>
+          } @else if (!loading() && !hasOptOuts()) {
             <lfx-empty-state
               [withCard]="false"
               icon="fa-light fa-user-slash"

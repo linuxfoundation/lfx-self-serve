@@ -17,9 +17,8 @@ import {
   FilterPillOption,
   NewsletterAnalytics,
   NewsletterListItem,
-  NewsletterListResponse,
+  NewsletterListLoadResult,
   NewsletterOptOut,
-  NewsletterOptOutListResponse,
   NewsletterRow,
   NewsletterStatusTabId,
 } from '@lfx-one/shared/interfaces';
@@ -32,11 +31,6 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
-
-// Discriminates the two list shapes the context/tab switchMap can resolve to,
-// so the single subscribe callback can route each response without a second
-// stream.
-type ListLoadResult = { kind: 'newsletters'; response: NewsletterListResponse } | { kind: 'optout'; response: NewsletterOptOutListResponse };
 
 @Component({
   selector: 'lfx-newsletter-list',
@@ -79,6 +73,7 @@ export class NewsletterListComponent {
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
   protected readonly optOuts = signal<NewsletterOptOut[]>([]);
+  protected readonly optOutsLoadFailed = signal<boolean>(false);
   protected readonly loading = signal<boolean>(false);
   protected readonly loadingMore = signal<boolean>(false);
   protected readonly nextPageToken = signal<string | undefined>(undefined);
@@ -241,6 +236,7 @@ export class NewsletterListComponent {
           this.nextPageToken.set(undefined);
           this.newsletters.set([]);
           this.optOuts.set([]);
+          this.optOutsLoadFailed.set(false);
           if (uid !== this.lastLoadedUid) {
             this.lastLoadedUid = uid;
             this.analyticsCacheGeneration++;
@@ -254,16 +250,17 @@ export class NewsletterListComponent {
           this.loading.set(true);
           if (status === 'optout') {
             return this.newsletterService.listOptOuts(uid).pipe(
-              map((response): ListLoadResult => ({ kind: 'optout', response })),
+              map((response): NewsletterListLoadResult => ({ kind: 'optout', response })),
               catchError((err: HttpErrorResponse) => {
                 this.loading.set(false);
-                this.showLoadError(err);
+                this.optOutsLoadFailed.set(true);
+                this.showLoadError(err, 'Could not load opt-outs');
                 return EMPTY;
               })
             );
           }
           return this.newsletterService.listNewsletters(uid, { status }).pipe(
-            map((response): ListLoadResult => ({ kind: 'newsletters', response })),
+            map((response): NewsletterListLoadResult => ({ kind: 'newsletters', response })),
             catchError((err: HttpErrorResponse) => {
               this.loading.set(false);
               this.showLoadError(err);
@@ -365,10 +362,10 @@ export class NewsletterListComponent {
       });
   }
 
-  private showLoadError(err: HttpErrorResponse): void {
+  private showLoadError(err: HttpErrorResponse, summary = 'Could not load newsletters'): void {
     this.messageService.add({
       severity: 'error',
-      summary: 'Could not load newsletters',
+      summary,
       detail: err?.error?.message || err?.message || 'Please try again later.',
     });
   }
