@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgInfluenceRow, OrgLeaderboardRow, OrgMeetingsKpiSummary, OrgMeetingsSpendBreakdown, OrgMeetingsTrend } from '../interfaces/org-meetings-insights.interface';
+import type {
+  OrgInfluenceRow,
+  OrgLeaderboardRow,
+  OrgMeetingsKpiSummary,
+  OrgMeetingsSpendBreakdown,
+  OrgMeetingsTrend,
+} from '../interfaces/org-meetings-insights.interface';
 
 /** Valid values for the Org Lens Meetings time-range dropdown, in display order. */
 export const ORG_MEETINGS_TIME_RANGES = [

@@ -17,11 +17,10 @@ export function isUuid(value: string): boolean {
  * @returns A kebab-case slug, e.g. "Meetings Attended" -> "meetings-attended"
  */
 export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
+  const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const start = slug.startsWith('-') ? 1 : 0;
+  const end = slug.endsWith('-') ? slug.length - 1 : slug.length;
+  return slug.slice(start, end);
 }
 
 /**
