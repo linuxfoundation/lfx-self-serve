@@ -32,6 +32,7 @@ export class OrgMeetingsInfluenceComponent {
   private readonly accountContext = inject(AccountContextService);
 
   // Public fields from inputs
+  // Accepted but not yet consumed — data is demo-only until this section wires to real Snowflake queries.
   public readonly timeRange = input.required<OrgMeetingsTimeRange>();
 
   // Configuration

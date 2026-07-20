@@ -33,7 +33,7 @@
           </td>
           <td>
             <div
-              class="relative flex flex-wrap items-center gap-1"
+              class="relative flex flex-wrap items-center gap-1 rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               [class.group]="row.foundationsGroup.overflowCount > 0"
               [attr.tabindex]="row.foundationsGroup.overflowCount > 0 ? 0 : null"
               [attr.aria-describedby]="row.foundationsGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover' : null">
@@ -61,7 +61,7 @@
           <td class="text-gray-900">{{ row.upcoming }}</td>
           <td>
             <div
-              class="relative flex flex-wrap items-center gap-1"
+              class="relative flex flex-wrap items-center gap-1 rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               [class.group]="row.typeGroup.overflowCount > 0"
               [attr.tabindex]="row.typeGroup.overflowCount > 0 ? 0 : null"
               [attr.aria-describedby]="row.typeGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-type-popover' : null">
@@ -87,7 +87,7 @@
           </td>
           <td>
             <div
-              class="relative flex flex-wrap items-center gap-1"
+              class="relative flex flex-wrap items-center gap-1 rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               [class.group]="row.roleGroup.overflowCount > 0"
               [attr.tabindex]="row.roleGroup.overflowCount > 0 ? 0 : null"
               [attr.aria-describedby]="row.roleGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-role-popover' : null">

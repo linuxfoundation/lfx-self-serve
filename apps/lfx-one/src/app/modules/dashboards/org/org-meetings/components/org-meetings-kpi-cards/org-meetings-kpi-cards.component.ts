@@ -13,6 +13,7 @@ import type { OrgMeetingsTimeRange, StatCardItem } from '@lfx-one/shared/interfa
 })
 export class OrgMeetingsKpiCardsComponent {
   // Public fields from inputs
+  // Accepted but not yet consumed — data is demo-only until this section wires to real Snowflake queries.
   public readonly timeRange = input.required<OrgMeetingsTimeRange>();
 
   // Complex computed
