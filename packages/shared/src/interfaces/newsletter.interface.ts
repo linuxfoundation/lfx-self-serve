@@ -371,8 +371,9 @@ export interface NewsletterComposerToolbarState {
 }
 
 /**
- * The block palette + field schemas bundled into the app at build time from the
- * hard-coded template repo (spec 004 §6.3, Phase 1).
+ * The block palette + field schemas for one block library, served at runtime by
+ * lfx-v2-newsletter-service from its embedded template sets (GET
+ * .../newsletters/templates/{key}/manifest, proxied by the BFF).
  */
 export interface NewsletterTemplateManifest {
   wrapper_key: string;

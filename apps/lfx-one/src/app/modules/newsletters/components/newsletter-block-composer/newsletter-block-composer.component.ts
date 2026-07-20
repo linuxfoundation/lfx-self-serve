@@ -56,8 +56,9 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  * Newsletter block-composer — the first increment of the native-Angular,
  * Puck-style block editor (LFXV2-2381).
  *
- * Left: a palette of block types read from the build-time manifest, grouped by
- * category. Right: a canvas that is a CDK drop list of the layout's top-level
+ * Left: a palette of block types read from the newsletter service's manifest for
+ * the selected block library (fetched at runtime, not a build-time bundle),
+ * grouped by category. Right: a canvas that is a CDK drop list of the layout's top-level
  * blocks. Users drag a palette block into the canvas to append it, reorder
  * blocks within the canvas, and remove blocks. The component emits the current
  * `NewsletterLayout` (wrapper_key from the manifest + the canvas blocks).
@@ -105,8 +106,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // === Inputs ===
   // Optional initial layout to seed the canvas (e.g. editing an existing draft).
   public readonly initialLayout = input<NewsletterLayout | null>(null);
-  // Which embedded template set drives the palette. Defaults to the full AAIF
-  // set until per-newsletter template selection lands.
+  // The initial/fallback block library that drives the palette. A saved layout's
+  // own `template_key` takes precedence (resolved in ngOnInit); this default (the
+  // full AAIF set) applies only when a draft has no explicit key.
   public readonly templateKey = input<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
 
   // === Outputs ===
