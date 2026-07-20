@@ -97,7 +97,9 @@
             <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health score</span>
             @if (healthMeta(); as hm) {
               <span class="md:ml-auto" data-testid="project-detail-health-badge">
-                <lfx-tag [value]="hm.label" [severity]="hm.severity" />
+                <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" [style.backgroundColor]="hm.bg" [style.color]="hm.text">{{
+                  hm.label
+                }}</span>
               </span>
             }
           </div>

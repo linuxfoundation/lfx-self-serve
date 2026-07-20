@@ -448,7 +448,7 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private mapHealthScore(score: number): HealthScore {
+  private mapHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
     return classifyHealthScore(score);
   }
 

@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TagSeverity } from './components.interface';
-
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
 export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
@@ -181,8 +179,7 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   ecosystemBandLabel: string;
   /** Health badge display label (e.g. "Excellent"). */
   healthLabel: string;
-  /** Health badge severity token for lfx-tag. */
-  healthSeverity: TagSeverity;
+  healthBadge: { bg: string; text: string };
   /** Pre-built Chart.js dataset for the sparkline; stable reference avoids re-allocation on recompute. */
   sparklineDataset: { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] };
   /**

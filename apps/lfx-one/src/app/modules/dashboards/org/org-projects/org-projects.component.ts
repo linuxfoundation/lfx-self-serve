@@ -12,8 +12,8 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
+  HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_SEVERITY,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -61,7 +61,6 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
@@ -85,7 +84,6 @@ import { PersonaService } from '@shared/services/persona.service';
     SelectComponent,
     SkeletonModule,
     TableComponent,
-    TagComponent,
     TooltipModule,
   ],
   templateUrl: './org-projects.component.html',
@@ -718,7 +716,7 @@ export class OrgProjectsComponent {
         technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
         ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
         healthLabel: HEALTH_SCORE_LABELS[project.health],
-        healthSeverity: HEALTH_SCORE_SEVERITY[project.health],
+        healthBadge: HEALTH_SCORE_BADGE[project.health],
         sparklineDataset: {
           labels: project.trend.series.map((_, i) => String(i)),
           datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
