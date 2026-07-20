@@ -159,6 +159,7 @@ export interface OrgInfluenceBandBar {
 
 /** An `OrgInfluenceRow` enriched with display-ready band chip/bar and highlighted breakdown, as rendered by the influence accordion. */
 export interface OrgInfluenceDisplayRow extends Omit<OrgInfluenceRow, 'breakdown'> {
+  rankTierClass: string;
   bandChipClass: string;
   bandLabel: string;
   bandBars: OrgInfluenceBandBar[];

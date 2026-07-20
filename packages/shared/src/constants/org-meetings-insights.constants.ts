@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  OrgInfluenceRankTier,
   OrgInfluenceRow,
   OrgLeaderboardRow,
   OrgMeetingsKpiSummary,
@@ -85,6 +86,13 @@ export const ORG_LEADERBOARD_VISIBLE_PILL_COUNT = 2;
 
 /** Chip label shown for meetings the viewer isn't authorized to see the real value for. */
 export const ORG_LEADERBOARD_PRIVATE_MEETING_LABEL = 'Private';
+
+/** Influence table rank pill text color, keyed by `OrgInfluenceRankTier`: top → emerald, down → red, neutral → gray. */
+export const ORG_INFLUENCE_RANK_TIER_TEXT_CLASS: Record<OrgInfluenceRankTier, string> = {
+  top: 'text-emerald-600',
+  down: 'text-red-600',
+  neutral: 'text-gray-500',
+};
 
 /** Demo KPI summary — matches the 6a design spec's mock numbers (63 employees / 512 meetings / 47 projects / 30 foundations). */
 export const DEMO_ORG_MEETINGS_KPI_SUMMARY: OrgMeetingsKpiSummary = {
@@ -248,11 +256,11 @@ export const DEMO_ORG_LEADERBOARD: OrgLeaderboardRow[] = [
   {
     employee: 'Priya Okoro',
     identity: 'priya.okoro@example.com',
-    // CNCF has both a public and a private meeting, so the public value is shown; Argo is private-only, so it's masked.
+    // CNCF has both a public and a private meeting, so the public value is shown; AAIF is private-only, so it's masked.
     foundationMeetings: [
       { value: 'CNCF', isPrivate: false },
       { value: 'CNCF', isPrivate: true },
-      { value: 'Argo', isPrivate: true },
+      { value: 'AAIF', isPrivate: true },
     ],
     attended: 76,
     upcoming: 5,
@@ -338,13 +346,13 @@ export const DEMO_ORG_LEADERBOARD: OrgLeaderboardRow[] = [
     identity: 'marcus.wu@example.com',
     // Second broad contributor, all-private-foundation edge case folded in alongside overflow.
     foundationMeetings: [
-      { value: 'Kubernetes', isPrivate: false },
-      { value: 'Argo', isPrivate: false },
-      { value: 'Envoy', isPrivate: true },
-      { value: 'Helm', isPrivate: false },
-      { value: 'gRPC', isPrivate: true },
-      { value: 'containerd', isPrivate: false },
-      { value: 'OpenTelemetry', isPrivate: true },
+      { value: 'CNCF', isPrivate: false },
+      { value: 'AAIF', isPrivate: false },
+      { value: 'PyTorch Foundation', isPrivate: true },
+      { value: 'OpenSSF', isPrivate: false },
+      { value: 'FINOS', isPrivate: true },
+      { value: 'LF Networking', isPrivate: false },
+      { value: 'LF Energy', isPrivate: true },
     ],
     attended: 112,
     upcoming: 9,
@@ -398,7 +406,7 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Kubernetes',
     projectSlug: 'kubernetes',
-    projectLink: '/org/projects',
+    projectLink: '/org/projects/kubernetes',
     ecosystemInfluence: 88,
     band: 'leading',
     rankLabel: '#3 of 210',
@@ -421,7 +429,7 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'PyTorch',
     projectSlug: 'pytorch',
-    projectLink: '/org/projects',
+    projectLink: '/org/projects/pytorch',
     ecosystemInfluence: 71,
     band: 'contributing',
     rankLabel: '#2 of 96',
@@ -444,7 +452,7 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Argo',
     projectSlug: 'argo',
-    projectLink: '/org/projects',
+    projectLink: '/org/projects/argo',
     ecosystemInfluence: 54,
     band: 'participating',
     rankLabel: '#7 of 140',
@@ -467,7 +475,7 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Envoy',
     projectSlug: 'envoy',
-    projectLink: '/org/projects',
+    projectLink: '/org/projects/envoy',
     ecosystemInfluence: 32,
     band: 'silent',
     rankLabel: '#22 of 88',

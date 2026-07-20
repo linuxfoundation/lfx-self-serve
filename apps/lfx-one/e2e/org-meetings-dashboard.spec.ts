@@ -121,7 +121,7 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
     const kubernetesDetail = page.getByTestId('org-meetings-influence-row-kubernetes-detail');
     await expect(kubernetesDetail).toBeVisible();
-    await expect(kubernetesDetail).toContainText('Meeting attendance');
+    await expect(kubernetesDetail).toContainText('Meeting Attendance');
 
     // Expanding PyTorch via its caret reveals its detail row too.
     await page.getByTestId('org-meetings-influence-row-pytorch-caret').click();

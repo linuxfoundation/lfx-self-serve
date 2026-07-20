@@ -11,6 +11,7 @@
         class="cursor-help text-xs text-gray-400 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         [pTooltip]="infoTooltip"
         tooltipPosition="top"
+        tooltipEvent="both"
         aria-label="How attendance relates to the Ecosystem Influence Score"
         data-testid="org-meetings-influence-info">
         <i class="fa-light fa-circle-info" aria-hidden="true"></i>
@@ -59,7 +60,7 @@
               </div>
             </td>
             <td class="px-4 py-3 align-middle">
-              <span class="text-xs text-gray-500">{{ row.rankLabel }}</span>
+              <span class="text-xs font-medium" [class]="row.rankTierClass">{{ row.rankLabel }}</span>
             </td>
             <td class="px-4 py-3 align-middle">
               <span [class]="row.bandChipClass" [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug + '-band'">
@@ -74,9 +75,13 @@
             <td class="px-4 py-3 align-middle">
               <div class="flex items-center gap-2.5">
                 <div
-                  class="h-1.5 w-24 overflow-hidden rounded-full bg-blue-100"
+                  class="h-1.5 w-24 overflow-hidden rounded-full bg-blue-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                  tabindex="0"
+                  role="img"
+                  [attr.aria-label]="'Bar is scaled for legibility; ' + row.fromAttendancePct + '% is the actual contribution.'"
                   [pTooltip]="'Bar is scaled for legibility; ' + row.fromAttendancePct + '% is the actual contribution.'"
-                  tooltipPosition="top">
+                  tooltipPosition="top"
+                  tooltipEvent="both">
                   <div class="h-1.5 rounded-full bg-blue-600" [style.width.%]="attendanceBarWidth(row.fromAttendancePct)"></div>
                 </div>
                 <span class="text-xs font-medium whitespace-nowrap text-gray-900">{{ row.fromAttendancePct }}% of score</span>

@@ -12,7 +12,7 @@
   <i class="fa-light fa-chevron-down text-xs text-gray-400" aria-hidden="true"></i>
 </button>
 
-<p-popover #popover appendTo="body" [style]="{ width: '24rem' }" data-testid="org-meetings-time-range-panel">
+<p-popover #popover appendTo="body" [style]="{ width: '24rem', maxWidth: 'calc(100vw - 2rem)' }" data-testid="org-meetings-time-range-panel">
   <div class="flex flex-col" data-testid="org-meetings-time-range-panel-body">
     @for (group of groups(); track $index; let isFirstGroup = $first) {
       <div class="flex flex-col py-1" [class.border-t]="!isFirstGroup" [class.border-gray-200]="!isFirstGroup">
@@ -24,7 +24,7 @@
             (click)="select(option)"
             [attr.data-testid]="'org-meetings-time-range-option-' + option.value">
             <span class="flex items-center gap-2 text-sm" [class.font-medium]="option.value === value()" [class.text-gray-900]="option.value === value()">
-              <i class="fa-light fa-check w-3.5 text-blue-500" [class.opacity-0]="option.value !== value()" [attr.aria-hidden]="option.value !== value()"></i>
+              <i class="fa-light fa-check w-3.5 text-blue-500" [class.opacity-0]="option.value !== value()" aria-hidden="true"></i>
               {{ option.label }}
             </span>
             @if (option.rangeLabel) {
