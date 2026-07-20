@@ -7,12 +7,6 @@ import type { OrgMeetingsTimeRange, OrgMeetingsTimeRangeOption } from '@lfx-one/
 import { formatShortDate } from '@lfx-one/shared/utils';
 import { Popover, PopoverModule } from 'primeng/popover';
 
-// Server renders `rangeLabel`s off `Date.now()` at request time; without pinning that timestamp,
-// the client would recompute a different `now` during hydration (different clock/tick), producing
-// a different formatted string than what the server sent and triggering a hydration mismatch.
-// TransferState carries the exact server timestamp to the client so both compute identical labels.
-const TODAY_TIMESTAMP_KEY = makeStateKey<number>('org-meetings-time-range-today');
-
 @Component({
   selector: 'lfx-org-meetings-time-range',
   imports: [PopoverModule],
@@ -20,6 +14,12 @@ const TODAY_TIMESTAMP_KEY = makeStateKey<number>('org-meetings-time-range-today'
 })
 export class OrgMeetingsTimeRangeComponent {
   private readonly transferState = inject(TransferState);
+
+  // Server renders `rangeLabel`s off `Date.now()` at request time; without pinning that timestamp,
+  // the client would recompute a different `now` during hydration (different clock/tick), producing
+  // a different formatted string than what the server sent and triggering a hydration mismatch.
+  // TransferState carries the exact server timestamp to the client so both compute identical labels.
+  private readonly todayTimestampKey = makeStateKey<number>('org-meetings-time-range-today');
 
   // Model signals for two-way binding
   public readonly value = model.required<OrgMeetingsTimeRange>();
@@ -53,11 +53,13 @@ export class OrgMeetingsTimeRangeComponent {
   }
 
   private resolveToday(): Date {
-    if (this.transferState.hasKey(TODAY_TIMESTAMP_KEY)) {
-      return new Date(this.transferState.get(TODAY_TIMESTAMP_KEY, Date.now()));
+    if (this.transferState.hasKey(this.todayTimestampKey)) {
+      const timestamp = this.transferState.get(this.todayTimestampKey, Date.now());
+      this.transferState.remove(this.todayTimestampKey);
+      return new Date(timestamp);
     }
     const now = Date.now();
-    this.transferState.set(TODAY_TIMESTAMP_KEY, now);
+    this.transferState.set(this.todayTimestampKey, now);
     return new Date(now);
   }
 
@@ -72,11 +74,11 @@ export class OrgMeetingsTimeRangeComponent {
       case 'previousQuarter':
         return this.previousQuarterLabel(today);
       case 'previousYear':
-        return `${today.getFullYear() - 1}`;
+        return `${today.getUTCFullYear() - 1}`;
       case 'previous5y':
-        return `${today.getFullYear() - 5} → ${today.getFullYear() - 1}`;
+        return `${today.getUTCFullYear() - 5} → ${today.getUTCFullYear() - 1}`;
       case 'previous10y':
-        return `${today.getFullYear() - 10} → ${today.getFullYear() - 1}`;
+        return `${today.getUTCFullYear() - 10} → ${today.getUTCFullYear() - 1}`;
       default:
         return null;
     }
@@ -84,16 +86,16 @@ export class OrgMeetingsTimeRangeComponent {
 
   private pastDaysLabel(today: Date, days: number): string {
     const start = new Date(today);
-    start.setDate(start.getDate() - (days - 1));
+    start.setUTCDate(start.getUTCDate() - (days - 1));
     return `${formatShortDate(start)} → Today`;
   }
 
   private previousQuarterLabel(today: Date): string {
-    const currentQuarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
+    const currentQuarterStartMonth = Math.floor(today.getUTCMonth() / 3) * 3;
     const startMonth = currentQuarterStartMonth - 3;
-    const start = new Date(today.getFullYear(), startMonth, 1);
-    const end = new Date(today.getFullYear(), startMonth + 2, 1);
-    const monthYear = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const start = new Date(Date.UTC(today.getUTCFullYear(), startMonth, 1));
+    const end = new Date(Date.UTC(today.getUTCFullYear(), startMonth + 2, 1));
+    const monthYear = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
     return `${monthYear(start)} → ${monthYear(end)}`;
   }
 }

@@ -504,5 +504,5 @@ export function formatRelativeTime(date: Date): string {
 
 /** Short date label for range previews, e.g. "Apr 18, 2026". */
 export function formatShortDate(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }

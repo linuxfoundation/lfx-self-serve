@@ -85,12 +85,14 @@
         </tr>
       </ng-template>
     </lfx-table>
-    <p-popover #overflowPopover appendTo="body">
-      <p class="mb-2 text-xs font-medium text-gray-500">{{ overflowPopoverTitle() }}</p>
-      <div class="flex w-56 flex-wrap gap-1">
-        @for (pill of overflowPopoverItems(); track $index) {
-          <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
-        }
+    <p-popover #overflowPopover appendTo="body" ariaLabelledBy="org-meetings-leaderboard-overflow-title">
+      <div class="flex flex-col gap-2">
+        <p id="org-meetings-leaderboard-overflow-title" class="text-xs font-medium text-gray-500">{{ overflowPopoverTitle() }}</p>
+        <div class="flex w-56 flex-wrap gap-1">
+          @for (pill of overflowPopoverItems(); track $index) {
+            <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
+          }
+        </div>
       </div>
     </p-popover>
   </lfx-card>
