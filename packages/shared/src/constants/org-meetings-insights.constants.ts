@@ -113,7 +113,7 @@ export const DEMO_ORG_MEETINGS_SPEND: OrgMeetingsSpendBreakdown = {
         { label: 'LF Energy', pct: 2 },
         { label: 'Hyperledger Foundation', pct: 2 },
         { label: 'LF AI & Data', pct: 2 },
-        { label: 'LF Edge', pct: 1 },
+        { label: 'LF Edge', pct: 2 },
         { label: 'Zephyr Project', pct: 1 },
         { label: 'Academy Software Foundation', pct: 1 },
         { label: 'Continuous Delivery Foundation', pct: 1 },

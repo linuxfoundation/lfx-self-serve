@@ -25,9 +25,9 @@ export class OrgSpendBarComponent {
 
   private initRows(): Signal<OrgSpendBarSegment[]> {
     return computed(() =>
-      this.segments().map((segment, index, all) => ({
+      this.segments().map((segment) => ({
         ...segment,
-        isOther: index === all.length - 1,
+        isOther: !!segment.others?.length,
       }))
     );
   }

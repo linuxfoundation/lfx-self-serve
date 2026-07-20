@@ -75,7 +75,7 @@
             <td class="px-4 py-3 align-middle">
               <div class="flex items-center gap-2.5">
                 <div class="h-1.5 w-24 overflow-hidden rounded-full bg-blue-100">
-                  <div class="h-1.5 rounded-full bg-blue-600" [style.width.%]="row.fromAttendancePct * attendanceBarScale"></div>
+                  <div class="h-1.5 rounded-full bg-blue-600" [style.width.%]="attendanceBarWidth(row.fromAttendancePct)"></div>
                 </div>
                 <span class="text-xs font-medium whitespace-nowrap text-gray-900">{{ row.fromAttendancePct }}% of score</span>
               </div>

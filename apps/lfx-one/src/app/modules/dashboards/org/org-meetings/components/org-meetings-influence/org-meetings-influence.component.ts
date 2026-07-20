@@ -57,6 +57,13 @@ export class OrgMeetingsInfluenceComponent {
   // section's subject stays visually dominant even when it isn't the largest measure.
   protected readonly rows: Signal<OrgInfluenceDisplayRow[]> = this.initRows();
 
+  // Emphasis-scaled width for the summary row's attendance bar — a distinct visual from the
+  // expanded detail row's unscaled breakdown bars, which compare 9 measures against each other.
+  // Clamped so a high fromAttendancePct can't overflow the bar past 100%.
+  protected attendanceBarWidth(fromAttendancePct: number): number {
+    return Math.min(100, fromAttendancePct * this.attendanceBarScale);
+  }
+
   protected toggleExpansion(projectSlug: string): void {
     this.expansionState.update((state) => {
       const next = { ...state };
