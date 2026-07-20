@@ -25,11 +25,11 @@
 
   <!-- Left column -->
   <div class="lg:mr-80">
-    <div class="mx-auto flex max-w-[1024px] flex-col pt-6 lg:pt-0">
+    <div class="mx-auto flex max-w-[1024px] flex-col gap-6 pt-6 lg:pt-0">
       <!-- Read-only notice while impersonating — editing acts on the real account and is disabled -->
       @if (impersonating()) {
         <div
-          class="mb-6 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
           role="status"
           data-testid="profile-readonly-notice">
           <i class="fa-light fa-eye"></i>
@@ -38,13 +38,13 @@
       }
 
       <!-- Page head -->
-      <div class="mb-6">
+      <div>
         <h1 class="text-[22px] font-bold tracking-tight text-slate-900" data-testid="profile-page-title">Profile &amp; Account</h1>
         <p class="mt-1 text-sm text-slate-500">Manage your profile and account settings.</p>
       </div>
 
       <!-- Subtab navigation — horizontally scrollable on small screens -->
-      <div class="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200" data-testid="profile-tabs-desktop">
+      <div class="flex gap-1 overflow-x-auto border-b border-slate-200" data-testid="profile-tabs-desktop">
         @for (tab of tabs; track tab.id) {
           <a
             [routerLink]="tab.route"

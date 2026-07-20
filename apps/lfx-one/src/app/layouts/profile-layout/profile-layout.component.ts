@@ -132,9 +132,11 @@ export class ProfileLayoutComponent {
     return new Map<string, boolean>([['identities', hasUnverified]]);
   });
 
-  // GitHub username from a connected (non-hidden) GitHub identity; empty when GitHub isn't connected
+  // GitHub username from a GitHub account the user actually owns (linked in Auth0); empty otherwise.
+  // inAuth0 gates out CDP-only rows (inAuth0 === false) — unverified suggestions or identities that
+  // belong to another LFID merged into CDP — which could otherwise surface a stale/unowned handle.
   public readonly githubHandle: Signal<string> = computed(() => {
-    const github = this.identities().find((id) => id.platform === 'github' && id.displayState !== 'hidden');
+    const github = this.identities().find((id) => id.platform === 'github' && id.inAuth0);
     return github?.value ?? '';
   });
 

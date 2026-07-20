@@ -10,9 +10,9 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
  * `editRequested` so the parent — which owns the profile data, edit dialog, and
  * optimistic-update logic — handles the actual edit flow.
  *
- * Rows render only when their value is present. About me, GitHub, and LinkedIn are
- * stubbed for now (no source on CombinedProfile yet) and therefore stay hidden until
- * wired in a follow-up.
+ * Rows render only when their value is present. GitHub is sourced from the user's
+ * connected identities (bound by the parent); About me and LinkedIn are stubbed for now
+ * (no source yet) and therefore stay hidden until wired in a follow-up.
  */
 @Component({
   selector: 'lfx-profile-panel',
@@ -52,7 +52,10 @@ export class ProfilePanelComponent {
     return !!url && this.avatarErrorUrl() !== url;
   });
 
-  // Editing acts on the real account and is blocked while impersonating.
+  /**
+   * Request the profile edit flow from the parent. No-op while impersonating, since
+   * profile edits act on the real account and are blocked server-side.
+   */
   public onEdit(): void {
     if (this.impersonating()) {
       return;
@@ -60,7 +63,10 @@ export class ProfilePanelComponent {
     this.editRequested.emit();
   }
 
-  // Called by the avatar <img> (error) handler — record the failed URL so we fall back to initials.
+  /**
+   * Handle a failed avatar image load: record the errored URL so `showAvatarImage`
+   * turns false and the initials fallback renders until the URL changes.
+   */
   public onAvatarError(): void {
     this.avatarErrorUrl.set(this.avatarUrl());
   }

@@ -63,9 +63,9 @@
     <div class="my-5 h-px bg-slate-200"></div>
 
     <!-- Fields — each renders only when its value is present -->
-    <div class="flex flex-col">
+    <div class="flex flex-col gap-5">
       @if (aboutMe()) {
-        <div class="mb-5" data-testid="profile-panel-about">
+        <div data-testid="profile-panel-about">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-file-lines"></i>
             <span>About me</span>
@@ -74,7 +74,7 @@
         </div>
       }
       @if (jobTitle()) {
-        <div class="mb-5" data-testid="profile-panel-job-title">
+        <div data-testid="profile-panel-job-title">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-briefcase"></i>
             <span>Job title</span>
@@ -83,7 +83,7 @@
         </div>
       }
       @if (organization()) {
-        <div class="mb-5" data-testid="profile-panel-organization">
+        <div data-testid="profile-panel-organization">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-building"></i>
             <span>Organization</span>
@@ -92,7 +92,7 @@
         </div>
       }
       @if (email()) {
-        <div class="mb-5" data-testid="profile-panel-email">
+        <div data-testid="profile-panel-email">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-envelope"></i>
             <span>Primary email</span>
@@ -101,7 +101,7 @@
         </div>
       }
       @if (addressLines().length > 0) {
-        <div class="mb-5" data-testid="profile-panel-location">
+        <div data-testid="profile-panel-location">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-location-dot"></i>
             <span>Location</span>
@@ -114,7 +114,7 @@
         </div>
       }
       @if (phone()) {
-        <div class="mb-5" data-testid="profile-panel-phone">
+        <div data-testid="profile-panel-phone">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-phone"></i>
             <span>Phone number</span>
@@ -123,7 +123,7 @@
         </div>
       }
       @if (tshirtSize()) {
-        <div class="mb-5" data-testid="profile-panel-tshirt">
+        <div data-testid="profile-panel-tshirt">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-shirt"></i>
             <span>T-shirt size</span>
@@ -133,7 +133,7 @@
       }
     </div>
 
-    <!-- Social rows — stubbed until wired from a real source; render only when present -->
+    <!-- Social rows — GitHub is wired from the user's connected identities; LinkedIn is stubbed. Each renders only when present. -->
     @if (githubHandle() || linkedinHandle()) {
       <div class="my-1 h-px bg-slate-200"></div>
       <div class="flex flex-col gap-2 pt-4">
