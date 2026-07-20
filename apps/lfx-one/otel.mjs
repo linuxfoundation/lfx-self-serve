@@ -29,22 +29,24 @@ const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 // circular structures) never crash the process; falls back to a minimal line.
 // The replacer normalizes Error instances so their message and stack are
 // captured — by default JSON.stringify serializes Error as {}.
+// Console is constructed with ignoreErrors:true (the default) so async stream
+// errors (e.g. EPIPE when stdout is piped to a closed consumer) are suppressed
+// and never crash the boot path — try/catch alone cannot catch async pipe errors.
 function otelReplacer(_key, value) {
   if (value instanceof Error) {
     return { message: value.message, stack: value.stack, name: value.name };
   }
   return value;
 }
+const _otelConsole = new console.Console({ stdout: process.stdout, ignoreErrors: true });
 function otelWrite(level, msg, extra) {
+  let line;
   try {
-    process.stdout.write(JSON.stringify({ level, msg, ...extra }, otelReplacer) + '\n');
+    line = JSON.stringify({ level, msg, ...extra }, otelReplacer);
   } catch {
-    try {
-      process.stdout.write(JSON.stringify({ level, msg }) + '\n');
-    } catch {
-      // stdout closed (e.g. EPIPE) — drop the line; never crash the boot path.
-    }
+    line = JSON.stringify({ level, msg });
   }
+  _otelConsole.log(line);
 }
 const otelLog = {
   info: (msg, extra) => otelWrite('INFO', msg, extra),
