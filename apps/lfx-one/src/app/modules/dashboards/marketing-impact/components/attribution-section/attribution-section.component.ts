@@ -7,9 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { ATTRIBUTION_MODEL_OPTIONS, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
+import { ATTRIBUTION_CHANNEL_DESCRIPTIONS, ATTRIBUTION_MODEL_OPTIONS, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import type {
@@ -22,7 +23,7 @@ import type {
 
 @Component({
   selector: 'lfx-attribution-section',
-  imports: [DecimalPipe, ReactiveFormsModule, SelectComponent, ButtonComponent],
+  imports: [DecimalPipe, ReactiveFormsModule, SelectComponent, ButtonComponent, TooltipModule],
   templateUrl: './attribution-section.component.html',
   styleUrl: './attribution-section.component.scss',
 })
@@ -43,6 +44,14 @@ export class AttributionSectionComponent {
   public readonly selectedPeriod = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
+  // When a parent has already fetched the same attribution response (e.g. the
+  // Overview tab, which also renders this section), it passes it in so we reuse
+  // it instead of issuing a duplicate request. `undefined` means "self-fetch".
+  public readonly attributionOverride = input<MarketingAttributionResponse | null | undefined>(undefined);
+  // When using a parent override, the parent also passes its in-flight state so
+  // we show the skeleton (not the empty state) while the parent request runs and
+  // its override is still the initial/previous-period `null`.
+  public readonly loadingOverride = input<boolean>(false);
 
   // === Forms ===
   protected readonly modelForm = this.fb.nonNullable.group({
@@ -52,7 +61,9 @@ export class AttributionSectionComponent {
   protected readonly modelOptions: AttributionModelOption[] = ATTRIBUTION_MODEL_OPTIONS;
 
   // === WritableSignals ===
-  protected readonly loading = signal(false);
+  // Tracks the component's own fetch; the template reads `loading` (below), which
+  // also folds in the parent's loadingOverride when running in override mode.
+  private readonly selfLoading = signal(false);
 
   // === Computed Signals ===
   protected readonly attributionData: Signal<MarketingAttributionResponse | null> = this.initAttributionData();
@@ -60,25 +71,40 @@ export class AttributionSectionComponent {
   protected readonly channelRows: Signal<AttributionChannelRow[]> = this.initChannelRows();
   protected readonly totalRevenue: Signal<string> = this.initTotalRevenue();
   protected readonly hasData = computed(() => this.channelRows().length > 0);
+  // In override mode, defer to the parent's in-flight state; otherwise use our own.
+  protected readonly loading = computed(() => (this.attributionOverride() !== undefined ? this.loadingOverride() : this.selfLoading()));
+
+  // === Protected Methods ===
+  /** Tooltip text describing what a consolidated channel groups; empty when no definition exists (no tooltip shown). */
+  protected channelDescription(channel: string): string {
+    return ATTRIBUTION_CHANNEL_DESCRIPTIONS[channel] ?? '';
+  }
 
   // === Private Initializers ===
   private initAttributionData(): Signal<MarketingAttributionResponse | null> {
+    const override$ = toObservable(this.attributionOverride);
     const slug$ = toObservable(this.foundationSlug);
     const focus$ = toObservable(this.focusProgram);
     const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, focus$, period$]).pipe(
-        switchMap(([slug, focus, period]) => {
+      combineLatest([override$, slug$, focus$, period$]).pipe(
+        switchMap(([override, slug, focus, period]) => {
+          // A parent-supplied response short-circuits our own fetch (no duplicate
+          // query). Loading is driven by the parent's loadingOverride in this mode.
+          if (override !== undefined) {
+            this.selfLoading.set(false);
+            return of(override);
+          }
           if (!slug) {
-            this.loading.set(false);
+            this.selfLoading.set(false);
             return of(null);
           }
-          this.loading.set(true);
+          this.selfLoading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
           return this.analyticsService.getMarketingAttribution(slug, classification, period || undefined).pipe(
             catchError(() => of(null)),
-            finalize(() => this.loading.set(false))
+            finalize(() => this.selfLoading.set(false))
           );
         })
       ),

@@ -5,6 +5,7 @@ import type {
   BrandReachResponse,
   EmailCtrResponse,
   MarketingAttributionChannel,
+  MarketingAttributionResponse,
   PaidProjectPerformance,
   RevenueImpactResponse,
 } from './analytics-data.interface';
@@ -40,6 +41,7 @@ export interface OverviewKpiData {
   revenueImpact: RevenueImpactResponse | null;
   brandReach: BrandReachResponse | null;
   emailCtr: EmailCtrResponse | null;
+  attribution: MarketingAttributionResponse | null;
 }
 
 /** Pre-formatted KPI card data for the Marketing Impact performance summary. */

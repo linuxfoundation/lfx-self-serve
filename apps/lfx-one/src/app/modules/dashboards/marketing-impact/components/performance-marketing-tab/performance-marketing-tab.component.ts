@@ -3,15 +3,12 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { FOCUS_TO_CLASSIFICATION, FUNNEL_STAGE_OPTIONS } from '@lfx-one/shared/constants';
+import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type {
-  FilterPillOption,
-  FunnelStage,
   KeywordPerformanceResponse,
   KeywordRow,
   MarketingImpactFocusProgram,
@@ -30,7 +27,7 @@ import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-c
 
 @Component({
   selector: 'lfx-performance-marketing-tab',
-  imports: [FilterPillsComponent, SparklineKpiCardComponent],
+  imports: [SparklineKpiCardComponent],
   templateUrl: './performance-marketing-tab.component.html',
   styleUrl: './performance-marketing-tab.component.scss',
 })
@@ -60,13 +57,9 @@ export class PerformanceMarketingTabComponent {
   public readonly foundationName = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
 
-  // === Constants ===
-  protected readonly funnelOptions: FilterPillOption[] = FUNNEL_STAGE_OPTIONS;
-
   // === WritableSignals ===
   protected readonly loading = signal(false);
   protected readonly keywordLoading = signal(false);
-  protected readonly selectedFunnel = signal<FunnelStage>('all');
   protected readonly expandedProjects = signal<Set<string>>(new Set());
   protected readonly expandedPlatforms = signal<Set<string>>(new Set());
   protected readonly expandedKeywords = signal<Set<string>>(new Set());
@@ -84,12 +77,6 @@ export class PerformanceMarketingTabComponent {
   protected readonly hasKeywords = computed(() => this.keywordRows().length > 0);
 
   // === Protected Methods ===
-  protected onFunnelChange(funnelId: string): void {
-    if (this.funnelOptions.some((o) => o.id === funnelId)) {
-      this.selectedFunnel.set(funnelId as FunnelStage);
-    }
-  }
-
   protected toggleProjectExpand(projectKey: string): void {
     this.expandedProjects.update((current) => {
       const next = new Set(current);
@@ -158,7 +145,6 @@ export class PerformanceMarketingTabComponent {
       const data = this.socialReachData();
       if (!data) return [];
 
-      const roasMomPct = data.changePercentage;
       const completedMonths = data.monthlyData?.slice(0, -1);
       const impressionsMomPct = computeMomPct(completedMonths);
 
@@ -208,9 +194,12 @@ export class PerformanceMarketingTabComponent {
           icon: 'fa-light fa-chart-line-up',
           iconClass: 'bg-violet-100 text-violet-600',
           value: `${(data.roas ?? 0).toFixed(2)}x`,
-          momChange: formatChangePct(roasMomPct, 'MoM'),
-          momTrend: trendDirection(roasMomPct),
-          momTrendClass: trendColorClass(roasMomPct),
+          // No MoM delta: paid spend is lumpy and event-driven, so a
+          // month-over-month ROAS swing mostly reflects a change in campaign
+          // volume/mix, not a change in ad efficiency.
+          momChange: null,
+          momTrend: 'neutral',
+          momTrendClass: 'text-gray-500',
           yoyChange: null,
           yoyTrend: 'neutral',
           yoyTrendClass: 'text-gray-500',
@@ -224,19 +213,9 @@ export class PerformanceMarketingTabComponent {
   private initProjectRows(): Signal<PaidProjectRow[]> {
     return computed(() => {
       const data = this.socialReachData();
-      const funnel = this.selectedFunnel();
       if (!data?.projectBreakdown?.length) return [];
 
       return data.projectBreakdown
-        .filter((p) => {
-          if (funnel === 'all') return true;
-          const stage = p.funnelStage?.toLowerCase() ?? '';
-          if (!stage || stage === 'unknown') return false;
-          if (funnel === 'tofu') return stage.startsWith('tofu');
-          if (funnel === 'mofu') return stage === 'mofu';
-          if (funnel === 'bofu') return stage === 'bofu';
-          return false;
-        })
         .map((p): PaidProjectRow => {
           const perf = this.normalizePerformance(p.performance);
           return {
