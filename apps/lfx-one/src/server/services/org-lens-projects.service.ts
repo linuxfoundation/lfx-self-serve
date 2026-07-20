@@ -852,7 +852,7 @@ export class OrgLensProjectsService {
       (project) =>
         typeof project.slug === 'string' &&
         typeof project.name === 'string' &&
-        project.health in HEALTH_SCORE_LABELS &&
+        Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
         Array.isArray(project.healthMetrics) &&
         Array.isArray(project.maintainers) &&
         Array.isArray(project.contributors)

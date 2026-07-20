@@ -1521,7 +1521,7 @@ export class OrgLensProjectDetailService {
     const candidate = value as OrgLensHeroBlock;
     if (!candidate.hero || typeof candidate.hero !== 'object' || typeof candidate.isNonLfProject !== 'boolean') return false;
     const { health } = candidate.hero as OrgLensProjectHero;
-    return health === null || health in PD_HEALTH_TAG;
+    return health === null || Object.prototype.hasOwnProperty.call(PD_HEALTH_TAG, health);
   }
 
   private static isInfluenceBlock(value: unknown): value is OrgLensInfluenceBlock {
