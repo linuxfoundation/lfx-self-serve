@@ -11,11 +11,11 @@ intercom_collection: Settings
 
 ## What is the difference between Settings and Profile?
 
-**Settings** (`/settings`) manages your account security and access credentials — email addresses, password, two-factor authentication, and your developer API token. **Profile** (`/profile`) manages your personal information — such as your name, work history, affiliations, and connected identities. Both are accessible from the left navigation.
+**Settings** is the tab of your **Profile** (`/profile/settings`) that manages your account security and access credentials — email addresses, password, two-factor authentication, and your developer API token. The other Profile tabs manage your personal information — such as your name, work history, affiliations, and connected identities. You can open Settings from its own item in the left navigation or from the Profile page tabs.
 
 ## Does LFX Self Serve have notification preferences?
 
-LFX Self Serve does not currently include a notification preferences section in Settings. Email and password settings are managed at `/settings`.
+LFX Self Serve does not currently include a notification preferences section in Settings. Email and password settings are managed in the Settings tab of your Profile (`/profile/settings`).
 
 ## Are my settings shared across devices?
 

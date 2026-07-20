@@ -17,12 +17,11 @@ The information below covers **your individual** LFX account — the profile tie
 
 ### What you can do
 
-- View your profile overview
-- Edit your name, photo, and personal details
-- Manage your email addresses
-- Change your password
-- View and update your project affiliations
-- Access developer settings
+- View and update your work history and project affiliations
+- Manage the identities used to attribute your contributions
+- Enroll in the Linux Foundation Individual Supporter plan
+- View your Linux Foundation purchase history
+- Manage your email addresses, password, and developer API token
 
 ### Who this applies to
 
@@ -32,14 +31,15 @@ All authenticated users have a profile. Every user can view and edit their own p
 
 Go to **app.lfx.dev** and select **Profile** from the left navigation sidebar, or navigate directly to `/profile`. The profile section uses a tabbed layout with the following tabs:
 
-| Tab          | Route                   | Description                                 |
-| ------------ | ----------------------- | ------------------------------------------- |
-| Overview     | `/profile`              | Summary of your profile and activity        |
-| Edit Profile | `/profile/manage`       | Edit your name, photo, and personal details |
-| Affiliations | `/profile/affiliations` | View and manage your project affiliations   |
-| Developer    | `/profile/developer`    | Developer-specific settings and API access  |
-| Email        | `/profile/email`        | Manage your email addresses                 |
-| Password     | `/profile/password`     | Change your account password                |
+| Tab                         | Route                            | Description                                                 |
+| --------------------------- | -------------------------------- | ----------------------------------------------------------- |
+| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                  |
+| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work |
+| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan    |
+| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                      |
+| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token          |
+
+`/profile` opens the **Work history & Affiliations** tab by default.
 
 ## Your company's activity
 

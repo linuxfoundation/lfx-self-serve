@@ -22,6 +22,8 @@
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
  *   S12 Settings page — view-only banner hidden for writer
+ *   S13 Settings lens redirect — me lens → /profile/settings (fragment preserved); foundation keeps prefixed route
+ *   S14 Legacy transactions redirect — /me/transactions → /profile/transactions, embedded in the Profile shell
  *
  * Failure messages include the persona × lens × page combination so CI output
  * pinpoints the exact regression without digging through traces.
@@ -587,5 +589,75 @@ test.describe('S12: Settings / Permissions page — no banner for writer', () =>
       page.getByText('You have view-only access to this project'),
       'persona=contributor canWrite=true lens=project page=settings should NOT show view-only banner'
     ).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+  });
+});
+
+// ─── S13: Settings lens redirect (settingsLensRedirectGuard) ───────────────────
+
+test.describe('S13: Settings lens redirect — me lens → /profile/settings', () => {
+  test('me lens redirects /settings?src=nav#developer-settings to /profile/settings preserving query + fragment', async ({ page }) => {
+    await stubPersona(page, ['contributor']);
+    await setPersonaCookie(page, ['contributor']);
+
+    // Me lens is the default; no project context needed.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto('/settings?src=nav#developer-settings', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // settingsLensRedirectGuard maps me-lens /settings → /profile/settings, carrying both the query
+    // param and the fragment through so the header's Developer Settings anchor link still lands right.
+    await expect(page, 'me lens should redirect /settings to /profile/settings with ?src=nav and #developer-settings preserved').toHaveURL(
+      /\/profile\/settings\?src=nav#developer-settings$/,
+      { timeout: ELEMENT_TIMEOUT }
+    );
+  });
+
+  test('foundation lens keeps the lens-prefixed /foundation/settings route', async ({ page }) => {
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
+    await setPersonaCookie(page, ['executive-director']);
+
+    // Establish the foundation lens first, then hit the flat /settings route.
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+
+    await page.goto(`/settings?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'foundation lens should redirect /settings to /foundation/settings with ?project preserved').toHaveURL(
+      /\/foundation\/settings\?project=test-foundation/,
+      { timeout: ELEMENT_TIMEOUT }
+    );
+  });
+});
+
+// ─── S14: Legacy transactions redirect (/me/transactions → /profile/transactions) ──
+
+test.describe('S14: Legacy transactions redirect — /me/transactions → /profile/transactions', () => {
+  test('redirects the legacy path and renders the dashboard embedded in the Profile shell', async ({ page }) => {
+    await stubPersona(page, ['contributor']);
+    await setPersonaCookie(page, ['contributor']);
+
+    // Me lens is the default; establish it, then hit the legacy transactions path.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto('/me/transactions', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // The route redirects the former /me/transactions page to the canonical Profile tab.
+    await expect(page, 'legacy /me/transactions should redirect to /profile/transactions').toHaveURL(/\/profile\/transactions$/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // The transactions dashboard renders inside the Profile shell, which owns the page header…
+    await expect(page.getByTestId('transactions-dashboard'), 'transactions dashboard should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-page-title'), 'Profile shell header should own the page title').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    // …so the dashboard's own standalone header is suppressed in embedded mode.
+    await expect(page.getByTestId('transactions-title'), 'embedded dashboard should not render its standalone header').toHaveCount(0);
   });
 });

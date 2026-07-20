@@ -28,7 +28,7 @@ All authenticated users can view their own transactions. Each user sees only the
 
 ### Navigation
 
-Go to **app.lfx.dev** and select **My Transactions** from the left navigation sidebar (route: `/me/transactions`). The transactions page lists all your purchases associated with your LFX account.
+Go to **app.lfx.dev**, open the **Profile** page, and select the **Transactions** tab (route: `/profile/transactions`). The transactions page lists all your purchases associated with your LFX account.
 
 ## Your company's activity
 

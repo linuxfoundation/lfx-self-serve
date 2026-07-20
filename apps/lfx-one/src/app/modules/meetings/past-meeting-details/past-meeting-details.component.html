@@ -192,38 +192,58 @@
       </lfx-card>
     }
 
-    <!-- Resources (full-width, only when present) -->
-    @if (attachments().length > 0) {
+    <!-- Resources (always shown for organizers; hidden for non-organizers when empty) -->
+    @if (attachments().length > 0 || meeting.organizer) {
       <lfx-card data-testid="resources-card">
         <div class="flex items-center gap-2 mb-3">
           <i class="fa-light fa-paperclip text-gray-500 text-sm"></i>
           <h2 class="text-sm font-medium text-gray-700">Resources</h2>
-          <span class="text-xs font-medium text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">{{ attachments().length }}</span>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          @for (attachment of attachments(); track attachment.uid; let i = $index) {
-            @if (attachment.type === 'link') {
-              <a
-                [href]="attachment.link"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="bg-gray-100 hover:bg-gray-200 rounded px-3 py-2 flex items-center gap-3 transition-colors cursor-pointer"
-                [attr.data-testid]="'resource-link-' + i">
-                <i class="fa-light fa-arrow-up-right-from-square text-xs text-gray-600 flex-shrink-0"></i>
-                <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1">{{ attachment.name }}</span>
-              </a>
-            } @else {
-              <a
-                (click)="downloadAttachment(attachment)"
-                class="bg-gray-100 hover:bg-gray-200 rounded px-3 py-2 flex items-center gap-3 transition-colors cursor-pointer"
-                [attr.data-testid]="'resource-file-' + i">
-                <i class="fa-light fa-file-arrow-down text-xs text-gray-600 flex-shrink-0"></i>
-                <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1">{{ attachment.name }}</span>
-              </a>
-            }
+          @if (attachments().length > 0) {
+            <span class="text-xs font-medium text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">{{ attachments().length }}</span>
+          }
+          @if (meeting.organizer) {
+            <button
+              type="button"
+              (click)="openMaterialsDrawer()"
+              class="ml-auto text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+              data-testid="manage-past-materials-btn">
+              Manage
+            </button>
           }
         </div>
+        @if (attachments().length > 0) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            @for (attachment of attachments(); track attachment.uid; let i = $index) {
+              @if (attachment.type === 'link') {
+                <a
+                  [href]="attachment.link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="bg-gray-100 hover:bg-gray-200 rounded px-3 py-2 flex items-center gap-3 transition-colors cursor-pointer"
+                  [attr.data-testid]="'resource-link-' + i">
+                  <i class="fa-light fa-arrow-up-right-from-square text-xs text-gray-600 flex-shrink-0"></i>
+                  <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1">{{ attachment.name }}</span>
+                </a>
+              } @else {
+                <a
+                  (click)="downloadAttachment(attachment)"
+                  class="bg-gray-100 hover:bg-gray-200 rounded px-3 py-2 flex items-center gap-3 transition-colors cursor-pointer"
+                  [attr.data-testid]="'resource-file-' + i">
+                  <i class="fa-light fa-file-arrow-down text-xs text-gray-600 flex-shrink-0"></i>
+                  <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1">{{ attachment.name }}</span>
+                </a>
+              }
+            }
+          </div>
+        } @else {
+          <p class="text-xs text-gray-400">No resources have been added yet.</p>
+        }
       </lfx-card>
+    }
+
+    @if (meeting.organizer) {
+      <lfx-meeting-materials-drawer [pastMeetingId]="pastMeetingResourceId()" [(visible)]="materialsDrawerVisible" (materialsChanged)="onMaterialsChanged()">
+      </lfx-meeting-materials-drawer>
     }
 
     <!-- Participants Table -->

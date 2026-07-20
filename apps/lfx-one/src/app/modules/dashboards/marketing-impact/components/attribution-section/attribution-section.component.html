@@ -60,7 +60,20 @@
       <!-- Rows -->
       @for (row of channelRows(); track row.channel) {
         <div class="flex items-center gap-4 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'attribution-row-' + row.channel">
-          <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.channel }}</span>
+          <div class="flex w-36 items-center gap-1.5" role="cell">
+            <span class="truncate text-xs font-medium text-gray-700">{{ row.channel }}</span>
+            @if (channelDescription(row.channel); as description) {
+              <i
+                class="fa-light fa-circle-info cursor-help rounded-full text-[11px] text-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                role="button"
+                tabindex="0"
+                [pTooltip]="description"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                [attr.aria-label]="row.channel + ' definition: ' + description"
+                [attr.data-testid]="'attribution-channel-tooltip-' + row.channel"></i>
+            }
+          </div>
           <div class="flex flex-1 items-center gap-2" role="cell">
             <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
               <div

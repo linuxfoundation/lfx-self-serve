@@ -265,6 +265,22 @@ export class NewsletterController {
   }
 
   /**
+   * GET /api/projects/:projectUid/newsletters/opt-outs
+   */
+  public async listOptOuts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_opt_outs_list', { project_uid: projectUid });
+
+    try {
+      const result = await this.newsletterService.listOptOuts(req, projectUid);
+      logger.success(req, 'newsletter_opt_outs_list', startTime, { count: result.opt_outs.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/projects/:projectUid/newsletters/generate
    *
    * AI-assisted body generation. Doesn't touch the Go newsletter-service —
