@@ -107,7 +107,7 @@
             <span>Location</span>
           </div>
           <div class="flex flex-col text-[12.5px] leading-relaxed text-slate-800">
-            @for (line of addressLines(); track line) {
+            @for (line of addressLines(); track $index) {
               <span>{{ line }}</span>
             }
           </div>
