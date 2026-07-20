@@ -6,6 +6,7 @@ import {
   DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
+  HEALTH_SCORE_LABELS,
   ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE,
   ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG,
   ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG,
@@ -13,6 +14,7 @@ import {
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
+import { classifyHealthScore } from '@lfx-one/shared/utils';
 import type {
   HealthScore,
   InfluenceBand,
@@ -446,11 +448,8 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private mapHealthScore(score: number): HealthScore {
-    if (score >= 80) {
-      return 'excellent';
-    }
-    return score >= 60 ? 'healthy' : 'at-risk';
+  private mapHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
+    return classifyHealthScore(score);
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {
@@ -853,6 +852,7 @@ export class OrgLensProjectsService {
       (project) =>
         typeof project.slug === 'string' &&
         typeof project.name === 'string' &&
+        Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
         Array.isArray(project.healthMetrics) &&
         Array.isArray(project.maintainers) &&
         Array.isArray(project.contributors)
