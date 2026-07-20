@@ -36,7 +36,9 @@
               class="relative flex flex-wrap items-center gap-1 rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               [class.group]="row.foundationsGroup.overflowCount > 0"
               [attr.tabindex]="row.foundationsGroup.overflowCount > 0 ? 0 : null"
-              [attr.aria-describedby]="row.foundationsGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover' : null">
+              [attr.aria-describedby]="
+                row.foundationsGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover' : null
+              ">
               @for (pill of row.foundationsGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
