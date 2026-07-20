@@ -393,7 +393,7 @@ export const DEMO_ORG_LEADERBOARD: OrgLeaderboardRow[] = [
   },
 ];
 
-/** Demo Ecosystem Influence rows, seeded from the 6a design spec's mock projects (Kubernetes expanded by default). */
+/** Demo Ecosystem Influence rows, seeded from the 6a design spec's mock projects. */
 export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Kubernetes',

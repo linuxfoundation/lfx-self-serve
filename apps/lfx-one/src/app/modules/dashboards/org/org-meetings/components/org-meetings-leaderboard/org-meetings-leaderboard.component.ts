@@ -36,14 +36,30 @@ export class OrgMeetingsLeaderboardComponent {
   // Complex computed via init function
   protected readonly rows: Signal<OrgLeaderboardDisplayRow[]> = this.initRows();
 
+  // `appendTo="body"` detaches the popover from the triggering cell, so the pointer briefly
+  // leaves the cell while crossing to the popover — a same-tick `hide()` on the cell's
+  // `mouseleave` would close it before the pointer arrives. Deferring the hide by a tick lets a
+  // `mouseenter` on the popover itself cancel it first.
+  private hideOverflowPopoverTimeoutId: ReturnType<typeof setTimeout> | undefined;
+
   // The "+N" overflow popover is a single instance shared across every cell (rather than one per
   // cell), appended to body via `appendTo="body"` so it isn't clipped by the table's scroll
   // container — that container needs `overflow: auto` intact for horizontal scroll on narrow
   // viewports, which an absolutely-positioned per-cell popover would otherwise be clipped by.
   protected showOverflowPopover(event: Event, title: string, items: OrgLeaderboardPillValue[]): void {
+    this.cancelHideOverflowPopover();
     this.overflowPopoverTitle.set(title);
     this.overflowPopoverItems.set(items);
     this.overflowPopoverRef()?.show(event);
+  }
+
+  protected scheduleHideOverflowPopover(): void {
+    this.cancelHideOverflowPopover();
+    this.hideOverflowPopoverTimeoutId = setTimeout(() => this.overflowPopoverRef()?.hide(), 100);
+  }
+
+  protected cancelHideOverflowPopover(): void {
+    clearTimeout(this.hideOverflowPopoverTimeoutId);
   }
 
   protected hideOverflowPopover(): void {
