@@ -34,9 +34,8 @@ async function seedSelectedOrgCookie(page: Page): Promise<void> {
   ]);
 }
 
-// Stub only what the org lens needs to render (personas + account context). The Org
-// Lens meetings BFF endpoints were retired (LFXV2-1902) — there is nothing
-// meetings-specific left to stub.
+// Stub only what the org lens needs to render (personas + account context). This page is demo-data
+// only (LFXV2-2735) — no meetings-insights BFF endpoint exists yet, so there is nothing else to stub.
 async function stubOrgLensContext(page: Page): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, {
@@ -66,44 +65,83 @@ async function gotoOrgMeetingsPage(page: Page): Promise<void> {
   }
 }
 
-test.describe('Org Meetings (retired — coming soon)', () => {
-  test('renders the coming-soon placeholder and no live meetings surface', async ({ page }) => {
+test.describe('Org Meetings insights (6a redesign)', () => {
+  test('renders the page shell with default 90-day KPI values', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgMeetingsPage(page);
 
-    // Header stays for sibling-tab consistency.
     await expect(page.getByTestId('org-meetings-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Meetings' })).toBeVisible();
+    await expect(page.getByTestId('org-meetings-time-range')).toBeVisible();
 
-    // The coming-soon placeholder is shown.
-    const placeholder = page.getByTestId('org-meetings-coming-soon');
-    await expect(placeholder).toBeVisible();
-    await expect(placeholder.getByText('Coming soon')).toBeVisible();
-
-    // The retired live surface (KPI strip, filters, upcoming list, invitee PII panel) is gone.
-    await expect(page.getByTestId('org-meetings-kpi-strip')).toHaveCount(0);
-    await expect(page.getByTestId('org-meetings-filter-bar')).toHaveCount(0);
-    await expect(page.getByTestId('org-upcoming-meetings-list')).toHaveCount(0);
+    const kpiCards = page.getByTestId('org-meetings-kpi-cards');
+    await expect(kpiCards).toBeVisible();
+    await expect(kpiCards).toContainText('63');
+    await expect(kpiCards).toContainText('512');
+    await expect(kpiCards).toContainText('47');
+    await expect(kpiCards).toContainText('30');
   });
 
-  test('does not call the retired org-lens meetings BFF endpoints', async ({ page }) => {
+  test('renders the "where your people spend time" stacked bars', async ({ page }) => {
     await stubOrgLensContext(page);
-
-    let meetingsApiHit = false;
-    await page.route('**/api/orgs/**/lens/meetings**', (route) => {
-      meetingsApiHit = true;
-      return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
-    });
-
     await gotoOrgMeetingsPage(page);
 
-    await expect(page.getByTestId('org-meetings-coming-soon')).toBeVisible();
+    const spend = page.getByTestId('org-meetings-spend-breakdown');
+    await expect(spend).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-By foundation')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-By project')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-By meeting type')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-By role')).toBeVisible();
+    await expect(spend).toContainText('CNCF');
+  });
 
-    // Keep observing over a bounded window after the placeholder renders: a deferred/async
-    // call to the retired endpoint would resolve waitForRequest and fail this expectation,
-    // instead of slipping past an immediate check. No request within the window => the wait
-    // times out and rejects, which is the pass condition.
-    await expect(page.waitForRequest('**/api/orgs/**/lens/meetings**', { timeout: 1000 })).rejects.toThrow();
-    expect(meetingsApiHit).toBe(false);
+  test('renders trend cards with sparklines', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    const trends = page.getByTestId('org-meetings-trends');
+    await expect(trends).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-Meetings Attended')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-Employees Active')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-trend-Projects Supported')).toBeVisible();
+  });
+
+  test('renders the influence table with all rows collapsed by default', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    const influence = page.getByTestId('org-meetings-influence');
+    await expect(influence).toBeVisible();
+
+    // All rows start collapsed, so no detail rows are rendered.
+    await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
+    await expect(page.getByTestId('org-meetings-influence-row-pytorch-detail')).toHaveCount(0);
+
+    // Expanding Kubernetes via its caret reveals the detail row.
+    await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
+    const kubernetesDetail = page.getByTestId('org-meetings-influence-row-kubernetes-detail');
+    await expect(kubernetesDetail).toBeVisible();
+    await expect(kubernetesDetail).toContainText('Meeting attendance');
+
+    // Expanding PyTorch via its caret reveals its detail row too.
+    await page.getByTestId('org-meetings-influence-row-pytorch-caret').click();
+    await expect(page.getByTestId('org-meetings-influence-row-pytorch-detail')).toBeVisible();
+
+    // Collapsing Kubernetes via its caret removes the detail row.
+    await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
+    await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
+  });
+
+  test('switching time range keeps the page rendering without error', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    await page.getByTestId('org-meetings-time-range').click();
+    await page.getByTestId('org-meetings-time-range-option-previousYear').click();
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
+
+    await page.getByTestId('org-meetings-time-range').click();
+    await page.getByTestId('org-meetings-time-range-option-allTime').click();
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
   });
 });

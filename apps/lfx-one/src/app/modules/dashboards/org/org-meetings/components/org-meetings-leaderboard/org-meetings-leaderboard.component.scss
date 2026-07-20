@@ -1,0 +1,12 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// PrimeNG sets `overflow: auto` as an inline style on its table wrapper (for responsive horizontal
+// scrolling), which clips the absolutely-positioned "+N" hover popovers in the leaderboard cells.
+// `!important` is required here to win over that inline style. This table doesn't need scroll
+// behavior (7 columns fit the card width), so overflow is opened up for this instance only.
+::ng-deep {
+  .p-datatable-table-container {
+    overflow: visible !important;
+  }
+}

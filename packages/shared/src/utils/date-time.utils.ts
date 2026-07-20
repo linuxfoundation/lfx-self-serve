@@ -501,3 +501,8 @@ export function formatRelativeTime(date: Date): string {
   const diffDay = Math.floor(diffMs / 86_400_000);
   return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
 }
+
+/** Short date label for range previews, e.g. "Apr 18, 2026". */
+export function formatShortDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}

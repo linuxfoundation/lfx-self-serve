@@ -1,0 +1,133 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-4" data-testid="org-meetings-influence">
+  <div class="flex items-center gap-3">
+    <h2 class="flex shrink-0 items-center gap-2 text-base font-medium text-gray-900">
+      <i class="fa-light fa-arrow-trend-up text-lg" aria-hidden="true"></i>
+      <span>How attendance impacts project influence</span>
+      <button
+        type="button"
+        class="cursor-help text-xs text-gray-400 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+        [pTooltip]="infoTooltip"
+        tooltipPosition="top"
+        aria-label="How attendance relates to the Ecosystem Influence Score"
+        data-testid="org-meetings-influence-info"
+        (click)="$event.preventDefault()">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+      </button>
+    </h2>
+    <div class="flex-1 self-center border-t border-gray-200"></div>
+  </div>
+  <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-meetings-influence-table">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50">
+        <tr class="border-b border-gray-200 text-left text-xs tracking-wide text-gray-500 uppercase">
+          <th class="px-4 py-2 font-medium">Project</th>
+          <th class="px-4 py-2 font-medium">Rank among companies</th>
+          <th class="px-4 py-2 font-medium">Ecosystem Influence</th>
+          <th class="px-4 py-2 font-medium">Attendance's contribution</th>
+          <th class="px-4 py-2 font-medium">Δ this period</th>
+          <th class="px-4 py-2 font-medium"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.projectSlug) {
+          <tr
+            class="cursor-pointer border-b border-gray-200 transition-colors hover:bg-gray-50"
+            role="button"
+            tabindex="0"
+            [attr.aria-expanded]="!!expansionMap()[row.projectSlug]"
+            [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug"
+            (mousedown)="$event.preventDefault()"
+            (click)="toggleExpansion(row.projectSlug)"
+            (keydown.enter)="toggleExpansion(row.projectSlug)"
+            (keydown.space)="toggleExpansion(row.projectSlug); $event.preventDefault()">
+            <td class="px-4 py-3 align-middle">
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  class="flex h-7 w-7 items-center justify-center rounded p-0 text-gray-500 hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                  [attr.aria-expanded]="!!expansionMap()[row.projectSlug]"
+                  [attr.aria-label]="(expansionMap()[row.projectSlug] ? 'Collapse ' : 'Expand ') + row.project"
+                  [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug + '-caret'"
+                  (mousedown)="$event.preventDefault()"
+                  (click)="toggleExpansion(row.projectSlug); $event.stopPropagation()">
+                  <i
+                    class="fa-light"
+                    [class.fa-chevron-down]="!expansionMap()[row.projectSlug]"
+                    [class.fa-chevron-up]="!!expansionMap()[row.projectSlug]"
+                    aria-hidden="true"></i>
+                </button>
+                <span class="font-medium text-gray-900">{{ row.project }}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 align-middle">
+              <span class="text-xs text-gray-500">{{ row.rankLabel }}</span>
+            </td>
+            <td class="px-4 py-3 align-middle">
+              <span [class]="row.bandChipClass" [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug + '-band'">
+                <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
+                  @for (bar of row.bandBars; track bar.x) {
+                    <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
+                  }
+                </svg>
+                {{ row.bandLabel }}
+              </span>
+            </td>
+            <td class="px-4 py-3 align-middle">
+              <div class="flex items-center gap-2.5">
+                <div class="h-1.5 w-24 overflow-hidden rounded-full bg-blue-100">
+                  <div class="h-1.5 rounded-full bg-blue-600" [style.width.%]="row.fromAttendancePct * 2.2"></div>
+                </div>
+                <span class="text-xs font-medium whitespace-nowrap text-gray-900">{{ row.fromAttendancePct }}% of score</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 align-middle">
+              <span class="inline-flex items-center gap-1 text-xs font-medium" [class]="deltaTextClass[row.deltaDirection]">
+                <i [class]="deltaIcon[row.deltaDirection]" aria-hidden="true"></i>
+                {{ row.deltaLabel }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-right align-middle">
+              <a
+                class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                [routerLink]="row.projectLink"
+                (click)="$event.stopPropagation()">
+                Projects
+                <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i>
+              </a>
+            </td>
+          </tr>
+          @if (expansionMap()[row.projectSlug]) {
+            <tr class="bg-gray-50" [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug + '-detail'">
+              <td colspan="6" class="px-12 py-4">
+                <div class="flex flex-col gap-3">
+                  <div class="flex flex-col gap-2.5">
+                    @for (segment of row.breakdown; track segment.label) {
+                      <div class="grid grid-cols-[1fr_2.5rem] items-center gap-2.5">
+                        <div class="flex flex-col gap-1">
+                          <span class="text-xs" [class]="segment.isAttendance ? 'font-medium text-gray-900' : 'text-gray-500'">{{ segment.label }}</span>
+                          <div class="h-1.5 w-full overflow-hidden rounded-full" [class]="segment.isAttendance ? 'bg-blue-100' : 'bg-gray-100'">
+                            <div class="h-1.5 rounded-full" [class]="segment.isAttendance ? 'bg-blue-600' : 'bg-gray-300'" [style.width.%]="segment.pct"></div>
+                          </div>
+                        </div>
+                        <span class="text-right text-xs font-medium" [class]="segment.isAttendance ? 'text-gray-900' : 'text-gray-400'"
+                          >{{ segment.pct }}%</span
+                        >
+                      </div>
+                    }
+                  </div>
+                  <p class="text-sm text-gray-600">
+                    {{ row.fromAttendancePct }}% of {{ orgName() }}'s ecosystem influence score of {{ row.bandLabel }} in {{ row.project }} comes from your
+                    organization's meeting attendance.
+                  </p>
+                </div>
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+</section>

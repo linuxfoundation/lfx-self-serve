@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<button
+  type="button"
+  class="flex items-center gap-2 text-sm font-medium text-gray-900 hover:text-gray-700"
+  (click)="togglePanel($event)"
+  data-testid="org-meetings-time-range">
+  <i class="fa-light fa-calendar text-gray-500" aria-hidden="true"></i>
+  <span data-testid="org-meetings-time-range-label">{{ selectedLabel() }}</span>
+  <i class="fa-light fa-chevron-down text-xs text-gray-400" aria-hidden="true"></i>
+</button>
+
+<p-popover #popover appendTo="body" [style]="{ width: '24rem' }" data-testid="org-meetings-time-range-panel">
+  <div class="flex flex-col" data-testid="org-meetings-time-range-panel-body">
+    @for (group of groups(); track $index; let isFirstGroup = $first) {
+      <div class="flex flex-col py-1" [class.border-t]="!isFirstGroup" [class.border-gray-200]="!isFirstGroup">
+        @for (option of group; track option.value) {
+          <button
+            type="button"
+            class="flex items-center justify-between gap-4 rounded-md px-3 py-2 text-left hover:bg-gray-50"
+            (click)="select(option)"
+            [attr.data-testid]="'org-meetings-time-range-option-' + option.value">
+            <span class="flex items-center gap-2 text-sm" [class.font-medium]="option.value === value()" [class.text-gray-900]="option.value === value()">
+              <i class="fa-light fa-check w-3.5 text-blue-500" [class.opacity-0]="option.value !== value()" [attr.aria-hidden]="option.value !== value()"></i>
+              {{ option.label }}
+            </span>
+            @if (option.rangeLabel) {
+              <span class="text-xs whitespace-nowrap text-gray-400">{{ option.rangeLabel }}</span>
+            }
+          </button>
+        }
+      </div>
+    }
+  </div>
+</p-popover>

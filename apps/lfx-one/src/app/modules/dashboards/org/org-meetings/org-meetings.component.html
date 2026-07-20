@@ -1,15 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
+
 <main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-meetings-page">
-  <header class="flex flex-col gap-1">
-    <h1 class="font-display font-light text-2xl">Meetings</h1>
-    <p class="text-sm text-gray-500">A view of the meetings your organization is participating in — coming soon.</p>
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="org-meetings-header">
+    <div class="flex flex-col gap-2">
+      <h1 class="font-display font-light text-2xl" data-testid="org-meetings-title">Meetings</h1>
+      <p class="text-sm text-gray-500" data-testid="org-meetings-subtitle">How your organization's employees engage across Linux Foundation projects.</p>
+    </div>
+    <lfx-org-meetings-time-range [(value)]="timeRange" />
   </header>
 
-  <div class="flex flex-col items-center justify-center min-h-[50vh] text-center gap-6" data-testid="org-meetings-coming-soon">
-    <div class="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center">
-      <i class="fa-light fa-video text-4xl text-blue-500" aria-hidden="true"></i>
-    </div>
-    <lfx-tag value="Coming soon" severity="contrast" [rounded]="true" />
-  </div>
+  <lfx-org-meetings-kpi-cards [timeRange]="timeRange()" />
+
+  <lfx-org-meetings-spend-breakdown [timeRange]="timeRange()" />
+
+  <!-- Employee leaderboard deferred to a future PR (LFXV2-2735 follow-up) -->
+
+  <lfx-org-meetings-influence [timeRange]="timeRange()" />
 </main>
