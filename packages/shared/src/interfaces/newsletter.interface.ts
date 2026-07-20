@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-export type NewsletterStatusTabId = 'draft' | 'sent';
+export type NewsletterStatusTabId = 'draft' | 'sent' | 'optout';
 
 /**
  * Newsletter lifecycle states.
@@ -171,4 +171,13 @@ export interface NewsletterChartDataset {
 export interface NewsletterChartData {
   labels: string[];
   datasets: NewsletterChartDataset[];
+}
+
+export interface NewsletterOptOut {
+  email: string;
+  unsubscribed_at: string;
+}
+
+export interface NewsletterOptOutListResponse {
+  opt_outs: NewsletterOptOut[];
 }

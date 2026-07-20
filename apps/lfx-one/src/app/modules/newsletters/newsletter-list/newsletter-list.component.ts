@@ -13,7 +13,16 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY } from '@lfx-one/shared/constants';
-import { FilterPillOption, NewsletterAnalytics, NewsletterListItem, NewsletterRow, NewsletterStatusTabId } from '@lfx-one/shared/interfaces';
+import {
+  FilterPillOption,
+  NewsletterAnalytics,
+  NewsletterListItem,
+  NewsletterListResponse,
+  NewsletterOptOut,
+  NewsletterOptOutListResponse,
+  NewsletterRow,
+  NewsletterStatusTabId,
+} from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -23,6 +32,11 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+
+// Discriminates the two list shapes the context/tab switchMap can resolve to,
+// so the single subscribe callback can route each response without a second
+// stream.
+type ListLoadResult = { kind: 'newsletters'; response: NewsletterListResponse } | { kind: 'optout'; response: NewsletterOptOutListResponse };
 
 @Component({
   selector: 'lfx-newsletter-list',
@@ -58,11 +72,13 @@ export class NewsletterListComponent {
   protected readonly statusTabOptions: FilterPillOption[] = [
     { id: 'draft', label: 'Drafts' },
     { id: 'sent', label: 'Sent' },
+    { id: 'optout', label: 'Opt-out' },
   ];
 
   // === Writable Signals ===
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
+  protected readonly optOuts = signal<NewsletterOptOut[]>([]);
   protected readonly loading = signal<boolean>(false);
   protected readonly loadingMore = signal<boolean>(false);
   protected readonly nextPageToken = signal<string | undefined>(undefined);
@@ -93,20 +109,21 @@ export class NewsletterListComponent {
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0);
+  protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
   protected readonly rows: Signal<NewsletterRow[]> = this.initRows();
 
   public constructor() {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
-    if (tabFromQuery === 'sent' || tabFromQuery === 'draft') {
+    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'optout') {
       this.statusTab.set(tabFromQuery);
     }
     this.initLoadOnContextOrTab();
   }
 
   protected onStatusTabChange(tab: string): void {
-    if (tab === 'draft' || tab === 'sent') {
+    if (tab === 'draft' || tab === 'sent' || tab === 'optout') {
       this.statusTab.set(tab);
     }
   }
@@ -133,7 +150,9 @@ export class NewsletterListComponent {
     const uid = this.projectUid();
     const status = this.statusTab();
     const generation = this.loadGeneration;
-    if (!token || this.loadingMore() || !uid) return;
+    // Opt-out has no pagination — canLoadMore() never yields true for it, so
+    // this is just the type guard that lets `status` narrow below.
+    if (!token || this.loadingMore() || !uid || status === 'optout') return;
     this.loadingMore.set(true);
     this.newsletterService
       .listNewsletters(uid, { status, page_token: token })
@@ -221,6 +240,7 @@ export class NewsletterListComponent {
           this.selectedNewsletter.set(null);
           this.nextPageToken.set(undefined);
           this.newsletters.set([]);
+          this.optOuts.set([]);
           if (uid !== this.lastLoadedUid) {
             this.lastLoadedUid = uid;
             this.analyticsCacheGeneration++;
@@ -232,7 +252,18 @@ export class NewsletterListComponent {
             return EMPTY;
           }
           this.loading.set(true);
+          if (status === 'optout') {
+            return this.newsletterService.listOptOuts(uid).pipe(
+              map((response): ListLoadResult => ({ kind: 'optout', response })),
+              catchError((err: HttpErrorResponse) => {
+                this.loading.set(false);
+                this.showLoadError(err);
+                return EMPTY;
+              })
+            );
+          }
           return this.newsletterService.listNewsletters(uid, { status }).pipe(
+            map((response): ListLoadResult => ({ kind: 'newsletters', response })),
             catchError((err: HttpErrorResponse) => {
               this.loading.set(false);
               this.showLoadError(err);
@@ -242,11 +273,15 @@ export class NewsletterListComponent {
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((response) => {
+      .subscribe((result) => {
         this.loading.set(false);
-        this.newsletters.set(response.newsletters);
-        this.nextPageToken.set(response.next_page_token);
-        this.loadOpenRates(response.newsletters);
+        if (result.kind === 'optout') {
+          this.optOuts.set(result.response.opt_outs);
+          return;
+        }
+        this.newsletters.set(result.response.newsletters);
+        this.nextPageToken.set(result.response.next_page_token);
+        this.loadOpenRates(result.response.newsletters);
       });
   }
 

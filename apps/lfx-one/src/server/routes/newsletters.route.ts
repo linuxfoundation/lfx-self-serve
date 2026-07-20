@@ -33,6 +33,11 @@ router.post('/test-send', (req, res, next) => newsletterController.testSend(req,
 router.get('/', (req, res, next) => newsletterController.listNewsletters(req, res, next));
 router.post('/', (req, res, next) => newsletterController.createNewsletter(req, res, next));
 
+// Opt-out (unsubscribe) list. Static segment, registered before the
+// `/:newsletterUid` catch-alls so Express doesn't parse `opt-outs` as a
+// newsletter UID.
+router.get('/opt-outs', (req, res, next) => newsletterController.listOptOuts(req, res, next));
+
 // Per-newsletter CRUD + send + analytics.
 router.get('/:newsletterUid', (req, res, next) => newsletterController.getNewsletter(req, res, next));
 router.put('/:newsletterUid', (req, res, next) => newsletterController.updateNewsletter(req, res, next));
