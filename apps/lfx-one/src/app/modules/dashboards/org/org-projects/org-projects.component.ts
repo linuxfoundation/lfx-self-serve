@@ -904,6 +904,12 @@ export class OrgProjectsComponent {
   }
 
   private compareProjects(a: OrgLensProject, b: OrgLensProject, field: OrgProjectsSortField, dir: SortDirection): number {
+    if (field === 'health') {
+      const availability = this.compareHealthAvailability(a.health, b.health);
+      if (availability !== 0) {
+        return availability;
+      }
+    }
     const primary = this.compareByField(a, b, field);
     const directed = dir === 'asc' ? primary : -primary;
     if (directed !== 0) {
@@ -933,6 +939,15 @@ export class OrgProjectsComponent {
       default:
         return 0;
     }
+  }
+
+  private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
+    const aUnavailable = a === 'unavailable';
+    const bUnavailable = b === 'unavailable';
+    if (aUnavailable === bUnavailable) {
+      return 0;
+    }
+    return aUnavailable ? 1 : -1;
   }
 
   private healthRank(health: OrgLensProject['health']): number {

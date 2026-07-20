@@ -6,6 +6,7 @@ import {
   DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
+  HEALTH_SCORE_LABELS,
   ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE,
   ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG,
   ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG,
@@ -851,6 +852,7 @@ export class OrgLensProjectsService {
       (project) =>
         typeof project.slug === 'string' &&
         typeof project.name === 'string' &&
+        project.health in HEALTH_SCORE_LABELS &&
         Array.isArray(project.healthMetrics) &&
         Array.isArray(project.maintainers) &&
         Array.isArray(project.contributors)
