@@ -12,6 +12,7 @@ import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
+import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -346,8 +347,9 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       {
+        // Me lens → /profile/settings (canonical); foundation/project → lens-prefixed settings.
         path: 'settings',
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [settingsLensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
@@ -363,8 +365,10 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/badges/badges.routes').then((m) => m.BADGE_ROUTES),
       },
       {
+        // Transactions now live as a Profile tab — redirect the legacy path.
         path: 'me/transactions',
-        loadChildren: () => import('./modules/transactions/transactions.routes').then((m) => m.TRANSACTION_ROUTES),
+        redirectTo: 'profile/transactions',
+        pathMatch: 'full',
       },
       {
         path: 'events',

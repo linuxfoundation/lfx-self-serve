@@ -8,7 +8,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COUNTRIES, normalizeTShirtSize, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
+import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -194,7 +194,9 @@ export class ProfileEditDialogComponent {
         error: (error: HttpErrorResponse) => {
           // Flow C: Management token required — save form state and redirect to authorize
           if (error.status === 403 && error.error?.error === 'management_token_required') {
-            sessionStorage.setItem('lfx_profile_pending_save', JSON.stringify(this.profileForm.value));
+            // Stamp with a timestamp so the parent shell can discard a stale pending-save if this
+            // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
+            sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
             window.location.href = error.error.authorize_url;
             return;
           }

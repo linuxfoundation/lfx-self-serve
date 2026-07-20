@@ -43,23 +43,23 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 **Identical for all personas.** Static items — no runtime persona conditions.
 
-| Section       | Item                      | Route              |
-| ------------- | ------------------------- | ------------------ |
-| _(top-level)_ | My Dashboard              | `/`                |
-| My Engagement | My Meetings               | `/meetings`        |
-|               | My Events                 | `/events`          |
-|               | My Committees             | `/groups`          |
-|               | My Mailing Lists          | `/mailing-lists`   |
-|               | My Votes                  | `/votes`           |
-|               | My Surveys                | `/surveys`         |
-|               | My Documents              | `/documents`       |
-| My Growth     | Training & Certifications | `/me/training`     |
-|               | Mentorships               | _(external link)_  |
-|               | Crowdfunding              | _(external link)_  |
-|               | Badges                    | `/badges`          |
-| My Account    | Profile                   | `/profile`         |
-|               | Settings                  | `/settings`        |
-|               | Transactions              | `/me/transactions` |
+| Section       | Item                      | Route                   |
+| ------------- | ------------------------- | ----------------------- |
+| _(top-level)_ | My Dashboard              | `/`                     |
+| My Engagement | My Meetings               | `/meetings`             |
+|               | My Events                 | `/events`               |
+|               | My Committees             | `/groups`               |
+|               | My Mailing Lists          | `/mailing-lists`        |
+|               | My Votes                  | `/votes`                |
+|               | My Surveys                | `/surveys`              |
+|               | My Documents              | `/documents`            |
+| My Growth     | Training & Certifications | `/me/training`          |
+|               | Mentorships               | _(external link)_       |
+|               | Crowdfunding              | _(external link)_       |
+|               | Badges                    | `/badges`               |
+| My Account    | Profile                   | `/profile`              |
+|               | Settings                  | `/profile/settings`     |
+|               | Transactions              | `/profile/transactions` |
 
 ---
 

@@ -4,12 +4,23 @@
 import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
 
 /**
+ * sessionStorage key for a profile-edit form interrupted by a Flow C
+ * (management-token) authorization. Written by the profile-edit dialog and
+ * replayed by ProfileLayoutComponent on return; cleared before unrelated
+ * profile-auth flows. Centralized here because it is shared across the profile
+ * layout, the profile-edit dialog, and the settings feature.
+ */
+export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
+
+/**
  * Profile tab configuration
  */
 export const PROFILE_TABS: ProfileTab[] = [
-  { id: 'attribution', label: 'Work history & Affiliations', route: 'attribution' },
+  { id: 'attribution', label: 'Work history & Affiliations', route: 'attributions' },
   { id: 'identities', label: 'Identities', route: 'identities' },
   { id: 'individual-enrollment', label: 'Individual Enrollment', route: 'individual-enrollment' },
+  { id: 'transactions', label: 'Transactions', route: 'transactions' },
+  { id: 'settings', label: 'Settings', route: 'settings' },
 ];
 
 /**

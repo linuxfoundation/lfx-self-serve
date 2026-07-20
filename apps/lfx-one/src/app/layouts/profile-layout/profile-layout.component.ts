@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
-import { normalizeTShirtSize, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -43,7 +43,11 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileLayoutComponent {
-  private static readonly formStateKey = 'lfx_profile_pending_save';
+  private static readonly formStateKey = PENDING_PROFILE_SAVE_KEY;
+  // Discard a stored pending-save older than this. Prevents an abandoned profile-edit authorization
+  // from being silently replayed by a later, unrelated profile-auth return (e.g. an email-delete
+  // authorization that now lands on /profile/settings inside this shell).
+  private static readonly pendingSaveTtlMs = 10 * 60 * 1000;
 
   // Private injections
   private readonly route = inject(ActivatedRoute);
@@ -71,7 +75,7 @@ export class ProfileLayoutComponent {
 
   // Form for mobile tab selection
   public readonly tabForm = this.fb.group({
-    selectedTab: ['attribution'],
+    selectedTab: ['attributions'],
   });
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
@@ -167,16 +171,16 @@ export class ProfileLayoutComponent {
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       if (params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
-        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        this.clearAuthQueryParams();
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
-          detail: 'Profile authorization failed. Please try saving again.',
+          detail: 'Authorization failed. Please try again.',
         });
-        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        this.clearAuthQueryParams();
       }
     });
   }
@@ -253,9 +257,15 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
+    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
+    // authorization isn't silently replayed by a later, unrelated profile-auth return.
     let formData: Partial<UserMetadata>;
     try {
-      formData = JSON.parse(savedState);
+      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
+      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+        return;
+      }
+      formData = envelope.form;
     } catch {
       return;
     }
@@ -297,6 +307,14 @@ export class ProfileLayoutComponent {
         });
       },
     });
+  }
+
+  // Strip the Flow C query params (success/error) while staying on the current tab.
+  // Navigating relative to this.route would resolve to the parent /profile route and
+  // bounce the user to the default tab — so re-navigate to the current path sans query.
+  private clearAuthQueryParams(): void {
+    const path = this.router.url.split('?')[0];
+    this.router.navigateByUrl(path, { replaceUrl: true });
   }
 
   // Private init functions
