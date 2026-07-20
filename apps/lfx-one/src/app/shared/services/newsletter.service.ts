@@ -14,6 +14,8 @@ import {
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -47,6 +49,11 @@ export class NewsletterService {
 
   public testSend(projectUid: string, payload: NewsletterTestSendPayload): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`/api/projects/${this.enc(projectUid)}/newsletters/test-send`, payload).pipe(take(1));
+  }
+
+  /** Render a layout to its final email HTML server-side (the same output the send path dispatches). */
+  public renderPreview(projectUid: string, payload: NewsletterRenderPreviewPayload): Observable<NewsletterRenderPreviewResponse> {
+    return this.http.post<NewsletterRenderPreviewResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/render-preview`, payload).pipe(take(1));
   }
 
   public generate(projectUid: string, payload: GenerateNewsletterRequest): Observable<GenerateNewsletterResponse> {

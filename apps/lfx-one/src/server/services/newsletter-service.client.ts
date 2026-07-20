@@ -11,6 +11,8 @@ import {
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
   NewsletterSendResult,
   NewsletterTemplateManifest,
   NewsletterTemplatesResponse,
@@ -51,6 +53,17 @@ export class NewsletterServiceClient {
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`,
       'GET'
+    );
+  }
+
+  public async renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterRenderPreviewResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/render-preview`,
+      'POST',
+      undefined,
+      payload
     );
   }
 

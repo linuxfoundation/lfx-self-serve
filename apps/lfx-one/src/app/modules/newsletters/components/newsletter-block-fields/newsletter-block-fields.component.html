@@ -10,8 +10,12 @@
         }
 
         @for (entry of fieldEntries(); track trackByKey($index, entry)) {
-          <div class="flex flex-col gap-1.5" [attr.data-testid]="'newsletter-composer-field-' + entry.key">
-            <label class="text-sm font-medium text-gray-700">{{ fieldLabel(entry) }}</label>
+          <div
+            role="group"
+            [attr.aria-labelledby]="'nlfld-' + entry.key"
+            class="flex flex-col gap-1.5"
+            [attr.data-testid]="'newsletter-composer-field-' + entry.key">
+            <label [id]="'nlfld-' + entry.key" class="text-sm font-medium text-gray-700">{{ fieldLabel(entry) }}</label>
 
             @switch (entry.type) {
               @case ('richtext') {
@@ -42,12 +46,13 @@
                   [options]="entry.options ?? []"
                   [showClear]="true"
                   placeholder="Select…"
+                  [ariaLabelledBy]="'nlfld-' + entry.key"
                   [dataTest]="'newsletter-composer-field-input-' + entry.key">
                 </lfx-select>
               }
               @case ('array') {
                 <div class="flex flex-col gap-3" [attr.data-testid]="'newsletter-composer-field-array-' + entry.key">
-                  @for (item of arrayItems(entry.key); track item) {
+                  @for (item of arrayItems(entry.key); track item; let itemIdx = $index) {
                     <div
                       class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3"
                       [attr.data-testid]="'newsletter-composer-field-array-' + entry.key + '-item-' + $index">
@@ -64,8 +69,10 @@
                       </div>
 
                       @for (nested of nestedEntries(entry); track trackByKey($index, nested)) {
-                        <div class="flex flex-col gap-1.5">
-                          <label class="text-xs font-medium text-gray-600">{{ fieldLabel(nested) }}</label>
+                        <div role="group" [attr.aria-labelledby]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="flex flex-col gap-1.5">
+                          <label [id]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="text-xs font-medium text-gray-600">{{
+                            fieldLabel(nested)
+                          }}</label>
                           @switch (nested.type) {
                             @case ('richtext') {
                               <lfx-rich-editor
@@ -99,6 +106,7 @@
                                 [options]="nested.options ?? []"
                                 [showClear]="true"
                                 placeholder="Select…"
+                                [ariaLabelledBy]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key"
                                 [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
                               </lfx-select>
                             }
@@ -142,8 +150,8 @@
         <div class="flex flex-col gap-3 border-t border-gray-100 pt-4" data-testid="newsletter-composer-fields-spacing">
           <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Spacing</p>
           <div class="grid grid-cols-2 gap-3">
-            <div class="flex flex-col gap-1.5">
-              <label class="text-sm font-medium text-gray-700">Padding</label>
+            <label class="flex flex-col gap-1.5">
+              <span class="text-sm font-medium text-gray-700">Padding</span>
               <lfx-input-text
                 [form]="fg"
                 [control]="paddingKey"
@@ -151,9 +159,9 @@
                 styleClass="w-full"
                 [dataTest]="'newsletter-composer-field-input-' + paddingKey">
               </lfx-input-text>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label class="text-sm font-medium text-gray-700">Margin</label>
+            </label>
+            <label class="flex flex-col gap-1.5">
+              <span class="text-sm font-medium text-gray-700">Margin</span>
               <lfx-input-text
                 [form]="fg"
                 [control]="marginKey"
@@ -161,7 +169,7 @@
                 styleClass="w-full"
                 [dataTest]="'newsletter-composer-field-input-' + marginKey">
               </lfx-input-text>
-            </div>
+            </label>
           </div>
           <p class="text-xs text-gray-400">CSS shorthand, e.g. <code>12px</code> or <code>8px 16px</code>.</p>
         </div>

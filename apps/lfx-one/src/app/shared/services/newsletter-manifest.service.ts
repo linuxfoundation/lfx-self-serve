@@ -109,6 +109,11 @@ export class NewsletterManifestService {
 
     const cached = this.manifestStreams.get(templateKey);
     if (cached) {
+      // A cached stream is always a previously-successful (or in-flight) key —
+      // a failed load deletes its cache entry — so its manifest is authoritative.
+      // Clear any error a later failed switch/load set, otherwise re-activating a
+      // known-good library leaves the palette stuck on the "Could not load" state.
+      this.errorSignal.set(false);
       return cached;
     }
 

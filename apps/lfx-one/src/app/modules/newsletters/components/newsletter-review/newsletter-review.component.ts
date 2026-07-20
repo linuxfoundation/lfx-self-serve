@@ -75,7 +75,11 @@ export class NewsletterReviewComponent implements OnInit {
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
   protected readonly hasSubject = computed(() => this.subjectValue().trim().length > 0);
   protected readonly bodyPlainText = computed(() => stripHtml(this.bodyValue() ?? '').trim());
-  protected readonly hasBody = computed(() => this.bodyPlainText().length > 0);
+  // A blocks-mode draft is "filled" as soon as it has composed blocks, even
+  // before render-on-write syncs body_html back — otherwise the review card
+  // wrongly shows "Add body content" (and hides Preview) for a valid layout
+  // draft. Mirrors the manage component's layout-aware `bodyFilled`.
+  protected readonly hasBody = computed(() => this.bodyPlainText().length > 0 || (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0);
   protected readonly bodyPreview = computed(() => {
     const text = this.bodyPlainText();
     if (!text) return '';

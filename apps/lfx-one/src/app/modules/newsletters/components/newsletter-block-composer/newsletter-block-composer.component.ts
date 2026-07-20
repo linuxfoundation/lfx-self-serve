@@ -19,7 +19,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -45,6 +45,9 @@ import {
   NewsletterTemplateManifest,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
+import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { catchError, debounceTime, map, of, switchMap } from 'rxjs';
 
 import { NewsletterBlockFieldsComponent } from '../newsletter-block-fields/newsletter-block-fields.component';
 import { NewsletterRendererService } from '../../services/newsletter-renderer.service';
@@ -92,6 +95,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // === Services ===
   private readonly destroyRef = inject(DestroyRef);
   private readonly manifestService = inject(NewsletterManifestService);
+  private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly renderer = inject(NewsletterRendererService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly platformId = inject(PLATFORM_ID);
@@ -175,10 +180,20 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // send uses (editMode off, so no inline-edit markers). Browser-only; feeds the
   // HTML-source view and the email-size indicator.
   protected readonly fullHtml: Signal<string> = this.initFullHtml();
-  // Byte size of the rendered email, and the Gmail-clipping status derived from
-  // it (Gmail clips messages over ~102 KB, warning as it approaches).
+  // The AUTHORITATIVE rendered email: the server MJML render of the current
+  // layout — the same output the send path dispatches — debounced. The client
+  // `fullHtml` above is only a canvas estimate; MJML adds table/style boilerplate
+  // it can't see, so the size and source must come from the server render.
+  protected readonly serverHtml: Signal<string> = this.initServerHtml();
+  // Source view: the server render once available, falling back to the instant
+  // client render so the panel isn't blank before the first server response.
+  protected readonly sourceHtml: Signal<string> = computed(() => this.serverHtml() || this.fullHtml());
+  // Byte size of the SENT email — the authoritative server render once it's
+  // available, falling back to the client estimate meanwhile (via sourceHtml) so
+  // the indicator never shows a misleading 0.0 KB before the first render or on a
+  // render error. Drives the Gmail-clipping status (Gmail clips over ~102 KB).
   protected readonly emailBytes: Signal<number> = computed(() => {
-    const html = this.fullHtml();
+    const html = this.sourceHtml();
     return html ? new TextEncoder().encode(html).length : 0;
   });
   protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1024).toFixed(1)} KB`);
@@ -263,6 +278,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   // Monotonic counter for unique per-instance block ids (CDK trackBy + child lists).
   private blockIdCounter = 0;
+  // Monotonic token for library switches, so a slow earlier manifest load can't
+  // land after a newer switch and desync the palette/canvas/key (see onLibraryChange).
+  private librarySwitchSeq = 0;
 
   // Last-rendered HTML per block id. `initRenderedBlocks` reuses the frozen
   // entry for `editingBlockId` so an in-progress inline edit is never wiped by
@@ -291,9 +309,16 @@ export class NewsletterBlockComposerComponent implements OnInit {
     }
 
     // Browser-only: fetch the palette manifest for the active library and the
-    // catalog of libraries for the picker.
+    // catalog of libraries for the picker. Once the manifest resolves, reconcile
+    // any seeded container that hydrated as a leaf (an empty container comes back
+    // without a `blocks` array, and hydrate runs before the manifest is here).
     if (isPlatformBrowser(this.platformId)) {
-      this.manifestService.ensureLoaded(activeKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+      this.manifestService
+        .ensureLoaded(activeKey)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((manifest) => {
+          if (manifest) this.reconcileContainers(manifest);
+        });
       this.manifestService.loadTemplates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
     }
   }
@@ -362,6 +387,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
       return;
     }
 
+    // Guard against overlapping switches: a rapid B→C can otherwise let a slower
+    // B response land after C and overwrite the palette/canvas/key the author now
+    // sees. Only the latest switch's response is applied.
+    const seq = ++this.librarySwitchSeq;
+
     // Load the new library's manifest, then retain the blocks IT supports (use
     // the emitted manifest, not the shared signal, so a failed load can't filter
     // the canvas against the stale previous library and orphan blocks).
@@ -369,11 +399,16 @@ export class NewsletterBlockComposerComponent implements OnInit {
       .ensureLoaded(key)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((manifest) => {
+        // A newer switch superseded this one — drop this stale response.
+        if (seq !== this.librarySwitchSeq) return;
         if (!manifest) {
           // The new library's manifest failed to load — keep the current library
           // rather than switching to one we can't validate blocks against. Revert
-          // the picker and tell the author; nothing is emitted.
+          // the picker and re-activate the current (cached, known-good) manifest so
+          // the palette recovers from the "Could not load" state the failed load
+          // set; nothing is emitted.
           this.libraryForm.controls.library.setValue(current, { emitEvent: false });
+          this.manifestService.ensureLoaded(current).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
           window.alert('Could not load that template. Please try again.');
           return;
         }
@@ -730,6 +765,36 @@ export class NewsletterBlockComposerComponent implements OnInit {
     });
   }
 
+  /**
+   * The server-rendered email HTML for the current layout, debounced so we
+   * render at most once per editing pause. Browser-only; empty until the first
+   * response (and for an empty canvas). Failures degrade to '' — callers
+   * (sourceHtml / emailBytes) fall back to the client estimate rather than
+   * blanking or showing 0 KB.
+   */
+  private initServerHtml(): Signal<string> {
+    const renderInput = computed(() => ({ layout: this.toLayout(), wrapperContent: this.wrapperPreviewContent() }));
+    return toSignal(
+      toObservable(renderInput).pipe(
+        debounceTime(700),
+        switchMap(({ layout, wrapperContent }) => {
+          const projectUid = this.projectContext.activeContextUid();
+          if (!isPlatformBrowser(this.platformId) || !projectUid || layout.blocks.length === 0) {
+            return of('');
+          }
+          return this.newsletterService.renderPreview(projectUid, { body_layout: layout, wrapper_content: wrapperContent }).pipe(
+            map((response) => response.body_html ?? ''),
+            catchError((err: unknown) => {
+              console.error('newsletter-block-composer: render-preview failed; email-size + source fall back to the client estimate', err);
+              return of('');
+            })
+          );
+        })
+      ),
+      { initialValue: '' }
+    );
+  }
+
   private initWrapperHeader(): Signal<SafeHtml> {
     return computed(() => {
       const wrapper = this.manifest()?.wrapper;
@@ -891,6 +956,27 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (padding !== NEWSLETTER_SPACING_DEFAULT) style['padding'] = padding;
     if (margin !== NEWSLETTER_SPACING_DEFAULT) style['margin'] = margin;
     return style;
+  }
+
+  /**
+   * After the manifest resolves, promote any top-level block the manifest
+   * declares a container but that hydrated as a leaf. An empty (childless)
+   * container comes back from the service without a `blocks` array (omitempty),
+   * and `hydrate` runs before the manifest is available, so it can't classify it
+   * — left unreconciled it would render without its drop zone and can't accept
+   * nested blocks. Containers never nest, so only the top level needs this.
+   */
+  private reconcileContainers(manifest: NewsletterTemplateManifest): void {
+    const containerTypes = new Set(manifest.blocks.filter((b) => b.is_container).map((b) => b.block_type));
+    let changed = false;
+    const next = this.blocks().map((block) => {
+      if (!block.isContainer && containerTypes.has(block.block_type)) {
+        changed = true;
+        return { ...block, isContainer: true, children: block.children ?? [] };
+      }
+      return block;
+    });
+    if (changed) this.blocks.set(next);
   }
 
   /** Rehydrate a persisted layout block (and its children) into a canvas block. */

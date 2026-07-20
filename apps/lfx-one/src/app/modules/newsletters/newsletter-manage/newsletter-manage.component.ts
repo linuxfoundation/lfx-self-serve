@@ -321,6 +321,10 @@ export class NewsletterManageComponent {
         subject: this.form.controls.subject.value,
         body_html: this.form.controls.bodyHtml.value,
         to_email: this.edEmail(),
+        // A block-composer draft renders a complete emitter email into body_html,
+        // so flag it as a layout send — otherwise the service re-wraps it in the
+        // legacy chrome and the test email is double-wrapped.
+        is_layout: (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0,
       })
       .pipe(
         take(1),
@@ -817,7 +821,12 @@ export class NewsletterManageComponent {
     const basePayload = {
       subject: this.form.controls.subject.value,
       body_html: this.form.controls.bodyHtml.value,
-      body_layout: this.form.controls.bodyLayout.value ?? undefined,
+      // Tri-state contract: send the current value verbatim. A non-null layout
+      // sets it; an explicit `null` (e.g. after switching a blocks draft to the
+      // simple editor) CLEARS the stored layout so the newly authored body_html
+      // becomes authoritative. Coercing null→undefined would omit the field,
+      // which the service reads as "preserve", leaving the stale layout in place.
+      body_layout: this.form.controls.bodyLayout.value,
       committee_uids: this.form.controls.committeeUids.value,
       ed_reply_email: this.edEmail(),
     };

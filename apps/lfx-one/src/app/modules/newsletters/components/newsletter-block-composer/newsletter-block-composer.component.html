@@ -253,7 +253,7 @@
             <!-- Read-only HTML source of the rendered email (Gatewaze parity). -->
             <pre
               class="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-md bg-gray-900 p-4 text-xs leading-relaxed text-gray-100"
-              data-testid="newsletter-composer-source"><code>{{ fullHtml() }}</code></pre>
+              data-testid="newsletter-composer-source"><code>{{ sourceHtml() }}</code></pre>
           } @else {
             <!-- Wrapper header chrome (banner / view-online / date). -->
             @if (wrapperHeader()) {

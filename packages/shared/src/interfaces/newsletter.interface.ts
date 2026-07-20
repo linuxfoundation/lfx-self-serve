@@ -49,6 +49,23 @@ export interface NewsletterTestSendPayload {
   subject: string;
   body_html: string;
   to_email: string;
+  // True when body_html is a layout (block-composer) render — a complete emitter
+  // email — so the service dispatches it as-is instead of wrapping it in the
+  // legacy email chrome (which would double-wrap it). Omitted/false = simple
+  // editor HTML that still needs the chrome envelope.
+  is_layout?: boolean;
+}
+
+// Render a layout to its final email HTML server-side (the SAME MJML render the
+// send path uses), so the composer can show the authoritative sent-email size
+// and source instead of estimating from the client preview markup.
+export interface NewsletterRenderPreviewPayload {
+  body_layout: NewsletterLayout;
+  wrapper_content?: Record<string, unknown>;
+}
+
+export interface NewsletterRenderPreviewResponse {
+  body_html: string;
 }
 
 export interface NewsletterSendFailure {
@@ -78,7 +95,7 @@ export interface Newsletter {
   project_uid: string;
   subject: string;
   body_html: string;
-  body_layout?: NewsletterLayout;
+  body_layout?: NewsletterLayout | null;
   ed_reply_email: string;
   committee_uids: string[];
   status: NewsletterStatus;
@@ -94,7 +111,7 @@ export interface Newsletter {
 export interface CreateNewsletterRequest {
   subject: string;
   body_html: string;
-  body_layout?: NewsletterLayout;
+  body_layout?: NewsletterLayout | null;
   ed_reply_email: string;
   committee_uids: string[];
 }
@@ -102,7 +119,7 @@ export interface CreateNewsletterRequest {
 export interface UpdateNewsletterRequest {
   subject: string;
   body_html: string;
-  body_layout?: NewsletterLayout;
+  body_layout?: NewsletterLayout | null;
   ed_reply_email: string;
   committee_uids: string[];
 }

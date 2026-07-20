@@ -10,6 +10,8 @@ import {
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
   NewsletterSendResult,
   NewsletterTemplateManifest,
   NewsletterTemplatesResponse,
@@ -47,6 +49,10 @@ export class NewsletterService {
 
   public getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
     return this.newsletterClient.getTemplates(req, projectUid);
+  }
+
+  public renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.newsletterClient.renderPreview(req, projectUid, payload);
   }
 
   public getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {

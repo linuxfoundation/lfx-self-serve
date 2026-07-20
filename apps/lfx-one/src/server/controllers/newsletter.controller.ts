@@ -8,6 +8,7 @@ import {
   NewsletterLayout,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
+  NewsletterRenderPreviewPayload,
   NewsletterStatus,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -190,6 +191,28 @@ export class NewsletterController {
       const manifest = await this.newsletterService.getTemplateManifest(req, projectUid, templateKey);
       logger.success(req, 'newsletter_template_manifest', startTime, { template_key: templateKey, block_count: manifest.blocks.length });
       res.json(manifest);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectUid/newsletters/render-preview
+   *
+   * Renders a layout to its final email HTML server-side (the same MJML render
+   * the send path uses), so the composer can report the authoritative sent-email
+   * size and source rather than estimating from the client preview.
+   */
+  public async renderPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_render_preview', { project_uid: projectUid });
+
+    try {
+      const payload = req.body as NewsletterRenderPreviewPayload;
+      this.validateRenderPreviewPayload(payload, req.path, 'newsletter_render_preview');
+      const result = await this.newsletterService.renderPreview(req, projectUid, payload);
+      logger.success(req, 'newsletter_render_preview', startTime, { bytes: result.body_html.length });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -456,6 +479,25 @@ export class NewsletterController {
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
       fieldErrors['to_email'] = 'A valid to_email is required';
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      throw ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+  }
+
+  private validateRenderPreviewPayload(payload: NewsletterRenderPreviewPayload, path: string, operation: string): void {
+    const fieldErrors: Record<string, string> = {};
+
+    const layout = payload?.body_layout;
+    if (!layout || typeof layout !== 'object' || !Array.isArray(layout.blocks)) {
+      fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
+    } else if (JSON.stringify(layout).length > BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `body_layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer`;
     }
 
     if (Object.keys(fieldErrors).length > 0) {

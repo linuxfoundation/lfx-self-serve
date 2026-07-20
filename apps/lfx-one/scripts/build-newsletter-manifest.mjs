@@ -148,8 +148,17 @@ function hasSlotField(schema) {
 function extractTemplateBody(html) {
   // Drop ALL HTML comments — the SCHEMA comment (captured separately) plus any
   // authoring notes. Comments are inert in the renderer (the DOM walk ignores
-  // them), so stripping them just keeps the bundled asset tidy.
-  return html.replace(/<!--[\s\S]*?-->/g, '').trim();
+  // them), so stripping them just keeps the bundled asset tidy. Loop until the
+  // string is stable so a single pass can't leave a re-formed `<!--` behind
+  // (CodeQL: incomplete multi-character sanitization) — the inputs are trusted
+  // build-time template files, but keep the strip robust regardless.
+  let out = html;
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/<!--[\s\S]*?-->/g, '');
+  } while (out !== prev);
+  return out.trim();
 }
 
 /** Best-effort provenance: the template repo's git remote + pinned commit. */

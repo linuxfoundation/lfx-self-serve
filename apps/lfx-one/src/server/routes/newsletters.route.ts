@@ -28,6 +28,7 @@ router.post('/generate', (req, res, next) => newsletterController.generate(req, 
 router.post('/recipient-count', (req, res, next) => newsletterController.getRecipientCount(req, res, next));
 router.post('/recipients', (req, res, next) => newsletterController.getRecipients(req, res, next));
 router.post('/test-send', (req, res, next) => newsletterController.testSend(req, res, next));
+router.post('/render-preview', (req, res, next) => newsletterController.renderPreview(req, res, next));
 
 // Editor template sets (embedded in the newsletter service). Static segments
 // registered before `/:newsletterUid` so Express doesn't parse "templates" as
