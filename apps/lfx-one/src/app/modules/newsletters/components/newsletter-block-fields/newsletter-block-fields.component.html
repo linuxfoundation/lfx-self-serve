@@ -79,7 +79,7 @@
                                 [form]="item"
                                 [control]="nested.key"
                                 [editorStyle]="{ minHeight: '140px' }"
-                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key">
                               </lfx-rich-editor>
                             }
                             @case ('textarea') {
@@ -88,7 +88,7 @@
                                 [control]="nested.key"
                                 [autoResize]="true"
                                 styleClass="w-full"
-                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key">
                               </lfx-textarea>
                             }
                             @case ('number') {
@@ -96,7 +96,7 @@
                                 [form]="item"
                                 [control]="nested.key"
                                 styleClass="w-full"
-                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key">
                               </lfx-input-number>
                             }
                             @case ('select') {
@@ -107,7 +107,7 @@
                                 [showClear]="true"
                                 placeholder="Select…"
                                 [ariaLabelledBy]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key"
-                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key">
                               </lfx-select>
                             }
                             @default {
@@ -115,7 +115,7 @@
                                 [form]="item"
                                 [control]="nested.key"
                                 styleClass="w-full"
-                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + $index + '-' + nested.key">
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key">
                               </lfx-input-text>
                             }
                           }

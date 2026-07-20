@@ -23,7 +23,7 @@
 
 // ---------------------------------------------------------------------------
 // Rendered-email preview classes.
-//
+// ---
 // Ported from the gatewaze declarative renderer's shared style objects
 // (`blocks/_shared.ts` in newsletter-aaif-user-community's platform) so the
 // canvas preview matches the real email's look: the 650px centred column, the
@@ -32,7 +32,7 @@
 // DELIBERATELY hard-coded values lifted from the email template's own inline
 // styles — they describe the *rendered email*, not LFX app chrome, so they
 // don't reference lfxColors/Tailwind (the component's own UI chrome does).
-//
+// ---
 // The renderer maps the declarative `class="card|eyebrow|…"` names onto these
 // `nl-*` classes (see newsletter-renderer.service.ts CLASS_MAP). The blocks are
 // injected via [innerHTML], which does NOT receive the component's emulated
