@@ -113,9 +113,9 @@ export class ProfileLinuxEmailComponent {
   });
 
   // True when at least one forward option differs from what's already saved/selected —
-  // a real alternative to switch to. savedForwardTo is only ever set for the edit form
-  // (claimForm never touches it, so it stays ''), so on a first-time claim any real
-  // option still counts, since nothing is "already selected" to compare against.
+  // a real alternative to switch to. Drives only the edit form's hint text (whether to
+  // show "choose one" vs "add another to change this"); the claim form gates on
+  // forwardOptions().length so a stale savedForwardTo can never hide its dropdown.
   public hasForwardOptions = computed((): boolean => {
     const saved = this.savedForwardTo();
     return this.forwardOptions().some((option) => option.value !== saved);

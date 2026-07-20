@@ -127,7 +127,7 @@
                       </div>
                     </ng-template>
                   </lfx-message>
-                } @else if (hasForwardOptions()) {
+                } @else if (forwardOptions().length) {
                   <lfx-select
                     [form]="claimForm"
                     control="forwardTo"
