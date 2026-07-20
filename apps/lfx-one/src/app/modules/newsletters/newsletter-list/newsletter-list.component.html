@@ -27,7 +27,43 @@
       </lfx-card-tabs-bar>
 
       <div class="px-5 py-5 flex flex-col gap-4">
-        @if (!loading() && !hasNewsletters()) {
+        @if (statusTab() === 'optout') {
+          @if (optOutsLoadFailed()) {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-triangle-exclamation"
+              title="Could not load opt-outs"
+              subtitle="Something went wrong loading this list. Please try again later.">
+            </lfx-empty-state>
+          } @else if (!loading() && !hasOptOuts()) {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-user-slash"
+              title="No opt-outs yet"
+              subtitle="People who unsubscribe from this newsletter will show up here.">
+            </lfx-empty-state>
+          } @else {
+            <lfx-table [value]="optOuts()" [loading]="loading()" dataKey="email" data-testid="newsletter-optout-table">
+              <ng-template #header>
+                <tr>
+                  <th class="w-[70%]">Email</th>
+                  <th class="w-[30%]">Unsubscribed</th>
+                </tr>
+              </ng-template>
+
+              <ng-template #body let-optOut>
+                <tr [attr.data-testid]="'newsletter-optout-row-' + optOut.email">
+                  <td>
+                    <span class="text-sm text-gray-900">{{ optOut.email }}</span>
+                  </td>
+                  <td>
+                    <span class="text-sm text-gray-700">{{ optOut.unsubscribed_at | date: 'MMM d, y' }}</span>
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          }
+        } @else if (!loading() && !hasNewsletters()) {
           <lfx-empty-state
             [withCard]="false"
             icon="fa-light fa-paper-plane"

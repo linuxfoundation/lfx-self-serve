@@ -53,6 +53,11 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Invite error page — public so unauthenticated users see the error instead of being redirected to login
   { pattern: '/invite/error', type: 'ssr', auth: 'public' },
 
+  // Auth error page — public so a failed/cleared session doesn't bounce the visitor to /login
+  // instead of showing the branded error (the whole point of the redirect in server.ts). Anchored
+  // regex (not a bare string) so `startsWith` semantics can't fail-open on `/auth-error-admin` etc.
+  { pattern: /^\/auth-error\/?$/, type: 'ssr', auth: 'public' },
+
   // Public-facing user documentation portal (LFXV2-2001). The regex pattern bounds the match to
   // `/docs` exactly or `/docs/<segment>` — a bare `'/docs'` string would `startsWith`-match
   // `/docs-admin`, `/docsx`, etc. and silently fail-open if such a route is ever added. Must come

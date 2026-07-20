@@ -2822,7 +2822,7 @@ export class ProjectService {
           impressions: number;
           clicks: number;
           sessions: number;
-          funnelStages: Set<string>;
+          funnelStages: Map<string, number>;
           campaigns: typeof projectPerfResult.rows;
         }
       >();
@@ -2834,7 +2834,7 @@ export class ProjectService {
           impressions: 0,
           clicks: 0,
           sessions: 0,
-          funnelStages: new Set<string>(),
+          funnelStages: new Map<string, number>(),
           campaigns: [] as typeof projectPerfResult.rows,
         };
         existing.spend += row.SPEND ?? 0;
@@ -2844,7 +2844,7 @@ export class ProjectService {
         existing.clicks += row.CLICKS ?? 0;
         existing.sessions += row.SESSIONS ?? 0;
         if (row.FUNNEL_STAGE) {
-          existing.funnelStages.add(row.FUNNEL_STAGE);
+          existing.funnelStages.set(row.FUNNEL_STAGE, (existing.funnelStages.get(row.FUNNEL_STAGE) ?? 0) + (row.SPEND ?? 0));
         }
         existing.campaigns.push(row);
         projectMap.set(row.PROJECT_NAME, existing);
@@ -2859,12 +2859,26 @@ export class ProjectService {
 
       const CAMPAIGN_TOP_N = 10;
 
-      const formatFunnel = (stages: Set<string>): string => {
+      // Picks the funnel stage that received the most spend. Presence alone is
+      // misleading: a campaign with 95% ToFU spend and a trace of BoFU should
+      // read ToFU, not BoFU. Ties fall back to a fixed priority for determinism.
+      const formatFunnel = (stageSpend: Map<string, number>): string => {
         const priority = ['BoFU', 'MoFU', 'ToFU', 'ToFU2', 'Unknown'];
-        for (const p of priority) {
-          if (stages.has(p)) return p;
+        // Unrecognized stages rank last so they lose spend ties to known stages,
+        // rather than winning them (indexOf would return -1, the lowest index).
+        const rank = (stage: string): number => {
+          const i = priority.indexOf(stage);
+          return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+        };
+        let dominant = '';
+        let maxSpend = -Infinity;
+        for (const [stage, spend] of stageSpend) {
+          if (spend > maxSpend || (spend === maxSpend && rank(stage) < rank(dominant))) {
+            dominant = stage;
+            maxSpend = spend;
+          }
         }
-        return [...stages][0] ?? 'Unknown';
+        return dominant || 'Unknown';
       };
 
       const projectBreakdown = Array.from(projectMap.entries())
@@ -2886,22 +2900,54 @@ export class ProjectService {
             impressions: data.impressions,
             clicks: data.clicks,
             performance: getPaidPerformance(projectRoas),
-            campaigns: [...data.campaigns]
-              .sort((a, b) => (b.SPEND ?? 0) - (a.SPEND ?? 0))
-              .slice(0, CAMPAIGN_TOP_N)
-              .map((c) => ({
-                campaignName: c.CAMPAIGN_NAME,
-                funnelStage: c.FUNNEL_STAGE ?? 'Unknown',
-                spend: Math.round((c.SPEND ?? 0) * 100) / 100,
-                revenue: Math.round((c.REVENUE ?? 0) * 100) / 100,
-                roas: c.ROAS ?? 0,
-                conversions: c.CONVERSIONS ?? 0,
-                convRate: c.CONV_RATE ?? 0,
-                cpc: c.CPC ?? 0,
-                sessions: c.SESSIONS ?? 0,
-                impressions: c.IMPRESSIONS ?? 0,
-                clicks: c.CLICKS ?? 0,
-              })),
+            // The query's grain is campaign × funnel stage; the UI shows one
+            // row per campaign, so stages are dissolved here — sums first,
+            // then ratios recomputed from the sums (averaging per-stage
+            // ratios would be statistically incorrect), then the top-N cap
+            // so a multi-stage campaign consumes one slot, not three.
+            campaigns: (() => {
+              const byCampaign = new Map<
+                string,
+                { spend: number; revenue: number; conversions: number; sessions: number; impressions: number; clicks: number; stages: Map<string, number> }
+              >();
+              for (const c of data.campaigns) {
+                const agg = byCampaign.get(c.CAMPAIGN_NAME) ?? {
+                  spend: 0,
+                  revenue: 0,
+                  conversions: 0,
+                  sessions: 0,
+                  impressions: 0,
+                  clicks: 0,
+                  stages: new Map<string, number>(),
+                };
+                agg.spend += c.SPEND ?? 0;
+                agg.revenue += c.REVENUE ?? 0;
+                agg.conversions += c.CONVERSIONS ?? 0;
+                agg.sessions += c.SESSIONS ?? 0;
+                agg.impressions += c.IMPRESSIONS ?? 0;
+                agg.clicks += c.CLICKS ?? 0;
+                if (c.FUNNEL_STAGE) {
+                  agg.stages.set(c.FUNNEL_STAGE, (agg.stages.get(c.FUNNEL_STAGE) ?? 0) + (c.SPEND ?? 0));
+                }
+                byCampaign.set(c.CAMPAIGN_NAME, agg);
+              }
+              return [...byCampaign.entries()]
+                .sort((a, b) => b[1].spend - a[1].spend)
+                .slice(0, CAMPAIGN_TOP_N)
+                .map(([campaignName, c]) => ({
+                  campaignName,
+                  funnelStage: formatFunnel(c.stages),
+                  spend: Math.round(c.spend * 100) / 100,
+                  revenue: Math.round(c.revenue * 100) / 100,
+                  roas: c.spend > 0 ? Math.round((c.revenue / c.spend) * 100) / 100 : 0,
+                  conversions: c.conversions,
+                  convRate: c.clicks > 0 ? Math.round((c.conversions / c.clicks) * 10000) / 100 : 0,
+                  cpc: c.clicks > 0 ? Math.round((c.spend / c.clicks) * 100) / 100 : 0,
+                  sessions: c.sessions,
+                  impressions: c.impressions,
+                  clicks: c.clicks,
+                }));
+            })(),
           };
         })
         .sort((a, b) => b.spend - a.spend);

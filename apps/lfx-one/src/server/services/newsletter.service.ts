@@ -7,6 +7,7 @@ import {
   NewsletterAnalytics,
   NewsletterListParams,
   NewsletterListResponse,
+  NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
@@ -95,5 +96,9 @@ export class NewsletterService {
 
   public getAnalytics(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAnalytics> {
     return this.newsletterClient.getAnalytics(req, projectUid, newsletterUid);
+  }
+
+  public listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
+    return this.newsletterClient.listOptOuts(req, projectUid);
   }
 }

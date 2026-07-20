@@ -6,6 +6,7 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import {
   TRANSACTION_TYPE_BUNDLE,
   TRANSACTION_TYPE_CERTIFICATION,
@@ -53,10 +54,13 @@ const TAB_TYPE_MAP: Record<string, string> = {
 export class TransactionsDashboardComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly transactionService = inject(TransactionService);
+  private readonly route = inject(ActivatedRoute);
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   protected readonly subtitle = PAGE_SUBTITLE;
   protected readonly tabOptions = TAB_OPTIONS;
+  // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
+  protected readonly embedded = this.route.snapshot.data['embedded'] === true;
 
   // ─── Writable Signals ──────────────────────────────────────────────────────
   protected readonly activeTab = signal<string>('all');
