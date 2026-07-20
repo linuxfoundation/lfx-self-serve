@@ -18,7 +18,7 @@ import {
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime } from '@lfx-one/shared/utils';
+import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -164,7 +164,16 @@ export class NewsletterManageComponent {
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
   // Content exists as either composed blocks (new drafts) or raw body_html
   // (drafts authored before the composer landed) — either keeps a draft sendable.
-  public readonly bodyFilled = computed(() => (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0 || this.bodyHtmlValue().trim().length > 0);
+  public readonly bodyFilled = computed(() => {
+    const layout = this.bodyLayoutValue();
+    // A present layout is authoritative upstream (any layout object wins over
+    // body_html), so it counts as content only when it actually has blocks — an
+    // empty layout must never read as filled (it would persist a wrapper-only
+    // email). Fall back to body_html only when there's no layout (simple
+    // editor); strip markup so an empty rich-text placeholder isn't "content".
+    if (layout) return (layout.blocks?.length ?? 0) > 0;
+    return stripHtml(this.bodyHtmlValue()).trim().length > 0;
+  });
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
   // body_html is server-derived, so it only reflects the canvas once a save has
   // completed and synced it back. bodyRendered/isDirty gate the surfaces that
@@ -172,7 +181,13 @@ export class NewsletterManageComponent {
   // HTML — e.g. a test email must never go out with an unrendered body.
   private readonly bodyRendered = computed(() => this.bodyHtmlValue().trim().length > 0);
   private readonly isDirty = computed(() => this.computeIsDirty());
-  public readonly canPreview = computed(() => this.bodyRendered() && !this.isDirty());
+  // Blocks mode: body_html is server-derived, valid only after a save syncs the
+  // render → require a clean snapshot. Simple mode: body_html is authored live in
+  // the form (and both the preview drawer and test-send read that control
+  // directly), so it's usable immediately without waiting for autosave.
+  private readonly isBlocksMode = computed(() => (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0);
+  private readonly bodyUsable = computed(() => this.bodyRendered() && (!this.isBlocksMode() || !this.isDirty()));
+  public readonly canPreview = computed(() => this.bodyUsable());
   public readonly canSend = computed(
     () =>
       this.audienceFilled() &&
@@ -184,7 +199,7 @@ export class NewsletterManageComponent {
       !this.resolvingSend()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyRendered() && !this.isDirty() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
+    () => this.subjectFilled() && this.bodyUsable() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
   );
   public readonly canProceed = computed(() => this.computeCanProceed(this.currentStep()));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
@@ -325,6 +340,11 @@ export class NewsletterManageComponent {
         // so flag it as a layout send — otherwise the service re-wraps it in the
         // legacy chrome and the test email is double-wrapped.
         is_layout: (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0,
+        // Send the structured layout too: the service recompiles the test email
+        // from it with the unsubscribe/compliance footer suppressed, so the test
+        // email doesn't carry a dangling empty "Unsubscribe" row. Null for simple
+        // drafts (the service then wraps body_html the legacy way).
+        body_layout: this.bodyLayoutValue(),
       })
       .pipe(
         take(1),

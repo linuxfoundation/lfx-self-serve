@@ -144,35 +144,37 @@
           </div>
         }
 
-        <!-- Universal spacing controls — auto-injected at the bottom of every
-             block's fields (gatewaze parity). CSS shorthand strings; default
-             "0px" renders without an outer spacing wrapper. -->
-        <div class="flex flex-col gap-3 border-t border-gray-100 pt-4" data-testid="newsletter-composer-fields-spacing">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Spacing</p>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="flex flex-col gap-1.5">
-              <span class="text-sm font-medium text-gray-700">Padding</span>
-              <lfx-input-text
-                [form]="fg"
-                [control]="paddingKey"
-                placeholder="0px"
-                styleClass="w-full"
-                [dataTest]="'newsletter-composer-field-input-' + paddingKey">
-              </lfx-input-text>
-            </label>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-sm font-medium text-gray-700">Margin</span>
-              <lfx-input-text
-                [form]="fg"
-                [control]="marginKey"
-                placeholder="0px"
-                styleClass="w-full"
-                [dataTest]="'newsletter-composer-field-input-' + marginKey">
-              </lfx-input-text>
-            </label>
+        <!-- Universal spacing controls — TOP-LEVEL blocks only (the upstream
+             render applies per-block spacing only there). CSS shorthand strings;
+             default "0px" renders without an outer spacing wrapper. -->
+        @if (showSpacing()) {
+          <div class="flex flex-col gap-3 border-t border-gray-100 pt-4" data-testid="newsletter-composer-fields-spacing">
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Spacing</p>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="flex flex-col gap-1.5">
+                <span class="text-sm font-medium text-gray-700">Padding</span>
+                <lfx-input-text
+                  [form]="fg"
+                  [control]="paddingKey"
+                  placeholder="0px"
+                  styleClass="w-full"
+                  [dataTest]="'newsletter-composer-field-input-' + paddingKey">
+                </lfx-input-text>
+              </label>
+              <label class="flex flex-col gap-1.5">
+                <span class="text-sm font-medium text-gray-700">Margin</span>
+                <lfx-input-text
+                  [form]="fg"
+                  [control]="marginKey"
+                  placeholder="0px"
+                  styleClass="w-full"
+                  [dataTest]="'newsletter-composer-field-input-' + marginKey">
+                </lfx-input-text>
+              </label>
+            </div>
+            <p class="text-xs text-gray-400">CSS shorthand, e.g. <code>12px</code> or <code>8px 16px</code>.</p>
           </div>
-          <p class="text-xs text-gray-400">CSS shorthand, e.g. <code>12px</code> or <code>8px 16px</code>.</p>
-        </div>
+        }
       </div>
     }
   }

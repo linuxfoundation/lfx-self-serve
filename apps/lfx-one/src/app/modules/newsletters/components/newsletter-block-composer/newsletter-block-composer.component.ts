@@ -233,6 +233,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
     const id = this.selectedBlockId();
     return id ? this.findBlock(this.blocks(), id) : null;
   });
+  // Whether the selected block is top-level (directly on the canvas) vs a
+  // container child. The upstream render applies per-block spacing only to
+  // top-level blocks, so the Fields panel exposes the spacing controls only for
+  // those — otherwise child spacing would show in the canvas but be dropped from
+  // the sent email.
+  protected readonly selectedIsTopLevel: Signal<boolean> = computed(() => {
+    const id = this.selectedBlockId();
+    return !!id && this.blocks().some((block) => block.id === id);
+  });
   // The manifest field schema for the selected block (drives the fields panel).
   protected readonly selectedSchema: Signal<NewsletterFieldSchema | null> = computed(() => {
     const block = this.selectedBlock();
@@ -428,10 +437,20 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * CDK's indices map 1:1 onto the `blocks` array.
    */
   protected onOutlineDrop(event: CdkDragDrop<NewsletterComposerBlock[]>): void {
-    const next = [...this.blocks()];
-    moveItemInArray(next, event.previousIndex, event.currentIndex);
-    this.blocks.set(next);
-    this.emit();
+    this.moveTopLevelBlock(event.previousIndex, event.currentIndex);
+  }
+
+  /**
+   * Keyboard-accessible reorder for the Outline: the drag handle is pointer-only,
+   * so these move a top-level block up/down one position for keyboard users.
+   * (Container nesting via keyboard remains a follow-up.)
+   */
+  protected moveBlockUp(index: number): void {
+    this.moveTopLevelBlock(index, index - 1);
+  }
+
+  protected moveBlockDown(index: number): void {
+    this.moveTopLevelBlock(index, index + 1);
   }
 
   /** Constrain the preview to a desktop or mobile email width. */
@@ -966,6 +985,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * — left unreconciled it would render without its drop zone and can't accept
    * nested blocks. Containers never nest, so only the top level needs this.
    */
+  private moveTopLevelBlock(from: number, to: number): void {
+    const blocks = this.blocks();
+    if (to < 0 || to >= blocks.length || from === to) return;
+    const next = [...blocks];
+    moveItemInArray(next, from, to);
+    this.blocks.set(next);
+    this.emit();
+  }
+
   private reconcileContainers(manifest: NewsletterTemplateManifest): void {
     const containerTypes = new Set(manifest.blocks.filter((b) => b.is_container).map((b) => b.block_type));
     let changed = false;

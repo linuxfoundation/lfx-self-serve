@@ -164,6 +164,11 @@ export class NewsletterContentStepComponent implements OnInit {
       // Drop the layout so the server uses the authored html rather than
       // rendering blocks over it.
       this.form().get('bodyLayout')?.setValue(null);
+      // Also clear the derived body_html: it holds the layout's COMPLETE
+      // server-rendered emitter email, which — kept as "simple" content with a
+      // null layout — the send path would double-wrap in the legacy chrome. The
+      // discard was already confirmed, so the simple editor starts empty.
+      this.form().get('bodyHtml')?.setValue('');
     } else {
       // Drop the authored html; blocks become the source and the server
       // re-derives body_html on save.

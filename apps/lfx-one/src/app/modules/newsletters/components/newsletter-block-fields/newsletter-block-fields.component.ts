@@ -45,6 +45,10 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   // === Inputs ===
   /** The selected canvas block (null when nothing is selected). */
   public readonly block = input<NewsletterComposerBlock | null>(null);
+  // Whether to show the per-block outer-spacing controls. Off for container
+  // children: the upstream render applies spacing only to top-level blocks, so
+  // exposing it for children would show canvas spacing the sent email drops.
+  public readonly showSpacing = input<boolean>(true);
   /** The selected block's manifest field schema (null when unknown). */
   public readonly schema = input<NewsletterFieldSchema | null>(null);
 

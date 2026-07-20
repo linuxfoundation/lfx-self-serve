@@ -42,6 +42,11 @@ export class NewsletterManifestService {
   private readonly manifestStreams = new Map<string, Observable<NewsletterTemplateManifest | null>>();
   // The template-catalog request, shared across subscribers once issued.
   private templatesStream: Observable<NewsletterTemplateInfo[]> | null = null;
+  // The latest template key any caller requested. Every shared-state write in
+  // load() is gated on it, so a slow earlier switch's response can't publish its
+  // manifest / loading / error over a newer switch. (The composer's own sequence
+  // token guards its LOCAL actions; this guards the SHARED signals.)
+  private latestRequestedKey: string | null = null;
 
   /** Read-only view of the loaded manifest (null until loaded / on failure). */
   public get manifest(): Signal<NewsletterTemplateManifest | null> {
@@ -107,6 +112,11 @@ export class NewsletterManifestService {
       return of(null);
     }
 
+    // Record this as the latest requested key; the async guards below (`isLatest`)
+    // read it at emit time so only the newest switch publishes shared state.
+    this.latestRequestedKey = templateKey;
+    const isLatest = (): boolean => this.latestRequestedKey === templateKey;
+
     const cached = this.manifestStreams.get(templateKey);
     if (cached) {
       // A cached stream is always a previously-successful (or in-flight) key —
@@ -136,19 +146,23 @@ export class NewsletterManifestService {
       .pipe(
         catchError((err: unknown) => {
           console.error('NewsletterManifestService: manifest load failed', { templateKey, err });
-          this.errorSignal.set(true);
+          if (isLatest()) this.errorSignal.set(true);
           // Reset the cache so a later retry can re-issue the request.
           this.manifestStreams.delete(templateKey);
           return of(null);
         }),
-        finalize(() => this.loadingSignal.set(false)),
+        finalize(() => {
+          if (isLatest()) this.loadingSignal.set(false);
+        }),
         shareReplay({ bufferSize: 1, refCount: false }),
         // Activate this key's manifest AFTER shareReplay, so switching back to an
         // already-loaded key — which replays the cached manifest to the new
         // subscriber without re-running the source — still makes it the active
         // manifest (a tap upstream of shareReplay only runs on the first load).
+        // Gated on `isLatest` so a stale switch's response can't overwrite the
+        // palette a newer switch already activated.
         tap((manifest) => {
-          if (manifest) this.manifestSignal.set(manifest);
+          if (manifest && isLatest()) this.manifestSignal.set(manifest);
         })
       );
 

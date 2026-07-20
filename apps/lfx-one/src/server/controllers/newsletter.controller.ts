@@ -211,7 +211,7 @@ export class NewsletterController {
       const payload = req.body as NewsletterRenderPreviewPayload;
       this.validateRenderPreviewPayload(payload, req.path, 'newsletter_render_preview');
       const result = await this.newsletterService.renderPreview(req, projectUid, payload);
-      logger.success(req, 'newsletter_render_preview', startTime, { bytes: result.body_html.length });
+      logger.success(req, 'newsletter_render_preview', startTime, { bytes: Buffer.byteLength(result.body_html, 'utf8') });
       res.json(result);
     } catch (error) {
       next(error);
@@ -438,9 +438,17 @@ export class NewsletterController {
     // The body may arrive as raw HTML or as a structured block layout. The
     // newsletter service renders body_layout to body_html on write, so an empty
     // body_html is acceptable as long as a non-empty layout accompanies it.
+    // Tri-state: an absent (undefined) or explicit `null` layout selects the
+    // body_html path; a present (non-null) layout object is authoritative
+    // upstream — it renders even when body_html is set. So a present-but-empty
+    // layout must be rejected, or it would persist and render a wrapper-only
+    // email despite the accompanying html.
+    const layoutPresent = payload?.body_layout !== undefined && payload?.body_layout !== null;
     const hasBodyHtml = typeof payload?.body_html === 'string' && payload.body_html.trim().length > 0;
-    const hasBodyLayout = !!payload?.body_layout && Array.isArray(payload.body_layout.blocks) && payload.body_layout.blocks.length > 0;
-    if (!hasBodyHtml && !hasBodyLayout) {
+    const hasBodyLayout = layoutPresent && Array.isArray(payload.body_layout!.blocks) && payload.body_layout!.blocks.length > 0;
+    if (layoutPresent && !hasBodyLayout) {
+      fieldErrors['body_layout'] = 'A block layout must contain at least one block';
+    } else if (!hasBodyHtml && !hasBodyLayout) {
       fieldErrors['body_html'] = 'Body is required';
     } else if (typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
       fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
