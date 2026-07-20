@@ -29,6 +29,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   AddableProjectOption,
+  HealthScore,
   InfluenceBand,
   OrgLensProject,
   OrgLensProjectSearchResult,
@@ -482,7 +483,7 @@ export class OrgProjectsComponent {
     const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
     const body = rows.map((p) => [
       p.name,
-      HEALTH_SCORE_LABELS[p.health],
+      HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
       INFLUENCE_BAND_LABELS[p.technicalInfluence],
       INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
       p.trend.deltaPct,
@@ -555,7 +556,7 @@ export class OrgProjectsComponent {
   // Full health summary (rating + sub-scores) so keyboard/screen-reader users get the popover's content without a mouse.
   protected healthAriaLabel(project: OrgLensProject): string {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
-    return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
+    return `Health: ${HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)]}. ${metrics}.`;
   }
   protected searchAddableProjects(query: string): void {
     if (this.addableProjectsSearchDebounceTimer) {
@@ -715,8 +716,8 @@ export class OrgProjectsComponent {
         ecosystemBars: this.bandBars(project.ecosystemInfluence),
         technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
         ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
-        healthLabel: HEALTH_SCORE_LABELS[project.health],
-        healthBadge: HEALTH_SCORE_BADGE[project.health],
+        healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
+        healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
         sparklineDataset: {
           labels: project.trend.series.map((_, i) => String(i)),
           datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
@@ -937,6 +938,10 @@ export class OrgProjectsComponent {
       default:
         return 0;
     }
+  }
+
+  private normalizeHealth(health: HealthScore): HealthScore {
+    return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
   private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
