@@ -90,7 +90,10 @@ export class NewsletterContentStepComponent implements OnInit {
     // saved html body means the simple editor, otherwise the default (blocks).
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
     const html = (this.form().get('bodyHtml')?.value as string) ?? '';
-    if ((layout?.blocks?.length ?? 0) > 0) {
+    // A PRESENT layout means the composer, even after its last block is removed
+    // (an empty-but-present layout is still authoritative upstream). Only a null
+    // layout with authored html is the simple editor.
+    if (layout !== null) {
       this.editorMode.set('blocks');
     } else if (stripHtml(html).length > 0) {
       this.editorMode.set('simple');

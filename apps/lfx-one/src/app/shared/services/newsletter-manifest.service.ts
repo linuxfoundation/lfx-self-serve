@@ -123,7 +123,11 @@ export class NewsletterManifestService {
       // a failed load deletes its cache entry — so its manifest is authoritative.
       // Clear any error a later failed switch/load set, otherwise re-activating a
       // known-good library leaves the palette stuck on the "Could not load" state.
+      // Clear loading too: a superseded in-flight request's finalize is gated out
+      // by isLatest, so switching to a cached library while another fetch is in
+      // flight would otherwise leave loadingSignal stuck true forever.
       this.errorSignal.set(false);
+      this.loadingSignal.set(false);
       return cached;
     }
 

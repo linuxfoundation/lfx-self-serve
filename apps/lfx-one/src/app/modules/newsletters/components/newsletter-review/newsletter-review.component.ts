@@ -7,6 +7,7 @@ import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { NewsletterLayout } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_DEFAULT_TEMPLATE_KEY } from '@lfx-one/shared/constants';
 import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { EMPTY, startWith, switchMap } from 'rxjs';
@@ -68,8 +69,11 @@ export class NewsletterReviewComponent implements OnInit {
   // catalog hasn't loaded (e.g. landing straight on review without opening the
   // editor this session).
   protected readonly templateLabel = computed(() => {
-    const key = this.bodyLayoutValue()?.template_key;
-    if (!key) return '';
+    const layout = this.bodyLayoutValue();
+    if (!layout) return ''; // html-only draft: no library
+    // A blocks draft saved before template_key existed has a layout but no key;
+    // its effective library is the default, so show that rather than hide the row.
+    const key = layout.template_key ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY;
     return this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
   });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
@@ -79,7 +83,14 @@ export class NewsletterReviewComponent implements OnInit {
   // before render-on-write syncs body_html back — otherwise the review card
   // wrongly shows "Add body content" (and hides Preview) for a valid layout
   // draft. Mirrors the manage component's layout-aware `bodyFilled`.
-  protected readonly hasBody = computed(() => this.bodyPlainText().length > 0 || (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0);
+  protected readonly hasBody = computed(() => {
+    const layout = this.bodyLayoutValue();
+    // Layout-authoritative, mirroring the manage component: a present layout is
+    // content only when it has blocks (an emptied layout is not); fall back to
+    // the plain-text body only for html-only (simple) drafts.
+    if (layout) return (layout.blocks?.length ?? 0) > 0;
+    return this.bodyPlainText().length > 0;
+  });
   protected readonly bodyPreview = computed(() => {
     const text = this.bodyPlainText();
     if (!text) return '';

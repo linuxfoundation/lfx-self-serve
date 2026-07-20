@@ -806,6 +806,10 @@ export class NewsletterManageComponent {
   private syncDerivedBodyHtml(draft: Newsletter): void {
     const renderedFromLayout = (draft.body_layout?.blocks?.length ?? 0) > 0;
     if (!renderedFromLayout) return;
+    // If the author switched to the simple editor while this blocks save was in
+    // flight, the form's layout is now null — don't overwrite the freshly cleared
+    // (or re-authored) body_html with the stale layout render.
+    if (this.bodyLayoutValue() === null) return;
     const bodyHtml = draft.body_html ?? '';
     this.form.controls.bodyHtml.setValue(bodyHtml, { emitEvent: false });
     this.bodyHtmlValue.set(bodyHtml);

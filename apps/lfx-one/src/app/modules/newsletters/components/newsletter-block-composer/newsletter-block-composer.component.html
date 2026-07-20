@@ -420,11 +420,14 @@
                       (cdkDropListDropped)="onChildDrop(block.id, $event)"
                       [attr.data-testid]="'newsletter-composer-container-' + block.block_type">
                       @for (child of block.children ?? []; track trackById($index, child)) {
+                        <!-- No [style]="blockSpacingStyles()...": the upstream render
+                             applies _spacing_* only to top-level blocks, so a child
+                             must not show outer spacing in the canvas (the Fields
+                             panel also hides child spacing controls). -->
                         <div
                           class="group/child relative cursor-pointer rounded transition-shadow"
                           [class.ring-2]="selectedBlockId() === child.id"
                           [class.ring-blue-500]="selectedBlockId() === child.id"
-                          [style]="blockSpacingStyles().get(child.id)"
                           cdkDrag
                           [cdkDragData]="child"
                           (click)="selectBlock(child.id); $event.stopPropagation()"
