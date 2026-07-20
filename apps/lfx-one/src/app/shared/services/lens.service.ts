@@ -13,11 +13,13 @@ import {
   ORG_LENS_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, LensOption, NavLens } from '@lfx-one/shared/interfaces';
+import { deriveAllowedLenses } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { PersonaService } from './persona.service';
+import { WriterGrantsService } from './writer-grants.service';
 
 @Injectable({
   providedIn: 'root',
@@ -27,6 +29,7 @@ export class LensService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly personaService = inject(PersonaService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly writerGrantsService = inject(WriterGrantsService);
   private readonly router = inject(Router);
 
   /** Dark-launch gate; off by default until the LaunchDarkly flag is flipped. */
@@ -108,26 +111,30 @@ export class LensService {
     });
   }
 
+  /**
+   * Lenses the current user may use. Persona roles and `writer` grants each confer access
+   * independently (LFXV2-2754) — see `deriveAllowedLenses` for why either suffices.
+   *
+   * This set is not stable across a session, in two different ways:
+   *  - the `writer` half arrives after hydration (see {@link WriterGrantsService}) and only ever
+   *    widens as grants land;
+   *  - the persona half can *narrow*. It is seeded from a cookie and then replaced by
+   *    `PersonaService.refreshFromApi()`, which may drop a role the cookie claimed and clears
+   *    `isRootWriter` on its error path.
+   *
+   * So a caller must treat a `false` from {@link setLens} as provisional rather than final, and
+   * must not assume a lens it holds now will still be allowed later.
+   * `MainLayoutComponent.syncLensFromRoute` is the one caller that re-asserts.
+   */
   private getAllowedLensIds(): readonly Lens[] {
-    const hasBoardRole = this.personaService.hasBoardRole();
-    const hasProjectRole = this.personaService.hasProjectRole();
-    const isRootWriter = this.personaService.isRootWriter();
-
-    // Root writers bypass persona filtering and see both foundation + project lenses.
-    const showFoundation = hasBoardRole || isRootWriter;
-    const showProject = hasProjectRole || isRootWriter;
-
-    const lenses: Lens[] = ['me'];
-    if (showFoundation) {
-      lenses.push('foundation');
-    }
-    if (showProject) {
-      lenses.push('project');
-    }
-    if (this.isOrgLensEnabled()) {
-      lenses.push('org');
-    }
-    return lenses;
+    return deriveAllowedLenses({
+      hasBoardRole: this.personaService.hasBoardRole(),
+      hasProjectRole: this.personaService.hasProjectRole(),
+      isRootWriter: this.personaService.isRootWriter(),
+      hasWriterFoundation: this.writerGrantsService.hasWriterFoundation(),
+      hasWriterProject: this.writerGrantsService.hasWriterProject(),
+      isOrgLensEnabled: this.isOrgLensEnabled(),
+    });
   }
 
   private persistToCookie(lens: Lens): void {

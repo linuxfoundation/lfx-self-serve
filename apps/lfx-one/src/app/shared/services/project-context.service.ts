@@ -34,6 +34,24 @@ export class ProjectContextService {
   private readonly foundationSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
   private readonly projectSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
 
+  /**
+   * The context kind declared by the current route (`route.data.lens`), when it declares one.
+   *
+   * Takes precedence over {@link LensService.activeLens} when resolving which slot is active. The
+   * route is a stronger statement of intent than the lens, and — unlike the lens — it does not
+   * depend on data that arrives after hydration. `activeLens` is clamped to the allowed set, and
+   * the writer-derived half of that set resolves post-hydration (LFXV2-2754), so on a deep link or
+   * hard refresh onto `/foundation/...` the lens can still read `me` while `projectQueryParamGuard`
+   * has already seeded the foundation slot. Resolving by lens there returns the *other* slot, and
+   * because create flows build their payload from `activeContextUid()`, the artifact would be
+   * created against a different project than the one `writerGuard` authorised. Honouring the route
+   * closes that window, and stays correct even if the grants request fails outright.
+   *
+   * Set by `projectQueryParamGuard` on every navigation it runs for — to the declared kind, or
+   * `null` where none is declared, so a stale override cannot outlive the route that set it.
+   */
+  private readonly routeLensKind: WritableSignal<'foundation' | 'project' | null> = signal<'foundation' | 'project' | null>(null);
+
   public readonly activeContext: Signal<ProjectContext | null> = this.initActiveContext();
   public readonly isFoundationContext: Signal<boolean> = this.initIsFoundationContext();
   public readonly activeContextUid: Signal<string> = computed(() => this.activeContext()?.uid || '');
@@ -73,6 +91,11 @@ export class ProjectContextService {
     if (syncUrl) {
       this.syncProjectQueryParam(project.slug);
     }
+  }
+
+  /** Records the kind the current route declares, so context resolution can prefer it over the lens. */
+  public setRouteLensKind(kind: 'foundation' | 'project' | null): void {
+    this.routeLensKind.set(kind);
   }
 
   public clearFoundation(): void {
@@ -139,6 +162,12 @@ export class ProjectContextService {
 
   private initActiveContext(): Signal<ProjectContext | null> {
     return computed(() => {
+      // The route wins when it declares a kind — see `routeLensKind`.
+      const routeKind = this.routeLensKind();
+      if (routeKind) {
+        return routeKind === 'foundation' ? this.foundationSelection() : this.projectSelection();
+      }
+
       const lens = this.lensService.activeLens();
 
       switch (lens) {
@@ -157,6 +186,12 @@ export class ProjectContextService {
 
   private initIsFoundationContext(): Signal<boolean> {
     return computed(() => {
+      // Kept in lockstep with `initActiveContext` — the two must never disagree about which slot is active.
+      const routeKind = this.routeLensKind();
+      if (routeKind) {
+        return routeKind === 'foundation';
+      }
+
       const lens = this.lensService.activeLens();
 
       switch (lens) {

@@ -10,6 +10,25 @@ import type { LensItem } from './navigation.interface';
 export type Lens = 'me' | 'foundation' | 'project' | 'org';
 
 /**
+ * Inputs to `deriveAllowedLenses` — the persona roles and `writer` grants that
+ * independently confer lens access. See that function for why either source suffices.
+ */
+export interface LensGrantInputs {
+  /** Persona holds a board-scoped role (ED / Board Member). */
+  hasBoardRole: boolean;
+  /** Persona holds a project-scoped role (Maintainer / Contributor). */
+  hasProjectRole: boolean;
+  /** Root writer — bypasses persona filtering entirely. */
+  isRootWriter: boolean;
+  /** Holds `writer` on at least one project that computes as a foundation. */
+  hasWriterFoundation: boolean;
+  /** Holds `writer` on at least one non-foundation project. */
+  hasWriterProject: boolean;
+  /** Org lens dark-launch flag. */
+  isOrgLensEnabled: boolean;
+}
+
+/**
  * Configuration for a lens option displayed in the L1 Rail
  */
 export interface LensOption {
