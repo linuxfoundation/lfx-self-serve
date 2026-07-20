@@ -36,8 +36,7 @@
               class="relative flex flex-wrap items-center gap-1"
               [class.group]="row.foundationsGroup.overflowCount > 0"
               [attr.tabindex]="row.foundationsGroup.overflowCount > 0 ? 0 : null"
-              [attr.role]="row.foundationsGroup.overflowCount > 0 ? 'button' : null"
-              [attr.aria-haspopup]="row.foundationsGroup.overflowCount > 0 ? 'true' : null">
+              [attr.aria-describedby]="row.foundationsGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover' : null">
               @for (pill of row.foundationsGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
@@ -45,6 +44,7 @@
                 <lfx-tag [value]="'+' + row.foundationsGroup.overflowCount" severity="secondary" />
                 <div
                   role="tooltip"
+                  [id]="'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover'"
                   class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
                   [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug + '-foundations-popover'">
                   <p class="mb-2 text-xs font-medium text-gray-500">All foundations</p>
@@ -64,8 +64,7 @@
               class="relative flex flex-wrap items-center gap-1"
               [class.group]="row.typeGroup.overflowCount > 0"
               [attr.tabindex]="row.typeGroup.overflowCount > 0 ? 0 : null"
-              [attr.role]="row.typeGroup.overflowCount > 0 ? 'button' : null"
-              [attr.aria-haspopup]="row.typeGroup.overflowCount > 0 ? 'true' : null">
+              [attr.aria-describedby]="row.typeGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-type-popover' : null">
               @for (pill of row.typeGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="info" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
@@ -73,6 +72,7 @@
                 <lfx-tag [value]="'+' + row.typeGroup.overflowCount" severity="info" />
                 <div
                   role="tooltip"
+                  [id]="'org-meetings-leaderboard-row-' + row.identitySlug + '-type-popover'"
                   class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
                   [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug + '-type-popover'">
                   <p class="mb-2 text-xs font-medium text-gray-500">All meeting types</p>
@@ -90,8 +90,7 @@
               class="relative flex flex-wrap items-center gap-1"
               [class.group]="row.roleGroup.overflowCount > 0"
               [attr.tabindex]="row.roleGroup.overflowCount > 0 ? 0 : null"
-              [attr.role]="row.roleGroup.overflowCount > 0 ? 'button' : null"
-              [attr.aria-haspopup]="row.roleGroup.overflowCount > 0 ? 'true' : null">
+              [attr.aria-describedby]="row.roleGroup.overflowCount > 0 ? 'org-meetings-leaderboard-row-' + row.identitySlug + '-role-popover' : null">
               @for (pill of row.roleGroup.visible; track $index) {
                 <lfx-tag [value]="pill.label" severity="secondary" [icon]="pill.isPrivate ? 'fa-light fa-lock' : undefined" />
               }
@@ -99,6 +98,7 @@
                 <lfx-tag [value]="'+' + row.roleGroup.overflowCount" severity="secondary" />
                 <div
                   role="tooltip"
+                  [id]="'org-meetings-leaderboard-row-' + row.identitySlug + '-role-popover'"
                   class="pointer-events-none absolute top-full left-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
                   [attr.data-testid]="'org-meetings-leaderboard-row-' + row.identitySlug + '-role-popover'">
                   <p class="mb-2 text-xs font-medium text-gray-500">All roles</p>
