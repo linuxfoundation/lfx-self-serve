@@ -19,19 +19,27 @@ function buildLogArgs(args: any[]): [Record<string, unknown>, string] {
 
   for (const arg of args) {
     if (arg instanceof Error) {
-      errValue = arg;
-    } else if (arg !== null && typeof arg === 'object' && 'status' in arg && 'statusText' in arg && 'url' in arg) {
-      // Angular HttpErrorResponse shape — convert to a structured err entry.
+      // First error wins; subsequent errors are stringified into the message so
+      // nothing is silently dropped (e.g. console.error('ctx', err1, err2)).
+      if (errValue === undefined) errValue = arg;
+      else parts.push(arg.message || String(arg));
+    } else if (arg !== null && typeof arg === 'object' && arg.ok === false && 'status' in arg && 'statusText' in arg && 'url' in arg) {
+      // Angular HttpErrorResponse shape (ok === false distinguishes it from
+      // a success HttpResponse which carries the same status/statusText/url).
       // Include the error body regardless of type (string or object) so upstream
       // failure text is not lost in production logs.
-      errValue = {
-        type: 'HttpErrorResponse',
-        message: arg.message || `Http failure response for ${arg.url}: ${arg.status} ${arg.statusText}`,
-        statusCode: arg.status,
-        statusText: arg.statusText,
-        url: arg.url,
-        ...(arg.error != null ? { detail: arg.error } : {}),
-      };
+      if (errValue === undefined) {
+        errValue = {
+          type: 'HttpErrorResponse',
+          message: arg.message || `Http failure response for ${arg.url}: ${arg.status} ${arg.statusText}`,
+          statusCode: arg.status,
+          statusText: arg.statusText,
+          url: arg.url,
+          ...(arg.error != null ? { detail: arg.error } : {}),
+        };
+      } else {
+        parts.push(arg.message || String(arg));
+      }
     } else if (arg !== null && typeof arg === 'object') {
       Object.assign(extra, arg);
     } else {
@@ -73,7 +81,7 @@ export function initializeServerConsoleOverride(): void {
 
   console.log = (...args: any[]) => {
     const [data, msg] = buildLogArgs(args);
-    serverLogger.info(data, msg);
+    serverLogger.info({ ...data, console: 'log' }, msg);
   };
 
   // console.info is used in several Angular components (app.component.ts,
@@ -81,6 +89,6 @@ export function initializeServerConsoleOverride(): void {
   // would otherwise bypass Pino during SSR.
   console.info = (...args: any[]) => {
     const [data, msg] = buildLogArgs(args);
-    serverLogger.info(data, msg);
+    serverLogger.info({ ...data, console: 'info' }, msg);
   };
 }

@@ -39,7 +39,11 @@ function otelWrite(level, msg, extra) {
   try {
     process.stdout.write(JSON.stringify({ level, msg, ...extra }, otelReplacer) + '\n');
   } catch {
-    process.stdout.write(JSON.stringify({ level, msg }) + '\n');
+    try {
+      process.stdout.write(JSON.stringify({ level, msg }) + '\n');
+    } catch {
+      // stdout closed (e.g. EPIPE) — drop the line; never crash the boot path.
+    }
   }
 }
 const otelLog = {
