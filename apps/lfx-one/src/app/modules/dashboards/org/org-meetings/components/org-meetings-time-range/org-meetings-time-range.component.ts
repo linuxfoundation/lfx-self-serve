@@ -1,11 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, model, Signal, viewChild } from '@angular/core';
+import { Component, computed, inject, makeStateKey, model, Signal, TransferState, viewChild } from '@angular/core';
 import { ORG_MEETINGS_TIME_RANGE_GROUPS, ORG_MEETINGS_TIME_RANGE_LABELS } from '@lfx-one/shared/constants';
 import type { OrgMeetingsTimeRange, OrgMeetingsTimeRangeOption } from '@lfx-one/shared/interfaces';
 import { formatShortDate } from '@lfx-one/shared/utils';
 import { Popover, PopoverModule } from 'primeng/popover';
+
+// Server renders `rangeLabel`s off `Date.now()` at request time; without pinning that timestamp,
+// the client would recompute a different `now` during hydration (different clock/tick), producing
+// a different formatted string than what the server sent and triggering a hydration mismatch.
+// TransferState carries the exact server timestamp to the client so both compute identical labels.
+const TODAY_TIMESTAMP_KEY = makeStateKey<number>('org-meetings-time-range-today');
 
 @Component({
   selector: 'lfx-org-meetings-time-range',
@@ -13,6 +19,8 @@ import { Popover, PopoverModule } from 'primeng/popover';
   templateUrl: './org-meetings-time-range.component.html',
 })
 export class OrgMeetingsTimeRangeComponent {
+  private readonly transferState = inject(TransferState);
+
   // Model signals for two-way binding
   public readonly value = model.required<OrgMeetingsTimeRange>();
 
@@ -33,7 +41,7 @@ export class OrgMeetingsTimeRangeComponent {
 
   private initGroups(): Signal<OrgMeetingsTimeRangeOption[][]> {
     return computed(() => {
-      const today = new Date();
+      const today = this.resolveToday();
       return ORG_MEETINGS_TIME_RANGE_GROUPS.map((group) =>
         group.map((value) => ({
           value,
@@ -42,6 +50,15 @@ export class OrgMeetingsTimeRangeComponent {
         }))
       );
     });
+  }
+
+  private resolveToday(): Date {
+    if (this.transferState.hasKey(TODAY_TIMESTAMP_KEY)) {
+      return new Date(this.transferState.get(TODAY_TIMESTAMP_KEY, Date.now()));
+    }
+    const now = Date.now();
+    this.transferState.set(TODAY_TIMESTAMP_KEY, now);
+    return new Date(now);
   }
 
   private rangeLabelFor(value: OrgMeetingsTimeRange, today: Date): string | null {

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, Signal } from '@angular/core';
+import { Component, computed, input, signal, Signal, viewChild, WritableSignal } from '@angular/core';
 import { DEMO_ORG_LEADERBOARD, ORG_LEADERBOARD_PRIVATE_MEETING_LABEL, ORG_LEADERBOARD_VISIBLE_PILL_COUNT } from '@lfx-one/shared/constants';
 import type {
   OrgLeaderboardDisplayRow,
@@ -11,6 +11,7 @@ import type {
   OrgMeetingsTimeRange,
 } from '@lfx-one/shared/interfaces';
 import { slugify } from '@lfx-one/shared/utils';
+import { Popover, PopoverModule } from 'primeng/popover';
 
 import { CardComponent } from '@components/card/card.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
@@ -19,16 +20,35 @@ import { TagComponent } from '@components/tag/tag.component';
 
 @Component({
   selector: 'lfx-org-meetings-leaderboard',
-  imports: [CardComponent, TableComponent, PersonAvatarComponent, TagComponent],
+  imports: [CardComponent, TableComponent, PersonAvatarComponent, TagComponent, PopoverModule],
   templateUrl: './org-meetings-leaderboard.component.html',
-  styleUrl: './org-meetings-leaderboard.component.scss',
 })
 export class OrgMeetingsLeaderboardComponent {
   // Public fields from inputs
   public readonly timeRange = input.required<OrgMeetingsTimeRange>();
 
+  private readonly overflowPopoverRef = viewChild<Popover>('overflowPopover');
+
+  // Simple WritableSignals
+  protected readonly overflowPopoverTitle: WritableSignal<string> = signal('');
+  protected readonly overflowPopoverItems: WritableSignal<OrgLeaderboardPillValue[]> = signal([]);
+
   // Complex computed via init function
   protected readonly rows: Signal<OrgLeaderboardDisplayRow[]> = this.initRows();
+
+  // The "+N" overflow popover is a single instance shared across every cell (rather than one per
+  // cell), appended to body via `appendTo="body"` so it isn't clipped by the table's scroll
+  // container — that container needs `overflow: auto` intact for horizontal scroll on narrow
+  // viewports, which an absolutely-positioned per-cell popover would otherwise be clipped by.
+  protected showOverflowPopover(event: Event, title: string, items: OrgLeaderboardPillValue[]): void {
+    this.overflowPopoverTitle.set(title);
+    this.overflowPopoverItems.set(items);
+    this.overflowPopoverRef()?.show(event);
+  }
+
+  protected hideOverflowPopover(): void {
+    this.overflowPopoverRef()?.hide();
+  }
 
   private initRows(): Signal<OrgLeaderboardDisplayRow[]> {
     return computed(() =>
