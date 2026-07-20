@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<lfx-header></lfx-header>
+
+<div class="bg-gray-50 min-h-screen">
+  <div class="container mx-auto py-6 px-8">
+    <div class="max-w-4xl mx-auto">
+      <lfx-card data-testid="auth-error-card">
+        <div class="text-center py-12">
+          <div class="flex justify-center mb-6">
+            <div class="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center">
+              <i class="fa-light fa-user-lock text-4xl text-red-400"></i>
+            </div>
+          </div>
+
+          <h1 class="mb-3" data-testid="auth-error-title">{{ title }}</h1>
+
+          <p class="text-gray-600 mb-8 max-w-lg mx-auto" data-testid="auth-error-description">
+            {{ description }}
+          </p>
+
+          <lfx-button [href]="loginHref" icon="fa-light fa-right-to-bracket" label="Log In" size="small" data-testid="auth-error-login-button"> </lfx-button>
+        </div>
+      </lfx-card>
+    </div>
+  </div>
+</div>
