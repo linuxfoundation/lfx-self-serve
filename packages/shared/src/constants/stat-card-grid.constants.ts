@@ -20,5 +20,5 @@ export const GRID_COLS_CLASS: Record<2 | 3 | 4, string> = {
 export const GRID_DIVIDER_CLASS: Record<2 | 3 | 4, string> = {
   2: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   3: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
-  4: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:border-t sm:[&>*:nth-child(n+3)]:border-gray-200 sm:[&>*:nth-child(even)]:border-l sm:[&>*:nth-child(even)]:border-gray-200 lg:[&>*]:border-t-0 lg:[&>*]:border-l-0 lg:divide-x',
+  4: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:border-t sm:[&>*:nth-child(n+3)]:border-gray-200 sm:[&>*:nth-child(even)]:border-l sm:[&>*:nth-child(even)]:border-gray-200 lg:[&>*:nth-child(n+3)]:border-t-0 lg:[&>*:nth-child(even)]:border-l-0 lg:divide-x',
 };

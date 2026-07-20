@@ -10,13 +10,20 @@
     <lfx-org-meetings-time-range [(value)]="timeRange" />
   </header>
 
-  <lfx-org-meetings-kpi-cards [timeRange]="timeRange()" />
+  @if (!hasCompany()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="Select a company via Impersonate to view meeting insights."
+      data-testid="org-meetings-no-company-empty-state" />
+  } @else {
+    <lfx-org-meetings-kpi-cards [timeRange]="timeRange()" />
 
-  <lfx-org-meetings-spend-breakdown [timeRange]="timeRange()" />
+    <lfx-org-meetings-spend-breakdown [timeRange]="timeRange()" />
 
-  <lfx-org-meetings-trends [timeRange]="timeRange()" />
+    <lfx-org-meetings-trends [timeRange]="timeRange()" />
 
-  <!-- Employee leaderboard deferred to a future PR (LFXV2-2735 follow-up) -->
+    <!-- Employee leaderboard deferred to a future PR (LFXV2-2735 follow-up) -->
 
-  <lfx-org-meetings-influence [timeRange]="timeRange()" />
+    <lfx-org-meetings-influence [timeRange]="timeRange()" />
+  }
 </main>

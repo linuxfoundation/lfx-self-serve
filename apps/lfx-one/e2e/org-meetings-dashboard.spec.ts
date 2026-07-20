@@ -151,4 +151,21 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('All time');
     await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
   });
+
+  test('renders the no-company empty state when no account is selected', async ({ page }) => {
+    await page.route('**/api/user/personas*', (route) =>
+      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
+    );
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_MEETINGS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/meetings')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/meetings redirected away');
+    }
+
+    await expect(page.getByTestId('org-meetings-no-company-empty-state')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);
+  });
 });

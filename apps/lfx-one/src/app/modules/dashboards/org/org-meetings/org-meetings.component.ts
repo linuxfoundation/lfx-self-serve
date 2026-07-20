@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import type { OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
+import { AccountContextService } from '@services/account-context.service';
+
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 
 import { OrgMeetingsInfluenceComponent } from './components/org-meetings-influence/org-meetings-influence.component';
 import { OrgMeetingsKpiCardsComponent } from './components/org-meetings-kpi-cards/org-meetings-kpi-cards.component';
@@ -25,10 +28,16 @@ import { OrgMeetingsTrendsComponent } from './components/org-meetings-trends/org
     OrgMeetingsSpendBreakdownComponent,
     OrgMeetingsTrendsComponent,
     OrgMeetingsInfluenceComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './org-meetings.component.html',
 })
 export class OrgMeetingsComponent {
+  private readonly accountContext = inject(AccountContextService);
+
   // Simple WritableSignals
   protected readonly timeRange = signal<OrgMeetingsTimeRange>('past365d');
+
+  // Complex computed
+  protected readonly hasCompany: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().uid);
 }

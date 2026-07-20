@@ -53,10 +53,6 @@ export class OrgSpendBarComponent {
     clearTimeout(this.hideOthersPopoverTimeoutId);
   }
 
-  protected hideOthersPopover(): void {
-    this.othersPopoverRef()?.hide();
-  }
-
   private initRows(): Signal<OrgSpendBarSegment[]> {
     return computed(() =>
       this.segments().map((segment) => ({
