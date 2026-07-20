@@ -12,6 +12,8 @@
         class="relative"
         [class.group]="!!segment.others?.length"
         [attr.tabindex]="segment.others?.length ? 0 : null"
+        [attr.role]="segment.others?.length ? 'button' : null"
+        [attr.aria-haspopup]="segment.others?.length ? 'true' : null"
         [class.mt-1]="segment.isOther"
         [class.border-t]="segment.isOther"
         [class.border-dashed]="segment.isOther"
@@ -26,6 +28,7 @@
         </div>
         @if (segment.others?.length) {
           <div
+            role="tooltip"
             class="pointer-events-none absolute top-full right-0 z-10 mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg group-hover:block group-focus-within:block"
             [attr.data-testid]="'org-spend-bar-' + titleSlug() + '-others-popover'">
             <p class="mb-2 text-xs font-medium text-gray-500">Breakdown</p>
