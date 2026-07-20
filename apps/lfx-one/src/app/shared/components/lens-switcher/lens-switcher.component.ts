@@ -114,6 +114,12 @@ export class LensSwitcherComponent {
     this.router.navigate(['/profile']);
   }
 
+  protected navigateToProfileSettings(): void {
+    this.userMenu()?.hide();
+    this.lensService.setLens('me');
+    this.router.navigate(['/profile/settings']);
+  }
+
   protected openImpersonationDialog(): void {
     this.dialogService.open(ImpersonationDialogComponent, {
       header: 'Impersonate User',
