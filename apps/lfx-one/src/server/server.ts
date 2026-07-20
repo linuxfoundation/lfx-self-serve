@@ -5,9 +5,9 @@ import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
-import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
+import { randomBytes } from 'node:crypto';
 import { Server as HttpServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,7 @@ import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
+import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
@@ -60,6 +61,7 @@ import mktgAgentsRouter from './routes/mktg-agents.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
+import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
@@ -67,7 +69,13 @@ import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shut
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
-  dotenv.config();
+  try {
+    process.loadEnvFile();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[loadenvfile] failed to load .env:', err);
+    }
+  }
 }
 
 // Redirect console.error/warn/log through Pino so all output in production is
@@ -171,6 +179,32 @@ const httpLogger = pinoHttp({
 
 app.use(httpLogger);
 
+// LFXV2-2666: move the session bundle out of the encrypted `appSession` cookie and into Valkey,
+// keyed by an opaque session id, so cookie size stays flat as more tokens (impersonation,
+// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when
+// SESSION_STORE_ENABLED is set and VALKEY_URL is present — without VALKEY_URL every store
+// read/write would degrade to "session missing" (ValkeyService's fail-soft behavior) and silently
+// log everyone out. Note: this only gates on URL presence, not live reachability — a Valkey outage
+// after startup surfaces as failed session writes (401, forced re-login) rather than a silent miss
+// (see SessionStoreService for the fail-soft read / fail-closed write behavior).
+//
+// Rollout note: toggling this flag changes what the `appSession` cookie *means* (encrypted JWE vs.
+// opaque Valkey id). The chart's default RollingUpdate strategy means old and new pods coexist
+// during the rollout window, so requests hitting different pods will flap between "valid session"
+// and "invalid session" until the rollout completes — see the PR description's rollout-safety note
+// for the accepted operational mitigation.
+const valkeyUrl = process.env['VALKEY_URL'];
+const sessionStoreEnabled = process.env['SESSION_STORE_ENABLED'] === 'true' && !!valkeyUrl;
+
+// The session-store payload carries the full bearer-token bundle (Auth0 access/refresh plus
+// impersonation/API-gateway/crowdfunding/profile tokens) — unlike ValkeyService's other, lower-
+// sensitivity cache entries, a plaintext `redis://` transport would ship those credentials
+// unencrypted. Fail startup rather than silently degrade; local/dev environments are exempt since
+// they don't carry real user credentials.
+if (sessionStoreEnabled && process.env['NODE_ENV'] === 'production' && !valkeyUrl!.startsWith('rediss://')) {
+  throw new Error('SESSION_STORE_ENABLED requires a TLS-secured VALKEY_URL (rediss://) in production — refusing to start with an insecure transport.');
+}
+
 const authConfig: ConfigParams = {
   // Global auth disabled; selective middleware handles it.
   authRequired: false,
@@ -188,7 +222,51 @@ const authConfig: ConfigParams = {
   routes: {
     login: false,
   },
+  ...(sessionStoreEnabled && {
+    session: {
+      store: sessionStoreService,
+      // 256 bits of cryptographically strong randomness — sufficient entropy on its own, per the
+      // library's genid docs, without needing signSessionStoreCookie. 64 hex chars is also the
+      // exact cap enforced by isFilterSafeIdentifier (used to build the Valkey cache key) — don't
+      // widen randomBytes() or change the encoding without raising that cap too, or every session
+      // id will fail the cache-key safety check and every session will be treated as missing.
+      genid: () => randomBytes(32).toString('hex'),
+    },
+  }),
 };
+
+// The native custom-store cookie writer (appSession.js's CustomStore.setCookie) only ever sets or
+// clears the single unchunked `appSession` cookie — it has no awareness of the legacy
+// `appSession.0`, `appSession.1`, ... chunk cookies a large pre-cutover session may have left in a
+// user's browser. Left uncleared, those chunks stay valid (decryptable, unexpired) in the browser
+// even after the user logs out under the store, and a later rollback to cookie mode would silently
+// re-authenticate them from that stale, pre-cutover session snapshot. Proactively clear any such
+// chunks on every request while the store is enabled, so nothing survives to be resurrected by a
+// rollback.
+//
+// Registered BEFORE auth(authConfig): express-openid-connect's built-in /logout route completes
+// the response inside its own router without calling next(), so cleanup registered after auth()
+// would never run on a logout request — the exact request where clearing these chunks matters most.
+if (sessionStoreEnabled) {
+  // Mirror the attributes express-openid-connect used when it originally set these chunk cookies
+  // (config.js's session.cookie defaults: httpOnly=true, sameSite='Lax', secure=true iff baseURL is
+  // https) — a Set-Cookie clear with mismatched attributes can be silently ignored by the browser.
+  const chunkCookieOptions = { httpOnly: true, sameSite: 'lax' as const, secure: /^https:/i.test(authConfig.baseURL as string) };
+  app.use((req, res, next) => {
+    const cookieHeader = req.headers.cookie;
+    if (cookieHeader) {
+      for (const pair of cookieHeader.split(';')) {
+        const eqIndex = pair.indexOf('=');
+        if (eqIndex === -1) continue;
+        const name = pair.slice(0, eqIndex).trim();
+        if (/^appSession\.\d+$/.test(name)) {
+          res.clearCookie(name, chunkCookieOptions);
+        }
+      }
+    }
+    next();
+  });
+}
 
 app.use(auth(authConfig));
 
@@ -420,6 +498,13 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
 // Global error handler — must be last.
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  // Clear the in-memory session before this headersSent guard so a failed session write's
+  // clearSession still takes effect on SSR/auth-redirect routes that flush headers before
+  // apiErrorHandler would otherwise run — mirrors the same guard inside apiErrorHandler itself.
+  if (error instanceof AuthenticationError && error.clearSession) {
+    req.appSession = null;
+  }
+
   if (res.headersSent) {
     next(error);
     return;

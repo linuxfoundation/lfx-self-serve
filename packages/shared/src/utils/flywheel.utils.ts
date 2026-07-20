@@ -129,7 +129,7 @@ export function buildFlywheelRecommendedActions(data: FlywheelConversionResponse
   if (reengagement.reengagementMomChange < -5) {
     actions.push({
       title: 'Address re-engagement rate decline',
-      description: `Re-engagement dropped ${Math.abs(reengagement.reengagementMomChange).toFixed(1)}% MoM — review post-event follow-up effectiveness`,
+      description: `Re-engagement dropped ${Math.abs(reengagement.reengagementMomChange).toFixed(1)}pp MoM — review post-event follow-up effectiveness`,
       priority: 'high',
 
       actionType: 'decline',
@@ -147,7 +147,7 @@ export function buildFlywheelRecommendedActions(data: FlywheelConversionResponse
   }
 
   if (actions.length === 0) {
-    const growthSuffix = reengagement.reengagementMomChange > 0 ? ` — improving ${reengagement.reengagementMomChange.toFixed(1)}%` : '';
+    const growthSuffix = reengagement.reengagementMomChange > 0 ? ` — improving ${reengagement.reengagementMomChange.toFixed(1)}pp MoM` : '';
     actions.push({
       title: 'Continue flywheel optimization',
       description: `${reengagement.reengagementRate.toFixed(1)}% re-engagement rate${growthSuffix} across ${formatNumber(attendees)} attendees`,
@@ -199,10 +199,10 @@ export function buildFlywheelKeyInsights(data: FlywheelConversionResponse | null
   }
 
   if (reengagement.reengagementMomChange > 3) {
-    insights.push({ text: `Re-engagement rate trending up ${reengagement.reengagementMomChange.toFixed(1)}% — flywheel is accelerating`, type: 'driver' });
+    insights.push({ text: `Re-engagement rate trending up ${reengagement.reengagementMomChange.toFixed(1)}pp MoM — flywheel is accelerating`, type: 'driver' });
   } else if (reengagement.reengagementMomChange < -3) {
     insights.push({
-      text: `Re-engagement rate dropped ${Math.abs(reengagement.reengagementMomChange).toFixed(1)}% — flywheel is slowing`,
+      text: `Re-engagement rate dropped ${Math.abs(reengagement.reengagementMomChange).toFixed(1)}pp MoM — flywheel is slowing`,
       type: 'warning',
     });
   }

@@ -408,6 +408,16 @@ environment:
   VALKEY_KEY_NAMESPACE:
     value:
 
+  # Stores the OIDC session server-side in Valkey (keyed by an opaque session id) instead of the
+  # encrypted appSession cookie, so cookie size stays flat as more tokens are added to the session.
+  # Only takes effect when VALKEY_URL is also set. Toggling this value (in either direction) changes
+  # what the appSession cookie means, which the chart's default 3-replica RollingUpdate cannot
+  # interpret consistently mid-rollout — flip it only during a low-traffic window using a Recreate
+  # (no-overlap) rollout strategy. Not an instant/safe-anytime rollback despite being a single value
+  # flip — see Runtime Configuration docs.
+  SESSION_STORE_ENABLED:
+    value: "false"
+
   SNOWFLAKE_MIN_CONNECTIONS:
     value: "2"
 

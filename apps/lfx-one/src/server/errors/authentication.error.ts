@@ -8,6 +8,11 @@ import { BaseApiError } from './base.error';
  * Used when a user attempts to access protected routes without proper authentication
  */
 export class AuthenticationError extends BaseApiError {
+  /** When true, `apiErrorHandler` clears `req.appSession` before responding, so express-openid-connect's
+   * cookie-write hook (which fires independently of how the request settles) clears the session cookie
+   * instead of reissuing it — needed whenever the thrown error means the session data can't be trusted. */
+  public readonly clearSession: boolean;
+
   public constructor(
     message = 'Authentication required',
     options: {
@@ -15,9 +20,12 @@ export class AuthenticationError extends BaseApiError {
       service?: string;
       path?: string;
       metadata?: Record<string, any>;
+      clearSession?: boolean;
     } = {}
   ) {
-    super(message, 401, 'AUTHENTICATION_REQUIRED', options);
+    const { clearSession, ...rest } = options;
+    super(message, 401, 'AUTHENTICATION_REQUIRED', rest);
+    this.clearSession = clearSession ?? false;
   }
 }
 

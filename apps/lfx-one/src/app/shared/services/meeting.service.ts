@@ -20,10 +20,6 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingRsvp,
-  GetOrgUpcomingMeetingsOptions,
-  OrgMeetingsProjectsResponse,
-  OrgMeetingsSummary,
-  OrgUpcomingMeetingsResponse,
   PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
@@ -63,24 +59,6 @@ export class MeetingService {
     );
   }
 
-  /** Org Lens Meetings stat strip: upcoming + recurring counts (with foundation breadth) for the selected org, from Snowflake. */
-  public getOrgMeetingsSummary(accountId: string): Observable<OrgMeetingsSummary> {
-    return this.http.get<OrgMeetingsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/summary`);
-  }
-
-  public getOrgUpcomingMeetings(accountId: string, options: GetOrgUpcomingMeetingsOptions): Observable<OrgUpcomingMeetingsResponse> {
-    let params = new HttpParams().set('pageSize', String(options.pageSize)).set('offset', String(options.offset));
-    if (options.searchQuery) params = params.set('searchQuery', options.searchQuery);
-    if (options.project) params = params.set('project', options.project);
-    if (options.type) params = params.set('type', options.type);
-    if (options.pendingRsvpOnly) params = params.set('pendingRsvpOnly', 'true');
-    return this.http.get<OrgUpcomingMeetingsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings`, { params });
-  }
-
-  public getOrgMeetingProjects(accountId: string): Observable<OrgMeetingsProjectsResponse> {
-    return this.http.get<OrgMeetingsProjectsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/projects`);
-  }
-
   public getPastMeetings(params?: HttpParams): Observable<PaginatedResponse<PastMeeting>> {
     return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(
       catchError((error) => {
@@ -113,14 +91,7 @@ export class MeetingService {
 
   /** Fetches meeting count scoped to a committee. */
   public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
-    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
-    return this.http.get<QueryServiceCountResponse>('/api/meetings/count', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load meetings count:', error);
-        return of({ count: 0 });
-      }),
-      map((response) => response.count)
-    );
+    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`);
   }
 
   /** Fetches upcoming meetings scoped to a committee. */
@@ -147,19 +118,11 @@ export class MeetingService {
   }
 
   public getMeetingsCountByProject(uid: string): Observable<number> {
-    const params = new HttpParams().set('tags', `project_uid:${uid}`);
-    return this.http
-      .get<QueryServiceCountResponse>('/api/meetings/count', { params })
-      .pipe(
-        catchError((error) => {
-          console.error('Failed to load meetings count:', error);
-          return of({ count: 0 });
-        })
-      )
-      .pipe(
-        // Extract just the count number from the response
-        map((response) => response.count)
-      );
+    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`);
+  }
+
+  public getPastMeetingsCountByProject(uid: string): Observable<number> {
+    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -364,7 +327,7 @@ export class MeetingService {
       .pipe(take(1));
   }
 
-  // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
+  // ─── Past Meeting Attachment Methods ─────────────────────────────────────
 
   public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
     return this.http
@@ -448,6 +411,37 @@ export class MeetingService {
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
     return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
+  }
+
+  public createPastMeetingAttachment(pastMeetingId: string, attachmentData: CreateMeetingAttachmentRequest): Observable<PastMeetingAttachment> {
+    return this.http.post<PastMeetingAttachment>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments`, attachmentData).pipe(take(1));
+  }
+
+  public deletePastMeetingAttachment(pastMeetingId: string, attachmentId: string): Observable<void> {
+    return this.http.delete<void>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/${encodeURIComponent(attachmentId)}`).pipe(take(1));
+  }
+
+  public presignPastMeetingAttachment(pastMeetingId: string, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    return this.http.post<PresignAttachmentResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/presign`, presignData).pipe(take(1));
+  }
+
+  public uploadPastMeetingFile(pastMeetingId: string, file: File, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    let params = new HttpParams().set('name', presignData.name).set('file_size', presignData.file_size.toString()).set('file_type', presignData.file_type);
+
+    if (presignData.category) {
+      params = params.set('category', presignData.category);
+    }
+
+    if (presignData.description) {
+      params = params.set('description', presignData.description);
+    }
+
+    return this.http
+      .post<PresignAttachmentResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/upload`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+        params,
+      })
+      .pipe(take(1));
   }
 
   public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {
@@ -601,5 +595,16 @@ export class MeetingService {
         this.pastMeetingRecordingCache.delete(key);
       }
     }
+  }
+
+  private getCountByTag(endpoint: string, tag: string): Observable<number> {
+    const params = new HttpParams().set('tags', tag);
+    return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load count from ${endpoint}:`, error);
+        return of({ count: 0 });
+      }),
+      map((response) => response.count)
+    );
   }
 }

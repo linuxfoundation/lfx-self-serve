@@ -702,38 +702,35 @@ export class CommitteeService {
   }
 
   /**
-   * After LFID invite acceptance, auto-accept pending committee invitations addressed to
-   * {@link invitedEmail}. Callers must verify the session email matches the invite token
-   * email before invoking. {@link resourceUid} (from the LFID invite JWT) disambiguates
-   * when multiple pending invites exist — matched against committee_invite UID first, then
-   * committee UID; if no match and exactly one pending invite remains, that one is accepted.
+   * Legacy path for LFID invite JWTs that pre-date the {@link committee_invite_uid} claim.
+   * Searches pending committee_invites by email, selects the one(s) matching
+   * {@link params.resourceUid} (the committee UID from the JWT), and auto-accepts them.
    *
-   * Returns the first invite that requires an organization but had none pre-filled — the
-   * caller must surface this to the user to collect their organization and complete acceptance.
-   * Other invites (those that can be auto-accepted) are still processed before returning.
-   *
-   * Other failures are logged and swallowed so LFID acceptance still succeeds.
+   * Returns `undefined` when no matching invite is visible yet — the FGA invitee tuple may
+   * still be propagating; the caller should wait and retry. Returns `null` when acceptance
+   * completed successfully. Returns {@link PendingCommitteeInviteForOrg} when the invite
+   * requires an organization that was not pre-filled — the client must collect it.
    */
   public async acceptPendingCommitteeInvitesAfterLfidAccept(
     req: Request,
-    params: { invitedEmail: string; resourceUid?: string }
-  ): Promise<PendingCommitteeInviteForOrg | null> {
+    params: { invitedEmail: string; resourceUid: string }
+  ): Promise<PendingCommitteeInviteForOrg | null | undefined> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, params.invitedEmail);
     if (pendingInvites.length === 0) {
       logger.debug(req, 'accept_invite', 'No pending committee invitations to auto-accept after LFID invite');
-      return null;
+      return undefined;
     }
 
     const toAccept = this.selectCommitteeInvitesForLfidAccept(pendingInvites, params.resourceUid);
     if (toAccept.length === 0) {
-      logger.warning(req, 'accept_invite', 'Pending committee invitations found but none selected for auto-accept', {
+      logger.warning(req, 'accept_invite', 'Pending committee invitations found but none matched the committee UID — will retry', {
         pending_count: pendingInvites.length,
         resource_uid: params.resourceUid,
       });
-      return null;
+      return undefined;
     }
 
-    logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite', {
+    logger.info(req, 'accept_invite', 'Auto-accepting committee invitations after LFID invite (legacy path)', {
       accept_count: toAccept.length,
       resource_uid: params.resourceUid,
     });
@@ -751,8 +748,6 @@ export class CommitteeService {
         if (requiresOrganization) {
           const orgName = invite.organization?.name?.trim() || null;
           if (!orgName) {
-            // Return the first such invite so the client can collect the org and complete acceptance.
-            // Keep processing other invites — those that don't need org can still be auto-accepted.
             if (!pendingForOrg) {
               logger.info(req, 'accept_invite', 'Committee invite requires organization — returning to client for manual org collection', {
                 committee_uid: invite.committee_uid,
@@ -767,8 +762,6 @@ export class CommitteeService {
             }
             continue;
           }
-          // Build an explicit allowlist payload — trim fields and coerce empty strings to null
-          // rather than forwarding the raw query-service organization reference upstream.
           const orgPayload = {
             name: orgName,
             id: invite.organization?.id?.trim() || null,
@@ -784,10 +777,14 @@ export class CommitteeService {
           invite_uid: invite.uid,
           err: error,
         });
+        throw error;
       }
     }
 
-    return pendingForOrg;
+    if (pendingForOrg) {
+      return pendingForOrg;
+    }
+    return null;
   }
 
   /**
@@ -1330,6 +1327,56 @@ export class CommitteeService {
   }
 
   /**
+   * Batch-fetches committee resources by UID from the query service.
+   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
+   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
+   */
+  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+    const unique = Array.from(new Set(uids)).filter(Boolean);
+    if (unique.length === 0) return new Map();
+
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
+    }
+
+    // Rethrow batch failures — returning [] would make callers treat real memberships as
+    // "committee not found" and silently drop them (defeats failOnPartial: true).
+    const batchResults = await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          return await fetchAllQueryResources<Committee>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          );
+        } catch (error) {
+          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
+            batch_size: batch.length,
+            err: error,
+          });
+          throw error;
+        }
+      })
+    );
+
+    const byUid = new Map<string, Committee>();
+    for (const committee of batchResults.flat()) {
+      if (committee?.uid) {
+        byUid.set(committee.uid, committee);
+      }
+    }
+
+    return byUid;
+  }
+
+  /**
    * Fetches the caller's membership row for a single committee, or null if none.
    * Uses the username-tagged query so visibility is independent of which email
    * the caller authenticated with — matching the pattern used by
@@ -1417,56 +1464,6 @@ export class CommitteeService {
       // Tie-breaker: prefer lexicographically smallest uid for stable ordering across requests.
       return (current.uid ?? '') < (best.uid ?? '') ? current : best;
     });
-  }
-
-  /**
-   * Batch-fetches committee resources by UID from the query service.
-   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
-   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
-   */
-  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
-    const unique = Array.from(new Set(uids)).filter(Boolean);
-    if (unique.length === 0) return new Map();
-
-    const BATCH_SIZE = 100;
-    const batches: string[][] = [];
-    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-      batches.push(unique.slice(i, i + BATCH_SIZE));
-    }
-
-    // Rethrow batch failures — returning [] would make callers treat real memberships as
-    // "committee not found" and silently drop them (defeats failOnPartial: true).
-    const batchResults = await Promise.all(
-      batches.map(async (batch) => {
-        try {
-          return await fetchAllQueryResources<Committee>(
-            req,
-            (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'committee',
-                filters_or: batch.map((uid) => `uid:${uid}`),
-                ...(pageToken && { page_token: pageToken }),
-              }),
-            { failOnPartial: true }
-          );
-        } catch (error) {
-          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
-            batch_size: batch.length,
-            err: error,
-          });
-          throw error;
-        }
-      })
-    );
-
-    const byUid = new Map<string, Committee>();
-    for (const committee of batchResults.flat()) {
-      if (committee?.uid) {
-        byUid.set(committee.uid, committee);
-      }
-    }
-
-    return byUid;
   }
 
   /**
@@ -1712,24 +1709,18 @@ export class CommitteeService {
   }
 
   /**
-   * Narrows pending committee invites using the LFID invite JWT {@link resourceUid} when present.
+   * Filters {@link pending} invites to those whose committee UID matches {@link resourceUid}.
+   * Used by the legacy LFID invite flow where the JWT carries the committee UID (resource_uid)
+   * but not the exact invite UID.
+   *
+   * Returns an empty array when no match is found — the caller should treat this as
+   * "not yet visible" and retry (FGA invitee tuple may still be propagating).
    */
-  private selectCommitteeInvitesForLfidAccept(pending: CommitteeInvite[], resourceUid?: string): CommitteeInvite[] {
-    const trimmedResourceUid = resourceUid?.trim();
+  private selectCommitteeInvitesForLfidAccept(pending: CommitteeInvite[], resourceUid: string): CommitteeInvite[] {
+    const trimmedResourceUid = resourceUid.trim();
     if (!trimmedResourceUid) {
-      return pending;
+      return [];
     }
-
-    const byInviteUid = pending.filter((invite) => invite.uid === trimmedResourceUid);
-    if (byInviteUid.length > 0) {
-      return byInviteUid;
-    }
-
-    const byCommitteeUid = pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
-    if (byCommitteeUid.length > 0) {
-      return byCommitteeUid;
-    }
-
-    return pending.length === 1 ? pending : [];
+    return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
   }
 }

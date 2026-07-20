@@ -161,7 +161,7 @@ export class BrandReachDrawerComponent {
       if (totalMonthlySessions > 0 && websiteDomains.length > 0) {
         const topDomain = [...websiteDomains].sort((a, b) => b.sessions - a.sessions)[0];
         insights.push({
-          text: `${topDomain.domain} drives ${formatNumber(topDomain.sessions)} monthly sessions`,
+          text: `${topDomain.domain} drives ${formatNumber(topDomain.sessions)} sessions in the last 30 days`,
           type: 'info',
         });
       }

@@ -139,7 +139,7 @@ export class CommitteeOverviewComponent {
 
   public canJoin: Signal<boolean> = computed(() => {
     const mode = this.committee().join_mode;
-    return this.isVisitor() && (mode === 'open' || mode === 'application') && !this.hasPendingInvite();
+    return this.isVisitor() && mode === 'open' && !this.hasPendingInvite();
   });
 
   public showInviteOnlyNotice: Signal<boolean> = computed(() => {

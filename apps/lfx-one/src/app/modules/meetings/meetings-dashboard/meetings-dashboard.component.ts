@@ -132,6 +132,8 @@ export class MeetingsDashboardComponent {
   // Per-lens loading flags so Me/FP recording-count pipelines cannot clobber each other on lens switch.
   protected readonly meRecordingsCountLoading = signal(false);
   protected readonly fpRecordingsCountLoading = signal(false);
+  protected fpUpcomingCountLoading = signal(false);
+  protected fpPastCountLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
@@ -228,11 +230,12 @@ export class MeetingsDashboardComponent {
     this.rawFpUpcomingMeetings = this.initializeRawFpUpcomingMeetings();
     this.rawFpPastMeetings = this.initializeRawFpPastMeetings();
 
-    // Foundation/Project lens stat cards (computed from raw FP signals, not paginated)
-    // Only look at the active tab's loading signal — inactive tab fetches are gated off.
+    // Foundation/Project lens stat cards
+    // fpStatsLoading gates recurring/recordings cards (backed by raw full-page fetches).
+    // fpUpcomingCount/fpPastCount use the count API directly — they resolve independently.
     this.fpStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()));
-    this.fpUpcomingCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().length : 0));
-    this.fpPastCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpPastMeetings().length : 0));
+    this.fpUpcomingCount = this.initFpUpcomingCount();
+    this.fpPastCount = this.initFpPastCount();
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
     this.fpRecordingsAvailableCount = this.initFpRecordingsAvailableCount();
 
@@ -256,10 +259,10 @@ export class MeetingsDashboardComponent {
 
   /** FullCalendar event click → navigate to the meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean };
+    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean; password?: string };
     if (props.cancelled) return;
     if (props.type === 'meeting' && props.meetingId) {
-      void this.router.navigate(['/meetings', props.meetingId]);
+      void this.router.navigate(['/meetings', props.meetingId], props.password ? { queryParams: { password: props.password } } : {});
     }
   }
 
@@ -779,6 +782,40 @@ export class MeetingsDashboardComponent {
     });
   }
 
+  private initFpUpcomingCount(): Signal<number> {
+    return this.initFpCount(this.fpUpcomingCountLoading, (uid) => this.meetingService.getMeetingsCountByProject(uid));
+  }
+
+  private initFpPastCount(): Signal<number> {
+    return this.initFpCount(this.fpPastCountLoading, (uid) => this.meetingService.getPastMeetingsCountByProject(uid));
+  }
+
+  private initFpCount(loadingSignal: WritableSignal<boolean>, fetchFn: (uid: string) => Observable<number>): Signal<number> {
+    const project$ = toObservable(this.project);
+    const lens$ = toObservable(this.activeLens);
+
+    return toSignal(
+      combineLatest([project$, lens$, this.refresh$]).pipe(
+        switchMap(([project, lens]) => {
+          if (lens === 'me' || !project?.uid) {
+            loadingSignal.set(false);
+            return of(0);
+          }
+          if (!isPlatformBrowser(this.platformId)) {
+            loadingSignal.set(true);
+            return of(0);
+          }
+          loadingSignal.set(true);
+          return fetchFn(project.uid).pipe(
+            catchError(() => of(0)),
+            finalize(() => loadingSignal.set(false))
+          );
+        })
+      ),
+      { initialValue: 0 }
+    );
+  }
+
   private initFpRecordingsAvailableCount(): Signal<number> {
     return toSignal(
       combineLatest([toObservable(this.activeLens), toObservable(this.rawFpPastMeetings)]).pipe(
@@ -919,7 +956,7 @@ export class MeetingsDashboardComponent {
           display: 'block',
           // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
           classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
-          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
+          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled, password: meeting.password },
         };
       });
     }
@@ -935,7 +972,7 @@ export class MeetingsDashboardComponent {
         textColor: '#ffffff',
         display: 'block',
         classNames: ['meeting-event'],
-        extendedProps: { type: 'meeting', meetingId: meeting.id },
+        extendedProps: { type: 'meeting', meetingId: meeting.id, password: meeting.password },
       },
     ];
   }

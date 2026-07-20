@@ -7,10 +7,8 @@ import { filter, firstValueFrom } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { ButtonComponent } from '@components/button/button.component';
-import { ANNOUNCEMENT_ENABLED_FLAG, CROWDFUNDING_SPONSOR_TIERS_FLAG } from '@lfx-one/shared/constants';
 import { InitiativeDetail, TabOption, UpdateInitiativeInput } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { SettingsAnnouncementsTabComponent } from './components/settings-announcements-tab/settings-announcements-tab.component';
 import { SettingsBeneficiariesTabComponent } from './components/settings-beneficiaries-tab/settings-beneficiaries-tab.component';
 import { SettingsBrandingTabComponent } from './components/settings-branding-tab/settings-branding-tab.component';
@@ -36,7 +34,6 @@ import { SettingsSponsorshipTiersTabComponent } from './components/settings-spon
 export class InitiativeSettingsDrawerComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly messageService = inject(MessageService);
-  private readonly featureFlagService = inject(FeatureFlagService);
 
   public readonly initiative = input.required<InitiativeDetail>();
   public readonly visible = model(false);
@@ -45,27 +42,22 @@ export class InitiativeSettingsDrawerComponent {
   protected readonly activeSettingsTab = signal<string>('details');
   protected readonly saving = signal(false);
 
-  protected readonly announcementsEnabled = this.featureFlagService.getBooleanFlag(ANNOUNCEMENT_ENABLED_FLAG, false);
-  protected readonly sponsorshipTiersEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_SPONSOR_TIERS_FLAG, false);
-
-  protected readonly settingsTabs: Signal<TabOption<string>[]> = computed(() => [
+  protected readonly settingsTabs: TabOption<string>[] = [
     { value: 'details', label: 'Initiative details' },
     { value: 'branding', label: 'Branding' },
     { value: 'beneficiaries', label: 'Beneficiaries' },
     { value: 'funding', label: 'Funding' },
-    ...(this.sponsorshipTiersEnabled() ? [{ value: 'sponsorship-tiers', label: 'Sponsorship Tiers' }] : []),
-    ...(this.announcementsEnabled() ? [{ value: 'announcements', label: 'Announcements', savesInline: true }] : []),
-  ]);
+    { value: 'sponsorship-tiers', label: 'Sponsorship Tiers' },
+    { value: 'announcements', label: 'Announcements', savesInline: true },
+  ];
 
-  protected readonly activeTab: Signal<TabOption<string> | undefined> = computed(() =>
-    this.settingsTabs().find((tab) => tab.value === this.activeSettingsTab())
-  );
+  protected readonly activeTab: Signal<TabOption<string> | undefined> = computed(() => this.settingsTabs.find((tab) => tab.value === this.activeSettingsTab()));
 
   private readonly detailsTab = viewChild.required(SettingsDetailsTabComponent);
   private readonly brandingTab = viewChild.required(SettingsBrandingTabComponent);
   private readonly beneficiariesTab = viewChild.required(SettingsBeneficiariesTabComponent);
   private readonly fundingTab = viewChild.required(SettingsFundingTabComponent);
-  private readonly sponsorshipTiersTab = viewChild(SettingsSponsorshipTiersTabComponent);
+  private readonly sponsorshipTiersTab = viewChild.required(SettingsSponsorshipTiersTabComponent);
 
   public constructor() {
     toObservable(this.visible)
@@ -85,10 +77,10 @@ export class InitiativeSettingsDrawerComponent {
     const sponsorshipTiersTab = this.sponsorshipTiersTab();
 
     const invalidBeneficiary = beneficiaries.beneficiaryGroups().some((g) => g.invalid);
-    if (details.form.invalid || funding.form.invalid || sponsorshipTiersTab?.form.invalid || invalidBeneficiary) {
+    if (details.form.invalid || funding.form.invalid || sponsorshipTiersTab.form.invalid || invalidBeneficiary) {
       details.form.markAllAsTouched();
       funding.form.markAllAsTouched();
-      sponsorshipTiersTab?.form.markAllAsTouched();
+      sponsorshipTiersTab.form.markAllAsTouched();
       beneficiaries.beneficiaryGroups().forEach((g) => g.markAllAsTouched());
       return;
     }
@@ -150,7 +142,7 @@ export class InitiativeSettingsDrawerComponent {
         }))
         .filter((b) => b.name || b.email);
 
-      const sponsorshipTiers = sponsorshipTiersTab?.getValue();
+      const sponsorshipTiers = sponsorshipTiersTab.getValue();
       if (sponsorshipTiers) {
         input.donationMode = sponsorshipTiers.donationMode;
         input.sponsorshipTiers = sponsorshipTiers.sponsorshipTiers;

@@ -153,7 +153,7 @@
           <h3 class="text-sm font-semibold text-gray-900">Monthly Paid Impressions</h3>
           <p class="text-sm text-gray-600">Paid ad impressions across all channels over the last 6 months</p>
         </div>
-        @if (drawerData().monthlyData.length > 0) {
+        @if (hasImpressionData()) {
           <div class="h-[240px]" data-testid="paid-social-reach-drawer-chart">
             <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
           </div>

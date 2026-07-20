@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
+  PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
@@ -38,6 +40,7 @@ import {
   FoundationContributorsMentoredRow,
   FoundationEventsAttendanceDistributionResponse,
   FoundationEventsAttendanceDistributionRow,
+  FoundationHealthScore,
   FoundationEventsQuarterlyResponse,
   FoundationEventsQuarterlyRow,
   FoundationHealthEventsMonthlyRow,
@@ -136,6 +139,15 @@ import { SnowflakeService } from './snowflake.service';
 
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
+
+/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list so the server and UI cannot drift. */
+const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<FoundationHealthScore> = new Set(PROJECT_HEALTH_SCORE_CATEGORIES);
+
+/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY; null when absent or unrecognized. */
+function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
+  const category = raw?.toLowerCase() as FoundationHealthScore | undefined;
+  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? category : null;
+}
 
 /** Upstream response shape for project folders (POST response) */
 interface ProjectFolder {
@@ -1676,24 +1688,34 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
+    // Latest daily row per project (keyed on PROJECT_SLUG — different PROJECT_ID
+    // systems); a null category on the newest row flows through as Unscored,
+    // matching normalizeHealthScoreCategory and the FOUNDATION_HEALTH_SCORE_DISTRIBUTION counts.
     const query = `
       SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        LIFECYCLE_STAGE,
-        CONTRIBUTORS_90D_COUNT,
-        COMMITS_90D_COUNT,
-        MAINTAINERS_CURRENT_COUNT,
-        STARS_YTD_COUNT,
-        LAST_UPDATED_TS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
-      WHERE FOUNDATION_SLUG = ?
-      ORDER BY PROJECT_NAME ASC
+        d.PROJECT_ID,
+        d.PROJECT_NAME,
+        d.PROJECT_SLUG,
+        d.LIFECYCLE_STAGE,
+        d.CONTRIBUTORS_90D_COUNT,
+        d.COMMITS_90D_COUNT,
+        d.MAINTAINERS_CURRENT_COUNT,
+        d.STARS_YTD_COUNT,
+        d.LAST_UPDATED_TS,
+        h.HEALTH_SCORE_CATEGORY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
+      LEFT JOIN (
+        SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
+        WHERE FOUNDATION_SLUG = ?
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY PROJECT_SLUG ORDER BY METRIC_DATE DESC) = 1
+      ) h ON d.PROJECT_SLUG = h.PROJECT_SLUG
+      WHERE d.FOUNDATION_SLUG = ?
+      ORDER BY d.PROJECT_NAME ASC
     `;
 
     try {
-      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug]);
+      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug, foundationSlug]);
 
       const projects = result.rows.map((row) => ({
         id: row.PROJECT_SLUG,
@@ -1714,6 +1736,9 @@ export class ProjectService {
         maintainers: row.MAINTAINERS_CURRENT_COUNT ?? 0,
         stars: row.STARS_YTD_COUNT ?? 0,
         lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
+        // Normalize the upstream capitalized category to our lowercase union; guard
+        // against unexpected strings so the interface's promise (FoundationHealthScore | null) holds.
+        healthScoreCategory: normalizeHealthScoreCategory(row.HEALTH_SCORE_CATEGORY),
       }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
@@ -2103,11 +2128,38 @@ export class ProjectService {
       const totalSessions = domainGroups.reduce((sum, g) => sum + g.totalSessions, 0);
       const totalPageViews = domainGroups.reduce((sum, g) => sum + g.totalPageViews, 0);
 
-      const dailyData = dailyResult.rows.map((row) => row.DAILY_SESSIONS ?? 0);
-      const dailyLabels = dailyResult.rows.map((row) => {
-        const date = new Date(row.ACTIVITY_DATE);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      });
+      // Zero-fill weekly buckets across the requested range: the query only
+      // groups weeks that HAVE rows, so a silent week would otherwise vanish
+      // and downstream trend math (e.g. the drawer's midpoint split) would
+      // compare observed weeks instead of the window's calendar halves. The
+      // walk is anchored to the first returned bucket's weekday so keys match
+      // Snowflake's DATE_TRUNC('WEEK') alignment; an empty result stays empty
+      // to preserve the no-data signal.
+      const dailyData: number[] = [];
+      const dailyLabels: string[] = [];
+      const firstBucketIso = dailyResult.rows.length > 0 ? ProjectService.toIsoDate(dailyResult.rows[0].ACTIVITY_DATE) : null;
+      if (firstBucketIso) {
+        const weekRowsByStart = new Map(
+          dailyResult.rows.map((row) => [(ProjectService.toIsoDate(row.ACTIVITY_DATE) ?? '').slice(0, 10), row.DAILY_SESSIONS ?? 0])
+        );
+        const firstBucket = new Date(`${firstBucketIso.slice(0, 10)}T00:00:00Z`);
+        const weekCursor = new Date(`${resolved.startDate}T00:00:00Z`);
+        weekCursor.setUTCDate(weekCursor.getUTCDate() - ((weekCursor.getUTCDay() - firstBucket.getUTCDay() + 7) % 7));
+        const weekFillEnd = new Date(`${resolved.endDate}T00:00:00Z`);
+        while (weekCursor < weekFillEnd) {
+          const key = weekCursor.toISOString().slice(0, 10);
+          dailyData.push(weekRowsByStart.get(key) ?? 0);
+          dailyLabels.push(weekCursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+          weekCursor.setUTCDate(weekCursor.getUTCDate() + 7);
+        }
+      } else if (dailyResult.rows.length > 0) {
+        // Unparseable bucket dates — fall back to direct row mapping rather
+        // than walking NaN-anchored week cursors and breaking the response.
+        for (const row of dailyResult.rows) {
+          dailyData.push(row.DAILY_SESSIONS ?? 0);
+          dailyLabels.push(new Date(row.ACTIVITY_DATE).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+        }
+      }
 
       return { totalSessions, totalPageViews, domainGroups, dailyData, dailyLabels };
     } catch (error) {
@@ -2262,8 +2314,24 @@ export class ProjectService {
       // Note: Snowflake values are already percentages (e.g., 2.32 = 2.32%), no conversion needed
       const summaryRow = summaryResult.rows[0];
 
+      // Zero-fill the monthly rows across the query window (trendStartDate →
+      // endDate): EMAIL_CTR_BY_MONTH emits only months that had sends, so gaps
+      // would let every downstream series (CTR, sends, opens) and any MoM
+      // comparison span non-consecutive months. A month with no sends genuinely
+      // had 0 sends and 0 opens.
+      const emailMonthKey = (d: Date): string => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const emailRowsByMonth = new Map(monthlyResult.rows.map((row) => [(ProjectService.toIsoDate(row.PUBLISHED_MONTH_DATE) ?? '').slice(0, 7), row]));
+      const monthlyRows: typeof monthlyResult.rows = [];
+      const emailCursor = new Date(`${this.trendStartDate(resolved)}T00:00:00Z`);
+      const emailFillEnd = new Date(`${resolved.endDate}T00:00:00Z`);
+      while (emailCursor < emailFillEnd) {
+        const key = emailMonthKey(emailCursor);
+        monthlyRows.push(emailRowsByMonth.get(key) ?? { PUBLISHED_MONTH: key, PUBLISHED_MONTH_DATE: `${key}-01`, TOTAL_SENDS: 0, TOTAL_OPENS: 0 });
+        emailCursor.setUTCMonth(emailCursor.getUTCMonth() + 1);
+      }
+
       // Compute unrounded CTR from raw sends/opens for MoM precision
-      const rawMonthlyCtrs = monthlyResult.rows.map((row) => {
+      const rawMonthlyCtrs = monthlyRows.map((row) => {
         const sends = row.TOTAL_SENDS ?? 0;
         const opens = row.TOTAL_OPENS ?? 0;
         return sends > 0 ? (opens * 100) / sends : 0;
@@ -2271,11 +2339,14 @@ export class ProjectService {
       const monthlyData = rawMonthlyCtrs.map((v) => Math.round(v * 10) / 10);
 
       const summaryCtr = summaryRow ? Math.round((summaryRow.CTR_LAST_COMPLETED_MONTH ?? 0) * 10) / 10 : 0;
-      const periodRows = monthlyResult.rows.filter((row) => (ProjectService.toIsoDate(row.PUBLISHED_MONTH_DATE) ?? '') >= resolved.startDate);
+      const periodRows = monthlyRows.filter((row) => (ProjectService.toIsoDate(row.PUBLISHED_MONTH_DATE) ?? '') >= resolved.startDate);
       const periodSends = periodRows.reduce((sum, row) => sum + (row.TOTAL_SENDS ?? 0), 0);
       const periodOpens = periodRows.reduce((sum, row) => sum + (row.TOTAL_OPENS ?? 0), 0);
       const periodCtr = periodSends > 0 ? Math.round(((periodOpens * 100) / periodSends) * 10) / 10 : 0;
-      const currentCtr = periodRows.length > 0 ? periodCtr : summaryCtr;
+      // Fall back to summaryCtr when the period had no sends — zero-filling
+      // makes periodRows always non-empty, so row count no longer signals
+      // whether the monthly view actually had data.
+      const currentCtr = periodSends > 0 ? periodCtr : summaryCtr;
 
       let changePercentage = 0;
       if (monthlyData.length >= 2 && currentCtr > 0) {
@@ -2287,18 +2358,33 @@ export class ProjectService {
 
       let momChangePercentage: number | null = null;
       if (rawMonthlyCtrs.length >= 2) {
+        // Only claim MoM when the last two rows are ADJACENT calendar months —
+        // the series has no rows for months without sends, so the tail can
+        // otherwise span a gap and compare non-consecutive months.
+        const monthOrdinal = (iso: string | null): number | null => {
+          if (!iso) return null;
+          const [year, month] = iso.split('-').map(Number);
+          return year * 12 + month;
+        };
+        const lastOrd = monthOrdinal(ProjectService.toIsoDate(monthlyRows[monthlyRows.length - 1].PUBLISHED_MONTH_DATE));
+        const priorOrd = monthOrdinal(ProjectService.toIsoDate(monthlyRows[monthlyRows.length - 2].PUBLISHED_MONTH_DATE));
+        const adjacent = lastOrd !== null && priorOrd !== null && lastOrd - priorOrd === 1;
+        // Both months must have SENDS: with zero-filled rows, a trailing
+        // no-send month has CTR 0 by construction — CTR is undefined without
+        // sends, and reporting it as a "-100% MoM" drop would be noise.
+        const lastHasSends = (monthlyRows[monthlyRows.length - 1].TOTAL_SENDS ?? 0) > 0;
         const current = rawMonthlyCtrs[rawMonthlyCtrs.length - 1];
         const prior = rawMonthlyCtrs[rawMonthlyCtrs.length - 2];
-        if (prior > 0) {
+        if (adjacent && lastHasSends && prior > 0) {
           momChangePercentage = ((current - prior) / prior) * 100;
         }
       }
 
-      const monthlySends = monthlyResult.rows.map((row) => row.TOTAL_SENDS ?? 0);
-      const monthlyOpens = monthlyResult.rows.map((row) => row.TOTAL_OPENS ?? 0);
-      const monthlyLabels = monthlyResult.rows.map((row) => {
+      const monthlySends = monthlyRows.map((row) => row.TOTAL_SENDS ?? 0);
+      const monthlyOpens = monthlyRows.map((row) => row.TOTAL_OPENS ?? 0);
+      const monthlyLabels = monthlyRows.map((row) => {
         const date = new Date(row.PUBLISHED_MONTH_DATE);
-        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
       });
 
       const campaignGroups = campaignResult.rows.map((row) => ({
@@ -2484,7 +2570,7 @@ export class ProjectService {
 
       // Block 4: Monthly impressions (bar chart, period range)
       const monthlyImpressionsQuery = `
-      SELECT CAMPAIGN_MONTH, SUM(IMPRESSIONS) AS IMPRESSIONS
+      SELECT CAMPAIGN_MONTH, SUM(IMPRESSIONS) AS IMPRESSIONS, SUM(SPEND) AS SPEND
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= TO_DATE(?)
         AND CAMPAIGN_MONTH < TO_DATE(?)
@@ -2558,7 +2644,7 @@ export class ProjectService {
           ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [
+        this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number; SPEND: number }>(monthlyImpressionsQuery, [
           this.trendStartDate(resolved),
           resolved.endDate,
           ...foundationParams,
@@ -2647,29 +2733,47 @@ export class ProjectService {
       const roas = periodRoas;
       const roasMomPct = previousRoas > 0 ? ((currentRoas - previousRoas) / previousRoas) * 100 : 0;
 
-      if (monthlyImpressionsResult.rows.length === 0) {
-        return {
-          totalReach,
-          roas: Math.round(roas * 100) / 100,
-          totalSpend,
-          totalRevenue,
-          changePercentage: Math.round(roasMomPct * 10) / 10,
-          trend: roasMomPct >= 0 ? 'up' : 'down',
-          monthlyData: [],
-          monthlyLabels: [],
-          monthlyRoas: [],
-          channelGroups: [],
-          projectBreakdown: [],
-          platformBreakdown: [],
-        };
-      }
+      // NOTE: no early return on an empty month set — a valid period with zero
+      // paid rows still gets a zero-filled series below, so consumers always
+      // receive calendar-complete arrays for the requested window.
 
-      const monthlyData = monthlyImpressionsResult.rows.map((row) => row.IMPRESSIONS ?? 0);
-      const monthlyRoas = monthlyRoasResult.rows.map((row) => Math.round((row.ROAS ?? 0) * 100) / 100);
-      const monthlyLabels = monthlyImpressionsResult.rows.map((row) => {
-        const date = new Date(row.CAMPAIGN_MONTH);
-        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      });
+      // Zero-fill the monthly series across the whole requested period: the
+      // queries emit only months that have campaign rows, so gaps would leave
+      // the series with non-consecutive months — chart bars would sit side by
+      // side across a hole, and client-side MoM (computeMomPct on monthlyData)
+      // would compare two non-adjacent months as if consecutive. A month with
+      // no campaigns genuinely had 0 impressions; ROAS fills as 0 for series
+      // alignment (labels are shared across both series).
+      const monthKey = (d: Date): string => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      // Row keys come from the CAMPAIGN_MONTH string prefix, not a Date
+      // round-trip — new Date() on a driver-provided value could carry a
+      // timezone shift and land the row one month off the fill loop's
+      // explicit-UTC keys.
+      const rowMonthKey = (value: string): string => {
+        const match = /^(\d{4}-\d{2})/.exec(String(value));
+        return match ? match[1] : monthKey(new Date(value));
+      };
+      const impressionsByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), row.IMPRESSIONS ?? 0]));
+      const spendByMonth = new Map(monthlyImpressionsResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), row.SPEND ?? 0]));
+      const roasByMonth = new Map(monthlyRoasResult.rows.map((row) => [rowMonthKey(row.CAMPAIGN_MONTH), Math.round((row.ROAS ?? 0) * 100) / 100]));
+      const monthlyData: number[] = [];
+      const monthlyRoas: number[] = [];
+      const monthlySpend: number[] = [];
+      const monthlyLabels: string[] = [];
+      // Walk from trendStartDate, not resolved.startDate — the monthly queries
+      // bind trendStartDate (one month earlier for single-month periods, to give
+      // the trend charts an MoM reference point), so the fill window must match
+      // the query window or that extra month's data would be silently dropped.
+      const monthCursor = new Date(`${this.trendStartDate(resolved)}T00:00:00Z`);
+      const periodEnd = new Date(`${resolved.endDate}T00:00:00Z`);
+      while (monthCursor < periodEnd) {
+        const key = monthKey(monthCursor);
+        monthlyData.push(impressionsByMonth.get(key) ?? 0);
+        monthlyRoas.push(roasByMonth.get(key) ?? 0);
+        monthlySpend.push(spendByMonth.get(key) ?? 0);
+        monthlyLabels.push(monthCursor.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }));
+        monthCursor.setUTCMonth(monthCursor.getUTCMonth() + 1);
+      }
 
       // Aggregate platform rows by CHANNEL for channelGroups and platformBreakdown
       const platformMap = new Map<
@@ -2851,6 +2955,7 @@ export class ProjectService {
         monthlyData,
         monthlyLabels,
         monthlyRoas,
+        monthlySpend,
         channelGroups,
         projectBreakdown,
         platformBreakdown,
@@ -3315,7 +3420,11 @@ export class ProjectService {
       const monthlyData = trendResult.rows.map((row) => {
         const date = new Date(row.SNAPSHOT_MONTH);
         return {
-          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          // timeZone: 'UTC' is load-bearing: the drawer parses this label back
+          // into a calendar ordinal for its streak-freshness check, and a
+          // non-UTC server would shift UTC-midnight month starts into the
+          // prior month's label.
+          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           totalFollowers: row.TOTAL_FOLLOWERS ?? 0,
         };
       });
@@ -4938,15 +5047,22 @@ export class ProjectService {
       const binds = isUmbrella ? [] : [foundationSlug];
 
       // Query 1: YTD summary — apples-to-apples comparison.
-      // Current year: Jan 1 → today.  Last year: Jan 1 → same month/day last year.
-      // This prevents mid-year YoY from comparing partial 2026 against full 2025.
+      // Current year: Jan 1 → today.  Last year: Jan 1 → approximately the same
+      // period last year (DATEADD year -1; the cutoff can differ by a day across
+      // a Feb 29 boundary). This prevents mid-year YoY from comparing partial
+      // 2026 against full 2025.
+      // Totals use NET_REVENUE_USD (not NET_REVENUE, which is in each event's
+      // LOCAL currency) — summing local amounts across events mixes currencies
+      // (INR + KRW + USD) into a meaningless number. NOTE: the FX basis of
+      // NET_REVENUE_USD (transaction-date vs snapshot rate) is owned by lf-dbt;
+      // if it is a snapshot rate, part of the YoY movement is currency drift.
       const summaryQuery = `
         SELECT
           YEAR(EVENT_START_DATE) AS EVENT_YEAR,
           COUNT(DISTINCT EVENT_ID) AS EVENT_COUNT,
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
-          SUM(COALESCE(NET_REVENUE, 0)) AS TOTAL_NET_REVENUE
+          SUM(COALESCE(NET_REVENUE_USD, 0)) AS TOTAL_NET_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE (
           (YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE) AND EVENT_START_DATE <= CURRENT_DATE)
@@ -4957,7 +5073,20 @@ export class ProjectService {
         GROUP BY YEAR(EVENT_START_DATE)
       `;
 
-      // Query 2: All events for the current year (past + upcoming), sorted by date
+      // Query 2: Current-year events (past + upcoming), sorted by date, CAPPED at
+      // EVENT_GROWTH_TOP_EVENTS_LIMIT rows — the TLF umbrella (no slug filter)
+      // returns every foundation's events and the drawer renders the list
+      // unvirtualized. The drawer discloses the cap when the list hits it; the
+      // YTD summary metrics above are computed independently and remain
+      // uncapped.
+      // Per-event revenue is shown in the event's LOCAL currency (NET_REVENUE),
+      // labeled via CURRENCY_CODE — but ONLY when the event's registrations carry
+      // exactly one distinct currency. Events are ASSUMED single-currency, not
+      // guaranteed: if rows mix currencies (regional pricing, USD sponsorships
+      // alongside local tickets) the local SUM would silently add mixed
+      // currencies, so the mapping below falls back to the USD-normalized figure
+      // for that event. The same fallback covers revenue with a NULL currency
+      // code, which cannot be labeled honestly with any local code.
       const topEventsQuery = `
         SELECT
           EVENT_ID,
@@ -4965,12 +5094,17 @@ export class ProjectService {
           EVENT_START_DATE,
           COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
           SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
-          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE
+          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE,
+          SUM(COALESCE(NET_REVENUE_USD, 0)) AS EVENT_REVENUE_USD,
+          MAX(CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 THEN CURRENCY_CODE END) AS CURRENCY_CODE,
+          COUNT(DISTINCT CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 THEN CURRENCY_CODE END) AS KNOWN_CODE_COUNT,
+          MAX(CASE WHEN COALESCE(NET_REVENUE, 0) <> 0 AND CURRENCY_CODE IS NULL THEN 1 ELSE 0 END) AS HAS_NULL_CODE
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE)
           ${slugFilter}
         GROUP BY EVENT_ID, EVENT_NAME, EVENT_START_DATE
         ORDER BY EVENT_START_DATE
+        LIMIT ${EVENT_GROWTH_TOP_EVENTS_LIMIT}
       `;
 
       // Query 3: Quarterly registration trend — bounded to the last 12 quarters (3 years)
@@ -5000,6 +5134,10 @@ export class ProjectService {
           REGISTRANT_COUNT: number;
           ATTENDEE_COUNT: number;
           EVENT_REVENUE: number;
+          EVENT_REVENUE_USD: number;
+          CURRENCY_CODE: string | null;
+          KNOWN_CODE_COUNT: number;
+          HAS_NULL_CODE: number;
         }>(topEventsQuery, binds),
         this.snowflakeService.execute<{
           QUARTER_START_DATE: string | Date;
@@ -5033,14 +5171,39 @@ export class ProjectService {
       const yoyRegistrantChange = pctChange(totalRegistrants, registrantsLastYtd);
       const yoyRevenueChange = pctChange(totalRevenue, revenueLastYtd);
 
-      const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => ({
-        id: String(row.EVENT_ID ?? ''),
-        name: row.EVENT_NAME ?? '',
-        date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
-        registrants: row.REGISTRANT_COUNT ?? 0,
-        attendees: row.ATTENDEE_COUNT ?? 0,
-        revenue: row.EVENT_REVENUE ?? 0,
-      }));
+      const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => {
+        // Local currency is only honest when the event's REVENUE-BEARING rows
+        // carry exactly one known code. Both aggregates are scoped to rows with
+        // nonzero NET_REVENUE; NULL-code presence is tracked as a separate flag
+        // rather than a string sentinel (a literal placeholder like '__NULL__'
+        // in upstream data could otherwise collide and under-count). So:
+        // no revenue rows at all = free event (local sum is 0, keep local);
+        // exactly one known code and no NULL-code revenue = single currency
+        // (keep local); anything else falls back to the USD-normalized amount
+        // rather than mislabeling the sum. Row-scoped counting (not the net
+        // sum) also catches charges and refunds that cancel to zero.
+        const knownCodeCount = row.KNOWN_CODE_COUNT ?? 0;
+        const hasNullCodeRevenue = (row.HAS_NULL_CODE ?? 0) === 1;
+        const hasRevenueRows = knownCodeCount > 0 || hasNullCodeRevenue;
+        const singleKnownCurrency = knownCodeCount === 1 && !hasNullCodeRevenue;
+        if (hasRevenueRows && !singleKnownCurrency) {
+          logger.warning(undefined, 'get_event_growth', 'Event revenue is multi-currency or missing a currency code; falling back to USD', {
+            event_id: String(row.EVENT_ID ?? ''),
+            known_code_count: knownCodeCount,
+            has_null_code_revenue: hasNullCodeRevenue,
+          });
+        }
+        const useLocal = singleKnownCurrency || !hasRevenueRows;
+        return {
+          id: String(row.EVENT_ID ?? ''),
+          name: row.EVENT_NAME ?? '',
+          date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
+          registrants: row.REGISTRANT_COUNT ?? 0,
+          attendees: row.ATTENDEE_COUNT ?? 0,
+          revenue: useLocal ? (row.EVENT_REVENUE ?? 0) : (row.EVENT_REVENUE_USD ?? 0),
+          currencyCode: useLocal ? (row.CURRENCY_CODE ?? 'USD') : 'USD',
+        };
+      });
 
       // Quarterly registration trend — stored as monthlyData for API compatibility
       const quarterlyData = quarterlyResult.rows.map((row) => {
@@ -5224,7 +5387,7 @@ export class ProjectService {
       totalMentions: 0,
       sentiment: { positive: 0, neutral: 0, negative: 0 },
       sentimentMomChangePp: 0,
-      mentionMomChangePct: 0,
+      mentionMomChangePct: null,
       trend: 'up',
       monthlyMentions: [],
       topProjects: [],
@@ -5377,12 +5540,27 @@ export class ProjectService {
       const sentimentMomChangePp = 0;
 
       // Mention volume MoM: compute from the two most recent months in trendResult.
-      // trendResult is ordered DESC, so [0] = latest, [1] = previous.
-      let mentionMomChangePct = 0;
+      // trendResult is ordered DESC, so [0] = latest, [1] = previous. The series
+      // only contains months with mention rows, so a genuine MoM additionally
+      // requires: (a) the two rows are ADJACENT calendar months, and (b) the
+      // newest row is the final month of the REQUESTED period (not a stale
+      // older pair). resolved.endDate is the exclusive first-of-next-month
+      // boundary, so the expected newest month is one ordinal below it —
+      // wall-clock "now" would permanently zero MoM for historical periods.
+      let mentionMomChangePct: number | null = null;
       if (trendResult.rows.length >= 2) {
+        const rowOrdinal = (value: string | Date): number => {
+          const date = new Date(value);
+          return date.getUTCFullYear() * 12 + date.getUTCMonth();
+        };
+        const periodEnd = new Date(resolved.endDate);
+        const expectedNewestOrdinal = periodEnd.getUTCFullYear() * 12 + periodEnd.getUTCMonth() - 1;
+        const newestOrdinal = rowOrdinal(trendResult.rows[0].MONTH_START_DATE);
+        const priorOrdinal = rowOrdinal(trendResult.rows[1].MONTH_START_DATE);
+        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= expectedNewestOrdinal;
         const current = trendResult.rows[0].MENTION_COUNT ?? 0;
         const previous = trendResult.rows[1].MENTION_COUNT ?? 0;
-        if (previous > 0) {
+        if (validPair && previous > 0) {
           mentionMomChangePct = Number((((current - previous) / previous) * 100).toFixed(2));
         }
       }
@@ -5390,7 +5568,9 @@ export class ProjectService {
       const monthlyMentions: NorthStarMonthlyDataPoint[] = [...trendResult.rows].reverse().map((row) => {
         const date = new Date(row.MONTH_START_DATE);
         return {
-          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          // Display-only today, but pinned to UTC to match the convention for
+          // month labels elsewhere (a non-UTC server would shift the label).
+          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           value: row.MENTION_COUNT ?? 0,
         };
       });
@@ -5417,7 +5597,7 @@ export class ProjectService {
         sentiment: { positive: positivePct, neutral: neutralPct, negative: negativePct },
         sentimentMomChangePp,
         mentionMomChangePct,
-        trend: mentionMomChangePct >= 0 ? 'up' : 'down',
+        trend: (mentionMomChangePct ?? 0) >= 0 ? 'up' : 'down',
         monthlyMentions,
         topProjects,
         topPositiveMentions: positiveMentionsResult.rows.map(mapMention),

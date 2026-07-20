@@ -5,6 +5,7 @@ import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
   AttachmentDownloadUrlResponse,
+  Committee,
   CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
@@ -48,7 +49,6 @@ import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
-import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -59,13 +59,11 @@ import { ProjectService } from './project.service';
 export class MeetingService {
   private accessCheckService: AccessCheckService;
   private microserviceProxy: MicroserviceProxyService;
-  private committeeService: CommitteeService;
   private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
-    this.committeeService = new CommitteeService();
     this.projectService = new ProjectService();
   }
 
@@ -1365,7 +1363,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
       'GET'
     );
   }
@@ -1379,8 +1377,101 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/attachments/${attachmentUid}/download`,
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}/download`,
       'GET'
+    );
+  }
+
+  /**
+   * Creates a new past meeting attachment (link or file record) via ITX proxy
+   */
+  public async createPastMeetingAttachment(
+    req: Request,
+    pastMeetingUid: string,
+    attachmentData: CreateMeetingAttachmentRequest
+  ): Promise<PastMeetingAttachment> {
+    logger.debug(req, 'create_past_meeting_attachment', 'Creating past meeting attachment', { past_meeting_id: pastMeetingUid, type: attachmentData.type });
+
+    return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments`,
+      'POST',
+      undefined,
+      attachmentData
+    );
+  }
+
+  /**
+   * Generates a presigned upload URL for a past meeting file attachment
+   */
+  public async presignPastMeetingAttachment(req: Request, pastMeetingUid: string, presignData: PresignAttachmentRequest): Promise<PresignAttachmentResponse> {
+    logger.debug(req, 'presign_past_meeting_attachment', 'Generating presigned upload URL', { past_meeting_id: pastMeetingUid, file_name: presignData.name });
+
+    return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/presign`,
+      'POST',
+      undefined,
+      presignData
+    );
+  }
+
+  /**
+   * Presigns a past meeting file attachment then uploads the binary directly to S3.
+   */
+  public async uploadPastMeetingAttachment(
+    req: Request,
+    pastMeetingUid: string,
+    fileBuffer: Buffer,
+    presignData: PresignAttachmentRequest
+  ): Promise<PresignAttachmentResponse> {
+    logger.debug(req, 'upload_past_meeting_attachment', 'Presigning attachment', { past_meeting_id: pastMeetingUid, file_name: presignData.name });
+
+    const presignResponse = await this.presignPastMeetingAttachment(req, pastMeetingUid, presignData);
+
+    logger.debug(req, 'upload_past_meeting_attachment', 'Uploading file to S3', {
+      past_meeting_id: pastMeetingUid,
+      attachment_uid: presignResponse.uid,
+      file_size: presignData.file_size,
+    });
+
+    const s3Response = await fetch(presignResponse.file_url, {
+      method: 'PUT',
+      body: new Uint8Array(fileBuffer),
+      headers: {
+        'Content-Type': presignData.file_type,
+        'Content-Length': String(presignData.file_size),
+      },
+      signal: AbortSignal.timeout(5 * 60 * 1000),
+    });
+
+    if (!s3Response.ok) {
+      const errorText = await s3Response.text().catch(() => '');
+      throw new Error(`S3 upload failed with status ${s3Response.status}: ${errorText}`);
+    }
+
+    logger.info(req, 'upload_past_meeting_attachment', 'File uploaded to S3 successfully', {
+      past_meeting_id: pastMeetingUid,
+      attachment_uid: presignResponse.uid,
+      file_name: presignData.name,
+    });
+
+    return presignResponse;
+  }
+
+  /**
+   * Deletes a past meeting attachment via ITX proxy
+   */
+  public async deletePastMeetingAttachment(req: Request, pastMeetingUid: string, attachmentUid: string): Promise<void> {
+    logger.debug(req, 'delete_past_meeting_attachment', 'Deleting past meeting attachment', { past_meeting_id: pastMeetingUid, attachment_uid: attachmentUid });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      'DELETE'
     );
   }
 
@@ -1441,22 +1532,47 @@ export class MeetingService {
       unique_committees: uniqueCommitteeUids.length,
     });
 
-    const results = await Promise.all(
-      uniqueCommitteeUids.map(async (uid) => {
-        try {
-          const committee = await this.committeeService.getCommitteeById(req, uid);
-          return { uid, name: committee.name };
-        } catch (error) {
-          logger.warning(req, 'get_meeting_committees', 'Committee enrichment failed; continuing without name', { committee_uid: uid, err: error });
-          return { uid, name: undefined };
-        }
-      })
+    const unique = uniqueCommitteeUids.filter(Boolean);
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
+    }
+
+    // Use Promise.allSettled so one transient batch failure doesn't wipe names resolved by other
+    // batches — mirrors the pattern in getCommitteesWithMailingList.
+    // In practice a project's displayed meetings touch ≤1 unique committee, so this is almost always
+    // a single concurrent request; batching guards only against pathological cardinality.
+    const results = await Promise.allSettled(
+      batches.map((batch) =>
+        fetchAllQueryResources<Committee>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
     );
 
     const nameMap = new Map<string, string>();
-    for (const { uid, name } of results) {
-      if (name) {
-        nameMap.set(uid, name);
+    for (const [i, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        for (const committee of result.value) {
+          if (committee?.uid && committee.name) {
+            nameMap.set(committee.uid, committee.name);
+          }
+        }
+      } else {
+        logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; affected meetings will have no committee name', {
+          batch_index: i,
+          batch_size: batches[i].length,
+          sample_uids: batches[i].slice(0, 3),
+          err: result.reason,
+        });
       }
     }
 

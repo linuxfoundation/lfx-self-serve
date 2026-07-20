@@ -1,0 +1,40 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="onContinue()" class="flex flex-col gap-4" data-testid="create-artifact-dialog">
+  <!-- Header: neutral type icon + "Create <Type>" + description -->
+  <div class="flex items-start gap-3" data-testid="create-artifact-summary">
+    <div class="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center bg-gray-100 text-gray-500">
+      <i [class]="artifact.icon + ' text-xl'"></i>
+    </div>
+    <div class="flex flex-col">
+      <h2 id="create-artifact-heading" class="text-lg font-semibold text-gray-900">{{ createLabel }}</h2>
+      <p class="text-xs text-gray-500">{{ artifact.description }}</p>
+    </div>
+  </div>
+
+  <!-- Foundation / project — reuses the sidebar project-selector (search + All/Foundations/Projects tabs,
+       logos, role badges). Fed the writer-scoped `selectorItems` via the curated `items` input so the list
+       is only projects the user holds `writer` on, not the view-scoped nav catalog. -->
+  <div class="flex flex-col gap-1">
+    <label class="text-sm text-gray-900">
+      Select Foundation/Project
+      <span class="text-red-500">*</span>
+    </label>
+    <lfx-project-selector
+      [lens]="'project'"
+      [hybridMode]="true"
+      [items]="selectorItems()"
+      [selectedProject]="selectedContext()"
+      searchPlaceholder="Search foundations and projects..."
+      emptyMessage="No foundations or projects available"
+      (itemSelected)="onItemSelected($event)"
+      data-testid="create-artifact-project-select" />
+  </div>
+
+  <!-- Actions -->
+  <div class="flex justify-end gap-3" data-testid="create-artifact-modal-actions">
+    <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" type="button" (onClick)="cancel()" data-testid="create-artifact-cancel-button" />
+    <lfx-button [label]="createLabel" [disabled]="form.invalid" size="small" type="submit" data-testid="create-artifact-continue-button" />
+  </div>
+</form>

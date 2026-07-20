@@ -112,7 +112,7 @@
                     <i class="fa-light fa-calendar text-xl"></i>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    @if (fpStatsLoading()) {
+                    @if (fpUpcomingCountLoading()) {
                       <p class="text-xl font-medium text-gray-400">&mdash;</p>
                     } @else {
                       <p class="text-xl font-medium text-gray-900">{{ fpUpcomingCount() }}</p>
@@ -139,7 +139,7 @@
                     <i class="fa-light fa-clock-rotate-left text-xl"></i>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    @if (fpStatsLoading()) {
+                    @if (fpPastCountLoading()) {
                       <p class="text-xl font-medium text-gray-400">&mdash;</p>
                     } @else {
                       <p class="text-xl font-medium text-gray-900">{{ fpPastCount() }}</p>

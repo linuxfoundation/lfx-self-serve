@@ -258,11 +258,9 @@
               <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
                 <td>
                   <a
-                    [href]="project.insightsUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    [routerLink]="['/org/projects', project.slug]"
                     class="flex items-center gap-2 text-left"
-                    [attr.aria-label]="'Open ' + project.name + ' in LFX Insights'">
+                    [attr.aria-label]="'View ' + project.name + ' project detail'">
                     <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
                     <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
                   </a>
