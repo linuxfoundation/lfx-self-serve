@@ -10,8 +10,9 @@
   aria-label="Profile summary"
   data-testid="profile-panel">
   @if (loading()) {
-    <div class="flex items-center justify-center py-8">
-      <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400"></i>
+    <div class="flex items-center justify-center py-8" role="status" aria-live="polite">
+      <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400" aria-hidden="true"></i>
+      <span class="sr-only">Loading profile summary</span>
     </div>
   } @else {
     <!-- Avatar + edit-pencil badge (rounded, not circle) -->
@@ -42,7 +43,7 @@
     </div>
 
     <!-- Name + handle -->
-    <h2 class="text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</h2>
+    <p class="text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
     @if (username()) {
       <p class="mb-4 text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
     }
