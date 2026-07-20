@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { inject, Injectable, PLATFORM_ID, SecurityContext } from '@angular/core';
+import { DomSanitizer } from '@angular/platform-browser';
 import { NewsletterBlock } from '@lfx-one/shared/interfaces';
 import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
 
@@ -24,8 +25,12 @@ import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
  * being rendered is the AUTHENTICATED author's OWN newsletter (the same trust
  * boundary the repo already documents for `body_html` / email chrome — "no
  * sanitizer, trust boundary = UI"). The template tags are additionally
- * constrained by the allowlist below, so the only HTML that can ever be emitted
- * is the inert subset the renderer maps to.
+ * constrained by the allowlist below. The one arbitrary-HTML field — `richtext`
+ * — is run through Angular's HTML sanitizer before it is emitted: a draft's
+ * `body_layout` is server-loaded and shared across a project's privileged
+ * personas (ED / Admin), so an unsanitized richtext field would be a stored
+ * cross-user XSS vector, not merely self-XSS. With that path sanitized, the
+ * emitted HTML stays the inert subset the renderer maps to.
  *
  * SSR-safe: parsing uses `DOMParser`, a browser-only API. Nothing here touches
  * the DOM at module load; the public `render*` methods early-return an empty
@@ -34,6 +39,7 @@ import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
 @Injectable({ providedIn: 'root' })
 export class NewsletterRendererService {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly sanitizer = inject(DomSanitizer);
 
   /**
    * Render a single block: parse its template, bind its content, and recurse
@@ -200,7 +206,9 @@ export class NewsletterRendererService {
       if (name === 'body' && ctx.bodySlot !== undefined) {
         return ctx.bodySlot;
       }
-      return ctx.children.map((child) => this.renderBlock(ctx.templateOf?.(child.block_type), child.content, child.blocks ?? [], ctx.templateOf, ctx.editMode)).join('');
+      return ctx.children
+        .map((child) => this.renderBlock(ctx.templateOf?.(child.block_type), child.content, child.blocks ?? [], ctx.templateOf, ctx.editMode))
+        .join('');
     }
 
     // Rich text: emit the bound field's raw HTML (author's own content). Tag the
@@ -209,7 +217,11 @@ export class NewsletterRendererService {
     if (tag === 'richtext') {
       const field = selfEdit?.field;
       const value = field ? getPath(ctx.content, field) : undefined;
-      const html = value == null ? '' : String(value);
+      // Sanitize before the value joins the trusted string (the assembled render
+      // is bypassSecurityTrustHtml'd in the canvas). Angular's HTML sanitizer
+      // strips scripts, event handlers, and javascript: URLs while keeping the
+      // inert formatting a richtext field legitimately carries.
+      const html = value == null ? '' : (this.sanitizer.sanitize(SecurityContext.HTML, String(value)) ?? '');
       const placeholder = field && ctx.editMode && isBlank(value) ? humanizeFieldKey(field) : undefined;
       const editable = field ? editableAttrs(markerFor(ctx, field), true, placeholder) : '';
       const open = openTag('div', mergedStyle(attrs), classList(attrs), editable);

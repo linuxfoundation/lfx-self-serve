@@ -3,13 +3,33 @@
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { isPlatformBrowser } from '@angular/common';
-import { afterRenderEffect, Component, computed, ElementRef, inject, input, OnInit, output, PLATFORM_ID, signal, Signal, untracked, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  input,
+  OnInit,
+  output,
+  PLATFORM_ID,
+  signal,
+  Signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
+import {
+  NEWSLETTER_DEFAULT_TEMPLATE_KEY,
+  NEWSLETTER_SPACING_DEFAULT,
+  NEWSLETTER_SPACING_MARGIN_KEY,
+  NEWSLETTER_SPACING_PADDING_KEY,
+} from '@lfx-one/shared/constants';
 import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
@@ -70,6 +90,7 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
 })
 export class NewsletterBlockComposerComponent implements OnInit {
   // === Services ===
+  private readonly destroyRef = inject(DestroyRef);
   private readonly manifestService = inject(NewsletterManifestService);
   private readonly renderer = inject(NewsletterRendererService);
   private readonly sanitizer = inject(DomSanitizer);
@@ -176,6 +197,22 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // container — so listing the canvas first would swallow drops meant for a
   // container. Inner-first lets a drop onto a container's nest zone win.
   protected readonly paletteConnectedTo: Signal<string[]> = computed(() => [...this.containerListIds(), this.canvasListId]);
+  // Per-container drop-list wiring (own id + connected-to lists), keyed by
+  // container block id — precomputed so the template reads a map instead of
+  // calling a function that allocated a fresh connected-to array (feeding a CDK
+  // input) on every change-detection pass. Order mirrors the old
+  // `containerConnectedTo`: every OTHER container first, then the canvas (CDK
+  // first-match by rect; canvas-last is the outside-every-container fallback).
+  protected readonly containerDropLists: Signal<Map<string, { listId: string; connectedTo: string[] }>> = computed(() => {
+    const ids = this.containerListIds();
+    const map = new Map<string, { listId: string; connectedTo: string[] }>();
+    for (const block of this.blocks()) {
+      if (!block.isContainer) continue;
+      const listId = this.containerListId(block.id);
+      map.set(block.id, { listId, connectedTo: [...ids.filter((id) => id !== listId), this.canvasListId] });
+    }
+    return map;
+  });
   // The selected block resolved from its id (searches top-level + children).
   protected readonly selectedBlock: Signal<NewsletterComposerBlock | null> = computed(() => {
     const id = this.selectedBlockId();
@@ -256,8 +293,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // Browser-only: fetch the palette manifest for the active library and the
     // catalog of libraries for the picker.
     if (isPlatformBrowser(this.platformId)) {
-      this.manifestService.ensureLoaded(activeKey).subscribe();
-      this.manifestService.loadTemplates().subscribe();
+      this.manifestService.ensureLoaded(activeKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+      this.manifestService.loadTemplates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
     }
   }
 
@@ -328,22 +365,25 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // Load the new library's manifest, then retain the blocks IT supports (use
     // the emitted manifest, not the shared signal, so a failed load can't filter
     // the canvas against the stale previous library and orphan blocks).
-    this.manifestService.ensureLoaded(key).subscribe((manifest) => {
-      if (!manifest) {
-        // The new library's manifest failed to load — keep the current library
-        // rather than switching to one we can't validate blocks against. Revert
-        // the picker and tell the author; nothing is emitted.
-        this.libraryForm.controls.library.setValue(current, { emitEvent: false });
-        window.alert('Could not load that template. Please try again.');
-        return;
-      }
-      this.selectedTemplateKey.set(key);
-      const dropped = this.retainSupportedBlocks(manifest);
-      if (dropped > 0) {
-        window.alert(`Removed ${dropped} block${dropped === 1 ? '' : 's'} not available in this template; the rest carried over.`);
-      }
-      this.emit();
-    });
+    this.manifestService
+      .ensureLoaded(key)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((manifest) => {
+        if (!manifest) {
+          // The new library's manifest failed to load — keep the current library
+          // rather than switching to one we can't validate blocks against. Revert
+          // the picker and tell the author; nothing is emitted.
+          this.libraryForm.controls.library.setValue(current, { emitEvent: false });
+          window.alert('Could not load that template. Please try again.');
+          return;
+        }
+        this.selectedTemplateKey.set(key);
+        const dropped = this.retainSupportedBlocks(manifest);
+        if (dropped > 0) {
+          window.alert(`Removed ${dropped} block${dropped === 1 ? '' : 's'} not available in this template; the rest carried over.`);
+        }
+        this.emit();
+      });
   }
 
   /**
@@ -357,11 +397,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
     moveItemInArray(next, event.previousIndex, event.currentIndex);
     this.blocks.set(next);
     this.emit();
-  }
-
-  /** True when the given rail tab is the active one. */
-  protected isActiveTab(tab: NewsletterComposerTab): boolean {
-    return this.activeTab() === tab;
   }
 
   /** Constrain the preview to a desktop or mobile email width. */
@@ -378,16 +413,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Toggle the read-only HTML-source view of the rendered email. */
   protected toggleSource(): void {
     this.showSource.update((on) => !on);
-  }
-
-  /**
-   * The outer-spacing inline style for a canvas block, from its reserved
-   * `_spacing_padding` / `_spacing_margin` content keys. Empty when both are
-   * default — matching gatewaze, which skips the spacing wrapper at `0px`.
-   */
-  /** True when the given block id is the selected one (for highlighting). */
-  protected isSelected(id: string): boolean {
-    return this.selectedBlockId() === id;
   }
 
   /**
@@ -600,17 +625,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /** Stable CDK drop-list id for a container block's nested list. */
   protected containerListId(blockId: string): string {
     return `newsletter-composer-container-${blockId}`;
-  }
-
-  /**
-   * Lists a container connects to: every OTHER container, then the canvas.
-   * Containers come first so a drag from this container onto a sibling container
-   * lands there (CDK first-match by rect); the canvas rect contains them all, so
-   * canvas-last is the fallback for a drop outside every container.
-   */
-  protected containerConnectedTo(blockId: string): string[] {
-    const ownId = this.containerListId(blockId);
-    return [...this.containerListIds().filter((id) => id !== ownId), this.canvasListId];
   }
 
   // === Private Initializers ===

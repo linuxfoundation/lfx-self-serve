@@ -77,12 +77,13 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   private suppressEmit = false;
 
   public constructor() {
-    // Deliberate `effect()` (vs the usual toObservable→toSignal): this orchestrates
-    // a reactive FormGroup imperatively — rebuilding on block-id change and
-    // patching controls in place on external content change — which needs direct,
-    // ordered control of `FormGroup`/`FormArray` mutation (and the Tiptap binding)
-    // that a derived signal can't express. Rebuild the form when the selected
-    // block changes (by id); patch in place when only its content changed.
+    // SANCTIONED EXCEPTION to the frontend-checklist "no effect()" rule (§5):
+    // this orchestrates a reactive FormGroup imperatively — rebuilding on
+    // block-id change and patching controls in place on external content change —
+    // which needs direct, ordered control of `FormGroup`/`FormArray` mutation
+    // (and the Tiptap binding) that a derived toObservable→toSignal pipe can't
+    // express. Rebuild the form when the selected block changes (by id); patch in
+    // place when only its content changed.
     effect(() => {
       const block = this.block();
       const entries = this.fieldEntries();

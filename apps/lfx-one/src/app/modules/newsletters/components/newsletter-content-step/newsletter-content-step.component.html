@@ -5,11 +5,17 @@
   <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
     <div>
       <h2 class="text-base font-semibold text-gray-900">Write your newsletter</h2>
-      <p class="mt-1 text-sm text-gray-500">Add a subject line, then build the body — with content blocks, or as a simple written body you can generate with AI.</p>
+      <p class="mt-1 text-sm text-gray-500">
+        Add a subject line, then build the body — with content blocks, or as a simple written body you can generate with AI.
+      </p>
     </div>
 
     <!-- Editor toggle: block composer vs. the simple rich-text + AI editor. -->
-    <div class="flex shrink-0 overflow-hidden rounded-md border border-gray-200" role="group" aria-label="Body editor" data-testid="newsletter-content-editor-toggle">
+    <div
+      class="flex shrink-0 overflow-hidden rounded-md border border-gray-200"
+      role="group"
+      aria-label="Body editor"
+      data-testid="newsletter-content-editor-toggle">
       <button
         type="button"
         class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"

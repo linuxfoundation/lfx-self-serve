@@ -347,7 +347,8 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     // carry body_layout with both blocks — this is the Phase 1 persistence contract.
     const [request] = await Promise.all([
       page.waitForRequest(
-        (req) => req.method() === 'PUT' && req.url().includes(`/newsletters/${MOCK_NEWSLETTER_ID}`) && JSON.stringify(req.postDataJSON()).includes('sponsored_ad'),
+        (req) =>
+          req.method() === 'PUT' && req.url().includes(`/newsletters/${MOCK_NEWSLETTER_ID}`) && JSON.stringify(req.postDataJSON()).includes('sponsored_ad'),
         { timeout: ELEMENT_TIMEOUT }
       ),
       page.getByTestId('newsletter-manage-draft-btn').click(),

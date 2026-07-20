@@ -30,7 +30,14 @@ import { NewsletterGenerateDrawerComponent } from '../newsletter-generate-drawer
  */
 @Component({
   selector: 'lfx-newsletter-content-step',
-  imports: [ReactiveFormsModule, InputTextComponent, RichEditorComponent, NewsletterBlockComposerComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
+  imports: [
+    ReactiveFormsModule,
+    InputTextComponent,
+    RichEditorComponent,
+    NewsletterBlockComposerComponent,
+    NewsletterGenerateDrawerComponent,
+    ConfirmDialogModule,
+  ],
   templateUrl: './newsletter-content-step.component.html',
 })
 export class NewsletterContentStepComponent implements OnInit {
