@@ -945,8 +945,8 @@ export class OrgProjectsComponent {
   }
 
   private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
-    const aUnavailable = a === 'unavailable';
-    const bUnavailable = b === 'unavailable';
+    const aUnavailable = this.normalizeHealth(a) === 'unavailable';
+    const bUnavailable = this.normalizeHealth(b) === 'unavailable';
     if (aUnavailable === bUnavailable) {
       return 0;
     }
@@ -954,7 +954,7 @@ export class OrgProjectsComponent {
   }
 
   private healthRank(health: OrgLensProject['health']): number {
-    switch (health) {
+    switch (this.normalizeHealth(health)) {
       case 'excellent':
         return 5;
       case 'healthy':
