@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKS_CONFIG } from '../constants/links.config';
+import type { HealthScore } from '../interfaces';
 
 /**
  * Builds an LFX Insights URL from an optional path and query params.
@@ -51,6 +52,29 @@ export function buildLensAwareInsightsUrl(
   }
   const path = opts.projectSubPath ? `/project/${slug}/${opts.projectSubPath}` : `/project/${slug}`;
   return buildInsightsUrl(path, opts.projectParams);
+}
+
+/**
+ * Classifies an LFX Insights project health score (0–100) into a band, matching the Insights
+ * primary project Health Score component (`health-score.vue`): `>= 80` Excellent, `>= 60` Healthy,
+ * `>= 40` Stable, `>= 20` Unsteady, else Critical. The `unavailable` state (no score) is handled by
+ * callers, so this returns only the five scored bands and is the single source both the Org Lens
+ * Projects table and the project-detail hero classify through (they must never disagree).
+ */
+export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
+  if (score >= 80) {
+    return 'excellent';
+  }
+  if (score >= 60) {
+    return 'healthy';
+  }
+  if (score >= 40) {
+    return 'stable';
+  }
+  if (score >= 20) {
+    return 'unsteady';
+  }
+  return 'critical';
 }
 
 function encodePathSegments(path: string): string {

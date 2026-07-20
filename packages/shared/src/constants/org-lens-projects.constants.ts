@@ -9,7 +9,6 @@ import type {
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
   SortDirection,
-  TagSeverity,
 } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
@@ -86,20 +85,23 @@ export const INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT: Record<InfluenceBand, string> 
   'non-lf': 'fill-gray-200',
 };
 
-/** Display labels for health scores. */
+/** Display labels for health scores (5 Insights bands + Unavailable). */
 export const HEALTH_SCORE_LABELS: Record<HealthScore, string> = {
   excellent: 'Excellent',
   healthy: 'Healthy',
-  'at-risk': 'At Risk',
+  stable: 'Stable',
+  unsteady: 'Unsteady',
+  critical: 'Critical',
   unavailable: 'Unavailable',
 };
 
-/** Tag/badge severity per health score (drives health-badge color). */
-export const HEALTH_SCORE_SEVERITY: Record<HealthScore, TagSeverity> = {
-  excellent: 'success',
-  healthy: 'info',
-  'at-risk': 'danger',
-  unavailable: 'secondary',
+export const HEALTH_SCORE_BADGE: Record<HealthScore, { bg: string; text: string }> = {
+  excellent: { bg: lfxColors.emerald[100], text: lfxColors.emerald[700] },
+  healthy: { bg: lfxColors.blue[100], text: lfxColors.blue[700] },
+  stable: { bg: lfxColors.violet[100], text: lfxColors.violet[700] },
+  unsteady: { bg: lfxColors.amber[100], text: lfxColors.amber[700] },
+  critical: { bg: lfxColors.red[100], text: lfxColors.red[700] },
+  unavailable: { bg: lfxColors.gray[100], text: lfxColors.gray[600] },
 };
 
 /** Projects-table page sizes; 25 is the default. */
