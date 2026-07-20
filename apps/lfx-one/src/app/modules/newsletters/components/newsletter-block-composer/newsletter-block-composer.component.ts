@@ -1004,7 +1004,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
       }
       return block;
     });
-    if (changed) this.blocks.set(next);
+    if (changed) {
+      this.blocks.set(next);
+      // Sync the emitted layout with the reconciled canvas so the parent form
+      // doesn't keep the pre-reconcile representation. With empty-container blocks
+      // omitted (see toLayoutBlock), the emitted layout equals the seed, so this
+      // does not mark the draft dirty.
+      this.emit();
+    }
   }
 
   /** Rehydrate a persisted layout block (and its children) into a canvas block. */
@@ -1269,7 +1276,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
       block_type: block.block_type,
       content: block.content,
     };
-    if (block.isContainer && block.children) {
+    // Emit `blocks` only for a NON-EMPTY container: an empty container serializes
+    // identically to a leaf (block_type + content), matching the service's
+    // omitempty round-trip. This keeps a reconciled empty container's emitted
+    // layout equal to what was saved, so reconcileContainers' emit() doesn't
+    // spuriously mark the draft dirty.
+    if (block.isContainer && block.children && block.children.length > 0) {
       layoutBlock.blocks = block.children.map((child) => this.toLayoutBlock(child));
     }
     return layoutBlock;

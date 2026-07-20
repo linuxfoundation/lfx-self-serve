@@ -185,7 +185,12 @@ export class NewsletterManageComponent {
   // render → require a clean snapshot. Simple mode: body_html is authored live in
   // the form (and both the preview drawer and test-send read that control
   // directly), so it's usable immediately without waiting for autosave.
-  private readonly isBlocksMode = computed(() => (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0);
+  // Keyed on layout PRESENCE, not block count: a present layout (even after every
+  // block is removed, leaving an empty blocks array) is still blocks mode, where
+  // body_html is server-derived and must be re-synced. Simple mode sets the
+  // layout to null. Keying on block count would wrongly treat a just-emptied
+  // blocks draft as simple and skip the dirty check, showing stale preview HTML.
+  private readonly isBlocksMode = computed(() => this.bodyLayoutValue() !== null);
   private readonly bodyUsable = computed(() => this.bodyRendered() && (!this.isBlocksMode() || !this.isDirty()));
   public readonly canPreview = computed(() => this.bodyUsable());
   public readonly canSend = computed(
