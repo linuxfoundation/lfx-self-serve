@@ -19,7 +19,7 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, classifyHealthScore } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
@@ -1140,8 +1140,7 @@ export class OrgLensProjectDetailService {
 
   private mapHealth(score: number | null): OrgLensProjectHealth | null {
     if (score === null || score === undefined) return null;
-    if (score >= 80) return 'excellent';
-    return score >= 60 ? 'healthy' : 'at-risk';
+    return classifyHealthScore(score);
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {

@@ -936,16 +936,20 @@ export class OrgProjectsComponent {
   }
 
   private healthRank(health: OrgLensProject['health']): number {
-    if (health === 'excellent') {
-      return 2;
+    switch (health) {
+      case 'excellent':
+        return 5;
+      case 'healthy':
+        return 4;
+      case 'stable':
+        return 3;
+      case 'unsteady':
+        return 2;
+      case 'critical':
+        return 1;
+      default:
+        return 0;
     }
-    if (health === 'healthy') {
-      return 1;
-    }
-    if (health === 'at-risk') {
-      return 0;
-    }
-    return -1;
   }
 
   private buildRowMenu(project: OrgLensProject): MenuItem[] {
