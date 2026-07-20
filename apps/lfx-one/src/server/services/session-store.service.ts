@@ -79,7 +79,12 @@ export class SessionStoreService {
     if (key === null) {
       return null;
     }
-    return valkeyService.getJson<SessionStorePayload>(key, SessionStoreService.isSessionPayload);
+    // Authoritative session read — must use the same widened budget as the write path
+    // (VALKEY_CACHE.SESSION_OP_TIMEOUT_MS) rather than the cache's default OP_TIMEOUT_MS (250ms).
+    // Otherwise a cold pod's first get() can time out well before the TLS handshake completes,
+    // reading back a false "session missing" and forcing re-login even though the same connection
+    // would have succeeded within the budget the write path already gets.
+    return valkeyService.getJson<SessionStorePayload>(key, SessionStoreService.isSessionPayload, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
   }
 
   private async setAsync(sid: string, session: SessionStorePayload): Promise<void> {
