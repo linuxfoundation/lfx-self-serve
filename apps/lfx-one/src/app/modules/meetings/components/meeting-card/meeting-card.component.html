@@ -162,7 +162,7 @@
                   </span>
                 }
               </div>
-              @if (meeting().organizer && !pastMeeting()) {
+              @if (meeting().organizer) {
                 <button
                   type="button"
                   (click)="openMaterialsDrawer(); $event.stopPropagation()"
@@ -463,8 +463,13 @@
     }
 
     <!-- Meeting Materials Drawer -->
-    @if (meeting().organizer && !pastMeeting()) {
-      <lfx-meeting-materials-drawer [(visible)]="materialsDrawerVisible" [meetingId]="meeting().id" data-testid="meeting-materials-drawer-card">
+    @if (meeting().organizer) {
+      <lfx-meeting-materials-drawer
+        [(visible)]="materialsDrawerVisible"
+        [meetingId]="pastMeeting() ? undefined : meeting().id"
+        [pastMeetingId]="pastMeeting() ? pastMeetingResourceId() : undefined"
+        (materialsChanged)="onMaterialsChanged()"
+        data-testid="meeting-materials-drawer-card">
       </lfx-meeting-materials-drawer>
     }
 

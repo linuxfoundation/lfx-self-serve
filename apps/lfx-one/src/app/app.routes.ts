@@ -309,7 +309,7 @@ export const routes: Routes = [
       },
       {
         path: 'meetings',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
@@ -318,38 +318,38 @@ export const routes: Routes = [
       },
       {
         path: 'groups',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'votes',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
         path: 'newsletters',
-        canActivate: [lensRedirectGuard, newsletterAccessGuard],
+        canActivate: [lensRedirectGuard, newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
         path: 'documents',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       {
         // Me lens → /profile/settings (canonical); foundation/project → lens-prefixed settings.
         path: 'settings',
-        canActivate: [settingsLensRedirectGuard],
+        canActivate: [settingsLensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
@@ -372,7 +372,7 @@ export const routes: Routes = [
       },
       {
         path: 'events',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {

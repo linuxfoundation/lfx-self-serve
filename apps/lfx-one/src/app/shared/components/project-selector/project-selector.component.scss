@@ -10,9 +10,12 @@
   @apply font-medium leading-5 relative text-base text-gray-900 tracking-tight truncate w-full text-left;
 }
 
-// PrimeNG Popover override — hide arrow, force right-of-sidebar positioning
-// Same pattern as user-menu-popover in lens-switcher.component.scss
-::ng-deep .project-selector-panel.p-popover {
+// PrimeNG Popover cosmetics — hide arrow, radius, padding. Applies to both the sidebar panel
+// and the curated (dialog) variant. Same pattern as user-menu-popover in lens-switcher.component.scss.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
+::ng-deep .project-selector-panel.p-popover,
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
+::ng-deep .project-selector-panel-curated.p-popover {
   // Hide arrow
   &::before,
   &::after {
@@ -31,7 +34,12 @@
     // stylelint-disable-next-line declaration-no-important
     padding: 8px !important;
   }
+}
 
+// Sidebar-only fixed positioning (right of the rail + nav). NOT applied to the curated (dialog)
+// variant, which lets PrimeNG anchor the popover to its own trigger inside the centered dialog.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
+::ng-deep .project-selector-panel.p-popover {
   // Desktop only — on mobile the sidebar is a drawer with a different layout;
   // scoping to lg+ avoids anchoring the panel off-screen on narrow viewports
   @media (min-width: 1024px) {
@@ -44,6 +52,7 @@
     position: fixed !important;
 
     // Position to the right of the full sidebar (48px rail + 300px nav = 348px) with an 8px gap.
+    // stylelint-disable-next-line declaration-no-important
     left: 356px !important;
 
     // `top` is set at runtime in onPopoverShow() to match the selector trigger's viewport

@@ -12,8 +12,8 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
+  HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_SEVERITY,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -29,6 +29,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   AddableProjectOption,
+  HealthScore,
   InfluenceBand,
   OrgLensProject,
   OrgLensProjectSearchResult,
@@ -61,7 +62,6 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
@@ -85,7 +85,6 @@ import { PersonaService } from '@shared/services/persona.service';
     SelectComponent,
     SkeletonModule,
     TableComponent,
-    TagComponent,
     TooltipModule,
   ],
   templateUrl: './org-projects.component.html',
@@ -484,7 +483,7 @@ export class OrgProjectsComponent {
     const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
     const body = rows.map((p) => [
       p.name,
-      HEALTH_SCORE_LABELS[p.health],
+      HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
       INFLUENCE_BAND_LABELS[p.technicalInfluence],
       INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
       p.trend.deltaPct,
@@ -557,7 +556,7 @@ export class OrgProjectsComponent {
   // Full health summary (rating + sub-scores) so keyboard/screen-reader users get the popover's content without a mouse.
   protected healthAriaLabel(project: OrgLensProject): string {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
-    return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
+    return `Health: ${HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)]}. ${metrics}.`;
   }
   protected searchAddableProjects(query: string): void {
     if (this.addableProjectsSearchDebounceTimer) {
@@ -717,8 +716,8 @@ export class OrgProjectsComponent {
         ecosystemBars: this.bandBars(project.ecosystemInfluence),
         technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
         ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
-        healthLabel: HEALTH_SCORE_LABELS[project.health],
-        healthSeverity: HEALTH_SCORE_SEVERITY[project.health],
+        healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
+        healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
         sparklineDataset: {
           labels: project.trend.series.map((_, i) => String(i)),
           datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
@@ -904,6 +903,12 @@ export class OrgProjectsComponent {
   }
 
   private compareProjects(a: OrgLensProject, b: OrgLensProject, field: OrgProjectsSortField, dir: SortDirection): number {
+    if (field === 'health') {
+      const availability = this.compareHealthAvailability(a.health, b.health);
+      if (availability !== 0) {
+        return availability;
+      }
+    }
     const primary = this.compareByField(a, b, field);
     const directed = dir === 'asc' ? primary : -primary;
     if (directed !== 0) {
@@ -935,17 +940,34 @@ export class OrgProjectsComponent {
     }
   }
 
-  private healthRank(health: OrgLensProject['health']): number {
-    if (health === 'excellent') {
-      return 2;
-    }
-    if (health === 'healthy') {
-      return 1;
-    }
-    if (health === 'at-risk') {
+  private normalizeHealth(health: HealthScore): HealthScore {
+    return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
+  }
+
+  private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
+    const aUnavailable = this.normalizeHealth(a) === 'unavailable';
+    const bUnavailable = this.normalizeHealth(b) === 'unavailable';
+    if (aUnavailable === bUnavailable) {
       return 0;
     }
-    return -1;
+    return aUnavailable ? 1 : -1;
+  }
+
+  private healthRank(health: OrgLensProject['health']): number {
+    switch (this.normalizeHealth(health)) {
+      case 'excellent':
+        return 5;
+      case 'healthy':
+        return 4;
+      case 'stable':
+        return 3;
+      case 'unsteady':
+        return 2;
+      case 'critical':
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   private buildRowMenu(project: OrgLensProject): MenuItem[] {

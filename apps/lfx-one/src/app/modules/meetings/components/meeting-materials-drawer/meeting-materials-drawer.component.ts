@@ -6,12 +6,12 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
-import { MeetingAttachment, PendingAttachment } from '@lfx-one/shared/interfaces';
+import { MaterialsChangedEvent, MeetingAttachment, PastMeetingAttachment, PendingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, from, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
+import { catchError, from, map, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
@@ -25,9 +25,13 @@ export class MeetingMaterialsDrawerComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
-  public readonly meetingId = input.required<string>();
+  /** ID of a scheduled meeting. Leave undefined when using pastMeetingId for past-meeting mode. */
+  public readonly meetingId = input<string>();
+  /** Composite meeting_and_occurrence_id of a past meeting. When set, all API calls target the past meeting attachments endpoint. */
+  public readonly pastMeetingId = input<string>();
   public visible = model<boolean>(false);
-  public readonly materialsChanged = output<void>();
+  /** Emits deleted UIDs and newly created attachments so callers can apply optimistic UI updates without waiting for NATS propagation to the query service. */
+  public readonly materialsChanged = output<MaterialsChangedEvent>();
 
   // === Constants ===
   public readonly acceptString = generateAcceptString();
@@ -45,6 +49,7 @@ export class MeetingMaterialsDrawerComponent {
   // === Computed Signals ===
   public readonly fileAttachments = computed(() => this.existingAttachments().filter((a) => a.type === 'file'));
   public readonly linkAttachments = computed(() => this.existingAttachments().filter((a) => a.type === 'link'));
+  private readonly isPastMode = computed(() => !!this.pastMeetingId());
 
   // Lazy load attachments when drawer opens
   private readonly attachments$ = toObservable(this.visible).pipe(
@@ -54,16 +59,30 @@ export class MeetingMaterialsDrawerComponent {
         return of([]);
       }
       this.loading.set(true);
-      return this.meetingService.getMeetingAttachments(this.meetingId()).pipe(
-        tap(() => this.loading.set(false)),
-        catchError(() => {
-          this.loading.set(false);
-          return of([] as MeetingAttachment[]);
-        })
-      );
+      const id = this.isPastMode() ? this.pastMeetingId() : this.meetingId();
+      if (!id) {
+        this.loading.set(false);
+        return of([] as MeetingAttachment[]);
+      }
+      const load$ = this.isPastMode()
+        ? this.meetingService.getPastMeetingAttachments(id).pipe(
+            tap(() => this.loading.set(false)),
+            catchError(() => {
+              this.loading.set(false);
+              return of([] as MeetingAttachment[]);
+            })
+          )
+        : this.meetingService.getMeetingAttachments(id).pipe(
+            tap(() => this.loading.set(false)),
+            catchError(() => {
+              this.loading.set(false);
+              return of([] as MeetingAttachment[]);
+            })
+          );
+      return load$;
     }),
     tap((attachments) => {
-      this.existingAttachments.set(attachments);
+      this.existingAttachments.set(attachments as MeetingAttachment[]);
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
       this.newLinkTitle.set('');
@@ -144,65 +163,116 @@ export class MeetingMaterialsDrawerComponent {
     if (!title || !url) return;
 
     this.saving.set(true);
-    this.meetingService
-      .createMeetingAttachment(this.meetingId(), { type: 'link', category: 'Other', name: title, link: url })
-      .pipe(take(1))
-      .subscribe({
-        next: (attachment) => {
-          this.existingAttachments.update((current) => [...current, attachment]);
-          this.newLinkTitle.set('');
-          this.newLinkUrl.set('');
-          this.saving.set(false);
-          this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
-          this.materialsChanged.emit();
-        },
-        error: () => {
-          this.saving.set(false);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add link. Please try again.' });
-        },
-      });
+    const isPast = this.isPastMode();
+    const id = isPast ? this.pastMeetingId() : this.meetingId();
+    if (!id) {
+      this.saving.set(false);
+      return;
+    }
+    const create$ = isPast
+      ? this.meetingService.createPastMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url })
+      : this.meetingService.createMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url });
+
+    create$.pipe(take(1)).subscribe({
+      next: (attachment) => {
+        this.existingAttachments.update((current) => [...current, attachment as MeetingAttachment]);
+        this.newLinkTitle.set('');
+        this.newLinkUrl.set('');
+        this.saving.set(false);
+        this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
+        const addedAttachments: PastMeetingAttachment[] = isPast ? [attachment as PastMeetingAttachment] : [];
+        this.materialsChanged.emit({ deletedUids: [], addedAttachments });
+      },
+      error: () => {
+        this.saving.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add link. Please try again.' });
+      },
+    });
   }
 
   public onSave(): void {
     this.saving.set(true);
-    const meetingId = this.meetingId();
+    const isPast = this.isPastMode();
+    const id = isPast ? this.pastMeetingId() : this.meetingId();
+    if (!id) {
+      this.saving.set(false);
+      return;
+    }
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
 
-    // Delete first (parallel), then upload (parallel)
+    // Delete first (parallel), then upload (parallel).
+    // Each delete returns {uid, ok} so we can identify which succeeded
+    // and emit them for optimistic removal on the parent, independent of
+    // NATS propagation delay to the query service.
     const delete$ =
       deletions.length > 0
         ? from(deletions).pipe(
-            mergeMap((uid) => this.meetingService.deleteMeetingAttachment(meetingId, uid).pipe(catchError(() => of(null)))),
+            mergeMap((uid) =>
+              (isPast ? this.meetingService.deletePastMeetingAttachment(id, uid) : this.meetingService.deleteMeetingAttachment(id, uid)).pipe(
+                map(() => ({ uid, ok: true as const })),
+                catchError(() => of({ uid, ok: false as const }))
+              )
+            ),
             toArray()
           )
-        : of([]);
+        : of([] as { uid: string; ok: boolean }[]);
 
     delete$
       .pipe(
-        switchMap(() => {
-          if (uploads.length === 0) return of([]);
+        switchMap((deleteResults) => {
+          if (uploads.length === 0) return of({ deleteResults, uploadResults: [] as (object | null)[] });
           return from(uploads).pipe(
             mergeMap((attachment) =>
-              this.meetingService
-                .uploadMeetingFile(meetingId, attachment.file, {
-                  name: attachment.fileName,
-                  file_size: attachment.fileSize,
-                  file_type: attachment.mimeType,
-                })
-                .pipe(catchError(() => of(null)))
+              (isPast
+                ? this.meetingService.uploadPastMeetingFile(id, attachment.file, {
+                    name: attachment.fileName,
+                    file_size: attachment.fileSize,
+                    file_type: attachment.mimeType,
+                  })
+                : this.meetingService.uploadMeetingFile(id, attachment.file, {
+                    name: attachment.fileName,
+                    file_size: attachment.fileSize,
+                    file_type: attachment.mimeType,
+                  })
+              ).pipe(catchError(() => of(null)))
             ),
-            toArray()
+            toArray(),
+            map((uploadResults) => ({ deleteResults, uploadResults }))
           );
         }),
         take(1)
       )
       .subscribe({
-        next: () => {
+        next: ({ deleteResults, uploadResults }) => {
           this.saving.set(false);
-          this.messageService.add({ severity: 'success', summary: 'Materials Updated', detail: 'Meeting materials have been saved.' });
-          this.materialsChanged.emit();
-          this.visible.set(false);
+          const successfullyDeletedUids = deleteResults.filter((r) => r.ok).map((r) => r.uid);
+          const hasPartialFailure = deleteResults.some((r) => !r.ok) || uploadResults.some((r) => r === null);
+          const addedAttachments: PastMeetingAttachment[] = isPast
+            ? uploadResults
+                .filter((r): r is PresignAttachmentResponse => r !== null)
+                .map((r) => ({
+                  uid: r.uid,
+                  meeting_and_occurrence_id: id!,
+                  meeting_id: r.meeting_id ?? '',
+                  type: r.type,
+                  name: r.name,
+                  category: r.category,
+                  file_name: r.file_name,
+                  file_size: r.file_size,
+                  file_upload_status: r.file_upload_status,
+                  file_content_type: r.file_content_type,
+                  created_at: r.created_at,
+                  created_by: r.created_by,
+                }))
+            : [];
+          this.materialsChanged.emit({ deletedUids: successfullyDeletedUids, addedAttachments });
+          if (hasPartialFailure) {
+            this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });
+          } else {
+            this.messageService.add({ severity: 'success', summary: 'Materials Updated', detail: 'Meeting materials have been saved.' });
+            this.visible.set(false);
+          }
         },
         error: () => {
           this.saving.set(false);
