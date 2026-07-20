@@ -277,7 +277,6 @@
             <!-- Table Header -->
             <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
               <span class="flex-[2] min-w-[120px]">Project / Campaign</span>
-              <span class="w-16 text-center">Funnel</span>
               <span class="flex-1 text-right">Spend</span>
               <span class="flex-1 text-right">Rev (last-touch)</span>
               <span class="w-14 text-right">ROAS</span>
@@ -300,11 +299,6 @@
                 (keydown.space)="$event.preventDefault(); toggleProject(project.projectName)"
                 data-testid="email-ctr-drawer-project-row">
                 <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2">{{ project.projectName }}</span>
-                <span class="w-16 flex justify-center">
-                  @if (formatFunnelLabel(project.funnelStage)) {
-                    <lfx-tag [value]="formatFunnelLabel(project.funnelStage)" severity="secondary" [rounded]="true" />
-                  }
-                </span>
                 <span class="flex-1 text-right text-sm font-semibold text-gray-900">${{ formatCompact(project.spend) }}</span>
                 <span class="flex-1 text-right text-sm font-semibold text-gray-900">${{ formatCompact(project.revenue) }}</span>
                 <span class="w-14 text-right text-sm font-semibold text-gray-900">{{ project.roas | number: '1.1-1' }}x</span>
@@ -318,14 +312,9 @@
 
               <!-- Expanded Campaign Rows -->
               @if (expandedProjects().has(project.projectName)) {
-                @for (campaign of project.campaigns; track campaign.campaignName + '|' + campaign.funnelStage) {
+                @for (campaign of project.campaigns; track campaign.campaignName) {
                   <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-paid-campaign-row">
                     <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{ campaign.campaignName }}</span>
-                    <span class="w-16 flex justify-center">
-                      @if (formatFunnelLabel(campaign.funnelStage)) {
-                        <lfx-tag [value]="formatFunnelLabel(campaign.funnelStage)" severity="secondary" [rounded]="true" />
-                      }
-                    </span>
                     <span class="flex-1 text-right text-xs text-gray-600">${{ formatCompact(campaign.spend) }}</span>
                     <span class="flex-1 text-right text-xs text-gray-600">${{ formatCompact(campaign.revenue) }}</span>
                     <span class="w-14 text-right text-xs text-gray-600">{{ campaign.roas | number: '1.1-1' }}x</span>
