@@ -28,6 +28,9 @@ export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead
 
 export type CampaignProgramType = 'events' | 'education';
 
+/** How a campaign reaches its audience — the second selector after the program type. */
+export type CampaignDeliveryType = 'paid-marketing' | 'email';
+
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
 
 export interface RedditObjectiveParams {
@@ -37,6 +40,14 @@ export interface RedditObjectiveParams {
   readonly bidValue: number;
   readonly optimizationGoal: string;
   readonly viewThroughConversionType?: string;
+}
+
+export interface CampaignDeliveryTypeOption {
+  id: CampaignDeliveryType;
+  label: string;
+  breadcrumbLabel: string;
+  /** Disabled options render but can't be selected (e.g. a channel still in build). */
+  disabled?: boolean;
 }
 
 export interface CampaignProgramTypeOption {

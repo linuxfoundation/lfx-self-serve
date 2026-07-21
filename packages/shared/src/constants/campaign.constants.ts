@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  CampaignDeliveryTypeOption,
   CampaignGoalOption,
   CampaignPlatform,
   CampaignPlatformOption,
@@ -33,6 +34,15 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
+] as const;
+
+/**
+ * Delivery types — the second campaign selector (after the program type). Both are
+ * selectable; the Email channel is under active parallel development.
+ */
+export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
+  { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
+  { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [

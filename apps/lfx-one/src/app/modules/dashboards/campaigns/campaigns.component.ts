@@ -4,8 +4,8 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 
-import { CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
+import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
+import type { CampaignBriefOutput, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
@@ -23,11 +23,14 @@ export class CampaignsComponent {
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
+  protected readonly deliveryTypes = CAMPAIGN_DELIVERY_TYPES;
   protected readonly selectedTab = signal<CampaignTab>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
+  protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
+  protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
   protected selectTab(tab: CampaignTab): void {
     this.selectedTab.set(tab);
@@ -60,6 +63,15 @@ export class CampaignsComponent {
     const value = (event.target as HTMLSelectElement).value;
     if (this.programTypes.some((pt) => pt.id === value)) {
       this.selectedProgramType.set(value as CampaignProgramType);
+      this.briefOutput.set(null);
+      this.selectedTab.set('planning');
+    }
+  }
+
+  protected onDeliveryTypeChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    if (this.deliveryTypes.some((dt) => dt.id === value && !dt.disabled)) {
+      this.selectedDeliveryType.set(value as CampaignDeliveryType);
       this.briefOutput.set(null);
       this.selectedTab.set('planning');
     }
