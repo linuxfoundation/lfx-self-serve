@@ -140,7 +140,6 @@ export interface OrgInfluenceBreakdownRow extends OrgInfluenceBreakdownSegment {
 export interface OrgInfluenceRow {
   project: string;
   projectSlug: string;
-  projectLink: string;
   ecosystemInfluence: number;
   /** Qualitative ecosystem-influence band shown (with signal-bar icon) in place of the raw score. */
   band: OrgLensProjectBand;

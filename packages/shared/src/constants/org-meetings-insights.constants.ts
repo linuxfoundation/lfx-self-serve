@@ -406,7 +406,6 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Kubernetes',
     projectSlug: 'kubernetes',
-    projectLink: '/org/projects/kubernetes',
     ecosystemInfluence: 88,
     band: 'leading',
     rankLabel: '#3 of 210',
@@ -429,7 +428,6 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'PyTorch',
     projectSlug: 'pytorch',
-    projectLink: '/org/projects/pytorch',
     ecosystemInfluence: 71,
     band: 'contributing',
     rankLabel: '#2 of 96',
@@ -452,7 +450,6 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Argo',
     projectSlug: 'argo',
-    projectLink: '/org/projects/argo',
     ecosystemInfluence: 54,
     band: 'participating',
     rankLabel: '#7 of 140',
@@ -475,7 +472,6 @@ export const DEMO_ORG_INFLUENCE_ROWS: OrgInfluenceRow[] = [
   {
     project: 'Envoy',
     projectSlug: 'envoy',
-    projectLink: '/org/projects/envoy',
     ecosystemInfluence: 32,
     band: 'silent',
     rankLabel: '#22 of 88',
