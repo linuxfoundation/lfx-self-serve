@@ -5,7 +5,7 @@ audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, edit, archive, activate]
 last_generated: 2026-06-16
-last_updated: 2026-06-29
+last_updated: 2026-07-21
 intercom_collection: Crowdfunding
 ---
 
@@ -35,8 +35,16 @@ The detail page is organized into a header and two tabs.
 
 1. Open an initiative from the [View Initiatives](../view-initiatives/) page.
 1. Select **Edit Initiative** to open the settings drawer.
-1. Update fields across the four settings tabs — Initiative Details (name, description, topics, website URL), Branding (logo image), Beneficiaries (add or remove by name and email), and Funding (goal amount and distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation).
+1. Update fields across the settings tabs:
+   - **Initiative Details** — name, description, topics, website URL
+   - **Branding** — logo image
+   - **Beneficiaries** — add or remove by name and email
+   - **Funding** — goal amount and distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation
+   - **Sponsorship Tiers** — choose a donation option (open amount or tiered), then configure the goal and benefits for each enabled tier
+   - **Announcements** — add, edit, or delete announcements shown to sponsors on the initiative's Overview tab
 1. Save your changes.
+
+> **Note:** The Announcements tab saves each change immediately — there's no separate Save step for it, unlike the other settings tabs.
 
 ## Archive an initiative
 
