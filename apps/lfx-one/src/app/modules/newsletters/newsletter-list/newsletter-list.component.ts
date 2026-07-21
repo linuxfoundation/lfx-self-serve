@@ -81,6 +81,10 @@ export class NewsletterListComponent {
   protected readonly removingOptOutId = signal<string | null>(null);
   protected readonly previewVisible = signal<boolean>(false);
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
+  // Upstream authorizes opt-out removal for the `writer` relation only, while the
+  // newsletters route guard also fast-paths the ED persona — gate the destructive
+  // action on writer permission so ED non-writers don't get a button that 403s.
+  protected readonly canWrite = this.projectContextService.canWrite;
   // Analytics fetched lazily per sent row (the list endpoint intentionally omits
   // open_rate/unique_opens). Kept in a side map keyed by newsletter id — never
   // written back into `newsletters` — so row identity stays stable and results

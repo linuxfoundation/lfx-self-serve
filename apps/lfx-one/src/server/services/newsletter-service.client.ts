@@ -151,6 +151,13 @@ export class NewsletterServiceClient {
   }
 
   public async deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs/${optOutId}`, 'DELETE');
+    // The controller already restricts optOutId to a UUID; encoding keeps this
+    // path segment safe even if a future caller skips that validation.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletter-opt-outs/${encodeURIComponent(optOutId)}`,
+      'DELETE'
+    );
   }
 }

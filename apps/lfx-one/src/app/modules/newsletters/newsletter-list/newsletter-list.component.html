@@ -43,12 +43,12 @@
               subtitle="People who unsubscribe from this newsletter will show up here.">
             </lfx-empty-state>
           } @else {
-            <lfx-table [value]="optOuts()" [loading]="loading()" dataKey="email" data-testid="newsletter-optout-table">
+            <lfx-table [value]="optOuts()" [loading]="loading()" dataKey="id" data-testid="newsletter-optout-table">
               <ng-template #header>
                 <tr>
                   <th class="w-[60%]">Email</th>
                   <th class="w-[25%]">Unsubscribed</th>
-                  <th class="w-[15%]"></th>
+                  <th class="w-[15%]"><span class="sr-only">Actions</span></th>
                 </tr>
               </ng-template>
 
@@ -61,16 +61,20 @@
                     <span class="text-sm text-gray-700">{{ optOut.unsubscribed_at | date: 'MMM d, y' }}</span>
                   </td>
                   <td class="text-right">
-                    <lfx-button
-                      icon="fa-light fa-trash-can"
-                      severity="danger"
-                      size="small"
-                      [text]="true"
-                      [ariaLabel]="'Remove opt-out for ' + optOut.email"
-                      (onClick)="onRemoveOptOut(optOut, $event)"
-                      [disabled]="removingOptOutId() === optOut.id"
-                      [attr.data-testid]="'newsletter-optout-delete-' + optOut.email">
-                    </lfx-button>
+                    @if (canWrite()) {
+                      <!-- Disabled while ANY removal is in flight: the single removingOptOutId
+                           signal can't track concurrent requests, so removals are serialized. -->
+                      <lfx-button
+                        icon="fa-light fa-trash-can"
+                        severity="danger"
+                        size="small"
+                        [text]="true"
+                        [ariaLabel]="'Remove opt-out for ' + optOut.email"
+                        (onClick)="onRemoveOptOut(optOut, $event)"
+                        [disabled]="removingOptOutId() !== null"
+                        [attr.data-testid]="'newsletter-optout-delete-' + optOut.email">
+                      </lfx-button>
+                    }
                   </td>
                 </tr>
               </ng-template>

@@ -109,7 +109,7 @@ async function stubProjectApi(page: Page): Promise<void> {
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sfid: null }) }));
 }
 
-async function stubOptOutApi(page: Page, optOuts: NewsletterOptOut[]): Promise<void> {
+async function stubOptOutApi(page: Page, optOuts: NewsletterOptOut[], deletedIds?: string[]): Promise<void> {
   const optOutsResponse: NewsletterOptOutListResponse = { opt_outs: optOuts };
 
   // GET /opt-outs — returns the full list. The DELETE goes to /opt-outs/:optOutId,
@@ -121,9 +121,17 @@ async function stubOptOutApi(page: Page, optOuts: NewsletterOptOut[]): Promise<v
     return route.fallback();
   });
 
-  // DELETE /opt-outs/:optOutId — succeed with no content
+  // DELETE /opt-outs/:optOutId — 204 only for ids that exist in the mock data,
+  // so a lost/mismatched id between the click handler and the delete call fails
+  // the test instead of slipping through. Requested ids are recorded so tests
+  // can assert exactly which opt-out was targeted.
   await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/opt-outs/*`, (route) => {
     if (route.request().method() === 'DELETE') {
+      const requestedId = new URL(route.request().url()).pathname.split('/').pop() ?? '';
+      deletedIds?.push(requestedId);
+      if (!optOuts.some((optOut) => optOut.id === requestedId)) {
+        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'opt-out not found' }) });
+      }
       return route.fulfill({ status: 204 });
     }
     return route.fallback();
@@ -165,12 +173,15 @@ async function gotoOptOutListUrl(page: Page): Promise<void> {
 }
 
 test.describe('Newsletter opt-out list — Remove action', () => {
+  let deletedIds: string[];
+
   test.beforeEach(async ({ page }) => {
+    deletedIds = [];
     await setPersonaCookie(page, ['executive-director']);
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page);
     await stubProjectApi(page);
-    await stubOptOutApi(page, MOCK_OPT_OUTS);
+    await stubOptOutApi(page, MOCK_OPT_OUTS, deletedIds);
   });
 
   test('displays opt-outs with remove buttons; clicking remove shows confirmation dialog', async ({ page }) => {
@@ -226,6 +237,37 @@ test.describe('Newsletter opt-out list — Remove action', () => {
     // Success toast should appear (PrimeNG toasts render role="alert", so
     // target the .p-toast container like the rest of the suite does)
     await expect(page.locator('.p-toast'), 'success toast should appear').toContainText('Opt-out removed', { timeout: ELEMENT_TIMEOUT });
+
+    // Exactly one DELETE, targeting alice's id — locks the id contract between
+    // the click handler and the delete call.
+    expect(deletedIds, 'DELETE should target the selected opt-out id').toEqual([MOCK_OPT_OUTS[0].id]);
+  });
+
+  test('failed removal keeps the row and shows error toast', async ({ page }) => {
+    // Later route registrations take precedence, so this overrides the
+    // beforeEach DELETE stub with a server error.
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/opt-outs/*`, (route) => {
+      if (route.request().method() === 'DELETE') {
+        return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'upstream unavailable' }) });
+      }
+      return route.fallback();
+    });
+
+    await gotoOptOutListUrl(page);
+
+    await expect(page.getByTestId('newsletter-optout-table')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Click remove button for alice and accept the confirmation
+    await page.getByTestId('newsletter-optout-delete-alice@example.com').click();
+    const confirmDialog = page.locator('[role="dialog"]');
+    await expect(confirmDialog).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await confirmDialog.getByRole('button', { name: /remove/i }).click();
+
+    // Error toast should appear and the row must be retained
+    await expect(page.locator('.p-toast'), 'error toast should appear').toContainText('Remove failed', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-optout-row-alice@example.com'), 'alice row should be retained on failure').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
   });
 
   test('rejecting remove confirmation keeps the row', async ({ page }) => {

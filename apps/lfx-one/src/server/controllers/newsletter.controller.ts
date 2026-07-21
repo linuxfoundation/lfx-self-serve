@@ -285,11 +285,12 @@ export class NewsletterController {
    * DELETE /api/projects/:projectUid/newsletters/opt-outs/:optOutId
    */
   public async deleteOptOut(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const optOutId = this.requireOptOutId(req);
-    const startTime = logger.startOperation(req, 'newsletter_opt_out_delete', { project_uid: projectUid, opt_out_id: optOutId });
-
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
     try {
+      const projectUid = this.requireProjectUid(req);
+      const optOutId = this.requireOptOutId(req);
+      const startTime = logger.startOperation(req, 'newsletter_opt_out_delete', { project_uid: projectUid, opt_out_id: optOutId });
       await this.newsletterService.deleteOptOut(req, projectUid, optOutId);
       logger.success(req, 'newsletter_opt_out_delete', startTime, { opt_out_id: optOutId });
       res.status(204).end();
