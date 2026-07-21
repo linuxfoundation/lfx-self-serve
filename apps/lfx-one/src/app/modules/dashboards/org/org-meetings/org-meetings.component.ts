@@ -4,6 +4,9 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import type { OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { PersonaService } from '@services/persona.service';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 
@@ -29,16 +32,25 @@ import { OrgMeetingsTrendsComponent } from './components/org-meetings-trends/org
     OrgMeetingsTrendsComponent,
     OrgMeetingsInfluenceComponent,
     EmptyStateComponent,
+    SkeletonModule,
   ],
   templateUrl: './org-meetings.component.html',
 })
 export class OrgMeetingsComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly personaService = inject(PersonaService);
 
   // Simple WritableSignals
   protected readonly timeRange = signal<OrgMeetingsTimeRange>('past365d');
 
   // Complex computed
+  // True once both boot fetches that can populate `selectedAccount` have returned their first
+  // response — mirrors org-overview.component.ts's `loaded`/`hasNoOrgAccess` gate. Without this,
+  // a valid org user can see a one-tick flash of the no-company empty state while `selectedAccount`
+  // still sits on its PLACEHOLDER_ACCOUNT bootstrap value (account-context.service.ts).
+  protected readonly loaded: Signal<boolean> = computed(() => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded());
+
   // Either identifier counts as "selected": a fresh persona seed can have `uid` but an empty
   // `accountId` pending Snowflake enrichment, while a cookie-restored stub (account-context.service.ts)
   // can have `uid` set with `accountId` still empty. Checking only one leaves a validly-selected

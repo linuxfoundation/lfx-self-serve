@@ -10,7 +10,22 @@
     <lfx-org-meetings-time-range [(value)]="timeRange" />
   </header>
 
-  @if (!hasCompany()) {
+  @if (!loaded()) {
+    <!-- Pre-settled state — render lightweight skeletons so the page doesn't flash the no-company
+         empty-state during the race between the org-selector boot fetches and the first valid
+         selectedAccount, mirroring org-overview.component.html. -->
+    <section class="flex flex-col gap-4" data-testid="org-meetings-loading">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="p-4 bg-white border border-gray-200 rounded-lg flex flex-col gap-2">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="3rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+    </section>
+  } @else if (!hasCompany()) {
     <lfx-empty-state
       icon="fa-light fa-building"
       title="Select a company via Impersonate to view meeting insights."
