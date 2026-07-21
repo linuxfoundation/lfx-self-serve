@@ -78,6 +78,7 @@ export class NewsletterListComponent {
   protected readonly loadingMore = signal<boolean>(false);
   protected readonly nextPageToken = signal<string | undefined>(undefined);
   protected readonly deletingId = signal<string | null>(null);
+  protected readonly removingOptOutId = signal<string | null>(null);
   protected readonly previewVisible = signal<boolean>(false);
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
   // Analytics fetched lazily per sent row (the list endpoint intentionally omits
@@ -191,6 +192,21 @@ export class NewsletterListComponent {
     });
   }
 
+  protected onRemoveOptOut(optOut: NewsletterOptOut, event: Event): void {
+    event.stopPropagation();
+    this.confirmationService.confirm({
+      key: 'newsletter-list',
+      header: 'Remove opt-out?',
+      message: `Remove ${optOut.email} from the opt-out list? They will start receiving newsletters from this project again.`,
+      icon: 'pi pi-trash',
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.runRemoveOptOut(optOut),
+    });
+  }
+
   private initRows(): Signal<NewsletterRow[]> {
     return computed(() => {
       const analyticsMap = this.openRateAnalytics();
@@ -301,6 +317,30 @@ export class NewsletterListComponent {
             severity: 'error',
             summary: 'Delete failed',
             detail: err?.error?.message || err?.message || 'Could not delete the draft. Please try again.',
+          });
+        },
+      });
+  }
+
+  private runRemoveOptOut(optOut: NewsletterOptOut): void {
+    if (!this.projectUid()) return;
+    this.removingOptOutId.set(optOut.id);
+    this.newsletterService
+      .deleteOptOut(this.projectUid(), optOut.id)
+      .pipe(
+        take(1),
+        finalize(() => this.removingOptOutId.set(null))
+      )
+      .subscribe({
+        next: () => {
+          this.optOuts.update((current) => current.filter((o) => o.id !== optOut.id));
+          this.messageService.add({ severity: 'success', summary: 'Opt-out removed', detail: `${optOut.email} will receive newsletters again.` });
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Remove failed',
+            detail: err?.error?.message || err?.message || 'Could not remove the opt-out. Please try again.',
           });
         },
       });

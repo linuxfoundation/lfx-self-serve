@@ -149,4 +149,8 @@ export class NewsletterServiceClient {
   public async listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
     return this.microserviceProxy.proxyRequest<NewsletterOptOutListResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs`, 'GET');
   }
+
+  public async deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs/${optOutId}`, 'DELETE');
+  }
 }

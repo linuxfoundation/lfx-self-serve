@@ -46,8 +46,9 @@
             <lfx-table [value]="optOuts()" [loading]="loading()" dataKey="email" data-testid="newsletter-optout-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[70%]">Email</th>
-                  <th class="w-[30%]">Unsubscribed</th>
+                  <th class="w-[60%]">Email</th>
+                  <th class="w-[25%]">Unsubscribed</th>
+                  <th class="w-[15%]"></th>
                 </tr>
               </ng-template>
 
@@ -58,6 +59,17 @@
                   </td>
                   <td>
                     <span class="text-sm text-gray-700">{{ optOut.unsubscribed_at | date: 'MMM d, y' }}</span>
+                  </td>
+                  <td class="text-right">
+                    <lfx-button
+                      icon="fa-light fa-trash-can"
+                      severity="danger"
+                      size="small"
+                      [text]="true"
+                      (onClick)="onRemoveOptOut(optOut, $event)"
+                      [disabled]="removingOptOutId() === optOut.id"
+                      [attr.data-testid]="'newsletter-optout-delete-' + optOut.email">
+                    </lfx-button>
                   </td>
                 </tr>
               </ng-template>
