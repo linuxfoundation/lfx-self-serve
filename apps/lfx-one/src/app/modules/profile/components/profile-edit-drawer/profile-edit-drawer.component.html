@@ -8,6 +8,8 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="true"
+  [dismissible]="!saving()"
+  [closeOnEscape]="!saving()"
   styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
   data-testid="profile-edit-drawer">
   <ng-template #header>
@@ -214,7 +216,9 @@
 
           <!-- State/Province -->
           <div>
-            <label class="block text-sm text-slate-900 mb-2">State/Province</label>
+            <label [attr.for]="isUSA() ? 'drawer-edit-state-select' : 'drawer-edit-state-input'" class="block text-sm text-slate-900 mb-2">
+              State/Province
+            </label>
             @if (isUSA()) {
               <lfx-select
                 size="small"

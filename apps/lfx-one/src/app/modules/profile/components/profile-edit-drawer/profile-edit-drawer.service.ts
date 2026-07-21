@@ -7,13 +7,17 @@ import { CombinedProfile } from '@lfx-one/shared/interfaces';
 /**
  * Coordinates the Profile & Account edit drawer (LFXV2-2742). The edit affordances live in the
  * presentational ProfilePanelComponent while the drawer is hosted by ProfileLayoutComponent, so a
- * root-provided service decouples the trigger from the drawer: callers pass the current
- * CombinedProfile via {@link open}, and the drawer reads it to seed its form.
+ * shared service decouples the trigger from the drawer: callers pass the current CombinedProfile via
+ * {@link open}, and the drawer reads it to seed its form.
  *
- * Open state is derived from the context — a non-null context means the drawer is open — mirroring
- * PersonDetailDrawerService.
+ * Open state is derived from the context — a non-null context means the drawer is open.
+ *
+ * Provided at ProfileLayoutComponent (not root) so the instance — and its retained profile context —
+ * is torn down when the profile hub is left, rather than lingering and reopening with stale state on
+ * return. The drawer shares the layout's injector (it's rendered in the layout template), so both
+ * resolve the same instance.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class ProfileEditDrawerService {
   private readonly _context = signal<CombinedProfile | null>(null);
 

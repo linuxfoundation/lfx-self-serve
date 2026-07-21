@@ -39,7 +39,9 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
 @Component({
   selector: 'lfx-profile-layout',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent],
-  providers: [MessageService],
+  // ProfileEditDrawerService is layout-scoped (not root) so its retained profile context is torn
+  // down when the hub is left; the drawer child shares this injector and resolves the same instance.
+  providers: [MessageService, ProfileEditDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

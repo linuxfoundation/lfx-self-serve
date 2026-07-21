@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, finalize } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap } from 'rxjs';
 
 import { ProfileEditDrawerService } from './profile-edit-drawer.service';
 
@@ -106,13 +106,57 @@ export class ProfileEditDrawerComponent {
   public readonly isUSA = computed(() => this.selectedCountrySignal() === 'United States');
 
   public constructor() {
-    // Seed and (re)load whenever the drawer opens with a fresh profile context.
-    toObservable(this.drawer.context)
+    // Fires once per drawer open, with the profile to edit.
+    const open$ = toObservable(this.drawer.context).pipe(filter((context): context is CombinedProfile => context !== null));
+
+    // Seed the form synchronously on each open.
+    open$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((context) => this.seedForm(context));
+
+    // Reload emails on each open. switchMap cancels a prior open's in-flight request, so a slow
+    // earlier response can't overwrite a later one; the state reset also prevents stale rows from
+    // lingering when a reload fails.
+    open$
       .pipe(
-        filter((context): context is CombinedProfile => context !== null),
+        switchMap(() => {
+          this.loadingEmails.set(true);
+          this.emails.set([]);
+          this.primaryEmail.set('');
+          this.selectedPrimaryEmail.set('');
+          return this.userService.getUserEmails().pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load email addresses.' });
+              return of(null);
+            }),
+            finalize(() => this.loadingEmails.set(false))
+          );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((context) => this.onOpen(context));
+      .subscribe((data) => {
+        if (!data) {
+          return;
+        }
+        const primary: UserEmail = { email: data.primary_email, verified: true };
+        const alternates = data.alternate_emails.filter((e) => e.email !== data.primary_email);
+        this.emails.set([primary, ...alternates]);
+        this.primaryEmail.set(data.primary_email);
+        this.selectedPrimaryEmail.set(data.primary_email);
+      });
+
+    // Reload work-history on each open; switchMap likewise cancels a prior in-flight request.
+    // getWorkExperiences() already catches its own errors (returns []) and surfaces its own toast.
+    open$
+      .pipe(
+        switchMap(() => {
+          this.loadingWorkExperiences.set(true);
+          return this.userService.getWorkExperiences().pipe(finalize(() => this.loadingWorkExperiences.set(false)));
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((experiences) => {
+        this.workExperiences.set(experiences);
+        this.syncOrganizationControl();
+      });
 
     this.profileForm
       .get('country')
@@ -130,7 +174,8 @@ export class ProfileEditDrawerComponent {
   }
 
   public onVisibleChange(visible: boolean): void {
-    if (!visible) {
+    // Don't let a dismissal (close icon, backdrop, Esc) close the drawer mid-save.
+    if (!visible && !this.saving()) {
       this.drawer.close();
     }
   }
@@ -236,59 +281,14 @@ export class ProfileEditDrawerComponent {
 
   // Private methods
 
-  /** Seed the form from the opened profile and (re)load emails + work-history each open. */
-  private onOpen(profile: CombinedProfile): void {
+  /** Seed the form from the opened profile and reset its pristine/saving state. */
+  private seedForm(profile: CombinedProfile): void {
     this.combinedProfile.set(profile);
     this.populateForm(profile);
     this.profileForm.markAsPristine();
     this.profileForm.markAsUntouched();
     this.hasChanges.set(false);
     this.saving.set(false);
-    this.loadEmails();
-    this.loadWorkExperiences();
-  }
-
-  private loadEmails(): void {
-    this.loadingEmails.set(true);
-    this.userService
-      .getUserEmails()
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.loadingEmails.set(false))
-      )
-      .subscribe({
-        next: (data) => {
-          const primary: UserEmail = { email: data.primary_email, verified: true };
-          const alternates = data.alternate_emails.filter((e) => e.email !== data.primary_email);
-          this.emails.set([primary, ...alternates]);
-          this.primaryEmail.set(data.primary_email);
-          this.selectedPrimaryEmail.set(data.primary_email);
-        },
-        error: () => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to load email addresses.',
-          });
-        },
-      });
-  }
-
-  private loadWorkExperiences(): void {
-    this.loadingWorkExperiences.set(true);
-    // getWorkExperiences() already catches errors (returns []) and surfaces its own toast,
-    // so a dedicated error handler here would be unreachable. A currently-saved organization
-    // still shows as a selectable option via organizationOptions() when the list is empty.
-    this.userService
-      .getWorkExperiences()
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.loadingWorkExperiences.set(false))
-      )
-      .subscribe((experiences) => {
-        this.workExperiences.set(experiences);
-        this.syncOrganizationControl();
-      });
   }
 
   private populateForm(profile: CombinedProfile): void {
