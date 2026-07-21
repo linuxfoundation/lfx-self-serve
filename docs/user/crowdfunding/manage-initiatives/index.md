@@ -44,7 +44,7 @@ The detail page is organized into a header and two tabs.
    - **Announcements** — add, edit, or delete announcements shown to sponsors on the initiative's Overview tab
 1. Save your changes.
 
-> **Note:** The Announcements tab saves each change immediately — there's no separate Save step for it, unlike the other settings tabs.
+> **Note:** The Announcements tab isn't part of the drawer's shared Save step. Each add, edit, or delete uses its own **Add**, **Save**, or delete-confirmation action and takes effect right away, independent of the drawer's Save button.
 
 ## Archive an initiative
 
