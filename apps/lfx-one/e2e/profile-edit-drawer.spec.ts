@@ -98,8 +98,12 @@ test.describe('Profile edit drawer', () => {
 
   test('S3: Save closes the drawer and the panel reflects the edited name', async ({ page }) => {
     // Stub the write so the real profile is never mutated — assert on drawer-close + optimistic update.
+    // Capture the request body to lock in the { user_metadata: {...} } envelope the layout's
+    // applyOptimisticProfileUpdate depends on.
+    let patchBody: { user_metadata?: { given_name?: string } } | null = null;
     await page.route('**/api/profile', async (route) => {
       if (route.request().method() === 'PATCH') {
+        patchBody = route.request().postDataJSON();
         await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
         return;
       }
@@ -125,5 +129,7 @@ test.describe('Profile edit drawer', () => {
     await expect(page.getByTestId('profile-display-name'), 'panel should reflect the edited name optimistically').toContainText(uniqueName, {
       timeout: ELEMENT_TIMEOUT,
     });
+    // The drawer must send a user_metadata envelope (not a flat body) carrying the edited field.
+    expect(patchBody?.user_metadata?.given_name).toBe(uniqueName);
   });
 });

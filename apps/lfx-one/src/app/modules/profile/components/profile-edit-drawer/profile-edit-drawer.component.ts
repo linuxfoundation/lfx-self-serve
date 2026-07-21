@@ -221,7 +221,10 @@ export class ProfileEditDrawerComponent {
 
     this.userService
       .updateUserProfile(updateData)
-      .pipe(finalize(() => this.saving.set(false)))
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.saving.set(false))
+      )
       .subscribe({
         next: () => {
           this.messageService.add({
@@ -264,7 +267,10 @@ export class ProfileEditDrawerComponent {
 
     this.userService
       .setPrimaryEmail(email)
-      .pipe(finalize(() => this.savingPrimaryEmail.set(false)))
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.savingPrimaryEmail.set(false))
+      )
       .subscribe({
         next: () => {
           this.primaryEmail.set(email);
