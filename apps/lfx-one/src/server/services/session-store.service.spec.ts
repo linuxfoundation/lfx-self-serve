@@ -19,7 +19,7 @@ const { buildSessionCacheKey, valkeyService, VALKEY_CACHE } = vi.hoisted(() => (
   // which fails outside an Angular build/test context. Mock just the two values this spec
   // and the service under test actually need, mirroring valkey-cache.constants.ts, instead
   // of depending on the real module graph resolving.
-  VALKEY_CACHE: { SESSION_EXPIRED_TTL_SECONDS: 1, SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60 },
+  VALKEY_CACHE: { SESSION_EXPIRED_TTL_SECONDS: 1, SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60, SESSION_OP_TIMEOUT_MS: 3000 },
 }));
 
 vi.mock('./valkey.service', () => ({ buildSessionCacheKey, valkeyService }));
@@ -62,7 +62,7 @@ describe('SessionStoreService', () => {
       valkeyService.getJson.mockResolvedValue(payload);
 
       await expect(service.get('sid-1')).resolves.toEqual(payload);
-      expect(valkeyService.getJson).toHaveBeenCalledWith('lfx-ui:session:v1:sid-1', expect.any(Function));
+      expect(valkeyService.getJson).toHaveBeenCalledWith('lfx-ui:session:v1:sid-1', expect.any(Function), VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
     });
 
     it('invokes the callback form with (null, session) on a hit', async () => {
@@ -125,7 +125,7 @@ describe('SessionStoreService', () => {
       const payload = buildPayload();
 
       await expect(service.set('sid-1', payload)).resolves.toBeUndefined();
-      expect(valkeyService.setJson).toHaveBeenCalledWith('lfx-ui:session:v1:sid-1', payload, 60);
+      expect(valkeyService.setJson).toHaveBeenCalledWith('lfx-ui:session:v1:sid-1', payload, 60, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
     });
 
     it('invokes the callback form with no args on a successful write', async () => {
@@ -170,20 +170,45 @@ describe('SessionStoreService', () => {
       expect(valkeyService.del).toHaveBeenCalledTimes(2);
     });
 
+    it('spends the fallback del() retries against the remaining budget of one shared deadline, not a fresh timeout each', async () => {
+      valkeyService.setJson.mockResolvedValue(false);
+      valkeyService.del.mockResolvedValue(false);
+
+      await expect(service.set('sid-1', buildPayload())).rejects.toBeInstanceOf(AuthenticationError);
+
+      // Both del() calls get a key plus a positive remaining-ms budget bounded by SESSION_OP_TIMEOUT_MS —
+      // never `undefined` and never the full timeout re-granted per call.
+      for (const call of valkeyService.del.mock.calls) {
+        expect(call[0]).toBe('lfx-ui:session:v1:sid-1');
+        expect(call[1]).toBeGreaterThan(0);
+        expect(call[1]).toBeLessThanOrEqual(VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
+      }
+    });
+
     describe('ttlSecondsFor', () => {
       it('derives the TTL (seconds) from a positive cookie.maxAge (ms), rounding up', async () => {
         valkeyService.setJson.mockResolvedValue(true);
         await service.set('sid-1', buildPayload({ cookie: { expires: 0, maxAge: 1500 } }));
-        expect(valkeyService.setJson).toHaveBeenCalledWith(expect.any(String), expect.anything(), 2);
+        expect(valkeyService.setJson).toHaveBeenCalledWith(expect.any(String), expect.anything(), 2, VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
       });
 
       it('falls back to SESSION_EXPIRED_TTL_SECONDS for a non-positive maxAge', async () => {
         valkeyService.setJson.mockResolvedValue(true);
         await service.set('sid-1', buildPayload({ cookie: { expires: 0, maxAge: 0 } }));
-        expect(valkeyService.setJson).toHaveBeenCalledWith(expect.any(String), expect.anything(), VALKEY_CACHE.SESSION_EXPIRED_TTL_SECONDS);
+        expect(valkeyService.setJson).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.anything(),
+          VALKEY_CACHE.SESSION_EXPIRED_TTL_SECONDS,
+          VALKEY_CACHE.SESSION_OP_TIMEOUT_MS
+        );
 
         await service.set('sid-1', buildPayload({ cookie: { expires: 0, maxAge: -10 } }));
-        expect(valkeyService.setJson).toHaveBeenLastCalledWith(expect.any(String), expect.anything(), VALKEY_CACHE.SESSION_EXPIRED_TTL_SECONDS);
+        expect(valkeyService.setJson).toHaveBeenLastCalledWith(
+          expect.any(String),
+          expect.anything(),
+          VALKEY_CACHE.SESSION_EXPIRED_TTL_SECONDS,
+          VALKEY_CACHE.SESSION_OP_TIMEOUT_MS
+        );
       });
 
       it('falls back to SESSION_FALLBACK_TTL_SECONDS when cookie metadata is missing/malformed', async () => {
@@ -193,7 +218,12 @@ describe('SessionStoreService', () => {
         delete payload.cookie.maxAge;
 
         await service.set('sid-1', payload);
-        expect(valkeyService.setJson).toHaveBeenCalledWith(expect.any(String), expect.anything(), VALKEY_CACHE.SESSION_FALLBACK_TTL_SECONDS);
+        expect(valkeyService.setJson).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.anything(),
+          VALKEY_CACHE.SESSION_FALLBACK_TTL_SECONDS,
+          VALKEY_CACHE.SESSION_OP_TIMEOUT_MS
+        );
       });
     });
   });
@@ -203,7 +233,7 @@ describe('SessionStoreService', () => {
       valkeyService.del.mockResolvedValue(true);
 
       await expect(service.destroy('sid-1')).resolves.toBeUndefined();
-      expect(valkeyService.del).toHaveBeenCalledWith('lfx-ui:session:v1:sid-1');
+      expect(valkeyService.del).toHaveBeenCalledWith('lfx-ui:session:v1:sid-1', VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
     });
 
     it('invokes the callback form with no args regardless of delete outcome', async () => {
