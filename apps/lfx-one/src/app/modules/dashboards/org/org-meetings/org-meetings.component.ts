@@ -4,6 +4,7 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import type { OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -38,6 +39,7 @@ import { OrgMeetingsTrendsComponent } from './components/org-meetings-trends/org
 })
 export class OrgMeetingsComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
 
@@ -45,11 +47,23 @@ export class OrgMeetingsComponent {
   protected readonly timeRange = signal<OrgMeetingsTimeRange>('past365d');
 
   // Complex computed
-  // True once both boot fetches that can populate `selectedAccount` have returned their first
-  // response — mirrors org-overview.component.ts's `loaded`/`hasNoOrgAccess` gate. Without this,
-  // a valid org user can see a one-tick flash of the no-company empty state while `selectedAccount`
-  // still sits on its PLACEHOLDER_ACCOUNT bootstrap value (account-context.service.ts).
-  protected readonly loaded: Signal<boolean> = computed(() => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded());
+  // True once role grants + personas have settled and the caller genuinely has no org access —
+  // mirrors org-overview/org-projects' `hasNoOrgAccess`. Reused below so a direct writer/auditor
+  // with no persona-seeded organizations (who never triggers the nav fetch) isn't stuck waiting
+  // on `orgNavigationService.loaded()` forever.
+  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
+    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
+  );
+
+  // True once every fetch that can populate `selectedAccount` has settled — either the caller
+  // has no org access (short-circuits without waiting on nav), or role grants + personas +
+  // org-navigation's default-org selection have all returned. Without waiting on org-navigation
+  // too, a direct writer/auditor whose persona response has no organizations could see a one-tick
+  // flash of the no-company empty state before `/api/nav/org-items` populates `selectedAccount`.
+  // Mirrors org-projects.component.ts's `orgContextLoaded` gate.
+  protected readonly loaded: Signal<boolean> = computed(
+    () => this.hasNoOrgAccess() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+  );
 
   // Either identifier counts as "selected": a fresh persona seed can have `uid` but an empty
   // `accountId` pending Snowflake enrichment, while a cookie-restored stub (account-context.service.ts)
