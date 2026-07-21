@@ -300,8 +300,16 @@
           data-testid="lens-profile"
           (click)="navigateToProfile()"
           class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-          <i class="fa-light fa-user w-4 text-gray-400"></i>
-          <span>My profile</span>
+          <i class="fa-light fa-circle-user w-4 text-gray-400"></i>
+          <span>Profile &amp; Account</span>
+        </button>
+        <button
+          type="button"
+          data-testid="lens-settings"
+          (click)="navigateToProfileSettings()"
+          class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-gear w-4 text-gray-400"></i>
+          <span>Settings</span>
         </button>
         <button
           type="button"
