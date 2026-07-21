@@ -1157,15 +1157,24 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // HTML while the separate sidebar form patches its controls in place.
     el.addEventListener('input', () => this.commitInlineEdit(el, blockId));
 
-    // Sanitize pasted content BEFORE it reaches the live DOM. The browser parses
-    // pasted markup into the contenteditable — executing embedded handlers like
-    // `<img onerror>` — before commitInlineEdit reads it, and the renderer's
-    // sanitizer only runs on the next re-render (which is frozen while editing).
-    // So intercept the paste: richtext fields keep sanitized HTML (via the same
-    // Angular sanitizer the renderer uses); plain-text fields insert text only,
-    // so no pasted markup is ever parsed into the DOM. Defense-in-depth against
-    // self-XSS, matching the Tiptap editor used elsewhere in the composer.
-    el.addEventListener('paste', (event: ClipboardEvent) => this.handleEditablePaste(el, blockId, event));
+    // Sanitize pasted AND dropped content BEFORE it reaches the live DOM. The
+    // browser parses inbound markup into the contenteditable — executing embedded
+    // handlers like `<img onerror>` — before commitInlineEdit reads it, and the
+    // renderer's sanitizer only runs on the next re-render (frozen while editing).
+    // Paste and drag-drop are the same untrusted-HTML vector, so both route
+    // through insertSanitizedTransfer: richtext keeps sanitized HTML (via the same
+    // Angular sanitizer the renderer uses); plain-text inserts text only. Defense-
+    // in-depth against self-XSS, matching the Tiptap editor used elsewhere.
+    el.addEventListener('paste', (event: ClipboardEvent) => {
+      if (!event.clipboardData) return;
+      event.preventDefault();
+      this.insertSanitizedTransfer(el, blockId, event.clipboardData);
+    });
+    el.addEventListener('drop', (event: DragEvent) => {
+      if (!event.dataTransfer) return;
+      event.preventDefault();
+      this.insertSanitizedTransfer(el, blockId, event.dataTransfer);
+    });
 
     el.addEventListener('blur', () => {
       this.commitInlineEdit(el, blockId);
@@ -1199,28 +1208,29 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
-   * Intercept a paste into an inline-editable element and insert a SANITIZED
-   * value, so untrusted pasted markup never lands in the live contenteditable
-   * DOM — where the browser would parse it (and execute embedded handlers like
+   * Insert clipboard/drop data into an inline-editable element as a SANITIZED
+   * value, so untrusted markup never lands in the live contenteditable DOM —
+   * where the browser would parse it (and execute embedded handlers like
    * `<img onerror>`) before `commitInlineEdit` reads it, ahead of the renderer's
-   * own sanitizer. Richtext fields keep the HTML run through Angular's
-   * sanitizer; plain-text fields insert text only, so no markup is parsed at all.
+   * own sanitizer. Richtext fields keep the HTML run through Angular's sanitizer;
+   * plain-text fields insert text only, so no markup is parsed at all. Shared by
+   * the paste and drop handlers (the native default is already prevented, so even
+   * if the caret insert no-ops nothing unsanitized reaches the DOM).
    */
-  private handleEditablePaste(el: HTMLElement, blockId: string, event: ClipboardEvent): void {
+  private insertSanitizedTransfer(el: HTMLElement, blockId: string, data: DataTransfer): void {
     if (!isPlatformBrowser(this.platformId)) return;
-    const clipboard = event.clipboardData;
-    if (!clipboard) return;
-    event.preventDefault();
+    // A drop can land on an unfocused field; focus it so the caret insert applies.
+    el.focus();
 
-    const text = clipboard.getData('text/plain') ?? '';
+    const text = data.getData('text/plain') ?? '';
     const richtext = el.getAttribute('data-nl-richtext') === 'true';
     if (richtext) {
-      const html = clipboard.getData('text/html');
+      const html = data.getData('text/html');
       const clean = html ? (this.sanitizer.sanitize(SecurityContext.HTML, html) ?? text) : text;
       document.execCommand('insertHTML', false, clean);
     } else {
       // commitInlineEdit reads textContent for plain-text fields; inserting the
-      // plain text keeps any pasted markup from being parsed into the DOM.
+      // plain text keeps any inbound markup from being parsed into the DOM.
       document.execCommand('insertText', false, text);
     }
 

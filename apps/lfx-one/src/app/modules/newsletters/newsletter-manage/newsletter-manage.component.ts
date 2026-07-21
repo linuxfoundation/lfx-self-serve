@@ -174,6 +174,15 @@ export class NewsletterManageComponent {
     if (layout) return (layout.blocks?.length ?? 0) > 0;
     return stripHtml(this.bodyHtmlValue()).trim().length > 0;
   });
+  // Saveable content, distinct from bodyFilled: a PRESENT layout counts even
+  // with zero blocks, because clearing the canvas is a deliberate edit the user
+  // must be able to persist (otherwise an emptied draft silently reverts to its
+  // old content on reload). Send gates still use bodyFilled, so an empty layout
+  // can be saved but not sent. A null layout falls back to body_html content.
+  public readonly bodyPersistable = computed(() => {
+    if (this.bodyLayoutValue()) return true;
+    return stripHtml(this.bodyHtmlValue()).trim().length > 0;
+  });
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
   // body_html is server-derived, so it only reflects the canvas once a save has
   // completed and synced it back. bodyRendered/isDirty gate the surfaces that
@@ -215,7 +224,7 @@ export class NewsletterManageComponent {
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly canGoNext = computed(() => this.currentStep() < this.totalSteps && this.canProceed());
   public readonly canSaveDraft = computed(
-    () => this.hasContext() && this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.edEmail().length > 0 && !this.savingDraft()
+    () => this.hasContext() && this.audienceFilled() && this.subjectFilled() && this.bodyPersistable() && this.edEmail().length > 0 && !this.savingDraft()
   );
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => NEWSLETTER_STEP_TITLES[this.currentStep()] ?? '');
@@ -832,7 +841,9 @@ export class NewsletterManageComponent {
   }
 
   private hasAnythingToSave(): boolean {
-    return this.audienceFilled() && this.subjectFilled() && this.bodyFilled();
+    // bodyPersistable (not bodyFilled): an emptied blocks canvas must autosave,
+    // otherwise the cleared layout never reaches the server and reverts on reload.
+    return this.audienceFilled() && this.subjectFilled() && this.bodyPersistable();
   }
 
   private saveDraft(isManual = false) {
