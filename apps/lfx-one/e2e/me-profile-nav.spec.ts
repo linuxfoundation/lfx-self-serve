@@ -15,16 +15,18 @@
  * Both surfaces are desktop-shell affordances; the mobile shell exposes separate
  * lens-mobile-* entries, so these specs skip on the narrow (mobile) viewport.
  *
- * The Me lens is the default (DEFAULT_LENS = 'me'), so a fresh context landing on a
- * /profile route renders the me card. "Me lens active" is asserted via that card's
- * presence, since showMeSelector() === (activeLens() === 'me') — the desktop lens rail
- * buttons are hidden by every current caller and expose no active-state hook.
+ * "Me lens active" is asserted via the me card's visibility: showMeSelector() === (activeLens()
+ * === 'me') toggles the card's `hidden` class, and the desktop lens rail exposes no active-state
+ * hook. Because a fresh context defaults to the Me lens (DEFAULT_LENS = 'me'), the dock tests first
+ * establish a non-Me (foundation) lens via stubbed persona/nav APIs — otherwise the card would
+ * already be visible and the assertion could not detect setLens('me') breaking.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (see global-setup.ts)
  */
 
+import type { LensItem } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 // ─── Timeouts ───────────────────────────────────────────────────────────────
@@ -45,6 +47,19 @@ const PROFILE_TABS: { id: string; route: string }[] = [
   { id: 'transactions', route: 'transactions' },
   { id: 'settings', route: 'settings' },
 ];
+
+// /profile redirects to its first tab, so this is the canonical landing route for any bare-/profile nav.
+const PROFILE_DEFAULT_URL = /\/profile\/attributions\b/;
+
+// Foundation-lens fixtures — used only to seed a non-Me lens as the precondition for the dock tests.
+const MOCK_FOUNDATION_SLUG = 'test-foundation';
+const MOCK_FOUNDATION_ITEM: LensItem = {
+  uid: 'f0000000-0000-0000-0000-000000000001',
+  slug: MOCK_FOUNDATION_SLUG,
+  name: 'Test Foundation',
+  logoUrl: null,
+  isFoundation: true,
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -132,10 +147,59 @@ async function openProfileTabsPopover(page: Page): Promise<void> {
   await openPopover(page, 'me-card-more', 'me-card-tab-settings');
 }
 
-/** Open the dock avatar user menu and wait for its actions to render. */
-async function openUserMenu(page: Page): Promise<void> {
+// ─── Foundation-lens stubs (dock-test precondition) ──────────────────────────
+// Seed a non-Me lens so the post-action `me-selector` assertion proves the dock action switched the
+// lens back to Me, rather than passing trivially in the default-Me context. Mirrors the stub shape in
+// persona-navigation.spec.ts (hermetic: unmatched lens requests return empty items).
+
+async function stubPersona(page: Page, personas: string[]): Promise<void> {
+  await page.route('**/api/user/personas*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ personas, personaProjects: {}, projects: [], organizations: [], isRootWriter: false }),
+    })
+  );
+}
+
+async function stubFoundationNav(page: Page): Promise<void> {
+  await page.route('**/api/nav/lens-items*', (route) => {
+    const url = route.request().url();
+    const requestedLens = new URL(url).searchParams.get('lens') ?? 'foundation';
+    const items = requestedLens === 'foundation' ? [MOCK_FOUNDATION_ITEM] : [];
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
+    });
+  });
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_SLUG}*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ uid: MOCK_FOUNDATION_ITEM.uid, slug: MOCK_FOUNDATION_SLUG, name: 'Test Foundation', public: true, writer: true }),
+    })
+  );
+  await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sfid: null }) }));
+}
+
+/** Put the app on the foundation lens (me card hidden) so a later switch to Me is observable. */
+async function establishFoundationLens(page: Page): Promise<void> {
+  await stubPersona(page, ['board-member']);
+  await stubFoundationNav(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
+  await page.goto(`/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await expect(page.getByTestId('sidebar'), 'sidebar should be visible on the foundation lens').toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+  // Precondition: not on the Me lens. The card stays in the DOM but is toggled off via a `hidden`
+  // class ([class.hidden]="!showMeSelector()"), so assert not-visible rather than not-attached.
+  await expect(page.getByTestId('me-selector'), 'me card should be hidden off the Me lens').toBeHidden({ timeout: SIDEBAR_LOAD_TIMEOUT });
+}
+
+/** Establish a non-Me lens, then open the dock avatar user menu and wait for its actions to render. */
+async function openUserMenu(page: Page): Promise<void> {
+  await establishFoundationLens(page);
   await openPopover(page, 'lens-user-avatar', 'lens-settings');
 }
 
@@ -148,12 +212,14 @@ test.describe('Me-lens profile card', () => {
   });
 
   test('S1: card body navigates to /profile (stretched link)', async ({ page }) => {
-    await gotoProfileAndWaitForCard(page, '/profile');
+    // Start on a different Me-lens tab so the assertion proves the click *changed* the route — not
+    // just that we were already somewhere under /profile.
+    await gotoProfileAndWaitForCard(page, '/profile/identities');
 
     await page.getByTestId('me-card-link').click();
 
-    // /profile redirects to the first tab (attributions); assert we land in the Profile shell.
-    await expect(page, 'me-card body should navigate into the Profile shell').toHaveURL(/\/profile\b/, { timeout: ELEMENT_TIMEOUT });
+    // The card links to /profile, which redirects to the canonical first tab.
+    await expect(page, 'me-card body should navigate to the default Profile tab').toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
   });
 
   test('S2: the ⋯ overflow opens the five profile tabs, in order, each linking to its route', async ({ page }) => {
@@ -201,21 +267,25 @@ test.describe('Dock avatar user menu', () => {
   });
 
   test('S4: Settings action navigates to /profile/settings and activates the Me lens', async ({ page }) => {
+    // openUserMenu starts on the foundation lens (me card hidden), so the assertions below prove the
+    // action both navigated and switched the lens back to Me.
     await openUserMenu(page);
 
     await page.getByTestId('lens-settings').click();
 
     await expect(page, 'dock Settings should navigate to /profile/settings').toHaveURL(/\/profile\/settings\b/, { timeout: ELEMENT_TIMEOUT });
-    // The Me lens is active iff the sidebar me card renders (showMeSelector === activeLens === 'me').
-    await expect(page.getByTestId('me-selector'), 'Me lens should be active after the Settings action').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    // The Me lens is active iff the sidebar me card becomes visible (showMeSelector === activeLens === 'me').
+    await expect(page.getByTestId('me-selector'), 'Settings action should switch the lens to Me').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
-  test('S5: Profile & Account action navigates to /profile', async ({ page }) => {
+  test('S5: Profile & Account action navigates to /profile and activates the Me lens', async ({ page }) => {
     await openUserMenu(page);
 
     await page.getByTestId('lens-profile').click();
 
-    await expect(page, 'dock Profile & Account should navigate into the Profile shell').toHaveURL(/\/profile\b/, { timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId('me-selector'), 'Me lens should be active after the Profile action').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    // /profile redirects to the canonical first tab; asserting it (not a bare /profile match) proves
+    // the action reached the Profile shell rather than merely staying on some /profile* URL.
+    await expect(page, 'dock Profile & Account should navigate to the default Profile tab').toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('me-selector'), 'Profile action should switch the lens to Me').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });
