@@ -27,32 +27,33 @@
         <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-personal-heading">Personal Information</h3>
 
         <div class="flex flex-col gap-4">
-          <!-- First Name -->
-          <div>
-            <label for="drawer-edit-first-name" class="block text-sm text-slate-900 mb-2">First Name</label>
-            <lfx-input-text
-              size="small"
-              [form]="profileForm"
-              control="given_name"
-              id="drawer-edit-first-name"
-              placeholder="Enter your first name"
-              styleClass="w-full"
-              data-testid="profile-edit-drawer-first-name">
-            </lfx-input-text>
-          </div>
+          <!-- First & Last name — two-up on md+ (matches the retired dialog's layout) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="drawer-edit-first-name" class="block text-sm text-slate-900 mb-2">First Name</label>
+              <lfx-input-text
+                size="small"
+                [form]="profileForm"
+                control="given_name"
+                id="drawer-edit-first-name"
+                placeholder="Enter your first name"
+                styleClass="w-full"
+                data-testid="profile-edit-drawer-first-name">
+              </lfx-input-text>
+            </div>
 
-          <!-- Last Name -->
-          <div>
-            <label for="drawer-edit-last-name" class="block text-sm text-slate-900 mb-2">Last Name</label>
-            <lfx-input-text
-              size="small"
-              [form]="profileForm"
-              control="family_name"
-              id="drawer-edit-last-name"
-              placeholder="Enter your last name"
-              styleClass="w-full"
-              data-testid="profile-edit-drawer-last-name">
-            </lfx-input-text>
+            <div>
+              <label for="drawer-edit-last-name" class="block text-sm text-slate-900 mb-2">Last Name</label>
+              <lfx-input-text
+                size="small"
+                [form]="profileForm"
+                control="family_name"
+                id="drawer-edit-last-name"
+                placeholder="Enter your last name"
+                styleClass="w-full"
+                data-testid="profile-edit-drawer-last-name">
+              </lfx-input-text>
+            </div>
           </div>
 
           <!-- Username -->
@@ -68,53 +69,54 @@
             </lfx-input-text>
           </div>
 
-          <!-- Job Title -->
-          <div>
-            <label for="drawer-edit-job-title" class="block text-sm text-slate-900 mb-2">Job Title</label>
-            <lfx-input-text
-              size="small"
-              [form]="profileForm"
-              control="job_title"
-              id="drawer-edit-job-title"
-              placeholder="Enter your job title"
-              styleClass="w-full"
-              data-testid="profile-edit-drawer-job-title">
-            </lfx-input-text>
-          </div>
+          <!-- Job Title & Organization — two-up on md+ (matches the retired dialog's layout) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="drawer-edit-job-title" class="block text-sm text-slate-900 mb-2">Job Title</label>
+              <lfx-input-text
+                size="small"
+                [form]="profileForm"
+                control="job_title"
+                id="drawer-edit-job-title"
+                placeholder="Enter your job title"
+                styleClass="w-full"
+                data-testid="profile-edit-drawer-job-title">
+              </lfx-input-text>
+            </div>
 
-          <!-- Organization -->
-          <div>
-            <label
-              [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'drawer-edit-organization' : 'drawer-edit-organization-readonly'"
-              class="block text-sm text-slate-900 mb-2">
-              Organization
-            </label>
-            @if (hasOrganizationOptions() || loadingWorkExperiences()) {
-              <lfx-select
-                size="small"
-                [form]="profileForm"
-                control="organization"
-                id="drawer-edit-organization"
-                [options]="organizationOptions()"
-                placeholder="Select your organization"
-                [filter]="true"
-                [loading]="loadingWorkExperiences()"
-                styleClass="w-full"
-                data-testid="profile-edit-drawer-organization">
-              </lfx-select>
-            } @else {
-              <lfx-select
-                size="small"
-                [form]="profileForm"
-                control="organization"
-                id="drawer-edit-organization-readonly"
-                [options]="organizationOptions()"
-                placeholder="No work experience added"
-                styleClass="w-full"
-                data-testid="profile-edit-drawer-organization">
-              </lfx-select>
-              <p class="text-sm text-gray-500 mt-1">Add a work experience to set your organization.</p>
-            }
+            <div>
+              <label
+                [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'drawer-edit-organization' : 'drawer-edit-organization-readonly'"
+                class="block text-sm text-slate-900 mb-2">
+                Organization
+              </label>
+              @if (hasOrganizationOptions() || loadingWorkExperiences()) {
+                <lfx-select
+                  size="small"
+                  [form]="profileForm"
+                  control="organization"
+                  id="drawer-edit-organization"
+                  [options]="organizationOptions()"
+                  placeholder="Select your organization"
+                  [filter]="true"
+                  [loading]="loadingWorkExperiences()"
+                  styleClass="w-full"
+                  data-testid="profile-edit-drawer-organization">
+                </lfx-select>
+              } @else {
+                <lfx-select
+                  size="small"
+                  [form]="profileForm"
+                  control="organization"
+                  id="drawer-edit-organization-readonly"
+                  [options]="organizationOptions()"
+                  placeholder="No work experience added"
+                  styleClass="w-full"
+                  data-testid="profile-edit-drawer-organization">
+                </lfx-select>
+                <p class="text-sm text-gray-500 mt-1">Add a work experience to set your organization.</p>
+              }
+            </div>
           </div>
         </div>
       </div>
