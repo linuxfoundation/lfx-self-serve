@@ -9,7 +9,7 @@ import { normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZ
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, filter, map, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -325,8 +325,18 @@ export class ProfileLayoutComponent {
     });
   }
 
+  // Re-fetch identities on the Identities tab's refresh signal (LFXV2-2767) so the panel's GitHub
+  // handle and tab-notification dots stay current without a full reload.
   private initIdentities(): Signal<EnrichedIdentity[]> {
-    return toSignal(this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))), { initialValue: [] as EnrichedIdentity[] });
+    return toSignal(
+      this.userService.identitiesRefresh$.pipe(
+        startWith(undefined),
+        // Drop a failed refresh (EMPTY) — the shell has no error UI, so a transient error must not
+        // wipe the last-good GitHub handle / dot. initialValue covers an initial-load failure.
+        switchMap(() => this.userService.getIdentities().pipe(catchError(() => EMPTY)))
+      ),
+      { initialValue: [] as EnrichedIdentity[] }
+    );
   }
 
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {
