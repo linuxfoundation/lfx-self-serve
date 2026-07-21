@@ -198,6 +198,10 @@ export class NewsletterListComponent {
 
   protected onRemoveOptOut(optOut: NewsletterOptOut, event: Event): void {
     event.stopPropagation();
+    // Capture the project uid at dialog-open time: reading it on accept could
+    // target a different project if the context switches while the dialog is open.
+    const projectUid = this.projectUid();
+    if (!projectUid) return;
     this.confirmationService.confirm({
       key: 'newsletter-list',
       header: 'Remove opt-out?',
@@ -207,7 +211,7 @@ export class NewsletterListComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.runRemoveOptOut(optOut),
+      accept: () => this.runRemoveOptOut(projectUid, optOut),
     });
   }
 
@@ -326,11 +330,10 @@ export class NewsletterListComponent {
       });
   }
 
-  private runRemoveOptOut(optOut: NewsletterOptOut): void {
-    if (!this.projectUid()) return;
+  private runRemoveOptOut(projectUid: string, optOut: NewsletterOptOut): void {
     this.removingOptOutId.set(optOut.id);
     this.newsletterService
-      .deleteOptOut(this.projectUid(), optOut.id)
+      .deleteOptOut(projectUid, optOut.id)
       .pipe(
         take(1),
         finalize(() => this.removingOptOutId.set(null))

@@ -4,10 +4,12 @@
 /**
  * Newsletter Opt-out Remove Action — LFXV2-2766.
  *
- * Editors and Executive Directors can remove individual opt-outs from the opt-out tab,
- * restoring email delivery for that address. This spec locks in the remove flow: the
- * confirmation dialog appears with clear language about the consequence, and the row
- * disappears from the table and shows a success toast on completion.
+ * Project writers can remove individual opt-outs from the opt-out tab, restoring
+ * email delivery for that address (the upstream DELETE authorizes the writer
+ * relation only, and the UI hides the action from non-writers). This spec locks in
+ * the remove flow: the confirmation dialog appears with clear language about the
+ * consequence, and the row disappears from the table and shows a success toast on
+ * completion.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -268,6 +270,25 @@ test.describe('Newsletter opt-out list — Remove action', () => {
     await expect(page.getByTestId('newsletter-optout-row-alice@example.com'), 'alice row should be retained on failure').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
+  });
+
+  test('non-writer sees the opt-out list without remove controls', async ({ page }) => {
+    // Later registrations take precedence: serve the project with writer: false
+    // so the writer-only visibility gate is exercised.
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_SLUG}*`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...buildProjectStub(), writer: false }) })
+    );
+
+    await gotoOptOutListUrl(page);
+
+    // The list still renders for the ED persona, but without remove buttons
+    await expect(page.getByTestId('newsletter-optout-table')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('newsletter-optout-row-alice@example.com'), 'alice row should be visible').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-optout-delete-alice@example.com'), 'alice remove button should be hidden').toHaveCount(0);
+    await expect(page.getByTestId('newsletter-optout-delete-bob@example.com'), 'bob remove button should be hidden').toHaveCount(0);
+
+    // No DELETE can have been issued without a control to trigger it
+    expect(deletedIds, 'no DELETE should be issued').toEqual([]);
   });
 
   test('rejecting remove confirmation keeps the row', async ({ page }) => {
