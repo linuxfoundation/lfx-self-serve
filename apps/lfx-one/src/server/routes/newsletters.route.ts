@@ -40,10 +40,11 @@ router.get('/templates/:templateKey/manifest', (req, res, next) => newsletterCon
 router.get('/', (req, res, next) => newsletterController.listNewsletters(req, res, next));
 router.post('/', (req, res, next) => newsletterController.createNewsletter(req, res, next));
 
-// Opt-out (unsubscribe) list. Static segment, registered before the
-// `/:newsletterUid` catch-alls so Express doesn't parse `opt-outs` as a
-// newsletter UID.
+// Opt-out (unsubscribe) list and individual opt-out deletion. Static segments
+// registered before the `/:newsletterUid` catch-alls so Express doesn't parse
+// them as newsletter UIDs.
 router.get('/opt-outs', (req, res, next) => newsletterController.listOptOuts(req, res, next));
+router.delete('/opt-outs/:optOutId', (req, res, next) => newsletterController.deleteOptOut(req, res, next));
 
 // Per-newsletter CRUD + send + analytics.
 router.get('/:newsletterUid', (req, res, next) => newsletterController.getNewsletter(req, res, next));

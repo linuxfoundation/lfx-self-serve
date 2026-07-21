@@ -111,9 +111,9 @@ export class RecurringDonationDetailComponent {
             startWith(undefined as void),
             scan((page) => page + 1, -1),
             concatMap((page) =>
-              this.crowdfundingService.getInitiativeTransactions(slug, {
+              this.crowdfundingService.getMyInitiativeTransactions(slug, {
                 type: 'donations',
-                kind: 'recurring',
+                subscriptionOnly: true,
                 size: DEFAULT_CROWDFUNDING_PAGE_SIZE,
                 from: page * DEFAULT_CROWDFUNDING_PAGE_SIZE,
               })

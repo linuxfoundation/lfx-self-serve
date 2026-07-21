@@ -80,6 +80,10 @@ export class NewsletterService {
     return this.http.get<NewsletterOptOutListResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/opt-outs`).pipe(take(1));
   }
 
+  public deleteOptOut(projectUid: string, optOutId: string): Observable<void> {
+    return this.http.delete<void>(`/api/projects/${this.enc(projectUid)}/newsletters/opt-outs/${this.enc(optOutId)}`).pipe(take(1));
+  }
+
   public createNewsletter(projectUid: string, payload: CreateNewsletterRequest): Observable<Newsletter> {
     return this.http.post<Newsletter>(`/api/projects/${this.enc(projectUid)}/newsletters`, payload).pipe(take(1));
   }

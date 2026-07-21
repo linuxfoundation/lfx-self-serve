@@ -390,6 +390,7 @@ export interface NewsletterTemplateManifest {
 }
 
 export interface NewsletterOptOut {
+  id: string;
   email: string;
   unsubscribed_at: string;
 }
