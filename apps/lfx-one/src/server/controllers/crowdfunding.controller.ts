@@ -451,7 +451,10 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_initiative_transactions' });
       }
 
-      const { slug } = req.params;
+      const slug = (req.params['slug'] ?? '').trim();
+      if (!slug) {
+        throw ServiceValidationError.forField('slug', 'Initiative slug is required', { operation: 'get_my_initiative_transactions' });
+      }
       const { type, size, from, subscriptionOnly } = req.query;
 
       const ALLOWED_TYPES = ['donations', 'expenses'] as const;
