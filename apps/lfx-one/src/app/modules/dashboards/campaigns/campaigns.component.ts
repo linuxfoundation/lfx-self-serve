@@ -3,10 +3,14 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 
+import { ButtonComponent } from '../../../shared/components/button/button.component';
+import { SelectComponent } from '../../../shared/components/select/select.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
@@ -14,7 +18,15 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 
 @Component({
   selector: 'lfx-campaigns',
-  imports: [PlanningTabComponent, ImplementationTabComponent, MonitoringTabComponent, OptimizationTabComponent],
+  imports: [
+    ReactiveFormsModule,
+    SelectComponent,
+    ButtonComponent,
+    PlanningTabComponent,
+    ImplementationTabComponent,
+    MonitoringTabComponent,
+    OptimizationTabComponent,
+  ],
   templateUrl: './campaigns.component.html',
   styleUrl: './campaigns.component.scss',
 })
@@ -24,6 +36,18 @@ export class CampaignsComponent {
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
   protected readonly deliveryTypes = CAMPAIGN_DELIVERY_TYPES;
+  // lfx-select's `options` input is typed as a mutable `any[]`, so pass a shallow
+  // mutable copy of the readonly constants rather than the `readonly` arrays directly.
+  protected readonly programTypeOptions = [...CAMPAIGN_PROGRAM_TYPES];
+  protected readonly deliveryTypeOptions = [...CAMPAIGN_DELIVERY_TYPES];
+
+  // The two selectors are reactive-form controls so they can bind to the lfx-select
+  // wrapper (form-driven). nonNullable keeps the value typed to the union, never `| null`.
+  protected readonly selectorForm = new FormGroup({
+    programType: new FormControl<CampaignProgramType>('events', { nonNullable: true }),
+    deliveryType: new FormControl<CampaignDeliveryType>('paid-marketing', { nonNullable: true }),
+  });
+
   protected readonly selectedTab = signal<CampaignTab>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
@@ -31,6 +55,29 @@ export class CampaignsComponent {
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
+
+  constructor() {
+    // Mirror the program control into the signal. A program switch changes the whole
+    // brief context (URL scrape, copy), so it resets the brief + returns to planning.
+    this.selectorForm.controls.programType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (value === this.selectedProgramType()) {
+        return;
+      }
+      this.selectedProgramType.set(value);
+      this.resetToPlanning();
+    });
+
+    // Mirror the delivery-type control into the signal. Do NOT discard the brief here:
+    // Email is a placeholder ("coming soon"), so switching to it and back must preserve
+    // any in-progress Paid Marketing brief rather than silently wiping the user's work.
+    this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (value === this.selectedDeliveryType()) {
+        return;
+      }
+      this.selectedDeliveryType.set(value);
+      this.selectedTab.set('planning');
+    });
+  }
 
   protected selectTab(tab: CampaignTab): void {
     this.selectedTab.set(tab);
@@ -59,26 +106,17 @@ export class CampaignsComponent {
     }
   }
 
-  protected onProgramTypeChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    if (this.programTypes.some((pt) => pt.id === value)) {
-      this.selectedProgramType.set(value as CampaignProgramType);
-      this.briefOutput.set(null);
-      this.selectedTab.set('planning');
-    }
-  }
-
-  protected onDeliveryTypeChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    if (this.deliveryTypes.some((dt) => dt.id === value && !dt.disabled)) {
-      this.selectedDeliveryType.set(value as CampaignDeliveryType);
-      this.briefOutput.set(null);
-      this.selectedTab.set('planning');
-    }
+  protected switchToPaidMarketing(): void {
+    this.selectorForm.controls.deliveryType.setValue('paid-marketing');
   }
 
   protected onProceedToImplementation(brief: CampaignBriefOutput): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
+  }
+
+  private resetToPlanning(): void {
+    this.briefOutput.set(null);
+    this.selectedTab.set('planning');
   }
 }

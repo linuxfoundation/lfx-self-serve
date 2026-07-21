@@ -16,26 +16,25 @@
 
     <!-- Program & Delivery-Type Selectors -->
     <div class="flex items-center gap-3" data-testid="campaigns-selectors">
-      <select
-        class="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        [value]="selectedProgramType()"
-        (change)="onProgramTypeChange($event)"
-        aria-label="Campaign program type"
-        data-testid="campaigns-program-select">
-        @for (pt of programTypes; track pt.id) {
-          <option [value]="pt.id">{{ pt.label }}</option>
-        }
-      </select>
-      <select
-        class="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        [value]="selectedDeliveryType()"
-        (change)="onDeliveryTypeChange($event)"
-        aria-label="Campaign delivery type"
-        data-testid="campaigns-delivery-select">
-        @for (dt of deliveryTypes; track dt.id) {
-          <option [value]="dt.id" [disabled]="dt.disabled">{{ dt.label }}</option>
-        }
-      </select>
+      <lfx-select
+        [form]="selectorForm"
+        control="programType"
+        [options]="programTypeOptions"
+        optionLabel="label"
+        optionValue="id"
+        size="small"
+        ariaLabel="Campaign program type"
+        data-testid="campaigns-program-select" />
+      <lfx-select
+        [form]="selectorForm"
+        control="deliveryType"
+        [options]="deliveryTypeOptions"
+        optionLabel="label"
+        optionValue="id"
+        optionDisabled="disabled"
+        size="small"
+        ariaLabel="Campaign delivery type"
+        data-testid="campaigns-delivery-select" />
     </div>
   </div>
 
@@ -48,17 +47,8 @@
       data-testid="campaigns-email-placeholder">
       <i class="fa-light fa-envelope text-3xl text-gray-400" aria-hidden="true"></i>
       <h2 class="text-base font-semibold text-gray-900">Email campaigns are coming soon</h2>
-      <p class="max-w-md text-sm text-gray-500">
-        The Email delivery channel is under active development. Switch to
-        <button
-          type="button"
-          class="font-medium text-blue-600 hover:text-blue-700 hover:underline"
-          (click)="selectedDeliveryType.set('paid-marketing')"
-          data-testid="campaigns-email-switch-paid">
-          Paid Marketing
-        </button>
-        to plan and launch a campaign now.
-      </p>
+      <p class="max-w-md text-sm text-gray-500">The Email delivery channel is under active development.</p>
+      <lfx-button label="Switch to Paid Marketing" [link]="true" size="small" (onClick)="switchToPaidMarketing()" data-testid="campaigns-email-switch-paid" />
     </div>
   } @else {
     <!-- Tab Navigation -->
