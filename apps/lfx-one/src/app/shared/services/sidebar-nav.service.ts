@@ -184,28 +184,6 @@ export class SidebarNavService {
         },
       ],
     },
-    {
-      label: 'My Account',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Profile',
-          icon: 'fa-light fa-user',
-          routerLink: '/profile',
-        },
-        {
-          label: 'Settings',
-          icon: 'fa-light fa-gear',
-          routerLink: '/profile/settings',
-        },
-        {
-          label: 'Transactions',
-          icon: 'fa-light fa-receipt',
-          routerLink: '/profile/transactions',
-        },
-      ],
-    },
   ];
 
   // Whether the currently selected foundation has project-level data in Snowflake.
