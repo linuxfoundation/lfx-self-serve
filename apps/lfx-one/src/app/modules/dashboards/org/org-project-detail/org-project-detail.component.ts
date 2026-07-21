@@ -306,8 +306,8 @@ export class OrgProjectDetailComponent {
         })
       )
         .pipe(
-          distinctUntilChanged((a, b) => (a?.navToken ?? null) === (b?.navToken ?? null)),
           filter((match): match is { navToken: string; card: InfluenceCardVm } => match !== null),
+          distinctUntilChanged((a, b) => a.navToken === b.navToken),
           takeUntilDestroyed()
         )
         .subscribe(({ card }) => this.openCardDetail(card));
