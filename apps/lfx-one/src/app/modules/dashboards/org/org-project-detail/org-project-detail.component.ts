@@ -25,8 +25,10 @@ import {
   PD_DEFAULT_TAB,
   PD_VALID_TABS,
   PD_DEFAULT_TIME_RANGE,
+  PD_DRAWER_QUERY_PARAM,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
+  PD_VALID_DRAWER_CARD_KEYS,
   lfxColors,
   PD_METRIC_OPTIONS,
   PD_STACKED_PALETTE,
@@ -58,7 +60,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, type Observable, of, scan, skip, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, type Observable, of, scan, skip, startWith, switchMap, take } from 'rxjs';
 
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885), routed at `/org/projects/:projectSlug`.
@@ -138,6 +140,10 @@ export class OrgProjectDetailComponent {
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), { initialValue: null });
+  private readonly drawerCardParam = computed<string | null>(() => {
+    const raw = this.queryParamMap().get(PD_DRAWER_QUERY_PARAM);
+    return raw && PD_VALID_DRAWER_CARD_KEYS.has(raw) ? raw : null;
+  });
 
   // Fetch triggers. Hero is range-independent (drops range$); the tab-scoped blocks gate on an
   // "activated" flag that flips true the first time their tab is shown and stays true, so returning
@@ -288,6 +294,22 @@ export class OrgProjectDetailComponent {
         this.refreshArrows(this.techTrackRef()?.nativeElement, true);
         this.refreshArrows(this.ecoTrackRef()?.nativeElement, false);
       });
+
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(
+        computed(() => {
+          const key = this.drawerCardParam();
+          if (!key) return null;
+          return [...this.technicalCards(), ...this.ecosystemCards()].find((card) => card.key === key) ?? null;
+        })
+      )
+        .pipe(
+          filter((card): card is InfluenceCardVm => card !== null),
+          take(1),
+          takeUntilDestroyed()
+        )
+        .subscribe((card) => this.openCardDetail(card));
+    }
   }
 
   protected switchTab(tab: OrgLensProjectDetailTab): void {

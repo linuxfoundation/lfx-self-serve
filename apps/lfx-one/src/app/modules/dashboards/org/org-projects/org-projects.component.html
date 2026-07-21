@@ -339,10 +339,23 @@
                   </div>
                 </td>
                 <td>
-                  <span class="text-sm font-medium text-gray-900">{{ project.contributors.length }}</span>
+                  <a
+                    [routerLink]="['/org/projects', project.slug]"
+                    [queryParams]="contributorsDrawerQueryParams"
+                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    [attr.aria-label]="'View ' + project.contributors.length + ' contributors for ' + project.name"
+                    [attr.data-testid]="'org-projects-contributors-' + project.slug"
+                    >{{ project.contributors.length }}</a
+                  >
                 </td>
                 <td>
-                  <span class="text-sm font-medium text-gray-900">{{ project.participants.length }}</span>
+                  <a
+                    [routerLink]="['/org/projects', project.slug]"
+                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    [attr.aria-label]="'View ' + project.name + ' project detail'"
+                    [attr.data-testid]="'org-projects-participants-' + project.slug"
+                    >{{ project.participants.length }}</a
+                  >
                 </td>
                 <td class="text-right">
                   <lfx-button
