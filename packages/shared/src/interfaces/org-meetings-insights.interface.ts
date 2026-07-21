@@ -64,15 +64,6 @@ export interface OrgMeetingsSpendBreakdown {
   byRole: OrgMeetingsSpendSegment[];
 }
 
-/** One of the three "how this has changed over time" trend cards. */
-export interface OrgMeetingsTrend {
-  label: string;
-  value: number;
-  deltaLabel: string;
-  deltaDirection: OrgMeetingsDeltaDirection;
-  sparkline: number[];
-}
-
 /** One value (foundation/type/role) tied to a single meeting, tagged so private meetings can be masked in the leaderboard. */
 export interface OrgLeaderboardMaskedValue {
   value: string;

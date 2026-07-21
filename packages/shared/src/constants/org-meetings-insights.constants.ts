@@ -7,7 +7,6 @@ import type {
   OrgLeaderboardRow,
   OrgMeetingsKpiSummary,
   OrgMeetingsSpendBreakdown,
-  OrgMeetingsTrend,
 } from '../interfaces/org-meetings-insights.interface';
 
 /** Valid values for the Org Lens Meetings time-range dropdown, in display order. */
@@ -191,31 +190,6 @@ export const DEMO_ORG_MEETINGS_SPEND: OrgMeetingsSpendBreakdown = {
     { label: 'Voting Member', pct: 7 },
   ],
 };
-
-/** Demo trend cards for "How this has changed over time", seeded from the 6a design spec. */
-export const DEMO_ORG_MEETINGS_TRENDS: OrgMeetingsTrend[] = [
-  {
-    label: 'Meetings Attended',
-    value: 512,
-    deltaLabel: '+12% vs. prior period',
-    deltaDirection: 'up',
-    sparkline: [38, 41, 39, 44, 47, 45, 49, 52, 50, 54, 57, 60],
-  },
-  {
-    label: 'Employees Active',
-    value: 63,
-    deltaLabel: '+8% vs. prior period',
-    deltaDirection: 'up',
-    sparkline: [44, 46, 45, 48, 50, 49, 53, 55, 54, 58, 60, 63],
-  },
-  {
-    label: 'Projects Supported',
-    value: 47,
-    deltaLabel: '+3% vs. prior period',
-    deltaDirection: 'up',
-    sparkline: [42, 43, 42, 44, 43, 45, 44, 46, 45, 46, 46, 47],
-  },
-];
 
 /** Demo employee leaderboard rows, seeded from the 6a design spec's mock employees. */
 export const DEMO_ORG_LEADERBOARD: OrgLeaderboardRow[] = [

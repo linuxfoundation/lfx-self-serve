@@ -15,7 +15,6 @@ import { OrgMeetingsInfluenceComponent } from './components/org-meetings-influen
 import { OrgMeetingsKpiCardsComponent } from './components/org-meetings-kpi-cards/org-meetings-kpi-cards.component';
 import { OrgMeetingsSpendBreakdownComponent } from './components/org-meetings-spend-breakdown/org-meetings-spend-breakdown.component';
 import { OrgMeetingsTimeRangeComponent } from './components/org-meetings-time-range/org-meetings-time-range.component';
-import { OrgMeetingsTrendsComponent } from './components/org-meetings-trends/org-meetings-trends.component';
 
 // Employee leaderboard component intentionally not imported/rendered here — deferred to a
 // future PR (LFXV2-2735 follow-up). Its files remain in ./components/org-meetings-leaderboard.
@@ -30,7 +29,6 @@ import { OrgMeetingsTrendsComponent } from './components/org-meetings-trends/org
     OrgMeetingsTimeRangeComponent,
     OrgMeetingsKpiCardsComponent,
     OrgMeetingsSpendBreakdownComponent,
-    OrgMeetingsTrendsComponent,
     OrgMeetingsInfluenceComponent,
     EmptyStateComponent,
     SkeletonModule,
