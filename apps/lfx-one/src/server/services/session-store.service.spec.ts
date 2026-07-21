@@ -170,19 +170,27 @@ describe('SessionStoreService', () => {
       expect(valkeyService.del).toHaveBeenCalledTimes(2);
     });
 
-    it('spends the fallback del() retries against the remaining budget of one shared deadline, not a fresh timeout each', async () => {
+    it('shares one deadline across retries: the second del() gets a strictly smaller budget than the first once time has passed', async () => {
+      // setAsync calls Date.now() exactly three times: once to compute the shared deadline,
+      // then once per remainingMs(deadline) call ahead of each del() attempt. Mock a 500ms gap
+      // between the two remainingMs() calls to prove the second budget is the *remainder* of the
+      // same deadline, not a fresh SESSION_OP_TIMEOUT_MS re-granted per call — the bug this test
+      // guards against would hand both del() calls the same (full) budget.
+      const now = vi.spyOn(Date, 'now');
+      now
+        .mockReturnValueOnce(1_000) // deadline = 1_000 + SESSION_OP_TIMEOUT_MS
+        .mockReturnValueOnce(1_000) // remainingMs() ahead of the first del()
+        .mockReturnValueOnce(1_500); // remainingMs() ahead of the retry del()
+
       valkeyService.setJson.mockResolvedValue(false);
-      valkeyService.del.mockResolvedValue(false);
+      valkeyService.del.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
       await expect(service.set('sid-1', buildPayload())).rejects.toBeInstanceOf(AuthenticationError);
 
-      // Both del() calls get a key plus a positive remaining-ms budget bounded by SESSION_OP_TIMEOUT_MS —
-      // never `undefined` and never the full timeout re-granted per call.
-      for (const call of valkeyService.del.mock.calls) {
-        expect(call[0]).toBe('lfx-ui:session:v1:sid-1');
-        expect(call[1]).toBeGreaterThan(0);
-        expect(call[1]).toBeLessThanOrEqual(VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
-      }
+      expect(valkeyService.del).toHaveBeenNthCalledWith(1, 'lfx-ui:session:v1:sid-1', VALKEY_CACHE.SESSION_OP_TIMEOUT_MS);
+      expect(valkeyService.del).toHaveBeenNthCalledWith(2, 'lfx-ui:session:v1:sid-1', VALKEY_CACHE.SESSION_OP_TIMEOUT_MS - 500);
+
+      now.mockRestore();
     });
 
     describe('ttlSecondsFor', () => {
