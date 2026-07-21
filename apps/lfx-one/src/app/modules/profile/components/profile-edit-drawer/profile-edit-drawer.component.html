@@ -7,7 +7,7 @@
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
-  [showCloseIcon]="true"
+  [showCloseIcon]="!saving()"
   [dismissible]="!saving()"
   [closeOnEscape]="!saving()"
   styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
