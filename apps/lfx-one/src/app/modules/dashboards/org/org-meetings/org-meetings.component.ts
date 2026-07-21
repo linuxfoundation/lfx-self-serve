@@ -39,8 +39,11 @@ export class OrgMeetingsComponent {
   protected readonly timeRange = signal<OrgMeetingsTimeRange>('past365d');
 
   // Complex computed
-  // `accountId` (not `uid`) is the canonical presence check: it's always populated as soon as a
-  // real account is selected, while `uid` can still be pending Snowflake enrichment on a fresh
-  // persona seed — checking `uid` would leave a validly-selected company on the empty state.
-  protected readonly hasCompany: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().accountId);
+  // Either identifier counts as "selected": a fresh persona seed can have `uid` but an empty
+  // `accountId` pending Snowflake enrichment, while a cookie-restored stub (account-context.service.ts)
+  // can have `uid` set with `accountId` still empty. Checking only one leaves a validly-selected
+  // company on the empty state, per the same gate in org-overview.component.ts.
+  protected readonly hasCompany: Signal<boolean> = computed(
+    () => !!this.accountContext.selectedAccount().uid || !!this.accountContext.selectedAccount().accountId
+  );
 }
