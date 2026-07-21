@@ -9,7 +9,7 @@ import { normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZ
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, filter, map, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -332,7 +332,10 @@ export class ProfileLayoutComponent {
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
-        switchMap(() => this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))))
+        // Drop a failed refresh (EMPTY) rather than emitting [] — the shell has no error UI or retry,
+        // so a transient error must not wipe the last-good GitHub handle / notification dot. The
+        // initialValue below still covers an initial-load failure.
+        switchMap(() => this.userService.getIdentities().pipe(catchError(() => EMPTY)))
       ),
       { initialValue: [] as EnrichedIdentity[] }
     );
