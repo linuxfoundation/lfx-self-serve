@@ -30,7 +30,7 @@ import type {
   PersonaType,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -359,9 +359,11 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     const blockTypes = (payload.body_layout?.blocks ?? []).map((b) => b.block_type);
     expect(blockTypes).toContain('intro_paragraph');
     expect(blockTypes).toContain('sponsored_ad');
-    // The layout records the selected block library so the server renders from it.
-    // The draft carries no template_key, so the composer emits the default.
-    expect(payload.body_layout?.template_key).toBe(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+    // The draft is keyless and the author never picked a library, so the layout
+    // stays keyless — the composer omits template_key rather than stamping the
+    // default palette's key, and the service renders neutral chrome over the
+    // block superset. (Picking a library via the picker would persist that key.)
+    expect(payload.body_layout?.template_key).toBeUndefined();
   });
 
   test('switching to the simple editor confirms before discarding in-session blocks', async ({ page }) => {
