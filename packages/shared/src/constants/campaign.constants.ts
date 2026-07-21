@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  CampaignDeliveryTypeOption,
   CampaignGoalOption,
   CampaignPlatform,
   CampaignPlatformOption,
@@ -32,9 +33,16 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
-  { id: 'brave-ads', label: 'Brave Ads', icon: 'fa-light fa-shield', disabled: true },
-  { id: 'feathr', label: 'Feathr', icon: 'fa-light fa-bullseye-arrow', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
+] as const;
+
+/**
+ * Delivery types — the second campaign selector (after the program type). Both are
+ * selectable; the Email channel is under active parallel development.
+ */
+export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
+  { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
+  { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
@@ -93,8 +101,6 @@ export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> =
   'reddit-ads': '#FF4500',
   'meta-ads': '#1877F2',
   'microsoft-ads': '#00A4EF',
-  'brave-ads': '#FB542B',
-  feathr: '#6366F1',
   'twitter-ads': '#000000',
 };
 

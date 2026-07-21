@@ -2,20 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { SelectComponent } from '@components/select/select.component';
-import { normalizeTShirtSize, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
-import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
+import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, filter, map, of, switchMap, take } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
+import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
 
 // Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
 // Child routes (e.g. identities) handle their own error codes — do not swallow them here.
@@ -28,28 +27,34 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
 ]);
 
 /**
- * ProfileLayoutComponent serves as the shell for all profile pages.
+ * ProfileLayoutComponent is the two-column shell for the Profile & Account hub.
  * It provides:
- * - Profile header card with user info
- * - Tab navigation (horizontal on desktop, dropdown on mobile)
- * - Router outlet for child components
+ * - Left column: page head, subtab navigation, and the router outlet for child pages
+ * - Right column: the sticky profile panel (lfx-profile-panel) bound to the user's CombinedProfile
+ *
+ * The layout owns the profile data fetch, optimistic updates, the edit dialog, and the
+ * Flow C (management-token) auth-return handling; the panel is presentational and emits
+ * `editRequested` back here to open the edit dialog.
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ReactiveFormsModule, SelectComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent],
   providers: [DialogService, MessageService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileLayoutComponent {
-  private static readonly formStateKey = 'lfx_profile_pending_save';
+  private static readonly formStateKey = PENDING_PROFILE_SAVE_KEY;
+  // Discard a stored pending-save older than this. Prevents an abandoned profile-edit authorization
+  // from being silently replayed by a later, unrelated profile-auth return (e.g. an email-delete
+  // authorization that now lands on /profile/settings inside this shell).
+  private static readonly pendingSaveTtlMs = 10 * 60 * 1000;
 
   // Private injections
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
-  private readonly fb = inject(NonNullableFormBuilder);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -62,17 +67,6 @@ export class ProfileLayoutComponent {
 
   // Tab configuration
   public readonly tabs: ProfileTab[] = PROFILE_TABS;
-
-  // Tab options for dropdown (mobile)
-  public readonly tabOptions = this.tabs.map((tab) => ({
-    label: tab.label,
-    value: tab.route,
-  }));
-
-  // Form for mobile tab selection
-  public readonly tabForm = this.fb.group({
-    selectedTab: ['attribution'],
-  });
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override
@@ -88,9 +82,6 @@ export class ProfileLayoutComponent {
   // but all profile mutations act on the real user's account server-side and are blocked. The edit
   // affordances render visible-but-disabled and a banner surfaces the read-only state.
   public readonly impersonating = this.userService.impersonating;
-
-  // Tracks failed avatar image loads so we can fall back to initials
-  public readonly avatarLoadError = signal<boolean>(false);
 
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
@@ -132,51 +123,38 @@ export class ProfileLayoutComponent {
     return match?.label || data.tshirtSize;
   });
 
-  // Tab notification dots — show when work experiences need review or identities are unverified
-  public readonly tabNotifications: Signal<Map<string, boolean>> = this.initTabNotifications();
+  // Connected identities — fetched once and reused for the tab notification dots and the GitHub handle
+  private readonly identities: Signal<EnrichedIdentity[]> = this.initIdentities();
+
+  // Tab notification dots — show when identities are unverified
+  public readonly tabNotifications: Signal<Map<string, boolean>> = computed(() => {
+    const hasUnverified = this.identities().some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified');
+    return new Map<string, boolean>([['identities', hasUnverified]]);
+  });
+
+  // GitHub username from a GitHub account the user actually owns (linked in Auth0); empty otherwise.
+  // inAuth0 gates out CDP-only rows (inAuth0 === false) — unverified suggestions or identities that
+  // belong to another LFID merged into CDP — which could otherwise surface a stale/unowned handle.
+  public readonly githubHandle: Signal<string> = computed(() => {
+    const github = this.identities().find((id) => id.platform === 'github' && id.inAuth0);
+    return github?.value ?? '';
+  });
 
   public constructor() {
-    // Reset the avatar error flag whenever the picture URL changes so a newly-set
-    // (or refreshed) avatar re-attempts to load instead of staying on the initials fallback
-    effect(() => {
-      this.avatarUrl();
-      this.avatarLoadError.set(false);
-    });
-
-    // Subscribe to tab selection changes for mobile navigation
-    this.tabForm.controls.selectedTab.valueChanges.pipe(takeUntilDestroyed()).subscribe((route) => {
-      if (route) {
-        this.router.navigate(['/profile', route]);
-      }
-    });
-
-    // Sync mobile dropdown when route changes (back/forward, direct URL)
-    this.router.events
-      .pipe(
-        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-        takeUntilDestroyed()
-      )
-      .subscribe((event) => {
-        const match = event.urlAfterRedirects.match(/\/profile\/([^?/]+)/);
-        if (match) {
-          this.tabForm.controls.selectedTab.setValue(match[1], { emitEvent: false });
-        }
-      });
-
     // Handle Flow C return — restore saved form state and auto-save
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       if (params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
-        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        this.clearAuthQueryParams();
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
-          detail: 'Profile authorization failed. Please try saving again.',
+          detail: 'Authorization failed. Please try again.',
         });
-        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        this.clearAuthQueryParams();
       }
     });
   }
@@ -253,9 +231,15 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
+    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
+    // authorization isn't silently replayed by a later, unrelated profile-auth return.
     let formData: Partial<UserMetadata>;
     try {
-      formData = JSON.parse(savedState);
+      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
+      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+        return;
+      }
+      formData = envelope.form;
     } catch {
       return;
     }
@@ -299,6 +283,14 @@ export class ProfileLayoutComponent {
     });
   }
 
+  // Strip the Flow C query params (success/error) while staying on the current tab.
+  // Navigating relative to this.route would resolve to the parent /profile route and
+  // bounce the user to the default tab — so re-navigate to the current path sans query.
+  private clearAuthQueryParams(): void {
+    const path = this.router.url.split('?')[0];
+    this.router.navigateByUrl(path, { replaceUrl: true });
+  }
+
   // Private init functions
   private initProfileData(): Signal<ProfileHeaderData | null> {
     const user$ = toObservable(this.userService.user);
@@ -340,20 +332,8 @@ export class ProfileLayoutComponent {
     });
   }
 
-  private initTabNotifications(): Signal<Map<string, boolean>> {
-    return toSignal(
-      this.userService.getIdentities().pipe(
-        map((identities) => identities.some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified')),
-        catchError(() => of(false)),
-        startWith(false),
-        map((hasUnverified) => {
-          const notifications = new Map<string, boolean>();
-          notifications.set('identities', hasUnverified);
-          return notifications;
-        })
-      ),
-      { initialValue: new Map<string, boolean>() }
-    );
+  private initIdentities(): Signal<EnrichedIdentity[]> {
+    return toSignal(this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))), { initialValue: [] as EnrichedIdentity[] });
   }
 
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {

@@ -1,12 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="transactions-dashboard">
-  <!-- Page Header -->
-  <div class="mb-6">
-    <h1 class="font-display font-light text-2xl" data-testid="transactions-title">My Transactions</h1>
-    <p class="mt-1 text-sm text-gray-500" data-testid="transactions-subtitle">{{ subtitle }}</p>
-  </div>
+<div [class]="embedded ? 'w-full' : 'container mx-auto px-4 sm:px-6 lg:px-8'" data-testid="transactions-dashboard">
+  <!-- Page Header — suppressed when embedded in the Profile shell, which owns the header -->
+  @if (!embedded) {
+    <div class="mb-6">
+      <h1 class="font-display font-light text-2xl" data-testid="transactions-title">My Transactions</h1>
+      <p class="mt-1 text-sm text-gray-500" data-testid="transactions-subtitle">{{ subtitle }}</p>
+    </div>
+  }
 
   <!-- Tab switcher -->
   <div class="mb-6" data-testid="transactions-tabs">

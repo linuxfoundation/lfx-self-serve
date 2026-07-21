@@ -177,7 +177,7 @@
                     type="button"
                     class="flex items-center gap-1 whitespace-nowrap font-semibold"
                     (click)="toggleSort('health')"
-                    pTooltip="CHAOSS health classification from LFX Insights: Excellent, Healthy, or At Risk."
+                    pTooltip="LFX Insights project health classification: Excellent, Healthy, Stable, Unsteady, or Critical."
                     tooltipPosition="top"
                     tooltipStyleClass="lfx-tooltip-wide">
                     Health
@@ -274,7 +274,12 @@
                     (mouseenter)="openHealth($event, project, healthPop)"
                     (mouseleave)="scheduleHealthHide(healthPop)"
                     [attr.data-testid]="'org-projects-health-' + project.slug">
-                    <lfx-tag [value]="project.healthLabel" [severity]="project.healthSeverity" />
+                    <span
+                      class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold"
+                      [style.backgroundColor]="project.healthBadge.bg"
+                      [style.color]="project.healthBadge.text"
+                      >{{ project.healthLabel }}</span
+                    >
                   </span>
                 </td>
                 <td>
@@ -334,10 +339,23 @@
                   </div>
                 </td>
                 <td>
-                  <span class="text-sm font-medium text-gray-900">{{ project.contributors.length }}</span>
+                  <a
+                    [routerLink]="['/org/projects', project.slug]"
+                    [queryParams]="contributorsDrawerQueryParams"
+                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    [attr.aria-label]="project.contributorsAriaLabel"
+                    [attr.data-testid]="'org-projects-contributors-' + project.slug"
+                    >{{ project.contributors.length }}</a
+                  >
                 </td>
                 <td>
-                  <span class="text-sm font-medium text-gray-900">{{ project.participants.length }}</span>
+                  <a
+                    [routerLink]="['/org/projects', project.slug]"
+                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    [attr.aria-label]="project.participantsAriaLabel"
+                    [attr.data-testid]="'org-projects-participants-' + project.slug"
+                    >{{ project.participants.length }}</a
+                  >
                 </td>
                 <td class="text-right">
                   <lfx-button
@@ -373,7 +391,12 @@
           LFX Insights
         </a>
       </div>
-      <lfx-tag [value]="project.healthLabel" [severity]="project.healthSeverity" [dot]="true" />
+      <span
+        class="inline-flex w-fit px-2.5 py-1 rounded-full text-xs font-semibold"
+        [style.backgroundColor]="project.healthBadge.bg"
+        [style.color]="project.healthBadge.text"
+        >{{ project.healthLabel }}</span
+      >
       <p class="text-sm leading-relaxed text-gray-500">{{ project.description }}</p>
       <div class="flex flex-col gap-2.5">
         @for (metric of project.healthMetrics; track metric.label) {

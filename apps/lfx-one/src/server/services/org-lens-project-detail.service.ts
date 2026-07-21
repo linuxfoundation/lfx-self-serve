@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, PD_TIME_RANGE_TYPE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, PD_HEALTH_TAG, PD_TIME_RANGE_TYPE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgLensCardDetailCell,
   OrgLensCardDetailRow,
@@ -19,7 +19,7 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, classifyHealthScore } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
@@ -1140,8 +1140,7 @@ export class OrgLensProjectDetailService {
 
   private mapHealth(score: number | null): OrgLensProjectHealth | null {
     if (score === null || score === undefined) return null;
-    if (score >= 80) return 'excellent';
-    return score >= 60 ? 'healthy' : 'at-risk';
+    return classifyHealthScore(score);
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {
@@ -1520,7 +1519,9 @@ export class OrgLensProjectDetailService {
   private static isHeroBlock(value: unknown): value is OrgLensHeroBlock {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensHeroBlock;
-    return !!candidate.hero && typeof candidate.hero === 'object' && typeof candidate.isNonLfProject === 'boolean';
+    if (!candidate.hero || typeof candidate.hero !== 'object' || typeof candidate.isNonLfProject !== 'boolean') return false;
+    const { health } = candidate.hero as OrgLensProjectHero;
+    return health === null || Object.prototype.hasOwnProperty.call(PD_HEALTH_TAG, health);
   }
 
   private static isInfluenceBlock(value: unknown): value is OrgLensInfluenceBlock {

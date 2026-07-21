@@ -198,11 +198,6 @@ export class EmailCtrDrawerComponent {
     this.expandedProjects.set(next);
   }
 
-  protected formatFunnelLabel(stage: string): string {
-    const labels: Record<string, string> = { BoFU: 'BOTTOM', MoFU: 'MIDDLE', ToFU: 'TOP', ToFU2: 'TOP', Unknown: '' };
-    return labels[stage] ?? stage;
-  }
-
   protected toggleChannel(channel: string): void {
     const current = this.expandedChannels();
     const next = new Set(current);

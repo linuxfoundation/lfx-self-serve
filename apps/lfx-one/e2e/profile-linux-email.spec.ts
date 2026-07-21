@@ -109,3 +109,124 @@ test.describe('Linux.com email — partial claim failure recovery', () => {
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
   });
 });
+
+test.describe('Linux.com email — forwarding target visibility', () => {
+  test('keeps the forward dropdown visible with a hint when the saved target is the only verified option', async ({ page }) => {
+    await stubProfileContext(page);
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: `${ALIAS}@${DOMAIN}`, forwardTo: PRIMARY_EMAIL };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-select')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+    await expect(page.getByText('Add another verified email to change this.')).toBeVisible();
+  });
+
+  test('shows the empty-state message and hides the select when no verified email can be forwarded to', async ({ page }) => {
+    // Genuine-empty case: the only verified email is the claimed alias itself (so it's
+    // excluded from forwardOptions) and no external forwardTo is saved — zero options.
+    const aliasEmail = `${ALIAS}@${DOMAIN}`;
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: EmailManagementData = { primary_email: aliasEmail, alternate_emails: [] };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: aliasEmail, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-empty')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
+  });
+
+  test('shows the normal hint on a first-time claim with a single verified email', async ({ page }) => {
+    await stubProfileContext(page);
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-forward-select')).toBeVisible();
+    await expect(page.getByText('Choose one of your verified email addresses.')).toBeVisible();
+  });
+});
+
+test.describe('Linux.com email — verified emails fetch failure', () => {
+  test('shows a retry panel instead of the empty-state message on the claim form', async ({ page }) => {
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'upstream unavailable' }) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-forward-load-error')).toBeVisible();
+    await expect(page.getByTestId('linux-email-claim-forward-empty')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-claim-forward-retry-button')).toBeVisible();
+  });
+
+  test('shows a retry panel instead of the empty-state message on the edit form', async ({ page }) => {
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'upstream unavailable' }) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      // A preserved forwardTo (from before the emails fetch started failing) would make
+      // forwardOptions() non-empty even though emails failed — the retry panel must still
+      // win over the select in that case.
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: `${ALIAS}@${DOMAIN}`, forwardTo: PRIMARY_EMAIL };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-load-error')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-forward-retry-button')).toBeVisible();
+  });
+});

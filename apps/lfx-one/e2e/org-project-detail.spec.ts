@@ -129,6 +129,33 @@ test.describe('Org Project Detail — leaderboards', () => {
   });
 });
 
+test.describe('Org Project Detail — Contributors drawer deep-link', () => {
+  test('auto-opens the Contributors drawer from ?card=contributors', async ({ page }) => {
+    await page.goto(`${DETAIL_URL}?card=contributors`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('project-detail-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('project-detail-technical-card-contributors')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('influence-card-detail-title')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('influence-card-detail-title')).toHaveText('Contributors');
+  });
+
+  test('closing the auto-opened drawer stays on the detail page', async ({ page }) => {
+    await page.goto(`${DETAIL_URL}?card=contributors`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('influence-card-detail-title')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('influence-card-detail-title')).toBeHidden();
+    await expect(page.getByTestId('project-detail-page')).toBeVisible();
+    await expect(page).toHaveURL(/\/org\/projects\/k8s/);
+  });
+
+  test('ignores an unknown ?card= value and loads the page with no drawer', async ({ page }) => {
+    await page.goto(`${DETAIL_URL}?card=bogus-card`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('project-detail-technical-group')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('influence-card-detail-title')).toBeHidden();
+  });
+});
+
 test.describe('Org Project Detail — not found', () => {
   test('renders the 404 panel for an unknown slug', async ({ page }) => {
     await page.goto(DETAIL_URL_BOGUS, { waitUntil: 'domcontentloaded' });

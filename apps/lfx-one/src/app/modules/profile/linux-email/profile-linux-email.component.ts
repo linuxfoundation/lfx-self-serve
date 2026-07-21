@@ -112,6 +112,21 @@ export class ProfileLinuxEmailComponent {
     return options;
   });
 
+  // True when at least one forward option differs from what's already saved/selected —
+  // a real alternative to switch to. Drives only the edit form's hint text (whether to
+  // show "choose one" vs "add another to change this"); the claim form gates on
+  // forwardOptions().length so a stale savedForwardTo can never hide its dropdown.
+  public hasForwardOptions = computed((): boolean => {
+    const saved = this.savedForwardTo();
+    return this.forwardOptions().some((option) => option.value !== saved);
+  });
+
+  // True only on a failed getUserEmails() fetch, not a genuine lack of a primary
+  // email — a successful /api/profile/emails response always has a non-empty
+  // primary_email (server-side fallback), so `emails === null` here only ever
+  // means the request errored (see initData's catchError).
+  public emailsLoadFailed = computed((): boolean => this.data().emails === null);
+
   // Public methods
 
   public purchase(): void {

@@ -25,8 +25,10 @@ import {
   PD_DEFAULT_TAB,
   PD_VALID_TABS,
   PD_DEFAULT_TIME_RANGE,
+  PD_DRAWER_QUERY_PARAM,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
+  PD_VALID_DRAWER_CARD_KEYS,
   lfxColors,
   PD_METRIC_OPTIONS,
   PD_STACKED_PALETTE,
@@ -138,6 +140,10 @@ export class OrgProjectDetailComponent {
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), { initialValue: null });
+  private readonly drawerCardParam = computed<string | null>(() => {
+    const raw = this.queryParamMap().get(PD_DRAWER_QUERY_PARAM);
+    return raw && PD_VALID_DRAWER_CARD_KEYS.has(raw) ? raw : null;
+  });
 
   // Fetch triggers. Hero is range-independent (drops range$); the tab-scoped blocks gate on an
   // "activated" flag that flips true the first time their tab is shown and stays true, so returning
@@ -288,6 +294,24 @@ export class OrgProjectDetailComponent {
         this.refreshArrows(this.techTrackRef()?.nativeElement, true);
         this.refreshArrows(this.ecoTrackRef()?.nativeElement, false);
       });
+
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(
+        computed(() => {
+          const slug = this.projectSlug();
+          const key = this.drawerCardParam();
+          if (!slug || !key) return null;
+          const card = [...this.technicalCards(), ...this.ecosystemCards()].find((c) => c.key === key) ?? null;
+          return card ? { navToken: `${slug}|${key}`, card } : null;
+        })
+      )
+        .pipe(
+          filter((match): match is { navToken: string; card: InfluenceCardVm } => match !== null),
+          distinctUntilChanged((a, b) => a.navToken === b.navToken),
+          takeUntilDestroyed()
+        )
+        .subscribe(({ card }) => this.openCardDetail(card));
+    }
   }
 
   protected switchTab(tab: OrgLensProjectDetailTab): void {

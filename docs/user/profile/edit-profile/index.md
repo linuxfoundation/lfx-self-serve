@@ -13,11 +13,13 @@ Use the Profile section to keep your account information current. Your profile i
 
 ## Profile tabs
 
-The Profile page (`/profile`) has three tabs:
+The Profile page (`/profile`) has five tabs:
 
 - **Work history & Affiliations** — your work history and project affiliations
 - **Identities** — connected accounts used to identify you and attribute contributions
 - **Individual Enrollment** — enroll in the Linux Foundation Individual Supporter plan
+- **Transactions** — your Linux Foundation purchase history (`/profile/transactions`)
+- **Settings** — email addresses, password, and developer API token (`/profile/settings`)
 
 ## Edit your personal details
 
@@ -35,25 +37,25 @@ The Profile page (`/profile`) has three tabs:
 
 ## Manage email addresses
 
-Email address management is in **Settings** (`/settings`), not on the Profile page.
+Email address management is in the **Settings** tab of your Profile (`/profile/settings`).
 
-1. Go to **Settings** (`/settings`) > **Email Settings** > **Add New Email Address**.
+1. Go to the **Settings** tab (`/profile/settings`) > **Email Settings** > **Add New Email Address**.
 2. A 6-digit verification code will be sent to the new address.
 3. Enter the code to confirm the new address.
 
 ## Change your password
 
-Password management is in **Settings** (`/settings`), not on the Profile page.
+Password management is in the **Settings** tab of your Profile (`/profile/settings`).
 
-1. Go to **Settings** (`/settings`) > **Password** > **Change Password**.
+1. Go to the **Settings** tab (`/profile/settings`) > **Password** > **Change Password**.
 2. Fill in **Current Password**, **New Password**, and **Confirm New Password**.
 3. Select **Change Password** to apply.
 
 ## Developer settings (API token)
 
-Developer settings are in **Settings** (`/settings`), not on the Profile page.
+Developer settings are in the **Settings** tab of your Profile (`/profile/settings`).
 
-1. Go to **Settings** (`/settings`) > **Developer Settings**.
+1. Go to the **Settings** tab (`/profile/settings`) > **Developer Settings**.
 2. Your **Personal Access Token** is listed here.
 3. Use the **Show** button to reveal it and the **Copy** button to copy it.
 4. Never share this token publicly.
