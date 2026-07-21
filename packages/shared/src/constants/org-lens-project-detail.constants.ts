@@ -21,6 +21,10 @@ export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardM
 export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '2y';
 export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
+export const PD_DRAWER_QUERY_PARAM = 'card';
+export const PD_CONTRIBUTORS_CARD_KEY = 'contributors';
+export const PD_VALID_DRAWER_CARD_KEYS: ReadonlySet<string> = new Set<string>([PD_CONTRIBUTORS_CARD_KEY]);
+
 /** Snowflake `time_range_type` value for each UI range toggle. */
 export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
   '1y': 'last_365_days',
