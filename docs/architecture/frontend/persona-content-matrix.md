@@ -43,23 +43,28 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 **Identical for all personas.** Static items — no runtime persona conditions.
 
-| Section       | Item                      | Route                   |
-| ------------- | ------------------------- | ----------------------- |
-| _(top-level)_ | My Dashboard              | `/`                     |
-| My Engagement | My Meetings               | `/meetings`             |
-|               | My Events                 | `/events`               |
-|               | My Committees             | `/groups`               |
-|               | My Mailing Lists          | `/mailing-lists`        |
-|               | My Votes                  | `/votes`                |
-|               | My Surveys                | `/surveys`              |
-|               | My Documents              | `/documents`            |
-| My Growth     | Training & Certifications | `/me/training`          |
-|               | Mentorships               | _(external link)_       |
-|               | Crowdfunding              | _(external link)_       |
-|               | Badges                    | `/badges`               |
-| My Account    | Profile                   | `/profile`              |
-|               | Settings                  | `/profile/settings`     |
-|               | Transactions              | `/profile/transactions` |
+| Section           | Item                          | Route                            |
+| ----------------- | ----------------------------- | -------------------------------- |
+| _(top-level)_     | My Dashboard                  | `/`                              |
+| My Engagement     | My Meetings                   | `/meetings`                      |
+|                   | My Events                     | `/events`                        |
+|                   | My Committees                 | `/groups`                        |
+|                   | My Mailing Lists              | `/mailing-lists`                 |
+|                   | My Votes                      | `/votes`                         |
+|                   | My Surveys                    | `/surveys`                       |
+|                   | My Documents                  | `/documents`                     |
+| My Growth         | Training & Certifications     | `/me/training`                   |
+|                   | Mentorships                   | _(external link)_                |
+|                   | Crowdfunding                  | _(external link)_                |
+|                   | Badges                        | `/badges`                        |
+| Profile & Account | Profile & Account (user card) | `/profile`                       |
+|                   | Work history & Affiliations   | `/profile/attributions`          |
+|                   | Identities                    | `/profile/identities`            |
+|                   | Individual Enrollment         | `/profile/individual-enrollment` |
+|                   | Transactions                  | `/profile/transactions`          |
+|                   | Settings                      | `/profile/settings`              |
+
+> **Profile & Account** is not a nav section: it is the sidebar user card (the card links to `/profile`) with a trailing `⋯` overflow menu that exposes the profile tabs above. The lens-switcher dock avatar menu also links to Profile & Account (`/profile`) and Settings (`/profile/settings`).
 
 ---
 
