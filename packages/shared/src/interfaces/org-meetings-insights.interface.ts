@@ -91,7 +91,10 @@ export interface OrgLeaderboardRow {
   attendancePct: number;
 }
 
-/** One pill in a leaderboard cell — the real value, or "Private" if every meeting for it is private. */
+/**
+ * One pill in a leaderboard cell — the real value for a value's public meetings, or "Private" for
+ * its private ones. A value with both public and private meetings renders as two separate pills.
+ */
 export interface OrgLeaderboardPillValue {
   label: string;
   isPrivate: boolean;
