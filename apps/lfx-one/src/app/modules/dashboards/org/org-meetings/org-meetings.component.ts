@@ -39,5 +39,8 @@ export class OrgMeetingsComponent {
   protected readonly timeRange = signal<OrgMeetingsTimeRange>('past365d');
 
   // Complex computed
-  protected readonly hasCompany: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().uid);
+  // `accountId` (not `uid`) is the canonical presence check: it's always populated as soon as a
+  // real account is selected, while `uid` can still be pending Snowflake enrichment on a fresh
+  // persona seed — checking `uid` would leave a validly-selected company on the empty state.
+  protected readonly hasCompany: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().accountId);
 }
