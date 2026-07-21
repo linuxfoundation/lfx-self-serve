@@ -5,7 +5,7 @@
 // Platform & Phase
 // ---------------------------------------------------------------------------
 
-export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'brave-ads' | 'feathr' | 'twitter-ads';
+export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
 
 export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimization';
 
