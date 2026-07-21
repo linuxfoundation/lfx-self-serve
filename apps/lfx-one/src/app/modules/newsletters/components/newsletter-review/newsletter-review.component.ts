@@ -7,7 +7,6 @@ import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { NewsletterLayout } from '@lfx-one/shared/interfaces';
-import { NEWSLETTER_DEFAULT_TEMPLATE_KEY } from '@lfx-one/shared/constants';
 import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { EMPTY, startWith, switchMap } from 'rxjs';
@@ -71,9 +70,13 @@ export class NewsletterReviewComponent implements OnInit {
   protected readonly templateLabel = computed(() => {
     const layout = this.bodyLayoutValue();
     if (!layout) return ''; // html-only draft: no library
-    // A blocks draft saved before template_key existed has a layout but no key;
-    // its effective library is the default, so show that rather than hide the row.
-    const key = layout.template_key ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY;
+    const key = layout.template_key;
+    // A keyless layout (a new draft, or one saved before per-newsletter selection)
+    // renders with project-NEUTRAL chrome over the block superset — NOT a specific
+    // library. Labelling it with the default library's name (e.g. "AAIF User
+    // Community") would misstate what gets sent, so show a neutral label; a
+    // present key uses the catalog's curated label (or a humanized key).
+    if (!key) return 'Default (neutral)';
     return this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
   });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');

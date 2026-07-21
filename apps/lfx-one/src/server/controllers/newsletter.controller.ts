@@ -504,7 +504,12 @@ export class NewsletterController {
     } else if (!hasBodyHtml && !layoutValid) {
       // Neither authored html nor a (blocks-mode) layout — nothing to persist.
       fieldErrors['body_html'] = 'Body is required';
-    } else if (typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
+    } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
+      // Only cap authored body_html on the HTML-only path. In blocks mode the
+      // upstream ignores request body_html and re-derives it from body_layout, so
+      // capping the (server-rendered, echoed-back) body_html here would reject the
+      // autosave of a large composed email the composer only means to WARN about
+      // (the ~102 KB Gmail-clipping threshold). The layout has its own size cap.
       fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
     }
     if (layoutValid && JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
@@ -533,10 +538,24 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
-      fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
-      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    // A layout test send recompiles the email from body_layout upstream (the
+    // request body_html is the echoed server render), so require/cap body_html
+    // only on the HTML-only path. Otherwise a large composed newsletter — one the
+    // composer only WARNS about at the ~102 KB Gmail-clipping threshold — cannot
+    // be test-sent. Size-cap the layout itself instead.
+    const layoutValid =
+      payload?.body_layout !== undefined &&
+      payload?.body_layout !== null &&
+      Array.isArray(payload.body_layout.blocks) &&
+      payload.body_layout.blocks.length > 0;
+    if (!layoutValid) {
+      if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+        fieldErrors['body_html'] = 'Body is required';
+      } else if (payload.body_html.length > BODY_MAX_LENGTH) {
+        fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+      }
+    } else if (JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {

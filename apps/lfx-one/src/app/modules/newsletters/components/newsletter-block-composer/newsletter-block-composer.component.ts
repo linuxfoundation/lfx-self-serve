@@ -1239,13 +1239,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
     const text = data.getData('text/plain') ?? '';
     const richtext = el.getAttribute('data-nl-richtext') === 'true';
-    if (richtext) {
-      const html = data.getData('text/html');
-      const clean = html ? (this.sanitizer.sanitize(SecurityContext.HTML, html) ?? text) : text;
-      document.execCommand('insertHTML', false, clean);
+    // Only ever hand SANITIZED HTML to insertHTML. Plain text — including the
+    // no-HTML and sanitizer-returned-null cases — goes through insertText, which
+    // inserts it as text, NOT markup. Passing the raw text/plain payload to
+    // insertHTML would parse e.g. `<img src=x onerror=...>` into the live DOM and
+    // defeat the sanitization this method exists to provide.
+    const cleanHtml = richtext ? this.sanitizer.sanitize(SecurityContext.HTML, data.getData('text/html') ?? '') : null;
+    if (cleanHtml) {
+      document.execCommand('insertHTML', false, cleanHtml);
     } else {
-      // commitInlineEdit reads textContent for plain-text fields; inserting the
-      // plain text keeps any inbound markup from being parsed into the DOM.
       document.execCommand('insertText', false, text);
     }
 
