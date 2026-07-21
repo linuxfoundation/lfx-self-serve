@@ -485,24 +485,29 @@ export class NewsletterController {
     }
 
     // The body may arrive as raw HTML or as a structured block layout. The
-    // newsletter service renders body_layout to body_html on write, so an empty
-    // body_html is acceptable as long as a non-empty layout accompanies it.
-    // Tri-state: an absent (undefined) or explicit `null` layout selects the
-    // body_html path; a present (non-null) layout object is authoritative
-    // upstream — it renders even when body_html is set. So a present-but-empty
-    // layout must be rejected, or it would persist and render a wrapper-only
-    // email despite the accompanying html.
+    // newsletter service renders body_layout to body_html on write. Tri-state: an
+    // absent (undefined) or explicit `null` layout selects the body_html path; a
+    // present (non-null) layout object is authoritative upstream (blocks mode).
+    //
+    // A present layout must be STRUCTURALLY valid (blocks is an array) but MAY be
+    // empty: clearing the canvas emits `blocks: []`, a deliberate DRAFT state the
+    // author must be able to persist (rejecting it 400s the save, so the emptied
+    // draft silently reverts to its old content on reload). A wrapper-only layout
+    // renders fine upstream and can be saved; the non-empty requirement lives on
+    // the SEND gate (canSend / bodyFilled), not on draft validation, so an empty
+    // newsletter can be saved but not sent.
     const layoutPresent = payload?.body_layout !== undefined && payload?.body_layout !== null;
+    const layoutValid = layoutPresent && Array.isArray(payload.body_layout!.blocks);
     const hasBodyHtml = typeof payload?.body_html === 'string' && payload.body_html.trim().length > 0;
-    const hasBodyLayout = layoutPresent && Array.isArray(payload.body_layout!.blocks) && payload.body_layout!.blocks.length > 0;
-    if (layoutPresent && !hasBodyLayout) {
-      fieldErrors['body_layout'] = 'A block layout must contain at least one block';
-    } else if (!hasBodyHtml && !hasBodyLayout) {
+    if (layoutPresent && !layoutValid) {
+      fieldErrors['body_layout'] = 'A block layout must have a blocks array';
+    } else if (!hasBodyHtml && !layoutValid) {
+      // Neither authored html nor a (blocks-mode) layout — nothing to persist.
       fieldErrors['body_html'] = 'Body is required';
     } else if (typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
       fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
     }
-    if (hasBodyLayout && JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
+    if (layoutValid && JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
       fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
