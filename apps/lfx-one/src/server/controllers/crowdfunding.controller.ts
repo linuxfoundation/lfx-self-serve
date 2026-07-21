@@ -442,6 +442,49 @@ export class CrowdfundingController {
     }
   }
 
+  /** GET /api/crowdfunding/initiatives/:slug/my-transactions — paginated list of the caller's own contributions to the initiative. */
+  public async getMyInitiativeTransactions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_initiative_transactions');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_my_initiative_transactions' });
+      }
+
+      const { slug } = req.params;
+      const { type, size, from, subscriptionOnly } = req.query;
+
+      const ALLOWED_TYPES = ['donations', 'expenses'] as const;
+      type AllowedType = (typeof ALLOWED_TYPES)[number];
+
+      const resolvedType = type ? String(type) : undefined;
+      if (resolvedType !== undefined && !ALLOWED_TYPES.includes(resolvedType as AllowedType)) {
+        res.status(400).json({ message: `Invalid type '${resolvedType}'. Allowed values: ${ALLOWED_TYPES.join(', ')}` });
+        return;
+      }
+
+      const transactions = await this.crowdfundingService.getMyInitiativeTransactions(
+        req,
+        slug,
+        resolvedType as AllowedType | undefined,
+        parseNonNegativeInt(size),
+        parseNonNegativeInt(from),
+        subscriptionOnly === 'true'
+      );
+
+      if (!transactions) {
+        res.status(404).json({ message: `Initiative '${slug}' not found` });
+        return;
+      }
+
+      logger.success(req, 'get_my_initiative_transactions', startTime, { slug, total: transactions.totalCount });
+
+      res.json(transactions);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/crowdfunding/initiatives/:id/announcements — list announcements for an initiative. */
   public async getAnnouncements(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_announcements');

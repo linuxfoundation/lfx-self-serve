@@ -28,6 +28,7 @@ router.post('/initiatives/:id/announcements', (req, res, next) => crowdfundingCo
 router.put('/initiatives/:id/announcements/:announcementId', (req, res, next) => crowdfundingController.updateAnnouncement(req, res, next));
 router.delete('/initiatives/:id/announcements/:announcementId', (req, res, next) => crowdfundingController.deleteAnnouncement(req, res, next));
 router.get('/initiatives/:slug/transactions', (req, res, next) => crowdfundingController.getInitiativeTransactions(req, res, next));
+router.get('/initiatives/:slug/my-transactions', (req, res, next) => crowdfundingController.getMyInitiativeTransactions(req, res, next));
 router.patch('/initiatives/:id', (req, res, next) => crowdfundingController.updateInitiative(req, res, next));
 router.get('/initiatives/:slug', (req, res, next) => crowdfundingController.getInitiativeBySlug(req, res, next));
 
