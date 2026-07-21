@@ -67,15 +67,18 @@ export class CampaignsComponent {
       this.resetToPlanning();
     });
 
-    // Mirror the delivery-type control into the signal. Do NOT discard the brief here:
-    // Email is a placeholder ("coming soon"), so switching to it and back must preserve
-    // any in-progress Paid Marketing brief rather than silently wiping the user's work.
+    // Mirror the delivery-type control into the signal. Preserve ALL in-progress
+    // Paid Marketing state across an Email round-trip: Email is a "coming soon"
+    // placeholder, and the paid-marketing container stays mounted via [hidden], so we
+    // must NOT touch briefOutput OR selectedTab. Resetting selectedTab here would swap
+    // the inner @switch and destroy the currently-mounted tab component (e.g.
+    // ImplementationTabComponent with its own form/budget/creation state); leaving it
+    // alone means returning to Paid Marketing restores the same tab and its state.
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
       }
       this.selectedDeliveryType.set(value);
-      this.selectedTab.set('planning');
     });
   }
 
