@@ -290,6 +290,9 @@ export class ProfileEditDrawerComponent {
   /** Seed the form from the opened profile and reset its pristine/saving state. */
   private seedForm(profile: CombinedProfile): void {
     this.combinedProfile.set(profile);
+    // Clear the prior session's work history so a reopen doesn't surface stale organization options
+    // (or enable the control) until the fresh GET lands — mirrors the email reset in the reload pipe.
+    this.workExperiences.set([]);
     this.populateForm(profile);
     this.profileForm.markAsPristine();
     this.profileForm.markAsUntouched();
