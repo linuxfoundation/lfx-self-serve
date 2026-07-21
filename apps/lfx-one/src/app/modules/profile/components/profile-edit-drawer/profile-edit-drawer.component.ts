@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, output, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -14,28 +14,41 @@ import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize } from 'rxjs';
+import { DrawerModule } from 'primeng/drawer';
+import { filter, finalize } from 'rxjs';
 
+import { ProfileEditDrawerService } from './profile-edit-drawer.service';
+
+/**
+ * Right-side Profile & Account edit drawer (LFXV2-2742), replacing the former edit dialog. Opened via
+ * {@link ProfileEditDrawerService}; ProfileLayoutComponent hosts one instance and applies the
+ * optimistic update from the {@link saved} output. The form and save behaviour are a faithful port of
+ * the retired ProfileEditDialogComponent, including the Flow C (management-token) redirect.
+ */
 @Component({
-  selector: 'lfx-profile-edit-dialog',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent],
-  templateUrl: './profile-edit-dialog.component.html',
+  selector: 'lfx-profile-edit-drawer',
+  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent],
+  templateUrl: './profile-edit-drawer.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProfileEditDialogComponent {
+export class ProfileEditDrawerComponent {
   // Private injections
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
-  private readonly ref = inject(DynamicDialogRef);
-  private readonly config = inject(DynamicDialogConfig);
+  private readonly destroyRef = inject(DestroyRef);
+  protected readonly drawer = inject(ProfileEditDrawerService);
 
-  // Config data
-  public readonly combinedProfile: CombinedProfile = this.config.data.combinedProfile;
+  // Emits the saved metadata so the host layout can apply an optimistic profile update.
+  public readonly saved = output<Partial<UserMetadata>>();
+
+  // The profile currently being edited (seeded on each open). A signal so the computeds that read it
+  // (authEmail, organizationOptions) recompute when a new profile is opened.
+  private readonly combinedProfile = signal<CombinedProfile | null>(null);
 
   // Form state signals
   public readonly saving = signal(false);
+  public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
 
   // Email signals
@@ -44,9 +57,9 @@ export class ProfileEditDialogComponent {
   public readonly loadingEmails = signal(true);
   public readonly selectedPrimaryEmail = signal('');
   public readonly savingPrimaryEmail = signal(false);
-  public readonly verifiedEmails: Signal<UserEmail[]> = this.initVerifiedEmails();
+  public readonly verifiedEmails: Signal<UserEmail[]> = computed(() => this.emails().filter((e) => e.verified));
   public readonly hasManagedEmails: Signal<boolean> = computed(() => this.verifiedEmails().length > 0);
-  public readonly authEmail = this.combinedProfile.user.email;
+  public readonly authEmail = computed(() => this.combinedProfile()?.user.email ?? '');
 
   // Organization (work-history-derived) signals
   public readonly loadingWorkExperiences = signal(true);
@@ -54,7 +67,7 @@ export class ProfileEditDialogComponent {
   public readonly organizationOptions: Signal<{ label: string; value: string }[]> = this.initOrganizationOptions();
   public readonly hasOrganizationOptions: Signal<boolean> = computed(() => this.organizationOptions().length > 0);
 
-  // Country/state options
+  // Country/state/t-shirt options
   public readonly countryOptions = COUNTRIES.map((country: { label: string; value: string }) => ({
     label: country.label,
     value: country.label,
@@ -70,9 +83,7 @@ export class ProfileEditDialogComponent {
     value: size.value,
   }));
 
-  // Computed
   public readonly isUSA = computed(() => this.selectedCountrySignal() === 'United States');
-  public readonly hasChanges = signal(false);
 
   // Profile edit form
   public profileForm: FormGroup = this.fb.group({
@@ -93,11 +104,17 @@ export class ProfileEditDialogComponent {
   });
 
   public constructor() {
-    this.populateForm(this.combinedProfile);
+    // Seed and (re)load whenever the drawer opens with a fresh profile context.
+    toObservable(this.drawer.context)
+      .pipe(
+        filter((context): context is CombinedProfile => context !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((context) => this.onOpen(context));
 
     this.profileForm
       .get('country')
-      ?.valueChanges.pipe(takeUntilDestroyed())
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((country: string) => {
         this.selectedCountrySignal.set(country || '');
         if (country !== 'United States') {
@@ -105,47 +122,19 @@ export class ProfileEditDialogComponent {
         }
       });
 
-    this.profileForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+    this.profileForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.hasChanges.set(this.profileForm.dirty);
     });
+  }
 
-    this.userService
-      .getUserEmails()
-      .pipe(
-        takeUntilDestroyed(),
-        finalize(() => this.loadingEmails.set(false))
-      )
-      .subscribe({
-        next: (data) => {
-          const primary: UserEmail = { email: data.primary_email, verified: true };
-          const alternates = data.alternate_emails.filter((e) => e.email !== data.primary_email);
-          this.emails.set([primary, ...alternates]);
-          this.primaryEmail.set(data.primary_email);
-          this.selectedPrimaryEmail.set(data.primary_email);
-        },
-        error: () => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to load email addresses.',
-          });
-        },
-      });
+  public onVisibleChange(visible: boolean): void {
+    if (!visible) {
+      this.drawer.close();
+    }
+  }
 
-    // Load work-history organizations to populate the Organization dropdown.
-    this.userService
-      .getWorkExperiences()
-      .pipe(
-        takeUntilDestroyed(),
-        finalize(() => this.loadingWorkExperiences.set(false))
-      )
-      // getWorkExperiences() already catches errors (returns []) and surfaces its own toast,
-      // so a dedicated error handler here would be unreachable. A currently-saved organization
-      // still shows as a selectable option via organizationOptions() when the list is empty.
-      .subscribe((experiences) => {
-        this.workExperiences.set(experiences);
-        this.syncOrganizationControl();
-      });
+  public onCancel(): void {
+    this.drawer.close();
   }
 
   public onSubmit(): void {
@@ -158,7 +147,7 @@ export class ProfileEditDialogComponent {
     const formValue = this.profileForm.value;
 
     // organization_domain is resolved server-side from the organization name on every save path,
-    // so the dialog only needs to send the selected organization here.
+    // so the drawer only needs to send the selected organization here.
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,
@@ -187,14 +176,15 @@ export class ProfileEditDialogComponent {
             summary: 'Success',
             detail: 'Profile updated successfully!',
           });
-          // Return the saved metadata so the parent can update its cached profile optimistically.
+          // Hand the saved metadata to the host so it can update its cached profile optimistically.
           // The profile GET is eventually consistent, so an immediate refetch can read stale data.
-          this.ref.close(userMetadata);
+          this.saved.emit(userMetadata);
+          this.drawer.close();
         },
         error: (error: HttpErrorResponse) => {
-          // Flow C: Management token required — save form state and redirect to authorize
+          // Flow C: Management token required — save form state and redirect to authorize.
           if (error.status === 403 && error.error?.error === 'management_token_required') {
-            // Stamp with a timestamp so the parent shell can discard a stale pending-save if this
+            // Stamp with a timestamp so the host shell can discard a stale pending-save if this
             // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
             sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
             window.location.href = error.error.authorize_url;
@@ -208,13 +198,6 @@ export class ProfileEditDialogComponent {
           });
         },
       });
-  }
-
-  public onReset(): void {
-    this.populateForm(this.combinedProfile);
-    this.profileForm.markAsPristine();
-    this.profileForm.markAsUntouched();
-    this.hasChanges.set(false);
   }
 
   public onPrimaryEmailChange(email: string): void {
@@ -245,31 +228,90 @@ export class ProfileEditDialogComponent {
       });
   }
 
+  // Private methods
+
+  /** Seed the form from the opened profile and (re)load emails + work-history each open. */
+  private onOpen(profile: CombinedProfile): void {
+    this.combinedProfile.set(profile);
+    this.populateForm(profile);
+    this.profileForm.markAsPristine();
+    this.profileForm.markAsUntouched();
+    this.hasChanges.set(false);
+    this.saving.set(false);
+    this.loadEmails();
+    this.loadWorkExperiences();
+  }
+
+  private loadEmails(): void {
+    this.loadingEmails.set(true);
+    this.userService
+      .getUserEmails()
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.loadingEmails.set(false))
+      )
+      .subscribe({
+        next: (data) => {
+          const primary: UserEmail = { email: data.primary_email, verified: true };
+          const alternates = data.alternate_emails.filter((e) => e.email !== data.primary_email);
+          this.emails.set([primary, ...alternates]);
+          this.primaryEmail.set(data.primary_email);
+          this.selectedPrimaryEmail.set(data.primary_email);
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load email addresses.',
+          });
+        },
+      });
+  }
+
+  private loadWorkExperiences(): void {
+    this.loadingWorkExperiences.set(true);
+    // getWorkExperiences() already catches errors (returns []) and surfaces its own toast,
+    // so a dedicated error handler here would be unreachable. A currently-saved organization
+    // still shows as a selectable option via organizationOptions() when the list is empty.
+    this.userService
+      .getWorkExperiences()
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.loadingWorkExperiences.set(false))
+      )
+      .subscribe((experiences) => {
+        this.workExperiences.set(experiences);
+        this.syncOrganizationControl();
+      });
+  }
+
   private populateForm(profile: CombinedProfile): void {
     const countryValue = profile.profile?.country || '';
 
-    this.profileForm.patchValue({
-      given_name: profile.user.first_name || '',
-      family_name: profile.user.last_name || '',
-      username: stripAuthPrefixOrNull(profile.user.username) ?? '',
-      country: countryValue,
-      state_province: profile.profile?.state_province || '',
-      city: profile.profile?.city || '',
-      address: profile.profile?.address || '',
-      postal_code: profile.profile?.postal_code || '',
-      phone_number: profile.profile?.phone_number || '',
-      t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
-      job_title: profile.profile?.job_title || '',
-      // Trim so the form value matches the trimmed option values — otherwise a legacy saved
-      // org with stray whitespace would fail to match any option and render an empty selection.
-      organization: (profile.profile?.organization || '').trim(),
-    });
+    // emitEvent: false — the country control's valueChanges handler (which clears state_province for
+    // non-US countries) is already wired, so a plain patch would wipe a just-seeded state value.
+    this.profileForm.patchValue(
+      {
+        given_name: profile.user.first_name || '',
+        family_name: profile.user.last_name || '',
+        username: stripAuthPrefixOrNull(profile.user.username) ?? '',
+        country: countryValue,
+        state_province: profile.profile?.state_province || '',
+        city: profile.profile?.city || '',
+        address: profile.profile?.address || '',
+        postal_code: profile.profile?.postal_code || '',
+        phone_number: profile.profile?.phone_number || '',
+        t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
+        job_title: profile.profile?.job_title || '',
+        // Trim so the form value matches the trimmed option values — otherwise a legacy saved
+        // org with stray whitespace would fail to match any option and render an empty selection.
+        organization: (profile.profile?.organization || '').trim(),
+      },
+      { emitEvent: false }
+    );
 
     this.selectedCountrySignal.set(countryValue);
-  }
-
-  private initVerifiedEmails(): Signal<UserEmail[]> {
-    return computed(() => this.emails().filter((e) => e.verified));
+    this.syncOrganizationControl();
   }
 
   /**
@@ -322,11 +364,8 @@ export class ProfileEditDialogComponent {
 
       // Keep the currently-saved organization selectable even if it's no longer backed by a
       // work-history entry (e.g. the entry was deleted). value matches the form control value
-      // (patched from the saved metadata) so it stays selected. savedOrg is captured from the
-      // CombinedProfile at dialog open and doesn't change during the session, so this option
-      // persists for the dialog's lifetime; it's dropped on the next open once the saved org is
-      // one of the work-history entries.
-      const savedOrg = (this.combinedProfile.profile?.organization ?? '').trim();
+      // (patched from the saved metadata) so it stays selected.
+      const savedOrg = (this.combinedProfile()?.profile?.organization ?? '').trim();
       if (savedOrg && !seen.has(savedOrg.toLowerCase())) {
         options.unshift({ label: savedOrg, value: savedOrg });
       }

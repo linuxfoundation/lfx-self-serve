@@ -1,0 +1,337 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Profile & Account edit drawer (LFXV2-2742) — replaces the former edit dialog. -->
+<p-drawer
+  [visible]="drawer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="true"
+  styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="profile-edit-drawer">
+  <ng-template #header>
+    <span class="text-lg font-semibold text-slate-900" data-testid="profile-edit-drawer-header">Edit Profile</span>
+  </ng-template>
+
+  <div class="flex flex-col gap-8" data-testid="profile-edit-drawer-body">
+    <!-- Description -->
+    <p class="text-sm text-slate-500" data-testid="profile-edit-drawer-description">
+      A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you receive
+      contributor recognition and swag.
+    </p>
+
+    <form [formGroup]="profileForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+      <!-- Personal Information Section -->
+      <div data-testid="profile-edit-drawer-personal-section">
+        <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-personal-heading">Personal Information</h3>
+
+        <div class="flex flex-col gap-4">
+          <!-- First Name -->
+          <div>
+            <label for="drawer-edit-first-name" class="block text-sm text-slate-900 mb-2">First Name</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="given_name"
+              id="drawer-edit-first-name"
+              placeholder="Enter your first name"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-first-name">
+            </lfx-input-text>
+          </div>
+
+          <!-- Last Name -->
+          <div>
+            <label for="drawer-edit-last-name" class="block text-sm text-slate-900 mb-2">Last Name</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="family_name"
+              id="drawer-edit-last-name"
+              placeholder="Enter your last name"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-last-name">
+            </lfx-input-text>
+          </div>
+
+          <!-- Username -->
+          <div>
+            <label for="drawer-edit-username" class="block text-sm text-slate-900 mb-2">Username (read-only)</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="username"
+              id="drawer-edit-username"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-username">
+            </lfx-input-text>
+          </div>
+
+          <!-- Job Title -->
+          <div>
+            <label for="drawer-edit-job-title" class="block text-sm text-slate-900 mb-2">Job Title</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="job_title"
+              id="drawer-edit-job-title"
+              placeholder="Enter your job title"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-job-title">
+            </lfx-input-text>
+          </div>
+
+          <!-- Organization -->
+          <div>
+            <label
+              [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'drawer-edit-organization' : 'drawer-edit-organization-readonly'"
+              class="block text-sm text-slate-900 mb-2">
+              Organization
+            </label>
+            @if (hasOrganizationOptions() || loadingWorkExperiences()) {
+              <lfx-select
+                size="small"
+                [form]="profileForm"
+                control="organization"
+                id="drawer-edit-organization"
+                [options]="organizationOptions()"
+                placeholder="Select your organization"
+                [filter]="true"
+                [loading]="loadingWorkExperiences()"
+                styleClass="w-full"
+                data-testid="profile-edit-drawer-organization">
+              </lfx-select>
+            } @else {
+              <lfx-select
+                size="small"
+                [form]="profileForm"
+                control="organization"
+                id="drawer-edit-organization-readonly"
+                [options]="organizationOptions()"
+                placeholder="No work experience added"
+                styleClass="w-full"
+                data-testid="profile-edit-drawer-organization">
+              </lfx-select>
+              <p class="text-sm text-gray-500 mt-1">Add a work experience to set your organization.</p>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Primary Email Address Section -->
+      <div data-testid="profile-edit-drawer-email-section">
+        <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-email-heading">Primary Email Address</h3>
+
+        @if (loadingEmails()) {
+          <div class="flex items-center gap-2 text-sm text-slate-500" data-testid="profile-edit-drawer-email-loading">
+            <i class="pi pi-spinner pi-spin"></i>
+            <span>Loading emails...</span>
+          </div>
+        } @else if (!hasManagedEmails()) {
+          <!-- Auth email fallback when no managed emails exist -->
+          <div class="flex flex-col gap-3" data-testid="profile-edit-drawer-email-fallback">
+            <div class="flex items-center gap-3 p-3 border rounded-md border-blue-500 bg-blue-50" data-testid="profile-edit-drawer-email-fallback-row">
+              <div class="flex items-center justify-center w-4 h-4">
+                <div class="w-3 h-3 rounded-full bg-blue-600"></div>
+              </div>
+              <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-slate-900 truncate">{{ authEmail() }}</span>
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded"> Primary </span>
+                </div>
+                <span class="text-xs text-slate-500">Used for notifications and account communications</span>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div class="flex flex-col gap-3">
+            @for (email of verifiedEmails(); track email.email) {
+              <label
+                class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-slate-50 transition-colors"
+                [class.border-blue-500]="selectedPrimaryEmail() === email.email"
+                [class.bg-blue-50]="selectedPrimaryEmail() === email.email"
+                [class.border-slate-300]="selectedPrimaryEmail() !== email.email"
+                [attr.data-testid]="'profile-edit-drawer-email-row-' + email.email">
+                <input
+                  type="radio"
+                  name="primaryEmail"
+                  [value]="email.email"
+                  [checked]="selectedPrimaryEmail() === email.email"
+                  [disabled]="savingPrimaryEmail()"
+                  (change)="onPrimaryEmailChange(email.email)"
+                  class="accent-blue-600 w-4 h-4 cursor-pointer"
+                  [attr.data-testid]="'profile-edit-drawer-email-radio-' + email.email" />
+                <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm text-slate-900 truncate">{{ email.email }}</span>
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-green-700 bg-green-100 rounded">
+                      <i class="pi pi-check text-[10px]"></i>
+                      Verified
+                    </span>
+                  </div>
+                  @if (selectedPrimaryEmail() === email.email) {
+                    <span class="text-xs text-slate-500">Used for notifications and account communications</span>
+                  }
+                </div>
+                @if (savingPrimaryEmail() && selectedPrimaryEmail() === email.email) {
+                  <i class="pi pi-spinner pi-spin text-blue-500 text-sm"></i>
+                }
+              </label>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Location Information Section -->
+      <div data-testid="profile-edit-drawer-location-section">
+        <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-location-heading">Location Information</h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Country -->
+          <div>
+            <label for="drawer-edit-country" class="block text-sm text-slate-900 mb-2">Country</label>
+            <lfx-select
+              size="small"
+              [form]="profileForm"
+              control="country"
+              [options]="countryOptions"
+              id="drawer-edit-country"
+              placeholder="Select your country"
+              styleClass="w-full"
+              [filter]="true"
+              data-testid="profile-edit-drawer-country">
+            </lfx-select>
+          </div>
+
+          <!-- State/Province -->
+          <div>
+            <label class="block text-sm text-slate-900 mb-2">State/Province</label>
+            @if (isUSA()) {
+              <lfx-select
+                size="small"
+                [form]="profileForm"
+                control="state_province"
+                [options]="stateOptions"
+                id="drawer-edit-state-select"
+                placeholder="Select your state"
+                styleClass="w-full"
+                [filter]="true"
+                data-testid="profile-edit-drawer-state-select">
+              </lfx-select>
+            } @else {
+              <lfx-input-text
+                size="small"
+                [form]="profileForm"
+                control="state_province"
+                id="drawer-edit-state-input"
+                placeholder="Enter your state or province"
+                styleClass="w-full"
+                data-testid="profile-edit-drawer-state-input">
+              </lfx-input-text>
+            }
+          </div>
+
+          <!-- City -->
+          <div>
+            <label for="drawer-edit-city" class="block text-sm text-slate-900 mb-2">City</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="city"
+              id="drawer-edit-city"
+              placeholder="Enter your city"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-city">
+            </lfx-input-text>
+          </div>
+
+          <!-- Address -->
+          <div>
+            <label for="drawer-edit-address" class="block text-sm text-slate-900 mb-2">Address</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="address"
+              id="drawer-edit-address"
+              placeholder="Enter your address"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-address">
+            </lfx-input-text>
+          </div>
+
+          <!-- Postal/Zip Code -->
+          <div>
+            <label for="drawer-edit-zipcode" class="block text-sm text-slate-900 mb-2">Postal/Zip Code</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="postal_code"
+              id="drawer-edit-zipcode"
+              placeholder="Enter your postal or zip code"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-zipcode">
+            </lfx-input-text>
+          </div>
+
+          <!-- Phone Number -->
+          <div>
+            <label for="drawer-edit-phone" class="block text-sm text-slate-900 mb-2">Phone Number</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="phone_number"
+              id="drawer-edit-phone"
+              placeholder="Enter your phone number"
+              styleClass="w-full"
+              data-testid="profile-edit-drawer-phone">
+            </lfx-input-text>
+            <p class="text-sm text-gray-500 mt-1">Optional - Only used for urgent event notifications and swag delivery</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- T-shirt Size Section -->
+      <div data-testid="profile-edit-drawer-tshirt-section">
+        <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-tshirt-heading">T-shirt Size</h3>
+
+        <div class="max-w-[50%]">
+          <label for="drawer-edit-tshirt-size" class="block text-sm text-slate-900 mb-2">T-shirt Size</label>
+          <lfx-select
+            size="small"
+            [form]="profileForm"
+            control="t_shirt_size"
+            [options]="tshirtSizeOptions"
+            id="drawer-edit-tshirt-size"
+            placeholder="Select your t-shirt size"
+            styleClass="w-full"
+            data-testid="profile-edit-drawer-tshirt-size">
+          </lfx-select>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex justify-end gap-3 border-t border-slate-200 pt-6 mt-2" data-testid="profile-edit-drawer-actions">
+        <lfx-button
+          type="button"
+          variant="outlined"
+          label="Cancel"
+          (onClick)="onCancel()"
+          [disabled]="saving()"
+          size="small"
+          data-testid="profile-edit-drawer-cancel-button">
+        </lfx-button>
+
+        <lfx-button
+          type="submit"
+          severity="info"
+          [label]="saving() ? 'Saving...' : 'Save Changes'"
+          [loading]="saving()"
+          [disabled]="!hasChanges() || saving()"
+          size="small"
+          data-testid="profile-edit-drawer-save-button">
+        </lfx-button>
+      </div>
+    </form>
+  </div>
+</p-drawer>
