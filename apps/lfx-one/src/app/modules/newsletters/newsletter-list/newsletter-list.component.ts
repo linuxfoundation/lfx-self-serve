@@ -78,8 +78,13 @@ export class NewsletterListComponent {
   protected readonly loadingMore = signal<boolean>(false);
   protected readonly nextPageToken = signal<string | undefined>(undefined);
   protected readonly deletingId = signal<string | null>(null);
+  protected readonly removingOptOutId = signal<string | null>(null);
   protected readonly previewVisible = signal<boolean>(false);
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
+  // Upstream authorizes opt-out removal for the `writer` relation only, while the
+  // newsletters route guard also fast-paths the ED persona — gate the destructive
+  // action on writer permission so ED non-writers don't get a button that 403s.
+  protected readonly canWrite = this.projectContextService.canWrite;
   // Analytics fetched lazily per sent row (the list endpoint intentionally omits
   // open_rate/unique_opens). Kept in a side map keyed by newsletter id — never
   // written back into `newsletters` — so row identity stays stable and results
@@ -188,6 +193,25 @@ export class NewsletterListComponent {
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.runDelete(item.id),
+    });
+  }
+
+  protected onRemoveOptOut(optOut: NewsletterOptOut, event: Event): void {
+    event.stopPropagation();
+    // Capture the project uid at dialog-open time: reading it on accept could
+    // target a different project if the context switches while the dialog is open.
+    const projectUid = this.projectUid();
+    if (!projectUid) return;
+    this.confirmationService.confirm({
+      key: 'newsletter-list',
+      header: 'Remove opt-out?',
+      message: `Remove ${optOut.email} from the opt-out list? They will start receiving newsletters from this project again.`,
+      icon: 'pi pi-trash',
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.runRemoveOptOut(projectUid, optOut),
     });
   }
 
@@ -301,6 +325,29 @@ export class NewsletterListComponent {
             severity: 'error',
             summary: 'Delete failed',
             detail: err?.error?.message || err?.message || 'Could not delete the draft. Please try again.',
+          });
+        },
+      });
+  }
+
+  private runRemoveOptOut(projectUid: string, optOut: NewsletterOptOut): void {
+    this.removingOptOutId.set(optOut.id);
+    this.newsletterService
+      .deleteOptOut(projectUid, optOut.id)
+      .pipe(
+        take(1),
+        finalize(() => this.removingOptOutId.set(null))
+      )
+      .subscribe({
+        next: () => {
+          this.optOuts.update((current) => current.filter((o) => o.id !== optOut.id));
+          this.messageService.add({ severity: 'success', summary: 'Opt-out removed', detail: `${optOut.email} will receive newsletters again.` });
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Remove failed',
+            detail: err?.error?.message || err?.message || 'Could not remove the opt-out. Please try again.',
           });
         },
       });
