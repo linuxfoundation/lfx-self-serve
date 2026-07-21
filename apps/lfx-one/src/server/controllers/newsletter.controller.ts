@@ -11,6 +11,7 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -397,8 +398,10 @@ export class NewsletterController {
 
   private requireOptOutId(req: Request): string {
     const optOutId = String(req.params['optOutId'] || '').trim();
-    if (!optOutId) {
-      throw ServiceValidationError.forField('optOutId', 'optOutId path parameter is required', {
+    // Opt-out ids are always UUIDs; rejecting anything else keeps arbitrary
+    // strings out of the upstream path this value is interpolated into.
+    if (!isUuid(optOutId)) {
+      throw ServiceValidationError.forField('optOutId', 'optOutId path parameter must be a UUID', {
         operation: 'newsletter_controller',
         service: 'newsletter_controller',
         path: req.path,

@@ -66,6 +66,7 @@
                       severity="danger"
                       size="small"
                       [text]="true"
+                      [ariaLabel]="'Remove opt-out for ' + optOut.email"
                       (onClick)="onRemoveOptOut(optOut, $event)"
                       [disabled]="removingOptOutId() === optOut.id"
                       [attr.data-testid]="'newsletter-optout-delete-' + optOut.email">

@@ -36,12 +36,12 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
 
 const MOCK_OPT_OUTS: NewsletterOptOut[] = [
   {
-    id: 'o0000000-0000-0000-0000-000000000001',
+    id: 'a0000000-0000-0000-0000-000000000001',
     email: 'alice@example.com',
     unsubscribed_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
-    id: 'o0000000-0000-0000-0000-000000000002',
+    id: 'b0000000-0000-0000-0000-000000000002',
     email: 'bob@example.com',
     unsubscribed_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
   },
@@ -112,12 +112,17 @@ async function stubProjectApi(page: Page): Promise<void> {
 async function stubOptOutApi(page: Page, optOuts: NewsletterOptOut[]): Promise<void> {
   const optOutsResponse: NewsletterOptOutListResponse = { opt_outs: optOuts };
 
-  // GET /opt-outs — returns the full list
+  // GET /opt-outs — returns the full list. The DELETE goes to /opt-outs/:optOutId,
+  // one segment longer, so it needs its own route pattern below.
   await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/opt-outs`, (route) => {
     if (route.request().method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(optOutsResponse) });
     }
-    // DELETE /opt-outs/:optOutId — removes from mock list
+    return route.fallback();
+  });
+
+  // DELETE /opt-outs/:optOutId — succeed with no content
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/opt-outs/*`, (route) => {
     if (route.request().method() === 'DELETE') {
       return route.fulfill({ status: 204 });
     }
@@ -218,9 +223,9 @@ test.describe('Newsletter opt-out list — Remove action', () => {
       timeout: ELEMENT_TIMEOUT,
     });
 
-    // Success toast should appear
-    const successToast = page.locator('[role="status"]').filter({ has: page.locator('text=Opt-out removed') });
-    await expect(successToast, 'success toast should appear').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    // Success toast should appear (PrimeNG toasts render role="alert", so
+    // target the .p-toast container like the rest of the suite does)
+    await expect(page.locator('.p-toast'), 'success toast should appear').toContainText('Opt-out removed', { timeout: ELEMENT_TIMEOUT });
   });
 
   test('rejecting remove confirmation keeps the row', async ({ page }) => {
