@@ -34,21 +34,49 @@ async function seedSelectedOrgCookie(page: Page): Promise<void> {
   ]);
 }
 
-// Stub only what the org lens needs to render (personas + account context). This page is demo-data
-// only (LFXV2-2735) — no meetings-insights BFF endpoint exists yet, so there is nothing else to stub.
-async function stubOrgLensContext(page: Page): Promise<void> {
+// Stub what the org lens needs to render: personas + account context (page content is demo-data
+// only, LFXV2-2735 — no meetings-insights BFF endpoint exists yet), plus role-grants/nav-items so
+// `OrgMeetingsComponent.loaded()`/`hasNoOrgAccess()` (which gate on both services) settle
+// deterministically instead of hitting environment-specific BFF responses.
+async function stubOrgLensContext(page: Page, options: { hasAccess?: boolean } = {}): Promise<void> {
+  const hasAccess = options.hasAccess ?? true;
+
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, {
       personas: ['contributor'],
       personaProjects: {},
       projects: [],
-      organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+      organizations: hasAccess
+        ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }]
+        : [],
       isRootWriter: false,
     })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }])
+    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }] : [])
+  );
+
+  await page.route('**/api/orgs/me/role-grants', (route) =>
+    fulfillJson(route, {
+      writers: hasAccess ? [MOCK_ACCOUNT_ID] : [],
+      auditors: [],
+      cascadingWriters: [],
+      cascadingAuditors: [],
+      username: 'e2e-org-meetings',
+      loaded_at: new Date().toISOString(),
+    })
+  );
+
+  await page.route('**/api/nav/org-items*', (route) =>
+    fulfillJson(route, {
+      items: hasAccess
+        ? [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: 'Red Hat, Inc.', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
+        : [],
+      next_page_token: null,
+      upstream_failed: false,
+      total: hasAccess ? 1 : 0,
+    })
   );
 }
 
@@ -137,6 +165,7 @@ test.describe('Org Meetings insights (6a redesign)', () => {
   });
 
   test('renders the no-company empty state when no account is selected', async ({ page }) => {
+    await stubOrgLensContext(page, { hasAccess: true });
     await page.route('**/api/user/personas*', (route) =>
       fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
     );
@@ -151,5 +180,14 @@ test.describe('Org Meetings insights (6a redesign)', () => {
 
     await expect(page.getByTestId('org-meetings-no-company-empty-state')).toBeVisible();
     await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);
+  });
+
+  test('renders the no-access state when the caller has no org selector access', async ({ page }) => {
+    await stubOrgLensContext(page, { hasAccess: false });
+    await gotoOrgMeetingsPage(page);
+
+    await expect(page.getByTestId('org-meetings-no-access-state')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);
+    await expect(page.getByTestId('org-meetings-no-company-empty-state')).toHaveCount(0);
   });
 });
