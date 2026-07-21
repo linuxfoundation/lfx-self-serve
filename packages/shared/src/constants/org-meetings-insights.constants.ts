@@ -51,20 +51,6 @@ export const ORG_MEETINGS_KPI_ICON_CLASS = {
   foundationsSupported: 'bg-amber-100 text-amber-600',
 } as const;
 
-/** Per-metric header icon for the "How this has changed over time" trend cards, keyed by trend label. */
-export const ORG_MEETINGS_TREND_ICON: Record<string, string> = {
-  'Meetings Attended': 'fa-light fa-video',
-  'Employees Active': 'fa-light fa-users',
-  'Projects Supported': 'fa-light fa-diagram-project',
-};
-
-/** Descriptive footer subtitle per trend card, matching the org-overview involvement cards' subtitle line. */
-export const ORG_MEETINGS_TREND_SUBTITLE: Record<string, string> = {
-  'Meetings Attended': 'Meetings your employees attended',
-  'Employees Active': 'Employees active in project meetings',
-  'Projects Supported': 'Projects your employees support',
-};
-
 /**
  * Visual amplification factor for the influence table's "attendance contribution" bar. Real
  * `fromAttendancePct` values cluster well under 50%, so the raw percentage reads as nearly empty —
