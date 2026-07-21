@@ -160,6 +160,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Seeded in ngOnInit from the saved layout's `template_key`, then the
   // `templateKey` input, then the default. Changing it swaps the palette.
   protected readonly selectedTemplateKey = signal<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  // True only when the library was EXPLICITLY chosen — the saved layout carried a
+  // `template_key`, or the author picked one via the library picker. A keyless
+  // layout (a new draft, or a legacy newsletter saved before per-newsletter
+  // selection) stays keyless on save: selectedTemplateKey still drives the working
+  // palette (the superset default), but toLayout omits `template_key` so the
+  // service renders neutral chrome instead of permanently rebranding it to the
+  // default palette's library.
+  private readonly hasExplicitTemplateKey = signal<boolean>(false);
 
   // The canvas container — the positioned ancestor the floating toolbar is
   // measured against, and the root we scan for `data-nl-field` elements.
@@ -312,8 +320,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
     const seed = this.initialLayout();
     // Resolve the active library: the saved layout's key wins (a reopened draft
-    // keeps its library), then the bound input, then the default.
-    const activeKey = seed?.template_key ?? this.templateKey();
+    // keeps its library), then the bound input, then the default. Only a key that
+    // came from the SAVED layout is "explicit" — a keyless layout falls back to
+    // the default palette for editing but must not persist that key (see
+    // hasExplicitTemplateKey / toLayout).
+    const seededKey = seed?.template_key;
+    const activeKey = seededKey ?? this.templateKey();
+    this.hasExplicitTemplateKey.set(!!seededKey);
     this.selectedTemplateKey.set(activeKey);
     this.libraryForm.controls.library.setValue(activeKey, { emitEvent: false });
 
@@ -395,6 +408,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (!key || key === current) return;
 
     if (!isPlatformBrowser(this.platformId)) {
+      this.hasExplicitTemplateKey.set(true);
       this.selectedTemplateKey.set(key);
       this.emit();
       return;
@@ -425,6 +439,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
           window.alert('Could not load that template. Please try again.');
           return;
         }
+        this.hasExplicitTemplateKey.set(true);
         this.selectedTemplateKey.set(key);
         const dropped = this.retainSupportedBlocks(manifest);
         if (dropped > 0) {
@@ -1323,16 +1338,22 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * Map the canvas blocks back to the shared NewsletterLayout shape.
    *
    * `template_key` records the selected block library so the newsletter renders
-   * from it server-side and reopens into the same library. The newsletter-service
-   * accepts and renders from this key (LFXV2-2747); an empty/omitted key renders
-   * from the default library.
+   * from it server-side and reopens into the same library — but ONLY when the
+   * library was explicitly chosen (hasExplicitTemplateKey). A keyless layout is
+   * emitted without a `template_key` so the service renders it with neutral
+   * chrome over the block superset (LFXV2-2747), rather than being rebranded to
+   * the default palette's library. The newsletter-service accepts and renders
+   * from an explicit key; an omitted key renders neutral.
    */
   private toLayout(): NewsletterLayout {
-    return {
+    const layout: NewsletterLayout = {
       wrapper_key: this.manifest()?.wrapper_key ?? 'default',
-      template_key: this.selectedTemplateKey(),
       blocks: this.blocks().map((block) => this.toLayoutBlock(block)),
     };
+    if (this.hasExplicitTemplateKey()) {
+      layout.template_key = this.selectedTemplateKey();
+    }
+    return layout;
   }
 
   private toLayoutBlock(block: NewsletterComposerBlock): NewsletterLayout['blocks'][number] {

@@ -40,6 +40,12 @@ export class NewsletterManifestService {
 
   // One cached request per template key, shared across subscribers.
   private readonly manifestStreams = new Map<string, Observable<NewsletterTemplateManifest | null>>();
+  // Keys whose manifest request has RESOLVED (emitted a manifest). A cached
+  // stream can still be in flight, and only a resolved key's manifest is safe to
+  // expose synchronously — a pending key must keep the loading state until it
+  // lands, so a rapid switch back to it (A→B→C→B) can't clear loading and show a
+  // stale palette as ready while B is still fetching.
+  private readonly resolvedKeys = new Set<string>();
   // The template-catalog request, shared across subscribers once issued.
   private templatesStream: Observable<NewsletterTemplateInfo[]> | null = null;
   // The latest template key any caller requested. Every shared-state write in
@@ -119,15 +125,24 @@ export class NewsletterManifestService {
 
     const cached = this.manifestStreams.get(templateKey);
     if (cached) {
-      // A cached stream is always a previously-successful (or in-flight) key —
-      // a failed load deletes its cache entry — so its manifest is authoritative.
-      // Clear any error a later failed switch/load set, otherwise re-activating a
-      // known-good library leaves the palette stuck on the "Could not load" state.
-      // Clear loading too: a superseded in-flight request's finalize is gated out
-      // by isLatest, so switching to a cached library while another fetch is in
-      // flight would otherwise leave loadingSignal stuck true forever.
+      // A cached stream is a previously-successful or still-in-flight key (a
+      // failed load deletes its cache entry). Clear any error a later failed
+      // switch/load set, otherwise re-activating a known-good library leaves the
+      // palette stuck on the "Could not load" state.
       this.errorSignal.set(false);
-      this.loadingSignal.set(false);
+      if (this.resolvedKeys.has(templateKey)) {
+        // RESOLVED: its manifest replays synchronously to the returned
+        // subscription (activating the palette). Clear loading — no new fetch
+        // will, and a superseded in-flight fetch's finalize is gated out by
+        // isLatest, so it would otherwise stay stuck true forever.
+        this.loadingSignal.set(false);
+      } else {
+        // Still IN FLIGHT: keep the loading state and do NOT expose the previous
+        // manifest as ready. The shared stream's tap/finalize activates the
+        // palette and clears loading when it lands (gated on this key still being
+        // the latest requested), so a rapid switch back can't show a stale palette.
+        this.loadingSignal.set(true);
+      }
       return cached;
     }
 
@@ -166,7 +181,12 @@ export class NewsletterManifestService {
         // Gated on `isLatest` so a stale switch's response can't overwrite the
         // palette a newer switch already activated.
         tap((manifest) => {
-          if (manifest && isLatest()) this.manifestSignal.set(manifest);
+          if (!manifest) return;
+          // Mark resolved regardless of isLatest — a key's manifest is available
+          // once it lands, even if a newer switch is now active; a later switch
+          // back to it can then clear loading synchronously (see the cached branch).
+          this.resolvedKeys.add(templateKey);
+          if (isLatest()) this.manifestSignal.set(manifest);
         })
       );
 

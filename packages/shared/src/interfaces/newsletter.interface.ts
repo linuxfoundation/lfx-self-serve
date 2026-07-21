@@ -49,10 +49,14 @@ export interface NewsletterTestSendPayload {
   subject: string;
   body_html: string;
   to_email: string;
-  // True when body_html is a layout (block-composer) render — a complete emitter
-  // email — so the service dispatches it as-is instead of wrapping it in the
-  // legacy email chrome (which would double-wrap it). Omitted/false = simple
-  // editor HTML that still needs the chrome envelope.
+  /**
+   * @deprecated Ignored by the newsletter-service. `body_layout` is the sole
+   * layout trigger for a test send; a precompiled `is_layout` + `body_html`
+   * request is no longer dispatched verbatim (it could leave a dangling empty
+   * "Unsubscribe" row once its per-recipient sentinel resolved to nothing).
+   * Retained only for wire-compat with older clients (the service still accepts
+   * the field) — supply `body_layout` for a layout test send. Has no effect.
+   */
   is_layout?: boolean;
   // The structured layout for a block-composer draft. When present, the service
   // RECOMPILES the test email from it with the compliance/unsubscribe footer
@@ -265,8 +269,12 @@ export interface NewsletterLayout {
   /**
    * Which embedded block library (template set) this layout was composed from.
    * The newsletter-service persists it and renders the email from that library
-   * (LFXV2-2747); an empty/omitted key renders from the default library, so
-   * layouts saved before per-newsletter selection stay valid.
+   * (LFXV2-2747). An omitted/empty key does NOT inherit a specific library's
+   * chrome: the service renders it with a project-NEUTRAL wrapper over the block
+   * superset (every block any library offers), so a keyless layout — a new draft
+   * or one saved before per-newsletter selection — stays valid and never inherits
+   * another project's (e.g. AAIF) branding. Only set an explicit key when the
+   * author picks a library.
    */
   template_key?: string;
   blocks: NewsletterBlock[];
