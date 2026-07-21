@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, output, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
+import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -37,10 +38,29 @@ export class ProfileEditDrawerComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
   protected readonly drawer = inject(ProfileEditDrawerService);
 
   // Emits the saved metadata so the host layout can apply an optimistic profile update.
   public readonly saved = output<Partial<UserMetadata>>();
+
+  // Profile edit form
+  public profileForm: FormGroup = this.fb.group({
+    given_name: ['', [Validators.maxLength(50)]],
+    family_name: ['', [Validators.maxLength(50)]],
+    username: [{ value: '', disabled: true }],
+    country: ['', [Validators.maxLength(50)]],
+    state_province: ['', [Validators.maxLength(50)]],
+    city: ['', [Validators.maxLength(50)]],
+    address: ['', [Validators.maxLength(200)]],
+    postal_code: ['', [Validators.maxLength(20)]],
+    phone_number: ['', [Validators.maxLength(20)]],
+    t_shirt_size: [''],
+    job_title: ['', [Validators.maxLength(100)]],
+    // Organization is selected from work-history orgs (a constrained list); the only remaining
+    // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
+    organization: ['', [Validators.maxLength(200)]],
+  });
 
   // The profile currently being edited (seeded on each open). A signal so the computeds that read it
   // (authEmail, organizationOptions) recompute when a new profile is opened.
@@ -84,24 +104,6 @@ export class ProfileEditDrawerComponent {
   }));
 
   public readonly isUSA = computed(() => this.selectedCountrySignal() === 'United States');
-
-  // Profile edit form
-  public profileForm: FormGroup = this.fb.group({
-    given_name: ['', [Validators.maxLength(50)]],
-    family_name: ['', [Validators.maxLength(50)]],
-    username: [{ value: '', disabled: true }],
-    country: ['', [Validators.maxLength(50)]],
-    state_province: ['', [Validators.maxLength(50)]],
-    city: ['', [Validators.maxLength(50)]],
-    address: ['', [Validators.maxLength(200)]],
-    postal_code: ['', [Validators.maxLength(20)]],
-    phone_number: ['', [Validators.maxLength(20)]],
-    t_shirt_size: [''],
-    job_title: ['', [Validators.maxLength(100)]],
-    // Organization is selected from work-history orgs (a constrained list); the only remaining
-    // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
-    organization: ['', [Validators.maxLength(200)]],
-  });
 
   public constructor() {
     // Seed and (re)load whenever the drawer opens with a fresh profile context.
@@ -184,10 +186,14 @@ export class ProfileEditDrawerComponent {
         error: (error: HttpErrorResponse) => {
           // Flow C: Management token required — save form state and redirect to authorize.
           if (error.status === 403 && error.error?.error === 'management_token_required') {
-            // Stamp with a timestamp so the host shell can discard a stale pending-save if this
-            // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
-            sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
-            window.location.href = error.error.authorize_url;
+            // Guard the browser-only APIs for SSR safety. This handler only runs on a user-initiated
+            // save (browser), but the guard keeps the reference SSR-safe per .claude/rules/ssr-safety.md.
+            if (isPlatformBrowser(this.platformId)) {
+              // Stamp with a timestamp so the host shell can discard a stale pending-save if this
+              // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
+              sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
+              window.location.href = error.error.authorize_url;
+            }
             return;
           }
 

@@ -184,7 +184,7 @@ export class ProfileLayoutComponent {
       return;
     }
 
-    // The dialog builds metadata with `key: undefined` for empty fields; those keys are omitted
+    // The drawer builds metadata with `key: undefined` for empty fields; those keys are omitted
     // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
     // optimistic view would clear fields that were never actually persisted as cleared.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
@@ -254,7 +254,7 @@ export class ProfileLayoutComponent {
 
     this.userService.updateUserProfile(updateData).subscribe({
       next: () => {
-        // Optimistic update only — same as the dialog-close path. We intentionally do NOT
+        // Optimistic update only — same as the drawer-save path. We intentionally do NOT
         // refresh here: the profile GET is eventually consistent, so an immediate refetch could
         // overwrite combinedProfile with the pre-save body and reintroduce stale-on-reopen.
         this.applyOptimisticProfileUpdate(userMetadata);

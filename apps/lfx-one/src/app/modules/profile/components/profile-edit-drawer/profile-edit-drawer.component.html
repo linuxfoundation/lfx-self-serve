@@ -153,6 +153,12 @@
                 [class.bg-blue-50]="selectedPrimaryEmail() === email.email"
                 [class.border-slate-300]="selectedPrimaryEmail() !== email.email"
                 [attr.data-testid]="'profile-edit-drawer-email-row-' + email.email">
+                <!--
+                  Raw radio (not the lfx-radio-button wrapper): primary-email selection is an
+                  imperative, non-reactive-form action (saved immediately via onPrimaryEmailChange),
+                  and the wrapper has no checked/selected binding to reflect selectedPrimaryEmail().
+                  Ported verbatim from the retired edit dialog.
+                -->
                 <input
                   type="radio"
                   name="primaryEmail"
