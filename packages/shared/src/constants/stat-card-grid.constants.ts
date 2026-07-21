@@ -22,6 +22,8 @@ export const GRID_DIVIDER_CLASS: Record<2 | 3 | 4, string> = {
   3: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   // The `!` (important) modifiers are required: Tailwind's `divide-y-0` reset compiles to
   // `:not([hidden]) ~ :not([hidden])`, whose specificity beats a plain `nth-child(...)` selector,
-  // so without `!` it silently cancels the row/column dividers below regardless of source order.
-  4: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:[&>*:nth-child(even)]:!border-l-0 lg:divide-x',
+  // so without `!` it silently cancels the row divider below regardless of source order. The
+  // `sm` left border is left in place (not reset) at `lg`: `lg:divide-x` needs that same left
+  // border on cards 2/4 for the single-row layout, and card 3 gets it from `divide-x` itself.
+  4: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:divide-x',
 };
