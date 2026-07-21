@@ -51,11 +51,14 @@
       <lfx-button label="Switch to Paid Marketing" [link]="true" size="small" (onClick)="switchToPaidMarketing()" data-testid="campaigns-email-switch-paid" />
     </div>
   }
-  <!-- Paid-marketing content stays MOUNTED (toggled via [hidden], not a structural @if)
+  <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
        while the Email placeholder shows. PlanningTabComponent owns the brief form +
        generation state locally, so destroying this subtree on an Email round-trip would
-       silently wipe the user's in-progress brief — hidden keeps the instance alive. -->
-  <div class="flex flex-col gap-6" [hidden]="selectedDeliveryType() === 'email'" data-testid="campaigns-paid-marketing">
+       silently wipe the user's in-progress brief — hiding it keeps the instance alive.
+       Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
+       display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
+       so [hidden] alone would leave both views rendered. An inline style always wins. -->
+  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? 'none' : null" data-testid="campaigns-paid-marketing">
     <!-- Tab Navigation -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
       @for (tab of tabs; track tab.id; let i = $index) {
