@@ -325,16 +325,14 @@ export class ProfileLayoutComponent {
     });
   }
 
-  // Re-fetch identities whenever the Identities tab signals a change (LFXV2-2767) so the panel's
-  // GitHub handle and the tab-notification dots stay current without a full reload. startWith drives
-  // the initial load; toSignal tears the subscription down when the layout is destroyed.
+  // Re-fetch identities on the Identities tab's refresh signal (LFXV2-2767) so the panel's GitHub
+  // handle and tab-notification dots stay current without a full reload.
   private initIdentities(): Signal<EnrichedIdentity[]> {
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
-        // Drop a failed refresh (EMPTY) rather than emitting [] — the shell has no error UI or retry,
-        // so a transient error must not wipe the last-good GitHub handle / notification dot. The
-        // initialValue below still covers an initial-load failure.
+        // Drop a failed refresh (EMPTY) — the shell has no error UI, so a transient error must not
+        // wipe the last-good GitHub handle / dot. initialValue covers an initial-load failure.
         switchMap(() => this.userService.getIdentities().pipe(catchError(() => EMPTY)))
       ),
       { initialValue: [] as EnrichedIdentity[] }
