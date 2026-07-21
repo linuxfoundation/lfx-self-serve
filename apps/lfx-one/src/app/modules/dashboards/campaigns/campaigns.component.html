@@ -87,10 +87,16 @@
     @switch (selectedTab()) {
       @case ('planning') {
         <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
-          <lfx-planning-tab
-            [programTypeConfig]="activeProgramTypeConfig()"
-            (proceedToImplementation)="onProceedToImplementation($event)"
-            data-testid="campaigns-planning-tab" />
+          <!-- Keyed on the program type so a program change (Events <-> Education)
+               recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
+               state locally and does not reset on input change, so without a fresh
+               instance a stale Events brief could show under Education. -->
+          @for (program of [selectedProgramType()]; track program) {
+            <lfx-planning-tab
+              [programTypeConfig]="activeProgramTypeConfig()"
+              (proceedToImplementation)="onProceedToImplementation($event)"
+              data-testid="campaigns-planning-tab" />
+          }
         </div>
       }
       @case ('implementation') {

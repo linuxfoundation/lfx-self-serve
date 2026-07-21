@@ -69,11 +69,13 @@ export class CampaignsComponent {
 
     // Mirror the delivery-type control into the signal. Preserve ALL in-progress
     // Paid Marketing state across an Email round-trip: Email is a "coming soon"
-    // placeholder, and the paid-marketing container stays mounted via [hidden], so we
-    // must NOT touch briefOutput OR selectedTab. Resetting selectedTab here would swap
-    // the inner @switch and destroy the currently-mounted tab component (e.g.
-    // ImplementationTabComponent with its own form/budget/creation state); leaving it
-    // alone means returning to Paid Marketing restores the same tab and its state.
+    // placeholder, and the paid-marketing container stays mounted (hidden via an inline
+    // [style.display] binding, which wins the cascade over the `flex` utility that
+    // otherwise overrides [hidden]), so we must NOT touch briefOutput OR selectedTab.
+    // Resetting selectedTab here would swap the inner @switch and destroy the
+    // currently-mounted tab component (e.g. ImplementationTabComponent with its own
+    // form/budget/creation state); leaving it alone means returning to Paid Marketing
+    // restores the same tab and its state.
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
