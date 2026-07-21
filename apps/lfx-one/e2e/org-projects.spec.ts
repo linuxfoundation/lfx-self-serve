@@ -169,7 +169,7 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-projects-row-kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const contributors = page.getByTestId('org-projects-contributors-kubernetes');
-    await expect(contributors).toHaveAttribute('aria-label', /contributors for Kubernetes/);
+    await expect(contributors).toHaveAttribute('aria-label', /View 1 contributor for Kubernetes/);
     await contributors.click();
 
     await expect(page).toHaveURL(/\/org\/projects\/kubernetes\?(?:.*&)?card=contributors/);

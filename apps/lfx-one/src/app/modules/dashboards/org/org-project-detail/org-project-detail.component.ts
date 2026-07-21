@@ -60,7 +60,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, type Observable, of, scan, skip, startWith, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, type Observable, of, scan, skip, startWith, switchMap } from 'rxjs';
 
 /**
  * Org Lens · Project Detail sub-page (LFXV2-1885), routed at `/org/projects/:projectSlug`.
@@ -298,17 +298,19 @@ export class OrgProjectDetailComponent {
     if (isPlatformBrowser(this.platformId)) {
       toObservable(
         computed(() => {
+          const slug = this.projectSlug();
           const key = this.drawerCardParam();
-          if (!key) return null;
-          return [...this.technicalCards(), ...this.ecosystemCards()].find((card) => card.key === key) ?? null;
+          if (!slug || !key) return null;
+          const card = [...this.technicalCards(), ...this.ecosystemCards()].find((c) => c.key === key) ?? null;
+          return card ? { navToken: `${slug}|${key}`, card } : null;
         })
       )
         .pipe(
-          filter((card): card is InfluenceCardVm => card !== null),
-          take(1),
+          distinctUntilChanged((a, b) => (a?.navToken ?? null) === (b?.navToken ?? null)),
+          filter((match): match is { navToken: string; card: InfluenceCardVm } => match !== null),
           takeUntilDestroyed()
         )
-        .subscribe((card) => this.openCardDetail(card));
+        .subscribe(({ card }) => this.openCardDetail(card));
     }
   }
 

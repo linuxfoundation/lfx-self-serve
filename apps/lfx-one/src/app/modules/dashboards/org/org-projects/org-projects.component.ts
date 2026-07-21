@@ -709,6 +709,10 @@ export class OrgProjectsComponent {
     return computed(() => this.buildSortedProjects());
   }
 
+  private countAriaLabel(count: number, singular: string, projectName: string): string {
+    return `View ${count} ${count === 1 ? singular : `${singular}s`} for ${projectName}`;
+  }
+
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
   private initRows(): Signal<OrgProjectsTableRow[]> {
     return computed(() =>
@@ -733,6 +737,8 @@ export class OrgProjectsComponent {
         trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
         trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
         healthAriaLabel: this.healthAriaLabel(project),
+        contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
+        participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
       }))
     );
   }

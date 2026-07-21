@@ -343,7 +343,7 @@
                     [routerLink]="['/org/projects', project.slug]"
                     [queryParams]="contributorsDrawerQueryParams"
                     class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    [attr.aria-label]="'View ' + project.contributors.length + ' contributors for ' + project.name"
+                    [attr.aria-label]="project.contributorsAriaLabel"
                     [attr.data-testid]="'org-projects-contributors-' + project.slug"
                     >{{ project.contributors.length }}</a
                   >
@@ -352,7 +352,7 @@
                   <a
                     [routerLink]="['/org/projects', project.slug]"
                     class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    [attr.aria-label]="'View ' + project.name + ' project detail'"
+                    [attr.aria-label]="project.participantsAriaLabel"
                     [attr.data-testid]="'org-projects-participants-' + project.slug"
                     >{{ project.participants.length }}</a
                   >
