@@ -71,6 +71,11 @@ export class ProfileEditDrawerComponent {
   public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
 
+  // True while any drawer mutation is in flight (profile save or primary-email PUT). Every dismissal
+  // and save path gates on this so an in-flight change can't be interrupted or left stale by a
+  // close/reopen — see onVisibleChange and the drawer template.
+  public readonly busy = computed(() => this.saving() || this.savingPrimaryEmail());
+
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
   public readonly primaryEmail = signal('');
@@ -174,8 +179,9 @@ export class ProfileEditDrawerComponent {
   }
 
   public onVisibleChange(visible: boolean): void {
-    // Don't let a dismissal (close icon, backdrop, Esc) close the drawer mid-save.
-    if (!visible && !this.saving()) {
+    // Don't let a dismissal (close icon, backdrop, Esc) close the drawer while any mutation
+    // (profile save or primary-email PUT) is in flight.
+    if (!visible && !this.busy()) {
       this.drawer.close();
     }
   }

@@ -7,9 +7,9 @@
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
-  [showCloseIcon]="!saving()"
-  [dismissible]="!saving()"
-  [closeOnEscape]="!saving()"
+  [showCloseIcon]="!busy()"
+  [dismissible]="!busy()"
+  [closeOnEscape]="!busy()"
   styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
   data-testid="profile-edit-drawer">
   <ng-template #header>
@@ -329,7 +329,7 @@
           variant="outlined"
           label="Cancel"
           (onClick)="onCancel()"
-          [disabled]="saving()"
+          [disabled]="busy()"
           size="small"
           data-testid="profile-edit-drawer-cancel-button">
         </lfx-button>
@@ -339,7 +339,7 @@
           severity="info"
           [label]="saving() ? 'Saving...' : 'Save Changes'"
           [loading]="saving()"
-          [disabled]="!hasChanges() || saving()"
+          [disabled]="!hasChanges() || busy()"
           size="small"
           data-testid="profile-edit-drawer-save-button">
         </lfx-button>
