@@ -1116,6 +1116,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (selected && removedIds.includes(selected)) {
       this.selectedBlockId.set(null);
     }
+    // Also clear the inline-edit freeze if the block being edited was removed.
+    // A deleted block's contenteditable blur may never fire, so without this the
+    // stale editingBlockId keeps freezing re-renders until another field gains
+    // focus. Reset the richtext toolbar flag too, mirroring the blur handler.
+    const editing = this.editingBlockId();
+    if (editing && removedIds.includes(editing)) {
+      this.editingBlockId.set(null);
+      this.toolbar.update((t) => (t ? { ...t, richtextActive: false } : t));
+    }
   }
 
   // === Inline-editing helpers ===
