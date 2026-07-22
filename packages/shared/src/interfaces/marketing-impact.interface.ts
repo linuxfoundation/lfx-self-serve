@@ -61,6 +61,24 @@ export interface EventsOverviewSummary {
   sponsorship: EventsOverviewMetric;
 }
 
+/** Severity tone for a needs-attention item. */
+export type AttentionSeverity = 'critical' | 'warning';
+
+/** A single actionable item in the "Needs attention" strip. */
+export interface EventAttentionItem {
+  /** Stable id (the event id) for tracking. */
+  id: string;
+  /** Short severity tag, e.g. "BEHIND GOAL". */
+  tag: string;
+  severity: AttentionSeverity;
+  /** One-line headline, e.g. "Open Source Summit Korea is 29% to its registration goal". */
+  title: string;
+  /** Supporting detail line. */
+  detail: string;
+  /** Deep-link to act on the item (the event page); '' when unavailable. */
+  actionUrl: string;
+}
+
 /** A single actual-vs-goal progress bar in an event roster row. */
 export interface EventRosterBar {
   /** Formatted actual value (e.g. "206", "$45.2K"). */

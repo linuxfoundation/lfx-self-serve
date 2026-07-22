@@ -12,12 +12,19 @@ import type { MarketingImpactFocusProgram, OverviewKpiData, PerformanceSummaryKp
 
 import { AttributionSectionComponent } from '../attribution-section/attribution-section.component';
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
+import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
 import { EventsSummarySectionComponent } from '../events-summary-section/events-summary-section.component';
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
 @Component({
   selector: 'lfx-overview-tab',
-  imports: [SparklineKpiCardComponent, AttributionSectionComponent, EventsSummarySectionComponent, EventRosterSectionComponent],
+  imports: [
+    SparklineKpiCardComponent,
+    AttributionSectionComponent,
+    EventsSummarySectionComponent,
+    EventRosterSectionComponent,
+    EventsAttentionSectionComponent,
+  ],
   templateUrl: './overview-tab.component.html',
 })
 export class OverviewTabComponent {
