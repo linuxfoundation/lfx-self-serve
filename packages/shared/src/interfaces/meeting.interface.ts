@@ -403,6 +403,32 @@ export interface MeetingTemplateGroup {
 }
 
 /**
+ * Dropdown option for the "import registrants from a meeting" picker (LFXV2-2607).
+ * `label` is the display string (title + date); `title` is kept separately so
+ * import summaries can name the meeting cleanly.
+ */
+export interface MeetingSelectOption {
+  /** Meeting id passed to the registrants fetch */
+  value: string;
+  /** Display label, e.g. "Q3 Roadmap — Jul 3, 2026" */
+  label: string;
+  /** Bare meeting title, for summary copy */
+  title: string;
+}
+
+/**
+ * Result of pulling invite-ready emails off a meeting's registrant list.
+ * `emails` is de-duplicated (case-insensitive, first-seen casing preserved);
+ * `skippedNoEmail` counts registrants that carried no usable email.
+ */
+export interface RegistrantEmailExtraction {
+  /** Unique, trimmed registrant emails ready to feed the invite flow */
+  emails: string[];
+  /** Count of registrants skipped because they had no email */
+  skippedNoEmail: number;
+}
+
+/**
  * Meeting registrant information from microproxy service
  * @description Individual registrant/guest for a meeting
  */

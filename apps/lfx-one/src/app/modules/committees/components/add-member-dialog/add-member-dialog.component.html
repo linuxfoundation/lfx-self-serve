@@ -7,6 +7,40 @@
     their details. They appear as "Pending" until they accept.
   </p>
 
+  <!-- ── Import from a meeting (optional) ─────────────────────────────────────── -->
+  @if (meetingOptions().length > 0) {
+    <div class="flex flex-col gap-2" data-testid="add-member-import-section">
+      <label class="block text-sm font-medium text-gray-700">Import from a meeting <span class="text-gray-400 font-normal">(optional)</span></label>
+      <p class="text-xs text-gray-500">Pull a meeting's registrants into the list below. Their emails flow through the same review before anyone is invited.</p>
+      <div class="flex items-end gap-2">
+        <lfx-select
+          class="flex-1"
+          [form]="importForm"
+          control="meeting"
+          [options]="meetingOptions()"
+          [filter]="true"
+          placeholder="Select a meeting…"
+          size="small"
+          [showClear]="true"
+          styleClass="w-full"
+          appendTo="body"
+          data-testid="add-member-meeting-select"></lfx-select>
+        <lfx-button
+          label="Import"
+          icon="fa-light fa-user-plus"
+          [loading]="importing()"
+          [disabled]="!importForm.value.meeting || importing()"
+          (onClick)="onImportFromMeeting()"
+          size="small"
+          type="button"
+          data-testid="add-member-import"></lfx-button>
+      </div>
+      @if (importSummary()) {
+        <p class="text-xs text-emerald-600" data-testid="add-member-import-summary">{{ importSummary() }}</p>
+      }
+    </div>
+  }
+
   <!-- ── Find existing people (typeahead autofill, optional) ──────────────────── -->
   <div class="flex flex-col gap-2">
     <label class="block text-sm font-medium text-gray-700">Find existing people <span class="text-gray-400 font-normal">(optional)</span></label>
