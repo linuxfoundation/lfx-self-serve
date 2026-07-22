@@ -42,7 +42,7 @@ export interface OrgMeetingsSpendOtherItem {
   pct: number;
 }
 
-/** One colored segment of a "where time is spent" stacked bar. */
+/** One ranked row of a "where time is spent" percentage-bar breakdown (each row its own full-width bar, per row `pct` — matches the `/meetings` attendance-bar pattern, not a single stacked composition). */
 export interface OrgMeetingsSpendSegment {
   label: string;
   pct: number;
@@ -56,7 +56,7 @@ export interface OrgSpendBarSegment extends OrgMeetingsSpendSegment {
   isOther: boolean;
 }
 
-/** The four stacked bars rendered by the "Where your people spend time" card. */
+/** The four ranked percentage-bar breakdowns rendered by the "Where your people spend time" card. */
 export interface OrgMeetingsSpendBreakdown {
   byFoundation: OrgMeetingsSpendSegment[];
   byProject: OrgMeetingsSpendSegment[];

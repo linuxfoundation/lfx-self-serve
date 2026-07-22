@@ -165,10 +165,14 @@ test.describe('Org Meetings insights (6a redesign)', () => {
   });
 
   test('renders the no-company empty state when no account is selected', async ({ page }) => {
+    // hasAccess: true seeds a direct writer grant (so hasNoOrgAccess() stays false, reaching the
+    // no-company branch instead of the no-access one), but nav-items/personas are overridden below
+    // to return zero orgs so org-navigation never auto-selects one via handlePendingSelection().
     await stubOrgLensContext(page, { hasAccess: true });
     await page.route('**/api/user/personas*', (route) =>
       fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
     );
+    await page.route('**/api/nav/org-items*', (route) => fulfillJson(route, { items: [], next_page_token: null, upstream_failed: false, total: 0 }));
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
