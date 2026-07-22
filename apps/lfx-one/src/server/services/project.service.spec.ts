@@ -375,9 +375,15 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       CFP_STATUS: 'Review Complete',
     };
 
-    // Ordered mock: the event query resolves first, the tier query second.
-    function mockReads(event: unknown[], tiers: unknown[]): void {
-      execute.mockResolvedValueOnce({ rows: event }).mockResolvedValueOnce({ rows: tiers });
+    // Ordered mock for the first three reads (event, tier, channel attribution). getEventDetail
+    // also awaits getEventPacing, which issues two more — defaulted to empty rather than counted,
+    // so adding a query to that path doesn't break these cases.
+    function mockReads(event: unknown[], tiers: unknown[], channels: unknown[] = []): void {
+      execute
+        .mockResolvedValueOnce({ rows: event })
+        .mockResolvedValueOnce({ rows: tiers })
+        .mockResolvedValueOnce({ rows: channels })
+        .mockResolvedValue({ rows: [] });
     }
 
     it('maps the event and its tier breakdown', async () => {
@@ -404,8 +410,13 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
       await service.getEventDetail('evt-1', 'tlf');
 
-      expect(execute).toHaveBeenCalledTimes(2);
-      for (const [sql, binds] of execute.mock.calls) {
+      // Identified by content, not call order: getEventDetail also drives the channel and pacing
+      // reads, and a positional assertion would silently pass if a scoped query were reordered.
+      const scoped = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('MARKETING_EVENT_REGISTRATIONS r') || String(sql).includes('SPONSORSHIPS_BY_TIER t')
+      );
+      expect(scoped).toHaveLength(2);
+      for (const [sql, binds] of scoped) {
         expect(sql).toContain('slug_resolve');
         expect(binds).toEqual(['tlf', 'evt-1']);
       }
@@ -417,6 +428,31 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       mockReads([], []);
 
       await expect(service.getEventDetail('evt-1', 'other-foundation')).resolves.toBeNull();
+    });
+
+    // Same contract as the getSocialReach guard above: a real failure must not be laundered into
+    // a legitimate-looking "no data yet" state. Only an unmaterialized table is unavailable.
+    it('propagates a pacing query failure rather than reporting pacing unavailable', async () => {
+      const failure = new Error('SQL compilation error: invalid identifier FOO');
+      execute
+        .mockResolvedValueOnce({ rows: [eventRow] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValue(failure);
+
+      await expect(service.getEventDetail('evt-1', 'tlf')).rejects.toBe(failure);
+    });
+
+    it('reports pacing unavailable when the prediction table is not materialized', async () => {
+      execute
+        .mockResolvedValueOnce({ rows: [eventRow] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValue(new Error("Object 'MARKETING_EVENT_REGISTRATION_PREDICTIONS' does not exist or not authorized."));
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.pacing.available).toBe(false);
     });
 
     it('propagates Snowflake failures rather than resolving a partial event', async () => {
