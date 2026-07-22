@@ -6,6 +6,7 @@
     "start": "yarn docs:build && ng serve",
     "build": "yarn docs:build && ng build && cp -r src/server/pdf-templates dist/lfx-one/server/",
     "build:development": "yarn docs:build && ng build --configuration development",
+    "build:dev-cluster": "yarn docs:build && ng build --configuration dev-cluster",
     "build:production": "yarn docs:build && ng build --configuration production",
     "build:staging": "yarn docs:build && ng build --configuration staging",
     "watch": "yarn docs:build && ng build --watch --configuration development",
