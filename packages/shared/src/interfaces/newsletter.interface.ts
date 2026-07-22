@@ -63,6 +63,10 @@ export interface NewsletterTestSendPayload {
   // suppressed — so a test send doesn't carry a dangling empty "Unsubscribe"
   // row that the pre-compiled body_html would. Omit/null for simple drafts.
   body_layout?: NewsletterLayout | null;
+  // Reply-to address. The layout test send recompiles the wrapper from it (the
+  // "To reply, email …" row), and it becomes the email's reply-to — matching the
+  // real send. Omitted for a test send that carries no reply address.
+  ed_reply_email?: string;
 }
 
 // Render a layout to its final email HTML server-side (the SAME MJML render the

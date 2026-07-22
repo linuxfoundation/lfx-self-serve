@@ -313,9 +313,15 @@ export class NewsletterManageComponent {
 
   protected onSaveAsDraft(): void {
     if (!this.canSaveDraft()) {
-      // A save was already in flight — the button shows its loading state, so
-      // there's nothing to explain.
-      if (this.savingDraft()) return;
+      // A save is already running (canSaveDraft gates on !savingDraft). The
+      // manual button only shows its spinner for MANUAL saves (manualSaving), so
+      // during a background autosave it looks idle — acknowledge the click with
+      // feedback instead of silently dropping it. The in-flight save persists the
+      // current state, so there's nothing more to trigger.
+      if (this.savingDraft()) {
+        this.messageService.add({ severity: 'info', summary: 'Saving…', detail: 'Your draft is already being saved.' });
+        return;
+      }
       const missing = this.missingDraftRequirements();
       if (missing.length > 0) {
         this.messageService.add({
@@ -364,6 +370,10 @@ export class NewsletterManageComponent {
         // email doesn't carry a dangling empty "Unsubscribe" row. Null for simple
         // drafts (the service then wraps body_html the legacy way).
         body_layout: this.bodyLayoutValue(),
+        // The reply-to address the layout recompile binds into the "To reply,
+        // email …" row and the email's reply-to — without it a layout test email
+        // loses both, unlike the real send.
+        ed_reply_email: this.edEmail(),
       })
       .pipe(
         take(1),
