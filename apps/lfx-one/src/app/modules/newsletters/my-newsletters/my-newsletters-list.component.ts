@@ -32,7 +32,6 @@ export class MyNewslettersListComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   // === Writable Signals ===
-  protected readonly newsletters = signal<MyNewsletterListItem[]>([]);
   protected readonly loading = signal<boolean>(true);
   protected readonly loadingMore = signal<boolean>(false);
   protected readonly nextPageToken = signal<string | undefined>(undefined);
@@ -113,7 +112,6 @@ export class MyNewslettersListComponent {
 
         const current = this.allNewsletters();
         this.allNewsletters.set([...current, ...response.newsletters]);
-        this.newsletters.set(this.filteredNewsletters());
         this.nextPageToken.set(response.next_page_token);
         this.loadingMore.set(false);
       });
@@ -146,7 +144,6 @@ export class MyNewslettersListComponent {
   }
 
   private loadArchive(): void {
-    this.newsletters.set([]);
     this.allNewsletters.set([]);
     this.nextPageToken.set(undefined);
     this.selectedFoundation.set('');
@@ -167,7 +164,6 @@ export class MyNewslettersListComponent {
         }
 
         this.allNewsletters.set(response.newsletters);
-        this.newsletters.set(response.newsletters);
         this.nextPageToken.set(response.next_page_token);
         this.loading.set(false);
       });

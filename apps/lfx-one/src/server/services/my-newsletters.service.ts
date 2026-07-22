@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MyNewsletterArchiveResponse, MyNewsletterListItem, Newsletter } from '@lfx-one/shared/interfaces';
+import { MyNewsletterArchiveResponse, MyNewsletterListItem, Newsletter, Project } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -73,24 +73,25 @@ export class MyNewslettersService {
   /**
    * Fetch a specific newsletter from the recipient archive.
    * Upstream verification is authoritative (403/404 propagate).
-   * Local fast-path: check user's committee intersection with newsletter's committees.
+   * Service logs tracing only; controller logs operation boundary.
    */
   public async getArchiveDetail(req: Request, newsletterUid: string): Promise<Newsletter> {
-    const startTime = logger.startOperation(req, 'get_my_newsletter_detail', { newsletter_uid: newsletterUid });
+    logger.debug(req, 'get_my_newsletter_detail', 'Fetching from upstream archive', { newsletter_uid: newsletterUid });
 
     try {
       // Upstream is authoritative for membership check (403) and existence (404/not-sent)
       const newsletter = await this.newsletterClient.archiveDetail(req, newsletterUid);
 
-      logger.success(req, 'get_my_newsletter_detail', startTime, {
+      logger.debug(req, 'get_my_newsletter_detail', 'Fetched newsletter detail', {
         newsletter_id: newsletter.id,
         subject: newsletter.subject,
       });
 
       return newsletter;
     } catch (error) {
-      logger.error(req, 'get_my_newsletter_detail', startTime, error as Error, {
+      logger.warning(req, 'get_my_newsletter_detail', 'Failed to fetch (403/404 expected for access control)', {
         newsletter_uid: newsletterUid,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -114,7 +115,7 @@ export class MyNewslettersService {
     });
 
     // Batch fetch projects in groups of 25
-    const projects: (any | null)[] = [];
+    const projects: (Project | null)[] = [];
     const batchSize = 25;
 
     for (let i = 0; i < projectUids.length; i += batchSize) {
@@ -131,7 +132,7 @@ export class MyNewslettersService {
       projects.push(...results);
     }
 
-    const projectMap = new Map(projects.filter((p): p is any => p !== null).map((p) => [p.uid, p]));
+    const projectMap = new Map(projects.filter((p): p is Project => p !== null).map((p) => [p.uid, p]));
 
     logger.debug(req, 'enrich_newsletters_project_data', 'Project enrichment complete', {
       resolved: projectMap.size,

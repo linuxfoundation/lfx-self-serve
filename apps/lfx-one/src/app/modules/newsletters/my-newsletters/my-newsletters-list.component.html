@@ -33,10 +33,14 @@
       <!-- Newsletter list cards -->
       <div class="flex flex-col gap-4">
         @for (newsletter of filteredNewsletters(); track newsletter.id) {
-          <div
-            class="p-4 border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+          <button
+            type="button"
+            class="p-4 border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-left"
             (click)="openPreview(newsletter)"
-            [attr.data-testid]="'my-newsletters-item-' + newsletter.id">
+            (keydown.enter)="openPreview(newsletter)"
+            (keydown.space)="openPreview(newsletter)"
+            [attr.data-testid]="'my-newsletters-item-' + newsletter.id"
+            [attr.aria-label]="'View newsletter: ' + newsletter.subject">
             <div class="flex flex-col gap-2">
               <h3 class="font-medium text-gray-900 hover:text-blue-600">{{ newsletter.subject }}</h3>
               <div class="flex flex-col gap-1 text-sm text-gray-600">
@@ -49,7 +53,7 @@
                 <div class="text-xs text-gray-500">Sent {{ newsletter.sent_at | date: 'short' }}</div>
               </div>
             </div>
-          </div>
+          </button>
         }
       </div>
 
