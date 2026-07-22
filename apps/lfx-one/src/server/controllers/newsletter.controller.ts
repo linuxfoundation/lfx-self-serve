@@ -544,10 +544,7 @@ export class NewsletterController {
     // composer only WARNS about at the ~102 KB Gmail-clipping threshold — cannot
     // be test-sent. Size-cap the layout itself instead.
     const layoutValid =
-      payload?.body_layout !== undefined &&
-      payload?.body_layout !== null &&
-      Array.isArray(payload.body_layout.blocks) &&
-      payload.body_layout.blocks.length > 0;
+      payload?.body_layout !== undefined && payload?.body_layout !== null && Array.isArray(payload.body_layout.blocks) && payload.body_layout.blocks.length > 0;
     if (!layoutValid) {
       if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
         fieldErrors['body_html'] = 'Body is required';
