@@ -40,7 +40,18 @@ export class MyNewslettersService {
       }
 
       // Fetch archive from upstream service
-      const committeeUidList = Array.from(committeeUids);
+      let committeeUidList = Array.from(committeeUids);
+
+      // Cap committee UIDs at 500 (upstream service limit)
+      const COMMITTEE_UID_CAP = 500;
+      if (committeeUidList.length > COMMITTEE_UID_CAP) {
+        logger.warning(req, 'list_my_newsletters_archive', 'User exceeds committee UID cap, truncating', {
+          original_count: committeeUidList.length,
+          capped_count: COMMITTEE_UID_CAP,
+        });
+        committeeUidList = committeeUidList.slice(0, COMMITTEE_UID_CAP);
+      }
+
       logger.debug(req, 'list_my_newsletters_archive', 'Fetching archive from upstream', {
         committee_count: committeeUidList.length,
         page_token: pageToken ? 'present' : 'absent',

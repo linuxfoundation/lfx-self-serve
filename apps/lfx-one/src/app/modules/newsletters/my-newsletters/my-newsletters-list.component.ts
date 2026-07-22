@@ -138,8 +138,8 @@ export class MyNewslettersListComponent {
           this.previewNewsletter.set(newsletter);
           this.previewSubject.set(newsletter.subject);
           this.previewBodyHtml.set(newsletter.body_html);
-          // Use created_by as the display name (creator email/identifier)
-          this.previewDisplayName.set(newsletter.created_by);
+          // Use foundation name as display name (matches sender-side preview pattern)
+          this.previewDisplayName.set(item.foundation_name || item.project_name);
           this.previewVisible.set(true);
         }
         this.previewLoading.set(false);
