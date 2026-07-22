@@ -11,6 +11,8 @@
 
 <lfx-event-roster-section [foundationSlug]="foundationSlug()" data-testid="overview-tab-event-roster" />
 
+<lfx-events-geo-section [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="overview-tab-events-geo" />
+
 <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5" data-testid="overview-tab-summary-header">
   <div class="flex flex-col gap-0.5">
     <h3 class="text-base font-semibold text-gray-900">{{ summaryTitle() }}</h3>
