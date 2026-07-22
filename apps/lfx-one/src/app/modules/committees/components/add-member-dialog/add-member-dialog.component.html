@@ -140,6 +140,7 @@
           inputStyleClass="text-sm w-full"
           panelStyleClass="text-sm w-full"
           dataTestId="add-member-organization-search"
+          [domainRequired]="true"
           (onOrganizationResolved)="onOrgResolved($event)">
         </lfx-organization-search>
         @if (showOrgError()) {
