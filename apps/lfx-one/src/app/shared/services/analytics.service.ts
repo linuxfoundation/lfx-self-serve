@@ -489,20 +489,22 @@ export class AnalyticsService {
       // Evict the cache entry on error so a transient HTTP failure doesn't lock
       // subsequent subscribers to an empty fallback response for the session.
       // The fallback is returned for this subscription only; next subscribe re-fetches.
-      const req$ = this.http.get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } }).pipe(
-        catchError(() => {
-          this.foundationHealthScoreDistributionCache.delete(foundationSlug);
-          return of({
-            excellent: 0,
-            healthy: 0,
-            stable: 0,
-            unsteady: 0,
-            critical: 0,
-            unscored: 0,
-          });
-        }),
-        shareReplay(1)
-      );
+      const req$ = this.http
+        .get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } })
+        .pipe(
+          catchError(() => {
+            this.foundationHealthScoreDistributionCache.delete(foundationSlug);
+            return of({
+              excellent: 0,
+              healthy: 0,
+              stable: 0,
+              unsteady: 0,
+              critical: 0,
+              unscored: 0,
+            });
+          }),
+          shareReplay(1)
+        );
       this.foundationHealthScoreDistributionCache.set(foundationSlug, req$);
     }
     return this.foundationHealthScoreDistributionCache.get(foundationSlug)!;
