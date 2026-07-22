@@ -150,19 +150,29 @@ export interface MeetingUserInfo {
 }
 
 /**
- * The resolved display model for a meeting's "Organized by" line.
+ * A single organizer entry for the "Organized by" chip — a display name plus an optional
+ * `mailto:` link (absent when the organizer record has no email → rendered as plain text).
  */
-export interface MeetingOrganizerDisplay {
-  /** Full label, e.g. "Organized by Ada Lovelace", "Organized by you", or "Organized by Ada +2". */
-  label: string;
-  /** Display name of the primary organizer. */
-  primaryName: string;
-  /** True when the primary organizer is the current viewer. */
+export interface MeetingOrganizerLink {
+  /** Display name (full name, falling back to username, then email). */
+  name: string;
+  /** True when this organizer is the current viewer (rendered as "you", never a mailto link). */
   isYou: boolean;
-  /** Display names of any additional organizers (for a "+N" popover). */
-  overflowNames: string[];
+  /** Pre-filled `mailto:` URL, or null when the organizer has no email. */
+  mailto: string | null;
+}
+
+/**
+ * The resolved view model for a meeting's "Organized by" chip: the primary organizer, any
+ * overflow (for the "+N" popover), and the total count.
+ */
+export interface MeetingOrganizerChipModel {
   /** Total number of organizers. */
   count: number;
+  /** The primary (first) organizer shown inline. */
+  primary: MeetingOrganizerLink;
+  /** Additional organizers listed in the "+N" popover. */
+  overflow: MeetingOrganizerLink[];
 }
 
 /**

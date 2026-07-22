@@ -171,7 +171,7 @@
                       } @else {
                         <p-skeleton width="14rem" height="1.5rem" borderRadius="9999px" animation="wave" data-testid="meeting-badge-datetime-skeleton" />
                       }
-                      <lfx-meeting-organizer [meeting]="meeting()"></lfx-meeting-organizer>
+                      <lfx-meeting-organizer [meeting]="meeting()" [hosts]="registrants()" [pastMeeting]="isPastMeeting()"></lfx-meeting-organizer>
                     </div>
                   }
 

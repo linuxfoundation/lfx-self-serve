@@ -13,13 +13,14 @@ import {
   CommitteeMember,
   EnrichedPastMeetingParticipant,
   Meeting,
+  MeetingHostCandidate,
   MeetingRegistrant,
   PastMeeting,
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
 } from '@lfx-one/shared/interfaces';
-import { filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { filterPastMeetingParticipants, isUnresolvableParticipantName, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -50,6 +51,9 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
   public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
+  // Emits the host-flagged people (the organizer set) whenever the list resolves, so a parent
+  // can feed the same set to the shared "Organized by" chip — keeping chip and modal in agreement.
+  public readonly resolvedHostsChange: OutputEmitterRef<MeetingHostCandidate[]> = output<MeetingHostCandidate[]>();
 
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
@@ -146,6 +150,13 @@ export class MeetingRegistrantsDisplayComponent {
 
   public constructor() {
     this.addRegistrantForm = this.meetingService.createRegistrantFormGroup(false);
+
+    // Surface the host-flagged people to the parent so the "Organized by" chip and this modal
+    // resolve organizers from the same source.
+    effect(() => {
+      const people: MeetingHostCandidate[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
+      this.resolvedHostsChange.emit(people.filter((person) => person.host));
+    });
 
     effect(() => {
       if (!this.visible()) return;
@@ -454,11 +465,19 @@ export class MeetingRegistrantsDisplayComponent {
     );
   }
 
-  // Floats hosts (organizers) to the top of a people list, then orders by first name.
-  private compareByHostThenName<T extends { host?: boolean; first_name?: string | null }>(a: T, b: T): number {
-    const hostDelta = (b.host ? 1 : 0) - (a.host ? 1 : 0);
-    if (hostDelta !== 0) {
-      return hostDelta;
+  // Orders a people list into three tiers: hosts (organizers) first, then normally-named people,
+  // then unresolvable "[unknown]" records at the bottom — so broken rows never sit directly under
+  // the floated-to-top organizers. Within a tier, orders by first name.
+  private compareByHostThenName<T extends { host?: boolean; first_name?: string | null; last_name?: string | null }>(a: T, b: T): number {
+    const rank = (person: T): number => {
+      if (isUnresolvableParticipantName(person.first_name, person.last_name)) {
+        return 2;
+      }
+      return person.host ? 0 : 1;
+    };
+    const rankDelta = rank(a) - rank(b);
+    if (rankDelta !== 0) {
+      return rankDelta;
     }
     return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
   }

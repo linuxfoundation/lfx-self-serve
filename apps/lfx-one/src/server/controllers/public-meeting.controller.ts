@@ -132,7 +132,7 @@ export class PublicMeetingController {
       // so the join page can show the organizer name.
       [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
 
-      // The organizer is member-visible info (LFXV2-2802): never expose created_by (name/email/
+      // The organizer is authenticated-visible info (LFXV2-2802): never expose created_by (name/email/
       // username) to unauthenticated callers, mirroring the host_key strip above.
       if (!isAuthenticated) {
         delete (meeting as Partial<Meeting>).created_by;
@@ -290,7 +290,7 @@ export class PublicMeetingController {
       // v1_meeting index by meeting_id to resolve the organizer name.
       const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
 
-      // The organizer is member-visible info (LFXV2-2802): never expose created_by (name/email/
+      // The organizer is authenticated-visible info (LFXV2-2802): never expose created_by (name/email/
       // username) to unauthenticated callers. Stripping here covers both response branches below.
       if (!isAuthenticated) {
         delete (enrichedMeeting as Partial<Meeting>).created_by;

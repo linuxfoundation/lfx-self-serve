@@ -1,12 +1,52 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (display(); as organizer) {
-  <lfx-tag
-    [value]="organizer.label"
-    severity="secondary"
-    icon="fa-light fa-user"
-    [pTooltip]="organizer.count > 1 ? allNames() : ''"
+@if (chip(); as organizer) {
+  <span
+    class="inline-flex items-center gap-1.5 rounded-md bg-gray-100 text-gray-600 text-xs font-medium px-2 py-1 whitespace-nowrap"
     data-testid="meeting-organizer">
-  </lfx-tag>
+    <i class="fa-light fa-user" aria-hidden="true"></i>
+    <span>Organized by</span>
+    <!-- Primary organizer: name is a mailto link unless it's "you" or has no email. -->
+    @if (organizer.primary.isYou) {
+      <span>you</span>
+    } @else if (organizer.primary.mailto) {
+      <a
+        [href]="organizer.primary.mailto"
+        class="text-gray-700 hover:underline"
+        [attr.title]="'Email ' + organizer.primary.name"
+        data-testid="organizer-mailto">
+        {{ organizer.primary.name }}
+      </a>
+    } @else {
+      <span>{{ organizer.primary.name }}</span>
+    }
+
+    <!-- Overflow: "+N" opens a popover listing every organizer with the same mailto treatment. -->
+    @if (organizer.count > 1) {
+      <button
+        type="button"
+        class="text-gray-500 hover:text-gray-700 hover:underline"
+        (click)="overflow.toggle($event)"
+        [attr.aria-label]="organizer.count - 1 + ' more organizers'"
+        data-testid="organizer-overflow-toggle">
+        +{{ organizer.count - 1 }}
+      </button>
+      <p-popover #overflow>
+        <div class="flex flex-col gap-1.5 py-1 min-w-[10rem]" data-testid="organizer-overflow-list">
+          @for (link of [organizer.primary].concat(organizer.overflow); track link.name) {
+            <div class="text-sm text-gray-700">
+              @if (link.isYou) {
+                <span>{{ link.name }} (you)</span>
+              } @else if (link.mailto) {
+                <a [href]="link.mailto" class="hover:underline" [attr.title]="'Email ' + link.name">{{ link.name }}</a>
+              } @else {
+                <span>{{ link.name }}</span>
+              }
+            </div>
+          }
+        </div>
+      </p-popover>
+    }
+  </span>
 }

@@ -20,6 +20,7 @@ import {
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
+  isUnresolvableParticipantName,
   MEETING_TYPE_CONFIGS,
   PastMeeting,
   PastMeetingAttachment,
@@ -116,7 +117,16 @@ export class PastMeetingDetailsComponent {
     if (this.votingOnly()) {
       result = result.filter((p) => p.committee_voting_status === 'Voting Rep' || p.committee_voting_status === 'Alternate Voting Rep');
     }
-    return result;
+    // Organizers (hosts) float to the top; unresolvable "[unknown]" rows sink to the bottom.
+    return [...result].sort((a, b) => {
+      const rank = (p: EnrichedPastMeetingParticipant): number => {
+        if (isUnresolvableParticipantName(p.first_name, p.last_name)) return 2;
+        return p.host ? 0 : 1;
+      };
+      const rankDelta = rank(a) - rank(b);
+      if (rankDelta !== 0) return rankDelta;
+      return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
+    });
   });
   public meetingTypeBadge = this.initMeetingTypeBadge();
   public attendancePercentage = this.initAttendancePercentage();
