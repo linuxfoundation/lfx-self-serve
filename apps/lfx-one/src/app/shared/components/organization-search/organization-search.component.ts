@@ -36,6 +36,9 @@ export class OrganizationSearchComponent {
   public resolveToCdpName = input<boolean>(true);
   /** When true, marks the domain/website field as required (shows asterisk and validation errors). */
   public domainRequired = input<boolean>(false);
+  /** Name of the parent form control that holds the resolved org id. Cleared when entering manual
+   *  mode so a stale id from a prior selection does not survive as resolution evidence. */
+  public idControl = input<string>();
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
@@ -183,16 +186,15 @@ export class OrganizationSearchComponent {
     // while in manual/new-org mode. Cleared on exit to avoid validating search-mode state.
     const domainCtrl = domainControlName ? this.form().get(domainControlName) : null;
     if (domainCtrl) {
-      this.domainOriginalValidator = domainCtrl.validator;
-      // Clear any stale URL left by a prior selection before entering manual mode.
-      // The name-change subscription in the parent is guarded by manualMode(), so it won't
-      // clear this automatically — we must do it here to prevent Org A's URL from validating
-      // a newly created Org B.
+      if (this.domainOriginalValidator === undefined) {
+        this.domainOriginalValidator = domainCtrl.validator;
+      }
+      // Clear stale URL before manual mode — the parent's name-change sub is manualMode()-guarded
+      // and won't reset it, so Org A's URL would otherwise validate a newly created Org B.
       domainCtrl.setValue(null);
-      const parentForm = this.form();
-      const orgIdCtrl = parentForm.get('organization_id');
-      if (orgIdCtrl) {
-        orgIdCtrl.setValue(null);
+      const idControlName = this.idControl();
+      if (idControlName) {
+        this.form().get(idControlName)?.setValue(null);
       }
       const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
       domainCtrl.setValidators(validators);
@@ -220,9 +222,8 @@ export class OrganizationSearchComponent {
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
 
-    // Clear the internal search input and the parent form's name/URL values so that
-    // the empty search UI is consistent with the form state — prevents orgInvalid()
-    // from seeing a stale name with no org-id and blocking the submit button.
+    // Clear search input + parent name/URL so empty UI matches form state — prevents
+    // orgInvalid() from seeing a stale name with no org-id and blocking submit.
     this.organizationForm.get('organizationSearch')?.setValue('');
     if (nameControlName && parentForm.get(nameControlName)) {
       parentForm.get(nameControlName)?.setValue(null);
