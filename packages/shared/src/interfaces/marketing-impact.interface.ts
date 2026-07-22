@@ -61,6 +61,35 @@ export interface EventsOverviewSummary {
   sponsorship: EventsOverviewMetric;
 }
 
+/** A single actual-vs-goal progress bar in an event roster row. */
+export interface EventRosterBar {
+  /** Formatted actual value (e.g. "206", "$45.2K"). */
+  actual: string;
+  /** Formatted goal value (e.g. "700", "$195K"); shown as the grey target number. */
+  goal: string;
+  /** Fill percentage 0–100; only meaningful when hasGoal is true. */
+  percent: number;
+  /** False when goal is 0/absent — the UI renders no bar (matches PCC's "no goal required"). */
+  hasGoal: boolean;
+  /** Health tone driving the fill color. */
+  tone: 'good' | 'warn' | 'critical' | 'none';
+}
+
+/** Pre-formatted view-model for a single Event Roster table row. */
+export interface EventRosterRowView {
+  eventId: string;
+  eventName: string;
+  /** Display date (e.g. "Aug 11, 2026"). */
+  dateLabel: string;
+  eventUrl: string;
+  country: string;
+  registrations: EventRosterBar;
+  sponsorshipRevenue: EventRosterBar;
+  /** Whether to show the at-risk (⚠) flag — behind goal with a low comparison score. */
+  atRisk: boolean;
+  cfpStatus: string;
+}
+
 /** Pre-formatted view-model for a single Events Summary stat tile. */
 export interface EventsSummaryStat {
   id: string;
