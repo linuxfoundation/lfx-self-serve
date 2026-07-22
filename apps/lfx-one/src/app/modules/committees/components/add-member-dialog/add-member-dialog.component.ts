@@ -302,6 +302,10 @@ export class AddMemberDialogComponent {
       if (!this.showOrganizationField()) return false;
       const vals = this.orgFormValues();
       const hasName = !!(vals.organization ?? '').trim();
+      // User typed in the search box but never selected a result (e.g. org doesn't exist in CDP).
+      // The parent form stays empty in that case, so check the component's pending search text.
+      const pendingSearch = this.organizationSearch()?.searchTerm() ?? '';
+      if (!hasName && pendingSearch) return true;
       if (!hasName) return false;
       const hasOrgId = !!vals.organization_id;
       const hasUrl = !!(vals.organization_url ?? '').trim();
