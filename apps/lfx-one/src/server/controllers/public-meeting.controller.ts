@@ -132,6 +132,12 @@ export class PublicMeetingController {
       // so the join page can show the organizer name.
       [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
 
+      // The organizer is member-visible info (LFXV2-2802): never expose created_by (name/email/
+      // username) to unauthenticated callers, mirroring the host_key strip above.
+      if (!isAuthenticated) {
+        delete (meeting as Partial<Meeting>).created_by;
+      }
+
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
@@ -284,8 +290,15 @@ export class PublicMeetingController {
       // v1_meeting index by meeting_id to resolve the organizer name.
       const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
 
+      // The organizer is member-visible info (LFXV2-2802): never expose created_by (name/email/
+      // username) to unauthenticated callers. Stripping here covers both response branches below.
+      if (!isAuthenticated) {
+        delete (enrichedMeeting as Partial<Meeting>).created_by;
+      }
+
       // For non-full-access users, return only the fields needed for the basic UI.
-      // created_by is included so the basic view can still show the organizer name.
+      // created_by is included (authenticated callers only, per the strip above) so the basic
+      // view can still show the organizer name.
       const meetingResponse = fullAccess
         ? enrichedMeeting
         : {

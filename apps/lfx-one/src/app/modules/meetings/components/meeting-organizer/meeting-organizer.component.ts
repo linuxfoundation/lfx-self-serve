@@ -35,6 +35,13 @@ export class MeetingOrganizerComponent {
 
   private initDisplay(): Signal<MeetingOrganizerDisplay | null> {
     return computed(() => {
+      // v1 privacy constraint (LFXV2-2802): the organizer is member-visible info, so it is
+      // never shown to unauthenticated visitors even on public meetings. Gated in this single
+      // component so the whole "Organized by" surface can be un-gated in one place once the
+      // data-privacy review clears it.
+      if (!this.userService.authenticated()) {
+        return null;
+      }
       const organizers = collectMeetingOrganizers(this.meeting(), this.hosts());
       const viewerUsername = this.userService.user()?.username ?? null;
       return buildMeetingOrganizerDisplay(organizers, viewerUsername);
