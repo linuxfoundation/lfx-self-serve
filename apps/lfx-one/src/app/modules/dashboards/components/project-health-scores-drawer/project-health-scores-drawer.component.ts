@@ -151,7 +151,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
-  // draw (the trailing Unscored bar), so this must not collapse to hasData() (scored-only).
+  // draw (the leading Unscored bar), so this must not collapse to hasData() (scored-only).
   protected readonly hasChartData: Signal<boolean> = computed(() => this.scoredProjects() > 0 || this.data().unscored > 0);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!this.search().trim() || this.selectedStatuses().size > 0);
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
