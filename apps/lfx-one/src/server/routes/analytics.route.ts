@@ -186,6 +186,7 @@ router.get('/board-meeting-participation-summary', (req, res, next) => analytics
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
 router.get('/events-overview-summary', (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
+router.get('/event-roster', (req, res, next) => analyticsController.getEventRoster(req, res, next));
 router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
 router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
 router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));

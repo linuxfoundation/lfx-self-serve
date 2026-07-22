@@ -2741,6 +2741,46 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/event-roster
+   * Foundation event roster — one row per event with registration/sponsorship
+   * actual-vs-goal, comparison rating, and CFP status. Defaults to upcoming events;
+   * pass includePast=true for the full history.
+   */
+  public async getEventRoster(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_event_roster');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_roster',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_event_roster',
+        });
+      }
+
+      const includePast = getStringQueryParam(req, 'includePast') === 'true';
+
+      const response = await this.projectService.getEventRoster(foundationSlug, includePast);
+
+      logger.success(req, 'get_event_roster', startTime, {
+        foundation_slug: foundationSlug,
+        include_past: includePast,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/brand-reach
    * Get brand reach metrics (total digital reach across social + owned sites)
    */
