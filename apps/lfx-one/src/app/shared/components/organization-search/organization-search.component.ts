@@ -184,6 +184,16 @@ export class OrganizationSearchComponent {
     const domainCtrl = domainControlName ? this.form().get(domainControlName) : null;
     if (domainCtrl) {
       this.domainOriginalValidator = domainCtrl.validator;
+      // Clear any stale URL left by a prior selection before entering manual mode.
+      // The name-change subscription in the parent is guarded by manualMode(), so it won't
+      // clear this automatically — we must do it here to prevent Org A's URL from validating
+      // a newly created Org B.
+      domainCtrl.setValue(null);
+      const parentForm = this.form();
+      const orgIdCtrl = parentForm.get('organization_id');
+      if (orgIdCtrl) {
+        orgIdCtrl.setValue(null);
+      }
       const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
       domainCtrl.setValidators(validators);
       domainCtrl.updateValueAndValidity();
