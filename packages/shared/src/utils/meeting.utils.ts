@@ -827,9 +827,10 @@ export function buildMeetingOrganizerMailto(params: {
   detailUrl?: string | null;
 }): string | null {
   const email = params.email?.trim();
-  // Require a plausible address and reject any header-injection characters (whitespace, `?`, `&`,
-  // `<`, `>`, `"`, control chars) so a malformed record can't smuggle extra mailto headers.
-  if (!email || !email.includes('@') || /[\s?&<>"]/.test(email)) {
+  // Only emit a mailto for a conservative single-recipient address. The positive allowlist rejects
+  // whitespace, separators (`,`/`;`), extra `@`, and — critically — percent escapes, so a record
+  // like `victim@x.com%0D%0ABcc:attacker@x.com` can't decode into a CRLF + injected mail header.
+  if (!email || !/^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
     return null;
   }
 

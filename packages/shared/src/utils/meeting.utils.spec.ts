@@ -351,6 +351,9 @@ describe('buildMeetingOrganizerMailto', () => {
     expect(buildMeetingOrganizerMailto({ email: 'a&cc=x@b.com' })).toBeNull();
     expect(buildMeetingOrganizerMailto({ email: 'has space@b.com' })).toBeNull();
     expect(buildMeetingOrganizerMailto({ email: 'no-at-sign' })).toBeNull();
+    // Percent-encoded CRLF + Bcc header-injection attempt must not survive the allowlist.
+    expect(buildMeetingOrganizerMailto({ email: 'victim@example.com%0D%0ABcc:attacker@example.com' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'two@at@example.com' })).toBeNull();
   });
 });
 

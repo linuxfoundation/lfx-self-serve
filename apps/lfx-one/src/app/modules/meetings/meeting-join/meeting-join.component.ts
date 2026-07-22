@@ -34,6 +34,7 @@ import {
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
   MeetingAttachment,
+  MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingRegistrant,
@@ -249,6 +250,10 @@ export class MeetingJoinComponent implements OnInit {
   });
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
+  // Host source for the organizer chip: registrants for upcoming, participants for past (the
+  // upcoming registrants signal is empty on past join pages), so the chip and the participants
+  // drawer resolve organizers from the same people.
+  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
   // Past meeting attendance stats (derived from participants)
   protected participantCount = computed(() => this.pastMeetingParticipants().length);
   protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);
