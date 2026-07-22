@@ -5,6 +5,7 @@ import { Component, inject, input, output, signal, Signal } from '@angular/core'
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
+import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
@@ -167,10 +168,20 @@ export class OrganizationSearchComponent {
     this.clearResolveState();
 
     const nameControlName = this.nameControl();
+    const domainControlName = this.domainControl();
     const typedName = (this.organizationForm.get('organizationSearch')?.value || this.searchTerm())?.trim();
 
     if (nameControlName && this.form().get(nameControlName)) {
       this.form().get(nameControlName)?.setValue(typedName);
+    }
+
+    // Apply URL validators to the domain control so the website field is validated
+    // while in manual/new-org mode. Cleared on exit to avoid validating search-mode state.
+    const domainCtrl = domainControlName ? this.form().get(domainControlName) : null;
+    if (domainCtrl) {
+      const validators = this.domainRequired() ? [trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
+      domainCtrl.setValidators(validators);
+      domainCtrl.updateValueAndValidity();
     }
 
     // Remember the just-created org (free text, no domain) so re-opening the
@@ -187,7 +198,6 @@ export class OrganizationSearchComponent {
     this.manualMode.set(false);
     this.clearResolveState();
 
-    // Clear any touched state on the form controls
     const parentForm = this.form();
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
@@ -196,8 +206,11 @@ export class OrganizationSearchComponent {
       parentForm.get(nameControlName)?.markAsUntouched();
     }
 
-    if (domainControlName && parentForm.get(domainControlName)) {
-      parentForm.get(domainControlName)?.markAsUntouched();
+    const domainCtrl = domainControlName ? parentForm.get(domainControlName) : null;
+    if (domainCtrl) {
+      domainCtrl.clearValidators();
+      domainCtrl.updateValueAndValidity();
+      domainCtrl.markAsUntouched();
     }
   }
 
