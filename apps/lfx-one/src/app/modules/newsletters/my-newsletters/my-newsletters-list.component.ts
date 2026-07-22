@@ -85,18 +85,20 @@ export class MyNewslettersListComponent {
   }
 
   protected onFoundationChange(foundationId: string): void {
-    this.selectedFoundation.set(foundationId);
+    // Toggle: if already selected, deselect (show all); otherwise select this foundation
+    const current = this.selectedFoundation();
+    this.selectedFoundation.set(current === foundationId ? '' : foundationId);
   }
 
   protected loadMore(): void {
     const token = this.nextPageToken();
-    const currentGeneration = ++this.loadGeneration;
 
     if (!token || this.loading() || this.loadingMore()) {
       return;
     }
 
     this.loadingMore.set(true);
+    const currentGeneration = ++this.loadGeneration;
 
     this.newsletterService
       .listMyNewsletters(token)
@@ -107,6 +109,7 @@ export class MyNewslettersListComponent {
       .subscribe((response) => {
         // Discard stale responses from previous generations (project change/context shift)
         if (currentGeneration !== this.loadGeneration) {
+          this.loadingMore.set(false);
           return;
         }
 

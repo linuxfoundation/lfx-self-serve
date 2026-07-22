@@ -37,8 +37,6 @@
             type="button"
             class="p-4 border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-left"
             (click)="openPreview(newsletter)"
-            (keydown.enter)="openPreview(newsletter)"
-            (keydown.space)="openPreview(newsletter)"
             [attr.data-testid]="'my-newsletters-item-' + newsletter.id"
             [attr.aria-label]="'View newsletter: ' + newsletter.subject">
             <div class="flex flex-col gap-2">
@@ -50,7 +48,7 @@
                     <span class="text-gray-500"> • {{ newsletter.project_name }}</span>
                   }
                 </div>
-                <div class="text-xs text-gray-500">Sent {{ newsletter.sent_at | date: 'short' }}</div>
+                <div class="text-xs text-gray-500">Sent {{ newsletter.sent_at | date: 'MMM d, y': 'en-US' }}</div>
               </div>
             </div>
           </button>

@@ -45,21 +45,19 @@ export class MyNewslettersController {
    * Fetch a specific newsletter from the recipient archive with full body_html.
    */
   public async getArchiveDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const newsletterUid = req.params['newsletterUid'];
-
-    // Validate newsletter UID is a UUID
-    if (!newsletterUid || !isUuid(newsletterUid)) {
-      throw ServiceValidationError.fromFieldErrors({ newsletter_uid: 'Invalid newsletter UID format' }, 'Invalid newsletter UID', {
-        operation: 'get_my_newsletter_detail',
-        path: req.path,
-      });
-    }
-
-    const startTime = logger.startOperation(req, 'get_my_newsletter_detail', {
-      newsletter_uid: newsletterUid,
-    });
+    const startTime = logger.startOperation(req, 'get_my_newsletter_detail');
 
     try {
+      const newsletterUid = req.params['newsletterUid'];
+
+      // Validate newsletter UID is a UUID
+      if (!newsletterUid || !isUuid(newsletterUid)) {
+        throw ServiceValidationError.fromFieldErrors({ newsletter_uid: 'Invalid newsletter UID format' }, 'Invalid newsletter UID', {
+          operation: 'get_my_newsletter_detail',
+          path: req.path,
+        });
+      }
+
       const newsletter = await this.myNewslettersService.getArchiveDetail(req, newsletterUid);
       logger.success(req, 'get_my_newsletter_detail', startTime, {
         newsletter_id: newsletter.id,

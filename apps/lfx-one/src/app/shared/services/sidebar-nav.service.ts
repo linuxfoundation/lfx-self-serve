@@ -139,7 +139,7 @@ export class SidebarNavService {
         {
           label: 'My Newsletters',
           icon: 'fa-light fa-newspaper',
-          routerLink: '/newsletters/my-newsletters',
+          routerLink: '/my-newsletters',
         },
       ],
     },
