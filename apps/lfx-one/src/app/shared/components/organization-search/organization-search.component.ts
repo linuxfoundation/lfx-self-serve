@@ -210,7 +210,12 @@ export class OrganizationSearchComponent {
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
 
+    // Clear the internal search input and the parent form's name/URL values so that
+    // the empty search UI is consistent with the form state — prevents orgInvalid()
+    // from seeing a stale name with no org-id and blocking the submit button.
+    this.organizationForm.get('organizationSearch')?.setValue('');
     if (nameControlName && parentForm.get(nameControlName)) {
+      parentForm.get(nameControlName)?.setValue(null);
       parentForm.get(nameControlName)?.markAsUntouched();
     }
 
@@ -222,6 +227,7 @@ export class OrganizationSearchComponent {
       } else {
         domainCtrl.clearValidators();
       }
+      domainCtrl.setValue(null);
       domainCtrl.updateValueAndValidity();
       domainCtrl.markAsUntouched();
     }
