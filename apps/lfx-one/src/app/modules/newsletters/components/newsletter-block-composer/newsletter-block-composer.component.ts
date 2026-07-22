@@ -649,6 +649,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (paletteEntry) {
       // Don't allow a container to be created inside another container.
       if (paletteEntry.is_container) return;
+      // Honor the container's allowed_block_types allowlist — dropping an
+      // unsupported leaf would produce a layout the selected library can't render.
+      if (!this.childAllowedInContainer(parent, paletteEntry.block_type)) return;
       const children = [...(parent.children ?? [])];
       children.splice(event.currentIndex, 0, this.create(paletteEntry));
       this.updateBlock(parentId, { children });
@@ -659,6 +662,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // Existing block transferred into this container.
     const dragged = event.item.data as NewsletterComposerBlock | undefined;
     if (!dragged || dragged.isContainer) return;
+    // Same allowlist gate as a palette drop: a block dragged from the canvas or
+    // another container must also be a permitted child type for this container.
+    if (!this.childAllowedInContainer(parent, dragged.block_type)) return;
     const moved = this.detachFromSource(event);
     if (!moved) return;
     const children = [...(this.blocks().find((block) => block.id === parentId)?.children ?? [])];
@@ -885,6 +891,18 @@ export class NewsletterBlockComposerComponent implements OnInit {
       }
       return Array.from(groups.entries()).map(([category, entries]) => ({ category, entries }));
     });
+  }
+
+  /**
+   * Whether `childType` may be placed inside container `parent`. A container's
+   * manifest entry may restrict its children via `allowed_block_types`; when that
+   * list is absent or empty, any (non-container) block is allowed. Containers
+   * never nest — that single-level rule is enforced separately at the call sites.
+   */
+  private childAllowedInContainer(parent: NewsletterComposerBlock, childType: string): boolean {
+    const allowed = this.manifestService.getBlock(parent.block_type)?.allowed_block_types;
+    if (!allowed || allowed.length === 0) return true;
+    return allowed.includes(childType);
   }
 
   /**

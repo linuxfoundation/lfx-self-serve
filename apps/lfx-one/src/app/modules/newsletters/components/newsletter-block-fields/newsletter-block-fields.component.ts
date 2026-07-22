@@ -70,6 +70,11 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
 
   // The block id the current form was built for, to detect selection changes.
   private builtForBlockId: string | null = null;
+  // A signature of the field SET the form was built for. Switching libraries can
+  // keep the same block id while swapping the block's manifest schema (a
+  // different field set), so the form rebuilds when this changes even if the id
+  // does not — otherwise the FormGroup keeps the previous library's controls.
+  private builtForFieldsKey: string | null = null;
   // The `content` reference the form currently reflects — set when the form is
   // (re)built and whenever the panel emits its own edit. An incoming block whose
   // `content` is a DIFFERENT reference (e.g. an inline canvas edit) means the
@@ -94,11 +99,13 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
       if (!block) {
         this.teardownForm();
         this.builtForBlockId = null;
+        this.builtForFieldsKey = null;
         this.form.set(null);
         return;
       }
-      if (block.id === this.builtForBlockId) {
-        // Same block selected, but its content may have changed underneath the
+      const fieldsKey = this.fieldsKey(entries);
+      if (block.id === this.builtForBlockId && fieldsKey === this.builtForFieldsKey) {
+        // Same block AND same schema: its content may have changed underneath the
         // panel via inline canvas editing (a different `content` reference than
         // the form last reflected). Patch the EXISTING controls in place so the
         // sidebar mirrors the new values — crucially without rebuilding the form,
@@ -109,6 +116,8 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
         }
         return;
       }
+      // New block, OR the same block whose schema changed (a library switch
+      // swapped its field set) — rebuild so the controls match the current schema.
       this.buildForm(block, entries);
     });
   }
@@ -203,6 +212,15 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   }
 
   /** Build the reactive form for a block and wire its value-change emit. */
+  /**
+   * A stable signature of a schema's field set (each field's key + type), used
+   * to detect when a library switch swapped a block's fields so the form must be
+   * rebuilt rather than patched in place.
+   */
+  private fieldsKey(entries: NewsletterFieldEntry[]): string {
+    return entries.map((entry) => `${entry.key}:${entry.type}`).join('|');
+  }
+
   private buildForm(block: NewsletterComposerBlock, entries: NewsletterFieldEntry[]): void {
     this.teardownForm();
 
@@ -217,6 +235,7 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     group.addControl(this.marginKey, new FormControl(this.seedSpacing(block.content[this.marginKey])));
 
     this.builtForBlockId = block.id;
+    this.builtForFieldsKey = this.fieldsKey(entries);
     this.syncedContent = block.content;
     this.form.set(group);
 
