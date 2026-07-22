@@ -25,7 +25,7 @@
       [phone]="phoneInfo()"
       [tshirtSize]="tshirtSizeLabel()"
       [githubHandle]="githubHandle()"
-      (editRequested)="openEditDialog()" />
+      (editRequested)="openEditDrawer()" />
   </div>
 
   <!-- Left column -->
@@ -72,3 +72,6 @@
     </div>
   </div>
 </div>
+
+<!-- Profile edit drawer — opened via ProfileEditDrawerService when the panel emits editRequested -->
+<lfx-profile-edit-drawer (saved)="onProfileSaved($event)" />

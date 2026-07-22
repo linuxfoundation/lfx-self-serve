@@ -85,4 +85,8 @@ export class NewsletterService {
   public listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
     return this.newsletterClient.listOptOuts(req, projectUid);
   }
+
+  public deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {
+    return this.newsletterClient.deleteOptOut(req, projectUid, optOutId);
+  }
 }

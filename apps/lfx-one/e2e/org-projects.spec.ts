@@ -164,6 +164,27 @@ test.describe('Org Projects', () => {
     await expect(page).toHaveURL(/[?&]sort=name/);
   });
 
+  test('Contributors count links to the project detail page with the Contributors drawer param', async ({ page }) => {
+    await gotoOrgProjectsPage(page);
+    await expect(page.getByTestId('org-projects-row-kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const contributors = page.getByTestId('org-projects-contributors-kubernetes');
+    await expect(contributors).toHaveAttribute('aria-label', /View 1 contributor for Kubernetes/);
+    await contributors.click();
+
+    await expect(page).toHaveURL(/\/org\/projects\/kubernetes\?(?:.*&)?card=contributors/);
+  });
+
+  test('Participants count links to the project detail page without a drawer param', async ({ page }) => {
+    await gotoOrgProjectsPage(page);
+    await expect(page.getByTestId('org-projects-row-kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('org-projects-participants-kubernetes').click();
+
+    await expect(page).toHaveURL(/\/org\/projects\/kubernetes(?:\?|$)/);
+    expect(page.url()).not.toContain('card=');
+  });
+
   test('opens the workspace dropdown and the add-workspace dialog', async ({ page }) => {
     await gotoOrgProjectsPage(page);
     await expect(page.getByTestId('org-projects-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

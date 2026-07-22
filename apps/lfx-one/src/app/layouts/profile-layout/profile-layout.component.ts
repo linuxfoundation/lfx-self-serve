@@ -9,11 +9,11 @@ import { normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZ
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, filter, map, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
-import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
+import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
+import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
 
 // Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
@@ -32,14 +32,16 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  * - Left column: page head, subtab navigation, and the router outlet for child pages
  * - Right column: the sticky profile panel (lfx-profile-panel) bound to the user's CombinedProfile
  *
- * The layout owns the profile data fetch, optimistic updates, the edit dialog, and the
+ * The layout owns the profile data fetch, optimistic updates, the edit drawer, and the
  * Flow C (management-token) auth-return handling; the panel is presentational and emits
- * `editRequested` back here to open the edit dialog.
+ * `editRequested` back here to open the edit drawer.
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent],
-  providers: [DialogService, MessageService],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent],
+  // ProfileEditDrawerService is layout-scoped (not root) so its retained profile context is torn
+  // down when the hub is left; the drawer child shares this injector and resolves the same instance.
+  providers: [MessageService, ProfileEditDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -55,7 +57,7 @@ export class ProfileLayoutComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
-  private readonly dialogService = inject(DialogService);
+  private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -160,29 +162,20 @@ export class ProfileLayoutComponent {
   }
 
   // Public methods
-  public openEditDialog(): void {
+  public openEditDrawer(): void {
     if (!this.combinedProfile) return;
+    this.editDrawer.open(this.combinedProfile);
+  }
 
-    const dialogRef = this.dialogService.open(ProfileEditDialogComponent, {
-      header: 'Edit Profile',
-      width: '900px',
-      modal: true,
-      closable: true,
-      dismissableMask: false,
-      data: { combinedProfile: this.combinedProfile },
-    }) as DynamicDialogRef;
-
-    dialogRef.onClose.pipe(take(1)).subscribe((result: Partial<UserMetadata> | null) => {
-      if (result) {
-        this.applyOptimisticProfileUpdate(result);
-      }
-    });
+  /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
+  public onProfileSaved(metadata: Partial<UserMetadata>): void {
+    this.applyOptimisticProfileUpdate(metadata);
   }
 
   /**
    * Reflect a just-saved profile change immediately, without waiting on the eventually-consistent
    * profile GET. Merges the saved metadata into the cached CombinedProfile (so a reopened edit
-   * dialog is correct too) and sets it as the optimistic header override.
+   * drawer is correct too) and sets it as the optimistic header override.
    */
   private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
     if (!this.combinedProfile) {
@@ -193,7 +186,7 @@ export class ProfileLayoutComponent {
       return;
     }
 
-    // The dialog builds metadata with `key: undefined` for empty fields; those keys are omitted
+    // The drawer builds metadata with `key: undefined` for empty fields; those keys are omitted
     // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
     // optimistic view would clear fields that were never actually persisted as cleared.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
@@ -263,7 +256,7 @@ export class ProfileLayoutComponent {
 
     this.userService.updateUserProfile(updateData).subscribe({
       next: () => {
-        // Optimistic update only — same as the dialog-close path. We intentionally do NOT
+        // Optimistic update only — same as the drawer-save path. We intentionally do NOT
         // refresh here: the profile GET is eventually consistent, so an immediate refetch could
         // overwrite combinedProfile with the pre-save body and reintroduce stale-on-reopen.
         this.applyOptimisticProfileUpdate(userMetadata);
@@ -332,8 +325,18 @@ export class ProfileLayoutComponent {
     });
   }
 
+  // Re-fetch identities on the Identities tab's refresh signal (LFXV2-2767) so the panel's GitHub
+  // handle and tab-notification dots stay current without a full reload.
   private initIdentities(): Signal<EnrichedIdentity[]> {
-    return toSignal(this.userService.getIdentities().pipe(catchError(() => of([] as EnrichedIdentity[]))), { initialValue: [] as EnrichedIdentity[] });
+    return toSignal(
+      this.userService.identitiesRefresh$.pipe(
+        startWith(undefined),
+        // Drop a failed refresh (EMPTY) — the shell has no error UI, so a transient error must not
+        // wipe the last-good GitHub handle / dot. initialValue covers an initial-load failure.
+        switchMap(() => this.userService.getIdentities().pipe(catchError(() => EMPTY)))
+      ),
+      { initialValue: [] as EnrichedIdentity[] }
+    );
   }
 
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {

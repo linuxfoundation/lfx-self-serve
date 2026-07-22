@@ -22,7 +22,7 @@ import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, map, of, startWith, Subject, switchMap, take } from 'rxjs';
+import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../components/add-account-dialog/add-account-dialog.component';
 import { ProfileLinuxEmailComponent } from '../linux-email/profile-linux-email.component';
@@ -79,7 +79,6 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
   public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
-  private readonly refreshTrigger$ = new Subject<void>();
   private readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
 
   public ngOnInit(): void {
@@ -87,7 +86,7 @@ export class ProfileIdentitiesComponent implements OnInit {
 
     if (params['success'] === 'identity_linked') {
       this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Identity linked successfully.' });
-      this.refreshTrigger$.next();
+      this.userService.refreshUserIdentities();
       this.clearQueryParams();
     } else if (params['error'] === 'already_linked') {
       this.conflictDetected.set(true);
@@ -124,7 +123,7 @@ export class ProfileIdentitiesComponent implements OnInit {
 
     dialogRef.onClose.pipe(take(1)).subscribe((result) => {
       if (result) {
-        this.refreshTrigger$.next();
+        this.userService.refreshUserIdentities();
       }
     });
   }
@@ -160,7 +159,7 @@ export class ProfileIdentitiesComponent implements OnInit {
 
     dialogRef.onClose.pipe(take(1)).subscribe((result) => {
       if (result) {
-        this.refreshTrigger$.next();
+        this.userService.refreshUserIdentities();
       }
     });
   }
@@ -188,7 +187,7 @@ export class ProfileIdentitiesComponent implements OnInit {
           .rejectIdentity(identity.id, identity.provider, identity.auth0UserId)
           .pipe(take(1))
           .subscribe({
-            next: () => this.refreshTrigger$.next(),
+            next: () => this.userService.refreshUserIdentities(),
             error: (err: HttpErrorResponse) => {
               if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
                 window.location.href = err.error.authorize_url;
@@ -232,7 +231,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       return signal({ identities: [] as EnrichedIdentity[], loaded: false });
     }
     return toSignal(
-      this.refreshTrigger$.pipe(
+      this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
         switchMap(() => {
           this.identitiesLoadError.set(false);

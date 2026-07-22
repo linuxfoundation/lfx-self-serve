@@ -25,6 +25,8 @@ import {
   ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  PD_CONTRIBUTORS_CARD_KEY,
+  PD_DRAWER_QUERY_PARAM,
   VALID_ORG_PROJECTS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -105,6 +107,7 @@ export class OrgProjectsComponent {
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
+  protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -706,6 +709,10 @@ export class OrgProjectsComponent {
     return computed(() => this.buildSortedProjects());
   }
 
+  private countAriaLabel(count: number, singular: string, projectName: string): string {
+    return `View ${count} ${count === 1 ? singular : `${singular}s`} for ${projectName}`;
+  }
+
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
   private initRows(): Signal<OrgProjectsTableRow[]> {
     return computed(() =>
@@ -730,6 +737,8 @@ export class OrgProjectsComponent {
         trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
         trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
         healthAriaLabel: this.healthAriaLabel(project),
+        contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
+        participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
       }))
     );
   }

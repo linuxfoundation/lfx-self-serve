@@ -196,6 +196,10 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   trendArrowBadgeClass: string;
   /** Plain-text health summary (rating + sub-scores) for screen readers / keyboard focus. */
   healthAriaLabel: string;
+  /** Plain-text, count-correlated label for the Contributors count link (screen readers / keyboard focus). */
+  contributorsAriaLabel: string;
+  /** Plain-text, count-correlated label for the Participants count link (screen readers / keyboard focus). */
+  participantsAriaLabel: string;
 }
 
 export interface OrgLensProjectRow {
