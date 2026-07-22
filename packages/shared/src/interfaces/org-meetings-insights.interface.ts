@@ -108,9 +108,6 @@ export interface OrgLeaderboardDisplayRow extends OrgLeaderboardRow {
   roleGroup: OrgLeaderboardPillGroup;
 }
 
-/** Ecosystem Influence rank tier, drives pill color in the influence accordion. */
-export type OrgInfluenceRankTier = 'top' | 'down' | 'neutral';
-
 /**
  * One measure feeding a project's Ecosystem Influence Score, rendered as a segment of the breakdown
  * bar. Labels/measures mirror the Org Lens Project Detail ecosystem-influence cards (PR #1028):
@@ -135,7 +132,6 @@ export interface OrgInfluenceRow {
   /** Qualitative ecosystem-influence band shown (with signal-bar icon) in place of the raw score. */
   band: OrgLensProjectBand;
   rankLabel: string;
-  rankTier: OrgInfluenceRankTier;
   fromAttendancePct: number;
   deltaLabel: string;
   deltaDirection: OrgMeetingsDeltaDirection;
