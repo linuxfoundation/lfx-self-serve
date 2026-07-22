@@ -3,7 +3,7 @@
 
 import { Component, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
@@ -42,6 +42,8 @@ export class OrganizationSearchComponent {
 
   // Track manual mode state
   public manualMode = signal<boolean>(false);
+
+  private domainOriginalValidator: ValidatorFn | null | undefined = undefined;
 
   // Resolve state signals
   public resolvingOrg = signal(false);
@@ -102,7 +104,9 @@ export class OrganizationSearchComponent {
         takeUntilDestroyed()
       )
       .subscribe((value) => {
-        searchControl.setValue((value ?? '').trim(), { emitEvent: false });
+        const trimmedValue = (value ?? '').trim();
+        searchControl.setValue(trimmedValue, { emitEvent: false });
+        this.searchTerm.set(trimmedValue);
       });
   }
 
@@ -179,7 +183,8 @@ export class OrganizationSearchComponent {
     // while in manual/new-org mode. Cleared on exit to avoid validating search-mode state.
     const domainCtrl = domainControlName ? this.form().get(domainControlName) : null;
     if (domainCtrl) {
-      const validators = this.domainRequired() ? [trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
+      this.domainOriginalValidator = domainCtrl.validator;
+      const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
       domainCtrl.setValidators(validators);
       domainCtrl.updateValueAndValidity();
     }
@@ -208,7 +213,12 @@ export class OrganizationSearchComponent {
 
     const domainCtrl = domainControlName ? parentForm.get(domainControlName) : null;
     if (domainCtrl) {
-      domainCtrl.clearValidators();
+      if (this.domainOriginalValidator !== undefined) {
+        domainCtrl.setValidators(this.domainOriginalValidator);
+        this.domainOriginalValidator = undefined;
+      } else {
+        domainCtrl.clearValidators();
+      }
       domainCtrl.updateValueAndValidity();
       domainCtrl.markAsUntouched();
     }

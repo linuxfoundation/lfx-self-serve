@@ -103,6 +103,9 @@ export class AddMemberDialogComponent {
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
   private readonly orgFormValues = this.initOrgFormValues();
+  private readonly orgUrlStatus = toSignal(this.form.get('organization_url')!.statusChanges.pipe(startWith(this.form.get('organization_url')!.status)), {
+    initialValue: this.form.get('organization_url')!.status,
+  });
 
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
   public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
@@ -119,7 +122,7 @@ export class AddMemberDialogComponent {
     return result;
   });
   public readonly canSubmit = computed(
-    () => !this.submitting() && this.categorized().toInvite.length > 0 && !(this.showOrganizationField() && this.showOrgError())
+    () => !this.submitting() && this.categorized().toInvite.length > 0 && !(this.showOrganizationField() && this.orgInvalid())
   );
   public readonly orgInvalid: Signal<boolean> = this.initOrgInvalid();
   public readonly showOrgError: Signal<boolean> = this.initShowOrgError();
@@ -142,6 +145,7 @@ export class AddMemberDialogComponent {
       .get('organization')!
       .valueChanges.pipe(takeUntilDestroyed())
       .subscribe((name) => {
+        if (this.organizationSearch()?.manualMode()) return;
         const normalizedName = (name ?? '').trim();
         if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
           this.resolvedOrganizationName = '';
@@ -313,6 +317,11 @@ export class AddMemberDialogComponent {
   private initOrgInvalid(): Signal<boolean> {
     return computed(() => {
       if (!this.showOrganizationField()) return false;
+      // In manual mode, org validity is entirely determined by the URL form control's
+      // validator state (Validators.required + trimmedRequired + httpsUrlValidator).
+      if (this.organizationSearch()?.manualMode()) {
+        return this.orgUrlStatus() === 'INVALID';
+      }
       const vals = this.orgFormValues();
       const hasName = !!(vals.organization ?? '').trim();
       // User typed in the search box but never selected a result (e.g. org doesn't exist in CDP).
