@@ -187,6 +187,9 @@ export class OrganizationSearchComponent {
       const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
       domainCtrl.setValidators(validators);
       domainCtrl.updateValueAndValidity();
+      // Mark touched immediately so the required-URL error is visible from the start,
+      // which explains why the Send Invites button is disabled without needing a submit attempt.
+      domainCtrl.markAsTouched();
     }
 
     // Remember the just-created org (free text, no domain) so re-opening the

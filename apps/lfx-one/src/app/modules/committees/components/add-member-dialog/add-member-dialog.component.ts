@@ -24,14 +24,7 @@ import {
   OrganizationResolveResult,
   CommitteeOrganizationReference,
 } from '@lfx-one/shared/interfaces';
-import {
-  buildCommitteeOrganizationPayload,
-  committeeRequiresOrganization,
-  hasLfAccount,
-  isValidUrl,
-  parseEmailList,
-  rankUserSearchResults,
-} from '@lfx-one/shared/utils';
+import { buildCommitteeOrganizationPayload, committeeRequiresOrganization, hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -331,7 +324,14 @@ export class AddMemberDialogComponent {
       if (!hasName) return false;
       const hasOrgId = !!vals.organization_id;
       const urlValue = (vals.organization_url ?? '').trim();
-      const hasValidUrl = !!urlValue && isValidUrl(urlValue);
+      let hasValidUrl = false;
+      if (urlValue) {
+        try {
+          hasValidUrl = new URL(urlValue).protocol === 'https:';
+        } catch {
+          /* not a valid URL */
+        }
+      }
       return !hasOrgId && !hasValidUrl;
     });
   }
