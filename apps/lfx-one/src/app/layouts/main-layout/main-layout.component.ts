@@ -46,6 +46,12 @@ export class MainLayoutComponent {
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
 
+  // True on the /profile hub, where the fixed profile rail is shown. Drives the right-side gutter
+  // (pr-[300px]) on <main> so page content and the shared footer stay clear of the rail. Only the
+  // me-lens /profile route uses ProfileLayoutComponent; org/foundation/project profile pages live
+  // under lens-prefixed paths (e.g. /org/...), so a /profile prefix match is exact enough here.
+  protected readonly isProfileHub = signal(false);
+
   /**
    * A route lens that {@link LensService.setLens} refused, held for retry.
    *
@@ -58,6 +64,10 @@ export class MainLayoutComponent {
   private readonly pendingRouteLens = signal<Lens | null>(null);
 
   public constructor() {
+    // Seed the profile-hub flag from the current URL so the right gutter is correct on the first
+    // paint / hard load, before the first NavigationEnd fires.
+    this.isProfileHub.set(this.computeIsProfileHub());
+
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
       .pipe(
@@ -67,6 +77,7 @@ export class MainLayoutComponent {
       .subscribe(() => {
         this.appService.closeMobileSidebar();
         this.selectorPanelOpen.set(false);
+        this.isProfileHub.set(this.computeIsProfileHub());
         this.syncLensFromRoute();
       });
 
@@ -103,6 +114,11 @@ export class MainLayoutComponent {
     if (!visible) {
       this.appService.closeMobileSidebar();
     }
+  }
+
+  /** Whether the current URL is under the /profile hub (drops any query string before matching). */
+  private computeIsProfileHub(): boolean {
+    return this.router.url.split('?')[0].startsWith('/profile');
   }
 
   /**
