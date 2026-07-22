@@ -116,9 +116,10 @@ export class MainLayoutComponent {
     }
   }
 
-  /** Whether the current URL is under the /profile hub (drops any query string before matching). */
+  /** Whether the current URL is under the /profile hub (drops any query string, matches on segment boundary). */
   private computeIsProfileHub(): boolean {
-    return this.router.url.split('?')[0].startsWith('/profile');
+    const path = this.router.url.split('?')[0];
+    return path === '/profile' || path.startsWith('/profile/');
   }
 
   /**
