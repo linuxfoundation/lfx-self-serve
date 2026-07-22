@@ -691,6 +691,8 @@ function isServiceOrEmptyCreatedBy(createdBy: MeetingUserInfo): boolean {
     return true;
   }
 
+  // `split('@')[0]` takes the local part; safe here because this only runs on trusted upstream
+  // created_by data (a malformed multi-`@` address would just not match a skip identifier).
   const emailLocalPart = email ? email.split('@')[0] : undefined;
   return MEETING_ORGANIZER_SKIP_IDENTIFIERS.some((skip) => username === skip || email === skip || emailLocalPart === skip || name?.toLowerCase() === skip);
 }
@@ -875,11 +877,13 @@ export function buildMeetingOrganizerChip(
   }
 
   const viewer = normalizeUsername(viewerUsername);
-  const toLink = (organizer: MeetingUserInfo): MeetingOrganizerLink => {
+  const toLink = (organizer: MeetingUserInfo, index: number): MeetingOrganizerLink => {
     const isYou = !!viewer && normalizeUsername(organizer.username) === viewer;
     const name = getMeetingOrganizerDisplayName(organizer);
     return {
-      key: organizer.username?.trim() || organizer.email?.trim() || name,
+      // Suffix the identity with its position so two name-only organizers sharing a display name
+      // still get distinct @for track keys (avoids Angular's duplicate-key diagnostic / DOM reuse).
+      key: `${organizer.username?.trim() || organizer.email?.trim() || name}#${index}`,
       name,
       isYou,
       // "you" is never a mailto link (emailing yourself makes no sense); others link when they have an email.
@@ -889,8 +893,8 @@ export function buildMeetingOrganizerChip(
 
   return {
     count: organizers.length,
-    primary: toLink(organizers[0]),
-    overflow: organizers.slice(1).map(toLink),
+    primary: toLink(organizers[0], 0),
+    overflow: organizers.slice(1).map((organizer, index) => toLink(organizer, index + 1)),
   };
 }
 

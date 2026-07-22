@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { environment } from '@environments/environment';
-import { Meeting, MeetingHostCandidate, MeetingOrganizerChipModel, MeetingOrganizerLink, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHostCandidate, MeetingOrganizerChipModel, PastMeeting } from '@lfx-one/shared/interfaces';
 import { buildMeetingOrganizerChip, collectMeetingOrganizers, getPastMeetingResourceId } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { PopoverModule } from 'primeng/popover';
@@ -30,12 +30,6 @@ export class MeetingOrganizerComponent {
   public readonly pastMeeting = input<boolean>(false);
 
   public readonly chip: Signal<MeetingOrganizerChipModel | null> = this.initChip();
-  // Flattened [primary, ...overflow] for the "+N" popover — computed here so the template
-  // doesn't allocate a new array on every change-detection pass.
-  public readonly allOrganizers: Signal<MeetingOrganizerLink[]> = computed(() => {
-    const chip = this.chip();
-    return chip ? [chip.primary, ...chip.overflow] : [];
-  });
 
   private initChip(): Signal<MeetingOrganizerChipModel | null> {
     return computed(() => {

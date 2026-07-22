@@ -27,13 +27,14 @@
         type="button"
         class="text-gray-500 hover:text-gray-700 hover:underline"
         (click)="overflow.toggle($event)"
+        [attr.aria-expanded]="overflow.overlayVisible"
         [attr.aria-label]="organizer.count - 1 + ' more organizers'"
         data-testid="organizer-overflow-toggle">
         +{{ organizer.count - 1 }}
       </button>
       <p-popover #overflow>
         <div class="flex flex-col gap-1.5 py-1 min-w-[10rem]" data-testid="organizer-overflow-list">
-          @for (link of allOrganizers(); track link.key) {
+          @for (link of organizer.overflow; track link.key) {
             <div class="text-sm text-gray-700">
               @if (link.isYou) {
                 <span>{{ link.name }} (you)</span>

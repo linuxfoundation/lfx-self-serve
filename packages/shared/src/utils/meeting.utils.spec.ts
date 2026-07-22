@@ -371,17 +371,19 @@ describe('buildMeetingOrganizerChip', () => {
     const chip = buildMeetingOrganizerChip([ada], null, ctx);
     expect(chip?.count).toBe(1);
     expect(chip?.primary.name).toBe('Ada Lovelace');
-    expect(chip?.primary.key).toBe('alovelace');
+    expect(chip?.primary.key).toBe('alovelace#0');
     expect(chip?.primary.mailto).toContain('mailto:ada@example.com?subject=Sync');
     expect(chip?.overflow).toEqual([]);
   });
 
-  it('gives same-named organizers distinct track keys (from username/email)', () => {
-    const dupeA = { name: 'Alex Kim', username: 'akim1', email: 'a1@x.com' };
-    const dupeB = { name: 'Alex Kim', username: 'akim2', email: 'a2@x.com' };
-    const chip = buildMeetingOrganizerChip([dupeA, dupeB]);
-    expect(chip?.primary.key).toBe('akim1');
-    expect(chip?.overflow[0].key).toBe('akim2');
+  it('gives same-named organizers distinct track keys even with no username/email', () => {
+    // Two host-only organizers with identical display names and no username/email must not collide.
+    const nameOnlyA = { name: 'Alex Kim', username: '', email: '' };
+    const nameOnlyB = { name: 'Alex Kim', username: '', email: '' };
+    const chip = buildMeetingOrganizerChip([nameOnlyA, nameOnlyB]);
+    expect(chip?.primary.key).toBe('Alex Kim#0');
+    expect(chip?.overflow[0].key).toBe('Alex Kim#1');
+    expect(chip?.primary.key).not.toBe(chip?.overflow[0].key);
   });
 
   it('marks the viewer as "you" and never links their name', () => {

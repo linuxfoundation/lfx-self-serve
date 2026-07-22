@@ -20,7 +20,13 @@ import {
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
 } from '@lfx-one/shared/interfaces';
-import { compareMeetingPeopleByHostThenName, filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import {
+  compareMeetingPeopleByHostThenName,
+  filterPastMeetingParticipants,
+  getPastMeetingResourceId,
+  markFormControlsAsTouched,
+  resolveMeetingBaseCount,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -336,7 +342,9 @@ export class MeetingRegistrantsDisplayComponent {
             : of([] as CommitteeMember[]);
 
           return combineLatest([
-            this.meetingService.getPastMeetingParticipants(meeting.id).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
+            // Use the canonical occurrence resource id — project/foundation past cards can carry a
+            // distinct meeting.id, which would otherwise fail-soft to [] (empty organizer set).
+            this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
             committeeMembers$,
           ]).pipe(
             map(([participants, committeeMembers]) => {

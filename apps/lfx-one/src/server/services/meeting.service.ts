@@ -284,31 +284,55 @@ export class MeetingService {
       unique: uniqueUids.length,
     });
 
+    // CHUNK_SIZE caps how many UIDs ride one tags-param query; CONCURRENCY caps how many of those
+    // chunk queries run at once. The Me-lens path can supply hundreds of past meetings, so running
+    // chunks in bounded-concurrency waves avoids serial latency proportional to meeting count while
+    // keeping per-chunk failure isolation (a failed chunk is skipped, not fatal).
     const CHUNK_SIZE = 50;
+    const CONCURRENCY = 5;
+
+    const chunks: string[][] = [];
     for (let i = 0; i < uniqueUids.length; i += CHUNK_SIZE) {
-      const chunk = uniqueUids.slice(i, i + CHUNK_SIZE);
+      chunks.push(uniqueUids.slice(i, i + CHUNK_SIZE));
+    }
+
+    const fetchChunk = async (chunk: string[]): Promise<Meeting[]> => {
       try {
-        const meetings = await fetchAllQueryResources<Meeting>(req, (pageToken) =>
+        return await fetchAllQueryResources<Meeting>(req, (pageToken) =>
           this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'v1_meeting',
             tags: chunk,
             ...(pageToken && { page_token: pageToken }),
           })
         );
+      } catch (error) {
+        logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
+          chunk_size: chunk.length,
+          err: error,
+        });
+        return [];
+      }
+    };
 
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const wave = chunks.slice(i, i + CONCURRENCY);
+      const waveResults = await Promise.all(wave.map((chunk) => fetchChunk(chunk)));
+      for (const meetings of waveResults) {
         for (const meeting of meetings) {
           const uid = meeting.id;
           if (uid && meeting.created_by) {
             result.set(uid, meeting.created_by);
           }
         }
-      } catch (error) {
-        logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
-          chunk_size: chunk.length,
-          err: error,
-        });
       }
     }
+
+    // Surface partial-failure completeness: a resolved count below requested means some chunks
+    // failed and were skipped (those meetings render without an organizer rather than erroring).
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolved created_by lookups', {
+      requested: uniqueUids.length,
+      resolved: result.size,
+    });
 
     return result;
   }
