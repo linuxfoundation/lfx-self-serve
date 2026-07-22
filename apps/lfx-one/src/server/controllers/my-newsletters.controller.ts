@@ -5,6 +5,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MyNewslettersService } from '../services/my-newsletters.service';
 
@@ -21,7 +22,7 @@ export class MyNewslettersController {
    * List recipient archive: sent newsletters for committees the user belongs to.
    */
   public async listArchive(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const pageToken = (req.query['page_token'] as string) || undefined;
+    const pageToken = getStringQueryParam(req, 'page_token');
 
     const startTime = logger.startOperation(req, 'list_my_newsletters', {
       has_page_token: !!pageToken,
