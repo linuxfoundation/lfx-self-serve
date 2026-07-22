@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { currentEmployerFromWorkExperiences, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
+import { OrganizationService } from '@services/organization.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'rxjs';
 
@@ -21,6 +22,7 @@ import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'r
 export class InvitationAcceptFlowService {
   private readonly dialogService = inject(DialogService);
   private readonly invitationService = inject(InvitationService);
+  private readonly organizationService = inject(OrganizationService);
   private readonly http = inject(HttpClient);
 
   /**
@@ -49,6 +51,7 @@ export class InvitationAcceptFlowService {
         );
 
     return contextReady$.pipe(
+      switchMap((ctx) => this.preResolveOrganization(ctx)),
       switchMap((ctx) => from(this.openOrganizationDialog(ctx))),
       switchMap((result) => {
         if (!result?.organization) {
@@ -56,6 +59,26 @@ export class InvitationAcceptFlowService {
         }
         return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, result.organization);
       })
+    );
+  }
+
+  /**
+   * Attempts to resolve an org name to a CDP id before the dialog opens so a pre-filled
+   * name with no id is not treated as a brand-new org requiring a manual website entry.
+   * Silently passes context through on failure — the dialog handles the unresolved case.
+   */
+  private preResolveOrganization(ctx: InvitationAcceptContext): Observable<InvitationAcceptContext> {
+    const org = ctx.organization;
+    if (!org?.name?.trim() || org.id) {
+      return of(ctx);
+    }
+    return this.organizationService.resolveOrganization(org.name, org.website ?? '').pipe(
+      take(1),
+      map((resolved) => ({
+        ...ctx,
+        organization: { ...org, id: resolved.id || null, name: resolved.name },
+      })),
+      catchError(() => of(ctx))
     );
   }
 
