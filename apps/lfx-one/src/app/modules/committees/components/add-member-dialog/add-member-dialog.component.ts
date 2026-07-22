@@ -118,7 +118,9 @@ export class AddMemberDialogComponent {
     }
     return result;
   });
-  public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
+  public readonly canSubmit = computed(
+    () => !this.submitting() && this.categorized().toInvite.length > 0 && !(this.showOrganizationField() && this.showOrgError())
+  );
   public readonly orgInvalid: Signal<boolean> = this.initOrgInvalid();
   public readonly showOrgError: Signal<boolean> = this.initShowOrgError();
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
@@ -199,6 +201,10 @@ export class AddMemberDialogComponent {
 
     if (this.showOrganizationField()) {
       this.orgSubmitAttempted.set(true);
+      if (this.organizationSearch()?.manualMode()) {
+        // Touch the website control so its inline required/URL validators become visible.
+        this.form.get('organization_url')?.markAsTouched();
+      }
       if (this.orgInvalid()) {
         return;
       }
@@ -324,6 +330,9 @@ export class AddMemberDialogComponent {
   private initShowOrgError(): Signal<boolean> {
     return computed(() => {
       if (!this.orgInvalid()) return false;
+      // In manual mode the user is creating a new org — "not found" is irrelevant.
+      // Validation for that path is handled inline inside the org-search template.
+      if (this.organizationSearch()?.manualMode()) return false;
       if (this.orgSubmitAttempted()) return true;
       // Show immediately while the user has typed a search term with no confirmed selection —
       // same reactive-as-you-type UX as the email invalid warning (no submit click needed).
