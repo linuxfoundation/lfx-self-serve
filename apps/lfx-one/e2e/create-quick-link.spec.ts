@@ -291,5 +291,8 @@ test.describe('Create Quick-Link — committee-writer-only visibility', () => {
     await expect(page.getByTestId('create-menu-option-meeting')).toBeVisible();
     await expect(page.getByTestId('create-menu-option-vote')).toBeVisible();
     await expect(page.getByTestId('create-menu-option-survey')).toBeVisible();
+    await expect(page.getByTestId('create-menu-option-newsletter')).toBeHidden();
+    await expect(page.getByTestId('create-menu-option-group')).toBeHidden();
+    await expect(page.getByTestId('create-menu-option-mailing-list')).toBeHidden();
   });
 });
