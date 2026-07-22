@@ -4,6 +4,9 @@
 import typography from '@tailwindcss/typography';
 import {
   AVATAR_COLORS,
+  BAND_CHIP_CLASS,
+  BAND_SIGNAL_FILL,
+  BAND_SIGNAL_FILL_LIGHT,
   DELTA_DIRECTION_TEXT_CLASS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
@@ -44,17 +47,13 @@ export default {
     'text-amber-500',
     'text-purple-500',
     'text-gray-500',
-    // Org Lens projects — influence band signal-strength bars (classes defined in @lfx-one/shared, not scanned here)
-    'fill-emerald-500',
-    'fill-blue-500',
-    'fill-amber-500',
+    // Org Lens project bands — chip + signal-bar fill classes (BAND_CHIP_CLASS / BAND_SIGNAL_FILL /
+    // BAND_SIGNAL_FILL_LIGHT in @lfx-one/shared, not scanned here)
+    ...Object.values(BAND_CHIP_CLASS).flatMap((classes) => classes.split(' ')),
+    ...Object.values(BAND_SIGNAL_FILL),
+    ...Object.values(BAND_SIGNAL_FILL_LIGHT),
+    // Org Lens projects page — separate band signal-fill map with a red "silent" tier (org-lens-projects.constants.ts, not scanned here)
     'fill-red-500',
-    'fill-gray-400',
-    'fill-gray-200',
-    // Lighter tints for the unfilled signal bars
-    'fill-emerald-200',
-    'fill-blue-200',
-    'fill-amber-200',
     'fill-red-200',
     // Org Lens projects — influence trend text/badge colors (INFLUENCE_TREND_TEXT_CLASS / INFLUENCE_TREND_ARROW_BADGE_CLASS in @lfx-one/shared, not scanned here)
     'text-emerald-600',
