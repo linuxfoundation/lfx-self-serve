@@ -107,6 +107,7 @@
               data-testid="badge-datetime">
             </lfx-tag>
           }
+          <lfx-meeting-organizer [meeting]="meeting" [hosts]="participants()"></lfx-meeting-organizer>
           @if (hasRecording()) {
             <lfx-tag value="Recording" severity="secondary" icon="fa-light fa-video" styleClass="tag-feature-recording" data-testid="badge-recording"></lfx-tag>
           }
@@ -397,7 +398,7 @@
                   <div class="flex items-center gap-1.5">
                     <span class="text-sm text-gray-900 truncate">{{ p.first_name }} {{ p.last_name }}</span>
                     @if (p.host) {
-                      <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Host</span>
+                      <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" data-testid="participant-organizer-tag">Organizer</span>
                     }
                   </div>
                 </div>

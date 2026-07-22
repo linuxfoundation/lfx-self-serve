@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, effect, inject, input, InputSignal, ou
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -29,7 +30,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
-  imports: [AvatarComponent, ButtonComponent, TooltipModule, ReactiveFormsModule, RegistrantFormComponent, SelectComponent, NgTemplateOutlet],
+  imports: [AvatarComponent, BadgeComponent, ButtonComponent, TooltipModule, ReactiveFormsModule, RegistrantFormComponent, SelectComponent, NgTemplateOutlet],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
@@ -280,7 +281,7 @@ export class MeetingRegistrantsDisplayComponent {
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
-                map((registrants) => registrants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]),
+                map((registrants) => registrants.sort((a, b) => this.compareByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
                   const meeting = this.meeting();
                   const resolvedBaseCount = resolveMeetingBaseCount(meeting);
@@ -352,7 +353,7 @@ export class MeetingRegistrantsDisplayComponent {
                   };
                   return enriched;
                 })
-                .sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0);
+                .sort((a, b) => this.compareByHostThenName(a, b));
             }),
             finalize(() => this.internalLoading.set(false))
           );
@@ -367,13 +368,13 @@ export class MeetingRegistrantsDisplayComponent {
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
-        list = [...seed].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[];
+        list = [...seed].sort((a, b) => this.compareByHostThenName(a, b)) as MeetingRegistrant[];
       } else {
         list = this.internalRegistrants();
       }
       const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
       const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
-      return pending.length ? ([...pending, ...list].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]) : list;
+      return pending.length ? ([...pending, ...list].sort((a, b) => this.compareByHostThenName(a, b)) as MeetingRegistrant[]) : list;
     });
   }
 
@@ -451,5 +452,14 @@ export class MeetingRegistrantsDisplayComponent {
         group: this.groupFilter(),
       })
     );
+  }
+
+  // Floats hosts (organizers) to the top of a people list, then orders by first name.
+  private compareByHostThenName<T extends { host?: boolean; first_name?: string | null }>(a: T, b: T): number {
+    const hostDelta = (b.host ? 1 : 0) - (a.host ? 1 : 0);
+    if (hostDelta !== 0) {
+      return hostDelta;
+    }
+    return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
   }
 }

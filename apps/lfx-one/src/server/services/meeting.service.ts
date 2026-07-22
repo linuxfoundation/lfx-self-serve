@@ -17,6 +17,7 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingUserInfo,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -258,6 +259,58 @@ export class MeetingService {
     });
 
     return meeting;
+  }
+
+  /**
+   * Resolves the `created_by` (meeting creator) for a set of live `v1_meeting` UIDs by
+   * querying the indexed projection — the only source that carries it (the ITX detail
+   * payload and webhook-created past meetings do not).
+   *
+   * Batches the lookup with the query service's OR-semantics `tags` param so a page of
+   * meetings costs one call per chunk rather than N. UIDs that no longer resolve (deleted
+   * series) are simply absent from the returned map, so callers omit the organizer display.
+   *
+   * @returns Map of meeting UID → `created_by`, only for meetings that carry one.
+   */
+  public async resolveCreatedByForMeetings(req: Request, meetingUids: string[]): Promise<Map<string, MeetingUserInfo>> {
+    const result = new Map<string, MeetingUserInfo>();
+    const uniqueUids = [...new Set(meetingUids.filter(Boolean))];
+    if (uniqueUids.length === 0) {
+      return result;
+    }
+
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolving created_by from v1_meeting index', {
+      requested: meetingUids.length,
+      unique: uniqueUids.length,
+    });
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < uniqueUids.length; i += CHUNK_SIZE) {
+      const chunk = uniqueUids.slice(i, i + CHUNK_SIZE);
+      try {
+        const meetings = await fetchAllQueryResources<Meeting>(req, (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_meeting',
+            tags: chunk,
+            ...(pageToken && { page_token: pageToken }),
+          })
+        );
+
+        for (const meeting of meetings) {
+          const uid = meeting.id;
+          if (uid && meeting.created_by) {
+            result.set(uid, meeting.created_by);
+          }
+        }
+      } catch (error) {
+        logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
+          chunk_size: chunk.length,
+          err: error,
+        });
+      }
+    }
+
+    return result;
   }
 
   /**

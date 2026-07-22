@@ -3,12 +3,15 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
 import {
   CustomRecurrencePattern,
   Meeting,
+  MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOrganizerDisplay,
   MeetingRecurrence,
+  MeetingUserInfo,
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
@@ -670,5 +673,145 @@ export function normalizeIndexedMeetingAiSummary<T extends Pick<Meeting, 'ai_sum
     ...meeting,
     ai_summary_enabled: meeting.ai_summary_enabled ?? zoom.ai_companion_enabled,
     require_ai_summary_approval: meeting.require_ai_summary_approval ?? zoom.ai_summary_require_approval,
+  };
+}
+
+/**
+ * Returns true when a `created_by` value is a service account (e.g. `zoom.webhooks`)
+ * or carries no identifying information at all — either way it must not be shown as
+ * the meeting organizer.
+ */
+function isServiceOrEmptyCreatedBy(createdBy: MeetingUserInfo): boolean {
+  const name = createdBy.name?.trim();
+  const username = createdBy.username?.trim().toLowerCase();
+  const email = createdBy.email?.trim().toLowerCase();
+
+  if (!name && !username && !email) {
+    return true;
+  }
+
+  const emailLocalPart = email ? email.split('@')[0] : undefined;
+  return MEETING_ORGANIZER_SKIP_IDENTIFIERS.some((skip) => username === skip || email === skip || emailLocalPart === skip || name?.toLowerCase() === skip);
+}
+
+/**
+ * Resolves the person to display as a meeting's organizer, in priority order:
+ *   1. `meeting.created_by` when it's a real human (not a service account, not empty).
+ *   2. The first host among the supplied candidates (rare, but authoritative when present).
+ *   3. `null` — nothing resolvable, so the caller omits the organizer display entirely.
+ *
+ * @param meeting - Any object carrying an optional `created_by` (Meeting / PastMeeting).
+ * @param hosts - Optional registrant/participant candidates for the host fallback.
+ */
+export function resolveMeetingOrganizer(
+  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  hosts?: ReadonlyArray<MeetingHostCandidate>
+): MeetingUserInfo | null {
+  const createdBy = meeting?.created_by;
+  if (createdBy && !isServiceOrEmptyCreatedBy(createdBy)) {
+    return {
+      name: createdBy.name,
+      username: createdBy.username,
+      email: createdBy.email,
+      ...(createdBy.profile_picture ? { profile_picture: createdBy.profile_picture } : {}),
+    };
+  }
+
+  const host = hosts?.find((candidate) => candidate?.host);
+  if (host) {
+    const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();
+    const username = host.username?.trim() ?? '';
+    const email = host.email?.trim() ?? '';
+    if (name || username || email) {
+      return {
+        name,
+        username,
+        email,
+        ...(host.avatar_url ? { profile_picture: host.avatar_url } : {}),
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Display label for a resolved organizer: the full name, falling back to username,
+ * then email. Returns an empty string only when none are present.
+ */
+export function getMeetingOrganizerDisplayName(organizer: MeetingUserInfo | null | undefined): string {
+  if (!organizer) {
+    return '';
+  }
+  return organizer.name?.trim() || organizer.username?.trim() || organizer.email?.trim() || '';
+}
+
+/**
+ * Collects every person to attribute a meeting to, in priority order:
+ *   - the human `created_by` as the sole organizer, else
+ *   - all host-flagged candidates (multiple hosts → multiple organizers), else
+ *   - an empty array (nothing to display).
+ *
+ * The single-value {@link resolveMeetingOrganizer} drives the common (created_by) path;
+ * this returns the full list so surfaces with host data can render a "+N" overflow.
+ */
+export function collectMeetingOrganizers(
+  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  hosts?: ReadonlyArray<MeetingHostCandidate>
+): MeetingUserInfo[] {
+  const createdBy = meeting?.created_by;
+  const humanCreatedBy = createdBy ? resolveMeetingOrganizer({ created_by: createdBy }) : null;
+  if (humanCreatedBy) {
+    return [humanCreatedBy];
+  }
+
+  return (hosts ?? [])
+    .filter((candidate) => candidate?.host)
+    .map((host) => {
+      const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();
+      return {
+        name,
+        username: host.username?.trim() ?? '',
+        email: host.email?.trim() ?? '',
+        ...(host.avatar_url ? { profile_picture: host.avatar_url } : {}),
+      } as MeetingUserInfo;
+    })
+    .filter((organizer) => organizer.name || organizer.username || organizer.email);
+}
+
+/**
+ * Normalizes a username for viewer-identity comparison — lowercased and stripped of any
+ * auth-provider prefix (e.g. `auth0|`), so an OIDC `sub` still matches a plain LFID.
+ */
+function normalizeUsername(username: string | null | undefined): string {
+  return (username ?? '').trim().toLowerCase().split('|').pop() ?? '';
+}
+
+/**
+ * Builds the "Organized by" display model from resolved organizers and the viewer's username.
+ * Returns `null` when there are no organizers so the caller omits the line entirely.
+ *
+ * @param organizers - Resolved organizers (see {@link collectMeetingOrganizers}).
+ * @param viewerUsername - The current user's username, for the "Organized by you" variant.
+ */
+export function buildMeetingOrganizerDisplay(organizers: ReadonlyArray<MeetingUserInfo>, viewerUsername?: string | null): MeetingOrganizerDisplay | null {
+  if (!organizers.length) {
+    return null;
+  }
+
+  const primary = organizers[0];
+  const primaryName = getMeetingOrganizerDisplayName(primary);
+  const viewer = normalizeUsername(viewerUsername);
+  const isYou = !!viewer && normalizeUsername(primary.username) === viewer;
+  const overflowNames = organizers.slice(1).map((organizer) => getMeetingOrganizerDisplayName(organizer));
+  const extraCount = organizers.length - 1;
+  const base = `Organized by ${isYou ? 'you' : primaryName}`;
+
+  return {
+    label: extraCount > 0 ? `${base} +${extraCount}` : base,
+    primaryName,
+    isYou,
+    overflowNames,
+    count: organizers.length,
   };
 }

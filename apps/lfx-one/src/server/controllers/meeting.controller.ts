@@ -23,7 +23,7 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { addInvitedStatusToMeeting } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
@@ -160,8 +160,12 @@ export class MeetingController {
         meetingWithInvitedStatus.committee_members_count = 0;
       }
 
+      // The ITX detail payload omits created_by — join back to the live v1_meeting index so
+      // the organizer name can be shown. Single meeting keyed on its own UID.
+      const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meetingWithInvitedStatus], (m) => m.id);
+
       // Send the meeting data to the client
-      res.json(meetingWithInvitedStatus);
+      res.json(enrichedMeeting);
     } catch (error) {
       // Send the error to the next middleware
       next(error);

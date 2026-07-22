@@ -7,6 +7,7 @@ import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
@@ -103,6 +104,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    MeetingOrganizerComponent,
     GuestFormComponent,
     TooltipModule,
     DrawerModule,

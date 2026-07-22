@@ -133,6 +133,51 @@ export interface MeetingCommittee {
   name?: string;
 }
 
+/**
+ * User info embedded in meeting responses (the meeting creator / organizer).
+ * @description Mirrors the upstream ITX `created_by` shape returned on the indexed
+ * `v1_meeting` projection. Used to display the meeting organizer's name.
+ */
+export interface MeetingUserInfo {
+  /** Display name of the user */
+  name: string;
+  /** LFID username of the user */
+  username: string;
+  /** Email address of the user */
+  email: string;
+  /** Profile picture URL */
+  profile_picture?: string;
+}
+
+/**
+ * The resolved display model for a meeting's "Organized by" line.
+ */
+export interface MeetingOrganizerDisplay {
+  /** Full label, e.g. "Organized by Ada Lovelace", "Organized by you", or "Organized by Ada +2". */
+  label: string;
+  /** Display name of the primary organizer. */
+  primaryName: string;
+  /** True when the primary organizer is the current viewer. */
+  isYou: boolean;
+  /** Display names of any additional organizers (for a "+N" popover). */
+  overflowNames: string[];
+  /** Total number of organizers. */
+  count: number;
+}
+
+/**
+ * Minimal host-candidate shape for the organizer host-fallback derivation.
+ * Satisfied structurally by both {@link MeetingRegistrant} and {@link PastMeetingParticipant}.
+ */
+export interface MeetingHostCandidate {
+  first_name?: string | null;
+  last_name?: string | null;
+  username?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  host?: boolean;
+}
+
 /** Indexed v1_meeting zoom_config; AI flags use ai_companion_enabled / ai_summary_require_approval vs top-level ai_summary_enabled / require_ai_summary_approval. */
 export interface MeetingZoomConfig {
   /** Zoom numeric meeting ID */
@@ -155,6 +200,14 @@ export interface Meeting {
   modified_at: string;
   /** Write access permission for current user (response only) */
   organizer?: boolean;
+  /**
+   * The meeting creator, used to display the organizer's name (response only).
+   * Present on the indexed `v1_meeting` list projection; the ITX detail payload and
+   * webhook-created past meetings omit it, so the BFF enriches those paths by joining
+   * back to the live `v1_meeting` record. Absent when the creator is a service account
+   * (e.g. `zoom.webhooks`) or the series meeting no longer exists.
+   */
+  created_by?: MeetingUserInfo;
 
   // Required API fields
   /** UUID of the LF project */

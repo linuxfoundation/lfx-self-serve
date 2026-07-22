@@ -6,6 +6,13 @@ import type { CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
+ * Service-account usernames/emails that own `created_by` on system-created meetings
+ * (e.g. Zoom webhook events). These are not real people and must never be shown as
+ * the meeting organizer — the organizer derivation skips them.
+ */
+export const MEETING_ORGANIZER_SKIP_IDENTIFIERS = ['zoom.webhooks', 'zoom.events'];
+
+/**
  * Available meeting platforms and their configurations
  * @description Defines the supported platforms for hosting meetings
  */

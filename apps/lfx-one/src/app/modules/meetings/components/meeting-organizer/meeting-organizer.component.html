@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (display(); as organizer) {
+  <lfx-tag
+    [value]="organizer.label"
+    severity="secondary"
+    icon="fa-light fa-user"
+    [pTooltip]="organizer.count > 1 ? allNames() : ''"
+    data-testid="meeting-organizer">
+  </lfx-tag>
+}

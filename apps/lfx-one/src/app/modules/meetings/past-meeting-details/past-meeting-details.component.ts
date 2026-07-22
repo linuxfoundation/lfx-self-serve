@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, Signal, signal } from '@angula
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingMaterialsDrawerComponent } from '@app/modules/meetings/components/meeting-materials-drawer/meeting-materials-drawer.component';
+import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -56,6 +57,7 @@ import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filte
     AvatarComponent,
     TooltipModule,
     MeetingMaterialsDrawerComponent,
+    MeetingOrganizerComponent,
   ],
   templateUrl: './past-meeting-details.component.html',
 })
