@@ -110,7 +110,7 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await expect(kpiCards).toContainText('30');
   });
 
-  test('renders the "where your people spend time" stacked bars', async ({ page }) => {
+  test('renders the "where your people spend time" ranked percentage bars', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgMeetingsPage(page);
 
