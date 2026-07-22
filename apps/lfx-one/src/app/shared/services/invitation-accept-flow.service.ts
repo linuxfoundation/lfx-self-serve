@@ -76,7 +76,7 @@ export class InvitationAcceptFlowService {
       take(1),
       map((resolved) => ({
         ...ctx,
-        organization: { ...org, id: resolved.id || null, name: resolved.name },
+        organization: { ...org, id: resolved.id || null, name: resolved.name || org.name },
       })),
       catchError(() => of(ctx))
     );
