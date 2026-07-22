@@ -4,6 +4,9 @@
 import { NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, model, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -14,7 +17,7 @@ import type { EventDetailResponse } from '@lfx-one/shared/interfaces';
 @Component({
   selector: 'lfx-event-detail-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, DrawerModule],
+  imports: [NgClass, DrawerModule, ButtonComponent, CardComponent, TagComponent],
   templateUrl: './event-detail-drawer.component.html',
 })
 export class EventDetailDrawerComponent {
@@ -44,9 +47,28 @@ export class EventDetailDrawerComponent {
     return Math.min(100, Math.round((d.sponsorshipRevenue.actual / d.sponsorshipRevenue.goal) * 100));
   });
 
+  // === Protected Methods ===
+  protected onClose(): void {
+    this.visible.set(false);
+  }
+
   // === Protected Helpers (template) ===
   protected num(value: number): string {
     return formatNumber(value);
+  }
+
+  /** lfx-tag severity for the registration-pace rating. */
+  protected paceSeverity(): 'success' | 'warn' | 'danger' | 'secondary' {
+    switch (this.detail()?.compScore) {
+      case 'high':
+        return 'success';
+      case 'medium':
+        return 'warn';
+      case 'low':
+        return 'danger';
+      default:
+        return 'secondary';
+    }
   }
 
   protected money(value: number): string {
