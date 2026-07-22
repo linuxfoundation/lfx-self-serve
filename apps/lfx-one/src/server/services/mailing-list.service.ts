@@ -125,15 +125,10 @@ export class MailingListService {
       project_uid: newService.project_uid,
     });
 
-    // Poll the query service until the service is indexed
-    const indexed = await this.pollUntilResourceIndexed<GroupsIOService>(req, 'create_groupsio_service', 'groupsio_service', 'service_uid', newService.uid, {
-      service_uid: newService.uid,
-    });
-
-    if (!indexed) {
-      logger.warning(req, 'create_groupsio_service', 'Service not yet indexed in query service, returning POST response', { service_uid: newService.uid });
-    }
-    return await this.accessCheckService.addAccessToResource(req, indexed ?? newService, 'groupsio_service');
+    // Return the POST response immediately rather than blocking on query-service indexing
+    // (up to 8s of poll wait) — the frontend doesn't consume the enriched fields on the
+    // create success path, it just navigates away. See LFXV2-2712.
+    return await this.accessCheckService.addAccessToResource(req, newService, 'groupsio_service');
   }
 
   /**
@@ -278,22 +273,10 @@ export class MailingListService {
       service_uid: newMailingList.service_uid,
     });
 
-    // Poll the query service until the mailing list is indexed
-    const indexed = await this.pollUntilResourceIndexed<GroupsIOMailingList>(
-      req,
-      'create_mailing_list',
-      'groupsio_mailing_list',
-      'groupsio_mailing_list_uid',
-      newMailingList.uid,
-      { mailing_list_uid: newMailingList.uid }
-    );
-
-    if (!indexed) {
-      logger.warning(req, 'create_mailing_list', 'Mailing list not yet indexed in query service, returning POST response', {
-        mailing_list_uid: newMailingList.uid,
-      });
-    }
-    return await this.accessCheckService.addAccessToResource(req, indexed ?? newMailingList, 'groupsio_mailing_list');
+    // Return the POST response immediately rather than blocking on query-service indexing
+    // (up to 8s of poll wait) — the frontend doesn't consume the enriched fields on the
+    // create success path, it just navigates away. See LFXV2-2712.
+    return await this.accessCheckService.addAccessToResource(req, newMailingList, 'groupsio_mailing_list');
   }
 
   /**
@@ -553,16 +536,10 @@ export class MailingListService {
       member_uid: newMember.uid,
     });
 
-    // Poll the query service until the member is indexed
-    const indexed = await this.pollUntilResourceIndexed<MailingListMember>(req, 'create_mailing_list_member', 'groupsio_member', 'member_uid', newMember.uid, {
-      mailing_list_uid: mailingListId,
-      member_uid: newMember.uid,
-    });
-
-    if (!indexed) {
-      logger.warning(req, 'create_mailing_list_member', 'Member not yet indexed in query service, returning POST response', { member_uid: newMember.uid });
-    }
-    return await this.accessCheckService.addAccessToResource(req, indexed ?? newMember, 'groupsio_member');
+    // Return the POST response immediately rather than blocking on query-service indexing
+    // (up to 8s of poll wait) — the frontend doesn't consume the enriched fields on the
+    // create success path, it just navigates away. See LFXV2-2712.
+    return await this.accessCheckService.addAccessToResource(req, newMember, 'groupsio_member');
   }
 
   /**

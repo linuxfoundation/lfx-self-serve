@@ -13574,6 +13574,7 @@ __metadata:
     tslib: "npm:^2.8.1"
     typescript: "npm:~5.9.3"
     typescript-eslint: "npm:8.46.4"
+    vitest: "npm:^4.1.8"
   languageName: unknown
   linkType: soft
 
