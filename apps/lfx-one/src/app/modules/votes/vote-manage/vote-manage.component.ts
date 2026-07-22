@@ -150,7 +150,10 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    // Falls back to the locked committee's own project_uid when the project slot isn't seeded —
+    // a committee-only writer (no direct project-viewer relation) has no project resolvable via
+    // `?project=`'s guard seeding, so `this.project()` would otherwise be empty (LFXV2-2755).
+    const projectUid = this.vote()?.project_uid || this.project()?.uid || this.committeeContext()?.project_uid;
     if (!projectUid) {
       this.messageService.add({
         severity: 'error',
@@ -280,7 +283,10 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    // Falls back to the locked committee's own project_uid when the project slot isn't seeded —
+    // a committee-only writer (no direct project-viewer relation) has no project resolvable via
+    // `?project=`'s guard seeding, so `this.project()` would otherwise be empty (LFXV2-2755).
+    const projectUid = this.vote()?.project_uid || this.project()?.uid || this.committeeContext()?.project_uid;
     if (!projectUid) {
       this.messageService.add({
         severity: 'error',

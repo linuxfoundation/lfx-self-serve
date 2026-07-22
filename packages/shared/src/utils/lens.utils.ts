@@ -4,28 +4,26 @@
 import { Lens, LensGrantInputs } from '../interfaces/lens.interface';
 
 /**
- * The lenses a user is authorised to use, from their persona roles and `writer` grants.
+ * The lenses a user is authorised to use, from their persona roles alone.
  *
- * Two independent sources confer a lens, and either is sufficient:
- *  - a **persona role** — a board role reaches `foundation`, a project role reaches `project`,
- *    and a root writer reaches both.
- *  - a **`writer` grant** on a project of that kind (LFXV2-2754). Persona detection and FGA
- *    grants are independent, so delegated staff commonly hold `writer` on foundations while
- *    detecting as `contributor` only. Requiring the persona stranded them: every path that
- *    resolves a create target reads the lens, so a lens they could never hold made projects
- *    they demonstrably administer unreachable.
+ * A board role reaches `foundation`, a project role reaches `project`, and a root writer
+ * reaches both. `writer` grants no longer factor in here (LFXV2-2754 introduced a
+ * `writer`-derived widening as a stopgap so delegated staff holding `writer` on a project their
+ * persona didn't cover weren't stranded; LFXV2-2755 removed the need for it by making the create
+ * flow navigate via explicit target selection, resolved independently of the active lens — see
+ * `CreatePermissionService` and `project-context.service.ts`'s `routeLensKind` precedence).
  *
- * `me` is always present. `org` is feature-flagged and independent of both sources.
+ * `me` is always present. `org` is feature-flagged and independent of persona.
  *
  * Extracted as a pure function so this authorisation-adjacent logic is unit-testable — the
  * Angular app has no unit-test runner, and `LensService` consumes this rather than
  * reimplementing it.
  */
 export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
-  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isOrgLensEnabled } = inputs;
+  const { hasBoardRole, hasProjectRole, isRootWriter, isOrgLensEnabled } = inputs;
 
-  const showFoundation = hasBoardRole || isRootWriter || hasWriterFoundation;
-  const showProject = hasProjectRole || isRootWriter || hasWriterProject;
+  const showFoundation = hasBoardRole || isRootWriter;
+  const showProject = hasProjectRole || isRootWriter;
 
   const lenses: Lens[] = ['me'];
   if (showFoundation) {

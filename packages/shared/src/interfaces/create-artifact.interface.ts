@@ -36,6 +36,14 @@ export interface CreatableArtifactConfig {
   createRoute: string;
   /** Semantic group this entry belongs to; a change between adjacent entries draws a menu separator. */
   group: CreatableArtifactGroup;
+  /**
+   * Which target kinds this artifact type can be created against. A committee-writer-only
+   * user is only offered types whose `targetKinds` includes `'committee'` — mirrors the
+   * `writerGuard`'s `supportsCommitteeWriter` list (meetings/surveys/votes). Types not in
+   * that list (newsletter, group, mailing-list) require an actual project/foundation writer
+   * grant, since creating a *new* group is itself a project-writer operation.
+   */
+  targetKinds: CreatableTargetKind[];
 }
 
 /**
@@ -52,3 +60,35 @@ export interface CreatableProject extends ProjectContext {
    */
   isFoundation: boolean;
 }
+
+/** Discriminator for a create-target selector entry — a project/foundation or a committee. */
+export type CreatableTargetKind = 'project' | 'committee';
+
+/**
+ * A committee (Group) the current user is permitted to create meetings/votes/surveys
+ * against, sourced from a `writer === true` grant on `GET /api/committees`. Carries the
+ * owning project's slug/uid so navigation can seed `?project=<projectSlug>` alongside
+ * `?committee_uid=<uid>` — the create pages resolve `project_uid` from the seeded slot,
+ * falling back to `projectUid` directly when the caller has no independent project-viewer
+ * relation (see the committee-only writer fallback on the meeting/vote/survey create pages).
+ */
+export interface CreatableCommittee {
+  /** Committee UID. */
+  uid: string;
+  name: string;
+  logoUrl?: string;
+  /** Owning project's UID — used as a fallback when the project slot isn't seeded. */
+  projectUid: string;
+  /** Owning project's URL slug — carried as `?project=` to seed the create-flow slot. */
+  projectSlug: string;
+  projectName: string;
+  /** Whether the owning project is a foundation (top-level entity). */
+  isFoundation: boolean;
+}
+
+/**
+ * A create-target selector entry — either a project/foundation grant or a committee grant.
+ * `kind` discriminates which shape follows so the dialog and navigation code can branch
+ * without an `instanceof`/duck-typing check.
+ */
+export type CreatableTarget = ({ kind: 'project' } & CreatableProject) | ({ kind: 'committee' } & CreatableCommittee);

@@ -21,7 +21,10 @@
  *       feeding the curated `creatableProjects` (verified in production-code review), not asserted here.
  * - S5: a single eligible project is auto-selected on open (Continue enabled without a pick); with
  *       multiple eligible projects nothing is pre-selected and Continue stays gated until the user picks
- * - S6: Continue routes into the create flow — lands on the lens-prefixed create URL carrying ?project=<slug>
+ * - S6: Continue routes into the create flow — lands on a create page carrying ?project=<slug>
+ * - S7: a committee-target type routes with both ?project= (owning project slug) and ?committee_uid=
+ * - S8: a committee-writer-only user (no project/foundation writer grant) sees the rail button with
+ *       only meeting/vote/survey offered
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
@@ -31,6 +34,11 @@
  *
  * Note: this suite stops at the dialog boundary. It does not assert the post-Continue
  * create page — that path is enforced by each route's writerGuard.
+ *
+ * LFXV2-2755: the dialog no longer aligns the navigation lens before navigating (removed the
+ * `LensService.setLens` coupling) — it navigates by explicit target selection, resolved by the
+ * create-route guards independently of the active lens. So Continue can legitimately land on a
+ * flat (non-lens-prefixed) create URL; S6 asserts the query param + successful load, not a URL prefix.
  */
 
 import { expect, Locator, Page, test } from '@playwright/test';
@@ -79,6 +87,18 @@ function continueButton(page: Page): Locator {
   return page.getByTestId('create-artifact-continue-button').locator('button');
 }
 
+// Scoped to the project/foundation selector specifically — the dialog can render a second,
+// independent `lfx-project-selector` instance for committees (LFXV2-2755), so an unscoped
+// `dialog.getByTestId('project-selector')` would violate Playwright strict mode whenever both
+// are visible for the same artifact type.
+function projectSelectorTrigger(dialog: Locator): Locator {
+  return dialog.getByTestId('create-artifact-project-select').getByTestId('project-selector');
+}
+
+function committeeSelectorTrigger(dialog: Locator): Locator {
+  return dialog.getByTestId('create-artifact-committee-select').getByTestId('project-selector');
+}
+
 test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -123,10 +143,11 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
   test('S3: picking "Meeting" opens the dialog and choosing a project enables Continue', async ({ page }) => {
     await openDialogForType(page, 'meeting');
 
-    // Open the reused project-selector (same UI as the sidebar). Scope the trigger to the dialog —
-    // the same `project-selector` testid is emitted by the sidebar's instance in project/foundation lens.
+    // Open the reused project-selector (same UI as the sidebar). Scope the trigger to the
+    // project/foundation selector specifically — the dialog can also render an independent
+    // committee selector carrying the same `project-selector` testid (LFXV2-2755).
     const dialog = page.getByTestId('create-artifact-dialog');
-    await dialog.getByTestId('project-selector').click();
+    await projectSelectorTrigger(dialog).click();
     const panel = page.getByTestId('project-selector-panel');
     await expect(panel).toBeVisible({ timeout: 5_000 });
     const firstItem = panel.locator('[data-testid^="lens-item-"]').first();
@@ -140,9 +161,9 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
   test('S4: the project selector reuses the search + tabs pattern and renders selectable projects', async ({ page }) => {
     await openDialogForType(page, 'meeting');
 
-    // Scope the trigger to the dialog — the sidebar renders the same `project-selector` testid in project/foundation lens.
+    // Scope to the project/foundation selector — see projectSelectorTrigger doc.
     const dialog = page.getByTestId('create-artifact-dialog');
-    await dialog.getByTestId('project-selector').click();
+    await projectSelectorTrigger(dialog).click();
     const panel = page.getByTestId('project-selector-panel');
     await expect(panel).toBeVisible({ timeout: 5_000 });
 
@@ -159,19 +180,31 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(panel.locator('[data-testid^="lens-item-"]').first()).toBeVisible({ timeout: 5_000 });
   });
 
-  // S5 — auto-select single: a lone eligible project is pre-selected so Continue is enabled without a pick
-  test('S5: a single eligible project is auto-selected; multiple require an explicit pick', async ({ page }) => {
+  // S5 — auto-select single: a lone eligible target (project OR committee, counted together — see
+  // CreateArtifactDialogComponent's constructor) is pre-selected so Continue is enabled without a pick.
+  test('S5: a single eligible target is auto-selected; multiple require an explicit pick', async ({ page }) => {
     await openDialogForType(page, 'meeting');
     const dialog = page.getByTestId('create-artifact-dialog');
-    const trigger = dialog.getByTestId('project-selector');
+    const trigger = projectSelectorTrigger(dialog);
 
-    // Count eligible options, then toggle the panel closed via the trigger (Escape could close the dialog).
+    // Count eligible project options, then toggle the panel closed via the trigger (Escape could close the dialog).
     await trigger.click();
     const panel = page.getByTestId('project-selector-panel');
     await expect(panel).toBeVisible({ timeout: 5_000 });
-    const itemCount = await panel.locator('[data-testid^="lens-item-"]').count();
+    let itemCount = await panel.locator('[data-testid^="lens-item-"]').count();
     await trigger.click();
     await expect(panel).toBeHidden();
+
+    // Meeting is a committee-eligible type — add the committee selector's count, if rendered, since
+    // auto-select fires when the two lists sum to exactly one (LFXV2-2755).
+    const committeeTrigger = committeeSelectorTrigger(dialog);
+    if (await committeeTrigger.isVisible().catch(() => false)) {
+      await committeeTrigger.click();
+      await expect(panel).toBeVisible({ timeout: 5_000 });
+      itemCount += await panel.locator('[data-testid^="lens-item-"]').count();
+      await committeeTrigger.click();
+      await expect(panel).toBeHidden();
+    }
 
     if (itemCount === 1) {
       // Auto-selected on open — no manual pick needed.
@@ -182,11 +215,11 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     }
   });
 
-  // S6 — Continue exercises the create-navigation path: lands on the lens-prefixed create URL carrying ?project=<slug>
+  // S6 — Continue exercises the create-navigation path: lands on a create page carrying ?project=<slug>
   test('S6: Continue navigates to the create page carrying the selected project slug', async ({ page }) => {
     await openDialogForType(page, 'meeting');
     const dialog = page.getByTestId('create-artifact-dialog');
-    await dialog.getByTestId('project-selector').click();
+    await projectSelectorTrigger(dialog).click();
     const panel = page.getByTestId('project-selector-panel');
     await expect(panel).toBeVisible({ timeout: 5_000 });
 
@@ -199,9 +232,64 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
 
     await continueButton(page).click();
 
-    // onContinue aligns the lens then navigates; lensRedirectGuard forwards to the lens-prefixed mount,
-    // preserving ?project=. Require the lens prefix explicitly (foundation|project) — a bare
-    // /meetings/create would mean setLens/lensRedirectGuard didn't run, so it must NOT match.
-    await expect(page).toHaveURL(new RegExp(`/(foundation|project)/meetings/create\\?.*project=${slug}`), { timeout: 15_000 });
+    // onContinue navigates by explicit selection (`?project=<slug>`), resolved by the create-route
+    // guards independently of the active lens (LFXV2-2755) — no lens-alignment step runs first, so a
+    // flat (non-lens-prefixed) URL is an expected, valid outcome here, not a bug. Assert the query
+    // param plus a successful landing on the create page rather than a URL prefix.
+    await expect(page).toHaveURL(new RegExp(`/meetings/create\\?.*project=${slug}`), { timeout: 15_000 });
+    await expect(page.getByTestId('create-artifact-dialog')).toBeHidden();
+  });
+
+  // S7 — a committee target carries both ?project= (owning project slug, for writerGuard + slot-seeding)
+  // and ?committee_uid= (the committee lock + committee-writer authorization) on navigation.
+  test('S7: Continue with a committee target carries both project and committee_uid', async ({ page }) => {
+    await openDialogForType(page, 'meeting');
+    const dialog = page.getByTestId('create-artifact-dialog');
+    const committeeTrigger = committeeSelectorTrigger(dialog);
+
+    const hasCommitteeSelector = await committeeTrigger.isVisible().catch(() => false);
+    test.skip(!hasCommitteeSelector, 'Test user holds no committee `writer` grant for a committee-eligible type — selector hidden by design.');
+
+    await committeeTrigger.click();
+    const panel = page.getByTestId('project-selector-panel');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+    const firstItem = panel.locator('[data-testid^="lens-item-"]').first();
+    await expect(firstItem).toBeVisible({ timeout: 5_000 });
+    await firstItem.click();
+
+    await expect(continueButton(page)).toBeEnabled();
+    await continueButton(page).click();
+
+    await expect(page).toHaveURL(/\/meetings\/create\?.*project=[^&]+.*committee_uid=[^&]+|\/meetings\/create\?.*committee_uid=[^&]+.*project=[^&]+/, {
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId('create-artifact-dialog')).toBeHidden();
+  });
+});
+
+// S8 — a committee-writer-only user (no project/foundation writer grant at all) still sees the rail
+// button, and only the committee-eligible types (meeting/vote/survey) are offered — never
+// newsletter/group/mailing-list, which are project-only (LFXV2-2755).
+test.describe('Create Quick-Link — committee-writer-only visibility', () => {
+  test('S8: a committee-writer-only user sees the rail button with only meeting/vote/survey offered', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    const trigger = page.getByTestId('create-rail-button');
+    const visible = await trigger
+      .waitFor({ state: 'visible', timeout: RAIL_TIMEOUT })
+      .then(() => true)
+      .catch(() => false);
+    test.skip(!visible, 'Test user holds no writer grant of any kind — button hidden by design.');
+
+    await openCreateMenu(page);
+    const projectOnlyTypes: Array<'newsletter' | 'group' | 'mailing-list'> = ['newsletter', 'group', 'mailing-list'];
+    const anyProjectOnlyTypeVisible = await Promise.all(projectOnlyTypes.map((type) => page.getByTestId(`create-menu-option-${type}`).isVisible()));
+    test.skip(anyProjectOnlyTypeVisible.some(Boolean), 'Test user holds a project/foundation writer grant — not committee-writer-only.');
+
+    // Committee-writer-only: only the committee-eligible types are offered.
+    await expect(page.getByTestId('create-menu-option-meeting')).toBeVisible();
+    await expect(page.getByTestId('create-menu-option-vote')).toBeVisible();
+    await expect(page.getByTestId('create-menu-option-survey')).toBeVisible();
   });
 });

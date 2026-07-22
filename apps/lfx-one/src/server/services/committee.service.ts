@@ -130,11 +130,20 @@ export class CommitteeService {
 
   /**
    * Fetches all committees based on query parameters
+   *
+   * @param query.include_project_metadata When `'true'`, enriches every returned committee with
+   *   `project_name`, `project_slug`, `is_foundation`, and `parent_project_uid` via
+   *   `ProjectService.enrichWithProjectData` (batched, de-duplicated across the result set).
+   *   Mirrors the `includeProjectMetadata` option on {@link getCommitteeById}. Opt-in because it
+   *   costs an extra upstream project fetch per distinct `project_uid` — enable only for callers
+   *   that need slug-based navigation (e.g. the committee-writer create-target grants list).
    */
   public async getCommittees(req: Request, query: Record<string, any> = {}): Promise<Committee[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
+    const includeProjectMetadata = queryFilters['include_project_metadata'] === 'true';
+    delete queryFilters['include_project_metadata'];
 
     const params = {
       ...queryFilters,
@@ -198,6 +207,10 @@ export class CommitteeService {
           total: totalBefore,
         });
       }
+    }
+
+    if (includeProjectMetadata) {
+      return this.projectService.enrichWithProjectData(req, committees);
     }
 
     return committees;
