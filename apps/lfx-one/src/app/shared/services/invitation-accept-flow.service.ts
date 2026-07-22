@@ -10,7 +10,7 @@ import {
   InvitationAcceptContext,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { currentEmployerFromWorkExperiences, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { currentEmployerFromWorkExperiences, invitationRequiresOrganization, normalizeToUrl } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
 import { OrganizationService } from '@services/organization.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -90,7 +90,12 @@ export class InvitationAcceptFlowService {
           take(1),
           map((resolved) => ({
             ...ctx,
-            organization: { ...org, id: resolved.id || null, name: resolved.name || org.name },
+            organization: {
+              ...org,
+              id: resolved.id || null,
+              name: resolved.name || org.name,
+              website: normalizeToUrl(match.domain) ?? undefined,
+            },
           }))
         );
       }),
