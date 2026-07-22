@@ -100,13 +100,14 @@ export class MyNewslettersService {
   /**
    * Enrich list items with project/foundation name and slug.
    * Batches project lookups in groups of 25. Missing projects → items with empty fields + warning log.
+   * Also fetches parent_uid projects (foundations) in the same batch.
    */
   private async enrichNewslettersWithProjectData(req: Request, items: MyNewsletterListItem[]): Promise<MyNewsletterListItem[]> {
     if (items.length === 0) {
       return [];
     }
 
-    // Extract unique project UIDs
+    // Extract unique project UIDs from items
     const projectUids = Array.from(new Set(items.map((item) => item.project_uid)));
 
     logger.debug(req, 'enrich_newsletters_project_data', 'Starting project enrichment', {
@@ -114,10 +115,11 @@ export class MyNewslettersService {
       unique_projects: projectUids.length,
     });
 
-    // Batch fetch projects in groups of 25
+    // Batch fetch initial projects in groups of 25
     const projects: (Project | null)[] = [];
     const batchSize = 25;
 
+    // First pass: fetch project UIDs from items
     for (let i = 0; i < projectUids.length; i += batchSize) {
       const batch = projectUids.slice(i, i + batchSize);
       const results = await Promise.all(
@@ -132,7 +134,37 @@ export class MyNewslettersService {
       projects.push(...results);
     }
 
-    const projectMap = new Map(projects.filter((p): p is Project => p !== null).map((p) => [p.uid, p]));
+    // Second pass: collect parent UIDs and fetch those too
+    const parentUids = Array.from(
+      new Set(
+        projects
+          .filter((p): p is Project => p !== null)
+          .map((p) => p.parent_uid)
+          .filter((uid): uid is string => uid !== undefined && uid !== null)
+      )
+    );
+
+    const parentProjects: (Project | null)[] = [];
+    for (let i = 0; i < parentUids.length; i += batchSize) {
+      const batch = parentUids.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (uid) => {
+          try {
+            return await this.projectService.getProjectById(req, uid, false);
+          } catch {
+            return null;
+          }
+        })
+      );
+      parentProjects.push(...results);
+    }
+
+    // Combine all fetched projects into map
+    const projectMap = new Map<string, Project>();
+    [projects, parentProjects]
+      .flatMap((arr) => arr)
+      .filter((p): p is Project => p !== null)
+      .forEach((p) => projectMap.set(p.uid, p));
 
     logger.debug(req, 'enrich_newsletters_project_data', 'Project enrichment complete', {
       resolved: projectMap.size,
