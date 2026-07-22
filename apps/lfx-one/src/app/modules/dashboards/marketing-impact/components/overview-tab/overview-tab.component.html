@@ -1,22 +1,16 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<lfx-events-summary-section
+  [foundationSlug]="foundationSlug()"
+  [foundationName]="foundationName()"
+  [selectedPeriod]="selectedPeriod()"
+  data-testid="overview-tab-events-summary" />
+
 <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5" data-testid="overview-tab-summary-header">
-  <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-    <div class="flex flex-col gap-0.5">
-      <h3 class="text-base font-semibold text-gray-900">{{ summaryTitle() }}</h3>
-      <p class="text-xs text-gray-500">{{ summarySubtitle() }}</p>
-    </div>
-    <div class="flex items-center gap-4">
-      <lfx-button
-        label="View executive summary"
-        icon="fa-light fa-arrow-up-right-from-square"
-        severity="secondary"
-        [outlined]="true"
-        [disabled]="true"
-        ariaLabel="View executive summary (coming soon)"
-        data-testid="overview-tab-exec-summary-btn" />
-    </div>
+  <div class="flex flex-col gap-0.5">
+    <h3 class="text-base font-semibold text-gray-900">{{ summaryTitle() }}</h3>
+    <p class="text-xs text-gray-500">{{ summarySubtitle() }}</p>
   </div>
 
   <div class="grid grid-cols-1 gap-4 pt-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="overview-tab-kpi-grid">
@@ -41,13 +35,11 @@
   </div>
 </div>
 
-@if (!isProjectWebsites()) {
-  <lfx-attribution-section
-    [foundationSlug]="foundationSlug()"
-    [selectedPeriod]="selectedPeriod()"
-    [foundationName]="foundationName()"
-    [focusProgram]="focusProgram()"
-    [attributionOverride]="overviewKpiData().attribution"
-    [loadingOverride]="loading()"
-    data-testid="overview-tab-attribution-section" />
-}
+<lfx-attribution-section
+  [foundationSlug]="foundationSlug()"
+  [selectedPeriod]="selectedPeriod()"
+  [foundationName]="foundationName()"
+  [focusProgram]="focusProgram()"
+  [attributionOverride]="overviewKpiData().attribution"
+  [loadingOverride]="loading()"
+  data-testid="overview-tab-attribution-section" />

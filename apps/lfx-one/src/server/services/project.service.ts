@@ -29,6 +29,8 @@ import {
   EngagedCommunitySizeResponse,
   EventGrowthResponse,
   EventGrowthTopEvent,
+  EventsOverviewMetric,
+  EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   FlywheelConversionResponse,
   FoundationActiveContributorsMonthlyResponse,
@@ -4763,6 +4765,111 @@ export class ProjectService {
       sponsorshipRevenue,
       sponsorshipGoal,
       sponsorshipProgressPct,
+    };
+  }
+
+  /**
+   * Get the foundation-wide Events Summary for the Marketing Impact Overview tab.
+   *
+   * Sourced from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (one row per project,
+   * pre-computed period columns — no date-range filtering) plus MARKETING_EVENT_SPONSORSHIPS
+   * for the sponsorship dollar total. The foundation rollup (children included) is baked into
+   * the project spine, so a single row keyed on the resolved PROJECT_ID covers the foundation.
+   *
+   * Only YTD is modeled here (the table has no monthly grain); the *_PERCENT_CHANGE_YTD columns
+   * carry the YoY deltas as fractions (0.52 = +52%), surfaced unchanged as changeFraction.
+   */
+  public async getEventsOverviewSummary(foundationSlug: string): Promise<EventsOverviewSummaryResponse> {
+    logger.debug(undefined, 'get_events_overview_summary', 'Fetching events overview summary from Snowflake', {
+      foundation_slug: foundationSlug,
+    });
+
+    interface OverviewRow {
+      PROJECT_ID: string;
+      REGISTRATIONS_COUNT: number;
+      REGISTRATIONS_CHANGE: number | null;
+      ATTENDEES_COUNT: number;
+      ATTENDEES_CHANGE: number | null;
+      SPEAKERS_COUNT: number;
+      SPEAKERS_CHANGE: number | null;
+      COUNTRIES_COUNT: number;
+      COUNTRIES_CHANGE: number | null;
+      COMPANIES_COUNT: number;
+      COMPANIES_CHANGE: number | null;
+      EVENT_COUNT: number;
+    }
+
+    interface SponsorshipRow {
+      SPONSORSHIP_REVENUE: number;
+    }
+
+    // MARKETING_EVENT_OVERVIEW is one row per project; the *_PERCENT_CHANGE_YTD columns are
+    // passed through as-is (fractions). COMPANIES maps to the "Organizations" tile.
+    const overviewQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        eo.PROJECT_ID,
+        IFNULL(eo.REGISTRATIONS_COUNT_YTD, 0) AS REGISTRATIONS_COUNT,
+        eo.REGISTRATIONS_PERCENT_CHANGE_YTD AS REGISTRATIONS_CHANGE,
+        IFNULL(eo.ATTENDEES_COUNT_YTD, 0) AS ATTENDEES_COUNT,
+        eo.ATTENDEES_PERCENT_CHANGE_YTD AS ATTENDEES_CHANGE,
+        IFNULL(eo.SPEAKERS_COUNT_YTD, 0) AS SPEAKERS_COUNT,
+        eo.SPEAKERS_PERCENT_CHANGE_YTD AS SPEAKERS_CHANGE,
+        IFNULL(eo.COUNTRIES_COUNT_YTD, 0) AS COUNTRIES_COUNT,
+        eo.COUNTRIES_PERCENT_CHANGE_YTD AS COUNTRIES_CHANGE,
+        IFNULL(eo.COMPANIES_COUNT_YTD, 0) AS COMPANIES_COUNT,
+        eo.COMPANIES_PERCENT_CHANGE_YTD AS COMPANIES_CHANGE,
+        IFNULL(eo.EVENT_COUNT_YTD, 0) AS EVENT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW eo
+      INNER JOIN slug_resolve sr ON eo.PROJECT_ID = sr.project_id
+      LIMIT 1
+    `;
+
+    const sponsorshipQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        IFNULL(SUM(es.SPONSORSHIP_REVENUE_YTD), 0) AS SPONSORSHIP_REVENUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS es
+      INNER JOIN slug_resolve sr ON es.PROJECT_ID = sr.project_id
+    `;
+
+    const [overviewResult, sponsorshipResult] = await Promise.all([
+      this.snowflakeService.execute<OverviewRow>(overviewQuery, [foundationSlug]),
+      this.snowflakeService.execute<SponsorshipRow>(sponsorshipQuery, [foundationSlug]),
+    ]);
+
+    const row = overviewResult.rows?.[0];
+    const sponsorshipRow = sponsorshipResult.rows?.[0];
+
+    if (!row) {
+      logger.warning(undefined, 'get_events_overview_summary', 'No events overview row for foundation', { foundation_slug: foundationSlug });
+    }
+
+    const metric = (value: number | undefined, change: number | null | undefined): EventsOverviewMetric => ({
+      value: value ?? 0,
+      changeFraction: change ?? null,
+    });
+
+    return {
+      projectId: row?.PROJECT_ID ?? '',
+      registrations: metric(row?.REGISTRATIONS_COUNT, row?.REGISTRATIONS_CHANGE),
+      attendees: metric(row?.ATTENDEES_COUNT, row?.ATTENDEES_CHANGE),
+      speakers: metric(row?.SPEAKERS_COUNT, row?.SPEAKERS_CHANGE),
+      countries: metric(row?.COUNTRIES_COUNT, row?.COUNTRIES_CHANGE),
+      organizations: metric(row?.COMPANIES_COUNT, row?.COMPANIES_CHANGE),
+      // MARKETING_EVENT_OVERVIEW has no EVENT_COUNT_PERCENT_CHANGE_YTD, so the
+      // events tile shows a value with no YoY delta.
+      events: metric(row?.EVENT_COUNT, null),
+      // No YoY change is modeled for sponsorship revenue.
+      sponsorship: metric(sponsorshipRow?.SPONSORSHIP_REVENUE, null),
     };
   }
 

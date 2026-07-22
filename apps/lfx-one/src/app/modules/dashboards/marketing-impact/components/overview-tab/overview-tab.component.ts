@@ -3,7 +3,6 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ButtonComponent } from '@components/button/button.component';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { formatChangePct, formatCurrency, formatNumber, isPeriodMonth, resolvePeriodRange, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -12,11 +11,12 @@ import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rx
 import type { MarketingImpactFocusProgram, OverviewKpiData, PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
 
 import { AttributionSectionComponent } from '../attribution-section/attribution-section.component';
+import { EventsSummarySectionComponent } from '../events-summary-section/events-summary-section.component';
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
 @Component({
   selector: 'lfx-overview-tab',
-  imports: [ButtonComponent, SparklineKpiCardComponent, AttributionSectionComponent],
+  imports: [SparklineKpiCardComponent, AttributionSectionComponent, EventsSummarySectionComponent],
   templateUrl: './overview-tab.component.html',
 })
 export class OverviewTabComponent {
@@ -33,7 +33,6 @@ export class OverviewTabComponent {
   protected readonly loading = signal(false);
 
   // === Computed Signals ===
-  protected readonly isProjectWebsites = computed(() => this.focusProgram() === 'projectWebsites');
   protected readonly overviewKpiData: Signal<OverviewKpiData> = this.initOverviewKpiData();
   protected readonly performanceSummaryKpis: Signal<PerformanceSummaryKpi[]> = this.initPerformanceSummaryKpis();
   protected readonly summaryTitle: Signal<string> = this.initSummaryTitle();
@@ -54,14 +53,11 @@ export class OverviewTabComponent {
           }
           this.loading.set(true);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
-          const isWebOnly = focus === 'projectWebsites';
           return forkJoin({
-            revenueImpact: isWebOnly
-              ? of(null)
-              : this.analyticsService.getRevenueImpact(slug, classification, period || undefined).pipe(catchError(() => of(null))),
+            revenueImpact: this.analyticsService.getRevenueImpact(slug, classification, period || undefined).pipe(catchError(() => of(null))),
             // getBrandReach uses pre-computed _30D columns that cannot be period-filtered
             brandReach: this.analyticsService.getBrandReach(slug, classification).pipe(catchError(() => of(null))),
-            emailCtr: isWebOnly ? of(null) : this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(catchError(() => of(null))),
+            emailCtr: this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(catchError(() => of(null))),
             // Attributed Revenue KPI reports Linear attribution to match the
             // "Marketing attribution" table below (same source, same model),
             // not pipeline-won CRM revenue which is a different metric.
@@ -83,11 +79,10 @@ export class OverviewTabComponent {
       const changeSuffix: 'MoM' | 'Period' = isMonth ? 'MoM' : 'Period';
       const cards: PerformanceSummaryKpi[] = [];
 
-      // Attributed Revenue is driven by the attribution response, not revenueImpact.
-      // They are fetched independently and revenueImpact is intentionally null for
-      // projectWebsites, so guarding this card on revenueImpact would hide it even
-      // when attribution data exists. An empty/unavailable channel list renders as a
-      // dash — matching the "No attribution data available" state of the table below —
+      // Attributed Revenue is driven by the attribution response, not revenueImpact
+      // (they are fetched independently and can diverge), so this card is guarded on
+      // data.attribution. An empty/unavailable channel list renders as a dash —
+      // matching the "No attribution data available" state of the table below —
       // rather than a misleading $0.
       if (data.attribution) {
         const channels = data.attribution.channels ?? [];

@@ -14,10 +14,9 @@ export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'Jun
 /** Focus program filter options for the Marketing Impact FOCUS bar. Labels match Snowflake LF_SUB_DOMAIN_CLASSIFICATION values. */
 export const MARKETING_IMPACT_FOCUS_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All programs' },
-  { id: 'lfCorporate', label: 'LF Corporate' },
   { id: 'lfEvents', label: 'LF Events' },
+  { id: 'lfCorporate', label: 'LF Corporate' },
   { id: 'lfTraining', label: 'LF Training' },
-  { id: 'projectWebsites', label: 'Project Websites' },
 ];
 
 /** Tab definitions for the Marketing Impact section tabs. */
@@ -59,16 +58,14 @@ export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string
   lfCorporate: 'LF Corporate',
   lfEvents: 'LF Events',
   lfTraining: 'LF Training',
-  projectWebsites: 'Project Websites',
 };
 
 export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(FOCUS_TO_CLASSIFICATION).filter((v): v is string => v !== undefined));
 
-/** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering); Email is additionally hidden for projectWebsites (no email campaign data). */
+/** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering). */
 export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
   all: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
   lfCorporate: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
   lfEvents: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
   lfTraining: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity']),
-  projectWebsites: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'web-activity']),
 };
