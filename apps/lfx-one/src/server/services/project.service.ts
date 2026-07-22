@@ -33,6 +33,7 @@ import {
   EventDetailResponse,
   EventGeoReachResponse,
   EventGrowthResponse,
+  EventPacing,
   EventGrowthTopEvent,
   EventRosterResponse,
   EventRosterRow,
@@ -5118,17 +5119,7 @@ export class ProjectService {
         sponsorCount: t.SPONSOR_COUNT ?? 0,
       })),
       channels,
-      // Daily pacing prediction lands when MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]
-      // are materialized; until then the drawer shows a placeholder + a PCC link.
-      pacing: {
-        available: false,
-        daysLeft: null,
-        current: null,
-        priorYear: null,
-        predictedAvg: null,
-        predictedLow: null,
-        predictedHigh: null,
-      },
+      pacing: await this.getEventPacing(eventId),
     };
   }
 
@@ -7361,5 +7352,102 @@ export class ProjectService {
     const prev = all.find((m) => m.month === prevStr);
     if (!prev || prev.followers === 0) return null;
     return Math.round(((current.followers - prev.followers) / prev.followers) * 1000) / 10;
+  }
+
+  /**
+   * Get the per-event registration-pacing summary + daily curve from the prediction models
+   * (MARKETING_EVENT_REGISTRATION_PREDICTIONS + _DRILLDOWN). These are mirrored from PCC and may
+   * not exist yet; any failure (missing table, no rows) resolves to an unavailable pacing block
+   * so the drawer degrades to its placeholder + PCC link rather than erroring.
+   */
+  private async getEventPacing(eventId: string): Promise<EventPacing> {
+    const unavailable: EventPacing = {
+      available: false,
+      daysLeft: null,
+      current: null,
+      priorYear: null,
+      predictedAvg: null,
+      predictedLow: null,
+      predictedHigh: null,
+      points: [],
+    };
+
+    interface HeadRow {
+      DAYS_LEFT: number | null;
+      CURRENT: number | null;
+      PRIOR: number | null;
+      PRED_AVG: number | null;
+      PRED_LOW: number | null;
+      PRED_HIGH: number | null;
+    }
+    interface PointRow {
+      DAYS_TO_EVENT: number;
+      CURRENT: number | null;
+      PRIOR: number | null;
+      PRED_AVG: number | null;
+      PRED_LOW: number | null;
+      PRED_HIGH: number | null;
+    }
+
+    const headQuery = `
+      SELECT
+        DAYS_LEFT_FROM_YESTERDAY AS DAYS_LEFT,
+        FINAL_CURRENT_CUMULATIVE_REGISTRATIONS AS CURRENT,
+        FINAL_PRIOR_CUMULATIVE_REGISTRATIONS AS PRIOR,
+        FINAL_CUMULATIVE_AVG_PREDICTED_REGISTRATIONS AS PRED_AVG,
+        FINAL_CUMULATIVE_LOW_PREDICTED_REGISTRATIONS AS PRED_LOW,
+        FINAL_CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS AS PRED_HIGH
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+      WHERE EVENT_ID = ?
+      LIMIT 1
+    `;
+
+    const pointsQuery = `
+      SELECT
+        DAYS_TO_EVENT,
+        CURRENT_EVENT_CUMULATIVE_REGISTRATIONS AS CURRENT,
+        PRIOR_EVENT_CUMULATIVE_REGISTRATIONS AS PRIOR,
+        CUMULATIVE_AVG_PREDICTED_REGISTRATIONS AS PRED_AVG,
+        CUMULATIVE_LOW_PREDICTED_REGISTRATIONS AS PRED_LOW,
+        CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS AS PRED_HIGH
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
+      WHERE EVENT_ID = ?
+      ORDER BY DAYS_TO_EVENT DESC
+    `;
+
+    try {
+      const [headResult, pointsResult] = await Promise.all([
+        this.snowflakeService.execute<HeadRow>(headQuery, [eventId]),
+        this.snowflakeService.execute<PointRow>(pointsQuery, [eventId]),
+      ]);
+
+      const head = headResult.rows?.[0];
+      if (!head) return unavailable;
+
+      return {
+        available: true,
+        daysLeft: head.DAYS_LEFT,
+        current: head.CURRENT,
+        priorYear: head.PRIOR,
+        predictedAvg: head.PRED_AVG,
+        predictedLow: head.PRED_LOW,
+        predictedHigh: head.PRED_HIGH,
+        points: pointsResult.rows.map((p) => ({
+          daysToEvent: p.DAYS_TO_EVENT,
+          current: p.CURRENT,
+          priorYear: p.PRIOR,
+          predictedAvg: p.PRED_AVG,
+          predictedLow: p.PRED_LOW,
+          predictedHigh: p.PRED_HIGH,
+        })),
+      };
+    } catch (error) {
+      // Tables not materialized yet (or transient) — degrade gracefully.
+      logger.warning(undefined, 'get_event_pacing', 'Pacing prediction tables unavailable', {
+        event_id: eventId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return unavailable;
+    }
   }
 }

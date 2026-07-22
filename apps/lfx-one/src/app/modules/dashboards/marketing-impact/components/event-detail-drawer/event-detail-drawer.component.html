@@ -123,22 +123,41 @@
         }
 
         @if (d.pacing.available) {
-          <div class="flex gap-8">
+          <!-- Headline: current / last year / predicted, mirroring PCC -->
+          <div class="flex flex-wrap gap-8">
             <div class="flex flex-col">
-              <span class="text-xl font-semibold text-gray-900">{{ num(d.pacing.current ?? 0) }}</span>
+              <span class="text-xl font-semibold text-blue-600">{{ num(d.pacing.current ?? 0) }}</span>
               <span class="text-xs text-gray-400">Current</span>
             </div>
             @if (d.hasPriorYear) {
               <div class="flex flex-col">
-                <span class="text-xl font-semibold text-gray-900">{{ num(d.pacing.priorYear ?? 0) }}</span>
+                <span class="text-xl font-semibold text-gray-500">{{ num(d.pacing.priorYear ?? 0) }}</span>
                 <span class="text-xs text-gray-400">Last year</span>
               </div>
             }
             <div class="flex flex-col">
               <span class="text-xl font-semibold text-violet-600">{{ num(d.pacing.predictedAvg ?? 0) }}</span>
-              <span class="text-xs text-gray-400">Predicted</span>
+              <span class="text-xs text-gray-400">
+                Predicted
+                @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null) {
+                  <span class="text-gray-400">({{ num(d.pacing.predictedLow) }}–{{ num(d.pacing.predictedHigh) }})</span>
+                }
+              </span>
             </div>
+            @if (d.pacing.daysLeft !== null) {
+              <div class="ml-auto flex flex-col text-right">
+                <span class="text-xl font-semibold text-gray-900">{{ num(d.pacing.daysLeft) }}</span>
+                <span class="text-xs text-gray-400">Days left</span>
+              </div>
+            }
           </div>
+
+          <!-- Daily cumulative registration curve -->
+          @if (hasPacingChart()) {
+            <div class="h-[240px]" data-testid="event-detail-pacing-chart">
+              <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
+            </div>
+          }
         } @else {
           <p class="text-sm text-gray-500">
             Day-by-day pacing prediction is coming to this view. For now, see the live registration curve and prediction in PCC.

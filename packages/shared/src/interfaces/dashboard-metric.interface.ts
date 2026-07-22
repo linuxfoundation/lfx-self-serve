@@ -722,9 +722,25 @@ export interface EventChannelAttribution {
 }
 
 /**
- * Per-event registration-pacing summary. Populated once the pacing prediction models land
- * (MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]); until then `available` is false and
- * the UI shows a placeholder that links to PCC. Numbers mirror PCC's EventPrediction.
+ * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
+ * Mirrors PCC's EventPredictionDrilldown grain.
+ */
+export interface EventPacingPoint {
+  daysToEvent: number;
+  /** Current-year cumulative registrations (null for future days not yet reached). */
+  current: number | null;
+  /** Prior-year cumulative registrations aligned by days-to-event. */
+  priorYear: number | null;
+  predictedAvg: number | null;
+  predictedLow: number | null;
+  predictedHigh: number | null;
+}
+
+/**
+ * Per-event registration-pacing summary + daily curve. Populated once the pacing prediction
+ * models land (MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]); until then `available` is
+ * false, `points` is empty, and the UI shows a placeholder that links to PCC. Headline numbers
+ * mirror PCC's EventPrediction; `points` mirrors EventPredictionDrilldown.
  */
 export interface EventPacing {
   available: boolean;
@@ -734,6 +750,8 @@ export interface EventPacing {
   predictedAvg: number | null;
   predictedLow: number | null;
   predictedHigh: number | null;
+  /** The day-by-day cumulative curve; empty until the drilldown model lands. */
+  points: EventPacingPoint[];
 }
 
 /**
