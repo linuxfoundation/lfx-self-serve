@@ -24,7 +24,14 @@ import {
   OrganizationResolveResult,
   CommitteeOrganizationReference,
 } from '@lfx-one/shared/interfaces';
-import { buildCommitteeOrganizationPayload, committeeRequiresOrganization, hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
+import {
+  buildCommitteeOrganizationPayload,
+  committeeRequiresOrganization,
+  hasLfAccount,
+  isValidUrl,
+  parseEmailList,
+  rankUserSearchResults,
+} from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -308,13 +315,21 @@ export class AddMemberDialogComponent {
       if (!hasName && pendingSearch) return true;
       if (!hasName) return false;
       const hasOrgId = !!vals.organization_id;
-      const hasUrl = !!(vals.organization_url ?? '').trim();
-      return !hasOrgId && !hasUrl;
+      const urlValue = (vals.organization_url ?? '').trim();
+      const hasValidUrl = !!urlValue && isValidUrl(urlValue);
+      return !hasOrgId && !hasValidUrl;
     });
   }
 
   private initShowOrgError(): Signal<boolean> {
-    return computed(() => this.orgInvalid() && this.orgSubmitAttempted());
+    return computed(() => {
+      if (!this.orgInvalid()) return false;
+      if (this.orgSubmitAttempted()) return true;
+      // Show immediately while the user has typed a search term with no confirmed selection —
+      // same reactive-as-you-type UX as the email invalid warning (no submit click needed).
+      const hasName = !!(this.orgFormValues().organization ?? '').trim();
+      return !hasName && !!(this.organizationSearch()?.searchTerm() ?? '');
+    });
   }
 
   private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {
