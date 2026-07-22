@@ -14,7 +14,7 @@ import { currentEmployerFromWorkExperiences, invitationRequiresOrganization } fr
 import { InvitationService } from '@services/invitation.service';
 import { OrganizationService } from '@services/organization.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'rxjs';
+import { EMPTY, Observable, catchError, from, map, of, switchMap, take, timeout } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -65,19 +65,36 @@ export class InvitationAcceptFlowService {
   /**
    * Attempts to resolve an org name to a CDP id before the dialog opens so a pre-filled
    * name with no id is not treated as a brand-new org requiring a manual website entry.
-   * Silently passes context through on failure — the dialog handles the unresolved case.
+   *
+   * Uses a two-step read-only approach to avoid the find-or-create side effect of calling
+   * resolveOrganization directly with an empty or unverified domain:
+   *  1. Search by name (read-only GET) to find the CDP-canonical domain.
+   *  2. Resolve only on an exact name match, using the canonical domain so the CDP call
+   *     is almost certainly a find (not a create).
+   *
+   * Times out after 2 s and silently falls through — the dialog handles the unresolved case.
    */
   private preResolveOrganization(ctx: InvitationAcceptContext): Observable<InvitationAcceptContext> {
     const org = ctx.organization;
     if (!org?.name?.trim() || org.id) {
       return of(ctx);
     }
-    return this.organizationService.resolveOrganization(org.name, org.website ?? '').pipe(
+    return this.organizationService.searchOrganizations(org.name).pipe(
       take(1),
-      map((resolved) => ({
-        ...ctx,
-        organization: { ...org, id: resolved.id || null, name: resolved.name || org.name },
-      })),
+      switchMap((suggestions) => {
+        const match = suggestions.find((s) => s.name.toLowerCase() === org.name!.toLowerCase().trim());
+        if (!match) {
+          return of(ctx);
+        }
+        return this.organizationService.resolveOrganization(match.name, match.domain).pipe(
+          take(1),
+          map((resolved) => ({
+            ...ctx,
+            organization: { ...org, id: resolved.id || null, name: resolved.name || org.name },
+          }))
+        );
+      }),
+      timeout(2000),
       catchError((error) => {
         console.warn('[InvitationAcceptFlowService] Org pre-resolution failed; opening dialog with unresolved context', error);
         return of(ctx);
