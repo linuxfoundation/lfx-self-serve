@@ -4,88 +4,116 @@
 <div class="flex flex-col gap-6 p-6" data-testid="campaigns-page">
   <!-- Header -->
   <div class="flex flex-col gap-3">
-    <h1 class="sr-only">{{ activeProgramTypeConfig().breadcrumbLabel }}</h1>
-    <!-- Breadcrumb -->
+    <h1 class="sr-only">{{ activeProgramTypeConfig().breadcrumbLabel }} — {{ activeDeliveryTypeConfig().breadcrumbLabel }}</h1>
+    <!-- Breadcrumb: Campaigns > {program} > {delivery type} -->
     <nav class="flex items-center gap-2 text-sm" aria-label="Breadcrumb" data-testid="campaigns-breadcrumb">
       <span class="text-gray-400">Campaigns</span>
       <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
-      <span class="text-gray-400">Paid Performance</span>
+      <span class="text-gray-400">{{ activeProgramTypeConfig().breadcrumbLabel }}</span>
       <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
-      <span class="font-semibold text-gray-900" aria-current="page">{{ activeProgramTypeConfig().breadcrumbLabel }}</span>
+      <span class="font-semibold text-gray-900" aria-current="page">{{ activeDeliveryTypeConfig().breadcrumbLabel }}</span>
     </nav>
 
-    <!-- Platform & Use Case Selectors -->
+    <!-- Program & Delivery-Type Selectors -->
     <div class="flex items-center gap-3" data-testid="campaigns-selectors">
-      <select
-        class="cursor-default rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-600"
-        disabled
-        aria-label="Campaign platform"
-        data-testid="campaigns-platform-select">
-        <option>Paid Performance</option>
-      </select>
-      <select
-        class="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        [value]="selectedProgramType()"
-        (change)="onProgramTypeChange($event)"
-        aria-label="Campaign program type"
-        data-testid="campaigns-usecase-select">
-        @for (pt of programTypes; track pt.id) {
-          <option [value]="pt.id">{{ pt.label }}</option>
-        }
-      </select>
+      <lfx-select
+        [form]="selectorForm"
+        control="programType"
+        [options]="programTypeOptions"
+        optionLabel="label"
+        optionValue="id"
+        size="small"
+        ariaLabel="Campaign program type"
+        data-testid="campaigns-program-select" />
+      <lfx-select
+        [form]="selectorForm"
+        control="deliveryType"
+        [options]="deliveryTypeOptions"
+        optionLabel="label"
+        optionValue="id"
+        optionDisabled="disabled"
+        size="small"
+        ariaLabel="Campaign delivery type"
+        data-testid="campaigns-delivery-select" />
     </div>
   </div>
 
   <hr class="border-gray-200" />
 
-  <!-- Tab Navigation -->
-  <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
-    @for (tab of tabs; track tab.id; let i = $index) {
-      <button
-        type="button"
-        role="tab"
-        [attr.aria-selected]="selectedTab() === tab.id"
-        [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
-        [attr.id]="'tab-' + tab.id"
-        [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
-        (click)="selectTab(tab.id)"
-        (keydown)="onTabKeydown($event, i)"
-        [class]="
-          selectedTab() === tab.id
-            ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
-            : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
-        "
-        [attr.data-testid]="'campaigns-' + tab.id + '-tab'">
-        <i [class]="tab.icon" aria-hidden="true"></i>
-        {{ tab.label }}
-      </button>
+  @if (selectedDeliveryType() === 'email') {
+    <!-- Email delivery is under active development — placeholder until it ships. -->
+    <div
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+      data-testid="campaigns-email-placeholder">
+      <i class="fa-light fa-envelope text-3xl text-gray-400" aria-hidden="true"></i>
+      <h2 class="text-base font-semibold text-gray-900">Email campaigns are coming soon</h2>
+      <p class="max-w-md text-sm text-gray-500">The Email delivery channel is under active development.</p>
+      <lfx-button label="Switch to Paid Marketing" [text]="true" size="small" (onClick)="switchToPaidMarketing()" data-testid="campaigns-email-switch-paid" />
+    </div>
+  }
+  <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
+       while the Email placeholder shows. PlanningTabComponent owns the brief form +
+       generation state locally, so destroying this subtree on an Email round-trip would
+       silently wipe the user's in-progress brief — hiding it keeps the instance alive.
+       Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
+       display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
+       so [hidden] alone would leave both views rendered. An inline style always wins. -->
+  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? 'none' : null" data-testid="campaigns-paid-marketing">
+    <!-- Tab Navigation -->
+    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
+      @for (tab of tabs; track tab.id; let i = $index) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="selectedTab() === tab.id"
+          [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
+          [attr.id]="'tab-' + tab.id"
+          [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
+          (click)="selectTab(tab.id)"
+          (keydown)="onTabKeydown($event, i)"
+          [class]="
+            selectedTab() === tab.id
+              ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+              : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+          "
+          [attr.data-testid]="'campaigns-' + tab.id + '-tab'">
+          <i [class]="tab.icon" aria-hidden="true"></i>
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    <!-- Tab Content -->
+    @switch (selectedTab()) {
+      @case ('planning') {
+        <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
+          <!-- Keyed on the program type so a program change (Events <-> Education)
+               recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
+               state locally and does not reset on input change, so without a fresh
+               instance a stale Events brief could show under Education. -->
+          @for (program of [selectedProgramType()]; track program) {
+            <lfx-planning-tab
+              [programTypeConfig]="activeProgramTypeConfig()"
+              (proceedToImplementation)="onProceedToImplementation($event)"
+              data-testid="campaigns-planning-tab" />
+          }
+        </div>
+      }
+      @case ('implementation') {
+        <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
+          <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
+        </div>
+      }
+      @case ('insights') {
+        <div role="tabpanel" id="panel-insights" aria-labelledby="tab-insights" data-testid="campaigns-insights-panel">
+          <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
+        </div>
+      }
+      @case ('optimization') {
+        <div role="tabpanel" id="panel-optimization" aria-labelledby="tab-optimization" data-testid="campaigns-optimization-panel">
+          <lfx-optimization-tab data-testid="campaigns-optimization-tab" />
+        </div>
+      }
     }
   </div>
-
-  <!-- Tab Content -->
-  @switch (selectedTab()) {
-    @case ('planning') {
-      <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
-        <lfx-planning-tab
-          [programTypeConfig]="activeProgramTypeConfig()"
-          (proceedToImplementation)="onProceedToImplementation($event)"
-          data-testid="campaigns-planning-tab" />
-      </div>
-    }
-    @case ('implementation') {
-      <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
-        <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
-      </div>
-    }
-    @case ('insights') {
-      <div role="tabpanel" id="panel-insights" aria-labelledby="tab-insights" data-testid="campaigns-insights-panel">
-        <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
-      </div>
-    }
-    @case ('optimization') {
-      <div role="tabpanel" id="panel-optimization" aria-labelledby="tab-optimization" data-testid="campaigns-optimization-panel">
-        <lfx-optimization-tab data-testid="campaigns-optimization-tab" />
-      </div>
-    }
-  }
 </div>

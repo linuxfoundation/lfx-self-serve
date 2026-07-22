@@ -120,6 +120,28 @@
                 }
               ]
             },
+            "dev-cluster": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "3MB",
+                  "maximumError": "4MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "6kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all",
+              "sourceMap": true,
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.dev.ts"
+                }
+              ]
+            },
             "local": {
               "optimization": false,
               "extractLicenses": false,

@@ -14,7 +14,7 @@ Use the Transactions section to review your purchase and billing history on the 
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **My Transactions** from the left navigation sidebar (route: `/me/transactions`).
+2. Open the **Profile** page and select the **Transactions** tab (route: `/profile/transactions`).
 3. Your transaction history appears in the main content area.
 4. Select a transaction to view its details.
 

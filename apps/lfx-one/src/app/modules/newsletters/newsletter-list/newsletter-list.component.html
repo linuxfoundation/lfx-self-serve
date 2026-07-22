@@ -27,7 +27,60 @@
       </lfx-card-tabs-bar>
 
       <div class="px-5 py-5 flex flex-col gap-4">
-        @if (!loading() && !hasNewsletters()) {
+        @if (statusTab() === 'optout') {
+          @if (optOutsLoadFailed()) {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-triangle-exclamation"
+              title="Could not load opt-outs"
+              subtitle="Something went wrong loading this list. Please try again later.">
+            </lfx-empty-state>
+          } @else if (!loading() && !hasOptOuts()) {
+            <lfx-empty-state
+              [withCard]="false"
+              icon="fa-light fa-user-slash"
+              title="No opt-outs yet"
+              subtitle="People who unsubscribe from this newsletter will show up here.">
+            </lfx-empty-state>
+          } @else {
+            <lfx-table [value]="optOuts()" [loading]="loading()" dataKey="id" data-testid="newsletter-optout-table">
+              <ng-template #header>
+                <tr>
+                  <th class="w-[60%]">Email</th>
+                  <th class="w-[25%]">Unsubscribed</th>
+                  <th class="w-[15%]"><span class="sr-only">Actions</span></th>
+                </tr>
+              </ng-template>
+
+              <ng-template #body let-optOut>
+                <tr [attr.data-testid]="'newsletter-optout-row-' + optOut.email">
+                  <td>
+                    <span class="text-sm text-gray-900">{{ optOut.email }}</span>
+                  </td>
+                  <td>
+                    <span class="text-sm text-gray-700">{{ optOut.unsubscribed_at | date: 'MMM d, y' }}</span>
+                  </td>
+                  <td class="text-right">
+                    @if (canWrite()) {
+                      <!-- Disabled while ANY removal is in flight: the single removingOptOutId
+                           signal can't track concurrent requests, so removals are serialized. -->
+                      <lfx-button
+                        icon="fa-light fa-trash-can"
+                        severity="danger"
+                        size="small"
+                        [text]="true"
+                        [ariaLabel]="'Remove opt-out for ' + optOut.email"
+                        (onClick)="onRemoveOptOut(optOut, $event)"
+                        [disabled]="removingOptOutId() !== null"
+                        [attr.data-testid]="'newsletter-optout-delete-' + optOut.email">
+                      </lfx-button>
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          }
+        } @else if (!loading() && !hasNewsletters()) {
           <lfx-empty-state
             [withCard]="false"
             icon="fa-light fa-paper-plane"

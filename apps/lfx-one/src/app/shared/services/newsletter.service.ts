@@ -11,6 +11,7 @@ import {
   NewsletterAnalytics,
   NewsletterListParams,
   NewsletterListResponse,
+  NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
@@ -66,6 +67,14 @@ export class NewsletterService {
 
   public getAnalytics(projectUid: string, newsletterUid: string): Observable<NewsletterAnalytics> {
     return this.http.get<NewsletterAnalytics>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics`).pipe(take(1));
+  }
+
+  public listOptOuts(projectUid: string): Observable<NewsletterOptOutListResponse> {
+    return this.http.get<NewsletterOptOutListResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/opt-outs`).pipe(take(1));
+  }
+
+  public deleteOptOut(projectUid: string, optOutId: string): Observable<void> {
+    return this.http.delete<void>(`/api/projects/${this.enc(projectUid)}/newsletters/opt-outs/${this.enc(optOutId)}`).pipe(take(1));
   }
 
   public createNewsletter(projectUid: string, payload: CreateNewsletterRequest): Observable<Newsletter> {

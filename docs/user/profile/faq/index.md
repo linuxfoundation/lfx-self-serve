@@ -11,11 +11,11 @@ intercom_collection: Profile
 
 ## How do I change my email address?
 
-Email addresses are managed in **Settings** (`/settings`), not on the Profile page. Go to Settings > **Email Settings** > **Add New Email Address**. A 6-digit verification code will be sent to the new address to confirm it.
+Email addresses are managed in the **Settings** tab of your Profile (`/profile/settings`). Go to the **Settings** tab > **Email Settings** > **Add New Email Address**. A 6-digit verification code will be sent to the new address to confirm it.
 
 ## How do I change my password?
 
-Go to **Settings** (`/settings`) > **Password** > **Change Password**. Fill in **Current Password**, **New Password**, and **Confirm New Password**, then select **Change Password**.
+Go to the **Settings** tab of your Profile (`/profile/settings`) > **Password** > **Change Password**. Fill in **Current Password**, **New Password**, and **Confirm New Password**, then select **Change Password**.
 
 ## How do I update my profile photo?
 
@@ -27,7 +27,7 @@ Affiliations are the Linux Foundation projects you are associated with. They app
 
 ## Where are developer settings (API token)?
 
-Developer settings (API token) are in **Settings** (`/settings`) > **Developer Settings**. Use the **Show** button to reveal your Personal Access Token and the **Copy** button to copy it.
+Developer settings (API token) are in the **Settings** tab of your Profile (`/profile/settings`) > **Developer Settings**. Use the **Show** button to reveal your Personal Access Token and the **Copy** button to copy it.
 
 ## My name is displaying incorrectly. How do I fix it?
 

@@ -43,17 +43,29 @@
 
       <!-- [class.hidden] avoids SSR hydration mismatch -->
       <div class="px-[12px] mb-[16px] w-full" [class.hidden]="!showMeSelector()">
-        <div data-testid="me-selector" class="box-border flex gap-3 items-start p-3 w-full rounded-lg">
-          <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
-          <div class="flex flex-col gap-1 grow min-w-0">
-            <p class="font-semibold text-base text-gray-900 leading-5 tracking-tight line-clamp-2">{{ user()?.name }}</p>
-            @if (showPersonaBadge() && personaLabels().length > 0) {
-              @if (personaLabels().length === 1) {
-                <span class="inline-flex items-center text-xs font-normal text-gray-400 leading-none">
-                  <i [ngClass]="personaLabels()[0].icon" class="mr-1" aria-hidden="true"></i>{{ personaLabels()[0].label }}
-                </span>
-              } @else {
-                <div class="flex flex-wrap gap-1">
+        <div data-testid="me-selector" class="group relative box-border flex gap-3 items-center p-3 w-full rounded-lg hover:bg-gray-50 transition-colors">
+          <!--
+            Stretched link: the whole card navigates to /profile. Interactive children (persona
+            badges, the ⋯ button, the popover) re-enable pointer events and sit above so they keep
+            their own click/focus behaviour without nesting interactive elements inside the anchor.
+          -->
+          <a
+            [routerLink]="'/profile'"
+            aria-label="Profile & Account"
+            data-testid="me-card-link"
+            class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"></a>
+
+          <div class="relative z-10 flex items-center gap-3 w-full pointer-events-none">
+            <!-- Avatar with persona badges anchored bottom-right -->
+            <div class="relative shrink-0">
+              <lfx-avatar
+                [image]="user()?.picture ?? ''"
+                [label]="user()?.name ?? ''"
+                shape="square"
+                size="large"
+                styleClass="size-12 rounded-xl overflow-hidden"></lfx-avatar>
+              @if (showPersonaBadge() && personaLabels().length > 0) {
+                <div class="absolute -bottom-1 -right-1 flex items-center gap-0.5">
                   @for (tag of personaLabels(); track $index) {
                     <ng-template #personaTooltipContent>
                       <div class="font-semibold">{{ tag.label }}</div>
@@ -72,19 +84,57 @@
                       [pTooltip]="personaTooltipContent"
                       tooltipPosition="top"
                       tooltipStyleClass="persona-tooltip"
-                      class="inline-flex items-center justify-center size-6 rounded-full bg-white border border-gray-200 text-gray-700 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                      <i [ngClass]="tag.icon" class="text-[10px]" aria-hidden="true"></i>
+                      class="pointer-events-auto inline-flex items-center justify-center size-[18px] rounded-md bg-white border border-gray-200 text-gray-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                      <i [ngClass]="tag.icon" class="text-[9px]" aria-hidden="true"></i>
                     </span>
                   }
                 </div>
               }
-            }
+            </div>
+
+            <!-- Name + label -->
+            <div class="flex flex-col gap-0.5 grow min-w-0">
+              <p class="font-semibold text-base text-gray-900 leading-5 tracking-tight line-clamp-2">{{ user()?.name }}</p>
+              <span class="text-sm font-medium text-blue-600">Profile &amp; Account</span>
+            </div>
+
+            <!-- Overflow (⋯) → profile tabs dropdown -->
+            <button
+              type="button"
+              (click)="toggleProfileMenu($event)"
+              aria-label="Open profile sections"
+              [attr.aria-expanded]="profileMenu.overlayVisible"
+              data-testid="me-card-more"
+              class="pointer-events-auto relative shrink-0 flex items-center justify-center size-8 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+              <i class="fa-light fa-ellipsis" aria-hidden="true"></i>
+            </button>
           </div>
+
+          <p-popover #profileMenu appendTo="body" styleClass="w-60 profile-tabs-popover">
+            <ng-template #content>
+              <nav aria-label="Profile sections" class="py-1">
+                @for (tab of profileTabs; track tab.id) {
+                  <a
+                    [routerLink]="['/profile', tab.route]"
+                    (click)="closeProfileMenu()"
+                    [attr.data-testid]="'me-card-tab-' + tab.id"
+                    class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    {{ tab.label }}
+                  </a>
+                }
+              </nav>
+            </ng-template>
+          </p-popover>
         </div>
       </div>
 
-      <!-- Hidden on foundation/project lens until nav API responds, since items are lens-scoped. -->
-      @if (lensLoaded()) {
+      <!--
+        Gated on hydrated() so the concrete lens menu is withheld until the browser commits its first
+        render (afterNextRender). Server + first client render both fall through to the skeleton branches
+        below, avoiding the SSR/CSR lens mismatch that left stale me-lens items on org routes. Also
+        hidden on foundation/project lens until the nav API responds, since items are lens-scoped.
+      -->
+      @if (hydrated() && lensLoaded()) {
         <div class="flex flex-col gap-1 items-start px-[12px] w-full">
           <!--
             Track by stable per-destination key (routerLink/url, falling back to the unique label for

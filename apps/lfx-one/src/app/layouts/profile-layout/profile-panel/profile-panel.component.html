@@ -1,0 +1,155 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  Full-width separator card when stacked (below 2xl); at 2xl it fills the sticky right column
+  set up by the layout, with its own scroll if the content exceeds the viewport height.
+-->
+<aside
+  class="flex flex-col border-b border-slate-200 bg-slate-50 px-6 py-7 2xl:max-h-[calc(100vh-4rem)] 2xl:overflow-y-auto 2xl:rounded-xl 2xl:border"
+  aria-label="Profile summary"
+  data-testid="profile-panel">
+  @if (loading()) {
+    <div class="flex items-center justify-center py-8" role="status" aria-live="polite">
+      <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400" aria-hidden="true"></i>
+      <span class="sr-only">Loading profile summary</span>
+    </div>
+  } @else {
+    <!-- Avatar + edit-pencil badge (rounded, not circle) -->
+    <div class="relative mb-3.5 w-24">
+      <div
+        class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 text-xl font-semibold text-white"
+        data-testid="profile-avatar">
+        @if (showAvatarImage()) {
+          <img
+            [src]="avatarUrl()"
+            [alt]="displayName()"
+            (error)="onAvatarError()"
+            class="h-full w-full rounded-2xl object-cover"
+            data-testid="profile-avatar-image" />
+        } @else {
+          {{ initials() }}
+        }
+      </div>
+      <button
+        type="button"
+        (click)="onEdit()"
+        [disabled]="impersonating()"
+        [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Edit profile'"
+        class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="profile-panel-edit-badge">
+        <i class="fa-light fa-pencil text-xs"></i>
+      </button>
+    </div>
+
+    <!-- Name + handle -->
+    <p class="text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
+    @if (username()) {
+      <p class="mb-4 text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
+    }
+
+    <!-- Edit profile pill -->
+    <button
+      type="button"
+      (click)="onEdit()"
+      [disabled]="impersonating()"
+      [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+      class="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="profile-edit-button">
+      <i class="fa-light fa-pencil text-xs"></i>
+      Edit profile
+    </button>
+
+    <div class="my-5 h-px bg-slate-200"></div>
+
+    <!-- Fields — each renders only when its value is present -->
+    <div class="flex flex-col gap-5">
+      @if (aboutMe()) {
+        <div data-testid="profile-panel-about">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-file-lines"></i>
+            <span>About me</span>
+          </div>
+          <div class="text-[12.5px] leading-relaxed text-slate-800">{{ aboutMe() }}</div>
+        </div>
+      }
+      @if (jobTitle()) {
+        <div data-testid="profile-panel-job-title">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-briefcase"></i>
+            <span>Job title</span>
+          </div>
+          <div class="text-[12.5px] leading-relaxed text-slate-800">{{ jobTitle() }}</div>
+        </div>
+      }
+      @if (organization()) {
+        <div data-testid="profile-panel-organization">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-building"></i>
+            <span>Organization</span>
+          </div>
+          <div class="text-[12.5px] leading-relaxed text-slate-800">{{ organization() }}</div>
+        </div>
+      }
+      @if (email()) {
+        <div data-testid="profile-panel-email">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-envelope"></i>
+            <span>Primary email</span>
+          </div>
+          <div class="break-words text-[12.5px] leading-relaxed text-slate-800">{{ email() }}</div>
+        </div>
+      }
+      @if (addressLines().length > 0) {
+        <div data-testid="profile-panel-location">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-location-dot"></i>
+            <span>Location</span>
+          </div>
+          <div class="flex flex-col text-[12.5px] leading-relaxed text-slate-800">
+            @for (line of addressLines(); track $index) {
+              <span>{{ line }}</span>
+            }
+          </div>
+        </div>
+      }
+      @if (phone()) {
+        <div data-testid="profile-panel-phone">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-phone"></i>
+            <span>Phone number</span>
+          </div>
+          <div class="text-[12.5px] leading-relaxed text-slate-800">{{ phone() }}</div>
+        </div>
+      }
+      @if (tshirtSize()) {
+        <div data-testid="profile-panel-tshirt">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-shirt"></i>
+            <span>T-shirt size</span>
+          </div>
+          <div class="text-[12.5px] leading-relaxed text-slate-800">{{ tshirtSize() }}</div>
+        </div>
+      }
+    </div>
+
+    <!-- Social rows — GitHub is wired from the user's connected identities; LinkedIn is stubbed. Each renders only when present. -->
+    @if (githubHandle() || linkedinHandle()) {
+      <div class="my-1 h-px bg-slate-200"></div>
+      <div class="flex flex-col gap-2 pt-4">
+        @if (githubHandle()) {
+          <div class="flex items-center gap-2 text-[12.5px] text-slate-700" data-testid="profile-panel-github">
+            <i class="fa-brands fa-github text-slate-800"></i>
+            <span class="break-all">{{ githubHandle() }}</span>
+          </div>
+        }
+        @if (linkedinHandle()) {
+          <div class="flex items-center gap-2 text-[12.5px] text-slate-700" data-testid="profile-panel-linkedin">
+            <i class="fa-brands fa-linkedin text-blue-700"></i>
+            <span class="break-all">{{ linkedinHandle() }}</span>
+          </div>
+        }
+      </div>
+    }
+  }
+</aside>

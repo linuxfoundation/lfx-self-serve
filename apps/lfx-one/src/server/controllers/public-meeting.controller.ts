@@ -238,7 +238,12 @@ export class PublicMeetingController {
       if (isAuthenticated && originalToken !== undefined) {
         req.bearerToken = originalToken;
         try {
-          const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_past_meeting', 'organizer');
+          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+            req,
+            { ...meeting, id: meeting.meeting_and_occurrence_id ?? id },
+            'v1_past_meeting',
+            'organizer'
+          );
           isOrganizer = meetingWithAccess.organizer ?? false;
         } catch {
           isOrganizer = false;

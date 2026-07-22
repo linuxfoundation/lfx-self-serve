@@ -157,6 +157,21 @@ export class CrowdfundingService {
       .pipe(catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getInitiativeTransactions')));
   }
 
+  public getMyInitiativeTransactions(
+    slug: string,
+    params?: { type?: 'donations' | 'expenses'; size?: number; from?: number; subscriptionOnly?: boolean }
+  ): Observable<CrowdfundingTransactionList> {
+    let httpParams = new HttpParams();
+    if (params?.type) httpParams = httpParams.set('type', params.type);
+    if (params?.size != null) httpParams = httpParams.set('size', String(params.size));
+    if (params?.from != null) httpParams = httpParams.set('from', String(params.from));
+    if (params?.subscriptionOnly) httpParams = httpParams.set('subscriptionOnly', 'true');
+
+    return this.http
+      .get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}/my-transactions`, { params: httpParams })
+      .pipe(catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getMyInitiativeTransactions')));
+  }
+
   private handleCfError<T>(fallback: T, label: string) {
     return (err: HttpErrorResponse): Observable<T> => {
       if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {

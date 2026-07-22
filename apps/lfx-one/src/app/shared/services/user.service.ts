@@ -49,6 +49,10 @@ export class UserService {
 
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
+  // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
+  // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
+  private readonly userIdentitiesRefresh$ = new Subject<void>();
+  public readonly identitiesRefresh$: Observable<void> = this.userIdentitiesRefresh$.asObservable();
   // Per-chain destroy signals so that on user change we can tear down the old shareReplay
   // chain (which stays alive under refCount:false) instead of leaking abandoned subscriptions
   // to the refresh subjects. A fresh Subject is created for each new chain.
@@ -245,6 +249,15 @@ export class UserService {
    */
   public refreshUserPastMeetings(): void {
     this.userPastMeetingsRefresh$.next();
+  }
+
+  /**
+   * Signal that the user's connected identities changed (link / verify / add / remove). Consumers
+   * subscribed to {@link identitiesRefresh$} re-fetch, keeping the profile shell and the Identities
+   * tab in sync (LFXV2-2767).
+   */
+  public refreshUserIdentities(): void {
+    this.userIdentitiesRefresh$.next();
   }
 
   /**

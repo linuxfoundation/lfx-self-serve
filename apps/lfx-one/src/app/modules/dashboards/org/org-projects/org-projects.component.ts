@@ -12,8 +12,8 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
+  HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_SEVERITY,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -25,10 +25,13 @@ import {
   ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  PD_CONTRIBUTORS_CARD_KEY,
+  PD_DRAWER_QUERY_PARAM,
   VALID_ORG_PROJECTS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import type {
   AddableProjectOption,
+  HealthScore,
   InfluenceBand,
   OrgLensProject,
   OrgLensProjectSearchResult,
@@ -61,7 +64,6 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
@@ -85,7 +87,6 @@ import { PersonaService } from '@shared/services/persona.service';
     SelectComponent,
     SkeletonModule,
     TableComponent,
-    TagComponent,
     TooltipModule,
   ],
   templateUrl: './org-projects.component.html',
@@ -106,6 +107,7 @@ export class OrgProjectsComponent {
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
+  protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -484,7 +486,7 @@ export class OrgProjectsComponent {
     const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
     const body = rows.map((p) => [
       p.name,
-      HEALTH_SCORE_LABELS[p.health],
+      HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
       INFLUENCE_BAND_LABELS[p.technicalInfluence],
       INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
       p.trend.deltaPct,
@@ -557,7 +559,7 @@ export class OrgProjectsComponent {
   // Full health summary (rating + sub-scores) so keyboard/screen-reader users get the popover's content without a mouse.
   protected healthAriaLabel(project: OrgLensProject): string {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
-    return `Health: ${HEALTH_SCORE_LABELS[project.health]}. ${metrics}.`;
+    return `Health: ${HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)]}. ${metrics}.`;
   }
   protected searchAddableProjects(query: string): void {
     if (this.addableProjectsSearchDebounceTimer) {
@@ -707,6 +709,10 @@ export class OrgProjectsComponent {
     return computed(() => this.buildSortedProjects());
   }
 
+  private countAriaLabel(count: number, singular: string, projectName: string): string {
+    return `View ${count} ${count === 1 ? singular : `${singular}s`} for ${projectName}`;
+  }
+
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
   private initRows(): Signal<OrgProjectsTableRow[]> {
     return computed(() =>
@@ -717,8 +723,8 @@ export class OrgProjectsComponent {
         ecosystemBars: this.bandBars(project.ecosystemInfluence),
         technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
         ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
-        healthLabel: HEALTH_SCORE_LABELS[project.health],
-        healthSeverity: HEALTH_SCORE_SEVERITY[project.health],
+        healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
+        healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
         sparklineDataset: {
           labels: project.trend.series.map((_, i) => String(i)),
           datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
@@ -731,6 +737,8 @@ export class OrgProjectsComponent {
         trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
         trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
         healthAriaLabel: this.healthAriaLabel(project),
+        contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
+        participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
       }))
     );
   }
@@ -904,6 +912,12 @@ export class OrgProjectsComponent {
   }
 
   private compareProjects(a: OrgLensProject, b: OrgLensProject, field: OrgProjectsSortField, dir: SortDirection): number {
+    if (field === 'health') {
+      const availability = this.compareHealthAvailability(a.health, b.health);
+      if (availability !== 0) {
+        return availability;
+      }
+    }
     const primary = this.compareByField(a, b, field);
     const directed = dir === 'asc' ? primary : -primary;
     if (directed !== 0) {
@@ -935,17 +949,34 @@ export class OrgProjectsComponent {
     }
   }
 
-  private healthRank(health: OrgLensProject['health']): number {
-    if (health === 'excellent') {
-      return 2;
-    }
-    if (health === 'healthy') {
-      return 1;
-    }
-    if (health === 'at-risk') {
+  private normalizeHealth(health: HealthScore): HealthScore {
+    return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
+  }
+
+  private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
+    const aUnavailable = this.normalizeHealth(a) === 'unavailable';
+    const bUnavailable = this.normalizeHealth(b) === 'unavailable';
+    if (aUnavailable === bUnavailable) {
       return 0;
     }
-    return -1;
+    return aUnavailable ? 1 : -1;
+  }
+
+  private healthRank(health: OrgLensProject['health']): number {
+    switch (this.normalizeHealth(health)) {
+      case 'excellent':
+        return 5;
+      case 'healthy':
+        return 4;
+      case 'stable':
+        return 3;
+      case 'unsteady':
+        return 2;
+      case 'critical':
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   private buildRowMenu(project: OrgLensProject): MenuItem[] {

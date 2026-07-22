@@ -12,6 +12,7 @@ import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
+import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -308,7 +309,7 @@ export const routes: Routes = [
       },
       {
         path: 'meetings',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
@@ -317,37 +318,38 @@ export const routes: Routes = [
       },
       {
         path: 'groups',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'votes',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
         path: 'newsletters',
-        canActivate: [lensRedirectGuard, newsletterAccessGuard],
+        canActivate: [lensRedirectGuard, newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
         path: 'documents',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       {
+        // Me lens → /profile/settings (canonical); foundation/project → lens-prefixed settings.
         path: 'settings',
-        canActivate: [lensRedirectGuard],
+        canActivate: [settingsLensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
@@ -363,12 +365,14 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/badges/badges.routes').then((m) => m.BADGE_ROUTES),
       },
       {
+        // Transactions now live as a Profile tab — redirect the legacy path.
         path: 'me/transactions',
-        loadChildren: () => import('./modules/transactions/transactions.routes').then((m) => m.TRANSACTION_ROUTES),
+        redirectTo: 'profile/transactions',
+        pathMatch: 'full',
       },
       {
         path: 'events',
-        canActivate: [lensRedirectGuard],
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
@@ -432,5 +436,12 @@ export const routes: Routes = [
   {
     path: 'invite/error',
     loadComponent: () => import('./modules/invite/invite-error/invite-error.component').then((m) => m.InviteErrorComponent),
+  },
+  // Branded landing for browser-navigation auth failures (e.g. a Valkey session-store write
+  // fault) redirected here by the server instead of receiving a raw JSON error body. Outside the
+  // auth guard since the whole point is reaching it without a valid session.
+  {
+    path: 'auth-error',
+    loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
   },
 ];

@@ -10,6 +10,7 @@ import type {
   TagSeverity,
 } from '../interfaces';
 import { lfxColors } from './colors.constants';
+import { HEALTH_SCORE_BADGE } from './org-lens-projects.constants';
 
 export const PD_DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
 export const PD_VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
@@ -20,6 +21,10 @@ export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardM
 export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '2y';
 export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
+export const PD_DRAWER_QUERY_PARAM = 'card';
+export const PD_CONTRIBUTORS_CARD_KEY = 'contributors';
+export const PD_VALID_DRAWER_CARD_KEYS: ReadonlySet<string> = new Set<string>([PD_CONTRIBUTORS_CARD_KEY]);
+
 /** Snowflake `time_range_type` value for each UI range toggle. */
 export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
   '1y': 'last_365_days',
@@ -27,11 +32,12 @@ export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
   all: 'alltime',
 };
 
-/** Hero health badge → lfx-tag severity (green Excellent / blue Healthy / red At Risk), matching HEALTH_SCORE_SEVERITY on the Org Lens Projects page. */
-export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
-  excellent: { label: 'Excellent', severity: 'success' },
-  healthy: { label: 'Healthy', severity: 'info' },
-  'at-risk': { label: 'At Risk', severity: 'danger' },
+export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; bg: string; text: string }> = {
+  excellent: { label: 'Excellent', ...HEALTH_SCORE_BADGE.excellent },
+  healthy: { label: 'Healthy', ...HEALTH_SCORE_BADGE.healthy },
+  stable: { label: 'Stable', ...HEALTH_SCORE_BADGE.stable },
+  unsteady: { label: 'Unsteady', ...HEALTH_SCORE_BADGE.unsteady },
+  critical: { label: 'Critical', ...HEALTH_SCORE_BADGE.critical },
 };
 
 /** Leaderboard band chip → lfx-tag severity. */

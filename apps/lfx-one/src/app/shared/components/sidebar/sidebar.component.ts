@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -10,8 +10,8 @@ import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
-import { LensItem, NavLens, PersonaType, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY, PROFILE_TABS } from '@lfx-one/shared/constants';
+import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -20,6 +20,7 @@ import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -41,6 +42,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
     LensTabsComponent,
     OrgSelectorComponent,
     ProjectSelectorComponent,
+    PopoverModule,
     SkeletonModule,
     TooltipModule,
   ],
@@ -80,11 +82,22 @@ export class SidebarComponent {
   protected readonly navLens: Signal<NavLens | null> = this.initNavLens();
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
+  // Browser-only hydration gate. The org lens is enabled by a browser-only LaunchDarkly flag, so the
+  // server render always clamps to the me lens and would emit a me-lens menu; hydrating that against a
+  // client-resolved org menu leaves stale me-lens nodes on screen. Holding the concrete menu back until
+  // afterNextRender means the server and the first client render both show the loading skeleton
+  // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.
+  protected readonly hydrated = signal(false);
+
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
   protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
+
+  // Profile & Account tabs for the me-lens card overflow (⋯) dropdown → /profile/<route>
+  protected readonly profileTabs: ProfileTab[] = PROFILE_TABS;
+  protected readonly profileMenu = viewChild<Popover>('profileMenu');
 
   protected readonly itemsWithTestIds = computed(() =>
     this.items().map((item) => ({
@@ -132,12 +145,29 @@ export class SidebarComponent {
     return states;
   });
 
+  public constructor() {
+    // Runs browser-only, after the first client render is committed — flips the menu from skeleton to
+    // the client-resolved lens menu once hydration is safely past the SSR/CSR reconciliation boundary.
+    afterNextRender(() => this.hydrated.set(true));
+  }
+
   protected toggleGroup(label: string): void {
     const items = this.items();
     const current = this.expandedGroupStates()[label] ?? true;
     const prev = this.expandedGroupOverrides();
     const baseOverrides = prev.itemsRef === items ? prev.overrides : {};
     this.expandedGroupOverrides.set({ itemsRef: items, overrides: { ...baseOverrides, [label]: !current } });
+  }
+
+  // Toggle the me-lens card overflow popover. stopPropagation keeps the click from
+  // reaching document-level outside-click handlers, not the (sibling) stretched link.
+  protected toggleProfileMenu(event: Event): void {
+    event.stopPropagation();
+    this.profileMenu()?.toggle(event);
+  }
+
+  protected closeProfileMenu(): void {
+    this.profileMenu()?.hide();
   }
 
   protected onItemSelected(item: LensItem): void {

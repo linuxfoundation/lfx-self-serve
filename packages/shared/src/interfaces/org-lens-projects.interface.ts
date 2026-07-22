@@ -1,13 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TagSeverity } from './components.interface';
-
 /** Influence band per the markup-mu methodology (Boysel et al.). Declared strongest → weakest. */
 export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
-/** CHAOSS-derived project health classification (via LFX Insights). */
-export type HealthScore = 'excellent' | 'healthy' | 'at-risk' | 'unavailable';
+/** LFX Insights project health classification — the 5 bands of the Insights project Health Score component, plus `unavailable` when no score exists. */
+export type HealthScore = 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'critical' | 'unavailable';
 
 /** Direction of a one-year influence trend, used for color-coding the sparkline + delta. */
 export type InfluenceTrendDirection = 'up' | 'down' | 'flat';
@@ -181,8 +179,7 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   ecosystemBandLabel: string;
   /** Health badge display label (e.g. "Excellent"). */
   healthLabel: string;
-  /** Health badge severity token for lfx-tag. */
-  healthSeverity: TagSeverity;
+  healthBadge: { bg: string; text: string };
   /** Pre-built Chart.js dataset for the sparkline; stable reference avoids re-allocation on recompute. */
   sparklineDataset: { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] };
   /**
@@ -199,6 +196,10 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   trendArrowBadgeClass: string;
   /** Plain-text health summary (rating + sub-scores) for screen readers / keyboard focus. */
   healthAriaLabel: string;
+  /** Plain-text, count-correlated label for the Contributors count link (screen readers / keyboard focus). */
+  contributorsAriaLabel: string;
+  /** Plain-text, count-correlated label for the Participants count link (screen readers / keyboard focus). */
+  participantsAriaLabel: string;
 }
 
 export interface OrgLensProjectRow {
