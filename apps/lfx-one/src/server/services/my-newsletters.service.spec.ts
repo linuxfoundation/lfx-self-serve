@@ -215,9 +215,7 @@ describe('MyNewslettersService', () => {
 
       newsletterClient.archiveList.mockResolvedValue({ newsletters: items });
 
-      projectService.getProjectById.mockImplementation(async (req, uid) =>
-        buildProject({ uid, name: `Project ${uid}`, slug: `project-${uid}` })
-      );
+      projectService.getProjectById.mockImplementation(async (req, uid) => buildProject({ uid, name: `Project ${uid}`, slug: `project-${uid}` }));
 
       await service.listArchive(mockRequest);
 
@@ -255,12 +253,7 @@ describe('MyNewslettersService', () => {
 
       expect(result).toEqual(newsletter);
       expect(newsletterClient.archiveDetail).toHaveBeenCalledWith(mockRequest, 'newsletter-1');
-      expect(logger.debug).toHaveBeenCalledWith(
-        mockRequest,
-        'get_my_newsletter_detail',
-        'Fetching from upstream archive',
-        { newsletter_uid: 'newsletter-1' }
-      );
+      expect(logger.debug).toHaveBeenCalledWith(mockRequest, 'get_my_newsletter_detail', 'Fetching from upstream archive', { newsletter_uid: 'newsletter-1' });
     });
 
     it('propagates 403 (non-member) errors from upstream', async () => {
