@@ -75,6 +75,36 @@ export class EventDetailDrawerComponent {
     });
   }
 
+  /** Full venue + city + country line for the header; '' when nothing is known. */
+  protected locationLabel(): string {
+    const d = this.detail();
+    if (!d) return '';
+    return [d.location, d.city, d.country].filter((part) => part && part.length).join(', ');
+  }
+
+  /** Human label for the comparison pace rating. */
+  protected paceRatingLabel(): string {
+    switch (this.detail()?.compScore) {
+      case 'high':
+        return 'Pacing ahead';
+      case 'medium':
+        return 'On pace';
+      case 'low':
+        return 'Pacing behind';
+      default:
+        return 'No pace signal';
+    }
+  }
+
+  /** "N registrations behind goal" when there is a real, unmet goal; otherwise null. */
+  protected behindGoalLabel(): string | null {
+    const d = this.detail();
+    if (!d || d.registrations.goal <= 0) return null;
+    const gap = d.registrations.goal - d.registrations.actual;
+    if (gap <= 0) return 'Registration goal met';
+    return `${formatNumber(gap)} registrations behind goal`;
+  }
+
   // === Private Initializers ===
   private initDetail(): Signal<EventDetailResponse | null> {
     // Lazy-load on open: react to visibility flipping true (skip the initial value).

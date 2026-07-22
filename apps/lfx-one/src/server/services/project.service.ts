@@ -27,6 +27,7 @@ import {
   CreateProjectDocumentRequest,
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
+  EventChannelAttribution,
   EventCompScore,
   EventCountryReach,
   EventDetailResponse,
@@ -4988,12 +4989,18 @@ export class ProjectService {
       EVENT_ID: string;
       EVENT_NAME: string;
       START_DATE: string;
+      EVENT_IS_PAST: boolean;
+      EVENT_LOCATION: string | null;
+      EVENT_CITY: string | null;
       EVENT_COUNTRY: string | null;
+      EVENT_STATUS: string | null;
       EVENT_URL: string | null;
       REG_ACTUAL: number | null;
       REG_GOAL: number | null;
+      REGREV_GOAL: number | null;
       SPON_GOAL: number | null;
       VS_LY: number | null;
+      CREATED_LAST_YEAR: boolean | null;
       COMP_SCORE: string | null;
       CFP_STATUS: string | null;
     }
@@ -5004,17 +5011,30 @@ export class ProjectService {
       SPONSOR_COUNT: number;
     }
 
+    interface ChannelRow {
+      CHANNEL: string | null;
+      SESSIONS: number;
+      UNIQUE_VISITORS: number;
+      REVENUE: number;
+    }
+
     const eventQuery = `
       SELECT
         EVENT_ID,
         EVENT_NAME,
         TO_CHAR(EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        EVENT_IS_PAST,
+        EVENT_LOCATION,
+        EVENT_CITY,
         EVENT_COUNTRY,
+        EVENT_STATUS,
         EVENT_URL,
         COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
         EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        EVENT_REGISTRATION_REVENUE_GOAL AS REGREV_GOAL,
         EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
         PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        EVENT_CREATED_LAST_YEAR AS CREATED_LAST_YEAR,
         COMP_SCORE,
         CFP_STATUS
       FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS
@@ -5033,9 +5053,23 @@ export class ProjectService {
       ORDER BY REVENUE DESC
     `;
 
-    const [eventResult, tierResult] = await Promise.all([
+    // Marketing-channel attribution for this event (rolled up across the monthly rows).
+    const channelQuery = `
+      SELECT
+        CHANNEL,
+        SUM(IFNULL(SESSIONS, 0)) AS SESSIONS,
+        SUM(IFNULL(UNIQUE_VISITORS, 0)) AS UNIQUE_VISITORS,
+        SUM(IFNULL(LINEAR_REVENUE, 0)) AS REVENUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
+      WHERE RESOLVED_EVENT_ID = ?
+      GROUP BY CHANNEL
+      ORDER BY SESSIONS DESC
+    `;
+
+    const [eventResult, tierResult, channelResult] = await Promise.all([
       this.snowflakeService.execute<EventRow>(eventQuery, [eventId]),
       this.snowflakeService.execute<TierRow>(tierQuery, [eventId]),
+      this.snowflakeService.execute<ChannelRow>(channelQuery, [eventId]),
     ]);
 
     const row = eventResult.rows?.[0];
@@ -5050,16 +5084,32 @@ export class ProjectService {
     };
 
     const sponsorshipActual = tierResult.rows.reduce((sum, t) => sum + (t.REVENUE ?? 0), 0);
+    const totalSessions = channelResult.rows.reduce((sum, ch) => sum + (ch.SESSIONS ?? 0), 0);
+
+    const channels: EventChannelAttribution[] = channelResult.rows.map((ch) => ({
+      channel: ch.CHANNEL ?? 'Unknown',
+      sessions: ch.SESSIONS ?? 0,
+      uniqueVisitors: ch.UNIQUE_VISITORS ?? 0,
+      revenue: ch.REVENUE ?? 0,
+      sharePercent: totalSessions > 0 ? Math.round(((ch.SESSIONS ?? 0) / totalSessions) * 1000) / 10 : 0,
+    }));
 
     return {
       eventId: row.EVENT_ID,
       eventName: row.EVENT_NAME,
       startDate: row.START_DATE,
+      isPast: row.EVENT_IS_PAST,
+      location: row.EVENT_LOCATION ?? '',
+      city: row.EVENT_CITY ?? '',
       country: row.EVENT_COUNTRY ?? '',
+      status: row.EVENT_STATUS ?? '',
       eventUrl: row.EVENT_URL ?? '',
       registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
+      // No per-event registration-revenue actual is modeled yet (only the goal).
+      registrationRevenue: { actual: null, goal: row.REGREV_GOAL ?? 0 },
       sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
       vsLastYear: row.VS_LY,
+      hasPriorYear: row.CREATED_LAST_YEAR === true,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
       sponsorshipTiers: tierResult.rows.map((t) => ({
@@ -5067,6 +5117,18 @@ export class ProjectService {
         revenue: t.REVENUE ?? 0,
         sponsorCount: t.SPONSOR_COUNT ?? 0,
       })),
+      channels,
+      // Daily pacing prediction lands when MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]
+      // are materialized; until then the drawer shows a placeholder + a PCC link.
+      pacing: {
+        available: false,
+        daysLeft: null,
+        current: null,
+        priorYear: null,
+        predictedAvg: null,
+        predictedLow: null,
+        predictedHigh: null,
+      },
     };
   }
 

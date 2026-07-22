@@ -9,28 +9,86 @@
   [dismissible]="true"
   data-testid="event-detail-drawer">
   <ng-template #header>
-    <div class="flex flex-col gap-0.5">
+    <div class="flex flex-col gap-1">
       <h3 class="text-base font-semibold text-gray-900">{{ detail()?.eventName || 'Event detail' }}</h3>
-      @if (detail()) {
-        <p class="text-xs text-gray-500">
-          {{ dateLabel() }}
-          @if (detail()?.country) {
-            · {{ detail()?.country }}
+      @if (detail(); as d) {
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+          <span>{{ dateLabel() }}</span>
+          @if (locationLabel()) {
+            <span aria-hidden="true">·</span>
+            <span><i class="fa-light fa-location-dot mr-1" aria-hidden="true"></i>{{ locationLabel() }}</span>
           }
-        </p>
+          @if (d.status) {
+            <span aria-hidden="true">·</span>
+            <span>{{ d.status }}</span>
+          }
+        </div>
       }
     </div>
   </ng-template>
 
   @if (loading()) {
     <div class="flex flex-col gap-4" data-testid="event-detail-skeleton">
-      <div class="h-20 animate-pulse rounded-lg bg-gray-100"></div>
+      <div class="h-24 animate-pulse rounded-lg bg-gray-100"></div>
       <div class="h-20 animate-pulse rounded-lg bg-gray-100"></div>
       <div class="h-40 animate-pulse rounded-lg bg-gray-100"></div>
     </div>
   } @else if (detail(); as d) {
     <div class="flex flex-col gap-5">
-      <!-- Registrations vs goal -->
+      <!-- Registration pacing -->
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-pacing">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-gray-500">Registration pacing</span>
+          <span
+            class="rounded px-2 py-0.5 text-[10px] font-bold tracking-wide"
+            [ngClass]="{
+              'bg-emerald-100 text-emerald-600': d.compScore === 'high',
+              'bg-amber-100 text-amber-600': d.compScore === 'medium',
+              'bg-red-100 text-red-600': d.compScore === 'low',
+              'bg-gray-100 text-gray-500': d.compScore === 'unknown',
+            }"
+            >{{ paceRatingLabel() }}</span
+          >
+        </div>
+
+        @if (d.pacing.available) {
+          <!-- Filled once the prediction models land; wired to daysLeft/current/priorYear/predicted -->
+          <div class="flex gap-6">
+            <div>
+              <div class="text-xl font-semibold text-gray-900 tabular-nums">{{ num(d.pacing.current ?? 0) }}</div>
+              <div class="text-[11px] text-gray-400">Current</div>
+            </div>
+            @if (d.hasPriorYear) {
+              <div>
+                <div class="text-xl font-semibold text-gray-900 tabular-nums">{{ num(d.pacing.priorYear ?? 0) }}</div>
+                <div class="text-[11px] text-gray-400">Last year</div>
+              </div>
+            }
+            <div>
+              <div class="text-xl font-semibold text-violet-600 tabular-nums">{{ num(d.pacing.predictedAvg ?? 0) }}</div>
+              <div class="text-[11px] text-gray-400">Predicted</div>
+            </div>
+          </div>
+        } @else {
+          <p class="text-xs text-gray-500">
+            Day-by-day pacing prediction is coming to this view. For now, see the live registration curve and prediction in PCC.
+          </p>
+        }
+
+        @if (d.eventUrl) {
+          <a
+            [href]="d.eventUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex w-fit items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline"
+            data-testid="event-detail-pcc-link">
+            <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            View registration pacing &amp; prediction in PCC
+          </a>
+        }
+      </div>
+
+      <!-- Registration status -->
       <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="event-detail-registrations">
         <div class="flex items-baseline justify-between">
           <span class="text-xs font-medium text-gray-500">Registrations</span>
@@ -56,29 +114,36 @@
               [style.width.%]="regProgress()"></div>
           </div>
         }
+        @if (behindGoalLabel(); as behind) {
+          <span class="text-[11px] text-gray-500">{{ behind }}</span>
+        }
       </div>
 
-      <!-- Sponsorship vs goal -->
-      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="event-detail-sponsorship">
-        <span class="text-xs font-medium text-gray-500">Sponsorship revenue</span>
-        <div class="flex items-baseline gap-2">
-          <span class="text-2xl font-semibold text-gray-900 tabular-nums">{{ money(d.sponsorshipRevenue.actual) }}</span>
-          @if (d.sponsorshipRevenue.goal > 0) {
-            <span class="text-sm text-gray-400 tabular-nums">/ {{ money(d.sponsorshipRevenue.goal) }} goal</span>
+      <!-- Revenue: registration + sponsorship -->
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="flex flex-col gap-1.5 rounded-lg border border-gray-200 p-4" data-testid="event-detail-reg-revenue">
+          <span class="text-xs font-medium text-gray-500">Registration revenue</span>
+          @if (d.registrationRevenue.actual !== null) {
+            <span class="text-lg font-semibold text-gray-900 tabular-nums">{{ money(d.registrationRevenue.actual) }}</span>
+          } @else {
+            <span class="text-lg font-semibold text-gray-300">—</span>
+          }
+          @if (d.registrationRevenue.goal > 0) {
+            <span class="text-[11px] text-gray-400 tabular-nums">Goal {{ money(d.registrationRevenue.goal) }}</span>
           }
         </div>
-        @if (sponProgress() !== null) {
-          <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
-            <div
-              class="h-full rounded-full"
-              [ngClass]="{
-                'bg-emerald-500': sponProgress()! >= 80,
-                'bg-amber-500': sponProgress()! >= 50 && sponProgress()! < 80,
-                'bg-red-400': sponProgress()! < 50,
-              }"
-              [style.width.%]="sponProgress()"></div>
+        <div class="flex flex-col gap-1.5 rounded-lg border border-gray-200 p-4" data-testid="event-detail-sponsorship">
+          <span class="text-xs font-medium text-gray-500">Sponsorship revenue</span>
+          <span class="text-lg font-semibold text-gray-900 tabular-nums">{{ money(d.sponsorshipRevenue.actual) }}</span>
+          <div class="flex items-center gap-2">
+            @if (d.sponsorshipRevenue.goal > 0) {
+              <span class="text-[11px] text-gray-400 tabular-nums">Goal {{ money(d.sponsorshipRevenue.goal) }}</span>
+            }
+            @if (sponProgress() !== null) {
+              <span class="text-[11px] font-medium text-gray-500 tabular-nums">{{ sponProgress() }}%</span>
+            }
           </div>
-        }
+        </div>
       </div>
 
       <!-- Sponsorship by tier -->
@@ -99,18 +164,29 @@
         </div>
       }
 
-      <!-- Pacing lives in PCC (prediction service); deep-link out -->
-      @if (d.eventUrl) {
-        <a
-          [href]="d.eventUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-          data-testid="event-detail-pcc-link">
-          <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-          View registration pacing &amp; prediction in PCC
-        </a>
-      }
+      <!-- Marketing channels: which channel is driving registrations -->
+      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="event-detail-channels">
+        <span class="text-xs font-medium text-gray-500">Where registrations come from</span>
+        @if (d.channels.length) {
+          <div class="flex flex-col gap-2.5">
+            @for (channel of d.channels; track channel.channel) {
+              <div class="flex items-center gap-3" [attr.data-testid]="'event-detail-channel-' + channel.channel">
+                <span class="w-32 truncate text-xs font-medium text-gray-700">{{ channel.channel }}</span>
+                <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                  <div class="h-full rounded-full bg-blue-500" [style.width.%]="channel.sharePercent"></div>
+                </div>
+                <span class="w-16 text-right text-xs text-gray-900 tabular-nums">{{ num(channel.sessions) }}</span>
+                <span class="w-10 text-right text-[11px] text-gray-400 tabular-nums">{{ channel.sharePercent }}%</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="text-xs text-gray-500">
+            No tracked registration traffic yet.
+            <span class="text-gray-700">Email and paid are the fastest levers to drive early registrations.</span>
+          </p>
+        }
+      </div>
     </div>
   } @else {
     <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="event-detail-empty">
