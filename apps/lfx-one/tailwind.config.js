@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
-import { AVATAR_COLORS, DELTA_DIRECTION_TEXT_CLASS, GRID_COLS_CLASS, GRID_DIVIDER_CLASS, lfxColors, lfxFontSizes, ORG_MEETINGS_KPI_ICON_CLASS } from '@lfx-one/shared';
+import {
+  AVATAR_COLORS,
+  DELTA_DIRECTION_TEXT_CLASS,
+  GRID_COLS_CLASS,
+  GRID_DIVIDER_CLASS,
+  lfxColors,
+  lfxFontSizes,
+  ORG_MEETINGS_KPI_ICON_CLASS,
+} from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
