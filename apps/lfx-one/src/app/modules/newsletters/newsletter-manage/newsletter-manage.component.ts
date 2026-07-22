@@ -821,7 +821,11 @@ export class NewsletterManageComponent {
   // simple-mode saves; a mid-flight edit then stays in the control and the next
   // autosave persists it.
   private syncDerivedBodyHtml(draft: Newsletter): void {
-    const renderedFromLayout = (draft.body_layout?.blocks?.length ?? 0) > 0;
+    // Layout PRESENCE (even an emptied `blocks: []`) means blocks mode, where
+    // body_html is server-derived — a just-cleared canvas must still sync its
+    // (wrapper-only) render, or the form keeps the stale HTML and the draft stays
+    // dirty with preview disabled until reload. Non-empty-blocks was too narrow.
+    const renderedFromLayout = draft.body_layout != null;
     if (!renderedFromLayout) return;
     // If the author switched to the simple editor while this blocks save was in
     // flight, the form's layout is now null — don't overwrite the freshly cleared

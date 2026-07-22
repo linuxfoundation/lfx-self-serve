@@ -159,6 +159,12 @@ export class NewsletterManifestService {
 
     this.loadingSignal.set(true);
     this.errorSignal.set(false);
+    // Clear the now-stale active manifest while the latest uncached load is in
+    // flight. Otherwise renderers and field-schema lookups keep consuming the
+    // PREVIOUS library's manifest during the fetch, and if this load fails the
+    // error path only sets errorSignal — leaving the prior manifest published and
+    // breaking the documented "null on failure" contract.
+    if (isLatest()) this.manifestSignal.set(null);
 
     const stream = this.http
       .get<NewsletterTemplateManifest>(`/api/projects/${encodeURIComponent(projectUid)}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`)
