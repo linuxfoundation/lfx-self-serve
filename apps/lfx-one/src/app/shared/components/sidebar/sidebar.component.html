@@ -128,8 +128,13 @@
         </div>
       </div>
 
-      <!-- Hidden on foundation/project lens until nav API responds, since items are lens-scoped. -->
-      @if (lensLoaded()) {
+      <!--
+        Gated on hydrated() so the concrete lens menu is withheld until the browser commits its first
+        render (afterNextRender). Server + first client render both fall through to the skeleton branches
+        below, avoiding the SSR/CSR lens mismatch that left stale me-lens items on org routes. Also
+        hidden on foundation/project lens until the nav API responds, since items are lens-scoped.
+      -->
+      @if (hydrated() && lensLoaded()) {
         <div class="flex flex-col gap-1 items-start px-[12px] w-full">
           <!--
             Track by stable per-destination key (routerLink/url, falling back to the unique label for

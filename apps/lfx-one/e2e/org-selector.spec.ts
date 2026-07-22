@@ -509,3 +509,32 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
     await expect(page.getByTestId('org-selector')).not.toBeVisible();
   });
 });
+
+// S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
+// Me-lens sections (LFXV2-2789). The org lens is gated by a browser-only LaunchDarkly flag,
+// so SSR clamps to the me lens and used to emit a me-lens menu; hydrating that against the
+// client-resolved org menu left "My Engagement" / "My Growth" sections interleaved with org
+// items. The sidebar now withholds the concrete menu until afterNextRender, so the resolved
+// menu is built entirely from client state and must contain org items only.
+test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
+  test('S16: hard-refreshing /org/overview resolves to org-lens nav only, no Me-lens sections', async ({ page }) => {
+    await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // Flag off (or no org access) redirects away from /org/* — this regression only applies when
+    // the org lens is actually active, so skip otherwise (same gate as S14/S15).
+    if (!page.url().includes('/org/overview')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
+    }
+
+    // Wait for the sidebar to hydrate past the loading skeleton and render the resolved org menu.
+    await expect(page.getByTestId('sidebar'), 'sidebar should be visible').toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-memberships'), 'org-lens Memberships item should render after hydration').toBeVisible({
+      timeout: SIDEBAR_TIMEOUT,
+    });
+
+    // The org lens tab and the resolved menu must be consistent: no Me-lens sections remain on screen.
+    await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "My Engagement" must not leak into the org sidebar').toHaveCount(0);
+    await expect(page.getByTestId('sidebar-item-my-growth'), 'Me-lens "My Growth" must not leak into the org sidebar').toHaveCount(0);
+  });
+});
