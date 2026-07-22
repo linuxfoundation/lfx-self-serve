@@ -78,7 +78,10 @@ export class InvitationAcceptFlowService {
         ...ctx,
         organization: { ...org, id: resolved.id || null, name: resolved.name || org.name },
       })),
-      catchError(() => of(ctx))
+      catchError((error) => {
+        console.warn('[InvitationAcceptFlowService] Org pre-resolution failed; opening dialog with unresolved context', error);
+        return of(ctx);
+      })
     );
   }
 
