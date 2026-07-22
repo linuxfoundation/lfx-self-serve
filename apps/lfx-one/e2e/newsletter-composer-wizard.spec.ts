@@ -396,6 +396,48 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     await expect(page.getByTestId('newsletter-composer-block-sponsored_ad')).toHaveCount(0);
   });
 
+  test('reopening a legacy (pre-blocks) draft opens the simple editor, editable and saveable', async ({ page }) => {
+    // Backward-compat guard: a newsletter authored before the block composer
+    // existed has body_html and NO body_layout. It must reopen in the simple
+    // (original) editor — not the blocks composer — and stay editable and
+    // saveable as html-only. Registered in-test so it takes precedence over the
+    // beforeEach draft stub.
+    const legacyBody = '<p>Authored in the classic editor before blocks existed.</p>';
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_ID}`, (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(buildDraft({ body_layout: undefined, body_html: legacyBody })),
+        });
+      }
+      return route.fallback();
+    });
+
+    await gotoContentStep(page);
+
+    // Opens in Simple mode: the rich-text editor shows, the blocks composer does
+    // not, and the toggle reflects Simple as the active editor.
+    await expect(page.getByTestId('newsletter-content-body')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-composer')).toHaveCount(0);
+    await expect(page.getByTestId('newsletter-content-editor-simple')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('newsletter-content-editor-blocks')).toHaveAttribute('aria-pressed', 'false');
+
+    // The authored body survived the round-trip and is present in the editor.
+    await expect(page.getByText('Authored in the classic editor before blocks existed.')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Saving keeps it html-only: the PUT carries body_html with a null body_layout,
+    // so the service takes the legacy chrome path rather than rendering blocks over
+    // it. (A manual save always PUTs, even when the draft is unchanged.)
+    const [request] = await Promise.all([
+      page.waitForRequest((req) => req.method() === 'PUT' && req.url().includes(`/newsletters/${MOCK_NEWSLETTER_ID}`), { timeout: ELEMENT_TIMEOUT }),
+      page.getByTestId('newsletter-manage-draft-btn').click(),
+    ]);
+    const payload = request.postDataJSON() as UpdateNewsletterRequest;
+    expect(payload.body_layout ?? null).toBeNull();
+    expect(payload.body_html).toBeTruthy();
+  });
+
   test('clicking the active rail tab collapses and re-opens its panel', async ({ page }) => {
     await gotoContentStep(page);
     // Blocks is active by default, so its panel body is visible.
