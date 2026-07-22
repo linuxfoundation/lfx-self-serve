@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type {
-  OrgInfluenceRankTier,
-  OrgInfluenceRow,
-  OrgLeaderboardRow,
-  OrgMeetingsKpiSummary,
-  OrgMeetingsSpendBreakdown,
-} from '../interfaces/org-meetings-insights.interface';
+import type { OrgInfluenceRow, OrgLeaderboardRow, OrgMeetingsKpiSummary, OrgMeetingsSpendBreakdown } from '../interfaces/org-meetings-insights.interface';
 
 /** Valid values for the Org Lens Meetings time-range dropdown, in display order. */
 export const ORG_MEETINGS_TIME_RANGES = [
@@ -71,13 +65,6 @@ export const ORG_LEADERBOARD_VISIBLE_PILL_COUNT = 2;
 
 /** Chip label shown for meetings the viewer isn't authorized to see the real value for. */
 export const ORG_LEADERBOARD_PRIVATE_MEETING_LABEL = 'Private';
-
-/** Influence table rank pill text color, keyed by `OrgInfluenceRankTier`: top → emerald, down → red, neutral → gray. */
-export const ORG_INFLUENCE_RANK_TIER_TEXT_CLASS: Record<OrgInfluenceRankTier, string> = {
-  top: 'text-emerald-700',
-  down: 'text-red-600',
-  neutral: 'text-gray-500',
-};
 
 /** Demo KPI summary — matches the 6a design spec's mock numbers (63 employees / 512 meetings / 47 projects / 30 foundations). */
 export const DEMO_ORG_MEETINGS_KPI_SUMMARY: OrgMeetingsKpiSummary = {

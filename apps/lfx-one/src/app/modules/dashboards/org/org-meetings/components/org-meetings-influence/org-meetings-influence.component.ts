@@ -13,7 +13,6 @@ import {
   DELTA_DIRECTION_TEXT_CLASS,
   DEMO_ORG_INFLUENCE_ROWS,
   ORG_INFLUENCE_MEASURE_LABEL_MEETING_ATTENDANCE,
-  ORG_INFLUENCE_RANK_TIER_TEXT_CLASS,
   ORG_INFLUENCE_SIGNAL_BAR_GAP,
   ORG_INFLUENCE_SIGNAL_BAR_HEIGHTS,
   ORG_INFLUENCE_SIGNAL_BAR_WIDTH,
@@ -82,7 +81,6 @@ export class OrgMeetingsInfluenceComponent {
     return computed(() =>
       DEMO_ORG_INFLUENCE_ROWS.map((row) => ({
         ...row,
-        rankTierClass: ORG_INFLUENCE_RANK_TIER_TEXT_CLASS[row.rankTier],
         bandChipClass: BAND_CHIP_CLASS[row.band],
         bandLabel: PD_BAND_TAG[row.band].label,
         bandBars: this.buildSignalBars(BAND_SIGNAL_RANK[row.band], BAND_SIGNAL_FILL[row.band], BAND_SIGNAL_FILL_LIGHT[row.band]),
