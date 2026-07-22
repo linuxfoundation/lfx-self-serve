@@ -1037,6 +1037,12 @@ export interface FoundationHealthScoreDistributionResponse {
    * Number of projects with critical status
    */
   critical: number;
+
+  /**
+   * Number of projects with no health score (dbt's Unscored bucket -- additive to the
+   * 5 scored categories, so every project counted here has a corresponding chart bar).
+   */
+  unscored: number;
 }
 
 /**

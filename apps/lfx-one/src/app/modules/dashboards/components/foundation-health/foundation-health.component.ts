@@ -11,9 +11,9 @@ import {
   BASE_LINE_CHART_OPTIONS,
   DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION,
   lfxColors,
-  PROJECT_HEALTH_CATEGORY_CHART_COLOR,
-  PROJECT_HEALTH_CATEGORY_LABEL,
-  PROJECT_HEALTH_SCORE_CATEGORIES,
+  PROJECT_HEALTH_CHART_CATEGORIES,
+  PROJECT_HEALTH_CHART_CATEGORY_COLOR,
+  PROJECT_HEALTH_CHART_CATEGORY_LABEL,
   PRIMARY_FOUNDATION_HEALTH_METRICS,
 } from '@lfx-one/shared/constants';
 import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
@@ -36,6 +36,7 @@ import type {
   CompanyBusFactor,
   DashboardMetricCard,
   FoundationCompanyBusFactorResponse,
+  FoundationHealthScoreDistributionResponse,
   FoundationMaintainersResponse,
   FoundationValueConcentrationResponse,
   HealthEventsMonthlyResponse,
@@ -208,10 +209,12 @@ export class FoundationHealthComponent {
     return computed(() => {
       const distribution = this.healthScoresData();
 
-      const data = PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => ({
-        category: PROJECT_HEALTH_CATEGORY_LABEL[category],
+      // Mirrors the drawer's chart bars (leading Unscored + 5 scored) so the card's mini
+      // distribution and the drawer's full chart never disagree on which buckets exist.
+      const data = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => ({
+        category: PROJECT_HEALTH_CHART_CATEGORY_LABEL[category],
         count: distribution[category],
-        color: PROJECT_HEALTH_CATEGORY_CHART_COLOR[category],
+        color: PROJECT_HEALTH_CHART_CATEGORY_COLOR[category],
       }));
 
       const maxCount = Math.max(...data.map((d) => d.count));
@@ -685,12 +688,13 @@ export class FoundationHealthComponent {
   }
 
   private initializeHealthScoresData() {
-    const defaultValue = {
+    const defaultValue: FoundationHealthScoreDistributionResponse = {
       excellent: 0,
       healthy: 0,
       stable: 0,
       unsteady: 0,
       critical: 0,
+      unscored: 0,
     };
 
     return toSignal(
