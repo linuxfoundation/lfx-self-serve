@@ -827,7 +827,9 @@ export function buildMeetingOrganizerMailto(params: {
   detailUrl?: string | null;
 }): string | null {
   const email = params.email?.trim();
-  if (!email) {
+  // Require a plausible address and reject any header-injection characters (whitespace, `?`, `&`,
+  // `<`, `>`, `"`, control chars) so a malformed record can't smuggle extra mailto headers.
+  if (!email || !email.includes('@') || /[\s?&<>"]/.test(email)) {
     return null;
   }
 
@@ -874,8 +876,10 @@ export function buildMeetingOrganizerChip(
   const viewer = normalizeUsername(viewerUsername);
   const toLink = (organizer: MeetingUserInfo): MeetingOrganizerLink => {
     const isYou = !!viewer && normalizeUsername(organizer.username) === viewer;
+    const name = getMeetingOrganizerDisplayName(organizer);
     return {
-      name: getMeetingOrganizerDisplayName(organizer),
+      key: organizer.username?.trim() || organizer.email?.trim() || name,
+      name,
       isYou,
       // "you" is never a mailto link (emailing yourself makes no sense); others link when they have an email.
       mailto: isYou ? null : buildMeetingOrganizerMailto({ email: organizer.email, ...mailtoContext }),
@@ -898,4 +902,24 @@ export function isUnresolvableParticipantName(first?: string | null, last?: stri
   const tokens = [first, last].map((token) => (token ?? '').trim().toLowerCase());
   const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
   return meaningful.length === 0;
+}
+
+/**
+ * Orders a people list into three tiers so organizers stay at the top and broken rows at the bottom:
+ * hosts (organizers) first, then normally-named people, then unresolvable "[unknown]" records.
+ * Within a tier, orders by first name. Shared by the registrants/participants modal and the
+ * past-meeting details table so the ordering rule lives in one place.
+ */
+export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; first_name?: string | null; last_name?: string | null }>(a: T, b: T): number {
+  const rank = (person: T): number => {
+    if (isUnresolvableParticipantName(person.first_name, person.last_name)) {
+      return 2;
+    }
+    return person.host ? 0 : 1;
+  };
+  const rankDelta = rank(a) - rank(b);
+  if (rankDelta !== 0) {
+    return rankDelta;
+  }
+  return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
 }

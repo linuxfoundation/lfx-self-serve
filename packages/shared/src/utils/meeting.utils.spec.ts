@@ -15,6 +15,7 @@ import {
   buildMeetingOrganizerMailto,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
+  compareMeetingPeopleByHostThenName,
   getMeetingOrganizerDisplayName,
   isUnresolvableParticipantName,
   normalizeIndexedMeetingAiSummary,
@@ -344,6 +345,13 @@ describe('buildMeetingOrganizerMailto', () => {
     expect(buildMeetingOrganizerMailto({ email: 'a@b.com', meetingTitle: 'Only Title' })).toBe('mailto:a@b.com?subject=Only%20Title');
     expect(buildMeetingOrganizerMailto({ email: 'a@b.com' })).toBe('mailto:a@b.com');
   });
+
+  it('rejects addresses that could inject mailto headers', () => {
+    expect(buildMeetingOrganizerMailto({ email: 'a?subject=evil@b.com', meetingTitle: 'T' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'a&cc=x@b.com' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'has space@b.com' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'no-at-sign' })).toBeNull();
+  });
 });
 
 describe('buildMeetingOrganizerChip', () => {
@@ -356,12 +364,21 @@ describe('buildMeetingOrganizerChip', () => {
     expect(buildMeetingOrganizerChip([])).toBeNull();
   });
 
-  it('builds a single-organizer chip with a mailto link on the name', () => {
+  it('builds a single-organizer chip with a mailto link and a stable track key on the name', () => {
     const chip = buildMeetingOrganizerChip([ada], null, ctx);
     expect(chip?.count).toBe(1);
     expect(chip?.primary.name).toBe('Ada Lovelace');
+    expect(chip?.primary.key).toBe('alovelace');
     expect(chip?.primary.mailto).toContain('mailto:ada@example.com?subject=Sync');
     expect(chip?.overflow).toEqual([]);
+  });
+
+  it('gives same-named organizers distinct track keys (from username/email)', () => {
+    const dupeA = { name: 'Alex Kim', username: 'akim1', email: 'a1@x.com' };
+    const dupeB = { name: 'Alex Kim', username: 'akim2', email: 'a2@x.com' };
+    const chip = buildMeetingOrganizerChip([dupeA, dupeB]);
+    expect(chip?.primary.key).toBe('akim1');
+    expect(chip?.overflow[0].key).toBe('akim2');
   });
 
   it('marks the viewer as "you" and never links their name', () => {
@@ -394,6 +411,23 @@ describe('isUnresolvableParticipantName', () => {
     expect(isUnresolvableParticipantName('Ada', '')).toBe(false);
     expect(isUnresolvableParticipantName('', 'Lovelace')).toBe(false);
     expect(isUnresolvableParticipantName('unknown', 'Lovelace')).toBe(false);
+  });
+});
+
+describe('compareMeetingPeopleByHostThenName', () => {
+  it('floats hosts to the top, sinks unresolvable rows to the bottom, sorts by first name within a tier', () => {
+    const people = [
+      { first_name: 'Zed', last_name: 'Zephyr', host: false },
+      { first_name: '', last_name: '', host: false }, // unresolvable → bottom
+      { first_name: 'Grace', last_name: 'Hopper', host: true }, // host → top
+      { first_name: 'Ada', last_name: 'Lovelace', host: false },
+      { first_name: 'Alan', last_name: 'Turing', host: true }, // host → top
+      { first_name: 'unknown', last_name: '[unknown]', host: false }, // unresolvable → bottom
+    ];
+
+    const ordered = [...people].sort(compareMeetingPeopleByHostThenName).map((p) => `${p.first_name} ${p.last_name}`.trim());
+
+    expect(ordered).toEqual(['Alan Turing', 'Grace Hopper', 'Ada Lovelace', 'Zed Zephyr', '', 'unknown [unknown]']);
   });
 });
 

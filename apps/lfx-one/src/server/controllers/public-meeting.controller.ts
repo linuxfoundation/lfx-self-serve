@@ -128,13 +128,12 @@ export class PublicMeetingController {
         delete (meeting as Partial<Meeting>).host_key;
       }
 
-      // The ITX detail payload omits created_by — join back to the live v1_meeting index
-      // so the join page can show the organizer name.
-      [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
-
-      // The organizer is authenticated-visible info (LFXV2-2802): never expose created_by (name/email/
-      // username) to unauthenticated callers, mirroring the host_key strip above.
-      if (!isAuthenticated) {
+      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // created_by from the live v1_meeting index (the ITX detail payload omits it); for anonymous
+      // callers, skip that query and strip created_by so we neither expose nor waste a call on it.
+      if (isAuthenticated) {
+        [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
+      } else {
         delete (meeting as Partial<Meeting>).created_by;
       }
 
@@ -286,14 +285,14 @@ export class PublicMeetingController {
         delete (meeting as Partial<Meeting>).host_key;
       }
 
-      // Webhook-created past meeting lacks a human created_by — join back to the live
-      // v1_meeting index by meeting_id to resolve the organizer name.
-      const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
-
-      // The organizer is authenticated-visible info (LFXV2-2802): never expose created_by (name/email/
-      // username) to unauthenticated callers. Stripping here covers both response branches below.
-      if (!isAuthenticated) {
-        delete (enrichedMeeting as Partial<Meeting>).created_by;
+      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // created_by from the live v1_meeting index (webhook-created past meetings lack a human one);
+      // for anonymous callers, skip that query and strip created_by (present as zoom.webhooks).
+      let enrichedMeeting = meeting;
+      if (isAuthenticated) {
+        [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
+      } else {
+        delete (meeting as Partial<Meeting>).created_by;
       }
 
       // For non-full-access users, return only the fields needed for the basic UI.

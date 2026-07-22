@@ -20,7 +20,7 @@ import {
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
 } from '@lfx-one/shared/interfaces';
-import { filterPastMeetingParticipants, isUnresolvableParticipantName, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { compareMeetingPeopleByHostThenName, filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -148,15 +148,19 @@ export class MeetingRegistrantsDisplayComponent {
   // Filtered past meeting participants based on search
   public readonly filteredPastParticipants = this.initFilteredPastParticipants();
 
+  // Host-flagged people (the organizer set) derived from whichever list is active.
+  private readonly resolvedHosts: Signal<MeetingHostCandidate[]> = computed(() =>
+    (this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants()).filter((person) => person.host)
+  );
+
   public constructor() {
     this.addRegistrantForm = this.meetingService.createRegistrantFormGroup(false);
 
     // Surface the host-flagged people to the parent so the "Organized by" chip and this modal
     // resolve organizers from the same source.
-    effect(() => {
-      const people: MeetingHostCandidate[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
-      this.resolvedHostsChange.emit(people.filter((person) => person.host));
-    });
+    toObservable(this.resolvedHosts)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
     effect(() => {
       if (!this.visible()) return;
@@ -292,7 +296,7 @@ export class MeetingRegistrantsDisplayComponent {
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
-                map((registrants) => registrants.sort((a, b) => this.compareByHostThenName(a, b)) as MeetingRegistrant[]),
+                map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
                   const meeting = this.meeting();
                   const resolvedBaseCount = resolveMeetingBaseCount(meeting);
@@ -364,7 +368,7 @@ export class MeetingRegistrantsDisplayComponent {
                   };
                   return enriched;
                 })
-                .sort((a, b) => this.compareByHostThenName(a, b));
+                .sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
             }),
             finalize(() => this.internalLoading.set(false))
           );
@@ -379,13 +383,13 @@ export class MeetingRegistrantsDisplayComponent {
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
-        list = [...seed].sort((a, b) => this.compareByHostThenName(a, b)) as MeetingRegistrant[];
+        list = [...seed].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
       } else {
         list = this.internalRegistrants();
       }
       const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
       const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
-      return pending.length ? ([...pending, ...list].sort((a, b) => this.compareByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+      return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
     });
   }
 
@@ -463,22 +467,5 @@ export class MeetingRegistrantsDisplayComponent {
         group: this.groupFilter(),
       })
     );
-  }
-
-  // Orders a people list into three tiers: hosts (organizers) first, then normally-named people,
-  // then unresolvable "[unknown]" records at the bottom — so broken rows never sit directly under
-  // the floated-to-top organizers. Within a tier, orders by first name.
-  private compareByHostThenName<T extends { host?: boolean; first_name?: string | null; last_name?: string | null }>(a: T, b: T): number {
-    const rank = (person: T): number => {
-      if (isUnresolvableParticipantName(person.first_name, person.last_name)) {
-        return 2;
-      }
-      return person.host ? 0 : 1;
-    };
-    const rankDelta = rank(a) - rank(b);
-    if (rankDelta !== 0) {
-      return rankDelta;
-    }
-    return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
   }
 }

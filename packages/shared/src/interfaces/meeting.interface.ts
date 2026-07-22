@@ -154,6 +154,8 @@ export interface MeetingUserInfo {
  * `mailto:` link (absent when the organizer record has no email → rendered as plain text).
  */
 export interface MeetingOrganizerLink {
+  /** Stable identity for `@for` tracking (username, else email, else name) — names can collide. */
+  key: string;
   /** Display name (full name, falling back to username, then email). */
   name: string;
   /** True when this organizer is the current viewer (rendered as "you", never a mailto link). */
