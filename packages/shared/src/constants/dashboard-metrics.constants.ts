@@ -135,6 +135,14 @@ export const HEALTH_METRICS_BOARD_MEETING_JOB_TITLE_MAX_LENGTH = 50;
 
 export const HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES = 2;
 
+/**
+ * Payload cap for the Event Growth drawer's current-year events list. The TLF
+ * umbrella (no foundation filter) returns every foundation's events and the
+ * drawer renders the list unvirtualized — the server query LIMITs to this and
+ * the drawer discloses the cap when the list hits it.
+ */
+export const EVENT_GROWTH_TOP_EVENTS_LIMIT = 500;
+
 // ============================================
 // Marketing Action Icon Map
 // ============================================
@@ -750,11 +758,12 @@ function flatSparklineData(value: number): number[] {
   return [Math.max(value - nudge, 0), value, value, value, value, value + nudge];
 }
 
-/** Build a time-window label from the number of data points available.
- *  Returns "Last N months" for any count, capped at 6. */
+/** Build a "Last N months" label from a caller-supplied month count. Formats
+ *  exactly the number it is given (no cap — capping at 6 mislabeled the
+ *  12-month member growth series); callers estimating the count from other
+ *  granularities (e.g. weeks) own the accuracy of the estimate. */
 function trendWindow(monthCount: number): string {
   if (monthCount <= 0) return '';
-  if (monthCount >= 6) return 'Last 6 months';
   return `Last ${monthCount} month${monthCount === 1 ? '' : 's'}`;
 }
 
@@ -834,22 +843,28 @@ function monthlyValues(data: { month: string; value: number }[]): number[] {
   return data.map((d) => d.value);
 }
 
-/** Compute MoM change display from a monthly numeric series (last vs second-to-last). */
-function seriesMomChange(series: number[]): string | undefined {
-  if (series.length < 2) return undefined;
+/** Compute MoM change display from a monthly numeric series (last vs second-to-last).
+ *  The feeding series are calendar zero-filled, so months with no underlying
+ *  activity must not read as measured zeros. By default the series is its own
+ *  activity signal; callers whose series can carry a legitimate zero in an
+ *  active month (e.g. opens in a month that HAD sends) pass the aligned
+ *  activity series separately so real -100% observations still display. */
+function seriesMomChange(series: number[], activity: number[] = series): string | undefined {
+  if (series.length < 2 || activity.length !== series.length) return undefined;
   const prev = series[series.length - 2];
   const curr = series[series.length - 1];
-  if (prev === 0) return undefined;
+  if (prev === 0 || activity[activity.length - 1] === 0 || activity[activity.length - 2] === 0) return undefined;
   return formatMomChange(((curr - prev) / prev) * 100);
 }
 
 /** Compute trend direction from a monthly numeric series.
- *  Uses the same MoM % formula as seriesMomChange so the color matches the displayed text. */
-function seriesTrendDirection(series: number[]): 'up' | 'down' | 'neutral' | undefined {
-  if (series.length < 2) return undefined;
+ *  Uses the same MoM % formula and activity guards as seriesMomChange so the
+ *  color never diverges from the displayed text. */
+function seriesTrendDirection(series: number[], activity: number[] = series): 'up' | 'down' | 'neutral' | undefined {
+  if (series.length < 2 || activity.length !== series.length) return undefined;
   const prev = series[series.length - 2];
   const curr = series[series.length - 1];
-  if (prev === 0) return undefined;
+  if (prev === 0 || activity[activity.length - 1] === 0 || activity[activity.length - 2] === 0) return undefined;
   return trendFromChange(((curr - prev) / prev) * 100);
 }
 
@@ -871,6 +886,9 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   const emailTotalOpens = emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0);
   const emailOpenRate = emailTotalSends > 0 ? (emailTotalOpens / emailTotalSends) * 100 : 0;
 
+  // Paid month activity: spend OR impressions (a spend-only month is active).
+  const paidActivity = paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0));
+
   return [
     // === Campaign Performance (dual-signal: Email Opens + Paid Impressions) ===
     // Categorised as 'memberships' (North Star) intentionally — campaigns directly
@@ -890,16 +908,19 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           formatNumber(emailTotalOpens) + ' opens',
           emailCtr.monthlyOpens,
           lfxColors.blue[500],
-          seriesMomChange(emailCtr.monthlyOpens),
-          seriesTrendDirection(emailCtr.monthlyOpens)
+          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
+          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
         ),
         protoDualSignal(
           `Paid · ${formatCurrency(paidCampaign.totalSpend)} spend`,
           formatNumber(paidCampaign.totalReach) + ' impressions',
           paidCampaign.monthlyData,
           lfxColors.violet[500],
-          seriesMomChange(paidCampaign.monthlyData),
-          seriesTrendDirection(paidCampaign.monthlyData)
+          // Activity = spend OR impressions per month: an active month that
+          // delivered zero impressions keeps its real MoM, while zero-filled
+          // no-campaign months stay suppressed.
+          seriesMomChange(paidCampaign.monthlyData, paidActivity),
+          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
         ),
       ],
       caption: trendWindow(Math.max(emailCtr.monthlyOpens.length, paidCampaign.monthlyData.length)),
@@ -940,14 +961,14 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       trend: normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend),
       subtitle:
         memberAcquisition.totalMembersMonthlyData.length > 0
-          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · ${trendWindow(memberAcquisition.totalMembersMonthlyData.length)}`
+          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · Last 12 months`
           : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%`,
       chartData: protoSparkline(
         memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : flatSparklineData(memberAcquisition.totalMembers),
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Total paying corporate members with monthly net new over the last 6 months.',
+      tooltipText: 'Total paying corporate members with monthly net new over the last 12 months.',
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
     } as DashboardMetricCard,
     {
@@ -982,7 +1003,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       trend: trendFromChange(eventGrowth.registrantYoyChange),
       subtitle:
         eventGrowth.monthlyData.length > 0
-          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: ${trendWindow(eventGrowth.monthlyData.length)}`
+          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
           : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
       chartData: protoSparkline(
         eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
@@ -1000,7 +1021,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'brand',
       testId: 'ed-evo-brand-reach',
-      description: 'Social followers across all platforms and monthly website sessions.',
+      description: 'Social followers across all platforms and rolling 30-day website sessions.',
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
@@ -1014,7 +1035,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           normalizeTrend(brandReach.changePercentage, brandReach.trend)
         ),
         protoDualSignal(
-          'Monthly Sessions',
+          'Sessions (30d)',
           formatNumber(brandReach.totalMonthlySessions),
           brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : [],
           lfxColors.violet[500],
@@ -1022,11 +1043,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down')
         ),
       ],
-      caption:
-        brandReach.weeklyTrend.length > 0
-          ? `${brandReach.activePlatforms} platforms · ${trendWindow(Math.ceil(brandReach.weeklyTrend.length / 4))}`
-          : `${brandReach.activePlatforms} platforms`,
-      tooltipText: 'Social followers across all platforms (stock) and monthly website sessions (flow). Shown separately — these are different metric types.',
+      // weeklyTrend only holds weeks WITH rows, so its length is not the
+      // reporting window — the endpoint covers a fixed six-month range, so
+      // the window is labeled directly rather than estimated from row count.
+      caption: brandReach.weeklyTrend.length > 0 ? `${brandReach.activePlatforms} platforms · Last 6 months` : `${brandReach.activePlatforms} platforms`,
+      tooltipText:
+        'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
     {
@@ -1043,15 +1065,20 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           formatNumber(brandHealth.totalMentions),
           brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
           lfxColors.blue[500],
-          formatMomChange(brandHealth.mentionMomChangePct),
-          normalizeTrend(brandHealth.mentionMomChangePct, brandHealth.trend)
+          // null (no genuine MoM available) renders the same as a flat month:
+          // hidden delta, neutral trend.
+          formatMomChange(brandHealth.mentionMomChangePct ?? 0),
+          normalizeTrend(brandHealth.mentionMomChangePct ?? 0, brandHealth.trend)
         ),
         protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
       ],
+      // monthlyMentions only holds months WITH rows, so its length is not the
+      // reporting window — the ED caller always requests last-6, so the trend
+      // window is labeled directly rather than derived from row count.
       caption:
         brandHealth.monthlyMentions.length > 0
-          ? `${formatNumber(brandHealth.totalMentions)} mentions · ${trendWindow(brandHealth.monthlyMentions.length)}`
-          : `${formatNumber(brandHealth.totalMentions)} mentions`,
+          ? `${formatNumber(brandHealth.totalMentions)} mentions (30d) · trend last 6 months`
+          : `${formatNumber(brandHealth.totalMentions)} mentions (30d)`,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,

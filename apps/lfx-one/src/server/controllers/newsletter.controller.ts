@@ -11,6 +11,7 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -265,6 +266,40 @@ export class NewsletterController {
   }
 
   /**
+   * GET /api/projects/:projectUid/newsletters/opt-outs
+   */
+  public async listOptOuts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_opt_outs_list', { project_uid: projectUid });
+
+    try {
+      const result = await this.newsletterService.listOptOuts(req, projectUid);
+      logger.success(req, 'newsletter_opt_outs_list', startTime, { count: result.opt_outs.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/projects/:projectUid/newsletters/opt-outs/:optOutId
+   */
+  public async deleteOptOut(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const optOutId = this.requireOptOutId(req);
+      const startTime = logger.startOperation(req, 'newsletter_opt_out_delete', { project_uid: projectUid, opt_out_id: optOutId });
+      await this.newsletterService.deleteOptOut(req, projectUid, optOutId);
+      logger.success(req, 'newsletter_opt_out_delete', startTime, { opt_out_id: optOutId });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/projects/:projectUid/newsletters/generate
    *
    * AI-assisted body generation. Doesn't touch the Go newsletter-service —
@@ -360,6 +395,20 @@ export class NewsletterController {
       });
     }
     return newsletterUid;
+  }
+
+  private requireOptOutId(req: Request): string {
+    const optOutId = String(req.params['optOutId'] || '').trim();
+    // Opt-out ids are always UUIDs; rejecting anything else keeps arbitrary
+    // strings out of the upstream path this value is interpolated into.
+    if (!isUuid(optOutId)) {
+      throw ServiceValidationError.forField('optOutId', 'optOutId path parameter must be a UUID', {
+        operation: 'newsletter_controller',
+        service: 'newsletter_controller',
+        path: req.path,
+      });
+    }
+    return optOutId;
   }
 
   private validateCommonPayload(payload: { subject?: string; body_html?: string; ed_reply_email?: string }, path: string, operation: string): void {

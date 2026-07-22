@@ -15,11 +15,11 @@ Use the Settings section to configure your application preferences in LFX Self S
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Settings** from the left navigation sidebar.
-3. The settings dashboard (route: `/settings`) displays your current configuration options.
+3. The Settings tab of your Profile (route: `/profile/settings`) displays your current configuration options.
 
 ## Available settings
 
-The Settings page (`/settings`) has three sections on one page:
+The Settings tab (`/profile/settings`) has three sections on one page:
 
 - **Email Settings** — add a new email address using the **Add New Email Address** button, then confirm with the **Send Code** button. A 6-digit verification code is sent to the new address.
 - **Password** — change your password using the **Current Password**, **New Password**, and **Confirm New Password** fields, then select **Change Password**. Use **Send Reset Link** if you have forgotten your current password. An **Account Recovery** section is also available.
@@ -32,4 +32,4 @@ Settings are NOT auto-saved. Each section has its own action button: **Add New E
 ## Related
 
 - [Settings overview](../) — an overview of the Settings section
-- [Profile](../../profile/) — personal account information is managed separately in Profile
+- [Profile](../../profile/) — personal account information such as name and photo is managed in the Profile tab, alongside Settings

@@ -75,7 +75,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, filter, map, of, pairwise, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, filter, map, of, pairwise, switchMap, take, tap, timer } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
@@ -189,6 +189,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly showTranscriptBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasTranscript() : !!this.meeting().transcript_enabled));
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
+  protected readonly pastMeetingResourceId: Signal<string> = computed(() => getPastMeetingResourceId(this.meeting()));
   public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
     const meeting = this.meeting();
     const params: Record<string, string> = {};
@@ -274,6 +275,13 @@ export class MeetingCardComponent implements OnInit {
 
   public openMaterialsDrawer(): void {
     this.materialsDrawerVisible.set(true);
+  }
+
+  public onMaterialsChanged(): void {
+    this.refreshAttachments$.next();
+    timer(1000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.refreshAttachments$.next());
   }
 
   public copyMeetingLink(): void {

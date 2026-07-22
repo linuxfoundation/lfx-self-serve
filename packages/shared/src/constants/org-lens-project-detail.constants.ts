@@ -10,6 +10,7 @@ import type {
   TagSeverity,
 } from '../interfaces';
 import { lfxColors } from './colors.constants';
+import { HEALTH_SCORE_BADGE } from './org-lens-projects.constants';
 
 export const PD_DEFAULT_TAB: OrgLensProjectDetailTab = 'pd-influence';
 export const PD_VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTab>(['pd-influence', 'pd-leaderboards']);
@@ -17,14 +18,26 @@ export const PD_VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTa
 export const PD_DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
 export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
 
-export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '1y';
+export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '2y';
 export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 
-/** Hero health badge → lfx-tag severity (green Excellent / blue Healthy / red At Risk), matching HEALTH_SCORE_SEVERITY on the Org Lens Projects page. */
-export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; severity: TagSeverity }> = {
-  excellent: { label: 'Excellent', severity: 'success' },
-  healthy: { label: 'Healthy', severity: 'info' },
-  'at-risk': { label: 'At Risk', severity: 'danger' },
+export const PD_DRAWER_QUERY_PARAM = 'card';
+export const PD_CONTRIBUTORS_CARD_KEY = 'contributors';
+export const PD_VALID_DRAWER_CARD_KEYS: ReadonlySet<string> = new Set<string>([PD_CONTRIBUTORS_CARD_KEY]);
+
+/** Snowflake `time_range_type` value for each UI range toggle. */
+export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
+  '1y': 'last_365_days',
+  '2y': 'last_2_years',
+  all: 'alltime',
+};
+
+export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; bg: string; text: string }> = {
+  excellent: { label: 'Excellent', ...HEALTH_SCORE_BADGE.excellent },
+  healthy: { label: 'Healthy', ...HEALTH_SCORE_BADGE.healthy },
+  stable: { label: 'Stable', ...HEALTH_SCORE_BADGE.stable },
+  unsteady: { label: 'Unsteady', ...HEALTH_SCORE_BADGE.unsteady },
+  critical: { label: 'Critical', ...HEALTH_SCORE_BADGE.critical },
 };
 
 /** Leaderboard band chip → lfx-tag severity. */
@@ -32,35 +45,48 @@ export const PD_BAND_TAG: Record<OrgLensProjectBand, { label: string; severity: 
   leading: { label: 'Leading', severity: 'success' },
   contributing: { label: 'Contributing', severity: 'info' },
   participating: { label: 'Participating', severity: 'warn' },
-  'non-lf': { label: 'Non-LF', severity: 'secondary' },
+  silent: { label: 'Silent', severity: 'secondary' },
 };
 
 export const BAND_SIGNAL_RANK: Record<OrgLensProjectBand, number> = {
   leading: 4,
   contributing: 3,
   participating: 2,
-  'non-lf': 0,
+  silent: 1,
 };
 
 export const BAND_SIGNAL_FILL: Record<OrgLensProjectBand, string> = {
   leading: 'fill-emerald-500',
   contributing: 'fill-blue-500',
   participating: 'fill-amber-500',
-  'non-lf': 'fill-gray-400',
+  silent: 'fill-gray-400',
 };
 
 export const BAND_SIGNAL_FILL_LIGHT: Record<OrgLensProjectBand, string> = {
   leading: 'fill-emerald-200',
   contributing: 'fill-blue-200',
   participating: 'fill-amber-200',
-  'non-lf': 'fill-gray-200',
+  silent: 'fill-gray-200',
 };
 
 export const BAND_CHIP_CLASS: Record<OrgLensProjectBand, string> = {
   leading: 'inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700',
   contributing: 'inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700',
   participating: 'inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700',
-  'non-lf': 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
+  silent: 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
+};
+
+/**
+ * Non-LF projects have no ecosystem influence, so instead of a band tier they render a distinct
+ * marker. Reuses the neutral-gray styling that previously represented the (dropped) `non-lf` band.
+ */
+export const PD_NON_LF_MARKER: { label: string; severity: TagSeverity; chipClass: string; signalRank: number; signalFill: string; signalFillLight: string } = {
+  label: 'Non-LF',
+  severity: 'secondary',
+  chipClass: 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600',
+  signalRank: 0,
+  signalFill: 'fill-gray-400',
+  signalFillLight: 'fill-gray-200',
 };
 
 export const PD_METRIC_OPTIONS: { id: OrgLensLeaderboardMetric; label: string; icon: string }[] = [

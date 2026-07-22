@@ -41,6 +41,31 @@ export function formatChangePct(pct: number | null | undefined, suffix: string):
   return `${sign}${pct.toFixed(1)}% ${suffix}`;
 }
 
+const MONTH_LABEL_REGEX = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})$/;
+const ISO_YEAR_MONTH_REGEX = /^(\d{4})-(0[1-9]|1[0-2])(?:$|-)/;
+const SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Calendar month ordinal (year * 12 + monthIndex) parsed deterministically
+ * from a month string: either an en-US "MMM YYYY" label (e.g. "Jan 2026",
+ * as emitted by toLocaleDateString('en-US', { month: 'short', year:
+ * 'numeric' })) or an ISO "YYYY-MM"-prefixed string ("2026-01",
+ * "2026-01-01", "2026-01-01T00:00:00.000Z"). Returns NaN for any other
+ * format so adjacency checks fail closed instead of relying on
+ * implementation-defined Date string parsing.
+ */
+export function monthLabelOrdinal(label: string): number {
+  const labelMatch = MONTH_LABEL_REGEX.exec(label);
+  if (labelMatch) {
+    return Number(labelMatch[2]) * 12 + SHORT_MONTH_NAMES.indexOf(labelMatch[1]);
+  }
+  const isoMatch = ISO_YEAR_MONTH_REGEX.exec(label);
+  if (isoMatch) {
+    return Number(isoMatch[1]) * 12 + (Number(isoMatch[2]) - 1);
+  }
+  return Number.NaN;
+}
+
 /** Returns MoM percent change from the last two values of a monthly series. */
 export function computeMomPct(arr: number[] | undefined): number | null {
   if (!arr || arr.length < 2) return null;

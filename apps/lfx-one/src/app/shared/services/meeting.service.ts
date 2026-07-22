@@ -20,10 +20,6 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingRsvp,
-  GetOrgUpcomingMeetingsOptions,
-  OrgMeetingsProjectsResponse,
-  OrgMeetingsSummary,
-  OrgUpcomingMeetingsResponse,
   PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
@@ -61,24 +57,6 @@ export class MeetingService {
         return of({ data: [] as Meeting[], page_token: undefined });
       })
     );
-  }
-
-  /** Org Lens Meetings stat strip: upcoming + recurring counts (with foundation breadth) for the selected org, from Snowflake. */
-  public getOrgMeetingsSummary(accountId: string): Observable<OrgMeetingsSummary> {
-    return this.http.get<OrgMeetingsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/summary`);
-  }
-
-  public getOrgUpcomingMeetings(accountId: string, options: GetOrgUpcomingMeetingsOptions): Observable<OrgUpcomingMeetingsResponse> {
-    let params = new HttpParams().set('pageSize', String(options.pageSize)).set('offset', String(options.offset));
-    if (options.searchQuery) params = params.set('searchQuery', options.searchQuery);
-    if (options.project) params = params.set('project', options.project);
-    if (options.type) params = params.set('type', options.type);
-    if (options.pendingRsvpOnly) params = params.set('pendingRsvpOnly', 'true');
-    return this.http.get<OrgUpcomingMeetingsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings`, { params });
-  }
-
-  public getOrgMeetingProjects(accountId: string): Observable<OrgMeetingsProjectsResponse> {
-    return this.http.get<OrgMeetingsProjectsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/meetings/projects`);
   }
 
   public getPastMeetings(params?: HttpParams): Observable<PaginatedResponse<PastMeeting>> {
@@ -349,7 +327,7 @@ export class MeetingService {
       .pipe(take(1));
   }
 
-  // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
+  // ─── Past Meeting Attachment Methods ─────────────────────────────────────
 
   public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
     return this.http
@@ -433,6 +411,37 @@ export class MeetingService {
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
     return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
+  }
+
+  public createPastMeetingAttachment(pastMeetingId: string, attachmentData: CreateMeetingAttachmentRequest): Observable<PastMeetingAttachment> {
+    return this.http.post<PastMeetingAttachment>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments`, attachmentData).pipe(take(1));
+  }
+
+  public deletePastMeetingAttachment(pastMeetingId: string, attachmentId: string): Observable<void> {
+    return this.http.delete<void>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/${encodeURIComponent(attachmentId)}`).pipe(take(1));
+  }
+
+  public presignPastMeetingAttachment(pastMeetingId: string, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    return this.http.post<PresignAttachmentResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/presign`, presignData).pipe(take(1));
+  }
+
+  public uploadPastMeetingFile(pastMeetingId: string, file: File, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    let params = new HttpParams().set('name', presignData.name).set('file_size', presignData.file_size.toString()).set('file_type', presignData.file_type);
+
+    if (presignData.category) {
+      params = params.set('category', presignData.category);
+    }
+
+    if (presignData.description) {
+      params = params.set('description', presignData.description);
+    }
+
+    return this.http
+      .post<PresignAttachmentResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingId)}/attachments/upload`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+        params,
+      })
+      .pipe(take(1));
   }
 
   public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {

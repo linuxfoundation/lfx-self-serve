@@ -148,8 +148,8 @@ export interface MyMailingList extends GroupsIOMailingList {
  * @description Maps to Groups.io API create endpoint
  */
 export interface CreateMailingListRequest {
-  /** Groups.io group name (3-34 chars) */
-  group_name: string;
+  /** Subgroup name (3-34 chars) — maps to `name` in the upstream GroupsioSubgroupRequest API */
+  name: string;
   /** Whether the mailing list is publicly accessible */
   public: boolean;
   /** Mailing list type */
@@ -231,6 +231,8 @@ export interface MailingListMember {
   group_id?: number;
   /** Member's username/handle */
   username?: string;
+  /** Member's display name (combined first + last; returned by the API as `name`) */
+  name?: string;
   /** Member's first name */
   first_name?: string;
   /** Member's last name */
@@ -266,12 +268,8 @@ export interface MailingListMember {
 export interface CreateMailingListMemberRequest {
   /** Member's email address (required) */
   email: string;
-  /** Member's username/handle */
-  username?: string | null;
-  /** Member's first name */
-  first_name?: string | null;
-  /** Member's last name */
-  last_name?: string | null;
+  /** Member's display name — maps to `name` in the upstream GroupsioMemberRequest API */
+  name?: string | null;
   /** Member's organization */
   organization?: string | null;
   /** Member's job title */
@@ -289,12 +287,8 @@ export interface CreateMailingListMemberRequest {
  * @description Partial update for existing members (email is immutable)
  */
 export interface UpdateMailingListMemberRequest {
-  /** Member's username/handle */
-  username?: string | null;
-  /** Member's first name */
-  first_name?: string | null;
-  /** Member's last name */
-  last_name?: string | null;
+  /** Member's display name — maps to `name` in the upstream GroupsioMemberRequest API */
+  name?: string | null;
   /** Member's organization */
   organization?: string | null;
   /** Member's job title */

@@ -64,6 +64,7 @@ import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
@@ -76,6 +77,11 @@ if (process.env['NODE_ENV'] !== 'production') {
     }
   }
 }
+
+// Redirect console.error/warn/log through Pino so all output in production is
+// single-line structured JSON. Must run before any middleware or Angular SSR
+// renders so Angular component console calls are captured.
+initializeServerConsoleOverride();
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
@@ -337,6 +343,7 @@ app.use('/api/ossprey', (req, res) => {
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
 
+app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
 
 // Profile auth callback registered in Auth0 Profile Client.
@@ -501,6 +508,31 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
 
   if (res.headersSent) {
     next(error);
+    return;
+  }
+
+  // Everything reaching this handler (as opposed to the dedicated `/api/*` and `/public/api/*`
+  // mounts above) is either a browser navigation — /login, /callback and its siblings, or the SSR
+  // catch-all — or a non-GET SSR request that auth.middleware deliberately routed to a 401 instead
+  // of a redirect (so XHR/Fetch clients aren't handed an HTML redirect they can't follow). Redirect
+  // to the branded error page only for the session-store failures this page exists for, and only
+  // on GET (so XHR/Fetch clients still get JSON); everything else falls through to
+  // apiErrorHandler's structured JSON response.
+  //
+  // `auth()` is mounted globally (no path filter), so it attempts the same rolling session write on
+  // every request — including a GET to /auth-error itself. Without the path guard below, a Valkey
+  // outage would make /auth-error fail exactly the same way it just redirected here for, issuing
+  // another redirect to itself (with a growing `returnTo`) until the browser's redirect limit kicks
+  // in. Skip the redirect for that one case and fall through to apiErrorHandler's JSON response
+  // instead — an edge case (Valkey still down on the very next request to the error page) that's a
+  // fair trade for not looping.
+  if (error instanceof AuthenticationError && req.method === 'GET' && error.operation?.startsWith('session_store') && !/^\/auth-error\/?$/.test(req.path)) {
+    // A session-store write can fail while handling an OAuth callback (/callback and its
+    // /*.../callback siblings), whose query string carries a one-time `code`/`state` pair. Forwarding
+    // that URL as `returnTo` would send the user back to an already-consumed callback after re-login
+    // instead of a fresh OAuth round trip, so omit it there — only carry `returnTo` for ordinary pages.
+    const returnTo = /\/callback$/.test(req.path) ? '' : `&returnTo=${encodeURIComponent(req.originalUrl)}`;
+    res.redirect(`/auth-error?reason=session${returnTo}`);
     return;
   }
 

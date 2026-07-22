@@ -239,9 +239,6 @@ export * from './org-events.interface';
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
 
-// Org Meetings internal backend query-row shapes
-export * from './org-meetings-internal.interface';
-
 // Newsletter interfaces
 export * from './newsletter.interface';
 
@@ -270,5 +267,5 @@ export * from './donut-chart.interface';
 // Entity project context interfaces
 export * from './entity-project-context.interface';
 
-// Org Meetings interfaces (LFXV2 Meetings page)
-export * from './org-meetings.interface';
+// Create artifact quick-link interfaces (rail "Create" button + dialog)
+export * from './create-artifact.interface';

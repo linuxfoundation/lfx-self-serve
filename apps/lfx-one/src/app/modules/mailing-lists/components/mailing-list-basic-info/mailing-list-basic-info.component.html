@@ -55,7 +55,7 @@
           <p class="mt-1 text-sm text-red-600">{{ groupNameLengthError() }}</p>
         }
         @if (form().get('group_name')?.errors?.['pattern'] && form().get('group_name')?.touched) {
-          <p class="mt-1 text-sm text-red-600">Name can only contain letters, numbers, hyphens, and underscores</p>
+          <p class="mt-1 text-sm text-red-600">Name can only contain lowercase letters and numbers, with hyphens allowed between characters</p>
         }
       }
     </div>

@@ -39,6 +39,10 @@ export class ProfileLinuxEmailComponent {
   // One-shot guard (sessionStorage key) so a tokenless re-auth round-trip can't loop.
   private readonly reauthFlagKey = 'linux-email:forward-reauth-attempted';
 
+  // Set on FORWARD_SET_FAILED so the recovery toast can be shown once the refreshed
+  // alias state is known, instead of assuming the refetch lands on 'claimed'.
+  private pendingForwardRecoveryToast = false;
+
   // Refresh mechanism
   private refresh = new BehaviorSubject<void>(undefined);
 
@@ -108,6 +112,21 @@ export class ProfileLinuxEmailComponent {
     return options;
   });
 
+  // True when at least one forward option differs from what's already saved/selected —
+  // a real alternative to switch to. Drives only the edit form's hint text (whether to
+  // show "choose one" vs "add another to change this"); the claim form gates on
+  // forwardOptions().length so a stale savedForwardTo can never hide its dropdown.
+  public hasForwardOptions = computed((): boolean => {
+    const saved = this.savedForwardTo();
+    return this.forwardOptions().some((option) => option.value !== saved);
+  });
+
+  // True only on a failed getUserEmails() fetch, not a genuine lack of a primary
+  // email — a successful /api/profile/emails response always has a non-empty
+  // primary_email (server-side fallback), so `emails === null` here only ever
+  // means the request errored (see initData's catchError).
+  public emailsLoadFailed = computed((): boolean => this.data().emails === null);
+
   // Public methods
 
   public purchase(): void {
@@ -137,7 +156,20 @@ export class ProfileLinuxEmailComponent {
           this.refresh.next();
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Your Linux.com alias is active.' });
         },
-        error: (err: HttpErrorResponse) => this.handleError(err, 'Failed to claim your alias. Please try again.'),
+        error: (err: HttpErrorResponse) => {
+          // Partial failure: the alias was claimed but forwarding could not be set. The
+          // alias is immutable upstream, so a retry here would just fail with
+          // already_claimed — recover into the claimed/edit state instead of stranding
+          // the user on the claim form. The recovery toast is deferred until the refetch
+          // resolves — see maybeShowForwardRecoveryToast.
+          if (err.error?.code === 'FORWARD_SET_FAILED') {
+            this.claimForm.reset();
+            this.pendingForwardRecoveryToast = true;
+            this.refresh.next();
+            return;
+          }
+          this.handleError(err, 'Failed to claim your alias. Please try again.');
+        },
       });
   }
 
@@ -155,6 +187,9 @@ export class ProfileLinuxEmailComponent {
       .pipe(finalize(() => this.savingForward.set(false)))
       .subscribe({
         next: () => {
+          // Defensive: a successful save isn't the FORWARD_SET_FAILED recovery refetch, so
+          // it must not consume a stale pending flag from an earlier claim() failure.
+          this.pendingForwardRecoveryToast = false;
           this.refresh.next();
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Forwarding address updated.' });
         },
@@ -167,6 +202,9 @@ export class ProfileLinuxEmailComponent {
     if (isPlatformBrowser(this.platformId)) {
       sessionStorage.removeItem(this.reauthFlagKey);
     }
+    // Defensive: a user-initiated retry isn't the FORWARD_SET_FAILED recovery refetch, so
+    // it must not consume a stale pending flag from an earlier claim() failure.
+    this.pendingForwardRecoveryToast = false;
     this.refresh.next();
   }
 
@@ -208,6 +246,7 @@ export class ProfileLinuxEmailComponent {
             tap(({ alias, emails }) => {
               this.applyFormDefaults(alias, emails);
               this.maybeReauthForForward(alias);
+              this.maybeShowForwardRecoveryToast(alias);
             }),
             finalize(() => this.loading.set(false))
           );
@@ -237,6 +276,27 @@ export class ProfileLinuxEmailComponent {
     if (!alias.authorizeUrl || sessionStorage.getItem(this.reauthFlagKey)) return;
     sessionStorage.setItem(this.reauthFlagKey, '1');
     window.location.href = alias.authorizeUrl;
+  }
+
+  /**
+   * Shows the FORWARD_SET_FAILED recovery toast once the refreshed alias state is known,
+   * so the message matches what actually renders. If the forwards-service is still down
+   * (the same outage that likely caused the original failure), the refetch degrades to
+   * 'service_unavailable' and the retry panel renders instead of the claimed/edit form —
+   * in that case the toast must not tell the user to look for a form "below".
+   */
+  private maybeShowForwardRecoveryToast(alias: LinuxAliasData | null): void {
+    if (!this.pendingForwardRecoveryToast) return;
+    this.pendingForwardRecoveryToast = false;
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Alias claimed',
+      detail:
+        alias?.state === 'claimed'
+          ? 'Your alias is active, but we couldn’t set forwarding. Please set your forwarding address below.'
+          : 'Your alias is active, but we couldn’t set forwarding. Please try again once the service is available.',
+    });
   }
 
   /** Default the forward selection to the current target (if any) or the primary email. */

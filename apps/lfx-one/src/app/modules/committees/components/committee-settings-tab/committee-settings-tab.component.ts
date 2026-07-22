@@ -312,7 +312,7 @@ export class CommitteeSettingsTabComponent {
 
   private buildMlUpdatePayload(ml: GroupsIOMailingList, committeeUid: string | null): Partial<CreateMailingListRequest> {
     return {
-      group_name: ml.group_name,
+      name: ml.group_name,
       public: ml.public,
       type: ml.type,
       audience_access: ml.audience_access,

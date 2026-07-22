@@ -435,4 +435,44 @@ export class CrowdfundingService {
       size: raw.size,
     };
   }
+
+  public async getMyInitiativeTransactions(
+    req: Request,
+    slug: string,
+    type?: 'donations' | 'expenses',
+    size?: number,
+    from?: number,
+    subscriptionOnly?: boolean
+  ): Promise<CrowdfundingTransactionList | null> {
+    const startTime = logger.startOperation(req, 'cf_get_my_initiative_transactions', { slug, type, size, from, subscriptionOnly });
+
+    const params = new URLSearchParams();
+    if (type) params.set('type', type);
+    if (size != null) params.set('limit', String(size));
+    if (from != null) params.set('offset', String(from));
+    if (subscriptionOnly) params.set('subscriptionOnly', 'true');
+    const qs = params.toString();
+
+    // /v1/me/initiatives/{slug}/my-transactions — donor-scoped endpoint; returns the
+    // authenticated caller's own contributions to the (published) initiative, regardless
+    // of who owns it. Unlike the owner-scoped /transactions endpoint, this works for any donor.
+    const raw = await cfFetchNullable<BackendTransactionList>(
+      req,
+      'getMyInitiativeTransactions',
+      `/v1/me/initiatives/${encodeURIComponent(slug)}/my-transactions${qs ? `?${qs}` : ''}`
+    );
+    if (!raw) {
+      logger.warning(req, 'cf_get_my_initiative_transactions', 'Initiative not found', { slug });
+      return null;
+    }
+
+    logger.success(req, 'cf_get_my_initiative_transactions', startTime, { total: raw.total_count });
+
+    return {
+      data: raw.data.map(mapToTransaction),
+      totalCount: raw.total_count,
+      from: raw.from,
+      size: raw.size,
+    };
+  }
 }

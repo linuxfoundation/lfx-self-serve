@@ -7,8 +7,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { lfxColors } from '@lfx-one/shared/constants';
-import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { EVENT_GROWTH_TOP_EVENTS_LIMIT, lfxColors } from '@lfx-one/shared/constants';
+import { formatCompact, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -72,6 +72,8 @@ export class EventGrowthDrawerComponent {
 
   // === Computed year label ===
   protected readonly currentYear = new Date().getUTCFullYear();
+  /** Server-side cap on the events list — the template discloses it when hit. */
+  protected readonly topEventsLimit = EVENT_GROWTH_TOP_EVENTS_LIMIT;
 
   // === Computed Signals ===
   protected readonly sortedTopEvents: Signal<EventGrowthTopEventView[]> = this.initSortedTopEvents();
@@ -108,7 +110,7 @@ export class EventGrowthDrawerComponent {
         .sort((a, b) => a.date.localeCompare(b.date))
         .map((event) => ({
           ...event,
-          formattedRevenue: EventGrowthDrawerComponent.formatMoney(event.revenue),
+          formattedRevenue: EventGrowthDrawerComponent.formatMoney(event.revenue, event.currencyCode),
           isPast: !!event.date && event.date < today,
         }));
     });
@@ -190,9 +192,23 @@ export class EventGrowthDrawerComponent {
         }
       }
 
-      if (monthlyData.length >= 3) {
-        const recent3 = monthlyData.slice(-3);
-        const falling = recent3[0].value > recent3[1].value && recent3[1].value > recent3[2].value;
+      // Decline detection must only compare COMPLETED quarters. The quarterly
+      // series is keyed by EVENT start date, so the current and future quarters
+      // hold events whose registrations are still coming in — a completed
+      // quarter will always dwarf them, which would flag a "sustained decline"
+      // for any foundation with upcoming events (e.g. a first-year foundation
+      // with one big past quarter and a future pipeline).
+      const currentQuarterStart = EventGrowthDrawerComponent.quarterStartKey(new Date());
+      const completedQuarters = monthlyData.filter((d) => d.month < currentQuarterStart);
+      if (completedQuarters.length >= 3) {
+        const recent3 = completedQuarters.slice(-3);
+        // The series has no buckets for quarters with zero events, so the last
+        // three entries can span non-adjacent quarters (annual or sparse event
+        // portfolios). "3 quarters straight" is only claimable when they are
+        // truly consecutive.
+        const indices = recent3.map((d) => EventGrowthDrawerComponent.quarterIndex(d.month));
+        const consecutive = indices[1] === indices[0] + 1 && indices[2] === indices[1] + 1;
+        const falling = consecutive && recent3[0].value > recent3[1].value && recent3[1].value > recent3[2].value;
         if (falling && !actions.some((a) => a.actionType === 'decline')) {
           actions.push({
             title: 'Registrations falling 3 quarters straight',
@@ -243,7 +259,7 @@ export class EventGrowthDrawerComponent {
       if (topEvents.length > 0) {
         const leadEvent = topEvents.reduce((max, e) => (e.attendees > max.attendees ? e : max), topEvents[0]);
         insights.push({
-          text: `${leadEvent.name} leads with ${formatNumber(leadEvent.attendees)} attendees (${EventGrowthDrawerComponent.formatMoney(leadEvent.revenue)} revenue)`,
+          text: `${leadEvent.name} leads with ${formatNumber(leadEvent.attendees)} attendees (${EventGrowthDrawerComponent.formatMoney(leadEvent.revenue, leadEvent.currencyCode)} revenue)`,
           type: 'info',
         });
       }
@@ -252,9 +268,49 @@ export class EventGrowthDrawerComponent {
     });
   }
 
-  private static formatMoney(value: number): string {
-    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-    return `$${Math.round(value).toLocaleString()}`;
+  /**
+   * Quarter-start key ('YYYY-MM') for the quarter containing the given date —
+   * matches the key format of the quarterly series (EVENT quarter start month),
+   * so string comparison identifies completed vs current/future quarters.
+   */
+  private static quarterStartKey(date: Date): string {
+    const quarterStartMonth = Math.floor(date.getUTCMonth() / 3) * 3 + 1;
+    return `${date.getUTCFullYear()}-${String(quarterStartMonth).padStart(2, '0')}`;
+  }
+
+  /**
+   * Linear quarter index for a 'YYYY-MM' key (year * 4 + quarter ordinal) —
+   * adjacent calendar quarters differ by exactly 1, so consecutiveness checks
+   * are simple integer arithmetic.
+   */
+  private static quarterIndex(monthKey: string): number {
+    const [year, month] = monthKey.split('-').map(Number);
+    return year * 4 + Math.floor((month - 1) / 3);
+  }
+
+  /**
+   * Compact money formatter in the currency's native SYMBOL (₹4.1M, ₩12.6M,
+   * ¥1.9M, €49.2K, $238.9K) — matching how PCC's event health-metrics tables
+   * display multi-currency revenue. Per-event revenue is denominated in the
+   * event's LOCAL currency, so labeling everything `$` would be wrong.
+   * Locale is pinned to en-US so SSR (Node) and the browser render identical
+   * text — hydration flags a mismatch otherwise.
+   */
+  private static formatMoney(value: number, currencyCode: string = 'USD'): string {
+    const code = currencyCode || 'USD';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: code,
+        notation: 'compact',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      }).format(value);
+    } catch {
+      // Unknown/invalid ISO code — degrade to a code prefix via the shared
+      // compact formatter, so thresholds, rounding, and negative handling stay
+      // identical to every other compact number in the app.
+      return formatCompact(Math.abs(value), value < 0 ? '-' : '', `${code} `);
+    }
   }
 }

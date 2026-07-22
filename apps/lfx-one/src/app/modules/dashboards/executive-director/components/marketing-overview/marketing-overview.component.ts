@@ -130,7 +130,7 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     totalMentions: 0,
     sentiment: { positive: 0, neutral: 0, negative: 0 },
     sentimentMomChangePp: 0,
-    mentionMomChangePct: 0,
+    mentionMomChangePct: null,
     trend: 'up',
     monthlyMentions: [],
     topProjects: [],
@@ -296,7 +296,7 @@ export class MarketingOverviewComponent {
       this.mentionsTrigger$.pipe(
         switchMap((slug) => {
           if (!slug) return of(null);
-          return this.analyticsService.getBrandHealth(slug, true).pipe(
+          return this.analyticsService.getBrandHealth(slug, true, 'last-6').pipe(
             map((res) => ({ topPositiveMentions: res.topPositiveMentions, topNegativeMentions: res.topNegativeMentions })),
             catchError(() => of(null))
           );
@@ -326,10 +326,14 @@ export class MarketingOverviewComponent {
             engagedCommunity: safe('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),
             eventGrowth: safe('eventGrowth', this.analyticsService.getEventGrowth(slug)),
             brandReach: safe('brandReach', this.analyticsService.getBrandReach(slug)),
-            brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug)),
-            revenueImpact: safe('revenueImpact', this.analyticsService.getRevenueImpact(slug)),
-            emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug)),
-            paidCampaign: safe('paidCampaign', this.analyticsService.getSocialReach(slug)),
+            // Period-aware endpoints get the last-6 preset explicitly: their trend
+            // sections are designed (and labeled) as 6-month windows, and omitting
+            // the period silently falls back to the previous completed month. MoM
+            // KPIs are unaffected — both windows share the same period END.
+            brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug, false, 'last-6')),
+            revenueImpact: safe('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
+            emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
+            paidCampaign: safe('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
           })
         )
       ),

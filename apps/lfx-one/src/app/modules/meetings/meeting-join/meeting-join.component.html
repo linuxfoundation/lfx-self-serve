@@ -551,7 +551,7 @@
                         @if (hasRecentlyUpdatedMaterials()) {
                           <span class="text-xs font-medium text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">Updated</span>
                         }
-                        @if (meeting().organizer && !isPastMeeting()) {
+                        @if (meeting().organizer && (!isPastMeeting() || loadedViaPastMeetingId())) {
                           <button
                             type="button"
                             (click)="openMaterialsDrawer()"
@@ -802,8 +802,12 @@
       </p-drawer>
 
       <!-- Meeting Materials Drawer -->
-      @if (meeting().organizer && !isPastMeeting()) {
-        <lfx-meeting-materials-drawer [(visible)]="materialsDrawerVisible" [meetingId]="meeting().id" (materialsChanged)="onMaterialsChanged()">
+      @if (meeting().organizer && (!isPastMeeting() || loadedViaPastMeetingId())) {
+        <lfx-meeting-materials-drawer
+          [(visible)]="materialsDrawerVisible"
+          [meetingId]="loadedViaPastMeetingId() ? undefined : meeting().id"
+          [pastMeetingId]="pastMeetingResourceId()"
+          (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
       }
     </div>

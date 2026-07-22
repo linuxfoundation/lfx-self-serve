@@ -8,6 +8,7 @@ import {
   NewsletterAnalytics,
   NewsletterListParams,
   NewsletterListResponse,
+  NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
@@ -142,6 +143,21 @@ export class NewsletterServiceClient {
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletters/${newsletterUid}/analytics`,
       'GET'
+    );
+  }
+
+  public async listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterOptOutListResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs`, 'GET');
+  }
+
+  public async deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {
+    // The controller already restricts optOutId to a UUID; encoding keeps this
+    // path segment safe even if a future caller skips that validation.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletter-opt-outs/${encodeURIComponent(optOutId)}`,
+      'DELETE'
     );
   }
 }

@@ -184,28 +184,6 @@ export class SidebarNavService {
         },
       ],
     },
-    {
-      label: 'My Account',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Profile',
-          icon: 'fa-light fa-user',
-          routerLink: '/profile',
-        },
-        {
-          label: 'Settings',
-          icon: 'fa-light fa-gear',
-          routerLink: '/settings',
-        },
-        {
-          label: 'Transactions',
-          icon: 'fa-light fa-receipt',
-          routerLink: '/me/transactions',
-        },
-      ],
-    },
   ];
 
   // Whether the currently selected foundation has project-level data in Snowflake.
@@ -468,7 +446,12 @@ export class SidebarNavService {
       icon: 'fa-light fa-folder-bookmark',
       routerLink: '/org/memberships',
     },
-    // INFO: Future Epic implementation — Projects, ROI, and Governance pages are hidden until
+    {
+      label: 'Projects',
+      icon: 'fa-light fa-folder',
+      routerLink: '/org/projects',
+    },
+    // INFO: Future Epic implementation — ROI and Governance pages are hidden until
     // built. Restore as top-level items or a section when re-enabled.
     {
       label: 'Organization Engagement',

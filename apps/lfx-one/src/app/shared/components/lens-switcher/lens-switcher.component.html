@@ -69,6 +69,25 @@
       <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="w-6 h-6" />
     </button>
 
+    <!-- Create quick-link — opens a menu of creatable artifact types; only shown when the user can create at least one somewhere.
+         Desktop rail only by design (this @else branch): the popover is positioned against the vertical rail, so the mobile
+         horizontal strip has no equivalent yet. Mobile affordance is deferred to a follow-up (see PR description). -->
+    @if (createPermissionService.canShowCreateButton()) {
+      <button
+        type="button"
+        (click)="toggleCreateMenu($event)"
+        data-testid="create-rail-button"
+        aria-label="Create new artifact"
+        pTooltip="New"
+        tooltipPosition="right"
+        class="group mb-3 flex flex-col items-center gap-1 w-full">
+        <div
+          class="flex items-center justify-center w-10 h-10 rounded-full border border-blue-400/50 text-blue-400 transition-colors group-hover:border-blue-300 group-hover:bg-blue-400/10 group-hover:text-blue-300">
+          <i class="fa-light fa-plus text-lg" aria-hidden="true"></i>
+        </div>
+      </button>
+    }
+
     <!-- Lens Buttons — hidden by every current caller (lenses live in the sidebar tabs); the `showLensButtons` default is only a standalone-reuse fallback. -->
     @if (showLensButtons()) {
       <!-- Divider — only meaningful when it separates the logo from the lens buttons below. -->
@@ -186,6 +205,32 @@
     </div>
   </div>
 
+  <!-- Create Popover — pick an artifact type, then a dialog resolves the project/foundation -->
+  <p-popover #createMenu appendTo="body" [styleClass]="bannerOffset() ? 'w-72 lfx-create-popover lfx-create-popover-banner-offset' : 'w-72 lfx-create-popover'">
+    <ng-template #content>
+      @let creatables = creatableArtifacts();
+      <div class="py-1" data-testid="create-menu">
+        @for (artifact of creatables; track artifact.type; let i = $index) {
+          <!-- Thin separator wherever the semantic group changes (Engage | Decide | Organize) -->
+          @if (i > 0 && artifact.group !== creatables[i - 1].group) {
+            <div role="separator" class="my-1 border-t border-gray-100"></div>
+          }
+          <button
+            type="button"
+            (click)="openCreateDialog(artifact)"
+            [attr.data-testid]="'create-menu-option-' + artifact.type"
+            class="group flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+            <i [class]="artifact.icon + ' fa-fw text-base text-gray-400 mt-0.5'"></i>
+            <span class="flex flex-col min-w-0">
+              <span class="text-sm font-medium text-gray-900">{{ artifact.label }}</span>
+              <span class="text-xs text-gray-500">{{ artifact.description }}</span>
+            </span>
+          </button>
+        }
+      </div>
+    </ng-template>
+  </p-popover>
+
   <!-- LFX Apps Popover -->
   <p-popover #appsMenu appendTo="body" styleClass="w-72 lfx-apps-popover">
     <ng-template #content>
@@ -255,8 +300,16 @@
           data-testid="lens-profile"
           (click)="navigateToProfile()"
           class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-          <i class="fa-light fa-user w-4 text-gray-400"></i>
-          <span>My profile</span>
+          <i class="fa-light fa-circle-user w-4 text-gray-400"></i>
+          <span>Profile &amp; Account</span>
+        </button>
+        <button
+          type="button"
+          data-testid="lens-settings"
+          (click)="navigateToProfileSettings()"
+          class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-gear w-4 text-gray-400"></i>
+          <span>Settings</span>
         </button>
         <button
           type="button"

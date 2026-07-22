@@ -47,15 +47,16 @@
           <span class="text-sm text-gray-500">Growth</span>
           @if (reengagement().reengagementMomChange !== 0) {
             <div class="flex items-center gap-2">
+              <!-- reengagementMomChange is a percentage-POINT delta between two monthly rates, not a percent change -->
               <span class="text-2xl font-semibold" [class]="reengagement().reengagementMomChange >= 0 ? 'text-green-600' : 'text-red-600'">
-                {{ reengagement().reengagementMomChange > 0 ? '+' : '' }}{{ reengagement().reengagementMomChange | number: '1.1-1' }}%
+                {{ reengagement().reengagementMomChange > 0 ? '+' : '' }}{{ reengagement().reengagementMomChange | number: '1.1-1' }}pp
               </span>
               <i
                 class="text-sm"
                 [class]="reengagement().reengagementMomChange >= 0 ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
             </div>
           } @else {
-            <span class="text-2xl font-semibold text-gray-500">0%</span>
+            <span class="text-2xl font-semibold text-gray-500">0pp</span>
           }
         </div>
       </lfx-card>

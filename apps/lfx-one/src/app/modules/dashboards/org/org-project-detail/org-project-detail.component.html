@@ -7,412 +7,512 @@
       icon="fa-light fa-building"
       title="Select a company via Impersonate to view project details."
       data-testid="project-detail-no-company-empty-state" />
+  } @else if (heroState().status === 'notFound') {
+    <!-- B1 is the sole page-level gate: a 404 hero is the whole-page not-found. -->
+    <lfx-empty-state
+      icon="fa-light fa-folder-open"
+      title="Project not found"
+      subtitle="We couldn't find that project for your organization."
+      ctaLabel="Back to Projects"
+      ctaIcon="fa-light fa-arrow-left"
+      [ctaRoute]="['/org/projects']"
+      data-testid="project-detail-not-found">
+    </lfx-empty-state>
+  } @else if (heroState().status === 'error') {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Failed to load project detail"
+      subtitle="Please try again."
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-arrow-rotate-left"
+      data-testid="project-detail-error-state"
+      (ctaClick)="retryHero()">
+    </lfx-empty-state>
   } @else {
-    @switch (pageState()) {
-      @case ('loading') {
-        <div class="flex flex-col gap-4" data-testid="project-detail-loading">
-          <p-skeleton height="1.5rem" width="16rem" />
-          <p-skeleton height="2.5rem" width="75%" />
-          <p-skeleton height="1.25rem" width="66%" />
-          <p-skeleton height="16rem" width="100%" styleClass="mt-4" />
-        </div>
-      }
+    <!-- Breadcrumb: Projects / <Project> -->
+    <lfx-breadcrumb
+      [model]="breadcrumbItems()"
+      [home]="{ icon: 'fa-light fa-house', routerLink: ['/org/projects'], styleClass: 'sr-only' }"
+      data-testid="project-detail-breadcrumb">
+    </lfx-breadcrumb>
 
-      @case ('error') {
-        <lfx-empty-state
-          icon="fa-light fa-triangle-exclamation"
-          title="Failed to load project detail"
-          subtitle="Please try again."
-          ctaLabel="Retry"
-          ctaIcon="fa-light fa-arrow-rotate-left"
-          data-testid="project-detail-error-state"
-          (ctaClick)="retry()">
-        </lfx-empty-state>
-      }
-
-      @case ('notFound') {
-        <lfx-empty-state
-          icon="fa-light fa-folder-open"
-          title="Project not found"
-          subtitle="We couldn't find that project for your organization."
-          ctaLabel="Back to Projects"
-          ctaIcon="fa-light fa-arrow-left"
-          [ctaRoute]="['/org/projects']"
-          data-testid="project-detail-not-found">
-        </lfx-empty-state>
-      }
-
-      @default {
-        @if (hero(); as h) {
-          <!-- Breadcrumb: Projects / <Project> -->
-          <lfx-breadcrumb
-            [model]="breadcrumbItems()"
-            [home]="{ icon: 'fa-light fa-house', routerLink: ['/org/projects'], styleClass: 'sr-only' }"
-            data-testid="project-detail-breadcrumb">
-          </lfx-breadcrumb>
-
-          <!-- Hero -->
-          <section
-            class="flex flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 md:flex-row md:items-start md:justify-between"
-            data-testid="project-detail-hero">
-            <!-- Left: identity -->
-            <div class="flex flex-col gap-2">
-              <div class="flex items-center gap-3">
-                @if (h.logoUrl) {
-                  <img [src]="h.logoUrl" [alt]="h.projectName + ' logo'" class="h-10 w-10 shrink-0 rounded-lg object-contain" />
-                } @else {
-                  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-sm font-semibold text-blue-700" aria-hidden="true">
-                    {{ logoInitials() }}
-                  </div>
-                }
-                <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ h.projectName }}</h1>
-              </div>
-              <p class="text-sm leading-relaxed text-gray-600" data-testid="project-detail-description">
-                {{ h.description }}
-                @if (h.lfxInsightsUrl) {
-                  <span class="text-gray-500"> Source: </span>
-                  <a
-                    [href]="h.lfxInsightsUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700"
-                    data-testid="project-detail-source-link">
-                    LFX Insights
-                    <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
-                  </a>
-                }
-              </p>
-            </div>
-
-            <!-- Right: stat tiles -->
-            <div class="flex flex-wrap gap-x-12 gap-y-4 md:shrink-0 md:text-right" data-testid="project-detail-hero-stats">
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium uppercase tracking-wide text-gray-500">First commit</span>
-                <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-first-commit">{{ firstCommitLabel() }}</span>
-              </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Software value
-                  <i
-                    class="fa-light fa-circle-info text-gray-400"
-                    pTooltip="Based on Constructive Cost Model (COCOMO)"
-                    tooltipPosition="top"
-                    aria-hidden="true"></i>
-                </span>
-                <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-software-value">{{ softwareValueLabel() }}</span>
-              </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health score</span>
-                @if (healthMeta(); as hm) {
-                  <span class="md:ml-auto" data-testid="project-detail-health-badge">
-                    <lfx-tag [value]="hm.label" [severity]="hm.severity" />
-                  </span>
-                }
-              </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Foundation</span>
-                <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-foundation-pill">{{ h.foundationLabel }}</span>
-              </div>
-            </div>
-          </section>
-
-          <!-- Tab bar: tabs on left, metric toggle (leaderboards only) + time range on right -->
-          <lfx-org-project-detail-tab-bar
-            [tabs]="tabs"
-            [activeTab]="activeTab()"
-            [timeRange]="timeRange()"
-            [timeRangeOptions]="timeRangeOptions"
-            [metric]="activeTab() === 'pd-leaderboards' ? metric() : null"
-            [metricOptions]="activeTab() === 'pd-leaderboards' ? metricOptions : null"
-            (tabChange)="switchTab($event)"
-            (timeRangeChange)="setTimeRange($event)"
-            (metricChange)="setMetric($event)">
-          </lfx-org-project-detail-tab-bar>
-
-          <!-- Tab content -->
-          @switch (activeTab()) {
-            @case ('pd-influence') {
-              <div
-                role="tabpanel"
-                id="project-detail-tab-panel-pd-influence"
-                class="flex flex-col gap-8"
-                [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
-                <!-- Technical Influence -->
-                <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
-                  <div class="flex items-center gap-3">
-                    <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
-                    @if (technicalBandMeta(); as meta) {
-                      <span [class]="meta.chipClass" data-testid="project-detail-technical-band">
-                        <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
-                          @for (bar of meta.bars; track bar.x) {
-                            <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
-                          }
-                        </svg>
-                        {{ meta.label }}
-                      </span>
-                    }
-                    <div class="flex-1 h-px bg-gray-200"></div>
-                    <div class="flex items-center gap-1">
-                      <button
-                        type="button"
-                        class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                        [disabled]="!techArrows().left"
-                        (click)="scrollCards(technicalTrack, -1)"
-                        aria-label="Scroll technical cards left">
-                        <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
-                      </button>
-                      <button
-                        type="button"
-                        class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                        [disabled]="!techArrows().right"
-                        (click)="scrollCards(technicalTrack, 1)"
-                        aria-label="Scroll technical cards right">
-                        <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="overflow-hidden">
-                    <div
-                      #technicalTrack
-                      class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                      (scroll)="onTrackScroll(technicalTrack, 'tech')">
-                      @for (card of technicalCards(); track card.key) {
-                        <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
-                      }
-                    </div>
-                  </div>
-                </section>
-
-                <!-- Ecosystem Influence -->
-                <section class="flex flex-col gap-3" data-testid="project-detail-ecosystem-group">
-                  <div class="flex items-center gap-3">
-                    <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
-                    @if (ecosystemBandMeta(); as meta) {
-                      <span [class]="meta.chipClass" data-testid="project-detail-ecosystem-band">
-                        <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
-                          @for (bar of meta.bars; track bar.x) {
-                            <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
-                          }
-                        </svg>
-                        {{ meta.label }}
-                      </span>
-                    }
-                    <div class="flex-1 h-px bg-gray-200"></div>
-                    <div class="flex items-center gap-1">
-                      <button
-                        type="button"
-                        class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                        [disabled]="!ecoArrows().left"
-                        (click)="scrollCards(ecosystemTrack, -1)"
-                        aria-label="Scroll ecosystem cards left">
-                        <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
-                      </button>
-                      <button
-                        type="button"
-                        class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                        [disabled]="!ecoArrows().right"
-                        (click)="scrollCards(ecosystemTrack, 1)"
-                        aria-label="Scroll ecosystem cards right">
-                        <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="overflow-hidden">
-                    <div
-                      #ecosystemTrack
-                      class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                      (scroll)="onTrackScroll(ecosystemTrack, 'eco')">
-                      @for (card of ecosystemCards(); track card.key) {
-                        <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
-                      }
-                    </div>
-                  </div>
-                </section>
+    <!-- B1 Hero -->
+    @if (heroState().status === 'loading') {
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6" data-testid="project-detail-hero-loading">
+        <p-skeleton height="1.5rem" width="16rem" />
+        <p-skeleton height="2.5rem" width="60%" />
+        <p-skeleton height="1.25rem" width="80%" />
+      </div>
+    } @else if (hero(); as h) {
+      <section
+        class="flex flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 md:flex-row md:items-start md:justify-between"
+        data-testid="project-detail-hero">
+        <!-- Left: identity -->
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-3">
+            @if (h.logoUrl) {
+              <img [src]="h.logoUrl" [alt]="h.projectName + ' logo'" class="h-10 w-10 shrink-0 rounded-lg object-contain" />
+            } @else {
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-sm font-semibold text-blue-700" aria-hidden="true">
+                {{ logoInitials() }}
               </div>
             }
-            @case ('pd-leaderboards') {
-              <div
-                role="tabpanel"
-                id="project-detail-tab-panel-pd-leaderboards"
-                class="flex flex-col gap-4"
-                [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
-                <!-- Side-by-side Technical / Ecosystem leaderboards -->
-                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                  <!-- Technical leaderboard -->
-                  <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" data-testid="project-detail-leaderboard-technical">
-                    <div class="mb-5 flex items-start justify-between gap-3">
-                      <div>
-                        <div class="text-base font-bold text-gray-900">Technical Influence Leaderboard</div>
-                      </div>
-                      <div class="relative">
-                        <label for="project-detail-search-technical" class="sr-only">Technical leaderboard search</label>
-                        <lfx-input-text
-                          [form]="searchForm"
-                          control="technical"
-                          id="project-detail-search-technical"
-                          icon="fa-light fa-magnifying-glass"
-                          placeholder="Search"
-                          size="small"
-                          styleClass="w-40"
-                          dataTest="project-detail-search-technical" />
-                      </div>
-                    </div>
-                    @if (technicalBoard().length === 0) {
-                      <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-technical-empty">
-                        {{ techSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
-                      </p>
-                    } @else {
-                      <lfx-table
-                        [value]="technicalBoard()"
-                        [paginator]="true"
-                        [rows]="10"
-                        [rowsPerPageOptions]="[10, 25, 50]"
-                        [showCurrentPageReport]="true"
-                        [showFirstLastIcon]="false"
-                        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-                        paginatorPosition="bottom"
-                        data-testid="project-detail-leaderboard-technical-table">
-                        <ng-template #header>
-                          <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
-                            <th scope="col" class="w-12 px-3 py-3">#</th>
-                            <th scope="col" class="px-3 py-3">Organization</th>
-                            <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ scoreColumnLabel() }}</th>
-                          </tr>
-                        </ng-template>
-                        <ng-template #body let-row>
-                          <tr
-                            class="border-b border-gray-100"
-                            [class.bg-blue-50]="row.isViewingOrg"
-                            [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null">
-                            <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
-                            <td class="px-3 py-3.5">
-                              <div class="flex items-center gap-2.5">
-                                @if (row.orgLogoUrl) {
-                                  <img [src]="row.orgLogoUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
-                                } @else {
-                                  <span
-                                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500"
-                                    aria-hidden="true"
-                                    >{{ row.initials }}</span
-                                  >
-                                }
-                                <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
-                                @if (row.isViewingOrg) {
-                                  <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
-                                }
-                              </div>
-                            </td>
-                            <td class="px-3 py-3.5 text-right">
-                              @if (isActivityMode()) {
-                                <span class="font-semibold text-gray-900">{{ row.activityLabel }}</span>
-                              } @else {
-                                <lfx-tag [value]="row.bandLabel" [severity]="row.bandSeverity" />
-                              }
-                            </td>
-                          </tr>
-                        </ng-template>
-                      </lfx-table>
-                    }
-                  </div>
+            <h1 class="text-2xl font-semibold text-gray-900" data-testid="project-detail-name">{{ h.projectName }}</h1>
+          </div>
+          <p class="text-sm leading-relaxed text-gray-600" data-testid="project-detail-description">
+            {{ h.description }}
+            @if (h.lfxInsightsUrl) {
+              <span class="text-gray-500"> Source: </span>
+              <a
+                [href]="h.lfxInsightsUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700"
+                data-testid="project-detail-source-link">
+                LFX Insights
+                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+              </a>
+            }
+          </p>
+        </div>
 
-                  <!-- Ecosystem leaderboard -->
-                  <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" data-testid="project-detail-leaderboard-ecosystem">
-                    <div class="mb-5 flex items-start justify-between gap-3">
-                      <div>
-                        <div class="text-base font-bold text-gray-900">Ecosystem Influence Leaderboard</div>
-                      </div>
-                      <div class="relative">
-                        <label for="project-detail-search-ecosystem" class="sr-only">Ecosystem leaderboard search</label>
-                        <lfx-input-text
-                          [form]="searchForm"
-                          control="ecosystem"
-                          id="project-detail-search-ecosystem"
-                          icon="fa-light fa-magnifying-glass"
-                          placeholder="Search"
-                          size="small"
-                          styleClass="w-40"
-                          dataTest="project-detail-search-ecosystem" />
-                      </div>
-                    </div>
-                    @if (ecosystemBoard().length === 0) {
-                      <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-ecosystem-empty">
-                        {{ ecoSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
-                      </p>
-                    } @else {
-                      <lfx-table
-                        [value]="ecosystemBoard()"
-                        [paginator]="true"
-                        [rows]="10"
-                        [rowsPerPageOptions]="[10, 25, 50]"
-                        [showCurrentPageReport]="true"
-                        [showFirstLastIcon]="false"
-                        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-                        paginatorPosition="bottom"
-                        data-testid="project-detail-leaderboard-ecosystem-table">
-                        <ng-template #header>
-                          <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
-                            <th scope="col" class="w-12 px-3 py-3">#</th>
-                            <th scope="col" class="px-3 py-3">Organization</th>
-                            <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ scoreColumnLabel() }}</th>
-                          </tr>
-                        </ng-template>
-                        <ng-template #body let-row>
-                          <tr
-                            class="border-b border-gray-100"
-                            [class.bg-blue-50]="row.isViewingOrg"
-                            [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null">
-                            <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
-                            <td class="px-3 py-3.5">
-                              <div class="flex items-center gap-2.5">
-                                @if (row.orgLogoUrl) {
-                                  <img [src]="row.orgLogoUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
-                                } @else {
-                                  <span
-                                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500"
-                                    aria-hidden="true"
-                                    >{{ row.initials }}</span
-                                  >
-                                }
-                                <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
-                                @if (row.isViewingOrg) {
-                                  <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
-                                }
-                              </div>
-                            </td>
-                            <td class="px-3 py-3.5 text-right">
-                              @if (isActivityMode()) {
-                                <span class="font-semibold text-gray-900">{{ row.activityLabel }}</span>
-                              } @else {
-                                <lfx-tag [value]="row.bandLabel" [severity]="row.bandSeverity" />
-                              }
-                            </td>
-                          </tr>
-                        </ng-template>
-                      </lfx-table>
+        <!-- Right: stat tiles -->
+        <div class="flex flex-wrap gap-x-12 gap-y-4 md:shrink-0 md:text-right" data-testid="project-detail-hero-stats">
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-gray-500">First commit</span>
+            <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-first-commit">{{ firstCommitLabel() }}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Software value
+              <i
+                class="fa-light fa-circle-info text-gray-400"
+                pTooltip="Based on Constructive Cost Model (COCOMO)"
+                tooltipPosition="top"
+                aria-hidden="true"></i>
+            </span>
+            <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-software-value">{{ softwareValueLabel() }}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health score</span>
+            @if (healthMeta(); as hm) {
+              <span class="md:ml-auto" data-testid="project-detail-health-badge">
+                <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" [style.backgroundColor]="hm.bg" [style.color]="hm.text">{{
+                  hm.label
+                }}</span>
+              </span>
+            }
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Foundation</span>
+            <span class="text-sm font-semibold text-gray-900" data-testid="project-detail-foundation-pill">{{ h.foundationLabel }}</span>
+          </div>
+        </div>
+      </section>
+    }
+
+    <!-- B2 Filter strip: tabs on left, metric toggle (leaderboards only) + time range on right. Always interactive while blocks load. -->
+    <lfx-org-project-detail-tab-bar
+      [tabs]="tabs"
+      [activeTab]="activeTab()"
+      [timeRange]="timeRange()"
+      [timeRangeOptions]="timeRangeOptions"
+      [metric]="activeTab() === 'pd-leaderboards' ? metric() : null"
+      [metricOptions]="activeTab() === 'pd-leaderboards' ? metricOptions : null"
+      (tabChange)="switchTab($event)"
+      (timeRangeChange)="setTimeRange($event)"
+      (metricChange)="setMetric($event)">
+    </lfx-org-project-detail-tab-bar>
+
+    <!-- Tab content -->
+    @switch (activeTab()) {
+      @case ('pd-influence') {
+        <div
+          role="tabpanel"
+          id="project-detail-tab-panel-pd-influence"
+          class="flex flex-col gap-8"
+          [attr.aria-labelledby]="'project-detail-tab-trigger-pd-influence'">
+          @switch (influenceState().status) {
+            @case ('loading') {
+              <div class="flex flex-col gap-8" data-testid="project-detail-influence-loading">
+                <div class="flex flex-col gap-3">
+                  <p-skeleton height="1.5rem" width="14rem" />
+                  <div class="flex gap-4">
+                    @for (slot of [1, 2, 3, 4, 5]; track slot) {
+                      <p-skeleton height="11rem" width="20rem" />
                     }
                   </div>
                 </div>
-
-                <!-- Stacked Influence Trend -->
-                <section class="flex flex-col gap-3" data-testid="project-detail-trend-group">
-                  <div class="flex items-center gap-3">
-                    <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
-                    <div class="flex-1 h-px bg-gray-200"></div>
-                  </div>
-                  <div class="rounded-lg border border-gray-200 bg-white p-4">
-                    @if (hasStackedTrend()) {
-                      <div class="h-[688px]" data-testid="project-detail-trend-chart">
-                        <lfx-chart type="line" [data]="stackedTrendData()" [options]="stackedTrendOptions" height="100%" />
-                      </div>
-                    } @else {
-                      <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-trend-empty">No data available.</p>
+                <div class="flex flex-col gap-3">
+                  <p-skeleton height="1.5rem" width="14rem" />
+                  <div class="flex gap-4">
+                    @for (slot of [1, 2, 3, 4, 5]; track slot) {
+                      <p-skeleton height="11rem" width="20rem" />
                     }
                   </div>
-                </section>
+                </div>
               </div>
             }
+            @case ('error') {
+              <lfx-empty-state
+                icon="fa-light fa-triangle-exclamation"
+                title="Failed to load influence cards"
+                subtitle="Please try again."
+                ctaLabel="Retry"
+                ctaIcon="fa-light fa-arrow-rotate-left"
+                data-testid="project-detail-influence-error"
+                (ctaClick)="retryInfluence()">
+              </lfx-empty-state>
+            }
+            @default {
+              <!-- B3 Technical Influence -->
+              <section class="flex flex-col gap-3" data-testid="project-detail-technical-group">
+                <div class="flex items-center gap-3">
+                  <h2 class="text-lg font-semibold text-gray-900">Our Technical Influence</h2>
+                  @if (technicalBandMeta(); as meta) {
+                    <span [class]="meta.chipClass" data-testid="project-detail-technical-band">
+                      <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
+                        @for (bar of meta.bars; track bar.x) {
+                          <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
+                        }
+                      </svg>
+                      {{ meta.label }}
+                    </span>
+                  }
+                  <div class="flex-1 h-px bg-gray-200"></div>
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!techArrows().left"
+                      (click)="scrollCards(technicalTrack, -1)"
+                      aria-label="Scroll technical cards left">
+                      <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!techArrows().right"
+                      (click)="scrollCards(technicalTrack, 1)"
+                      aria-label="Scroll technical cards right">
+                      <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="overflow-hidden">
+                  <div
+                    #technicalTrack
+                    class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    (scroll)="onTrackScroll(technicalTrack, 'tech')">
+                    @for (card of technicalCards(); track card.key) {
+                      <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                    }
+                  </div>
+                </div>
+              </section>
+
+              <!-- B4 Ecosystem Influence -->
+              <section class="flex flex-col gap-3" data-testid="project-detail-ecosystem-group">
+                <div class="flex items-center gap-3">
+                  <h2 class="text-lg font-semibold text-gray-900">Our Ecosystem Influence</h2>
+                  @if (ecosystemBandMeta(); as meta) {
+                    <span [class]="meta.chipClass" data-testid="project-detail-ecosystem-band">
+                      <svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true" class="shrink-0">
+                        @for (bar of meta.bars; track bar.x) {
+                          <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="2.6" [attr.height]="bar.h" rx="0.5" [class]="bar.fillClass" />
+                        }
+                      </svg>
+                      {{ meta.label }}
+                    </span>
+                  }
+                  <div class="flex-1 h-px bg-gray-200"></div>
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!ecoArrows().left"
+                      (click)="scrollCards(ecosystemTrack, -1)"
+                      aria-label="Scroll ecosystem cards left">
+                      <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white p-0 text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      [disabled]="!ecoArrows().right"
+                      (click)="scrollCards(ecosystemTrack, 1)"
+                      aria-label="Scroll ecosystem cards right">
+                      <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="overflow-hidden">
+                  <div
+                    #ecosystemTrack
+                    class="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    (scroll)="onTrackScroll(ecosystemTrack, 'eco')">
+                    @for (card of ecosystemCards(); track card.key) {
+                      <ng-container [ngTemplateOutlet]="influenceCard" [ngTemplateOutletContext]="{ $implicit: card }"></ng-container>
+                    } @empty {
+                      <div
+                        class="flex w-full items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-sm text-gray-500"
+                        data-testid="project-detail-ecosystem-empty">
+                        No ecosystem influence data for this project yet.
+                      </div>
+                    }
+                  </div>
+                </div>
+              </section>
+            }
           }
-        }
+        </div>
+      }
+      @case ('pd-leaderboards') {
+        <div
+          role="tabpanel"
+          id="project-detail-tab-panel-pd-leaderboards"
+          class="flex flex-col gap-4"
+          [attr.aria-labelledby]="'project-detail-tab-trigger-pd-leaderboards'">
+          <!-- Side-by-side Technical / Ecosystem leaderboards — each an independent block -->
+          <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <!-- B7 Technical leaderboard -->
+            <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" data-testid="project-detail-leaderboard-technical">
+              <div class="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-base font-bold text-gray-900">{{ technicalBoardTitle() }}</div>
+                </div>
+                <div class="relative">
+                  <label for="project-detail-search-technical" class="sr-only">Technical leaderboard search</label>
+                  <lfx-input-text
+                    [form]="searchForm"
+                    control="technical"
+                    id="project-detail-search-technical"
+                    icon="fa-light fa-magnifying-glass"
+                    placeholder="Search"
+                    size="small"
+                    styleClass="w-40"
+                    dataTest="project-detail-search-technical" />
+                </div>
+              </div>
+              @switch (techBoardState().status) {
+                @case ('loading') {
+                  <div class="flex flex-col gap-2" data-testid="project-detail-leaderboard-technical-loading">
+                    @for (slot of [1, 2, 3, 4, 5, 6]; track slot) {
+                      <p-skeleton height="2.5rem" width="100%" />
+                    }
+                  </div>
+                }
+                @case ('error') {
+                  <lfx-empty-state
+                    icon="fa-light fa-triangle-exclamation"
+                    title="Failed to load leaderboard"
+                    subtitle="Please try again."
+                    ctaLabel="Retry"
+                    ctaIcon="fa-light fa-arrow-rotate-left"
+                    data-testid="project-detail-leaderboard-technical-error"
+                    (ctaClick)="retryTechnicalBoard()">
+                  </lfx-empty-state>
+                }
+                @default {
+                  @if (technicalBoard().length === 0) {
+                    <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-technical-empty">
+                      {{ techSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
+                    </p>
+                  } @else {
+                    <lfx-table
+                      [value]="technicalBoard()"
+                      [paginator]="true"
+                      [rows]="10"
+                      [rowsPerPageOptions]="[10, 25, 50]"
+                      [showCurrentPageReport]="true"
+                      [showFirstLastIcon]="false"
+                      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+                      paginatorPosition="bottom"
+                      data-testid="project-detail-leaderboard-technical-table">
+                      <ng-template #header>
+                        <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
+                          <th scope="col" class="w-12 px-3 py-3">#</th>
+                          <th scope="col" class="px-3 py-3">Organization</th>
+                          <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ technicalColumnLabel() }}</th>
+                        </tr>
+                      </ng-template>
+                      <ng-template #body let-row>
+                        <tr
+                          class="border-b border-gray-100"
+                          [class.bg-blue-50]="row.isViewingOrg"
+                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null">
+                          <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
+                          <td class="px-3 py-3.5">
+                            <div class="flex items-center gap-2.5">
+                              @if (row.orgLogoUrl) {
+                                <img [src]="row.orgLogoUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
+                              } @else {
+                                <span
+                                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500"
+                                  aria-hidden="true"
+                                  >{{ row.initials }}</span
+                                >
+                              }
+                              <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
+                              @if (row.isViewingOrg) {
+                                <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
+                              }
+                            </div>
+                          </td>
+                          <td class="px-3 py-3.5 text-right">
+                            @if (isActivityMode()) {
+                              <span class="font-semibold text-gray-900">{{ row.activityLabel }}</span>
+                            } @else {
+                              <lfx-tag [value]="row.bandLabel" [severity]="row.bandSeverity" />
+                            }
+                          </td>
+                        </tr>
+                      </ng-template>
+                    </lfx-table>
+                  }
+                }
+              }
+            </div>
+
+            <!-- B8 Ecosystem leaderboard -->
+            <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" data-testid="project-detail-leaderboard-ecosystem">
+              <div class="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-base font-bold text-gray-900">{{ ecosystemBoardTitle() }}</div>
+                  @if (ecosystemBoardNonLfMarker(); as marker) {
+                    <span [class]="marker.chipClass + ' mt-2 inline-flex'" data-testid="project-detail-leaderboard-ecosystem-non-lf">
+                      {{ marker.label }}
+                    </span>
+                  }
+                </div>
+                <div class="relative">
+                  <label for="project-detail-search-ecosystem" class="sr-only">Ecosystem leaderboard search</label>
+                  <lfx-input-text
+                    [form]="searchForm"
+                    control="ecosystem"
+                    id="project-detail-search-ecosystem"
+                    icon="fa-light fa-magnifying-glass"
+                    placeholder="Search"
+                    size="small"
+                    styleClass="w-40"
+                    dataTest="project-detail-search-ecosystem" />
+                </div>
+              </div>
+              @switch (ecoBoardState().status) {
+                @case ('loading') {
+                  <div class="flex flex-col gap-2" data-testid="project-detail-leaderboard-ecosystem-loading">
+                    @for (slot of [1, 2, 3, 4, 5, 6]; track slot) {
+                      <p-skeleton height="2.5rem" width="100%" />
+                    }
+                  </div>
+                }
+                @case ('error') {
+                  <lfx-empty-state
+                    icon="fa-light fa-triangle-exclamation"
+                    title="Failed to load leaderboard"
+                    subtitle="Please try again."
+                    ctaLabel="Retry"
+                    ctaIcon="fa-light fa-arrow-rotate-left"
+                    data-testid="project-detail-leaderboard-ecosystem-error"
+                    (ctaClick)="retryEcosystemBoard()">
+                  </lfx-empty-state>
+                }
+                @default {
+                  @if (ecosystemBoard().length === 0) {
+                    <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-ecosystem-empty">
+                      {{ ecoSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
+                    </p>
+                  } @else {
+                    <lfx-table
+                      [value]="ecosystemBoard()"
+                      [paginator]="true"
+                      [rows]="10"
+                      [rowsPerPageOptions]="[10, 25, 50]"
+                      [showCurrentPageReport]="true"
+                      [showFirstLastIcon]="false"
+                      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+                      paginatorPosition="bottom"
+                      data-testid="project-detail-leaderboard-ecosystem-table">
+                      <ng-template #header>
+                        <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
+                          <th scope="col" class="w-12 px-3 py-3">#</th>
+                          <th scope="col" class="px-3 py-3">Organization</th>
+                          <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ ecosystemColumnLabel() }}</th>
+                        </tr>
+                      </ng-template>
+                      <ng-template #body let-row>
+                        <tr
+                          class="border-b border-gray-100"
+                          [class.bg-blue-50]="row.isViewingOrg"
+                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null">
+                          <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
+                          <td class="px-3 py-3.5">
+                            <div class="flex items-center gap-2.5">
+                              @if (row.orgLogoUrl) {
+                                <img [src]="row.orgLogoUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-contain" aria-hidden="true" />
+                              } @else {
+                                <span
+                                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500"
+                                  aria-hidden="true"
+                                  >{{ row.initials }}</span
+                                >
+                              }
+                              <span class="text-gray-900" [class.font-semibold]="row.isViewingOrg">{{ row.orgName }}</span>
+                              @if (row.isViewingOrg) {
+                                <span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">You</span>
+                              }
+                            </div>
+                          </td>
+                          <td class="px-3 py-3.5 text-right">
+                            @if (isActivityMode()) {
+                              <span class="font-semibold text-gray-900">{{ row.activityLabel }}</span>
+                            } @else {
+                              <lfx-tag [value]="row.bandLabel" [severity]="row.bandSeverity" />
+                            }
+                          </td>
+                        </tr>
+                      </ng-template>
+                    </lfx-table>
+                  }
+                }
+              }
+            </div>
+          </div>
+
+          <!-- B6 Influence Trend -->
+          <section class="flex flex-col gap-3" data-testid="project-detail-trend-group">
+            <div class="flex items-center gap-3">
+              <h2 class="text-lg font-semibold text-gray-900">Influence Trend</h2>
+              <div class="flex-1 h-px bg-gray-200"></div>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+              @switch (trendState().status) {
+                @case ('loading') {
+                  <p-skeleton height="16rem" width="100%" data-testid="project-detail-trend-loading" />
+                }
+                @case ('error') {
+                  <lfx-empty-state
+                    icon="fa-light fa-triangle-exclamation"
+                    title="Failed to load influence trend"
+                    subtitle="Please try again."
+                    ctaLabel="Retry"
+                    ctaIcon="fa-light fa-arrow-rotate-left"
+                    data-testid="project-detail-trend-error"
+                    (ctaClick)="retryTrend()">
+                  </lfx-empty-state>
+                }
+                @default {
+                  @if (hasStackedTrend()) {
+                    <div class="h-[688px]" data-testid="project-detail-trend-chart">
+                      <lfx-chart type="line" [data]="stackedTrendData()" [options]="stackedTrendOptions" height="100%" />
+                    </div>
+                  } @else {
+                    <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-trend-empty">No data available.</p>
+                  }
+                }
+              }
+            </div>
+          </section>
+        </div>
       }
     }
   }
@@ -447,14 +547,14 @@
   </button>
 </ng-template>
 
-<!-- Card detail drawer — always in DOM so PrimeNG can animate open/close correctly -->
+<!-- B5 Card detail drawer — always in DOM so PrimeNG can animate open/close correctly -->
 <p-drawer
   [visible]="drawerOpen()"
   position="right"
   [modal]="true"
   styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
   data-testid="influence-card-detail-drawer"
-  (visibleChange)="drawerOpen.set($event)">
+  (visibleChange)="onDrawerVisibleChange($event)">
   <ng-template #header>
     @if (selectedCard(); as card) {
       <div class="flex w-full items-start gap-3">
@@ -476,70 +576,109 @@
         <p class="mt-1 text-sm text-gray-500">{{ card.caption.prefix }}{{ card.caption.emphasis }}{{ card.caption.suffix }}</p>
       </div>
 
-      @if (cardDetail(); as detail) {
-        <!-- Definition table -->
-        <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-definition-table">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
-                <th scope="col" class="w-1/2 px-4 py-3">Definition</th>
-                <th scope="col" class="px-4 py-3">
-                  {{ detail.definition.totalType === 'average' ? 'Average for this project' : 'Total count for this project' }}
-                </th>
-                <th scope="col" class="px-4 py-3">Data source</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="bg-white">
-                <td class="px-4 py-3 text-gray-700">{{ detail.definition.text }}</td>
-                <td class="px-4 py-3 font-semibold text-gray-900">{{ detail.definition.total }}</td>
-                <td class="px-4 py-3 text-gray-500">{{ detail.definition.dataSource }}</td>
-              </tr>
-              <tr class="border-t border-gray-50">
-                <td colspan="3" class="px-4 py-2 text-xs text-gray-400">Showing 1 of 1 row</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Card-specific data table -->
-        @if (detail.rows.length > 0) {
-          <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-detail-table">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
-                  @for (col of detail.columns; track col) {
-                    <th scope="col" class="px-4 py-3">{{ col }}</th>
-                  }
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                @for (dataRow of detail.rows; track rowKey(dataRow)) {
-                  <tr class="bg-white transition-colors hover:bg-gray-50">
-                    @for (cell of dataRow.cells; track $index) {
-                      <td class="px-4 py-2.5">
-                        @if (cell.person; as person) {
-                          <div class="flex items-center gap-2">
-                            <span
-                              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700"
-                              aria-hidden="true">
-                              {{ person.initials }}
-                            </span>
-                            <span class="font-medium text-blue-600">{{ person.name }}</span>
-                          </div>
-                        } @else {
-                          <span class="text-gray-700">{{ cell.text }}</span>
-                        }
-                      </td>
-                    }
-                  </tr>
-                }
-              </tbody>
-            </table>
-            <div class="border-t border-gray-50 px-4 py-2 text-xs text-gray-400">Showing {{ detail.rows.length }} of {{ detail.rows.length }} rows</div>
+      @switch (drawerState().status) {
+        @case ('loading') {
+          <div class="flex flex-col gap-3" data-testid="influence-card-detail-loading">
+            <p-skeleton height="3rem" width="100%" />
+            <p-skeleton height="2rem" width="100%" />
+            <p-skeleton height="2rem" width="100%" />
           </div>
-        } @else {
-          <div class="rounded-xl border border-gray-100 bg-gray-50 px-5 py-6 text-center text-sm text-gray-400">No data available for this metric.</div>
+        }
+        @case ('error') {
+          <lfx-empty-state
+            icon="fa-light fa-triangle-exclamation"
+            title="Failed to load details"
+            subtitle="Please try again."
+            ctaLabel="Retry"
+            ctaIcon="fa-light fa-arrow-rotate-left"
+            data-testid="influence-card-detail-error"
+            (ctaClick)="retryDrawer()">
+          </lfx-empty-state>
+        }
+        @default {
+          @if (cardDetail(); as detail) {
+            <!-- Definition table -->
+            <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-definition-table">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
+                    <th scope="col" class="w-1/2 px-4 py-3">Definition</th>
+                    <th scope="col" class="px-4 py-3">
+                      {{ detail.definition.totalType === 'average' ? 'Average for this project' : 'Total count for this project' }}
+                    </th>
+                    <th scope="col" class="px-4 py-3">Data source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="bg-white">
+                    <td class="px-4 py-3 text-gray-700">{{ detail.definition.text }}</td>
+                    <td class="px-4 py-3 font-semibold text-gray-900">{{ detail.definition.total }}</td>
+                    <td class="px-4 py-3 text-gray-500">{{ detail.definition.dataSource }}</td>
+                  </tr>
+                  <tr class="border-t border-gray-50">
+                    <td colspan="3" class="px-4 py-2 text-xs text-gray-400">Showing 1 of 1 row</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Card-specific data table (lazy, server-side paginated; dynamic columns + person/text cells) -->
+            @if (rosterTotal() > 0 || rosterLoading()) {
+              <div class="overflow-hidden rounded-xl border border-gray-100" data-testid="influence-card-detail-table">
+                <lfx-table
+                  [value]="rosterRows()"
+                  [lazy]="true"
+                  [lazyLoadOnInit]="false"
+                  [paginator]="true"
+                  [rows]="rosterRowsPerPage()"
+                  [first]="rosterFirst()"
+                  [totalRecords]="rosterTotal()"
+                  [loading]="rosterLoading()"
+                  [rowsPerPageOptions]="[10, 25, 50]"
+                  [showCurrentPageReport]="true"
+                  [showFirstLastIcon]="false"
+                  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+                  paginatorPosition="bottom"
+                  (onLazyLoad)="onRosterLazyLoad($event)">
+                  <ng-template #header>
+                    <tr class="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500">
+                      @for (col of detail.columns; track col) {
+                        <th scope="col" class="px-4 py-3">{{ col }}</th>
+                      }
+                    </tr>
+                  </ng-template>
+                  <ng-template #body let-dataRow>
+                    <tr class="border-b border-gray-50 bg-white transition-colors hover:bg-gray-50">
+                      @for (cell of dataRow.cells; track $index) {
+                        <td class="px-4 py-2.5">
+                          @if (cell.person; as person) {
+                            <div class="flex items-center gap-2">
+                              @if (person.avatarUrl) {
+                                <img [src]="person.avatarUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-cover" aria-hidden="true" />
+                              } @else {
+                                <span
+                                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700"
+                                  aria-hidden="true">
+                                  {{ person.initials }}
+                                </span>
+                              }
+                              <span class="font-medium text-blue-600">{{ person.name }}</span>
+                            </div>
+                          } @else {
+                            <span class="text-gray-700">{{ cell.text }}</span>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  </ng-template>
+                </lfx-table>
+              </div>
+            } @else {
+              <div class="rounded-xl border border-gray-100 bg-gray-50 px-5 py-6 text-center text-sm text-gray-400">No data available for this metric.</div>
+            }
+          } @else {
+            <div class="rounded-xl border border-gray-100 bg-gray-50 px-5 py-6 text-center text-sm text-gray-400">No data available for this metric.</div>
+          }
         }
       }
     </div>

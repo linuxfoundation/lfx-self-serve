@@ -2,21 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6" data-testid="performance-marketing-tab">
-  <!-- Header + funnel filter -->
-  <div class="flex flex-col gap-3">
-    <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-      <div class="flex flex-col gap-0.5">
-        <h3 class="text-base font-semibold text-gray-900">Performance marketing</h3>
-        <p class="text-xs text-gray-500">Paid campaign metrics · {{ foundationName() || 'All foundations' }}</p>
-      </div>
-    </div>
-    <div class="flex items-center gap-3">
-      <span class="text-xs font-semibold tracking-wide text-gray-500">FUNNEL</span>
-      <lfx-filter-pills
-        [options]="funnelOptions"
-        [selectedFilter]="selectedFunnel()"
-        (filterChange)="onFunnelChange($event)"
-        data-testid="performance-marketing-funnel-pills" />
+  <!-- Header -->
+  <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+    <div class="flex flex-col gap-0.5">
+      <h3 class="text-base font-semibold text-gray-900">Performance marketing</h3>
+      <p class="text-xs text-gray-500">Paid campaign metrics · {{ foundationName() || 'All foundations' }}</p>
     </div>
   </div>
 
@@ -47,7 +37,6 @@
           <!-- Table header -->
           <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
             <span class="w-40 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PROJECT</span>
-            <span class="w-20 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">STAGE</span>
             <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SPEND</span>
             <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
             <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
@@ -56,8 +45,8 @@
           </div>
 
           <!-- Rows -->
-          @for (row of projectRows(); track row.funnelStage + '|' + row.name) {
-            @let projectKey = row.funnelStage + '|' + row.name;
+          @for (row of projectRows(); track row.name) {
+            @let projectKey = row.name;
             @let projectExpanded = expandedProjects().has(projectKey);
             <div
               class="flex items-center gap-3 border-b border-gray-100 py-2.5 transition-colors"
@@ -78,7 +67,6 @@
                 }
                 <span class="truncate text-xs font-medium text-gray-700">{{ row.name }}</span>
               </div>
-              <span class="w-20 truncate text-[11px] text-gray-500" role="cell">{{ row.funnelStage }}</span>
               <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.spend }}</span>
               <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.revenue }}</span>
               <span class="w-16 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
@@ -99,7 +87,6 @@
                   [attr.data-testid]="'campaign-row-' + projectKey + '-' + $index">
                   <!-- w-40 (parent) minus pl-6 (indent) = 8.5rem -->
                   <span class="w-[8.5rem] truncate text-[11px] text-gray-500" role="cell">{{ campaign.campaignName }}</span>
-                  <span class="w-20 truncate text-[11px] text-gray-400" role="cell">{{ campaign.funnelStage }}</span>
                   <span class="w-24 text-right text-[11px] text-gray-500" role="cell">{{ campaign.spend }}</span>
                   <span class="w-24 text-right text-[11px] text-gray-500" role="cell">{{ campaign.revenue }}</span>
                   <span class="w-16 text-right text-[11px] text-gray-500" role="cell">{{ campaign.roas }}</span>

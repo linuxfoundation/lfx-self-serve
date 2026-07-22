@@ -198,11 +198,6 @@ export class EmailCtrDrawerComponent {
     this.expandedProjects.set(next);
   }
 
-  protected formatFunnelLabel(stage: string): string {
-    const labels: Record<string, string> = { BoFU: 'BOTTOM', MoFU: 'MIDDLE', ToFU: 'TOP', ToFU2: 'TOP', Unknown: '' };
-    return labels[stage] ?? stage;
-  }
-
   protected toggleChannel(channel: string): void {
     const current = this.expandedChannels();
     const next = new Set(current);
@@ -257,7 +252,7 @@ export class EmailCtrDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getEmailCtr(foundationSlug).pipe(
+          this.analyticsService.getEmailCtr(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -350,8 +345,13 @@ export class EmailCtrDrawerComponent {
       }
 
       if (paidActions.length === 0 && paid.monthlyData.length >= 3) {
+        // The series is calendar zero-filled — all three months must be
+        // ACTIVE (spend or impressions), or a trailing no-campaign month
+        // fabricates a "3 consecutive months" decline (spend gap, not a
+        // trend). An active month with zero impressions is a real data point.
         const recent3 = paid.monthlyData.slice(-3);
-        if (recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
+        const active3 = recent3.map((v, i) => v > 0 || (paid.monthlySpend?.[paid.monthlyData.length - 3 + i] ?? 0) > 0);
+        if (active3.every(Boolean) && recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
           paidActions.push({
             title: 'Investigate declining paid impressions',
             description: 'Impressions dropped for 3 consecutive months — review budget pacing and bid strategy',
@@ -371,16 +371,29 @@ export class EmailCtrDrawerComponent {
       }
 
       // --- Email — pick highest-priority ---
-      if (email.changePercentage < 0) {
+      // Use the true MoM figure: with a trailing (last-6) period, changePercentage
+      // compares the window's blended CTR against its own monthly average and sits
+      // near zero by construction.
+      const emailCtrMom = email.momChangePercentage;
+      if (emailCtrMom !== null && emailCtrMom < 0) {
         emailActions.push({
           title: 'Test new call-to-action formats',
-          description: `Email CTR dropped ${Math.abs(email.changePercentage).toFixed(1)}% — experiment with button placement and copy`,
-          priority: email.changePercentage < -10 ? 'high' : 'medium',
+          description: `Email CTR dropped ${Math.abs(emailCtrMom).toFixed(1)}% MoM — experiment with button placement and copy`,
+          priority: emailCtrMom < -10 ? 'high' : 'medium',
           actionType: 'optimize',
         });
       }
 
-      if (emailActions.length === 0 && email.monthlySends.length >= 2 && email.monthlyOpens.length >= 2) {
+      // Open-rate comparison requires sends in BOTH months: the series is
+      // calendar zero-filled, and a no-send month has no open rate — treating
+      // it as 0% fabricates an "Open rate declined" action.
+      if (
+        emailActions.length === 0 &&
+        email.monthlySends.length >= 2 &&
+        email.monthlyOpens.length >= 2 &&
+        email.monthlySends[email.monthlySends.length - 1] > 0 &&
+        email.monthlySends[email.monthlySends.length - 2] > 0
+      ) {
         const latestOpenRate =
           email.monthlySends[email.monthlySends.length - 1] > 0
             ? (email.monthlyOpens[email.monthlyOpens.length - 1] / email.monthlySends[email.monthlySends.length - 1]) * 100
@@ -511,7 +524,11 @@ export class EmailCtrDrawerComponent {
       if (paidInsights.length === 0 && paid.totalReach > 0 && paid.monthlyData.length >= 2) {
         const prev = paid.monthlyData[paid.monthlyData.length - 2];
         const curr = paid.monthlyData[paid.monthlyData.length - 1];
-        if (prev > 0) {
+        // Both months must be ACTIVE (spend or impressions): a zero-filled
+        // no-campaign month reads as ~-100% MoM — a spend gap, not a drop —
+        // while an active month with zero impressions is a real data point.
+        const currActive = curr > 0 || (paid.monthlySpend?.[paid.monthlyData.length - 1] ?? 0) > 0;
+        if (prev > 0 && currActive) {
           const paidMom = ((curr - prev) / prev) * 100;
           if (paidMom > 20) {
             paidInsights.push({ text: `Paid impressions surged ${paidMom.toFixed(0)}% MoM — ${formatNumber(curr)} last month`, type: 'driver' });
@@ -522,15 +539,19 @@ export class EmailCtrDrawerComponent {
       }
 
       // --- Email — pick 1 best ---
-      if (email.currentCtr > 0 || email.monthlyData.length > 0) {
-        if (email.changePercentage > 10) {
-          emailInsights.push({ text: `Email CTR grew ${email.changePercentage.toFixed(1)}% vs 6-month avg — strong improvement`, type: 'driver' });
-        } else if (email.changePercentage < -10) {
-          emailInsights.push({ text: `Email CTR dropped ${Math.abs(email.changePercentage).toFixed(1)}% vs 6-month avg`, type: 'warning' });
-        } else if (email.changePercentage !== 0) {
+      // momChangePercentage is the true MoM (unaffected by the trailing window);
+      // changePercentage under last-6 is the blended-vs-average figure and is
+      // structurally near zero.
+      const emailCtrMomInsight = email.momChangePercentage;
+      if ((email.currentCtr > 0 || email.monthlyData.length > 0) && emailCtrMomInsight !== null) {
+        if (emailCtrMomInsight > 10) {
+          emailInsights.push({ text: `Email CTR grew ${emailCtrMomInsight.toFixed(1)}% MoM — strong improvement`, type: 'driver' });
+        } else if (emailCtrMomInsight < -10) {
+          emailInsights.push({ text: `Email CTR dropped ${Math.abs(emailCtrMomInsight).toFixed(1)}% MoM`, type: 'warning' });
+        } else if (emailCtrMomInsight !== 0) {
           emailInsights.push({
-            text: `Email CTR ${email.changePercentage > 0 ? 'up' : 'down'} ${Math.abs(email.changePercentage).toFixed(1)}% vs 6-month avg`,
-            type: email.changePercentage > 0 ? 'info' : 'warning',
+            text: `Email CTR ${emailCtrMomInsight > 0 ? 'up' : 'down'} ${Math.abs(emailCtrMomInsight).toFixed(1)}% MoM`,
+            type: emailCtrMomInsight > 0 ? 'info' : 'warning',
           });
         }
       }
@@ -578,7 +599,7 @@ export class EmailCtrDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.paidDataResolved.set(false)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getSocialReach(foundationSlug).pipe(
+          this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.paidDataResolved.set(true)),
             catchError(() => {
               this.paidDataResolved.set(true);
@@ -603,7 +624,7 @@ export class EmailCtrDrawerComponent {
         map(([, slug]) => slug),
         tap(() => this.attributionDataResolved.set(false)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getMarketingAttribution(foundationSlug).pipe(
+          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.attributionDataResolved.set(true)),
             catchError(() => {
               this.attributionDataResolved.set(true);
