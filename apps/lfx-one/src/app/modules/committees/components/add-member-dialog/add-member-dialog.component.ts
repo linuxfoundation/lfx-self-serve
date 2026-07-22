@@ -18,6 +18,7 @@ import {
   CommitteeInvite,
   CommitteeInviteResult,
   CommitteeMember,
+  CreateCommitteeInviteRequest,
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
   UserSearchResult,
@@ -72,6 +73,12 @@ export class AddMemberDialogComponent {
   private resolvedOrganizationName = '';
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
+  /**
+   * Collect-only mode: instead of sending invites immediately (POST /invites), validate + build
+   * the invite payloads and return them to the caller to stage. Used by the create-group wizard so
+   * invites are only sent when the wizard is completed — cancelling sends nothing (LFXV2-2606).
+   */
+  public readonly collectOnly: boolean = this.config.data?.collectOnly ?? false;
   /** True when the committee requires organization on accept — shows an optional default org field. */
   public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   private readonly existingMemberEmails = new Set<string>(
@@ -174,19 +181,29 @@ export class AddMemberDialogComponent {
   public onSubmit(): void {
     const committeeId = this.committee?.uid;
     const emails = this.categorized().toInvite;
-    if (!committeeId || emails.length === 0) {
+    // Immediate mode POSTs to a committee, so it needs one; collect mode only stages payloads.
+    if ((!this.collectOnly && !committeeId) || emails.length === 0) {
       return;
     }
 
+    // Disable the submit button up front — org resolution below is async, and leaving it enabled
+    // during that window allows a double-click that fires a second resolve → invite chain.
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
-    const fanOut = (organization: CommitteeOrganizationReference | null | undefined): void => {
+    const complete = (organization: CommitteeOrganizationReference | null | undefined): void => {
+      // Collect-only: return the built invites for the caller to stage; do not send them now.
+      if (this.collectOnly) {
+        const staged: CreateCommitteeInviteRequest[] = emails.map((email) => ({ invitee_email: email, role, organization: organization ?? null }));
+        this.dialogRef.close(staged);
+        return;
+      }
+
       from(emails)
         .pipe(
           mergeMap(
             (email): Observable<CommitteeInviteResult> =>
-              this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role, organization }).pipe(
+              this.committeeService.createCommitteeInvite(committeeId!, { invitee_email: email, role, organization }).pipe(
                 map(() => ({ email, success: true })),
                 catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
               ),
@@ -213,13 +230,13 @@ export class AddMemberDialogComponent {
             this.resolvedOrganizationName = result.name;
             this.form.patchValue({ organization_id: result.id || null, organization: result.name });
           }
-          fanOut(buildCommitteeOrganizationPayload(this.organizationFormValue()));
+          complete(buildCommitteeOrganizationPayload(this.organizationFormValue()));
         },
       });
       return;
     }
 
-    fanOut(undefined);
+    complete(undefined);
   }
 
   private organizationFormValue(): {
