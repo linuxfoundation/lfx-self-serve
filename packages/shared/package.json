@@ -47,6 +47,7 @@
   "scripts": {
     "build": "tsc",
     "build:development": "tsc",
+    "build:dev-cluster": "tsc",
     "build:production": "tsc",
     "build:staging": "tsc",
     "watch": "tsc --watch",
