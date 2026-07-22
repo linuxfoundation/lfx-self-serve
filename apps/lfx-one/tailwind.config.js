@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
-import { AVATAR_COLORS, GRID_COLS_CLASS, GRID_DIVIDER_CLASS, lfxColors, lfxFontSizes } from '@lfx-one/shared';
+import { AVATAR_COLORS, DELTA_DIRECTION_TEXT_CLASS, GRID_COLS_CLASS, GRID_DIVIDER_CLASS, lfxColors, lfxFontSizes, ORG_MEETINGS_KPI_ICON_CLASS } from '@lfx-one/shared';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
@@ -21,6 +21,10 @@ export default {
     // scanned directly since they never appear as literal strings inside `content`.
     ...Object.values(GRID_COLS_CLASS).flatMap((classes) => classes.split(' ')),
     ...Object.values(GRID_DIVIDER_CLASS).flatMap((classes) => classes.split(' ')),
+    // Org Lens meetings — KPI card icon tints and delta text colors (ORG_MEETINGS_KPI_ICON_CLASS /
+    // DELTA_DIRECTION_TEXT_CLASS in @lfx-one/shared, not scanned here)
+    ...Object.values(ORG_MEETINGS_KPI_ICON_CLASS).flatMap((classes) => classes.split(' ')),
+    ...Object.values(DELTA_DIRECTION_TEXT_CLASS),
     // Meeting summary modal — dynamic section border/icon colors (applied via [ngClass])
     'border-l-blue-400',
     'border-l-emerald-400',
