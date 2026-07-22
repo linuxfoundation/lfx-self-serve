@@ -136,6 +136,11 @@ export class SidebarNavService {
           icon: 'fa-light fa-folder-open',
           routerLink: '/documents',
         },
+        {
+          label: 'My Newsletters',
+          icon: 'fa-light fa-newspaper',
+          routerLink: '/newsletters/my-newsletters',
+        },
       ],
     },
     {

@@ -18,6 +18,12 @@ export const NEWSLETTER_ROUTES: Routes = [
     data: { preload: false },
   },
   {
+    path: 'my-newsletters',
+    canActivate: [authGuard],
+    loadComponent: () => import('./my-newsletters/my-newsletters-list.component').then((m) => m.MyNewslettersListComponent),
+    data: { preload: false },
+  },
+  {
     path: 'create',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-manage/newsletter-manage.component').then((m) => m.NewsletterManageComponent),

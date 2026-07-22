@@ -4,6 +4,7 @@
 import { NEWSLETTER_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
+  MyNewsletterArchiveResponse,
   Newsletter,
   NewsletterAnalytics,
   NewsletterListParams,
@@ -159,5 +160,35 @@ export class NewsletterServiceClient {
       `/projects/${projectUid}/newsletter-opt-outs/${encodeURIComponent(optOutId)}`,
       'DELETE'
     );
+  }
+
+  /**
+   * List recipient-facing archive of sent newsletters for committees the user belongs to.
+   * The service verifies membership server-side (via NATS + email matching).
+   * Paginated via keyset cursor.
+   */
+  public async archiveList(req: Request, committeeUids: string[], pageToken?: string): Promise<MyNewsletterArchiveResponse> {
+    const query: Record<string, string> = {
+      committee_uids: committeeUids.join(','),
+    };
+    if (pageToken) {
+      query['page_token'] = pageToken;
+    }
+    return this.microserviceProxy.proxyRequest<MyNewsletterArchiveResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      '/newsletters/archive',
+      'GET',
+      Object.keys(query).length ? query : undefined
+    );
+  }
+
+  /**
+   * Fetch a specific newsletter from the recipient archive.
+   * Returns full newsletter with body_html.
+   * Verifies membership server-side; returns 403 if not a member, 404 if missing/not sent.
+   */
+  public async archiveDetail(req: Request, newsletterUid: string): Promise<Newsletter> {
+    return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/newsletters/archive/${encodeURIComponent(newsletterUid)}`, 'GET');
   }
 }
