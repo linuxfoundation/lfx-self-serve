@@ -64,6 +64,7 @@ import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
@@ -76,6 +77,11 @@ if (process.env['NODE_ENV'] !== 'production') {
     }
   }
 }
+
+// Redirect console.error/warn/log through Pino so all output in production is
+// single-line structured JSON. Must run before any middleware or Angular SSR
+// renders so Angular component console calls are captured.
+initializeServerConsoleOverride();
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
