@@ -213,7 +213,7 @@ export class FoundationHealthComponent {
       // distribution and the drawer's full chart never disagree on which buckets exist.
       const data = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => ({
         category: PROJECT_HEALTH_CHART_CATEGORY_LABEL[category],
-        count: distribution[category],
+        count: distribution[category] ?? 0,
         color: PROJECT_HEALTH_CHART_CATEGORY_COLOR[category],
       }));
 

@@ -207,7 +207,7 @@ export class ProjectHealthScoresDrawerComponent {
         labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
         datasets: [
           {
-            data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => d[category]),
+            data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => d[category] ?? 0),
             backgroundColor: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]),
             borderRadius: 4,
             borderSkipped: 'start',
