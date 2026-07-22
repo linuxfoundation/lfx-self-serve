@@ -410,8 +410,8 @@ AppComponent
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
         ├── /surveys             → SurveysDashboardComponent (lazy loaded)
-        ├── /settings            → SettingsDashboardComponent (lazy loaded)
-        └── /profile             → ProfileOverviewComponent (lazy loaded)
+        ├── /settings            → redirects by lens (settingsLensRedirectGuard): Me → /profile/settings; foundation/project → lens-prefixed settings
+        └── /profile             → ProfileLayoutComponent (lazy loaded; tabs incl. settings → AccountSettingsComponent, transactions)
 
     Standalone routes (outside MainLayoutComponent):
     ├── /meetings/not-found      → MeetingNotFoundComponent

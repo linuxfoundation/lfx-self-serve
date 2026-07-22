@@ -45,7 +45,8 @@ All routes are flat children of `MainLayoutComponent` (no nested `project/:slug`
     { path: 'mailing-lists', loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then(m => m.MAILING_LIST_ROUTES) },
     { path: 'votes', loadChildren: () => import('./modules/votes/votes.routes').then(m => m.VOTE_ROUTES) },
     { path: 'surveys', loadChildren: () => import('./modules/surveys/surveys.routes').then(m => m.SURVEY_ROUTES) },
-    { path: 'settings', loadChildren: () => import('./modules/settings/settings.routes').then(m => m.SETTINGS_ROUTES) },
+    // `/settings` redirects by active lens (settingsLensRedirectGuard): Me → /profile/settings; foundation/project → lens-prefixed settings
+    { path: 'settings', canActivate: [settingsLensRedirectGuard], loadChildren: () => import('./modules/settings/settings.routes').then(m => m.SETTINGS_ROUTES) },
     { path: 'profile', loadChildren: () => import('./modules/profile/profile.routes').then(m => m.PROFILE_ROUTES) },
   ],
 }
