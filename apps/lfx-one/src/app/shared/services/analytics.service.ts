@@ -57,6 +57,7 @@ import {
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
+  EventDetailResponse,
   EventRosterResponse,
   EventsOverviewSummaryResponse,
   EventsSummaryResponse,
@@ -1175,6 +1176,14 @@ export class AnalyticsService {
       this.eventRosterCache.set(key, req$);
     }
     return this.eventRosterCache.get(key)!;
+  }
+
+  /**
+   * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
+   * Emits null on error so the drawer shows its empty state.
+   */
+  public getEventDetail(eventId: string): Observable<EventDetailResponse | null> {
+    return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId } }).pipe(catchError(() => of(null)));
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {
