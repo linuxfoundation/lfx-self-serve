@@ -155,14 +155,24 @@ export class MailingListManageComponent {
           this.router.navigate(['/mailing-lists']);
         },
         error: (error: Error) => {
-          const isServiceError = isCreatingService && error?.message?.includes('service');
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: isServiceError
-              ? 'Failed to create mailing list service for this project'
-              : `Failed to ${this.isEditMode() ? 'update' : 'create'} mailing list`,
-          });
+          const httpStatus = (error as any).status as number | undefined;
+          const isDuplicateName = !this.isEditMode() && httpStatus === 409;
+
+          if (isDuplicateName) {
+            const groupNameControl = this.form().get('group_name');
+            groupNameControl?.setErrors({ ...groupNameControl.errors, duplicateName: true });
+            groupNameControl?.markAsTouched();
+            this.internalStep.set(1);
+          } else {
+            const isServiceError = isCreatingService && error?.message?.includes('service');
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: isServiceError
+                ? 'Failed to create mailing list service for this project'
+                : `Failed to ${this.isEditMode() ? 'update' : 'create'} mailing list`,
+            });
+          }
           this.submitting.set(false);
         },
       });
