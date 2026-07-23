@@ -4,94 +4,222 @@
 <p-drawer
   [(visible)]="visible"
   position="right"
-  styleClass="xl:!w-[45%] lg:!w-[55%] md:!w-[70%] sm:!w-[90%] !w-full"
-  [showCloseIcon]="true"
-  [dismissible]="true"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   data-testid="event-detail-drawer">
+  <!-- Header -->
   <ng-template #header>
-    <div class="flex flex-col gap-0.5">
-      <h3 class="text-base font-semibold text-gray-900">{{ detail()?.eventName || 'Event detail' }}</h3>
-      @if (detail()) {
-        <p class="text-xs text-gray-500">
-          {{ dateLabel() }}
-          @if (detail()?.country) {
-            · {{ detail()?.country }}
-          }
-        </p>
-      }
-    </div>
-  </ng-template>
-
-  @if (loading()) {
-    <div class="flex flex-col gap-4" data-testid="event-detail-skeleton">
-      <div class="h-20 animate-pulse rounded-lg bg-gray-100"></div>
-      <div class="h-20 animate-pulse rounded-lg bg-gray-100"></div>
-      <div class="h-40 animate-pulse rounded-lg bg-gray-100"></div>
-    </div>
-  } @else if (detail(); as d) {
-    <div class="flex flex-col gap-5">
-      <!-- Registrations vs goal -->
-      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="event-detail-registrations">
-        <div class="flex items-baseline justify-between">
-          <span class="text-xs font-medium text-gray-500">Registrations</span>
-          @if (vsLastYearLabel(); as vs) {
-            <span class="text-[11px] font-medium text-gray-400">{{ vs }}</span>
-          }
-        </div>
-        <div class="flex items-baseline gap-2">
-          <span class="text-2xl font-semibold text-gray-900 tabular-nums">{{ num(d.registrations.actual) }}</span>
-          @if (d.registrations.goal > 0) {
-            <span class="text-sm text-gray-400 tabular-nums">/ {{ num(d.registrations.goal) }} goal</span>
-          }
-        </div>
-        @if (regProgress() !== null) {
-          <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
-            <div
-              class="h-full rounded-full"
-              [ngClass]="{
-                'bg-emerald-500': regProgress()! >= 80,
-                'bg-amber-500': regProgress()! >= 50 && regProgress()! < 80,
-                'bg-red-400': regProgress()! < 50,
-              }"
-              [style.width.%]="regProgress()"></div>
+    <div class="flex w-full items-start justify-between gap-4" data-testid="event-detail-drawer-header">
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="event-detail-drawer-title">{{ detail()?.eventName || 'Event detail' }}</h2>
+        @if (detail(); as d) {
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-gray-500">
+            <span>{{ dateLabel() }}</span>
+            @if (locationLabel()) {
+              <span aria-hidden="true">·</span>
+              <span><i class="fa-light fa-location-dot mr-1" aria-hidden="true"></i>{{ locationLabel() }}</span>
+            }
+            @if (d.status) {
+              <span aria-hidden="true">·</span>
+              <span>{{ d.status }}</span>
+            }
           </div>
         }
       </div>
+      <lfx-button
+        icon="fa-light fa-xmark"
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        ariaLabel="Close panel"
+        (onClick)="onClose()"
+        data-testid="event-detail-drawer-close" />
+    </div>
+  </ng-template>
 
-      <!-- Sponsorship vs goal -->
-      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="event-detail-sponsorship">
-        <span class="text-xs font-medium text-gray-500">Sponsorship revenue</span>
-        <div class="flex items-baseline gap-2">
-          <span class="text-2xl font-semibold text-gray-900 tabular-nums">{{ money(d.sponsorshipRevenue.actual) }}</span>
-          @if (d.sponsorshipRevenue.goal > 0) {
-            <span class="text-sm text-gray-400 tabular-nums">/ {{ money(d.sponsorshipRevenue.goal) }} goal</span>
-          }
+  <!-- Content -->
+  @if (loading()) {
+    <div class="flex flex-col gap-6 pb-2" data-testid="event-detail-skeleton">
+      <div class="h-28 animate-pulse rounded-lg bg-gray-100"></div>
+      <div class="h-24 animate-pulse rounded-lg bg-gray-100"></div>
+      <div class="h-40 animate-pulse rounded-lg bg-gray-100"></div>
+    </div>
+  } @else if (detail(); as d) {
+    <div class="flex flex-col gap-6 pb-2" data-testid="event-detail-drawer-content">
+      <!-- Headline stats -->
+      <div class="flex flex-col gap-4 sm:flex-row" data-testid="event-detail-stats">
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Registrations</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ num(d.registrations.actual) }}</span>
+            @if (d.registrations.goal > 0) {
+              <span class="text-xs text-gray-400">of {{ num(d.registrations.goal) }} goal</span>
+            } @else {
+              <span class="text-xs text-gray-400">no goal set</span>
+            }
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Sponsorship revenue</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ money(d.sponsorshipRevenue.actual) }}</span>
+            @if (d.sponsorshipRevenue.goal > 0) {
+              <span class="text-xs text-gray-400">of {{ money(d.sponsorshipRevenue.goal) }} goal</span>
+            } @else {
+              <span class="text-xs text-gray-400">no goal set</span>
+            }
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">vs Last year</span>
+            @if (vsLastYearLabel(); as vs) {
+              <span
+                class="text-2xl font-semibold"
+                [class.text-green-600]="(d.vsLastYear ?? 1) > 1"
+                [class.text-red-600]="(d.vsLastYear ?? 1) < 1"
+                [class.text-gray-900]="(d.vsLastYear ?? 1) === 1"
+                >{{ vs }}</span
+              >
+              <span class="text-xs text-gray-400">registration pace</span>
+            } @else {
+              <span class="text-2xl font-semibold text-gray-400">—</span>
+              <span class="text-xs text-gray-400">no prior year</span>
+            }
+          </div>
+        </lfx-card>
+      </div>
+
+      <!-- Registration pacing -->
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-pacing">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Registration pacing</h3>
+            @if (behindGoalLabel(); as behind) {
+              <p class="text-sm text-gray-600">{{ behind }}</p>
+            }
+          </div>
+          <lfx-tag [value]="paceRatingLabel()" [severity]="paceSeverity()" [rounded]="true" />
         </div>
-        @if (sponProgress() !== null) {
-          <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
-            <div
-              class="h-full rounded-full"
-              [ngClass]="{
-                'bg-emerald-500': sponProgress()! >= 80,
-                'bg-amber-500': sponProgress()! >= 50 && sponProgress()! < 80,
-                'bg-red-400': sponProgress()! < 50,
-              }"
-              [style.width.%]="sponProgress()"></div>
+
+        @if (d.registrations.goal > 0 && regProgress() !== null) {
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-baseline justify-between text-sm">
+              <span class="font-semibold text-gray-900">{{ num(d.registrations.actual) }}</span>
+              <span class="text-gray-400">{{ num(d.registrations.goal) }} goal</span>
+            </div>
+            <div class="h-2.5 overflow-hidden rounded-full bg-gray-100">
+              <div
+                class="h-full rounded-full"
+                [ngClass]="{
+                  'bg-emerald-500': regProgress()! >= 80,
+                  'bg-amber-500': regProgress()! >= 50 && regProgress()! < 80,
+                  'bg-red-400': regProgress()! < 50,
+                }"
+                [style.width.%]="regProgress()"></div>
+            </div>
           </div>
         }
+
+        @if (d.pacing.available) {
+          <!-- Headline: current / last year / predicted, mirroring PCC -->
+          <div class="flex flex-wrap gap-8">
+            <div class="flex flex-col">
+              <span class="text-xl font-semibold text-blue-600">{{ num(d.pacing.current ?? 0) }}</span>
+              <span class="text-xs text-gray-400">Current</span>
+            </div>
+            @if (d.hasPriorYear) {
+              <div class="flex flex-col">
+                <span class="text-xl font-semibold text-gray-500">{{ num(d.pacing.priorYear ?? 0) }}</span>
+                <span class="text-xs text-gray-400">Last year</span>
+              </div>
+            }
+            <div class="flex flex-col">
+              <span class="text-xl font-semibold text-violet-600">{{ num(d.pacing.predictedAvg ?? 0) }}</span>
+              <span class="text-xs text-gray-400">
+                Predicted
+                @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null) {
+                  <span class="text-gray-400">({{ num(d.pacing.predictedLow) }}–{{ num(d.pacing.predictedHigh) }})</span>
+                }
+              </span>
+            </div>
+            @if (d.pacing.daysLeft !== null) {
+              <div class="ml-auto flex flex-col text-right">
+                <span class="text-xl font-semibold text-gray-900">{{ num(d.pacing.daysLeft) }}</span>
+                <span class="text-xs text-gray-400">Days left</span>
+              </div>
+            }
+          </div>
+
+          <!-- Daily cumulative registration curve -->
+          @if (hasPacingChart()) {
+            <div class="h-[240px]" data-testid="event-detail-pacing-chart">
+              <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
+            </div>
+          }
+        } @else {
+          <p class="text-sm text-gray-500">
+            Day-by-day pacing prediction is coming to this view. For now, see the live registration curve and prediction in PCC.
+          </p>
+        }
+
+        @if (d.eventUrl) {
+          <a
+            [href]="d.eventUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex w-fit items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
+            data-testid="event-detail-pcc-link">
+            <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            View registration pacing &amp; prediction in PCC
+          </a>
+        }
+      </div>
+
+      <!-- Revenue detail -->
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-revenue">
+        <h3 class="text-sm font-semibold text-gray-900">Revenue</h3>
+        <div class="flex flex-col gap-4 sm:flex-row">
+          <div class="flex flex-1 flex-col gap-1">
+            <span class="text-sm text-gray-500">Registration revenue</span>
+            @if (d.registrationRevenue.actual !== null) {
+              <span class="text-xl font-semibold text-gray-900">{{ money(d.registrationRevenue.actual) }}</span>
+            } @else {
+              <span class="text-xl font-semibold text-gray-300">—</span>
+            }
+            @if (d.registrationRevenue.goal > 0) {
+              <span class="text-xs text-gray-400">Goal {{ money(d.registrationRevenue.goal) }}</span>
+            }
+          </div>
+          <div class="flex flex-1 flex-col gap-1">
+            <span class="text-sm text-gray-500">Sponsorship revenue</span>
+            <span class="text-xl font-semibold text-gray-900">{{ money(d.sponsorshipRevenue.actual) }}</span>
+            <div class="flex items-center gap-2">
+              @if (d.sponsorshipRevenue.goal > 0) {
+                <span class="text-xs text-gray-400">Goal {{ money(d.sponsorshipRevenue.goal) }}</span>
+              }
+              @if (sponProgress() !== null) {
+                <span class="text-xs font-medium text-gray-500">{{ sponProgress() }}%</span>
+              }
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Sponsorship by tier -->
       @if (d.sponsorshipTiers.length) {
-        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="event-detail-tiers">
-          <span class="text-xs font-medium text-gray-500">Sponsorship by tier</span>
-          <div class="flex flex-col gap-2.5">
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-tiers">
+          <h3 class="text-sm font-semibold text-gray-900">Sponsorship by tier</h3>
+          <div class="flex flex-col gap-0">
             @for (tier of d.sponsorshipTiers; track tier.tier) {
-              <div class="flex items-center justify-between gap-3" [attr.data-testid]="'event-detail-tier-' + tier.tier">
-                <span class="truncate text-xs font-medium text-gray-700">{{ tier.tier || 'Other' }}</span>
-                <div class="flex items-baseline gap-3">
-                  <span class="text-[11px] text-gray-400">{{ tier.sponsorCount }} sponsor{{ tier.sponsorCount === 1 ? '' : 's' }}</span>
-                  <span class="w-20 text-right text-xs font-semibold text-gray-900 tabular-nums">{{ money(tier.revenue) }}</span>
+              <div
+                class="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5 last:border-b-0"
+                [attr.data-testid]="'event-detail-tier-' + tier.tier">
+                <span class="truncate text-sm font-medium text-gray-700">{{ tier.tier || 'Other' }}</span>
+                <div class="flex items-baseline gap-4">
+                  <span class="text-xs text-gray-400">{{ tier.sponsorCount }} sponsor{{ tier.sponsorCount === 1 ? '' : 's' }}</span>
+                  <span class="w-24 text-right text-sm font-semibold text-gray-900">{{ money(tier.revenue) }}</span>
                 </div>
               </div>
             }
@@ -99,18 +227,32 @@
         </div>
       }
 
-      <!-- Pacing lives in PCC (prediction service); deep-link out -->
-      @if (d.eventUrl) {
-        <a
-          [href]="d.eventUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-          data-testid="event-detail-pcc-link">
-          <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-          View registration pacing &amp; prediction in PCC
-        </a>
-      }
+      <!-- Where registrations come from -->
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-channels">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Where registrations come from</h3>
+          <p class="text-sm text-gray-600">Web traffic attributed to each marketing channel.</p>
+        </div>
+        @if (d.channels.length) {
+          <div class="flex flex-col gap-3">
+            @for (channel of d.channels; track channel.channel) {
+              <div class="flex items-center gap-3" [attr.data-testid]="'event-detail-channel-' + channel.channel">
+                <span class="w-36 truncate text-sm font-medium text-gray-700">{{ channel.channel }}</span>
+                <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                  <div class="h-full rounded-full bg-blue-500" [style.width.%]="channel.sharePercent"></div>
+                </div>
+                <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ num(channel.sessions) }}</span>
+                <span class="w-12 text-right text-xs text-gray-400">{{ channel.sharePercent }}%</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="text-sm text-gray-500">
+            No tracked registration traffic yet.
+            <span class="font-medium text-gray-700">Email and paid are the fastest levers to drive early registrations.</span>
+          </p>
+        }
+      </div>
     </div>
   } @else {
     <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="event-detail-empty">

@@ -709,6 +709,51 @@ export interface EventSponsorshipTier {
   sponsorCount: number;
 }
 
+/** One marketing-channel row for an event: how registrations/traffic are attributed. */
+export interface EventChannelAttribution {
+  /** Consolidated channel label (Organic Search, Email / HubSpot, Social, …). */
+  channel: string;
+  sessions: number;
+  uniqueVisitors: number;
+  /** Linear-attributed revenue in dollars. */
+  revenue: number;
+  /** Share of the event's total sessions, 0–100. */
+  sharePercent: number;
+}
+
+/**
+ * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
+ * Mirrors PCC's EventPredictionDrilldown grain.
+ */
+export interface EventPacingPoint {
+  daysToEvent: number;
+  /** Current-year cumulative registrations (null for future days not yet reached). */
+  current: number | null;
+  /** Prior-year cumulative registrations aligned by days-to-event. */
+  priorYear: number | null;
+  predictedAvg: number | null;
+  predictedLow: number | null;
+  predictedHigh: number | null;
+}
+
+/**
+ * Per-event registration-pacing summary + daily curve. Populated once the pacing prediction
+ * models land (MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]); until then `available` is
+ * false, `points` is empty, and the UI shows a placeholder that links to PCC. Headline numbers
+ * mirror PCC's EventPrediction; `points` mirrors EventPredictionDrilldown.
+ */
+export interface EventPacing {
+  available: boolean;
+  daysLeft: number | null;
+  current: number | null;
+  priorYear: number | null;
+  predictedAvg: number | null;
+  predictedLow: number | null;
+  predictedHigh: number | null;
+  /** The day-by-day cumulative curve; empty until the drilldown model lands. */
+  points: EventPacingPoint[];
+}
+
 /**
  * Per-event detail for the roster drawer, sourced from
  * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (event meta + goals) and
@@ -719,15 +764,27 @@ export interface EventDetailResponse {
   eventId: string;
   eventName: string;
   startDate: string;
+  isPast: boolean;
+  /** Full venue string, e.g. "InterContinental Grand Seoul Parnas"; '' when unknown. */
+  location: string;
+  city: string;
   country: string;
+  /** Event lifecycle status from the source (Active, Archived, …). */
+  status: string;
   eventUrl: string;
   registrations: { actual: number; goal: number };
+  /** Registration revenue; actual is null until the source exposes it (goal is known). */
+  registrationRevenue: { actual: number | null; goal: number };
   sponsorshipRevenue: { actual: number; goal: number };
   /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
   vsLastYear: number | null;
+  /** Whether a prior-year edition of this event exists to compare against. */
+  hasPriorYear: boolean;
   compScore: EventCompScore;
   cfpStatus: string;
   sponsorshipTiers: EventSponsorshipTier[];
+  channels: EventChannelAttribution[];
+  pacing: EventPacing;
 }
 
 /**
