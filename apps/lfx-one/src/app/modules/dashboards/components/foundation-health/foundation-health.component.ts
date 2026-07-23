@@ -207,7 +207,7 @@ export class FoundationHealthComponent {
 
   private initializeHealthScoreDistribution() {
     return computed(() => {
-      const distribution = this.healthScoresData();
+      const distribution = this.reconciledHealthScoresData();
 
       // Mirrors the drawer's chart bars (leading Unscored + 5 scored) so the card's mini
       // distribution and the drawer's full chart never disagree on which buckets exist.

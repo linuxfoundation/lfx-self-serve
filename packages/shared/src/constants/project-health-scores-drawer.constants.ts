@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
-import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthStatusFilterOption } from '../interfaces';
+import type {
+  FoundationHealthScore,
+  FoundationHealthScoreDistributionResponse,
+  HealthStatusFilterOption,
+  HealthStatusFilterValue,
+} from '../interfaces';
 
 export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
 
@@ -23,7 +28,7 @@ export const PROJECT_HEALTH_SCORE_CATEGORIES: readonly FoundationHealthScore[] =
 
 // Chart bar order including the additive "unscored" bucket (dbt's COALESCE(..., 'Unscored')
 // row) as a leading bar, so every table row -- scored or not -- maps to a chart bar.
-export const PROJECT_HEALTH_CHART_CATEGORIES: readonly (FoundationHealthScore | 'unscored')[] = ['unscored', ...PROJECT_HEALTH_SCORE_CATEGORIES];
+export const PROJECT_HEALTH_CHART_CATEGORIES: readonly HealthStatusFilterValue[] = ['unscored', ...PROJECT_HEALTH_SCORE_CATEGORIES];
 
 // Display label per health category (table badge + chart axis / tooltip title).
 export const PROJECT_HEALTH_CATEGORY_LABEL: Record<FoundationHealthScore, string> = {
@@ -65,14 +70,14 @@ export const PROJECT_HEALTH_UNSCORED_BADGE: { bg: string; text: string; label: s
 };
 
 // Chart axis / tooltip label per bar, including the leading "Unscored" bar.
-export const PROJECT_HEALTH_CHART_CATEGORY_LABEL: Record<FoundationHealthScore | 'unscored', string> = {
+export const PROJECT_HEALTH_CHART_CATEGORY_LABEL: Record<HealthStatusFilterValue, string> = {
   ...PROJECT_HEALTH_CATEGORY_LABEL,
   unscored: PROJECT_HEALTH_UNSCORED_BADGE.label,
 };
 
 // Chart bar fill color per bar, including a neutral gray for the leading "Unscored" bar
 // (matches the gray scale used by the Unscored badge/filter pill).
-export const PROJECT_HEALTH_CHART_CATEGORY_COLOR: Record<FoundationHealthScore | 'unscored', string> = {
+export const PROJECT_HEALTH_CHART_CATEGORY_COLOR: Record<HealthStatusFilterValue, string> = {
   ...PROJECT_HEALTH_CATEGORY_CHART_COLOR,
   unscored: lfxColors.gray[400],
 };

@@ -170,6 +170,8 @@ export interface ProjectHealthDistribution {
   unsteady: number;
   /** Number of projects with critical status */
   critical: number;
+  /** Number of projects with no health score (dbt's Unscored bucket) */
+  unscored: number;
 }
 
 /**
