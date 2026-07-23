@@ -84,10 +84,11 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 ### DevOps & Deployment
 
-1. **Deployment** — Chart source: `charts/lfx-self-serve/README.md` (in the repo root, outside this docs site). Deployed values, environment promotion, image tags, and ApplicationSets: `lfx-v2-argocd` (`values/dev/lfx-v2-ui.yaml`, staging, prod).
-2. **[Deploy Preview](../../CONTRIBUTING.md#deploy-preview)** — Add the `deploy-preview` label to any open PR to trigger a label → build → ArgoCD → isolated namespace → URL comment workflow on the shared dev cluster.
-3. **[Logging & Monitoring](./backend/logging-monitoring.md)** - Production monitoring
-4. **[Error Handling](./backend/error-handling-architecture.md)** - Error management
+1. **[Deployment Architecture](./deployment.md)** — Full CI/CD pipeline: build environments, main-branch dev deployment, PR branch previews, and the release (tag → staging/prod) flow. Start here.
+2. **[Deploy Preview](../../CONTRIBUTING.md#deploy-preview)** — Step-by-step guide: how to add the `deploy-preview` label, what the workflow does, cleanup, and troubleshooting.
+3. **[Helm Chart](../../charts/lfx-self-serve/README.md)** — Chart parameter reference, values schema, and local installation. Deployed values, environment promotion, and ApplicationSets live in the `lfx-v2-argocd` sibling repo.
+4. **[Logging & Monitoring](./backend/logging-monitoring.md)** - Production monitoring
+5. **[Error Handling](./backend/error-handling-architecture.md)** - Error management
 
 ## 🔧 Technology Stack Summary
 
