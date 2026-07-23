@@ -64,6 +64,53 @@ removal notice and ArgoCD tears down the namespace.
 Full workflow details — including prerequisites, step-by-step instructions,
 and troubleshooting — are in [CONTRIBUTING.md § Deploy Preview](../../CONTRIBUTING.md#deploy-preview).
 
+#### Orchestration diagram
+
+The label triggers two parallel tracks that must both complete before the URL
+is reachable. Bot comment arrival (~5 min) signals the image is ready; the URL
+becomes HTTPS-accessible once cert-manager finishes the Let's Encrypt challenge
+(~5–10 min total).
+
+```mermaid
+sequenceDiagram
+    actor Dev as Developer
+    participant GH as GitHub PR
+    participant CI as GitHub Actions
+    participant GHCR as GHCR
+    participant AS as ArgoCD ApplicationSet
+    participant K8s as Kubernetes
+    participant CM as cert-manager
+    participant LE as Let's Encrypt
+    participant Traefik as Traefik
+    participant EDNS as external-dns
+
+    Dev->>GH: Add deploy-preview label
+
+    par Image build track
+        GH->>CI: Trigger docker-build-pr.yml
+        CI->>CI: Build image (BUILD_ENV=dev-cluster)
+        CI->>GHCR: Push image tagged ui-pr-N
+        CI->>GH: Post deployment URL comment
+    and ArgoCD provisioning track
+        GH-->>AS: pullRequest generator detects label
+        AS->>K8s: Create Application ui-pr-N
+        K8s->>K8s: Create namespace ui-pr-N
+        K8s->>K8s: Apply Helm chart (Deployment, Service, Ingress)
+        K8s->>CM: Ingress annotation cert-manager.io/cluster-issuer detected
+        CM->>CM: Create Certificate CR (ui-pr-N-tls)
+        CM->>LE: ACME HTTP-01 challenge
+        LE-->>CM: Challenge validated
+        CM->>K8s: Store TLS cert in Secret ui-pr-N-tls
+        K8s->>Traefik: Load TLS cert, expose HTTPS endpoint
+        K8s->>EDNS: Ingress created
+        EDNS->>EDNS: Create DNS record ui-pr-N.dev.v2.cluster.linuxfound.info
+    end
+
+    Note over Dev,EDNS: URL live once both tracks complete (~5–10 min)
+    Dev->>Traefik: HTTPS request to ui-pr-N.dev.v2.cluster.linuxfound.info
+    Traefik->>K8s: Route to lfx-self-serve pod
+```
+
 ### Release — staging and production
 
 **Trigger:** push of a `v*` tag (e.g. `v1.0.42`)

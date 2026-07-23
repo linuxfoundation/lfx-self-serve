@@ -10,8 +10,9 @@ integration testing, stakeholder review, or debugging. Deployments are
 triggered by adding the `deploy-preview` label to a pull request — no manual
 `kubectl` or `helm` commands are required.
 
-For a high-level description of the CI/CD pipeline, see
-[Deployment Architecture](../architecture/deployment.md).
+For a high-level description of the CI/CD pipeline and an orchestration
+diagram showing the full label → image build → ArgoCD → cert-manager → DNS
+flow, see [Deployment Architecture](../architecture/deployment.md#orchestration-diagram).
 
 ---
 
