@@ -13,6 +13,7 @@
       [form]="form"
       nameControl="organization"
       domainControl="organization_url"
+      idControl="organization_id"
       [domainRequired]="isNewOrg()"
       placeholder="Search for organization..."
       styleClass="w-full"
@@ -23,6 +24,12 @@
     </lfx-organization-search>
     @if (organizationControl.errors?.['trimmedRequired'] && organizationControl.touched) {
       <p class="text-xs text-red-600">Organization is required for this group</p>
+    }
+    @if (showOrgWarning()) {
+      <p class="text-xs text-red-600" role="alert" data-testid="accept-invite-org-warning">
+        <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+        Select an organization from the results, or click "I want to create" to provide a website URL.
+      </p>
     }
   </div>
 </div>
@@ -41,7 +48,7 @@
     severity="info"
     size="small"
     [loading]="submitting()"
-    [disabled]="submitting()"
+    [disabled]="!canConfirm()"
     (onClick)="onConfirm()"
     data-testid="accept-invite-organization-confirm"></lfx-button>
 </div>
