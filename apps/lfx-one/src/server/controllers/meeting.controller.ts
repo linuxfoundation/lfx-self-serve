@@ -23,8 +23,9 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { addInvitedStatusToMeeting, enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { AccessCheckService } from '../services/access-check.service';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
@@ -43,6 +44,7 @@ export class MeetingController {
   private committeeService: CommitteeService = new CommitteeService();
   private natsService: NatsService = new NatsService();
   private userService: UserService = new UserService();
+  private accessCheckService: AccessCheckService = new AccessCheckService();
 
   /**
    * GET /meetings
@@ -70,7 +72,12 @@ export class MeetingController {
         this.userService.getUserRegisteredMeetingIds(req, userEmail),
       ]);
 
-      const result = meetings.map((m) => ({ ...m, invited: registeredMeetingIds.has(m.id) }));
+      // List cards never surface the host key — strip it from every item unconditionally.
+      const result = meetings.map((m) => {
+        const meeting = { ...m, invited: registeredMeetingIds.has(m.id) };
+        stripHostKey(meeting);
+        return meeting;
+      });
 
       logger.success(req, 'get_meetings', startTime, {
         meeting_count: result.length,
@@ -160,6 +167,10 @@ export class MeetingController {
         meetingWithInvitedStatus.committee_members_count = 0;
       }
 
+      // Gate the Zoom host key: expose it only to organizer / project writer / committee writer,
+      // stripped for everyone else. Runs on the authenticated user's token (active on this route).
+      await applyHostKeyVisibility(req, this.accessCheckService, meetingWithInvitedStatus);
+
       // The ITX detail payload omits created_by — join back to the live v1_meeting index so
       // the organizer name can be shown. Single meeting keyed on its own UID.
       const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meetingWithInvitedStatus], (m) => m.id);
@@ -196,6 +207,9 @@ export class MeetingController {
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
+
+      // The create echo never carries the host key — the creator reads it via the detail endpoint.
+      stripHostKey(meeting);
 
       // Send the new meeting data to the client
       res.status(201).json(meeting);
