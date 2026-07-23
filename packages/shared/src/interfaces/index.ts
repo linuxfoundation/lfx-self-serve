@@ -269,3 +269,6 @@ export * from './entity-project-context.interface';
 
 // Create artifact quick-link interfaces (rail "Create" button + dialog)
 export * from './create-artifact.interface';
+
+// Org Lens Meetings insights (LFXV2-2735) interfaces
+export * from './org-meetings-insights.interface';

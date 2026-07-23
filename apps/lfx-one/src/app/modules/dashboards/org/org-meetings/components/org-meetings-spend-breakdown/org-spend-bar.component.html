@@ -1,0 +1,55 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'org-spend-bar-' + titleSlug()">
+  <div class="mb-3.5 flex items-center gap-2">
+    <i [class]="icon()" class="text-base text-blue-600" aria-hidden="true"></i>
+    <span class="text-sm font-medium text-gray-900">{{ title() }}</span>
+  </div>
+  <div class="flex flex-col gap-3">
+    @for (segment of rows(); track segment.label) {
+      <div
+        class="relative rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+        [attr.tabindex]="segment.others?.length ? 0 : null"
+        [class.mt-1]="segment.isOther"
+        [class.border-t]="segment.isOther"
+        [class.border-dashed]="segment.isOther"
+        [class.border-gray-200]="segment.isOther"
+        [class.pt-3]="segment.isOther"
+        (mouseenter)="showOthersPopover($event, segment.others)"
+        (mouseleave)="scheduleHideOthersPopover()"
+        (focus)="showOthersPopover($event, segment.others)"
+        (blur)="scheduleHideOthersPopover()">
+        <div class="mb-1 flex items-center justify-between gap-2.5">
+          <span class="text-xs" [class]="segment.isOther ? 'text-gray-500' : 'text-gray-900'">{{ segment.label }}</span>
+          <span class="text-xs font-medium" [class]="segment.isOther ? 'text-gray-500' : 'text-gray-900'">{{ segment.pct }}%</span>
+        </div>
+        <div class="h-1.5 w-full overflow-hidden rounded-full" [class]="segment.isOther ? 'bg-gray-100' : 'bg-blue-100'">
+          <div class="h-1.5 rounded-full" [class]="segment.isOther ? 'bg-gray-300' : 'bg-blue-600'" [style.width.%]="segment.pct"></div>
+        </div>
+      </div>
+    }
+  </div>
+  <p-popover #othersPopover appendTo="body" [attr.data-testid]="'org-spend-bar-' + titleSlug() + '-others-popover'">
+    <div class="flex flex-col gap-2" (mouseenter)="cancelHideOthersPopover()" (mouseleave)="scheduleHideOthersPopover()">
+      <p class="text-xs font-medium text-gray-500">Breakdown</p>
+      <!-- tabindex makes this the focus target PrimeNG's `focusOnShow` moves focus into, and the
+           focus/blur handlers keep the popover open while focus (not just the pointer) is inside it,
+           so keyboard users can Tab in and scroll with arrow keys instead of losing the panel on trigger blur. -->
+      <div
+        class="flex max-h-64 w-56 flex-col gap-1.5 overflow-y-auto focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+        tabindex="0"
+        role="group"
+        aria-label="Breakdown of other values"
+        (focus)="cancelHideOthersPopover()"
+        (blur)="scheduleHideOthersPopover()">
+        @for (item of othersPopoverItems(); track item.label) {
+          <div class="flex items-center justify-between gap-2 text-xs">
+            <span class="text-gray-700">{{ item.label }}</span>
+            <span class="font-medium text-gray-900">{{ item.pct }}%</span>
+          </div>
+        }
+      </div>
+    </div>
+  </p-popover>
+</div>

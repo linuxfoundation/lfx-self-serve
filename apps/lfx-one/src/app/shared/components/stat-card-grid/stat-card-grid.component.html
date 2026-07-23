@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
-  <div class="grid w-full grid-cols-1 divide-y divide-gray-200 sm:divide-y-0 sm:divide-x" [class]="columns() === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+  <div class="grid w-full grid-cols-1" [class]="gridColsClass() + ' ' + gridDividerClass()">
     @for (card of cards(); track card.label) {
       <div class="flex items-center gap-3 p-4" [attr.data-testid]="'stat-card-' + card.label">
         <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
@@ -17,6 +17,12 @@
           <p class="text-sm font-normal text-gray-900">{{ card.label }}</p>
           @if (card.subLine) {
             <p class="text-xs text-gray-400">{{ card.subLine }}</p>
+          }
+          @if (card.delta && !loading()) {
+            <p class="flex items-center gap-1 text-xs font-medium" [class]="deltaTextClass[card.delta.direction]">
+              <i [class]="deltaIcon[card.delta.direction]" aria-hidden="true"></i>
+              {{ card.delta.label }}
+            </p>
           }
         </div>
       </div>

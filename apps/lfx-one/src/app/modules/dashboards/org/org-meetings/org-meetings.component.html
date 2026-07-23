@@ -1,15 +1,54 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
+
 <main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-meetings-page">
-  <header class="flex flex-col gap-1">
-    <h1 class="font-display font-light text-2xl">Meetings</h1>
-    <p class="text-sm text-gray-500">A view of the meetings your organization is participating in — coming soon.</p>
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="org-meetings-header">
+    <div class="flex flex-col gap-2">
+      <h1 class="font-display font-light text-2xl" data-testid="org-meetings-title">Meetings</h1>
+      <p class="text-sm text-gray-500" data-testid="org-meetings-subtitle">How your organization's employees engage across Linux Foundation projects.</p>
+    </div>
+    <lfx-org-meetings-time-range [(value)]="timeRange" />
   </header>
 
-  <div class="flex flex-col items-center justify-center min-h-[50vh] text-center gap-6" data-testid="org-meetings-coming-soon">
-    <div class="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center">
-      <i class="fa-light fa-video text-4xl text-blue-500" aria-hidden="true"></i>
-    </div>
-    <lfx-tag value="Coming soon" severity="contrast" [rounded]="true" />
-  </div>
+  @if (hasNoOrgAccess()) {
+    <section
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+      data-testid="org-meetings-no-access-state">
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+        <i class="fa-light fa-lock text-2xl" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-base font-semibold text-gray-900" data-testid="org-meetings-no-access-title">Organization Lens is not available</h2>
+      <p class="max-w-md text-sm text-gray-600" data-testid="org-meetings-no-access-description">
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please contact us.
+      </p>
+    </section>
+  } @else if (!loaded()) {
+    <!-- Pre-settled state — render lightweight skeletons so the page doesn't flash the no-company
+         empty-state during the race between the org-selector boot fetches and the first valid
+         selectedAccount, mirroring org-overview.component.html. -->
+    <section class="flex flex-col gap-4" data-testid="org-meetings-loading">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="p-4 bg-white border border-gray-200 rounded-lg flex flex-col gap-2">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="3rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+    </section>
+  } @else if (!hasCompany()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="Select a company via Impersonate to view meeting insights."
+      data-testid="org-meetings-no-company-empty-state" />
+  } @else {
+    <lfx-org-meetings-kpi-cards [timeRange]="timeRange()" />
+
+    <lfx-org-meetings-spend-breakdown [timeRange]="timeRange()" />
+
+    <!-- Employee leaderboard deferred to a future PR (LFXV2-2735 follow-up) -->
+
+    <lfx-org-meetings-influence [timeRange]="timeRange()" />
+  }
 </main>

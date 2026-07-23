@@ -34,22 +34,49 @@ async function seedSelectedOrgCookie(page: Page): Promise<void> {
   ]);
 }
 
-// Stub only what the org lens needs to render (personas + account context). The Org
-// Lens meetings BFF endpoints were retired (LFXV2-1902) — there is nothing
-// meetings-specific left to stub.
-async function stubOrgLensContext(page: Page): Promise<void> {
+// Stub what the org lens needs to render: personas + account context (page content is demo-data
+// only, LFXV2-2735 — no meetings-insights BFF endpoint exists yet), plus role-grants/nav-items so
+// `OrgMeetingsComponent.loaded()`/`hasNoOrgAccess()` (which gate on both services) settle
+// deterministically instead of hitting environment-specific BFF responses.
+async function stubOrgLensContext(page: Page, options: { hasAccess?: boolean } = {}): Promise<void> {
+  const hasAccess = options.hasAccess ?? true;
+
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, {
       personas: ['contributor'],
       personaProjects: {},
       projects: [],
-      organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+      organizations: hasAccess
+        ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }]
+        : [],
       isRootWriter: false,
     })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }])
+    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }] : [])
+  );
+
+  await page.route('**/api/orgs/me/role-grants', (route) =>
+    fulfillJson(route, {
+      writers: hasAccess ? [MOCK_ACCOUNT_ID] : [],
+      auditors: [],
+      cascadingWriters: [],
+      cascadingAuditors: [],
+      username: 'e2e-org-meetings',
+      loaded_at: new Date().toISOString(),
+    })
+  );
+
+  await page.route('**/api/nav/org-items*', (route) =>
+    fulfillJson(route, {
+      items: hasAccess
+        ? [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: 'Red Hat, Inc.', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
+        : [],
+      next_page_token: null,
+      upstream_failed: false,
+      total: hasAccess ? 1 : 0,
+    })
   );
 }
 
@@ -66,44 +93,105 @@ async function gotoOrgMeetingsPage(page: Page): Promise<void> {
   }
 }
 
-test.describe('Org Meetings (retired — coming soon)', () => {
-  test('renders the coming-soon placeholder and no live meetings surface', async ({ page }) => {
+test.describe('Org Meetings insights (6a redesign)', () => {
+  test('renders the page shell with default 365-day KPI values', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgMeetingsPage(page);
 
-    // Header stays for sibling-tab consistency.
     await expect(page.getByTestId('org-meetings-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Meetings' })).toBeVisible();
+    await expect(page.getByTestId('org-meetings-time-range')).toBeVisible();
 
-    // The coming-soon placeholder is shown.
-    const placeholder = page.getByTestId('org-meetings-coming-soon');
-    await expect(placeholder).toBeVisible();
-    await expect(placeholder.getByText('Coming soon')).toBeVisible();
-
-    // The retired live surface (KPI strip, filters, upcoming list, invitee PII panel) is gone.
-    await expect(page.getByTestId('org-meetings-kpi-strip')).toHaveCount(0);
-    await expect(page.getByTestId('org-meetings-filter-bar')).toHaveCount(0);
-    await expect(page.getByTestId('org-upcoming-meetings-list')).toHaveCount(0);
+    const kpiCards = page.getByTestId('org-meetings-kpi-cards');
+    await expect(kpiCards).toBeVisible();
+    await expect(kpiCards).toContainText('63');
+    await expect(kpiCards).toContainText('512');
+    await expect(kpiCards).toContainText('47');
+    await expect(kpiCards).toContainText('30');
   });
 
-  test('does not call the retired org-lens meetings BFF endpoints', async ({ page }) => {
+  test('renders the "where your people spend time" ranked percentage bars', async ({ page }) => {
     await stubOrgLensContext(page);
-
-    let meetingsApiHit = false;
-    await page.route('**/api/orgs/**/lens/meetings**', (route) => {
-      meetingsApiHit = true;
-      return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
-    });
-
     await gotoOrgMeetingsPage(page);
 
-    await expect(page.getByTestId('org-meetings-coming-soon')).toBeVisible();
+    const spend = page.getByTestId('org-meetings-spend-breakdown');
+    await expect(spend).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-foundation')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-project')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-meeting-type')).toBeVisible();
+    await expect(page.getByTestId('org-spend-bar-by-role')).toBeVisible();
+    await expect(spend).toContainText('CNCF');
+  });
 
-    // Keep observing over a bounded window after the placeholder renders: a deferred/async
-    // call to the retired endpoint would resolve waitForRequest and fail this expectation,
-    // instead of slipping past an immediate check. No request within the window => the wait
-    // times out and rejects, which is the pass condition.
-    await expect(page.waitForRequest('**/api/orgs/**/lens/meetings**', { timeout: 1000 })).rejects.toThrow();
-    expect(meetingsApiHit).toBe(false);
+  test('renders the influence table with all rows collapsed by default', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    const influence = page.getByTestId('org-meetings-influence');
+    await expect(influence).toBeVisible();
+
+    // All rows start collapsed, so no detail rows are rendered.
+    await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
+    await expect(page.getByTestId('org-meetings-influence-row-pytorch-detail')).toHaveCount(0);
+
+    // Expanding Kubernetes via its caret reveals the detail row.
+    await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
+    const kubernetesDetail = page.getByTestId('org-meetings-influence-row-kubernetes-detail');
+    await expect(kubernetesDetail).toBeVisible();
+    await expect(kubernetesDetail).toContainText('Meeting Attendance');
+
+    // Expanding PyTorch via its caret reveals its detail row too.
+    await page.getByTestId('org-meetings-influence-row-pytorch-caret').click();
+    await expect(page.getByTestId('org-meetings-influence-row-pytorch-detail')).toBeVisible();
+
+    // Collapsing Kubernetes via its caret removes the detail row.
+    await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
+    await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
+  });
+
+  test('switching time range keeps the page rendering without error', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    await page.getByTestId('org-meetings-time-range').click();
+    await page.getByTestId('org-meetings-time-range-option-previousYear').click();
+    await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('Previous year');
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
+
+    await page.getByTestId('org-meetings-time-range').click();
+    await page.getByTestId('org-meetings-time-range-option-allTime').click();
+    await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('All time');
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
+  });
+
+  test('renders the no-company empty state when no account is selected', async ({ page }) => {
+    // hasAccess: true seeds a direct writer grant (so hasNoOrgAccess() stays false, reaching the
+    // no-company branch instead of the no-access one), but nav-items/personas are overridden below
+    // to return zero orgs so org-navigation never auto-selects one via handlePendingSelection().
+    await stubOrgLensContext(page, { hasAccess: true });
+    await page.route('**/api/user/personas*', (route) =>
+      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
+    );
+    await page.route('**/api/nav/org-items*', (route) => fulfillJson(route, { items: [], next_page_token: null, upstream_failed: false, total: 0 }));
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_MEETINGS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/meetings')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/meetings redirected away');
+    }
+
+    await expect(page.getByTestId('org-meetings-no-company-empty-state')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);
+  });
+
+  test('renders the no-access state when the caller has no org selector access', async ({ page }) => {
+    await stubOrgLensContext(page, { hasAccess: false });
+    await gotoOrgMeetingsPage(page);
+
+    await expect(page.getByTestId('org-meetings-no-access-state')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);
+    await expect(page.getByTestId('org-meetings-no-company-empty-state')).toHaveCount(0);
   });
 });
