@@ -8,7 +8,13 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
-import { addInvitedStatusToMeeting, checkPastMeetingAccess } from '../helpers/meeting.helper';
+import {
+  addInvitedStatusToMeeting,
+  applyHostKeyVisibility,
+  checkPastMeetingAccess,
+  enrichMeetingsWithCreatedBy,
+  stripHostKey,
+} from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -78,28 +84,39 @@ export class PublicMeetingController {
         });
       }
 
-      // Check organizer status for authenticated users (needed for all meeting types)
-      if (isAuthenticated) {
+      // Resolve host-key visibility (organizer OR project writer OR committee writer). This sets
+      // meeting.organizer (used for the registrant counts below) and meeting.can_view_host_key,
+      // and strips host_key when the user isn't authorized — the single source of truth for the
+      // gate across every response branch.
+      //
+      // Guard on originalToken, not just isAuthenticated: this is an optional-auth route, so a
+      // token-refresh failure can leave isAuthenticated() true with NO user token captured
+      // (originalToken === undefined) while req.bearerToken still holds the M2M token. Running the
+      // access check in that state would evaluate the application identity — which may hold writer
+      // relations — and leak the host key. Fail closed unless we hold the user's own token.
+      if (isAuthenticated && originalToken !== undefined) {
         // Temporarily restore user's original token for the access check
-        if (originalToken !== undefined) {
-          req.bearerToken = originalToken;
-        }
+        req.bearerToken = originalToken;
 
         try {
-          meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_meeting', 'organizer');
+          await applyHostKeyVisibility(req, this.accessCheckService, meeting);
         } catch (error) {
-          // If organizer check fails, log but continue with organizer = false
-          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check organizer status, continuing with organizer = false', {
+          // If the access check fails, log but fail closed (no organizer, no host key)
+          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check host key access, continuing with no access', {
             err: error,
             meeting_id: id,
           });
           meeting.organizer = false;
+          meeting.can_view_host_key = false;
+          stripHostKey(meeting);
         }
 
         // Restore M2M token for subsequent operations (e.g., fetching public join URL)
         req.bearerToken = m2mToken;
       } else {
         meeting.organizer = false;
+        meeting.can_view_host_key = false;
+        stripHostKey(meeting);
       }
 
       // Fetch registrant counts for organizers, otherwise default to 0
@@ -122,10 +139,13 @@ export class PublicMeetingController {
         meeting.committee_members_count = 0;
       }
 
-      // The Zoom host key grants host privileges to whoever possesses it.
-      // Strip it from the response for unauthenticated callers.
-      if (!isAuthenticated) {
-        delete (meeting as Partial<Meeting>).host_key;
+      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // created_by from the live v1_meeting index (the ITX detail payload omits it); for anonymous
+      // callers, skip that query and strip created_by so we neither expose nor waste a call on it.
+      if (isAuthenticated) {
+        [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
+      } else {
+        delete (meeting as Partial<Meeting>).created_by;
       }
 
       // Log the success
@@ -139,13 +159,13 @@ export class PublicMeetingController {
         return;
       }
 
-      // Authenticated registered participants and organizers can access private/restricted
-      // meeting details without a password in the URL — their registrant record is the gate.
-      if (meeting.invited || meeting.organizer) {
-        // host_key grants Zoom host privileges — only organizers should receive it.
-        if (!meeting.organizer) {
-          delete (meeting as Partial<Meeting>).host_key;
-        }
+      // Authenticated registered participants, organizers, and project/committee writers can
+      // access private/restricted meeting details without a password in the URL — their
+      // registrant record or FGA writer/organizer relation is the gate. can_view_host_key is
+      // true only for organizer/project-writer/committee-writer, so it admits the writers who
+      // would otherwise fall through to the password gate despite managing the meeting.
+      // host_key was already stripped above for anyone not authorized to view it.
+      if (meeting.invited || meeting.organizer || meeting.can_view_host_key) {
         res.json({
           meeting,
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
@@ -166,7 +186,6 @@ export class PublicMeetingController {
                 email: userEmail,
               });
               meeting.invited = true;
-              delete (meeting as Partial<Meeting>).host_key;
               res.json({
                 meeting,
                 project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
@@ -271,32 +290,43 @@ export class PublicMeetingController {
         meeting.organizer = isOrganizer;
       }
 
-      // Strip the Zoom host key for unauthenticated callers (mirrors getMeetingById).
-      if (!isAuthenticated) {
-        delete (meeting as Partial<Meeting>).host_key;
+      // Past meetings never surface the Zoom host key — strip it unconditionally.
+      stripHostKey(meeting);
+
+      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // created_by from the live v1_meeting index (webhook-created past meetings lack a human one);
+      // for anonymous callers, skip that query and strip created_by (present as zoom.webhooks).
+      let enrichedMeeting = meeting;
+      if (isAuthenticated) {
+        [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
+      } else {
+        delete (meeting as Partial<Meeting>).created_by;
       }
 
-      // For non-full-access users, return only the fields needed for the basic UI
+      // For non-full-access users, return only the fields needed for the basic UI.
+      // created_by is included (authenticated callers only, per the strip above) so the basic
+      // view can still show the organizer name.
       const meetingResponse = fullAccess
-        ? meeting
+        ? enrichedMeeting
         : {
-            id: meeting.id,
-            title: meeting.title,
-            visibility: meeting.visibility,
-            meeting_type: meeting.meeting_type,
-            restricted: meeting.restricted,
-            start_time: meeting.start_time,
-            scheduled_start_time: meeting.scheduled_start_time,
-            scheduled_end_time: meeting.scheduled_end_time,
-            duration: meeting.duration,
-            recurrence: meeting.recurrence,
-            recording_enabled: meeting.recording_enabled,
-            transcript_enabled: meeting.transcript_enabled,
-            youtube_upload_enabled: meeting.youtube_upload_enabled,
-            show_meeting_attendees: meeting.show_meeting_attendees,
-            ai_summary_enabled: meeting.ai_summary_enabled,
-            project_uid: meeting.project_uid,
-            meeting_id: meeting.meeting_id,
+            id: enrichedMeeting.id,
+            title: enrichedMeeting.title,
+            visibility: enrichedMeeting.visibility,
+            meeting_type: enrichedMeeting.meeting_type,
+            restricted: enrichedMeeting.restricted,
+            start_time: enrichedMeeting.start_time,
+            scheduled_start_time: enrichedMeeting.scheduled_start_time,
+            scheduled_end_time: enrichedMeeting.scheduled_end_time,
+            duration: enrichedMeeting.duration,
+            recurrence: enrichedMeeting.recurrence,
+            recording_enabled: enrichedMeeting.recording_enabled,
+            transcript_enabled: enrichedMeeting.transcript_enabled,
+            youtube_upload_enabled: enrichedMeeting.youtube_upload_enabled,
+            show_meeting_attendees: enrichedMeeting.show_meeting_attendees,
+            ai_summary_enabled: enrichedMeeting.ai_summary_enabled,
+            project_uid: enrichedMeeting.project_uid,
+            meeting_id: enrichedMeeting.meeting_id,
+            created_by: enrichedMeeting.created_by,
           };
 
       res.json({

@@ -91,6 +91,11 @@ export class AnalyticsService {
   // request per foundation instead of each firing its own.
   private readonly foundationProjectsDetailCache = new Map<string, Observable<FoundationProjectsDetailResponse>>();
 
+  // Per-slug request cache for the foundation health-score distribution. Lets
+  // the drawer chart reuse one request per foundation so navigating away and
+  // back doesn't re-fetch (and potentially error into a zeroed fallback).
+  private readonly foundationHealthScoreDistributionCache = new Map<string, Observable<FoundationHealthScoreDistributionResponse>>();
+
   /**
    * Get active weeks streak data for the current user
    * @returns Observable of active weeks streak response
@@ -475,17 +480,34 @@ export class AnalyticsService {
    * @returns Observable of foundation health score distribution response
    */
   public getFoundationHealthScoreDistribution(foundationSlug: string): Observable<FoundationHealthScoreDistributionResponse> {
-    return this.http.get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          excellent: 0,
-          healthy: 0,
-          stable: 0,
-          unsteady: 0,
-          critical: 0,
-        });
-      })
-    );
+    // Cache is session-scoped (no TTL). Entries live for the service lifetime —
+    // which, because this service is root-provided, means until the user reloads
+    // the tab. Acceptable today because foundation health-score distribution
+    // rarely changes within a session; if freshness becomes a concern, add a TTL
+    // or an explicit `invalidate(foundationSlug)` call.
+    if (!this.foundationHealthScoreDistributionCache.has(foundationSlug)) {
+      // Evict the cache entry on error so a transient HTTP failure doesn't lock
+      // subsequent subscribers to an empty fallback response for the session.
+      // The fallback is returned for this subscription only; next subscribe re-fetches.
+      const req$ = this.http
+        .get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } })
+        .pipe(
+          catchError(() => {
+            this.foundationHealthScoreDistributionCache.delete(foundationSlug);
+            return of({
+              excellent: 0,
+              healthy: 0,
+              stable: 0,
+              unsteady: 0,
+              critical: 0,
+              unscored: 0,
+            });
+          }),
+          shareReplay(1)
+        );
+      this.foundationHealthScoreDistributionCache.set(foundationSlug, req$);
+    }
+    return this.foundationHealthScoreDistributionCache.get(foundationSlug)!;
   }
 
   /**

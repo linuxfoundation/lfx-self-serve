@@ -28,6 +28,7 @@ import {
   MeetingDeleteTypeResult,
   MeetingDeleteTypeSelectionComponent,
 } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
+import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -53,6 +54,7 @@ import {
   MeetingOccurrence,
   MeetingRecurrence,
   MEETING_TYPE_CONFIGS,
+  MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingRecording,
@@ -101,6 +103,7 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
     MeetingMaterialsDrawerComponent,
+    MeetingOrganizerComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
@@ -135,6 +138,9 @@ export class MeetingCardComponent implements OnInit {
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public drawerGuestCount: WritableSignal<number> = signal(0);
+  // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
+  // resolves the same organizer set the drawer badges (see resolvedHostsChange).
+  public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
   public attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = signal([]);
   public materialsDrawerVisible = signal(false);
 

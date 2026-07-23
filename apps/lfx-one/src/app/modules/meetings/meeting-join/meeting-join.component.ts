@@ -7,6 +7,7 @@ import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
@@ -33,6 +34,7 @@ import {
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
   MeetingAttachment,
+  MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingRegistrant,
@@ -48,7 +50,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisibleForJoinWindow } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -103,6 +105,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    MeetingOrganizerComponent,
     GuestFormComponent,
     TooltipModule,
     DrawerModule,
@@ -178,6 +181,15 @@ export class MeetingJoinComponent implements OnInit {
   private optimisticAdditional = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
+  // Host key is masked by default. Reveal state is scoped to a specific meeting id so that
+  // navigating to a different meeting on the same component instance requires a fresh reveal and
+  // never renders another meeting's key unmasked once its response arrives.
+  private readonly revealedHostKeyMeetingId: WritableSignal<string | null> = signal<string | null>(null);
+  protected readonly showHostKey: Signal<boolean> = computed(() => !!this.meeting()?.id && this.revealedHostKeyMeetingId() === this.meeting().id);
+  // Single gate for the host-key chip: the BFF authorized this viewer (and sent a key) AND the
+  // meeting is inside its join window (early-join → end) — the same window as the Join button.
+  // Host keys can rotate per occurrence, so we don't surface them before the meeting is joinable.
+  protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisibleForJoinWindow(this.meeting(), this.currentOccurrence()));
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —
@@ -247,6 +259,10 @@ export class MeetingJoinComponent implements OnInit {
   });
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
+  // Host source for the organizer chip: registrants for upcoming, participants for past (the
+  // upcoming registrants signal is empty on past join pages), so the chip and the participants
+  // drawer resolve organizers from the same people.
+  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
   // Past meeting attendance stats (derived from participants)
   protected participantCount = computed(() => this.pastMeetingParticipants().length);
   protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);
@@ -379,6 +395,41 @@ export class MeetingJoinComponent implements OnInit {
       summary: 'Meeting Link Copied',
       detail: 'The meeting link has been copied to your clipboard',
     });
+  }
+
+  /**
+   * Toggles the masked/revealed state of the host key for the currently loaded meeting.
+   * Reveal state is keyed to the meeting id, so it resets when a different meeting loads.
+   */
+  public toggleHostKey(): void {
+    const meetingId = this.meeting()?.id ?? null;
+    this.revealedHostKeyMeetingId.update((current) => (current === meetingId ? null : meetingId));
+  }
+
+  /**
+   * Copies the raw host key to the clipboard, showing a success or failure toast.
+   * No-ops when the current meeting has no host key.
+   */
+  public copyHostKey(): void {
+    const hostKey = this.meeting().host_key;
+    if (!hostKey) {
+      return;
+    }
+
+    const success = this.clipboard.copy(hostKey);
+    if (success) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Host Key Copied',
+        detail: 'The host key has been copied to your clipboard',
+      });
+    } else {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Copy Failed',
+        detail: 'Unable to copy the host key. Please copy it manually.',
+      });
+    }
   }
 
   public onRegistrantsToggle(): void {

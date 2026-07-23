@@ -18,6 +18,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -49,12 +50,19 @@ export class PastMeetingController {
         page_token?: string;
       };
 
+      // Past meetings are webhook-created (created_by = zoom.webhooks), so join back to the
+      // live v1_meeting index by meeting_id to resolve the real organizer name.
+      const enriched = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.meeting_id);
+
+      // Past meetings never surface the host key.
+      enriched.forEach((meeting) => stripHostKey(meeting));
+
       logger.success(req, 'get_past_meetings', startTime, {
-        meeting_count: meetings.length,
+        meeting_count: enriched.length,
         has_more_pages: !!page_token,
       });
 
-      res.json({ data: meetings, page_token });
+      res.json({ data: enriched, page_token });
     } catch (error) {
       next(error);
     }
@@ -120,12 +128,19 @@ export class PastMeetingController {
       meeting.participant_count = counts.participant_count;
       meeting.attended_count = counts.attended_count;
 
+      // Webhook-created past meeting lacks a human created_by — join back to the live
+      // v1_meeting index by meeting_id to resolve the organizer name.
+      const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
+
+      // Past meetings never surface the host key.
+      stripHostKey(enrichedMeeting);
+
       logger.success(req, 'get_past_meeting_by_id', startTime, {
         past_meeting_id: uid,
-        title: meeting.title,
+        title: enrichedMeeting.title,
       });
 
-      res.json(meeting);
+      res.json(enrichedMeeting);
     } catch (error) {
       next(error);
     }

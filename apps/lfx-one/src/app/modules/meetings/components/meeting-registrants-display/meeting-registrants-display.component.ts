@@ -6,19 +6,27 @@ import { Component, computed, DestroyRef, effect, inject, input, InputSignal, ou
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   CommitteeMember,
   EnrichedPastMeetingParticipant,
   Meeting,
+  MeetingHostCandidate,
   MeetingRegistrant,
   PastMeeting,
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
 } from '@lfx-one/shared/interfaces';
-import { filterPastMeetingParticipants, markFormControlsAsTouched, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import {
+  compareMeetingPeopleByHostThenName,
+  filterPastMeetingParticipants,
+  getPastMeetingResourceId,
+  markFormControlsAsTouched,
+  resolveMeetingBaseCount,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -29,7 +37,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
-  imports: [AvatarComponent, ButtonComponent, TooltipModule, ReactiveFormsModule, RegistrantFormComponent, SelectComponent, NgTemplateOutlet],
+  imports: [AvatarComponent, BadgeComponent, ButtonComponent, TooltipModule, ReactiveFormsModule, RegistrantFormComponent, SelectComponent, NgTemplateOutlet],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
@@ -49,6 +57,9 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
   public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
+  // Emits the host-flagged people (the organizer set) whenever the list resolves, so a parent
+  // can feed the same set to the shared "Organized by" chip — keeping chip and modal in agreement.
+  public readonly resolvedHostsChange: OutputEmitterRef<MeetingHostCandidate[]> = output<MeetingHostCandidate[]>();
 
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
@@ -143,8 +154,19 @@ export class MeetingRegistrantsDisplayComponent {
   // Filtered past meeting participants based on search
   public readonly filteredPastParticipants = this.initFilteredPastParticipants();
 
+  // Host-flagged people (the organizer set) derived from whichever list is active.
+  private readonly resolvedHosts: Signal<MeetingHostCandidate[]> = computed(() =>
+    (this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants()).filter((person) => person.host)
+  );
+
   public constructor() {
     this.addRegistrantForm = this.meetingService.createRegistrantFormGroup(false);
+
+    // Surface the host-flagged people to the parent so the "Organized by" chip and this modal
+    // resolve organizers from the same source.
+    toObservable(this.resolvedHosts)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
     effect(() => {
       if (!this.visible()) return;
@@ -280,7 +302,7 @@ export class MeetingRegistrantsDisplayComponent {
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
-                map((registrants) => registrants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]),
+                map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
                   const meeting = this.meeting();
                   const resolvedBaseCount = resolveMeetingBaseCount(meeting);
@@ -320,7 +342,9 @@ export class MeetingRegistrantsDisplayComponent {
             : of([] as CommitteeMember[]);
 
           return combineLatest([
-            this.meetingService.getPastMeetingParticipants(meeting.id).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
+            // Use the canonical occurrence resource id — project/foundation past cards can carry a
+            // distinct meeting.id, which would otherwise fail-soft to [] (empty organizer set).
+            this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
             committeeMembers$,
           ]).pipe(
             map(([participants, committeeMembers]) => {
@@ -352,7 +376,7 @@ export class MeetingRegistrantsDisplayComponent {
                   };
                   return enriched;
                 })
-                .sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0);
+                .sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
             }),
             finalize(() => this.internalLoading.set(false))
           );
@@ -367,13 +391,13 @@ export class MeetingRegistrantsDisplayComponent {
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
-        list = [...seed].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[];
+        list = [...seed].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
       } else {
         list = this.internalRegistrants();
       }
       const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
       const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
-      return pending.length ? ([...pending, ...list].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]) : list;
+      return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
     });
   }
 
