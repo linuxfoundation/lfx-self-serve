@@ -50,7 +50,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -181,6 +181,10 @@ export class MeetingJoinComponent implements OnInit {
   private optimisticAdditional = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
+  // Host key is masked by default; the reveal toggle flips this.
+  protected showHostKey = signal(false);
+  // Single gate for the host-key UI: upcoming meeting AND the BFF authorized this viewer and sent a key.
+  protected hostKeyVisible = computed(() => !this.isPastMeeting() && isHostKeyVisible(this.meeting()));
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —
@@ -386,6 +390,32 @@ export class MeetingJoinComponent implements OnInit {
       summary: 'Meeting Link Copied',
       detail: 'The meeting link has been copied to your clipboard',
     });
+  }
+
+  public toggleHostKey(): void {
+    this.showHostKey.update((shown) => !shown);
+  }
+
+  public copyHostKey(): void {
+    const hostKey = this.meeting().host_key;
+    if (!hostKey) {
+      return;
+    }
+
+    const success = this.clipboard.copy(hostKey);
+    if (success) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Host Key Copied',
+        detail: 'The host key has been copied to your clipboard',
+      });
+    } else {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Copy Failed',
+        detail: 'Unable to copy the host key. Please copy it manually.',
+      });
+    }
   }
 
   public onRegistrantsToggle(): void {

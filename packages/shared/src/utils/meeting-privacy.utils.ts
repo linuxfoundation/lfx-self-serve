@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '../enums';
+import type { Meeting } from '../interfaces';
 
 /**
  * Returns a human-readable label for the combined meeting privacy state.
@@ -39,4 +40,16 @@ export function getMeetingPrivacyIcon(visibility: MeetingVisibility | null, rest
     return 'fa-light fa-shield';
   }
   return 'fa-light fa-globe';
+}
+
+/**
+ * Whether the current viewer may see a meeting's Zoom host key.
+ * @description The BFF is the single source of truth for the host-key audience
+ * (organizer OR project writer OR committee writer): it sets `can_view_host_key` and strips
+ * `host_key` for anyone unauthorized. The UI must not re-derive that audience — it renders the
+ * host key only when the BFF both marks the viewer authorized AND supplies a key. Callers gate
+ * on meeting time (upcoming only) separately.
+ */
+export function isHostKeyVisible(meeting: Pick<Meeting, 'host_key' | 'can_view_host_key'> | null | undefined): boolean {
+  return !!meeting?.can_view_host_key && !!meeting?.host_key;
 }

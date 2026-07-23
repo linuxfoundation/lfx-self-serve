@@ -272,6 +272,8 @@ export interface Meeting {
 
   /** 6-digit Zoom host key */
   host_key?: string;
+  /** Whether the current user may view host_key (organizer OR project writer OR committee writer). Response-only. */
+  can_view_host_key?: boolean;
   /** Zoom meeting passcode */
   passcode?: string;
 

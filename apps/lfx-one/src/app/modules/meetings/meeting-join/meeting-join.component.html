@@ -282,6 +282,45 @@
                       <span>{{ totalInvitees() }} invited</span>
                     </div>
                   }
+
+                  <!-- Host Key (upcoming meetings; organizer / project writer / committee writer only) -->
+                  @if (hostKeyVisible()) {
+                    <div class="flex flex-col gap-1.5" data-testid="meeting-host-key">
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-sm font-medium text-gray-700">Host Key</span>
+                        <i
+                          class="fa-light fa-circle-info text-xs text-gray-400"
+                          pTooltip="Enter this key in Zoom to claim host privileges."
+                          tooltipPosition="top"
+                          aria-hidden="true"></i>
+                      </div>
+                      <div class="inline-flex items-center gap-2">
+                        <code
+                          class="font-mono text-sm text-gray-800 bg-gray-100 border border-gray-200 rounded px-2 py-1 tracking-widest"
+                          data-testid="host-key-value">
+                          {{ showHostKey() ? meeting().host_key : '••••••' }}
+                        </code>
+                        <lfx-button
+                          [icon]="showHostKey() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'"
+                          [text]="true"
+                          size="small"
+                          severity="secondary"
+                          [ariaLabel]="showHostKey() ? 'Hide host key' : 'Show host key'"
+                          [tooltip]="showHostKey() ? 'Hide host key' : 'Show host key'"
+                          (onClick)="toggleHostKey()"
+                          data-testid="host-key-toggle"></lfx-button>
+                        <lfx-button
+                          icon="fa-light fa-copy"
+                          [text]="true"
+                          size="small"
+                          severity="secondary"
+                          ariaLabel="Copy host key"
+                          tooltip="Copy host key"
+                          (onClick)="copyHostKey()"
+                          data-testid="host-key-copy"></lfx-button>
+                      </div>
+                    </div>
+                  }
                 </div>
 
                 <!-- Attendance Stats (past meetings) -->
