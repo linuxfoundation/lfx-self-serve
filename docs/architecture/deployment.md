@@ -23,15 +23,19 @@ push v* tag       →    docker-build-tag.yml    →  <semver>        →  stagi
 The Dockerfile accepts a `BUILD_ENV` argument that selects the Angular build
 configuration. The mapping between workflow and build environment is:
 
-| Workflow           | `BUILD_ENV`   | Angular config | Backends                        |
-| ------------------ | ------------- | -------------- | ------------------------------- |
-| `docker-build-main` | `dev-cluster` | `dev-cluster`  | Shared dev Auth0 / API / NATS   |
-| `docker-build-pr`   | `dev-cluster` | `dev-cluster`  | Shared dev Auth0 / API / NATS   |
-| `docker-build-tag`  | `production`  | `production`   | Production Auth0 / API / NATS   |
+| Workflow           | `BUILD_ENV`   | Angular config | Runtime backends (from Helm/ArgoCD values) |
+| ------------------ | ------------- | -------------- | ------------------------------------------ |
+| `docker-build-main` | `dev-cluster` | `dev-cluster`  | Shared dev Auth0 / API / NATS              |
+| `docker-build-pr`   | `dev-cluster` | `dev-cluster`  | Shared dev Auth0 / API / NATS              |
+| `docker-build-tag`  | `production`  | `production`   | Production Auth0 / API / NATS              |
+
+`BUILD_ENV` selects the Angular compile-time configuration only — it does not
+control which backends the running container connects to. Runtime backend URLs,
+credentials, and feature flags come from Helm values and Kubernetes secrets
+managed by ArgoCD in `lfx-v2-argocd`.
 
 The `dev-cluster` Angular configuration is defined in
-`apps/lfx-one/angular.json` and targets the shared development-cluster
-environment.
+`apps/lfx-one/angular.json`.
 
 ## Workflow Details
 
@@ -96,14 +100,14 @@ sequenceDiagram
         AS->>K8s: Create Application ui-pr-N
         K8s->>K8s: Create namespace ui-pr-N
         K8s->>K8s: Apply Helm chart (Deployment, Service, Ingress)
+        K8s->>EDNS: Ingress created
+        EDNS->>EDNS: Create DNS record ui-pr-N.dev.v2.cluster.linuxfound.info
         K8s->>CM: Ingress annotation cert-manager.io/cluster-issuer detected
         CM->>CM: Create Certificate CR (ui-pr-N-tls)
         CM->>LE: ACME HTTP-01 challenge
         LE-->>CM: Challenge validated
         CM->>K8s: Store TLS cert in Secret ui-pr-N-tls
         K8s->>Traefik: Load TLS cert, expose HTTPS endpoint
-        K8s->>EDNS: Ingress created
-        EDNS->>EDNS: Create DNS record ui-pr-N.dev.v2.cluster.linuxfound.info
     end
 
     Note over Dev,EDNS: URL live once both tracks complete (~5–10 min)

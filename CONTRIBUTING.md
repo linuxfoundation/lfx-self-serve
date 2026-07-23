@@ -316,7 +316,7 @@ label. The preview runs on the shared dev environment backends using the
 **Prerequisites:**
 
 - Write access to the repository (fork PRs are excluded)
-- An open, non-draft pull request
+- An open pull request
 
 **How it works:**
 

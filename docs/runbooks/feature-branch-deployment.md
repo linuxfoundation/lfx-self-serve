@@ -22,7 +22,7 @@ Before proceeding, verify:
 
 - **Write access** to the `linuxfoundation/lfx-self-serve` GitHub repository.
   Fork PRs cannot trigger preview deployments.
-- **An open pull request** — the PR must not be in draft state.
+- **An open pull request** — the workflow triggers on any open, non-fork PR with the label, including drafts.
 - **GitHub Actions enabled** — check under _Settings → Actions_ that workflows
   are not disabled for your fork or the repo.
 - **No merge conflicts** — the branch must be buildable. A red CI status does
@@ -231,8 +231,8 @@ synced via GitHub Actions.
    ```
 
    This syncs the secret from 1Password into AWS Secrets Manager. The
-   ExternalSecret controller picks it up within ~1 minute and creates the
-   Kubernetes Secret in the preview namespace.
+   ExternalSecret controller refreshes every 10 minutes (the chart default),
+   so a new key may take up to 10 minutes to appear in the preview namespace.
 
 5. **Reference the secret in the Helm chart.**
    Add the environment variable reference to `charts/lfx-self-serve/values.yaml`
@@ -243,8 +243,8 @@ synced via GitHub Actions.
      MY_NEW_SECRET:
        valueFrom:
          secretKeyRef:
-           name: pcc-secret-store   # ExternalSecret target secret name
-           key: my_secret           # Key as stored in AWS Secrets Manager
+           name: pcc-secrets   # Kubernetes Secret created by ExternalSecret
+           key: credential     # Field name as defined in the 1Password source
    ```
 
 6. **Set the value in `lfx-v2-argocd`** for the dev environment so the preview
@@ -256,8 +256,8 @@ synced via GitHub Actions.
      MY_NEW_SECRET:
        valueFrom:
          secretKeyRef:
-           name: pcc-secret-store
-           key: my_secret
+           name: pcc-secrets
+           key: credential
    ```
 
 > **Single-preview workaround:** If the secret is only needed for one specific
