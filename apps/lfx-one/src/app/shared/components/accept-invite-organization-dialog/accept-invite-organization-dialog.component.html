@@ -24,6 +24,12 @@
     @if (organizationControl.errors?.['trimmedRequired'] && organizationControl.touched) {
       <p class="text-xs text-red-600">Organization is required for this group</p>
     }
+    @if (isNewOrg()) {
+      <p class="text-xs text-red-600" role="alert" data-testid="accept-invite-org-warning">
+        <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+        Organization not found. Search and select it from the results, or click "Enter manually" to provide a website URL.
+      </p>
+    }
   </div>
 </div>
 
@@ -41,7 +47,7 @@
     severity="info"
     size="small"
     [loading]="submitting()"
-    [disabled]="submitting()"
+    [disabled]="submitting() || isNewOrg()"
     (onClick)="onConfirm()"
     data-testid="accept-invite-organization-confirm"></lfx-button>
 </div>
