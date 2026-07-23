@@ -36,8 +36,9 @@ Before proceeding, verify:
 Choose the branch to deploy:
 
 - Use the branch associated with the PR you want to preview. The workflow
-  always builds the PR's `HEAD` commit at the time the label is applied (or
-  re-applied after a push).
+  builds GitHub's synthetic merge commit of the PR branch against the base
+  branch (standard `pull_request` event behaviour for `actions/checkout@v4`).
+  In most cases this is equivalent to the PR's latest commit.
 - If you need to preview a stack of changes, open a PR against a feature
   integration branch rather than `main`, and apply the label there.
 
@@ -51,6 +52,7 @@ Choose the branch to deploy:
    progress in the **Actions** tab of the repository.
 
 The workflow:
+
 - Checks out the PR branch.
 - Builds a Docker image with `BUILD_ENV=dev-cluster` tagged `ui-pr-<N>`.
 - Pushes the image to `ghcr.io/linuxfoundation/lfx-self-serve`.
@@ -89,10 +91,13 @@ Pod logs surface Express/Node.js errors that do not appear in the browser:
 
 ```bash
 # Requires kubectl access to the dev cluster
-kubectl logs -n ui-pr-<N> -l app=lfx-self-serve --tail=100
+kubectl logs -n ui-pr-<N> \
+  -l app.kubernetes.io/name=lfx-self-serve \
+  --tail=100
 ```
 
 Common errors to look for:
+
 - Missing environment variable warnings (see [Adding a New Secret](#adding-a-new-secret) below)
 - NATS connection failures (usually transient; the app retries automatically)
 - Auth0 configuration mismatches
@@ -159,7 +164,7 @@ have to function.
 
 Secrets flow through the following pipeline:
 
-```
+```text
 1Password (source of truth)
     ↓  lfx-secrets-management sync
 AWS Secrets Manager

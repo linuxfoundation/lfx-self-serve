@@ -10,7 +10,7 @@ images; ArgoCD (in the `lfx-v2-argocd` sibling repo) reconciles those images
 to the appropriate Kubernetes namespaces. There are three distinct deployment
 paths, each triggered by a different git event.
 
-```
+```text
 git event              workflow                   image tag          environment
 ─────────────────────────────────────────────────────────────────────────────────
 push to main      →    docker-build-main.yml   →  development     →  dev cluster (persistent)
@@ -54,7 +54,7 @@ Builds an isolated preview for a single PR. ArgoCD provisions a dedicated
 namespace (`ui-pr-<PR number>`) and the workflow bot posts the URL as a PR
 comment:
 
-```
+```text
 https://ui-pr-<PR number>.dev.v2.cluster.linuxfound.info
 ```
 
