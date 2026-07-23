@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -86,7 +86,8 @@ export class MailingListManageComponent {
     evictOnWriteAccessLoss();
     this.form()
       .get('group_name')
-      ?.valueChanges.subscribe(() => this.hasDuplicateNameError.set(false));
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe(() => this.hasDuplicateNameError.set(false));
   }
 
   public nextStep(): void {
@@ -273,6 +274,7 @@ export class MailingListManageComponent {
           this.parentService.set(null);
           this.createdService.set(null);
           this.hasDuplicateNameError.set(false);
+          this.form().get('group_name')?.updateValueAndValidity();
         }),
         filter((project): project is NonNullable<typeof project> => project !== null),
         switchMap((project) =>
