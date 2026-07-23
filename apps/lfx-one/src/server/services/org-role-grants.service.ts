@@ -490,6 +490,10 @@ export class OrgRoleGrantsService {
         case 'inherited-auditor':
           cascadingAuditors.push({ uid, parentUid: role.parentUid ?? '', parentName: role.parentName ?? '' });
           break;
+        case 'foundation-auditor':
+          // LFXV2-2750 — foundation-auditor rows are resolved per-search in OrgNavigationService and
+          // carry their role source on the row itself; they never enter this grants-only resolution.
+          break;
       }
     }
 

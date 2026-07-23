@@ -70,6 +70,11 @@ export class AccountContextService {
    * grant, or at least one persona-seeded account. Single source of truth shared by the sidebar
    * selector visibility gate and the Org Overview no-access gate so the two cannot drift apart.
    * Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   *
+   * LFXV2-2750 note: foundation-auditor rows are resolved per-search, so foundation-level auditor
+   * status is not knowable up front (there is no per-user auditor index on projects). A caller whose
+   * ONLY access is a foundation-auditor grant — no direct org grant and no persona seed — therefore
+   * won't see the selector. Tracked as a follow-up.
    */
   public readonly hasOrgSelectorAccess: Signal<boolean> = computed(
     () => this.orgRoleGrantsService.writerSet().size > 0 || this.orgRoleGrantsService.auditorSet().size > 0 || this.availableAccounts().length > 0
