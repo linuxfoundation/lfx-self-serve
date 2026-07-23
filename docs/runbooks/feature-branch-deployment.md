@@ -156,32 +156,109 @@ have to function.
 
 **Secret values** (credentials, API keys):
 
-Secrets in the dev cluster are sourced from AWS Secrets Manager via
-ExternalSecret. The ExternalSecret fetches all secrets tagged
-`service: lfx-v2-ui` in `us-west-2`.
+Secrets flow through the following pipeline:
 
-To add a new secret for dev-cluster previews:
+```
+1Password (source of truth)
+    ↓  lfx-secrets-management sync
+AWS Secrets Manager
+    ↓  ExternalSecret controller
+Kubernetes Secret  →  Pod environment variable
+```
 
-1. Ask the platform team (or use your AWS access if you have it) to add the
-   secret to AWS Secrets Manager with the tag `service: lfx-v2-ui`.
-2. Add the corresponding environment variable reference to the Helm chart
-   `values.yaml`:
+The `lfx-secrets-management` repository is the authoritative tool for managing
+this pipeline. All secrets for the LFX platform are defined there as YAML and
+synced via GitHub Actions.
+
+**Step-by-step to add a new secret:**
+
+1. **Store the secret in 1Password.**
+   Add the credential to the appropriate vault in the `LFX` 1Password account:
+   - `lfx-development` for dev
+   - `lfx-staging` for staging
+   - `lfx-production` for production
+
+2. **Add a secret definition to `lfx-secrets-management`.**
+   Open a PR in the `lfx-secrets-management` repository. Add an entry to the
+   relevant file under `secrets/lfx/` (e.g. `cloud.yml` for general
+   credentials, `auth0_clients.yml` for Auth0 clients):
+
+   ```yaml
+   # secrets/lfx/cloud.yml
+   My LFX Self Serve Secret:
+     tags: [lfx_self_serve, pcc]
+     envs: [development, staging, production]
+     source:
+       onepassword:
+         vaults:
+           development: lfx-development
+           staging: lfx-staging
+           production: lfx-production
+         item: My Item Name in 1Password
+         fields: credential
+     destinations:
+       - aws_secretsmanager:
+           path: cloud/lfx_self_serve/my_secret
+           tags:
+             service: pcc
+   ```
+
+   The `service: pcc` AWS tag is what the dev-cluster ExternalSecret uses to
+   discover which secrets to sync into the preview namespace.
+
+3. **Validate the definition locally:**
+
+   ```bash
+   cd ~/lfx-secrets-management
+   make validate TAGS="lfx_self_serve"
+   ```
+
+4. **Merge the PR and deploy.**
+   After the `lfx-secrets-management` PR merges, trigger the GitHub Actions
+   deploy workflow (or ask the platform team to run it):
+
+   ```bash
+   gh workflow run deploy.yml \
+     --repo linuxfoundation/lfx-secrets-management \
+     --field tags="lfx_self_serve" \
+     --field envs="development"
+   ```
+
+   This syncs the secret from 1Password into AWS Secrets Manager. The
+   ExternalSecret controller picks it up within ~1 minute and creates the
+   Kubernetes Secret in the preview namespace.
+
+5. **Reference the secret in the Helm chart.**
+   Add the environment variable reference to `charts/lfx-self-serve/values.yaml`
+   and open a PR in this repo:
 
    ```yaml
    environment:
      MY_NEW_SECRET:
        valueFrom:
          secretKeyRef:
-           name: pcc-secret-store   # ExternalSecret target name
-           key: MY_NEW_SECRET
+           name: pcc-secret-store   # ExternalSecret target secret name
+           key: my_secret           # Key as stored in AWS Secrets Manager
    ```
 
-3. Update `lfx-v2-argocd` dev values to reference the secret key, then open
-   the preview as normal.
+6. **Set the value in `lfx-v2-argocd`** for the dev environment so the preview
+   namespace picks it up. Open a PR in `lfx-v2-argocd`:
 
-> **Note:** If you need the secret only in a single preview (not in all dev
-> namespaces), create a Kubernetes `Secret` manually in the preview namespace
-> via the platform team; this is unusual and should be a short-term workaround.
+   ```yaml
+   # values/dev/lfx-v2-ui.yaml
+   environment:
+     MY_NEW_SECRET:
+       valueFrom:
+         secretKeyRef:
+           name: pcc-secret-store
+           key: my_secret
+   ```
+
+> **Single-preview workaround:** If the secret is only needed for one specific
+> preview (not all dev namespaces), coordinate with the platform team to patch
+> the Kubernetes Secret directly in the `ui-pr-<N>` namespace. This is a
+> short-term workaround — the secret should still be added to
+> `lfx-secrets-management` for permanence.
 
 ---
 
