@@ -4,12 +4,17 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 /**
- * ProfilePanelComponent is the sticky right-hand panel of the Profile & Account hub
- * (a sticky side column at 2xl, stacked full-width above the content below that).
+ * ProfilePanelComponent is the right-hand panel of the Profile & Account hub. The layout wraps it
+ * in a fixed, full-height 300px rail pinned to the right edge at every screen size; this component
+ * fills that rail and scrolls its own content independently when the viewport is short.
  * It is purely presentational: all values arrive via signal inputs (sourced from the
  * parent ProfileLayoutComponent's CombinedProfile) and the edit affordances emit
  * `editRequested` so the parent — which owns the profile data, edit dialog, and
  * optimistic-update logic — handles the actual edit flow.
+ *
+ * The host is `block h-full` so the inner `aside`'s `h-full`/`overflow-y-auto` resolves against
+ * the fixed rail's height (mirrors lfx-sidebar's `:host { height: 100% }`); without host sizing
+ * the height chain breaks and the rail cannot scroll independently.
  *
  * Rows render only when their value is present. GitHub is sourced from the user's
  * connected identities (bound by the parent); About me and LinkedIn are stubbed for now
@@ -18,6 +23,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
 @Component({
   selector: 'lfx-profile-panel',
   imports: [],
+  host: { class: 'block h-full' },
   templateUrl: './profile-panel.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

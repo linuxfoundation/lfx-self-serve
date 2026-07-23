@@ -10,6 +10,7 @@ import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.c
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
+import { isProfileHubPath } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -46,6 +47,10 @@ export class MainLayoutComponent {
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
 
+  // True on the /profile hub — drives the pr-[300px] right gutter on <main> so content/footer
+  // clear the fixed rail. Only the me-lens /profile route uses ProfileLayoutComponent.
+  protected readonly isProfileHub = signal(false);
+
   /**
    * A route lens that {@link LensService.setLens} refused, held for retry.
    *
@@ -58,6 +63,10 @@ export class MainLayoutComponent {
   private readonly pendingRouteLens = signal<Lens | null>(null);
 
   public constructor() {
+    // Seed the profile-hub flag from the current URL so the right gutter is correct on the first
+    // paint / hard load, before the first NavigationEnd fires.
+    this.isProfileHub.set(isProfileHubPath(this.router.url));
+
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
       .pipe(
@@ -67,6 +76,7 @@ export class MainLayoutComponent {
       .subscribe(() => {
         this.appService.closeMobileSidebar();
         this.selectorPanelOpen.set(false);
+        this.isProfileHub.set(isProfileHubPath(this.router.url));
         this.syncLensFromRoute();
       });
 

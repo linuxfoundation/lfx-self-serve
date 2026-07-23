@@ -163,3 +163,16 @@ export function normalizeToUrl(input: string): string | null {
 
   return null;
 }
+
+/**
+ * Whether a router URL is under the /profile hub, matching on the route-segment boundary.
+ * Strips both the query string and the fragment before matching, so a bare prefix
+ * check does not misclassify sibling routes (`/profiles`, `/profile-old`), and a fragment
+ * (e.g. `/profile/settings#developer-settings`) does not defeat the match.
+ * @param url - The router URL (may include `?query` and/or `#fragment`)
+ * @returns true when the path is exactly `/profile` or under `/profile/`
+ */
+export function isProfileHubPath(url: string): boolean {
+  const path = url.split(/[?#]/)[0];
+  return path === '/profile' || path.startsWith('/profile/');
+}
