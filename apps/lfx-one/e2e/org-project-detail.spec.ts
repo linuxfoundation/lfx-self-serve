@@ -95,12 +95,38 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
-  test('renders both side-by-side boards with the viewing-org row pinned', async ({ page }) => {
+  test('renders both side-by-side boards with the viewing-org row at its ranked position', async ({ page }) => {
     await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible();
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem')).toBeVisible();
     await expect(page.getByTestId('project-detail-leaderboard-technical-viewing-row')).toBeVisible();
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-viewing-row')).toBeVisible();
     await expect(page.getByTestId('project-detail-trend-group')).toBeVisible();
+
+    // The viewing org is no longer pinned to the top: the default Calculated Influence view ranks
+    // rows 1..N contiguously, so ranks ascend in render order and the viewing row sits at the
+    // position matching its rank number. A pinned out-of-order row would break both invariants.
+    for (const board of ['technical', 'ecosystem'] as const) {
+      const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
+      const count = await rows.count();
+      expect(count).toBeGreaterThan(0);
+
+      const ranks: number[] = [];
+      let viewingIndex = -1;
+      for (let i = 0; i < count; i++) {
+        const row = rows.nth(i);
+        ranks.push(Number((await row.locator('td').first().innerText()).trim()));
+        if ((await row.getAttribute('data-testid')) === `project-detail-leaderboard-${board}-viewing-row`) {
+          viewingIndex = i;
+        }
+      }
+
+      expect(ranks[0]).toBe(1);
+      for (let i = 1; i < ranks.length; i++) {
+        expect(ranks[i]).toBeGreaterThan(ranks[i - 1]);
+      }
+      expect(viewingIndex).toBeGreaterThanOrEqual(0);
+      expect(ranks[viewingIndex]).toBe(viewingIndex + 1);
+    }
   });
 
   test('metric toggle persists in the URL and switches the score column', async ({ page }) => {
