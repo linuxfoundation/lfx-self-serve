@@ -168,8 +168,14 @@ export async function applyHostKeyVisibility(req: Request, accessCheckService: A
 
   const results = await accessCheckService.checkAccess(req, requests);
 
-  meeting.organizer = results.get(meeting.id) ?? false;
-  meeting.can_view_host_key = Array.from(results.values()).some(Boolean);
+  // Derive the gate from the three named relations explicitly (not "any true in the batch"), so a
+  // future unrelated entry added to `requests` can't silently widen host-key visibility.
+  const isOrganizer = results.get(meeting.id) ?? false;
+  const isProjectWriter = results.get(meeting.project_uid) ?? false;
+  const isCommitteeWriter = (meeting.committees ?? []).some((committee) => !!committee?.uid && (results.get(committee.uid) ?? false));
+
+  meeting.organizer = isOrganizer;
+  meeting.can_view_host_key = isOrganizer || isProjectWriter || isCommitteeWriter;
 
   if (!meeting.can_view_host_key) {
     stripHostKey(meeting);
