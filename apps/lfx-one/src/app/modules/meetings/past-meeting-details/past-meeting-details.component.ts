@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, Signal, signal } from '@angula
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingMaterialsDrawerComponent } from '@app/modules/meetings/components/meeting-materials-drawer/meeting-materials-drawer.component';
+import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -16,6 +17,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
+  compareMeetingPeopleByHostThenName,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
@@ -56,6 +58,7 @@ import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filte
     AvatarComponent,
     TooltipModule,
     MeetingMaterialsDrawerComponent,
+    MeetingOrganizerComponent,
   ],
   templateUrl: './past-meeting-details.component.html',
 })
@@ -114,7 +117,8 @@ export class PastMeetingDetailsComponent {
     if (this.votingOnly()) {
       result = result.filter((p) => p.committee_voting_status === 'Voting Rep' || p.committee_voting_status === 'Alternate Voting Rep');
     }
-    return result;
+    // Organizers (hosts) float to the top; unresolvable "[unknown]" rows sink to the bottom.
+    return [...result].sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
   });
   public meetingTypeBadge = this.initMeetingTypeBadge();
   public attendancePercentage = this.initAttendancePercentage();
