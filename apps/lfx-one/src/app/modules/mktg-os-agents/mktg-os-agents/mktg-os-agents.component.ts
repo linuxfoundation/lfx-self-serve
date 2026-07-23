@@ -5,13 +5,14 @@ import { NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
+
+import { MktgChatPanelComponent } from '../mktg-chat-panel/mktg-chat-panel.component';
 
 // Marketplace landing for the Marketing OS marketplace (LFXAI-98). Renders the
 // catalog tiles, client-side search, and the placeholder Alerts / Agents-in-Process
@@ -20,7 +21,7 @@ import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
 // because the chat panel (LFXAI-99) is an in-page side panel, not a separate page.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent],
+  imports: [NgClass, ReactiveFormsModule, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent, MktgChatPanelComponent],
   templateUrl: './mktg-os-agents.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
