@@ -2,15 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Two-column Profile & Account hub. Below 2xl the panel stacks full-width above the content:
-  the main-layout shell already claims 348px for its own fixed sidebar, so reserving the panel's
-  width any earlier leaves child pages (e.g. /profile/settings' two-column cards) too narrow. At
-  2xl the panel becomes a sticky in-flow right column — it stays in view as the left column
-  scrolls, and because it lives inside the content flow it never overlays the shared footer.
+  Profile & Account hub. The profile panel is a fixed, full-height 300px rail pinned to the right
+  edge of the viewport at every screen size — mirroring the left menu. It never stacks above the
+  content, never changes width, and always sits above page content (z-40). MainLayoutComponent
+  reserves a matching right gutter (pr-[300px]) on the profile hub so the content and the shared
+  footer stay clear of the rail. The rail's `top` matches the impersonation banner offset.
 -->
-<div class="flex flex-col gap-6 2xl:flex-row 2xl:items-start" data-testid="profile-layout">
-  <!-- Profile panel — first in the DOM so it stacks on top below 2xl; sticky right column at 2xl -->
-  <div class="2xl:sticky 2xl:order-2 2xl:w-80 2xl:shrink-0" [class.2xl:top-12]="impersonating()" [class.2xl:top-6]="!impersonating()">
+<div class="flex flex-col" data-testid="profile-layout">
+  <!-- Profile panel — fixed full-height right rail at all widths (out of normal flow) -->
+  <div class="fixed bottom-0 right-0 z-40 w-[300px]" [class.top-12]="impersonating()" [class.top-0]="!impersonating()">
     <lfx-profile-panel
       [loading]="loading()"
       [impersonating]="impersonating()"
@@ -29,7 +29,7 @@
   </div>
 
   <!-- Left column -->
-  <div class="min-w-0 flex-1 2xl:order-1">
+  <div class="min-w-0 flex-1">
     <div class="mx-auto flex max-w-[1024px] flex-col gap-6">
       <!-- Read-only notice while impersonating — editing acts on the real account and is disabled -->
       @if (impersonating()) {
