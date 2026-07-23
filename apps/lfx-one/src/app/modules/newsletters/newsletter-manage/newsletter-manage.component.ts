@@ -196,7 +196,14 @@ export class NewsletterManageComponent {
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly canGoNext = computed(() => this.currentStep() < this.totalSteps && this.canProceed());
   public readonly canSaveDraft = computed(
-    () => this.hasContext() && this.audienceFilled() && this.subjectFilled() && this.bodyFilled() && this.edEmail().length > 0 && !this.savingDraft()
+    () =>
+      this.hasContext() &&
+      this.audienceFilled() &&
+      this.audienceNormalized() &&
+      this.subjectFilled() &&
+      this.bodyFilled() &&
+      this.edEmail().length > 0 &&
+      !this.savingDraft()
   );
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => NEWSLETTER_STEP_TITLES[this.currentStep()] ?? '');
@@ -359,7 +366,7 @@ export class NewsletterManageComponent {
   private computeCanProceed(step: number): boolean {
     switch (step) {
       case 1:
-        return this.audienceFilled();
+        return this.audienceFilled() && this.audienceNormalized();
       case 2:
         return this.subjectFilled() && this.bodyFilled();
       case 3:
@@ -759,7 +766,7 @@ export class NewsletterManageComponent {
   }
 
   private hasAnythingToSave(): boolean {
-    return this.audienceFilled() && this.subjectFilled() && this.bodyFilled();
+    return this.audienceFilled() && this.audienceNormalized() && this.subjectFilled() && this.bodyFilled();
   }
 
   private saveDraft(isManual = false) {
