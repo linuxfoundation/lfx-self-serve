@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, TIMEZONES, WEEKDAY_CODES } from '../constants';
 import { RecurrenceType } from '../enums';
@@ -225,6 +225,23 @@ export function parseTime12Hour(time: string): { hours: number; minutes: number 
 // ============================================================================
 // Timezone Utilities
 // ============================================================================
+
+/**
+ * Returns the UTC offset string for a timezone at a given date, reflecting DST.
+ * e.g. 'America/Los_Angeles' on a July date → '-07:00'; on a January date → '-08:00'
+ */
+export function getTimezoneUtcOffsetString(timezone: string, date: Date): string {
+  try {
+    const offsetMs = getTimezoneOffset(timezone, date);
+    const sign = offsetMs >= 0 ? '+' : '-';
+    const absMs = Math.abs(offsetMs);
+    const hours = Math.floor(absMs / 3_600_000);
+    const minutes = Math.floor((absMs % 3_600_000) / 60_000);
+    return `${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Helper function to get timezone by value
