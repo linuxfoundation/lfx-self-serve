@@ -679,6 +679,37 @@ export interface EventRosterResponse {
   events: EventRosterRow[];
 }
 
+/** One sponsorship tier row for the per-event detail drawer. */
+export interface EventSponsorshipTier {
+  /** Tier name (Diamond, Gold, Platinum, …); '' when unlabeled. */
+  tier: string;
+  /** Sponsorship revenue in dollars for this tier at this event. */
+  revenue: number;
+  /** Number of sponsors in this tier. */
+  sponsorCount: number;
+}
+
+/**
+ * Per-event detail for the roster drawer, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (event meta + goals) and
+ * MARKETING_EVENT_SPONSORSHIPS_BY_TIER (tier breakdown). No daily-pacing time-series is
+ * available in these tables — that lives in PCC's prediction service, linked via eventUrl.
+ */
+export interface EventDetailResponse {
+  eventId: string;
+  eventName: string;
+  startDate: string;
+  country: string;
+  eventUrl: string;
+  registrations: { actual: number; goal: number };
+  sponsorshipRevenue: { actual: number; goal: number };
+  /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
+  vsLastYear: number | null;
+  compScore: EventCompScore;
+  cfpStatus: string;
+  sponsorshipTiers: EventSponsorshipTier[];
+}
+
 /**
  * Foundation-wide events summary for the Marketing Impact Overview tab, sourced from
  * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (per-project, pre-computed period

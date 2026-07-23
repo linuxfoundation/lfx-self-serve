@@ -28,6 +28,7 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   EventCompScore,
+  EventDetailResponse,
   EventGrowthResponse,
   EventGrowthTopEvent,
   EventRosterResponse,
@@ -4968,6 +4969,103 @@ export class ProjectService {
     }));
 
     return { projectId: '', events };
+  }
+
+  /**
+   * Get per-event detail for the roster drawer — event meta, registration/sponsorship
+   * actual-vs-goal, comparison rating, and a sponsorship-by-tier breakdown.
+   *
+   * Meta comes from MARKETING_EVENT_REGISTRATIONS (one row per event) and the tier breakdown
+   * from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. No daily-pacing time-series exists in these
+   * tables (that is PCC's prediction service); the drawer deep-links to eventUrl for pacing.
+   */
+  public async getEventDetail(eventId: string): Promise<EventDetailResponse | null> {
+    logger.debug(undefined, 'get_event_detail', 'Fetching event detail from Snowflake', { event_id: eventId });
+
+    interface EventRow {
+      EVENT_ID: string;
+      EVENT_NAME: string;
+      START_DATE: string;
+      EVENT_COUNTRY: string | null;
+      EVENT_URL: string | null;
+      REG_ACTUAL: number | null;
+      REG_GOAL: number | null;
+      SPON_GOAL: number | null;
+      VS_LY: number | null;
+      COMP_SCORE: string | null;
+      CFP_STATUS: string | null;
+    }
+
+    interface TierRow {
+      SPONSORSHIP_TIER: string | null;
+      REVENUE: number;
+      SPONSOR_COUNT: number;
+    }
+
+    const eventQuery = `
+      SELECT
+        EVENT_ID,
+        EVENT_NAME,
+        TO_CHAR(EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        EVENT_COUNTRY,
+        EVENT_URL,
+        COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
+        EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
+        PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        COMP_SCORE,
+        CFP_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS
+      WHERE EVENT_ID = ?
+      LIMIT 1
+    `;
+
+    const tierQuery = `
+      SELECT
+        SPONSORSHIP_TIER,
+        SUM(IFNULL(SPONSORSHIP_REV_ALL_TIME, 0)) AS REVENUE,
+        SUM(IFNULL(SPONSORSHIP_COUNT_ALL_TIME, 0)) AS SPONSOR_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER
+      WHERE EVENT_ID = ?
+      GROUP BY SPONSORSHIP_TIER
+      ORDER BY REVENUE DESC
+    `;
+
+    const [eventResult, tierResult] = await Promise.all([
+      this.snowflakeService.execute<EventRow>(eventQuery, [eventId]),
+      this.snowflakeService.execute<TierRow>(tierQuery, [eventId]),
+    ]);
+
+    const row = eventResult.rows?.[0];
+    if (!row) {
+      logger.warning(undefined, 'get_event_detail', 'No event row for id', { event_id: eventId });
+      return null;
+    }
+
+    const normalizeScore = (score: string | null): EventCompScore => {
+      const s = (score ?? '').toLowerCase();
+      return s === 'high' || s === 'medium' || s === 'low' ? s : 'unknown';
+    };
+
+    const sponsorshipActual = tierResult.rows.reduce((sum, t) => sum + (t.REVENUE ?? 0), 0);
+
+    return {
+      eventId: row.EVENT_ID,
+      eventName: row.EVENT_NAME,
+      startDate: row.START_DATE,
+      country: row.EVENT_COUNTRY ?? '',
+      eventUrl: row.EVENT_URL ?? '',
+      registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
+      sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
+      vsLastYear: row.VS_LY,
+      compScore: normalizeScore(row.COMP_SCORE),
+      cfpStatus: row.CFP_STATUS ?? '',
+      sponsorshipTiers: tierResult.rows.map((t) => ({
+        tier: t.SPONSORSHIP_TIER ?? '',
+        revenue: t.REVENUE ?? 0,
+        sponsorCount: t.SPONSOR_COUNT ?? 0,
+      })),
+    };
   }
 
   /**

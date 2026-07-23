@@ -11,9 +11,11 @@ import { combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import type { EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView } from '@lfx-one/shared/interfaces';
 
+import { EventDetailDrawerComponent } from '../event-detail-drawer/event-detail-drawer.component';
+
 @Component({
   selector: 'lfx-event-roster-section',
-  imports: [NgClass, ReactiveFormsModule],
+  imports: [NgClass, ReactiveFormsModule, EventDetailDrawerComponent],
   templateUrl: './event-roster-section.component.html',
 })
 export class EventRosterSectionComponent {
@@ -30,6 +32,8 @@ export class EventRosterSectionComponent {
   protected readonly loading = signal(false);
   protected readonly includePast = signal(false);
   protected readonly skeletons: readonly number[] = [0, 1, 2, 3, 4];
+  protected readonly drawerVisible = signal(false);
+  protected readonly selectedEventId = signal<string | null>(null);
 
   // === Computed Signals ===
   protected readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -40,6 +44,11 @@ export class EventRosterSectionComponent {
   // === Protected Methods ===
   protected toggleIncludePast(includePast: boolean): void {
     this.includePast.set(includePast);
+  }
+
+  protected openEvent(eventId: string): void {
+    this.selectedEventId.set(eventId);
+    this.drawerVisible.set(true);
   }
 
   // === Private Initializers ===

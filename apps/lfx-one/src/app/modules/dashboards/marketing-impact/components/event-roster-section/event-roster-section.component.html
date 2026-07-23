@@ -65,17 +65,18 @@
 
       <!-- Rows -->
       @for (row of rows(); track row.eventId) {
-        <div class="flex items-center gap-4 border-b border-gray-100 py-3" role="row" [attr.data-testid]="'event-roster-row-' + row.eventId">
+        <div
+          class="flex cursor-pointer items-center gap-4 border-b border-gray-100 py-3 transition-colors hover:bg-blue-50/40"
+          role="row"
+          tabindex="0"
+          (click)="openEvent(row.eventId)"
+          (keydown.enter)="openEvent(row.eventId)"
+          (keydown.space)="openEvent(row.eventId)"
+          [attr.data-testid]="'event-roster-row-' + row.eventId">
           <span class="w-24 text-xs text-gray-500 tabular-nums" role="cell">{{ row.dateLabel }}</span>
 
           <div class="flex flex-1 min-w-[180px] items-center gap-2" role="cell">
-            @if (row.eventUrl) {
-              <a [href]="row.eventUrl" target="_blank" rel="noopener noreferrer" class="truncate text-xs font-semibold text-blue-600 hover:underline">{{
-                row.eventName
-              }}</a>
-            } @else {
-              <span class="truncate text-xs font-semibold text-gray-700">{{ row.eventName }}</span>
-            }
+            <span class="truncate text-xs font-semibold text-blue-600">{{ row.eventName }}</span>
             @if (row.atRisk) {
               <i class="fa-solid fa-circle-exclamation text-xs text-red-500" aria-label="Behind registration goal" title="Behind registration goal"></i>
             }
@@ -135,3 +136,5 @@
     </div>
   }
 </div>
+
+<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" />
