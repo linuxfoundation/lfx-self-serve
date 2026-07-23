@@ -150,7 +150,7 @@ export interface OrgLensProjectLeaderboardRow {
   trendDeltaPct: number;
   /** Precomputed warehouse rank for Activity Count mode boards (org-dashboard parity). */
   warehouseRank?: number;
-  /** The viewing org's own row — always rendered and visually pinned. */
+  /** Marks the viewing org's own row — rendered at its rank-ordered position and visually highlighted (not pinned to the top). */
   isViewingOrg: boolean;
 }
 
