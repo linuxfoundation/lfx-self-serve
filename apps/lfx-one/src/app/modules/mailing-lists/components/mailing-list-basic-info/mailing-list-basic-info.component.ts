@@ -23,6 +23,7 @@ export class MailingListBasicInfoComponent {
   public readonly prefix = input<string>('');
   public readonly maxGroupNameLength = input<number>(34);
   public readonly isEditMode = input<boolean>(false);
+  public readonly duplicateNameError = input<boolean>(false);
 
   public readonly projectName = computed(() => {
     return this.service()?.project_name || this.projectContextService.activeContext()?.name || '';

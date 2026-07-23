@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { COMMITTEE_LABEL, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
@@ -60,6 +61,8 @@ export class MailingListManageComponent {
   public readonly servicesLoaded = signal<boolean>(false);
   public readonly parentService = signal<GroupsIOService | null>(null);
   private readonly internalStep = signal<number>(1);
+  private readonly createdService = signal<GroupsIOService | null>(null);
+  public readonly hasDuplicateNameError = signal<boolean>(false);
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -77,9 +80,14 @@ export class MailingListManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public readonly initialPublicValue: Signal<boolean | null> = this.initInitialPublicValue();
   public currentStep: Signal<number> = this.initCurrentStep();
+  public readonly backLink: Signal<string[]> = this.initBackLink();
 
   public constructor() {
     evictOnWriteAccessLoss();
+    this.form()
+      .get('group_name')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe(() => this.hasDuplicateNameError.set(false));
   }
 
   public nextStep(): void {
@@ -117,7 +125,7 @@ export class MailingListManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/mailing-lists']);
+    this.router.navigate(this.backLink());
   }
 
   public onSubmit(): void {
@@ -131,10 +139,15 @@ export class MailingListManageComponent {
     // Determine if we need to create a shared service first
     const isCreatingService = this.needsSharedServiceCreation() && !this.isEditMode();
     const serviceCreation$: Observable<GroupsIOService | null> = isCreatingService ? this.createSharedService() : of(null);
+    let serviceWasCreated: boolean = false;
 
     serviceCreation$
       .pipe(
         switchMap((newService: GroupsIOService | null) => {
+          if (newService) {
+            this.createdService.set(newService);
+            serviceWasCreated = true;
+          }
           const service = newService ?? this.selectedService();
           if (!service?.uid) {
             return throwError(() => new Error('Parent service is required'));
@@ -151,17 +164,33 @@ export class MailingListManageComponent {
             summary: 'Success',
             detail: `Mailing list ${this.isEditMode() ? 'updated' : 'created'} successfully`,
           });
-          this.router.navigate(['/mailing-lists']);
+          this.router.navigate(this.backLink());
         },
-        error: (error: Error) => {
-          const isServiceError = isCreatingService && error?.message?.includes('service');
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: isServiceError
-              ? 'Failed to create mailing list service for this project'
-              : `Failed to ${this.isEditMode() ? 'update' : 'create'} mailing list`,
-          });
+        error: (error: unknown) => {
+          const httpStatus = error instanceof HttpErrorResponse ? error.status : undefined;
+          const isDuplicateName = !this.isEditMode() && httpStatus === 409 && (!isCreatingService || serviceWasCreated);
+
+          if (isDuplicateName) {
+            const groupNameControl = this.form().get('group_name');
+            groupNameControl?.setErrors({ ...groupNameControl.errors, duplicateName: true });
+            groupNameControl?.markAsTouched();
+            this.hasDuplicateNameError.set(true);
+            this.internalStep.set(1);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'A mailing list with this name already exists',
+            });
+          } else {
+            const isServiceError = isCreatingService && !serviceWasCreated;
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: isServiceError
+                ? 'Failed to create mailing list service for this project'
+                : `Failed to ${this.isEditMode() ? 'update' : 'create'} mailing list`,
+            });
+          }
           this.submitting.set(false);
         },
       });
@@ -243,6 +272,9 @@ export class MailingListManageComponent {
         tap(() => {
           this.servicesLoaded.set(false);
           this.parentService.set(null);
+          this.createdService.set(null);
+          this.hasDuplicateNameError.set(false);
+          this.form().get('group_name')?.updateValueAndValidity();
         }),
         filter((project): project is NonNullable<typeof project> => project !== null),
         switchMap((project) =>
@@ -287,12 +319,15 @@ export class MailingListManageComponent {
   }
 
   private initSelectedService(): Signal<GroupsIOService | null> {
-    return computed(() => this.availableServices()[0] ?? null);
+    return computed(() => this.createdService() ?? this.availableServices()[0] ?? null);
   }
 
   private initNeedsSharedServiceCreation(): Signal<boolean> {
     return computed(
-      () => this.parentService() !== null && this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0
+      () =>
+        this.createdService() === null &&
+        this.parentService() !== null &&
+        this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0
     );
   }
 
@@ -342,6 +377,13 @@ export class MailingListManageComponent {
 
   private initInitialPublicValue(): Signal<boolean | null> {
     return computed(() => this.mailingList()?.public ?? null);
+  }
+
+  private initBackLink(): Signal<string[]> {
+    return computed(() => {
+      const id = this.mailingListId();
+      return this.isEditMode() && id ? ['/mailing-lists', id] : ['/mailing-lists'];
+    });
   }
 
   private initCurrentStep(): Signal<number> {

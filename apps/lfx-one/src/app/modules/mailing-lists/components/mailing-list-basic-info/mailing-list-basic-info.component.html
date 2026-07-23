@@ -57,6 +57,9 @@
         @if (form().get('group_name')?.errors?.['pattern'] && form().get('group_name')?.touched) {
           <p class="mt-1 text-sm text-red-600">Name can only contain lowercase letters and numbers, with hyphens allowed between characters</p>
         }
+        @if (duplicateNameError()) {
+          <p class="mt-1 text-sm text-red-600">A mailing list with this name already exists</p>
+        }
       }
     </div>
 
