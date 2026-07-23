@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -82,6 +82,13 @@ export class SidebarComponent {
   protected readonly navLens: Signal<NavLens | null> = this.initNavLens();
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
+  // Browser-only hydration gate. The org lens is enabled by a browser-only LaunchDarkly flag, so the
+  // server render always clamps to the me lens and would emit a me-lens menu; hydrating that against a
+  // client-resolved org menu leaves stale me-lens nodes on screen. Holding the concrete menu back until
+  // afterNextRender means the server and the first client render both show the loading skeleton
+  // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.
+  protected readonly hydrated = signal(false);
+
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
   protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
@@ -137,6 +144,12 @@ export class SidebarComponent {
     scanForGroups(items);
     return states;
   });
+
+  public constructor() {
+    // Runs browser-only, after the first client render is committed — flips the menu from skeleton to
+    // the client-resolved lens menu once hydration is safely past the SSR/CSR reconciliation boundary.
+    afterNextRender(() => this.hydrated.set(true));
+  }
 
   protected toggleGroup(label: string): void {
     const items = this.items();

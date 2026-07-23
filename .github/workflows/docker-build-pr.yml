@@ -72,7 +72,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            BUILD_ENV=development
+            BUILD_ENV=dev-cluster
             APP_VERSION=pr-${{ github.event.pull_request.number }}
 
       - name: Comment deployment URL on PR

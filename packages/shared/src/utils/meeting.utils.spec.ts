@@ -11,8 +11,15 @@ import { describe, expect, it } from 'vitest';
 import { RecurrenceType } from '../enums';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
 import {
+  buildMeetingOrganizerChip,
+  buildMeetingOrganizerMailto,
   buildRecurrenceSummary,
+  collectMeetingOrganizers,
+  compareMeetingPeopleByHostThenName,
+  getMeetingOrganizerDisplayName,
+  isUnresolvableParticipantName,
   normalizeIndexedMeetingAiSummary,
+  resolveMeetingOrganizer,
   resolveOccurrenceRecurrence,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -189,6 +196,255 @@ describe('normalizeIndexedMeetingAiSummary', () => {
     const result = normalizeIndexedMeetingAiSummary(meeting);
     expect(result.ai_summary_enabled).toBeUndefined();
     expect(result.require_ai_summary_approval).toBeUndefined();
+  });
+});
+
+describe('resolveMeetingOrganizer', () => {
+  it('returns created_by when it is a real human', () => {
+    const meeting = { created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' } } as Meeting;
+
+    expect(resolveMeetingOrganizer(meeting)).toEqual({
+      name: 'Ada Lovelace',
+      username: 'alovelace',
+      email: 'ada@example.com',
+      profile_picture: 'https://x/a.jpg',
+    });
+  });
+
+  it('omits profile_picture when created_by has none', () => {
+    const meeting = { created_by: { name: 'Ada', username: 'ada', email: 'ada@example.com' } } as Meeting;
+
+    expect(resolveMeetingOrganizer(meeting)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
+  });
+
+  it('skips zoom.webhooks / zoom.events service-account usernames', () => {
+    const webhooks = { created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } } as Meeting;
+    const events = { created_by: { name: '', username: 'zoom.events', email: '' } } as Meeting;
+
+    expect(resolveMeetingOrganizer(webhooks)).toBeNull();
+    expect(resolveMeetingOrganizer(events)).toBeNull();
+  });
+
+  it('skips service accounts matched by email or email local-part', () => {
+    const byEmail = { created_by: { name: '', username: '', email: 'zoom.webhooks@zoom.us' } } as Meeting;
+
+    expect(resolveMeetingOrganizer(byEmail)).toBeNull();
+  });
+
+  it('returns null when created_by is empty and no hosts are given', () => {
+    expect(resolveMeetingOrganizer({ created_by: { name: '', username: '', email: '' } } as Meeting)).toBeNull();
+    expect(resolveMeetingOrganizer({} as Meeting)).toBeNull();
+    expect(resolveMeetingOrganizer(null)).toBeNull();
+  });
+
+  it('falls back to the first host when created_by is not a human', () => {
+    const meeting = { created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } } as Meeting;
+    const hosts = [
+      { first_name: 'Not', last_name: 'Host', host: false },
+      { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', avatar_url: 'https://x/g.jpg', host: true },
+    ];
+
+    expect(resolveMeetingOrganizer(meeting, hosts)).toEqual({
+      name: 'Grace Hopper',
+      username: 'ghopper',
+      email: 'grace@example.com',
+      profile_picture: 'https://x/g.jpg',
+    });
+  });
+
+  it('prefers a human created_by over host fallback', () => {
+    const meeting = { created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' } } as Meeting;
+    const hosts = [{ first_name: 'Grace', last_name: 'Hopper', host: true }];
+
+    expect(resolveMeetingOrganizer(meeting, hosts)?.name).toBe('Ada Lovelace');
+  });
+
+  it('returns null when hosts exist but none is flagged host', () => {
+    expect(resolveMeetingOrganizer({} as Meeting, [{ first_name: 'A', last_name: 'B', host: false }])).toBeNull();
+  });
+});
+
+describe('getMeetingOrganizerDisplayName', () => {
+  it('prefers name, then username, then email', () => {
+    expect(getMeetingOrganizerDisplayName({ name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' })).toBe('Ada Lovelace');
+    expect(getMeetingOrganizerDisplayName({ name: '   ', username: 'ada', email: 'ada@example.com' })).toBe('ada');
+    expect(getMeetingOrganizerDisplayName({ name: '', username: '', email: 'ada@example.com' })).toBe('ada@example.com');
+  });
+
+  it('returns an empty string for null or a fully empty organizer', () => {
+    expect(getMeetingOrganizerDisplayName(null)).toBe('');
+    expect(getMeetingOrganizerDisplayName({ name: '', username: '', email: '' })).toBe('');
+  });
+});
+
+describe('collectMeetingOrganizers', () => {
+  it('returns the human created_by as the sole organizer when no hosts are supplied', () => {
+    const meeting = { created_by: { name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' } } as Meeting;
+
+    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' }]);
+  });
+
+  it('uses the host set (sorted by name) as the authoritative organizers when hosts are present', () => {
+    const meeting = { created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } } as Meeting;
+    const hosts = [
+      { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
+      { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
+      { first_name: 'Not', last_name: 'Host', host: false },
+    ];
+
+    const organizers = collectMeetingOrganizers(meeting, hosts);
+    expect(organizers.map((o) => o.name)).toEqual(['Alan Turing', 'Grace Hopper']);
+  });
+
+  it('does NOT short-circuit on created_by — hosts drive the set so chip and modal agree', () => {
+    // Regression: created_by (Christina) is one of two hosts; the chip must show BOTH, not just created_by.
+    const meeting = { created_by: { name: 'Christina Harter', username: 'charter', email: 'christina@example.com' } } as Meeting;
+    const hosts = [
+      { first_name: 'Christina', last_name: 'Harter', username: 'charter', email: 'christina@example.com', host: true },
+      { first_name: 'Grant', last_name: 'Miller', username: 'gmiller', email: 'grant@example.com', host: true },
+    ];
+
+    const organizers = collectMeetingOrganizers(meeting, hosts);
+    expect(organizers.map((o) => o.name)).toEqual(['Christina Harter', 'Grant Miller']);
+  });
+
+  it('folds a human created_by in when it is not among the hosts', () => {
+    const meeting = { created_by: { name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' } } as Meeting;
+    const hosts = [{ first_name: 'Grant', last_name: 'Miller', username: 'gmiller', email: 'grant@example.com', host: true }];
+
+    const organizers = collectMeetingOrganizers(meeting, hosts);
+    expect(organizers.map((o) => o.name)).toEqual(['Ada Lovelace', 'Grant Miller']);
+  });
+
+  it('returns an empty array when nothing resolves', () => {
+    expect(collectMeetingOrganizers({} as Meeting)).toEqual([]);
+    expect(collectMeetingOrganizers({} as Meeting, [{ first_name: 'A', last_name: 'B', host: false }])).toEqual([]);
+  });
+});
+
+describe('buildMeetingOrganizerMailto', () => {
+  it('returns null when there is no email (caller renders plain text)', () => {
+    expect(buildMeetingOrganizerMailto({ email: '', meetingTitle: 'Sync', detailUrl: 'https://x/m/1' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: null })).toBeNull();
+  });
+
+  it('builds a mailto with a percent-encoded subject and body, address left bare', () => {
+    const href = buildMeetingOrganizerMailto({
+      email: 'ada@example.com',
+      meetingTitle: 'Board & Strategy',
+      meetingDate: 'Jul 22, 2026',
+      detailUrl: 'https://lfx.dev/meetings/abc?x=1',
+    });
+
+    expect(href).toBe(
+      'mailto:ada@example.com?subject=Board%20%26%20Strategy%20%E2%80%94%20Jul%2022%2C%202026&body=https%3A%2F%2Flfx.dev%2Fmeetings%2Fabc%3Fx%3D1'
+    );
+  });
+
+  it('joins title and date with an em dash and omits empty parts', () => {
+    expect(buildMeetingOrganizerMailto({ email: 'a@b.com', meetingTitle: 'Only Title' })).toBe('mailto:a@b.com?subject=Only%20Title');
+    expect(buildMeetingOrganizerMailto({ email: 'a@b.com' })).toBe('mailto:a@b.com');
+  });
+
+  it('rejects addresses that could inject mailto headers', () => {
+    expect(buildMeetingOrganizerMailto({ email: 'a?subject=evil@b.com', meetingTitle: 'T' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'a&cc=x@b.com' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'has space@b.com' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'no-at-sign' })).toBeNull();
+    // Percent-encoded CRLF + Bcc header-injection attempt must not survive the allowlist.
+    expect(buildMeetingOrganizerMailto({ email: 'victim@example.com%0D%0ABcc:attacker@example.com' })).toBeNull();
+    expect(buildMeetingOrganizerMailto({ email: 'two@at@example.com' })).toBeNull();
+  });
+});
+
+describe('buildMeetingOrganizerChip', () => {
+  const ada = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+  const grace = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+  const noEmail = { name: 'No Email', username: 'noemail', email: '' };
+  const ctx = { meetingTitle: 'Sync', meetingDate: 'Jul 22, 2026', detailUrl: 'https://x/m/1' };
+
+  it('returns null when there are no organizers', () => {
+    expect(buildMeetingOrganizerChip([])).toBeNull();
+  });
+
+  it('builds a single-organizer chip with a mailto link and a stable track key on the name', () => {
+    const chip = buildMeetingOrganizerChip([ada], null, ctx);
+    expect(chip?.count).toBe(1);
+    expect(chip?.primary.name).toBe('Ada Lovelace');
+    expect(chip?.primary.key).toBe('alovelace#0');
+    expect(chip?.primary.mailto).toContain('mailto:ada@example.com?subject=Sync');
+    expect(chip?.overflow).toEqual([]);
+  });
+
+  it('gives same-named organizers distinct track keys even with no username/email', () => {
+    // Two host-only organizers with identical display names and no username/email must not collide.
+    const nameOnlyA = { name: 'Alex Kim', username: '', email: '' };
+    const nameOnlyB = { name: 'Alex Kim', username: '', email: '' };
+    const chip = buildMeetingOrganizerChip([nameOnlyA, nameOnlyB]);
+    expect(chip?.primary.key).toBe('Alex Kim#0');
+    expect(chip?.overflow[0].key).toBe('Alex Kim#1');
+    expect(chip?.primary.key).not.toBe(chip?.overflow[0].key);
+  });
+
+  it('marks the viewer as "you" and never links their name', () => {
+    const chip = buildMeetingOrganizerChip([ada], 'auth0|alovelace', ctx);
+    expect(chip?.primary.isYou).toBe(true);
+    expect(chip?.primary.mailto).toBeNull();
+  });
+
+  it('exposes overflow organizers for the "+N" popover, each with its own mailto', () => {
+    const chip = buildMeetingOrganizerChip([grace, ada, noEmail], null, ctx);
+    expect(chip?.count).toBe(3);
+    expect(chip?.primary.name).toBe('Grace Hopper');
+    expect(chip?.overflow.map((o) => o.name)).toEqual(['Ada Lovelace', 'No Email']);
+    expect(chip?.overflow[0].mailto).toContain('mailto:ada@example.com');
+    // No-email organizer → plain text (null mailto).
+    expect(chip?.overflow[1].mailto).toBeNull();
+  });
+});
+
+describe('isUnresolvableParticipantName', () => {
+  it('is true for empty or placeholder names', () => {
+    expect(isUnresolvableParticipantName('', '')).toBe(true);
+    expect(isUnresolvableParticipantName(null, undefined)).toBe(true);
+    expect(isUnresolvableParticipantName('unknown', 'unknown')).toBe(true);
+    expect(isUnresolvableParticipantName('[unknown]', '[unknown]')).toBe(true);
+    expect(isUnresolvableParticipantName('  Unknown  ', '')).toBe(true);
+  });
+
+  it('is false when at least one part is a real name', () => {
+    expect(isUnresolvableParticipantName('Ada', '')).toBe(false);
+    expect(isUnresolvableParticipantName('', 'Lovelace')).toBe(false);
+    expect(isUnresolvableParticipantName('unknown', 'Lovelace')).toBe(false);
+  });
+});
+
+describe('compareMeetingPeopleByHostThenName', () => {
+  it('floats hosts to the top, sinks unresolvable rows to the bottom, sorts by first name within a tier', () => {
+    const people = [
+      { first_name: 'Zed', last_name: 'Zephyr', host: false },
+      { first_name: '', last_name: '', host: false }, // unresolvable → bottom
+      { first_name: 'Grace', last_name: 'Hopper', host: true }, // host → top
+      { first_name: 'Ada', last_name: 'Lovelace', host: false },
+      { first_name: 'Alan', last_name: 'Turing', host: true }, // host → top
+      { first_name: 'unknown', last_name: '[unknown]', host: false }, // unresolvable → bottom
+    ];
+
+    const ordered = [...people].sort(compareMeetingPeopleByHostThenName).map((p) => `${p.first_name} ${p.last_name}`.trim());
+
+    expect(ordered).toEqual(['Alan Turing', 'Grace Hopper', 'Ada Lovelace', 'Zed Zephyr', '', 'unknown [unknown]']);
+  });
+
+  it('keeps an unnamed host at the top, not the bottom', () => {
+    const people = [
+      { first_name: 'Ada', last_name: 'Lovelace', host: false },
+      { first_name: '', last_name: '', host: true }, // unnamed host → still top
+      { first_name: 'unknown', last_name: '[unknown]', host: false }, // unresolvable non-host → bottom
+    ];
+
+    const ordered = [...people].sort(compareMeetingPeopleByHostThenName);
+    expect(ordered[0].host).toBe(true);
+    expect(`${ordered[2].first_name} ${ordered[2].last_name}`.trim()).toBe('unknown [unknown]');
   });
 });
 

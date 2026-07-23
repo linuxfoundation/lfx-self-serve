@@ -85,7 +85,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            BUILD_ENV=development
+            BUILD_ENV=dev-cluster
 
       - name: Post preview URL to step summary
         env:

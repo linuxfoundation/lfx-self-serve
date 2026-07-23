@@ -3,6 +3,7 @@
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { CommitteeService } from '../services/committee.service';
@@ -75,6 +76,44 @@ export async function addInvitedStatusToMeetings(req: Request, meetings: Meeting
   // Check invitation status for all meetings, including organizer meetings
   // (organizers may also be invited to their own meetings)
   return Promise.all(meetings.map((meeting) => addInvitedStatusToMeeting(req, meeting, email, m2mToken)));
+}
+
+/**
+ * Enriches meetings that lack a human `created_by` by joining back to the live
+ * `v1_meeting` index (the only source that carries it). Upcoming meetings key on their
+ * own UID; past meetings key on `meeting_id` (the originating series meeting). Meetings
+ * that already carry a human creator, or whose series no longer exists, are left untouched
+ * so the organizer display is simply omitted.
+ *
+ * @param req - Express request object
+ * @param meetings - Meetings to enrich (mutated copies returned; input is not modified)
+ * @param keyOf - Extracts the live `v1_meeting` UID to look up for a given meeting
+ * @returns The meetings with `created_by` populated where it could be resolved
+ */
+export async function enrichMeetingsWithCreatedBy<T extends Meeting>(req: Request, meetings: T[], keyOf: (meeting: T) => string | undefined): Promise<T[]> {
+  if (meetings.length === 0) {
+    return meetings;
+  }
+
+  // Only meetings without a resolvable human creator need the join.
+  const needsEnrichment = (meeting: T): boolean => !resolveMeetingOrganizer(meeting) && !!keyOf(meeting);
+  const uids = meetings.filter(needsEnrichment).map((meeting) => keyOf(meeting)!);
+  if (uids.length === 0) {
+    return meetings;
+  }
+
+  const createdByMap = await meetingService.resolveCreatedByForMeetings(req, uids);
+  if (createdByMap.size === 0) {
+    return meetings;
+  }
+
+  return meetings.map((meeting) => {
+    if (!needsEnrichment(meeting)) {
+      return meeting;
+    }
+    const createdBy = createdByMap.get(keyOf(meeting)!);
+    return createdBy ? { ...meeting, created_by: createdBy } : meeting;
+  });
 }
 
 /**

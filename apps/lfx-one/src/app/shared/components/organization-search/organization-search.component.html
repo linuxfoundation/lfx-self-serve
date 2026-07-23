@@ -92,7 +92,7 @@
             placeholder="https://example.com"
             styleClass="w-full"
             size="small" />
-          @if (ctrl?.errors?.['trimmedRequired'] && ctrl?.touched) {
+          @if ((ctrl?.errors?.['required'] || ctrl?.errors?.['trimmedRequired']) && ctrl?.touched) {
             <p class="text-xs text-red-600">Website is required for new organizations</p>
           }
           @if (ctrl?.errors?.['httpsUrl'] && ctrl?.touched) {

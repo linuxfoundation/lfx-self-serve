@@ -38,6 +38,7 @@ import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, no
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
@@ -737,7 +738,11 @@ export class UserService {
 
     const enriched = await this.meetingService.getMeetingProjectName(req, pastOnly);
 
-    return this.accessCheckService.addAccessToResources(req, enriched, 'v1_past_meeting', 'organizer');
+    // Webhook-created past meetings carry a service-account created_by — join back to the live
+    // v1_meeting index so the organizer chip resolves on Me-lens past cards.
+    const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
+
+    return this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
   }
 
   /**
@@ -834,7 +839,10 @@ export class UserService {
     }
 
     const enriched = await this.meetingService.getMeetingProjectName(req, filtered);
-    return this.accessCheckService.addAccessToResources(req, enriched, 'v1_past_meeting', 'organizer');
+    // Webhook-created past meetings carry a service-account created_by — join back to the live
+    // v1_meeting index so the organizer chip resolves on Me-lens latest-past cards.
+    const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
+    return this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
   }
 
   /**

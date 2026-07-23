@@ -17,6 +17,7 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingUserInfo,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -258,6 +259,85 @@ export class MeetingService {
     });
 
     return meeting;
+  }
+
+  /**
+   * Resolves the `created_by` (meeting creator) for a set of live `v1_meeting` UIDs by
+   * querying the indexed projection — the only source that carries it (the ITX detail
+   * payload and webhook-created past meetings do not).
+   *
+   * Batches the lookup with the query service's OR-semantics `tags` param so a page of
+   * meetings costs one call per chunk rather than N. UIDs that no longer resolve (deleted
+   * series) are simply absent from the returned map, so callers omit the organizer display.
+   *
+   * @returns Map of meeting UID → `created_by`, only for meetings that carry one.
+   */
+  public async resolveCreatedByForMeetings(req: Request, meetingUids: string[]): Promise<Map<string, MeetingUserInfo>> {
+    const result = new Map<string, MeetingUserInfo>();
+    const uniqueUids = [...new Set(meetingUids.filter(Boolean))];
+    if (uniqueUids.length === 0) {
+      return result;
+    }
+
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolving created_by from v1_meeting index', {
+      requested: meetingUids.length,
+      unique: uniqueUids.length,
+    });
+
+    // CHUNK_SIZE caps how many UIDs ride one tags-param query; CONCURRENCY caps how many of those
+    // chunk queries run at once. The Me-lens path can supply hundreds of past meetings, so running
+    // chunks in bounded-concurrency waves avoids serial latency proportional to meeting count while
+    // keeping per-chunk failure isolation (a failed chunk is skipped, not fatal).
+    const CHUNK_SIZE = 50;
+    const CONCURRENCY = 5;
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniqueUids.length; i += CHUNK_SIZE) {
+      chunks.push(uniqueUids.slice(i, i + CHUNK_SIZE));
+    }
+
+    // Paginate manually (rather than via fetchAllQueryResources) so we keep each resource's wrapper
+    // id: the canonical UID is `data.id` when present, else the `type:uid` wrapper id split — the
+    // same normalization getMeetings uses. Keying on `data.id` alone would miss rows where it's
+    // absent, so meeting_id lookups would silently never hit the map.
+    const fetchChunk = async (chunk: string[]): Promise<void> => {
+      try {
+        let pageToken: string | undefined;
+        do {
+          const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_meeting',
+            tags: chunk,
+            ...(pageToken && { page_token: pageToken }),
+          });
+          for (const resource of response.resources) {
+            const uid = resource.data?.id || resource.id?.split(':').pop() || resource.id;
+            if (uid && resource.data?.created_by) {
+              result.set(uid, resource.data.created_by);
+            }
+          }
+          pageToken = response.page_token;
+        } while (pageToken);
+      } catch (error) {
+        logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
+          chunk_size: chunk.length,
+          err: error,
+        });
+      }
+    };
+
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const wave = chunks.slice(i, i + CONCURRENCY);
+      await Promise.all(wave.map((chunk) => fetchChunk(chunk)));
+    }
+
+    // Surface partial-failure completeness: a resolved count below requested means some chunks
+    // failed and were skipped (those meetings render without an organizer rather than erroring).
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolved created_by lookups', {
+      requested: uniqueUids.length,
+      resolved: result.size,
+    });
+
+    return result;
   }
 
   /**
