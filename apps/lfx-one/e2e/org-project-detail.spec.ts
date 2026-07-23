@@ -136,7 +136,9 @@ test.describe('Org Project Detail — leaderboards', () => {
     // (rows with no warehouse rank sort last and render a positional `i + 1` fallback). So each row's
     // rank is non-decreasing versus the previous row EXCEPT for a trailing fallback row, whose rank
     // equals its 1-based position. A viewing row pinned out of order would satisfy neither condition.
-    // Both boards load independently, so await each table before reading its rows to avoid a race.
+    // We assert only the rendered rank order — not the viewing row's presence — because unpinning
+    // explicitly allows the viewing org to fall onto a later paginator page. Both boards load
+    // independently, so await each table before reading its rows to avoid a race.
     await page.getByTestId('project-detail-metric-activity').click();
     await expect(page).toHaveURL(/metric=activity/);
     await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -148,13 +150,8 @@ test.describe('Org Project Detail — leaderboards', () => {
       expect(count).toBeGreaterThan(0);
 
       const ranks: number[] = [];
-      let viewingIndex = -1;
       for (let i = 0; i < count; i++) {
-        const row = rows.nth(i);
-        ranks.push(Number((await row.locator('td').first().innerText()).trim()));
-        if ((await row.getAttribute('data-testid')) === `project-detail-leaderboard-${board}-viewing-row`) {
-          viewingIndex = i;
-        }
+        ranks.push(Number((await rows.nth(i).locator('td').first().innerText()).trim()));
       }
 
       for (let i = 1; i < ranks.length; i++) {
@@ -162,7 +159,6 @@ test.describe('Org Project Detail — leaderboards', () => {
         const positionalFallback = ranks[i] === i + 1;
         expect(nonDecreasing || positionalFallback).toBe(true);
       }
-      expect(viewingIndex).toBeGreaterThanOrEqual(0);
     }
   });
 
