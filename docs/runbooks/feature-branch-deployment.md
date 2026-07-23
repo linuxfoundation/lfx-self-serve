@@ -180,9 +180,9 @@ synced via GitHub Actions.
 
 1. **Store the secret in 1Password.**
    Add the credential to the appropriate vault in the `LFX` 1Password account:
-   - `lfx-development` for dev
-   - `lfx-staging` for staging
-   - `lfx-production` for production
+   - `LFX V2 - Development` for dev
+   - `LFX V2 - Staging` for staging
+   - `LFX V2 - Production` for production
 
 2. **Add a secret definition to `lfx-secrets-management`.**
    Open a PR in the `lfx-secrets-management` repository. Add an entry to the
@@ -192,14 +192,14 @@ synced via GitHub Actions.
    ```yaml
    # secrets/lfx/cloud.yml
    My LFX Self Serve Secret:
-     tags: [lfx_self_serve, pcc]
+     tags: [lfx_v2, pcc]
      envs: [development, staging, production]
      source:
        onepassword:
          vaults:
-           development: lfx-development
-           staging: lfx-staging
-           production: lfx-production
+           development: LFX V2 - Development
+           staging: LFX V2 - Staging
+           production: LFX V2 - Production
          item: My Item Name in 1Password
          fields: credential
      destinations:
