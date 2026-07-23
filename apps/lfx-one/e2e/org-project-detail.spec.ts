@@ -132,12 +132,15 @@ test.describe('Org Project Detail — leaderboards', () => {
   });
 
   test('activity count mode also renders boards in rank order with the viewing org not pinned', async ({ page }) => {
-    // buildBoard() drops the pin in the Activity Count branch too (ordered by warehouse rank). Warehouse
-    // ranks can have gaps for a viewer-scoped set, so assert non-decreasing order (not contiguity) — a
-    // viewing row pinned out of order would still break a non-decreasing sequence.
+    // buildBoard() drops the pin in the Activity Count branch too, sorting by warehouse rank ascending
+    // (rows with no warehouse rank sort last and render a positional `i + 1` fallback). So each row's
+    // rank is non-decreasing versus the previous row EXCEPT for a trailing fallback row, whose rank
+    // equals its 1-based position. A viewing row pinned out of order would satisfy neither condition.
+    // Both boards load independently, so await each table before reading its rows to avoid a race.
     await page.getByTestId('project-detail-metric-activity').click();
     await expect(page).toHaveURL(/metric=activity/);
     await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     for (const board of ['technical', 'ecosystem'] as const) {
       const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
@@ -155,7 +158,9 @@ test.describe('Org Project Detail — leaderboards', () => {
       }
 
       for (let i = 1; i < ranks.length; i++) {
-        expect(ranks[i]).toBeGreaterThanOrEqual(ranks[i - 1]);
+        const nonDecreasing = ranks[i] >= ranks[i - 1];
+        const positionalFallback = ranks[i] === i + 1;
+        expect(nonDecreasing || positionalFallback).toBe(true);
       }
       expect(viewingIndex).toBeGreaterThanOrEqual(0);
     }
