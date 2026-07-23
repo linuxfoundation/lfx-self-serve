@@ -171,7 +171,8 @@
                     [committeesLoading]="committeesLoading()"
                     [committeesError]="committeesError()"
                     [recipientCount]="recipientCount()"
-                    [recipientCountLoading]="recipientCountLoading()">
+                    [recipientCountLoading]="recipientCountLoading()"
+                    (retryCommittees)="retryCommittees()">
                   </lfx-newsletter-audience-step>
                 </ng-template>
               </p-step-panel>

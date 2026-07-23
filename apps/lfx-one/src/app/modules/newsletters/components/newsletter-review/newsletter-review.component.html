@@ -50,7 +50,7 @@
           }
         </div>
       </div>
-      @if (committeesError()) {
+      @if (committeesError() || committeesLoading()) {
         <lfx-button
           label="Retry"
           icon="fa-light fa-rotate-right"

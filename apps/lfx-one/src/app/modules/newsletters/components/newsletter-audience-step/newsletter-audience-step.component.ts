@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
@@ -34,6 +34,9 @@ export class NewsletterAudienceStepComponent {
   public readonly committeesError = input<string | null>(null);
   public readonly recipientCount = input<number | null>(null);
   public readonly recipientCountLoading = input<boolean>(false);
+
+  // === Outputs ===
+  public readonly retryCommittees = output<void>();
 
   // === Signals ===
   protected readonly recipients = signal<NewsletterRecipient[]>([]);
