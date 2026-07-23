@@ -917,10 +917,12 @@ export function isUnresolvableParticipantName(first?: string | null, last?: stri
  */
 export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; first_name?: string | null; last_name?: string | null }>(a: T, b: T): number {
   const rank = (person: T): number => {
-    if (isUnresolvableParticipantName(person.first_name, person.last_name)) {
-      return 2;
+    // Hosts always float to the top, even when their upstream name is empty/[unknown];
+    // only non-host unresolvable rows sink to the bottom.
+    if (person.host) {
+      return 0;
     }
-    return person.host ? 0 : 1;
+    return isUnresolvableParticipantName(person.first_name, person.last_name) ? 2 : 1;
   };
   const rankDelta = rank(a) - rank(b);
   if (rankDelta !== 0) {

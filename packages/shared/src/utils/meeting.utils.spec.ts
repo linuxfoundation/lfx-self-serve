@@ -434,6 +434,18 @@ describe('compareMeetingPeopleByHostThenName', () => {
 
     expect(ordered).toEqual(['Alan Turing', 'Grace Hopper', 'Ada Lovelace', 'Zed Zephyr', '', 'unknown [unknown]']);
   });
+
+  it('keeps an unnamed host at the top, not the bottom', () => {
+    const people = [
+      { first_name: 'Ada', last_name: 'Lovelace', host: false },
+      { first_name: '', last_name: '', host: true }, // unnamed host → still top
+      { first_name: 'unknown', last_name: '[unknown]', host: false }, // unresolvable non-host → bottom
+    ];
+
+    const ordered = [...people].sort(compareMeetingPeopleByHostThenName);
+    expect(ordered[0].host).toBe(true);
+    expect(`${ordered[2].first_name} ${ordered[2].last_name}`.trim()).toBe('unknown [unknown]');
+  });
 });
 
 function summaryResource(id: string, data: Partial<PastMeetingSummary> & { content?: string; edited_content?: string }): QueryServiceItem<PastMeetingSummary> {

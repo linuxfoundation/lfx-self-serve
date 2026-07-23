@@ -107,7 +107,7 @@
               data-testid="badge-datetime">
             </lfx-tag>
           }
-          <lfx-meeting-organizer [meeting]="meeting" [hosts]="participants()" [pastMeeting]="true"></lfx-meeting-organizer>
+          <lfx-meeting-organizer [meeting]="meeting" [hosts]="participants()" [pastMeeting]="true" [startTime]="meeting.start_time"></lfx-meeting-organizer>
           @if (hasRecording()) {
             <lfx-tag value="Recording" severity="secondary" icon="fa-light fa-video" styleClass="tag-feature-recording" data-testid="badge-recording"></lfx-tag>
           }

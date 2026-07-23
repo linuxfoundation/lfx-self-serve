@@ -4,7 +4,7 @@
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { environment } from '@environments/environment';
 import { Meeting, MeetingHostCandidate, MeetingOrganizerChipModel, PastMeeting } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerChip, collectMeetingOrganizers, getPastMeetingResourceId } from '@lfx-one/shared/utils';
+import { buildMeetingOrganizerChip, collectMeetingOrganizers, getPastMeetingResourceId, getPastMeetingStartTimeMs } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { PopoverModule } from 'primeng/popover';
 
@@ -28,6 +28,9 @@ export class MeetingOrganizerComponent {
   public readonly meeting = input.required<Meeting | PastMeeting>();
   public readonly hosts = input<MeetingHostCandidate[]>([]);
   public readonly pastMeeting = input<boolean>(false);
+  // The surface's resolved display start time (recurring cards show the current/next occurrence,
+  // not the series origin). Used for the mailto subject date; falls back to the meeting's own start.
+  public readonly startTime = input<string | null>(null);
 
   public readonly chip: Signal<MeetingOrganizerChipModel | null> = this.initChip();
 
@@ -57,15 +60,32 @@ export class MeetingOrganizerComponent {
   }
 
   private formatMeetingDate(meeting: Meeting | PastMeeting): string {
-    const start = ('scheduled_start_time' in meeting && meeting.scheduled_start_time) || meeting.start_time;
-    if (!start) {
+    const ms = this.resolveStartMs(meeting);
+    if (ms === null) {
       return '';
     }
-    const date = new Date(start);
-    if (Number.isNaN(date.getTime())) {
-      return '';
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(ms));
+  }
+
+  private resolveStartMs(meeting: Meeting | PastMeeting): number | null {
+    // Prefer the surface's resolved display start (the occurrence a recurring card actually shows).
+    const explicit = this.parseIso(this.startTime());
+    if (explicit !== null) {
+      return explicit;
     }
-    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date);
+    // Past meetings can carry a Go zero-date on scheduled_start_time — the shared helper falls back.
+    if (this.pastMeeting() || 'scheduled_start_time' in meeting) {
+      return getPastMeetingStartTimeMs(meeting as PastMeeting);
+    }
+    return this.parseIso(meeting.start_time);
+  }
+
+  private parseIso(iso: string | null | undefined): number | null {
+    if (!iso || iso.startsWith('0001-01-01')) {
+      return null;
+    }
+    const ms = new Date(iso).getTime();
+    return Number.isNaN(ms) ? null : ms;
   }
 
   private buildDetailUrl(meeting: Meeting | PastMeeting): string {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Meeting, MeetingUserInfo, PastMeeting } from '@lfx-one/shared/interfaces';
+import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { resolveCreatedByForMeetings } = vi.hoisted(() => ({
@@ -41,7 +42,7 @@ vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
 import { enrichMeetingsWithCreatedBy } from './meeting.helper';
 
-const req = {} as any;
+const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
 
 function pastMeeting(overrides: Partial<PastMeeting>): PastMeeting {

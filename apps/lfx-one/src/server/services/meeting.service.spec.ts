@@ -35,9 +35,11 @@ vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
 
+import type { Request } from 'express';
+
 import { MeetingService } from './meeting.service';
 
-const req = {} as any;
+const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
 
 // Builds a single-page query-service response for the given meetings.
@@ -75,6 +77,18 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     // Single chunk → single query; the tags param carries the batched OR list.
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'v1_meeting', tags: ['a', 'b'] });
+  });
+
+  it('falls back to the resource wrapper id when data.id is absent', async () => {
+    // Mirrors getMeetings normalization: uid = data.id || resource.id.split(":").pop().
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ id: 'v1_meeting:xyz', data: { created_by: human('xyz') } }],
+      page_token: undefined,
+    });
+
+    const result = await service.resolveCreatedByForMeetings(req, ['xyz']);
+
+    expect(result.get('xyz')).toEqual(human('xyz'));
   });
 
   it('dedupes repeated uids before querying', async () => {

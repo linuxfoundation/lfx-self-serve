@@ -296,35 +296,38 @@ export class MeetingService {
       chunks.push(uniqueUids.slice(i, i + CHUNK_SIZE));
     }
 
-    const fetchChunk = async (chunk: string[]): Promise<Meeting[]> => {
+    // Paginate manually (rather than via fetchAllQueryResources) so we keep each resource's wrapper
+    // id: the canonical UID is `data.id` when present, else the `type:uid` wrapper id split — the
+    // same normalization getMeetings uses. Keying on `data.id` alone would miss rows where it's
+    // absent, so meeting_id lookups would silently never hit the map.
+    const fetchChunk = async (chunk: string[]): Promise<void> => {
       try {
-        return await fetchAllQueryResources<Meeting>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        let pageToken: string | undefined;
+        do {
+          const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'v1_meeting',
             tags: chunk,
             ...(pageToken && { page_token: pageToken }),
-          })
-        );
+          });
+          for (const resource of response.resources) {
+            const uid = resource.data?.id || resource.id?.split(':').pop() || resource.id;
+            if (uid && resource.data?.created_by) {
+              result.set(uid, resource.data.created_by);
+            }
+          }
+          pageToken = response.page_token;
+        } while (pageToken);
       } catch (error) {
         logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
           chunk_size: chunk.length,
           err: error,
         });
-        return [];
       }
     };
 
     for (let i = 0; i < chunks.length; i += CONCURRENCY) {
       const wave = chunks.slice(i, i + CONCURRENCY);
-      const waveResults = await Promise.all(wave.map((chunk) => fetchChunk(chunk)));
-      for (const meetings of waveResults) {
-        for (const meeting of meetings) {
-          const uid = meeting.id;
-          if (uid && meeting.created_by) {
-            result.set(uid, meeting.created_by);
-          }
-        }
-      }
+      await Promise.all(wave.map((chunk) => fetchChunk(chunk)));
     }
 
     // Surface partial-failure completeness: a resolved count below requested means some chunks
