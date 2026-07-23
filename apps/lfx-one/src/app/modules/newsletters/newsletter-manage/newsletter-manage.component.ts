@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, Injector, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -76,6 +76,7 @@ export class NewsletterManageComponent {
   protected readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly newsletterService = inject(NewsletterService);
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -499,7 +500,9 @@ export class NewsletterManageComponent {
     // and one of the two would 409. canSend also disables Send while
     // savingDraft() is true; this is defense-in-depth for the click that
     // slips in during the flip.
-    const ensureSaved$ = toObservable(this.savingDraft).pipe(
+    // toObservable requires an injection context; runSend is invoked from the confirm-dialog's
+    // accept callback (a plain event handler), so the injector must be passed explicitly here.
+    const ensureSaved$ = toObservable(this.savingDraft, { injector: this.injector }).pipe(
       filter((saving) => !saving),
       take(1),
       switchMap(() => (this.snapshotMatchesLastSaved() ? of(true) : this.saveDraft(true).pipe(map((draft) => draft !== null))))

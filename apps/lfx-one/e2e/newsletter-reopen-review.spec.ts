@@ -33,6 +33,7 @@ const MOCK_FOUNDATION_SLUG = 'test-foundation';
 const MOCK_FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000001';
 const MOCK_NEWSLETTER_ID = 'n0000000-0000-0000-0000-000000000aaa';
 const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-000000000bbb';
+const MOCK_INELIGIBLE_COMMITTEE_UID = 'c0000000-0000-0000-0000-000000000ccc';
 
 const MOCK_FOUNDATION_ITEM: LensItem = {
   uid: MOCK_FOUNDATION_UID,
@@ -122,7 +123,11 @@ async function stubProjectApi(page: Page): Promise<void> {
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sfid: null }) }));
 }
 
-async function stubNewsletterApis(page: Page, draft: Newsletter): Promise<void> {
+async function stubNewsletterApis(
+  page: Page,
+  draft: Newsletter,
+  committees: { uid: string; name: string; category: string }[] = [{ uid: MOCK_COMMITTEE_UID, name: 'Community Newsletter', category: 'Newsletter' }]
+): Promise<void> {
   await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_ID}`, (route) => {
     if (route.request().method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(draft) });
@@ -146,13 +151,7 @@ async function stubNewsletterApis(page: Page, draft: Newsletter): Promise<void> 
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          uid: MOCK_COMMITTEE_UID,
-          name: 'Community Newsletter',
-          category: 'Newsletter',
-        },
-      ]),
+      body: JSON.stringify(committees),
     })
   );
 }
@@ -275,6 +274,30 @@ test.describe('Newsletter reopen — empty-state coverage', () => {
     await expect(page.getByTestId('newsletter-review-content-incomplete'), 'subject-only blank copy should call out the subject').toContainText(
       'Add a subject before sending'
     );
+  });
+});
+
+test.describe('Newsletter reopen — audience normalization with mixed committee eligibility', () => {
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['executive-director']);
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page);
+    await stubProjectApi(page);
+  });
+
+  test('a saved ineligible committee UID is pruned from the audience and does not count toward recipients', async ({ page }) => {
+    await stubNewsletterApis(page, buildDraft({ committee_uids: [MOCK_COMMITTEE_UID, MOCK_INELIGIBLE_COMMITTEE_UID] }), [
+      { uid: MOCK_COMMITTEE_UID, name: 'Community Newsletter', category: 'Newsletter' },
+      { uid: MOCK_INELIGIBLE_COMMITTEE_UID, name: 'Legal Committee', category: 'Legal' },
+    ]);
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The draft was saved with 2 committee_uids, but only 1 is Newsletter-eligible —
+    // normalization must prune the ineligible one before the audience is ever sent,
+    // otherwise a stale non-Newsletter uid could be delivered to on a later Send.
+    await expect(page.getByTestId('newsletter-review-audience-summary'), 'audience summary should only count the eligible group').toContainText('1 group');
   });
 });
 
