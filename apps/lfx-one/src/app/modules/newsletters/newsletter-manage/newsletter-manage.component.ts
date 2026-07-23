@@ -186,7 +186,8 @@ export class NewsletterManageComponent {
       this.bodyFilled() &&
       this.hasContext() &&
       !this.submitting() &&
-      !this.resolvingSend()
+      !this.resolvingSend() &&
+      !this.savingDraft()
   );
   public readonly canSendTest = computed(
     () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
@@ -463,11 +464,21 @@ export class NewsletterManageComponent {
     // newsletter by id/version, so a normalized-but-unsaved committee_uids value
     // would otherwise still deliver to the stale, un-normalized audience on the
     // server. Force a save first whenever the form has drifted from what's saved.
-    const ensureSaved$ = this.snapshotMatchesLastSaved() ? of(true) : this.saveDraft(true).pipe(map((draft) => draft !== null));
+    //
+    // Wait out any autosave already in flight first — saveDraft isn't routed
+    // through the saveTrigger$/concatMap channel here, so firing it directly
+    // while autosave's own PUT is still pending would race the same version
+    // and one of the two would 409. canSend also disables Send while
+    // savingDraft() is true; this is defense-in-depth for the click that
+    // slips in during the flip.
+    const ensureSaved$ = toObservable(this.savingDraft).pipe(
+      filter((saving) => !saving),
+      take(1),
+      switchMap(() => (this.snapshotMatchesLastSaved() ? of(true) : this.saveDraft(true).pipe(map((draft) => draft !== null))))
+    );
 
     ensureSaved$
       .pipe(
-        take(1),
         switchMap((saved) => {
           if (!saved) return EMPTY;
           return this.newsletterService.sendNewsletter(this.projectUid(), id, this.version());
