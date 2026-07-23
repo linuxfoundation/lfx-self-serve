@@ -23,8 +23,8 @@ push v* tag       →    docker-build-tag.yml    →  <semver>        →  stagi
 The Dockerfile accepts a `BUILD_ENV` argument that selects the Angular build
 configuration. The mapping between workflow and build environment is:
 
-| Workflow           | `BUILD_ENV`   | Angular config | Runtime backends (from Helm/ArgoCD values) |
-| ------------------ | ------------- | -------------- | ------------------------------------------ |
+| Workflow            | `BUILD_ENV`   | Angular config | Runtime backends (from Helm/ArgoCD values) |
+| ------------------- | ------------- | -------------- | ------------------------------------------ |
 | `docker-build-main` | `dev-cluster` | `dev-cluster`  | Shared dev Auth0 / API / NATS              |
 | `docker-build-pr`   | `dev-cluster` | `dev-cluster`  | Shared dev Auth0 / API / NATS              |
 | `docker-build-tag`  | `production`  | `production`   | Production Auth0 / API / NATS              |
@@ -50,7 +50,7 @@ environment forward. No manual action required.
 
 ### PR branch preview — isolated namespace
 
-**Trigger:** `deploy-preview` label added to an open PR
+**Trigger:** `deploy-preview` label added to an open, non-fork PR
 **Workflow:** `.github/workflows/docker-build-pr.yml`
 **Image tag:** `ui-pr-<PR number>`
 

@@ -249,7 +249,7 @@ The application is deployed via the in-repo Helm chart and the central GitOps re
   Self Serve service template, values, and Kubernetes resources.
 - **GitOps** — `lfx-v2-argocd` (sibling repo) owns environment values, chart pins,
   image tags, ExternalSecret references, and dev/staging/prod ApplicationSets.
-- **Preview** — add the `deploy-preview` label to any open PR (write access required)
+- **Preview** — add the `deploy-preview` label to any open, non-fork PR (write access required)
   to deploy it to an isolated dev-cluster namespace. See the
   [Deploy Preview](CONTRIBUTING.md#deploy-preview) section in CONTRIBUTING.md.
 

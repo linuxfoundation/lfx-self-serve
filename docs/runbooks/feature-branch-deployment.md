@@ -98,7 +98,7 @@ kubectl logs -n ui-pr-<N> \
 
 Common errors to look for:
 
-- Missing environment variable warnings (see [Adding a New Secret](#adding-a-new-secret) below)
+- Missing environment variable warnings (see [Adding a New Environment Variable or Secret](#adding-a-new-environment-variable-or-secret) below)
 - NATS connection failures (usually transient; the app retries automatically)
 - Auth0 configuration mismatches
 
@@ -117,10 +117,10 @@ label.
 
 Deployments are removed in two ways:
 
-| Action | Result |
-|--------|--------|
+| Action                            | Result                                                 |
+| --------------------------------- | ------------------------------------------------------ |
 | Remove the `deploy-preview` label | Cleanup job runs; bot posts a removal notice on the PR |
-| Close or merge the PR | Cleanup job runs automatically |
+| Close or merge the PR             | Cleanup job runs automatically                         |
 
 The ArgoCD ApplicationSet removes the namespace and all associated Kubernetes
 resources. Container images tagged `ui-pr-<N>` remain in GHCR and are subject
@@ -145,7 +145,7 @@ have to function.
    # charts/lfx-self-serve/values.yaml
    environment:
      MY_NEW_VAR:
-       value: "default-value"
+       value: 'default-value'
    ```
 
 2. Open a PR in `lfx-v2-argocd` to set the dev-cluster value:
@@ -154,7 +154,7 @@ have to function.
    # values/dev/lfx-v2-ui.yaml
    environment:
      MY_NEW_VAR:
-       value: "dev-value"
+       value: 'dev-value'
    ```
 
 3. The preview namespace inherits the dev-cluster values. No per-PR override
@@ -243,8 +243,8 @@ synced via GitHub Actions.
      MY_NEW_SECRET:
        valueFrom:
          secretKeyRef:
-           name: pcc-secrets   # Kubernetes Secret created by ExternalSecret
-           key: credential     # Field name as defined in the 1Password source
+           name: pcc-secrets # Kubernetes Secret created by ExternalSecret
+           key: credential # Field name as defined in the 1Password source
    ```
 
 6. **Set the value in `lfx-v2-argocd`** for the dev environment so the preview
@@ -284,11 +284,11 @@ Preview namespaces inherit the dev-cluster defaults.
    ```yaml
    resources:
      requests:
-       cpu: "100m"
-       memory: "256Mi"
+       cpu: '100m'
+       memory: '256Mi'
      limits:
-       cpu: "500m"
-       memory: "512Mi"
+       cpu: '500m'
+       memory: '512Mi'
    ```
 
 3. Open a PR in `lfx-v2-argocd`. ArgoCD reconciles the change within ~2 minutes
@@ -306,19 +306,19 @@ Preview namespaces inherit the dev-cluster defaults.
 **When to use:** Your branch updates a major dependency and you want to confirm
 the build and runtime behavior before merging.
 
-No special steps are needed — `docker-build-pr.yml` runs a full production
-build inside the Docker image. Dependency changes are picked up automatically
+No special steps are needed — `docker-build-pr.yml` runs a full
+`dev-cluster` build inside the Docker image. Dependency changes are picked up automatically
 from `package.json` / `yarn.lock`. Apply the `deploy-preview` label as normal.
 
 ---
 
 ## Known Gotchas
 
-| Symptom | Likely Cause | Resolution |
-|---------|-------------|------------|
-| No bot comment after 10 minutes | Workflow failed or never triggered | Check the Actions tab; confirm the label is applied and the PR is not from a fork |
-| Bot comment posted but URL returns 502/503 | ArgoCD not yet synced, or pod CrashLoopBackOff | Wait 2–3 minutes; check pod status via ArgoCD or kubectl |
-| Login redirects to wrong callback | Auth0 dev tenant callback not registered for this namespace | Contact the platform team to register `https://ui-pr-<N>.dev.v2.cluster.linuxfound.info/callback` |
-| Re-push doesn't update the deployment | Workflow did not re-trigger | Confirm `synchronize` event fired in Actions; re-add the label to force a fresh run |
-| Missing environment variable at runtime | New env var not present in dev-cluster ExternalSecret or values | Follow the [Adding a New Secret](#adding-a-new-secret) steps above |
-| Preview works but prod does not | `dev-cluster` vs `production` build config difference | Check Angular environment files in `apps/lfx-one/src/environments/` |
+| Symptom                                    | Likely Cause                                                    | Resolution                                                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| No bot comment after 10 minutes            | Workflow failed or never triggered                              | Check the Actions tab; confirm the label is applied and the PR is not from a fork                                  |
+| Bot comment posted but URL returns 502/503 | ArgoCD not yet synced, or pod CrashLoopBackOff                  | Wait 2–3 minutes; check pod status via ArgoCD or kubectl                                                           |
+| Login redirects to wrong callback          | Auth0 dev tenant callback not registered for this namespace     | Contact the platform team to register `https://ui-pr-<N>.dev.v2.cluster.linuxfound.info/callback`                  |
+| Re-push doesn't update the deployment      | Workflow did not re-trigger                                     | Confirm `synchronize` event fired in Actions; re-add the label to force a fresh run                                |
+| Missing environment variable at runtime    | New env var not present in dev-cluster ExternalSecret or values | Follow the [Adding a New Environment Variable or Secret](#adding-a-new-environment-variable-or-secret) steps above |
+| Preview works but prod does not            | `dev-cluster` vs `production` build config difference           | Check Angular environment files in `apps/lfx-one/src/environments/`                                                |
