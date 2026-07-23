@@ -187,3 +187,29 @@ export interface NewsletterOptOutListResponse {
 // switchMap can resolve to, so a single subscribe callback can route each
 // response without a second stream.
 export type NewsletterListLoadResult = { kind: 'newsletters'; response: NewsletterListResponse } | { kind: 'optout'; response: NewsletterOptOutListResponse };
+
+/**
+ * Recipient-facing newsletter archive list item.
+ * Shows sent newsletters targeting committees the user belongs to.
+ * Project context enriched server-side from upstream project UIDs.
+ */
+export interface MyNewsletterListItem {
+  id: string;
+  project_uid: string;
+  project_name: string;
+  project_slug: string;
+  foundation_name: string;
+  foundation_slug: string;
+  subject: string;
+  sent_at: string;
+  committee_uids: string[];
+}
+
+/**
+ * Response from GET /api/newsletters/my-newsletters (recipient archive list).
+ * Keyset-paginated list of sent newsletters for committees the user belongs to.
+ */
+export interface MyNewsletterArchiveResponse {
+  newsletters: MyNewsletterListItem[];
+  next_page_token?: string;
+}

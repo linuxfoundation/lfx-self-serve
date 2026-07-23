@@ -381,6 +381,12 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
       },
       {
+        path: 'my-newsletters',
+        canActivate: [authGuard],
+        loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters-list.component').then((m) => m.MyNewslettersListComponent),
+        data: { lens: 'me', preload: false },
+      },
+      {
         path: 'me/events',
         redirectTo: 'events',
         pathMatch: 'full',

@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card class="max-w-4xl mx-auto">
+  <div class="flex flex-col gap-6">
+    <!-- Foundation filter pills -->
+    @if (foundationOptions().length > 1) {
+      <div>
+        <lfx-filter-pills
+          [options]="foundationOptions()"
+          [selectedFilter]="selectedFoundation()"
+          (filterChange)="onFoundationChange($event)"
+          data-testid="my-newsletters-foundation-filter" />
+      </div>
+    }
+
+    <!-- Loading skeleton -->
+    @if (loading()) {
+      <div class="flex flex-col gap-4">
+        @for (i of [1, 2, 3]; track i) {
+          <p-skeleton height="5rem" />
+        }
+      </div>
+    } @else if (isEmpty()) {
+      <!-- Empty state -->
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-inbox"
+        title="No newsletters yet"
+        description="Newsletters sent to committees you belong to will appear here."
+        data-testid="my-newsletters-empty-state" />
+    } @else {
+      <!-- Newsletter list cards -->
+      <div class="flex flex-col gap-4">
+        @for (newsletter of filteredNewsletters(); track newsletter.id) {
+          <button
+            type="button"
+            class="p-4 border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-left"
+            (click)="openPreview(newsletter)"
+            [attr.data-testid]="'my-newsletters-item-' + newsletter.id"
+            [attr.aria-label]="'View newsletter: ' + newsletter.subject">
+            <div class="flex flex-col gap-2">
+              <h3 class="font-medium text-gray-900 hover:text-blue-600">{{ newsletter.subject }}</h3>
+              <div class="flex flex-col gap-1 text-sm text-gray-600">
+                <div>
+                  <span class="font-medium">{{ newsletter.foundation_name }}</span>
+                  @if (newsletter.project_name && newsletter.project_name !== newsletter.foundation_name) {
+                    <span class="text-gray-500"> • {{ newsletter.project_name }}</span>
+                  }
+                </div>
+                <div class="text-xs text-gray-500">Sent {{ newsletter.sent_at | date: 'MMM d, y' : 'en-US' }}</div>
+              </div>
+            </div>
+          </button>
+        }
+      </div>
+
+      <!-- Load more button -->
+      @if (canLoadMore()) {
+        <div class="flex justify-center pt-4">
+          <lfx-button [loading]="loadingMore()" label="Load more" (onClick)="loadMore()" data-testid="my-newsletters-load-more" />
+        </div>
+      }
+    }
+  </div>
+</lfx-card>
+
+<!-- Newsletter preview drawer -->
+@if (previewNewsletter()) {
+  <lfx-newsletter-preview-drawer
+    [(visible)]="previewVisible"
+    [subject]="previewSubject()"
+    [bodyHtml]="previewBodyHtml()"
+    [displayName]="previewDisplayName()"
+    data-testid="my-newsletters-preview-drawer" />
+}
