@@ -149,7 +149,7 @@ async function stubBackend(page: Page, draft: Newsletter): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([{ uid: MOCK_COMMITTEE_UID, name: 'Technical Steering Committee', category: 'Technical' }]),
+      body: JSON.stringify([{ uid: MOCK_COMMITTEE_UID, name: 'Community Newsletter', category: 'Newsletter' }]),
     })
   );
 }
