@@ -86,9 +86,10 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 1. **[Deployment Architecture](./deployment.md)** — Full CI/CD pipeline: build environments, main-branch dev deployment, PR branch previews, and the release (tag → staging/prod) flow. Start here.
 2. **[Deploy Preview](../../CONTRIBUTING.md#deploy-preview)** — Step-by-step guide: how to add the `deploy-preview` label, what the workflow does, cleanup, and troubleshooting.
-3. **[Helm Chart](../../charts/lfx-self-serve/README.md)** — Chart parameter reference, values schema, and local installation. Deployed values, environment promotion, and ApplicationSets live in the `lfx-v2-argocd` sibling repo.
-4. **[Logging & Monitoring](./backend/logging-monitoring.md)** - Production monitoring
-5. **[Error Handling](./backend/error-handling-architecture.md)** - Error management
+3. **[Feature Branch Deployment Runbook](../runbooks/feature-branch-deployment.md)** — Detailed runbook: branch selection, environment setup, verification, teardown, and common scenarios (adding secrets, changing resource limits).
+4. **[Helm Chart](../../charts/lfx-self-serve/README.md)** — Chart parameter reference, values schema, and local installation. Deployed values, environment promotion, and ApplicationSets live in the `lfx-v2-argocd` sibling repo.
+5. **[Logging & Monitoring](./backend/logging-monitoring.md)** - Production monitoring
+6. **[Error Handling](./backend/error-handling-architecture.md)** - Error management
 
 ## 🔧 Technology Stack Summary
 

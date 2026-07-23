@@ -340,6 +340,13 @@ the cleanup job, which posts a removal notice on the PR. The ArgoCD
 ApplicationSet automatically removes the namespace and all associated
 resources.
 
+**Verification:**
+
+Once the bot comment appears, open the URL in a browser and log in with a
+dev-environment account. The Angular app should load without a blank screen.
+Navigate to your feature and confirm expected behavior. If the URL is
+unreachable, wait 2–3 minutes for ArgoCD to finish reconciling, then reload.
+
 **Troubleshooting:**
 
 - **No bot comment after 10 minutes** — check the Actions tab on GitHub for
@@ -349,6 +356,10 @@ resources.
   the new commit; re-applying the label will force a fresh run if needed.
 - **Authentication errors in the preview** — the preview shares the dev
   cluster's Auth0 tenant; ensure your account has dev-environment access.
+
+For advanced scenarios (adding secrets, changing resource limits, pod-level
+debugging), see the full
+[Feature Branch Deployment Runbook](docs/runbooks/feature-branch-deployment.md).
 
 ## Questions?
 
