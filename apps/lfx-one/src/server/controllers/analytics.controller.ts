@@ -2816,6 +2816,41 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/event-geo-reach
+   * Geographic registration reach for a foundation (top countries by YTD registrations).
+   */
+  public async getEventGeoReach(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_event_geo_reach');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_geo_reach',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_event_geo_reach',
+        });
+      }
+
+      const response = await this.projectService.getEventGeoReach(foundationSlug);
+
+      logger.success(req, 'get_event_geo_reach', startTime, {
+        foundation_slug: foundationSlug,
+        country_count: response.totalCountries,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/brand-reach
    * Get brand reach metrics (total digital reach across social + owned sites)
    */
