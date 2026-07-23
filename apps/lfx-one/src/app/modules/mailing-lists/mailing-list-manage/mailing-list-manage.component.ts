@@ -62,6 +62,7 @@ export class MailingListManageComponent {
   public readonly parentService = signal<GroupsIOService | null>(null);
   private readonly internalStep = signal<number>(1);
   private readonly createdService = signal<GroupsIOService | null>(null);
+  public readonly hasDuplicateNameError = signal<boolean>(false);
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -83,6 +84,9 @@ export class MailingListManageComponent {
 
   public constructor() {
     evictOnWriteAccessLoss();
+    this.form()
+      .get('group_name')
+      ?.valueChanges.subscribe(() => this.hasDuplicateNameError.set(false));
   }
 
   public nextStep(): void {
@@ -169,6 +173,7 @@ export class MailingListManageComponent {
             const groupNameControl = this.form().get('group_name');
             groupNameControl?.setErrors({ ...groupNameControl.errors, duplicateName: true });
             groupNameControl?.markAsTouched();
+            this.hasDuplicateNameError.set(true);
             this.internalStep.set(1);
             this.messageService.add({
               severity: 'error',
@@ -267,6 +272,7 @@ export class MailingListManageComponent {
           this.servicesLoaded.set(false);
           this.parentService.set(null);
           this.createdService.set(null);
+          this.hasDuplicateNameError.set(false);
         }),
         filter((project): project is NonNullable<typeof project> => project !== null),
         switchMap((project) =>
