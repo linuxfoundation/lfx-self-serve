@@ -679,6 +679,26 @@ export interface EventRosterResponse {
   events: EventRosterRow[];
 }
 
+/** One country's registration reach for the geographic panel. */
+export interface EventCountryReach {
+  /** Two-letter ISO code (e.g. "US"); '' when unknown. */
+  code: string;
+  /** Display name (title-cased). */
+  name: string;
+  /** YTD registrations from this country. */
+  registrations: number;
+  /** Share of total registrations, 0–100. */
+  sharePercent: number;
+}
+
+/** Geographic reach response: top countries by YTD registrations for a foundation. */
+export interface EventGeoReachResponse {
+  projectId: string;
+  totalRegistrations: number;
+  totalCountries: number;
+  countries: EventCountryReach[];
+}
+
 /** One sponsorship tier row for the per-event detail drawer. */
 export interface EventSponsorshipTier {
   /** Tier name (Diamond, Gold, Platinum, …); '' when unlabeled. */

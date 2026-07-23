@@ -28,7 +28,9 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   EventCompScore,
+  EventCountryReach,
   EventDetailResponse,
+  EventGeoReachResponse,
   EventGrowthResponse,
   EventGrowthTopEvent,
   EventRosterResponse,
@@ -5066,6 +5068,79 @@ export class ProjectService {
         sponsorCount: t.SPONSOR_COUNT ?? 0,
       })),
     };
+  }
+
+  /**
+   * Get geographic registration reach for a foundation — YTD registrations by country,
+   * ranked, from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY. Returns the
+   * top countries plus totals so the UI can render shares. Raw country slugs are title-cased.
+   */
+  public async getEventGeoReach(foundationSlug: string, limit = 12): Promise<EventGeoReachResponse> {
+    logger.debug(undefined, 'get_event_geo_reach', 'Fetching event geo reach from Snowflake', { foundation_slug: foundationSlug });
+
+    interface CountryRow {
+      COUNTRY: string | null;
+      COUNTRY_CODE: string | null;
+      REGS: number;
+    }
+    interface TotalRow {
+      TOTAL_REGS: number;
+      COUNTRY_COUNT: number;
+    }
+
+    const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 50);
+
+    const countryQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT c.COUNTRY, c.COUNTRY_CODE, c.REGISTRATION_COUNT_YTD AS REGS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY c
+      INNER JOIN slug_resolve sr ON c.PROJECT_ID = sr.project_id
+      WHERE c.REGISTRATION_COUNT_YTD > 0
+      ORDER BY c.REGISTRATION_COUNT_YTD DESC
+      LIMIT ${boundedLimit}
+    `;
+
+    const totalQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        IFNULL(SUM(c.REGISTRATION_COUNT_YTD), 0) AS TOTAL_REGS,
+        COUNT(DISTINCT CASE WHEN c.REGISTRATION_COUNT_YTD > 0 THEN c.COUNTRY END) AS COUNTRY_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY c
+      INNER JOIN slug_resolve sr ON c.PROJECT_ID = sr.project_id
+    `;
+
+    const [countryResult, totalResult] = await Promise.all([
+      this.snowflakeService.execute<CountryRow>(countryQuery, [foundationSlug]),
+      this.snowflakeService.execute<TotalRow>(totalQuery, [foundationSlug]),
+    ]);
+
+    const total = totalResult.rows?.[0]?.TOTAL_REGS ?? 0;
+    const totalCountries = totalResult.rows?.[0]?.COUNTRY_COUNT ?? 0;
+
+    // Title-case a raw country slug ("republic_of_korea" -> "Republic Of Korea").
+    const titleCase = (slug: string): string =>
+      slug
+        .split('_')
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+    const countries: EventCountryReach[] = countryResult.rows.map((row) => ({
+      code: (row.COUNTRY_CODE ?? '').toUpperCase(),
+      name: row.COUNTRY ? titleCase(row.COUNTRY) : 'Unknown',
+      registrations: row.REGS ?? 0,
+      sharePercent: total > 0 ? Math.round(((row.REGS ?? 0) / total) * 1000) / 10 : 0,
+    }));
+
+    return { projectId: '', totalRegistrations: total, totalCountries, countries };
   }
 
   /**

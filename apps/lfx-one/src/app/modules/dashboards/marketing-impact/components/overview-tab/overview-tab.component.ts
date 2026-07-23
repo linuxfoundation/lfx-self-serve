@@ -13,6 +13,7 @@ import type { MarketingImpactFocusProgram, OverviewKpiData, PerformanceSummaryKp
 import { AttributionSectionComponent } from '../attribution-section/attribution-section.component';
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
+import { EventsGeoSectionComponent } from '../events-geo-section/events-geo-section.component';
 import { EventsSummarySectionComponent } from '../events-summary-section/events-summary-section.component';
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
@@ -24,6 +25,7 @@ import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-c
     EventsSummarySectionComponent,
     EventRosterSectionComponent,
     EventsAttentionSectionComponent,
+    EventsGeoSectionComponent,
   ],
   templateUrl: './overview-tab.component.html',
 })

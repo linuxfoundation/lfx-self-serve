@@ -57,6 +57,7 @@ import {
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
   EventDetailResponse,
+  EventGeoReachResponse,
   EventRosterResponse,
   EventsOverviewSummaryResponse,
   EventsSummaryResponse,
@@ -1144,6 +1145,16 @@ export class AnalyticsService {
    */
   public getEventDetail(eventId: string): Observable<EventDetailResponse | null> {
     return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId } }).pipe(catchError(() => of(null)));
+  }
+
+  /**
+   * Geographic registration reach for a foundation (top countries by YTD registrations).
+   * Emits an empty result on error so the panel shows its empty state.
+   */
+  public getEventGeoReach(foundationSlug: string): Observable<EventGeoReachResponse> {
+    return this.http
+      .get<EventGeoReachResponse>('/api/analytics/event-geo-reach', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ projectId: '', totalRegistrations: 0, totalCountries: 0, countries: [] })));
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {
