@@ -201,6 +201,13 @@ export const COMMITTEE_CATEGORIES = [
 ];
 
 /**
+ * Committee category value used to identify newsletter-eligible groups
+ * @description Only committees tagged with this category should be selectable as a newsletter's audience
+ * @readonly
+ */
+export const NEWSLETTER_COMMITTEE_CATEGORY = 'Newsletter';
+
+/**
  * Filtered committee categories for specific UI contexts
  * @description Subset of categories for restricted selection (e.g., forms, dashboards)
  */

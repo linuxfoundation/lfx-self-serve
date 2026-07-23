@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, input, Signal, signal, viewChi
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
 import { Committee, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
@@ -41,11 +42,13 @@ export class NewsletterAudienceStepComponent {
   protected readonly committeeUidsValue: Signal<string[]> = this.initCommitteeUidsValue();
 
   protected readonly committeeOptions = computed<NewsletterCommitteeOption[]>(() =>
-    this.committees().map((c) => ({
-      label: c.name || 'Unnamed group',
-      value: c.uid,
-      category: c.category || 'Other',
-    }))
+    this.committees()
+      .filter((c) => c.category === NEWSLETTER_COMMITTEE_CATEGORY)
+      .map((c) => ({
+        label: c.name || 'Unnamed group',
+        value: c.uid,
+        category: c.category || 'Other',
+      }))
   );
   protected readonly selectedCount: Signal<number> = computed(() => this.committeeUidsValue().length);
   protected readonly hasCommittees = computed(() => this.committeeOptions().length > 0);
