@@ -15,7 +15,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared';
 import { MEETING_DURATION_OPTIONS, RECURRING_MEETING_FEATURE, TIMEZONES, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
-import { getWeekOfMonth } from '@lfx-one/shared/utils';
+import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -94,11 +94,8 @@ export class MeetingDetailsComponent implements OnInit {
   // Recurrence options (dynamically updated based on selected date)
   public recurrenceOptions = signal<{ label: string; value: string }[]>([]);
 
-  // Timezone options from shared constants
-  public readonly timezoneOptions = TIMEZONES.map((tz) => ({
-    label: `${tz.label} (${tz.offset})`,
-    value: tz.value,
-  }));
+  // Timezone options — rebuilt whenever the meeting date changes so DST offsets are correct
+  public readonly timezoneOptions = signal<{ label: string; value: string }[]>(this.buildTimezoneOptions(new Date()));
 
   // Minimum date (yesterday)
   public readonly minDate = computed(() => {
@@ -109,10 +106,11 @@ export class MeetingDetailsComponent implements OnInit {
   });
 
   public ngOnInit(): void {
-    // Initialize recurrence options with current start date
+    // Initialize recurrence and timezone options with current start date
     const initialStartDate = this.form().get('startDate')?.value;
     if (initialStartDate) {
       this.generateRecurrenceOptions(initialStartDate);
+      this.timezoneOptions.set(this.buildTimezoneOptions(initialStartDate as Date));
     } else {
       this.recurrenceOptions.set([{ label: 'Does not repeat', value: 'none' }]);
     }
@@ -137,6 +135,7 @@ export class MeetingDetailsComponent implements OnInit {
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((newDate) => {
         this.handleStartDateChange(newDate as Date);
+        this.timezoneOptions.set(this.buildTimezoneOptions((newDate as Date) ?? new Date()));
       });
 
     // Watch for isRecurring changes to reset recurrence
@@ -425,5 +424,15 @@ export class MeetingDetailsComponent implements OnInit {
         // For custom, the recurrence pattern component will handle the values
         break;
     }
+  }
+
+  private buildTimezoneOptions(date: Date): { label: string; value: string }[] {
+    return TIMEZONES.map((tz) => {
+      const offset = getTimezoneUtcOffsetString(tz.value, date);
+      return {
+        label: offset ? `${tz.label} (${offset})` : tz.label,
+        value: tz.value,
+      };
+    });
   }
 }
