@@ -395,18 +395,20 @@ export class NewsletterManageComponent {
   /**
    * Owns audience normalization at the form level so it applies regardless of which
    * step/view is mounted — the audience step's own picker only renders while the
-   * stepper is on step 1, but save/send can happen from the Review view.
+   * stepper is on step 1, but save/send can happen from the Review view. Tracks
+   * `committeeUidsValue` (not just `eligibleCommitteeUids`) so a draft loaded via
+   * `patchValue({ emitEvent: false })` after eligibility has already resolved still
+   * gets re-checked.
    */
   private initAudienceNormalization(): void {
     effect(() => {
       const eligible = this.eligibleCommitteeUids();
+      const current = this.committeeUidsValue();
       if (!eligible) return;
 
-      const control = this.form.controls.committeeUids;
-      const current = control.value ?? [];
       const filtered = current.filter((uid) => eligible.has(uid));
       if (filtered.length !== current.length) {
-        control.setValue(filtered);
+        this.form.controls.committeeUids.setValue(filtered);
       }
     });
   }
