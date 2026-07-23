@@ -4,9 +4,9 @@
 <div class="container px-8" data-testid="mailing-list-manage">
   <!-- Back Navigation -->
   <div class="mb-4">
-    <a routerLink="/mailing-lists" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
+    <a [routerLink]="backLink()" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
       <i class="fa-light fa-arrow-left mr-2"></i>
-      Back to Mailing Lists
+      {{ isEditMode() ? 'Back to Mailing List' : 'Back to Mailing Lists' }}
     </a>
   </div>
 

@@ -77,6 +77,7 @@ export class MailingListManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public readonly initialPublicValue: Signal<boolean | null> = this.initInitialPublicValue();
   public currentStep: Signal<number> = this.initCurrentStep();
+  public readonly backLink: Signal<string[]> = this.initBackLink();
 
   public constructor() {
     evictOnWriteAccessLoss();
@@ -117,7 +118,7 @@ export class MailingListManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/mailing-lists']);
+    this.router.navigate(this.backLink());
   }
 
   public onSubmit(): void {
@@ -342,6 +343,13 @@ export class MailingListManageComponent {
 
   private initInitialPublicValue(): Signal<boolean | null> {
     return computed(() => this.mailingList()?.public ?? null);
+  }
+
+  private initBackLink(): Signal<string[]> {
+    return computed(() => {
+      const id = this.mailingListId();
+      return this.isEditMode() && id ? ['/mailing-lists', id] : ['/mailing-lists'];
+    });
   }
 
   private initCurrentStep(): Signal<number> {
