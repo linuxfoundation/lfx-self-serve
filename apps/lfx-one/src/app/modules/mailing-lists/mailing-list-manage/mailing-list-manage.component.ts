@@ -5,6 +5,7 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { COMMITTEE_LABEL, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
@@ -160,8 +161,8 @@ export class MailingListManageComponent {
           });
           this.router.navigate(this.backLink());
         },
-        error: (error: Error) => {
-          const httpStatus = (error as any).status as number | undefined;
+        error: (error: unknown) => {
+          const httpStatus = error instanceof HttpErrorResponse ? error.status : undefined;
           const isDuplicateName = !this.isEditMode() && httpStatus === 409 && (!isCreatingService || serviceWasCreated);
 
           if (isDuplicateName) {
