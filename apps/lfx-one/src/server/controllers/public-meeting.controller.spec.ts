@@ -29,6 +29,8 @@ const {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
+    resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -38,6 +40,9 @@ const {
 // the controller/gate use. validation.helper is mocked wholesale (see below) so its heavy
 // shared/constants + shared/utils module graph never loads.
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
+// meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer from shared/utils;
+// stub it so the real barrel (and its MeetingType enum dependency) isn't pulled into the mock graph.
+vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 
 vi.mock('../services/meeting.service', () => ({
