@@ -170,6 +170,11 @@ export class MailingListManageComponent {
             groupNameControl?.setErrors({ ...groupNameControl.errors, duplicateName: true });
             groupNameControl?.markAsTouched();
             this.internalStep.set(1);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'A mailing list with this name already exists',
+            });
           } else {
             const isServiceError = isCreatingService && !serviceWasCreated;
             this.messageService.add({
