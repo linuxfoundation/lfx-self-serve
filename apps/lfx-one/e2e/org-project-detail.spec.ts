@@ -100,6 +100,10 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem')).toBeVisible();
     await expect(page.getByTestId('project-detail-trend-group')).toBeVisible();
 
+    // Each board loads on its own request. beforeEach awaits the technical table; await the ecosystem
+    // table too so the loop never reads zero rows or skeleton DOM from a board that hasn't resolved yet.
+    await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
     // The viewing org is no longer pinned to the top. Calculated Influence assigns contiguous ranks,
     // so within the rendered page each row's rank equals the first row's rank plus its offset; a pinned
     // out-of-order row would break that contiguity. This rank-order guard is asserted FIRST and is
