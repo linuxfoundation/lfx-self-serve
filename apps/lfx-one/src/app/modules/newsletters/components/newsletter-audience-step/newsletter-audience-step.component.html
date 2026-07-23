@@ -27,7 +27,7 @@
       }
     </div>
 
-    @if (loadingCommittees()) {
+    @if (committeesLoading()) {
       <div class="text-sm text-gray-500 px-3 py-2 rounded-md border border-gray-200 bg-gray-50">Loading groups…</div>
     } @else if (committeesError(); as error) {
       <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" data-testid="newsletter-audience-committees-error">

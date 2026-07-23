@@ -9,6 +9,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY, NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
+  Committee,
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
@@ -151,9 +152,22 @@ export class NewsletterManageComponent {
   protected readonly recipientCountLoading = signal<boolean>(false);
 
   // === Newsletter-eligible committees ===
+  // Fetched once here (not duplicated in the audience-step child) and passed down
+  // via inputs, since the upstream endpoint fans out through fetchAllQueryResources.
+  protected readonly committeesLoading = signal<boolean>(false);
+  protected readonly committeesError = signal<string | null>(null);
+  protected readonly committees: Signal<Committee[]> = this.initCommittees();
+
   // null means "not yet loaded, or the fetch failed" — pruning is skipped in both
   // cases so a transient error or in-flight load never wipes a valid selection.
-  private readonly eligibleCommitteeUids: Signal<Set<string> | null> = this.initEligibleCommitteeUids();
+  private readonly eligibleCommitteeUids: Signal<Set<string> | null> = computed(() => {
+    if (this.committeesLoading() || this.committeesError()) return null;
+    return new Set(
+      this.committees()
+        .filter((c) => c.category === NEWSLETTER_COMMITTEE_CATEGORY)
+        .map((c) => c.uid)
+    );
+  });
 
   // === Validation gates ===
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
@@ -375,20 +389,25 @@ export class NewsletterManageComponent {
       });
   }
 
-  private initEligibleCommitteeUids(): Signal<Set<string> | null> {
+  private initCommittees(): Signal<Committee[]> {
     return toSignal(
       toObservable(this.projectUid).pipe(
         distinctUntilChanged(),
         switchMap((uid) => {
-          if (!uid) return of(null as Set<string> | null);
+          this.committeesError.set(null);
+          if (!uid) return of([] as Committee[]);
+          this.committeesLoading.set(true);
           return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
-            map((committees) => new Set(committees.filter((c) => c.category === NEWSLETTER_COMMITTEE_CATEGORY).map((c) => c.uid))),
-            catchError(() => of(null as Set<string> | null))
+            catchError(() => {
+              this.committeesError.set('Could not load groups. Please try again.');
+              return of([] as Committee[]);
+            }),
+            finalize(() => this.committeesLoading.set(false))
           );
         }),
         takeUntilDestroyed(this.destroyRef)
       ),
-      { initialValue: null }
+      { initialValue: [] as Committee[] }
     );
   }
 
@@ -428,10 +447,19 @@ export class NewsletterManageComponent {
     }
     this.submitting.set(true);
 
-    this.newsletterService
-      .sendNewsletter(this.projectUid(), id, this.version())
+    // Audience normalization only mutates the form; runSend sends the *persisted*
+    // newsletter by id/version, so a normalized-but-unsaved committee_uids value
+    // would otherwise still deliver to the stale, un-normalized audience on the
+    // server. Force a save first whenever the form has drifted from what's saved.
+    const ensureSaved$ = this.snapshotMatchesLastSaved() ? of(true) : this.saveDraft(true).pipe(map((draft) => draft !== null));
+
+    ensureSaved$
       .pipe(
         take(1),
+        switchMap((saved) => {
+          if (!saved) return EMPTY;
+          return this.newsletterService.sendNewsletter(this.projectUid(), id, this.version());
+        }),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({

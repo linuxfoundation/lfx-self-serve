@@ -7,11 +7,10 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
 import { Committee, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-one/shared/interfaces';
-import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
-import { catchError, distinctUntilChanged, EMPTY, finalize, map, of, startWith, switchMap, take } from 'rxjs';
+import { EMPTY, finalize, map, startWith, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-newsletter-audience-step',
@@ -20,26 +19,29 @@ import { catchError, distinctUntilChanged, EMPTY, finalize, map, of, startWith, 
 })
 export class NewsletterAudienceStepComponent {
   // === Services ===
-  private readonly committeeService = inject(CommitteeService);
   private readonly newsletterService = inject(NewsletterService);
   private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
+  // Committees are fetched once by the parent (NewsletterManageComponent) and
+  // passed down here rather than re-fetched — the upstream endpoint fans out
+  // through fetchAllQueryResources, so a second full traversal per mount is wasteful
+  // and can produce inconsistent loading/error states between parent and child.
   public readonly form = input.required<FormGroup>();
   public readonly projectUid = input.required<string>();
+  public readonly committees = input<Committee[]>([]);
+  public readonly committeesLoading = input<boolean>(false);
+  public readonly committeesError = input<string | null>(null);
   public readonly recipientCount = input<number | null>(null);
   public readonly recipientCountLoading = input<boolean>(false);
 
   // === Signals ===
-  protected readonly loadingCommittees = signal<boolean>(false);
-  protected readonly committeesError = signal<string | null>(null);
   protected readonly recipients = signal<NewsletterRecipient[]>([]);
   protected readonly recipientsLoading = signal<boolean>(false);
   protected readonly recipientsError = signal<string | null>(null);
   protected readonly recipientsPopover = viewChild<Popover>('recipientsPopover');
 
   // === Reactive data ===
-  protected readonly committees: Signal<Committee[]> = this.initCommittees();
   protected readonly committeeUidsValue: Signal<string[]> = this.initCommitteeUidsValue();
 
   protected readonly committeeOptions = computed<NewsletterCommitteeOption[]>(() =>
@@ -83,28 +85,6 @@ export class NewsletterAudienceStepComponent {
           this.recipientsError.set('Could not load recipients. Please try again.');
         },
       });
-  }
-
-  private initCommittees(): Signal<Committee[]> {
-    return toSignal(
-      toObservable(this.projectUid).pipe(
-        distinctUntilChanged(),
-        switchMap((uid) => {
-          this.committeesError.set(null);
-          if (!uid) return of([] as Committee[]);
-          this.loadingCommittees.set(true);
-          return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
-            catchError(() => {
-              this.committeesError.set('Could not load groups. Please try again.');
-              return of([] as Committee[]);
-            }),
-            finalize(() => this.loadingCommittees.set(false))
-          );
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      ),
-      { initialValue: [] as Committee[] }
-    );
   }
 
   private initCommitteeUidsValue(): Signal<string[]> {
