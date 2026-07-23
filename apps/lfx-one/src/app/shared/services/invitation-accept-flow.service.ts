@@ -94,7 +94,7 @@ export class InvitationAcceptFlowService {
               ...org,
               id: resolved.id || null,
               name: resolved.name || org.name,
-              website: normalizeToUrl(match.domain) ?? undefined,
+              website: normalizeToUrl(match.domain) ?? org.website,
             },
           }))
         );

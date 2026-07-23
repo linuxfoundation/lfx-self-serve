@@ -52,19 +52,22 @@ export class AcceptInviteOrganizationDialogComponent {
     const search = this.organizationSearch();
     const vals = this.formValue();
     if (search?.manualMode()) {
+      if (!(vals?.organization ?? '').trim()) return true;
       const urlValue = (vals?.organization_url ?? '').trim();
       if (!urlValue) return true;
       return this.urlStatus() !== 'VALID';
     }
     const hasName = !!(vals?.organization ?? '').trim();
-    const pendingSearch = search?.searchTerm() ?? '';
-    if (!hasName && pendingSearch) return true;
     if (!hasName) return true;
     if (!vals?.organization_id) {
       const urlValue = (vals?.organization_url ?? '').trim();
       if (!urlValue) return true;
       return this.urlStatus() !== 'VALID';
     }
+    // Block if visible search term was edited without a new selection — confirmed name/id may be stale.
+    const searchTerm = search?.searchTerm() ?? '';
+    const orgName = (vals?.organization ?? '').trim();
+    if (searchTerm && searchTerm.toLowerCase() !== orgName.toLowerCase()) return true;
     return false;
   });
 
@@ -127,7 +130,8 @@ export class AcceptInviteOrganizationDialogComponent {
 
     this.submitting.set(true);
     const orgSearch = this.organizationSearch();
-    const resolve$ = orgSearch ? orgSearch.resolveCurrentEntry() : null;
+    const alreadyResolved = !!this.formValue()?.organization_id;
+    const resolve$ = orgSearch && !alreadyResolved ? orgSearch.resolveCurrentEntry() : null;
 
     const finish = (): void => {
       const raw = this.form.getRawValue();
