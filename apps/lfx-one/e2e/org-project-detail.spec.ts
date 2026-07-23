@@ -102,9 +102,12 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-viewing-row')).toBeVisible();
     await expect(page.getByTestId('project-detail-trend-group')).toBeVisible();
 
-    // The viewing org is no longer pinned to the top: the default Calculated Influence view ranks
-    // rows 1..N contiguously, so ranks ascend in render order and the viewing row sits at the
-    // position matching its rank number. A pinned out-of-order row would break both invariants.
+    // The viewing org is no longer pinned to the top. Calculated Influence assigns contiguous ranks,
+    // so within the rendered page each row's rank equals the first row's rank plus its offset, and the
+    // viewing row sits at its own rank position. Asserting contiguity relative to the first rendered
+    // rank (rather than a hardcoded 1) keeps this correct even if the board ever paginates; a pinned
+    // out-of-order row would break contiguity. The viewing-row visibility check above establishes that
+    // the viewing org renders on the current page.
     for (const board of ['technical', 'ecosystem'] as const) {
       const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
       const count = await rows.count();
@@ -120,12 +123,41 @@ test.describe('Org Project Detail — leaderboards', () => {
         }
       }
 
-      expect(ranks[0]).toBe(1);
-      for (let i = 1; i < ranks.length; i++) {
-        expect(ranks[i]).toBeGreaterThan(ranks[i - 1]);
+      for (let i = 0; i < ranks.length; i++) {
+        expect(ranks[i]).toBe(ranks[0] + i);
       }
       expect(viewingIndex).toBeGreaterThanOrEqual(0);
-      expect(ranks[viewingIndex]).toBe(viewingIndex + 1);
+      expect(ranks[viewingIndex]).toBe(ranks[0] + viewingIndex);
+    }
+  });
+
+  test('activity count mode also renders boards in rank order with the viewing org not pinned', async ({ page }) => {
+    // buildBoard() drops the pin in the Activity Count branch too (ordered by warehouse rank). Warehouse
+    // ranks can have gaps for a viewer-scoped set, so assert non-decreasing order (not contiguity) — a
+    // viewing row pinned out of order would still break a non-decreasing sequence.
+    await page.getByTestId('project-detail-metric-activity').click();
+    await expect(page).toHaveURL(/metric=activity/);
+    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    for (const board of ['technical', 'ecosystem'] as const) {
+      const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
+      const count = await rows.count();
+      expect(count).toBeGreaterThan(0);
+
+      const ranks: number[] = [];
+      let viewingIndex = -1;
+      for (let i = 0; i < count; i++) {
+        const row = rows.nth(i);
+        ranks.push(Number((await row.locator('td').first().innerText()).trim()));
+        if ((await row.getAttribute('data-testid')) === `project-detail-leaderboard-${board}-viewing-row`) {
+          viewingIndex = i;
+        }
+      }
+
+      for (let i = 1; i < ranks.length; i++) {
+        expect(ranks[i]).toBeGreaterThanOrEqual(ranks[i - 1]);
+      }
+      expect(viewingIndex).toBeGreaterThanOrEqual(0);
     }
   });
 
