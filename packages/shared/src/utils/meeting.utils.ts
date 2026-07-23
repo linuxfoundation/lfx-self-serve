@@ -3,12 +3,16 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
 import {
   CustomRecurrencePattern,
   Meeting,
+  MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOrganizerChipModel,
+  MeetingOrganizerLink,
   MeetingRecurrence,
+  MeetingUserInfo,
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
@@ -671,4 +675,258 @@ export function normalizeIndexedMeetingAiSummary<T extends Pick<Meeting, 'ai_sum
     ai_summary_enabled: meeting.ai_summary_enabled ?? zoom.ai_companion_enabled,
     require_ai_summary_approval: meeting.require_ai_summary_approval ?? zoom.ai_summary_require_approval,
   };
+}
+
+/**
+ * Returns true when a `created_by` value is a service account (e.g. `zoom.webhooks`)
+ * or carries no identifying information at all — either way it must not be shown as
+ * the meeting organizer.
+ */
+function isServiceOrEmptyCreatedBy(createdBy: MeetingUserInfo): boolean {
+  const name = createdBy.name?.trim();
+  const username = createdBy.username?.trim().toLowerCase();
+  const email = createdBy.email?.trim().toLowerCase();
+
+  if (!name && !username && !email) {
+    return true;
+  }
+
+  // `split('@')[0]` takes the local part; safe here because this only runs on trusted upstream
+  // created_by data (a malformed multi-`@` address would just not match a skip identifier).
+  const emailLocalPart = email ? email.split('@')[0] : undefined;
+  return MEETING_ORGANIZER_SKIP_IDENTIFIERS.some((skip) => username === skip || email === skip || emailLocalPart === skip || name?.toLowerCase() === skip);
+}
+
+/**
+ * Resolves the person to display as a meeting's organizer, in priority order:
+ *   1. `meeting.created_by` when it's a real human (not a service account, not empty).
+ *   2. The first host among the supplied candidates (rare, but authoritative when present).
+ *   3. `null` — nothing resolvable, so the caller omits the organizer display entirely.
+ *
+ * @param meeting - Any object carrying an optional `created_by` (Meeting / PastMeeting).
+ * @param hosts - Optional registrant/participant candidates for the host fallback.
+ */
+export function resolveMeetingOrganizer(
+  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  hosts?: ReadonlyArray<MeetingHostCandidate>
+): MeetingUserInfo | null {
+  const createdBy = meeting?.created_by;
+  if (createdBy && !isServiceOrEmptyCreatedBy(createdBy)) {
+    return {
+      name: createdBy.name,
+      username: createdBy.username,
+      email: createdBy.email,
+      ...(createdBy.profile_picture ? { profile_picture: createdBy.profile_picture } : {}),
+    };
+  }
+
+  const host = hosts?.find((candidate) => candidate?.host);
+  if (host) {
+    const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();
+    const username = host.username?.trim() ?? '';
+    const email = host.email?.trim() ?? '';
+    if (name || username || email) {
+      return {
+        name,
+        username,
+        email,
+        ...(host.avatar_url ? { profile_picture: host.avatar_url } : {}),
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Display label for a resolved organizer: the full name, falling back to username,
+ * then email. Returns an empty string only when none are present.
+ */
+export function getMeetingOrganizerDisplayName(organizer: MeetingUserInfo | null | undefined): string {
+  if (!organizer) {
+    return '';
+  }
+  return organizer.name?.trim() || organizer.username?.trim() || organizer.email?.trim() || '';
+}
+
+/** Maps a host registrant/participant candidate to the organizer display shape. */
+function hostToOrganizer(host: MeetingHostCandidate): MeetingUserInfo {
+  const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();
+  return {
+    name,
+    username: host.username?.trim() ?? '',
+    email: host.email?.trim() ?? '',
+    ...(host.avatar_url ? { profile_picture: host.avatar_url } : {}),
+  };
+}
+
+/** Whether two organizers refer to the same person (by username, then email, then name). */
+function sameOrganizer(a: MeetingUserInfo, b: MeetingUserInfo): boolean {
+  const usernameA = normalizeUsername(a.username);
+  const usernameB = normalizeUsername(b.username);
+  if (usernameA && usernameB) {
+    return usernameA === usernameB;
+  }
+  const emailA = a.email?.trim().toLowerCase();
+  const emailB = b.email?.trim().toLowerCase();
+  if (emailA && emailB) {
+    return emailA === emailB;
+  }
+  const nameA = a.name?.trim().toLowerCase();
+  const nameB = b.name?.trim().toLowerCase();
+  return !!nameA && nameA === nameB;
+}
+
+/**
+ * Collects every person to attribute a meeting to, from a single unified source so the
+ * "Organized by" chip and the participants/registrants modal never disagree:
+ *   - When host-flagged candidates are present, they ARE the organizer set (exactly what the
+ *     modal badges), sorted by name; the human `created_by` is folded in only if it isn't
+ *     already one of the hosts.
+ *   - When no hosts are supplied (e.g. summary cards that don't load the registrant list), the
+ *     human `created_by` is the sole organizer.
+ *   - Otherwise an empty array (nothing to display).
+ *
+ * Surfaces that show BOTH the chip and the modal must pass the same host list to each.
+ */
+export function collectMeetingOrganizers(
+  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  hosts?: ReadonlyArray<MeetingHostCandidate>
+): MeetingUserInfo[] {
+  const createdBy = meeting?.created_by;
+  const humanCreatedBy = createdBy ? resolveMeetingOrganizer({ created_by: createdBy }) : null;
+
+  const hostOrganizers = (hosts ?? [])
+    .filter((candidate) => candidate?.host)
+    .map((host) => hostToOrganizer(host))
+    .filter((organizer) => organizer.name || organizer.username || organizer.email)
+    .sort((a, b) => getMeetingOrganizerDisplayName(a).localeCompare(getMeetingOrganizerDisplayName(b)));
+
+  if (hostOrganizers.length === 0) {
+    return humanCreatedBy ? [humanCreatedBy] : [];
+  }
+
+  if (humanCreatedBy && !hostOrganizers.some((organizer) => sameOrganizer(organizer, humanCreatedBy))) {
+    return [humanCreatedBy, ...hostOrganizers];
+  }
+  return hostOrganizers;
+}
+
+/**
+ * Builds a `mailto:` URL that pre-fills an email to a meeting organizer. Returns `null` when the
+ * organizer has no email (caller renders the name as plain text). Subject and body are
+ * percent-encoded; the address is left as a bare addr-spec.
+ *
+ * @param params.email - Organizer email (the mailto target).
+ * @param params.meetingTitle - Meeting title (subject prefix).
+ * @param params.meetingDate - Pre-formatted meeting date (subject suffix).
+ * @param params.detailUrl - Meeting details page URL (body).
+ */
+export function buildMeetingOrganizerMailto(params: {
+  email?: string | null;
+  meetingTitle?: string | null;
+  meetingDate?: string | null;
+  detailUrl?: string | null;
+}): string | null {
+  const email = params.email?.trim();
+  // Only emit a mailto for a conservative single-recipient address. The positive allowlist rejects
+  // whitespace, separators (`,`/`;`), extra `@`, and — critically — percent escapes, so a record
+  // like `victim@x.com%0D%0ABcc:attacker@x.com` can't decode into a CRLF + injected mail header.
+  if (!email || !/^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
+    return null;
+  }
+
+  const subject = [params.meetingTitle?.trim(), params.meetingDate?.trim()].filter(Boolean).join(' — ');
+  const body = params.detailUrl?.trim() ?? '';
+
+  const query: string[] = [];
+  if (subject) {
+    query.push(`subject=${encodeURIComponent(subject)}`);
+  }
+  if (body) {
+    query.push(`body=${encodeURIComponent(body)}`);
+  }
+
+  return `mailto:${email}${query.length ? `?${query.join('&')}` : ''}`;
+}
+
+/**
+ * Normalizes a username for viewer-identity comparison — lowercased and stripped of any
+ * auth-provider prefix (e.g. `auth0|`), so an OIDC `sub` still matches a plain LFID.
+ */
+function normalizeUsername(username: string | null | undefined): string {
+  return (username ?? '').trim().toLowerCase().split('|').pop() ?? '';
+}
+
+/**
+ * Builds the "Organized by" chip view model from resolved organizers, the viewer's username, and
+ * the meeting context needed to pre-fill a `mailto:` per organizer. Returns `null` when there are
+ * no organizers so the caller omits the chip entirely.
+ *
+ * @param organizers - Resolved organizers (see {@link collectMeetingOrganizers}).
+ * @param viewerUsername - The current user's username, for the "you" variant (never linked).
+ * @param mailtoContext - Meeting title / formatted date / details URL for the mailto subject+body.
+ */
+export function buildMeetingOrganizerChip(
+  organizers: ReadonlyArray<MeetingUserInfo>,
+  viewerUsername?: string | null,
+  mailtoContext: { meetingTitle?: string | null; meetingDate?: string | null; detailUrl?: string | null } = {}
+): MeetingOrganizerChipModel | null {
+  if (!organizers.length) {
+    return null;
+  }
+
+  const viewer = normalizeUsername(viewerUsername);
+  const toLink = (organizer: MeetingUserInfo, index: number): MeetingOrganizerLink => {
+    const isYou = !!viewer && normalizeUsername(organizer.username) === viewer;
+    const name = getMeetingOrganizerDisplayName(organizer);
+    return {
+      // Suffix the identity with its position so two name-only organizers sharing a display name
+      // still get distinct @for track keys (avoids Angular's duplicate-key diagnostic / DOM reuse).
+      key: `${organizer.username?.trim() || organizer.email?.trim() || name}#${index}`,
+      name,
+      isYou,
+      // "you" is never a mailto link (emailing yourself makes no sense); others link when they have an email.
+      mailto: isYou ? null : buildMeetingOrganizerMailto({ email: organizer.email, ...mailtoContext }),
+    };
+  };
+
+  return {
+    count: organizers.length,
+    primary: toLink(organizers[0], 0),
+    overflow: organizers.slice(1).map((organizer, index) => toLink(organizer, index + 1)),
+  };
+}
+
+/**
+ * Whether a participant/registrant has no meaningful name — empty or a placeholder like
+ * "unknown" / "[unknown]". Used to sink such rows to the BOTTOM of people lists (organizers
+ * float to top; broken records must not sit directly beneath them).
+ */
+export function isUnresolvableParticipantName(first?: string | null, last?: string | null): boolean {
+  const tokens = [first, last].map((token) => (token ?? '').trim().toLowerCase());
+  const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
+  return meaningful.length === 0;
+}
+
+/**
+ * Orders a people list into three tiers so organizers stay at the top and broken rows at the bottom:
+ * hosts (organizers) first, then normally-named people, then unresolvable "[unknown]" records.
+ * Within a tier, orders by first name. Shared by the registrants/participants modal and the
+ * past-meeting details table so the ordering rule lives in one place.
+ */
+export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; first_name?: string | null; last_name?: string | null }>(a: T, b: T): number {
+  const rank = (person: T): number => {
+    // Hosts always float to the top, even when their upstream name is empty/[unknown];
+    // only non-host unresolvable rows sink to the bottom.
+    if (person.host) {
+      return 0;
+    }
+    return isUnresolvableParticipantName(person.first_name, person.last_name) ? 2 : 1;
+  };
+  const rankDelta = rank(a) - rank(b);
+  if (rankDelta !== 0) {
+    return rankDelta;
+  }
+  return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
 }

@@ -117,10 +117,6 @@ export class HeaderComponent {
     this.searchForm.get('search')?.setValue('');
   }
 
-  protected onLogoClick(): void {
-    this.router.navigate(['/']);
-  }
-
   protected onUserClick(): void {
     // TODO: Show user menu/dropdown or navigate to profile
     console.info('User avatar clicked');

@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
-import { addInvitedStatusToMeeting, checkPastMeetingAccess } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, checkPastMeetingAccess, enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -126,6 +126,15 @@ export class PublicMeetingController {
       // Strip it from the response for unauthenticated callers.
       if (!isAuthenticated) {
         delete (meeting as Partial<Meeting>).host_key;
+      }
+
+      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // created_by from the live v1_meeting index (the ITX detail payload omits it); for anonymous
+      // callers, skip that query and strip created_by so we neither expose nor waste a call on it.
+      if (isAuthenticated) {
+        [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
+      } else {
+        delete (meeting as Partial<Meeting>).created_by;
       }
 
       // Log the success
@@ -276,27 +285,40 @@ export class PublicMeetingController {
         delete (meeting as Partial<Meeting>).host_key;
       }
 
-      // For non-full-access users, return only the fields needed for the basic UI
+      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // created_by from the live v1_meeting index (webhook-created past meetings lack a human one);
+      // for anonymous callers, skip that query and strip created_by (present as zoom.webhooks).
+      let enrichedMeeting = meeting;
+      if (isAuthenticated) {
+        [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
+      } else {
+        delete (meeting as Partial<Meeting>).created_by;
+      }
+
+      // For non-full-access users, return only the fields needed for the basic UI.
+      // created_by is included (authenticated callers only, per the strip above) so the basic
+      // view can still show the organizer name.
       const meetingResponse = fullAccess
-        ? meeting
+        ? enrichedMeeting
         : {
-            id: meeting.id,
-            title: meeting.title,
-            visibility: meeting.visibility,
-            meeting_type: meeting.meeting_type,
-            restricted: meeting.restricted,
-            start_time: meeting.start_time,
-            scheduled_start_time: meeting.scheduled_start_time,
-            scheduled_end_time: meeting.scheduled_end_time,
-            duration: meeting.duration,
-            recurrence: meeting.recurrence,
-            recording_enabled: meeting.recording_enabled,
-            transcript_enabled: meeting.transcript_enabled,
-            youtube_upload_enabled: meeting.youtube_upload_enabled,
-            show_meeting_attendees: meeting.show_meeting_attendees,
-            ai_summary_enabled: meeting.ai_summary_enabled,
-            project_uid: meeting.project_uid,
-            meeting_id: meeting.meeting_id,
+            id: enrichedMeeting.id,
+            title: enrichedMeeting.title,
+            visibility: enrichedMeeting.visibility,
+            meeting_type: enrichedMeeting.meeting_type,
+            restricted: enrichedMeeting.restricted,
+            start_time: enrichedMeeting.start_time,
+            scheduled_start_time: enrichedMeeting.scheduled_start_time,
+            scheduled_end_time: enrichedMeeting.scheduled_end_time,
+            duration: enrichedMeeting.duration,
+            recurrence: enrichedMeeting.recurrence,
+            recording_enabled: enrichedMeeting.recording_enabled,
+            transcript_enabled: enrichedMeeting.transcript_enabled,
+            youtube_upload_enabled: enrichedMeeting.youtube_upload_enabled,
+            show_meeting_attendees: enrichedMeeting.show_meeting_attendees,
+            ai_summary_enabled: enrichedMeeting.ai_summary_enabled,
+            project_uid: enrichedMeeting.project_uid,
+            meeting_id: enrichedMeeting.meeting_id,
+            created_by: enrichedMeeting.created_by,
           };
 
       res.json({

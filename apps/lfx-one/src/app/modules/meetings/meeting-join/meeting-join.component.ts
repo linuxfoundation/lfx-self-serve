@@ -7,6 +7,7 @@ import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
@@ -33,6 +34,7 @@ import {
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
   MeetingAttachment,
+  MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingRegistrant,
@@ -103,6 +105,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    MeetingOrganizerComponent,
     GuestFormComponent,
     TooltipModule,
     DrawerModule,
@@ -247,6 +250,10 @@ export class MeetingJoinComponent implements OnInit {
   });
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
+  // Host source for the organizer chip: registrants for upcoming, participants for past (the
+  // upcoming registrants signal is empty on past join pages), so the chip and the participants
+  // drawer resolve organizers from the same people.
+  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
   // Past meeting attendance stats (derived from participants)
   protected participantCount = computed(() => this.pastMeetingParticipants().length);
   protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);

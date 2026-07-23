@@ -3,8 +3,9 @@
 
 import { Component, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
+import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
@@ -35,12 +36,17 @@ export class OrganizationSearchComponent {
   public resolveToCdpName = input<boolean>(true);
   /** When true, marks the domain/website field as required (shows asterisk and validation errors). */
   public domainRequired = input<boolean>(false);
+  /** Name of the parent form control that holds the resolved org id. Cleared when entering manual
+   *  mode so a stale id from a prior selection does not survive as resolution evidence. */
+  public idControl = input<string>();
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
 
   // Track manual mode state
   public manualMode = signal<boolean>(false);
+
+  private domainOriginalValidator: ValidatorFn | null | undefined = undefined;
 
   // Resolve state signals
   public resolvingOrg = signal(false);
@@ -101,7 +107,9 @@ export class OrganizationSearchComponent {
         takeUntilDestroyed()
       )
       .subscribe((value) => {
-        searchControl.setValue((value ?? '').trim(), { emitEvent: false });
+        const trimmedValue = (value ?? '').trim();
+        searchControl.setValue(trimmedValue, { emitEvent: false });
+        this.searchTerm.set(trimmedValue);
       });
   }
 
@@ -167,10 +175,33 @@ export class OrganizationSearchComponent {
     this.clearResolveState();
 
     const nameControlName = this.nameControl();
+    const domainControlName = this.domainControl();
     const typedName = (this.organizationForm.get('organizationSearch')?.value || this.searchTerm())?.trim();
 
     if (nameControlName && this.form().get(nameControlName)) {
       this.form().get(nameControlName)?.setValue(typedName);
+    }
+
+    // Apply URL validators to the domain control so the website field is validated
+    // while in manual/new-org mode. Cleared on exit to avoid validating search-mode state.
+    const domainCtrl = domainControlName ? this.form().get(domainControlName) : null;
+    if (domainCtrl) {
+      if (this.domainOriginalValidator === undefined) {
+        this.domainOriginalValidator = domainCtrl.validator;
+      }
+      // Clear stale URL before manual mode — the parent's name-change sub is manualMode()-guarded
+      // and won't reset it, so Org A's URL would otherwise validate a newly created Org B.
+      domainCtrl.setValue(null);
+      const idControlName = this.idControl();
+      if (idControlName) {
+        this.form().get(idControlName)?.setValue(null);
+      }
+      const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
+      domainCtrl.setValidators(validators);
+      domainCtrl.updateValueAndValidity();
+      // Mark touched immediately so the required-URL error is visible from the start,
+      // which explains why the Send Invites button is disabled without needing a submit attempt.
+      domainCtrl.markAsTouched();
     }
 
     // Remember the just-created org (free text, no domain) so re-opening the
@@ -187,17 +218,29 @@ export class OrganizationSearchComponent {
     this.manualMode.set(false);
     this.clearResolveState();
 
-    // Clear any touched state on the form controls
     const parentForm = this.form();
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
 
+    // Clear search input + parent name/URL so empty UI matches form state — prevents
+    // orgInvalid() from seeing a stale name with no org-id and blocking submit.
+    this.organizationForm.get('organizationSearch')?.setValue('');
     if (nameControlName && parentForm.get(nameControlName)) {
+      parentForm.get(nameControlName)?.setValue(null);
       parentForm.get(nameControlName)?.markAsUntouched();
     }
 
-    if (domainControlName && parentForm.get(domainControlName)) {
-      parentForm.get(domainControlName)?.markAsUntouched();
+    const domainCtrl = domainControlName ? parentForm.get(domainControlName) : null;
+    if (domainCtrl) {
+      if (this.domainOriginalValidator !== undefined) {
+        domainCtrl.setValidators(this.domainOriginalValidator);
+        this.domainOriginalValidator = undefined;
+      } else {
+        domainCtrl.clearValidators();
+      }
+      domainCtrl.setValue(null);
+      domainCtrl.updateValueAndValidity();
+      domainCtrl.markAsUntouched();
     }
   }
 

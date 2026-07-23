@@ -92,8 +92,13 @@ export class AddMemberDialogComponent {
 
   public submitting = signal(false);
   public searchLoading = signal(false);
+  private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+  private readonly orgFormValues = this.initOrgFormValues();
+  private readonly orgUrlStatus = toSignal(this.form.get('organization_url')!.statusChanges.pipe(startWith(this.form.get('organization_url')!.status)), {
+    initialValue: this.form.get('organization_url')!.status,
+  });
 
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
   public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
@@ -109,7 +114,11 @@ export class AddMemberDialogComponent {
     }
     return result;
   });
-  public readonly canSubmit = computed(() => !this.submitting() && this.categorized().toInvite.length > 0);
+  public readonly canSubmit = computed(
+    () => !this.submitting() && this.categorized().toInvite.length > 0 && !(this.showOrganizationField() && this.orgInvalid())
+  );
+  public readonly orgInvalid: Signal<boolean> = this.initOrgInvalid();
+  public readonly showOrgError: Signal<boolean> = this.initShowOrgError();
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
@@ -129,9 +138,11 @@ export class AddMemberDialogComponent {
       .get('organization')!
       .valueChanges.pipe(takeUntilDestroyed())
       .subscribe((name) => {
+        if (this.organizationSearch()?.manualMode()) return;
         const normalizedName = (name ?? '').trim();
         if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
-          this.form.patchValue({ organization_id: null }, { emitEvent: false });
+          this.resolvedOrganizationName = '';
+          this.form.patchValue({ organization_id: null, organization_url: '' });
         }
       });
   }
@@ -156,7 +167,14 @@ export class AddMemberDialogComponent {
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe((employer) => {
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
-            this.form.patchValue({ organization: employer.name });
+            // Set resolvedOrganizationName before patching so the name-change subscription
+            // does not clear organization_id / organization_url immediately after autofill.
+            this.resolvedOrganizationName = employer.name.trim();
+            this.form.patchValue({
+              organization: employer.name.trim(),
+              organization_id: employer.id ?? null,
+              organization_url: employer.website ?? '',
+            });
           }
         });
     }
@@ -176,6 +194,17 @@ export class AddMemberDialogComponent {
     const emails = this.categorized().toInvite;
     if (!committeeId || emails.length === 0) {
       return;
+    }
+
+    if (this.showOrganizationField()) {
+      this.orgSubmitAttempted.set(true);
+      if (this.organizationSearch()?.manualMode()) {
+        // Touch the website control so its inline required/URL validators become visible.
+        this.form.get('organization_url')?.markAsTouched();
+      }
+      if (this.orgInvalid()) {
+        return;
+      }
     }
 
     this.submitting.set(true);
@@ -272,6 +301,53 @@ export class AddMemberDialogComponent {
     }
     const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
     return upstream ?? 'invite failed';
+  }
+
+  private initOrgFormValues() {
+    return toSignal(this.form.valueChanges.pipe(startWith(this.form.value)), { initialValue: this.form.value });
+  }
+
+  private initOrgInvalid(): Signal<boolean> {
+    return computed(() => {
+      if (!this.showOrganizationField()) return false;
+      // In manual mode, org validity is entirely determined by the URL form control's
+      // validator state (Validators.required + trimmedRequired + httpsUrlValidator).
+      if (this.organizationSearch()?.manualMode()) {
+        return this.orgUrlStatus() === 'INVALID';
+      }
+      const vals = this.orgFormValues();
+      const hasName = !!(vals.organization ?? '').trim();
+      // User typed in the search box but never selected a result (e.g. org doesn't exist in CDP).
+      // The parent form stays empty in that case, so check the component's pending search text.
+      const pendingSearch = this.organizationSearch()?.searchTerm() ?? '';
+      if (!hasName && pendingSearch) return true;
+      if (!hasName) return false;
+      const hasOrgId = !!vals.organization_id;
+      const urlValue = (vals.organization_url ?? '').trim();
+      let hasValidUrl = false;
+      if (urlValue) {
+        try {
+          hasValidUrl = new URL(urlValue).protocol === 'https:';
+        } catch {
+          /* not a valid URL */
+        }
+      }
+      return !hasOrgId && !hasValidUrl;
+    });
+  }
+
+  private initShowOrgError(): Signal<boolean> {
+    return computed(() => {
+      if (!this.orgInvalid()) return false;
+      // In manual mode the user is creating a new org — "not found" is irrelevant.
+      // Validation for that path is handled inline inside the org-search template.
+      if (this.organizationSearch()?.manualMode()) return false;
+      if (this.orgSubmitAttempted()) return true;
+      // Show immediately while the user has typed a search term with no confirmed selection —
+      // same reactive-as-you-type UX as the email invalid warning (no submit click needed).
+      const hasName = !!(this.orgFormValues().organization ?? '').trim();
+      return !hasName && !!(this.organizationSearch()?.searchTerm() ?? '');
+    });
   }
 
   private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {

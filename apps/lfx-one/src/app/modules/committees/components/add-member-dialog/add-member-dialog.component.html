@@ -135,13 +135,21 @@
           [form]="form"
           nameControl="organization"
           domainControl="organization_url"
+          idControl="organization_id"
           placeholder="Search for organization..."
           styleClass="w-full"
           inputStyleClass="text-sm w-full"
           panelStyleClass="text-sm w-full"
           dataTestId="add-member-organization-search"
+          [domainRequired]="true"
           (onOrganizationResolved)="onOrgResolved($event)">
         </lfx-organization-search>
+        @if (showOrgError()) {
+          <p class="text-xs text-red-600" role="alert" data-testid="add-member-org-error">
+            <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+            Organization not found. Select from the search results, or clear the field to leave it blank.
+          </p>
+        }
       </div>
     }
 
