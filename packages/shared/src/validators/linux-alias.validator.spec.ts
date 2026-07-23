@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AbstractControl } from '@angular/forms';
+import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { describe, expect, it } from 'vitest';
 
 import { LINUX_ALIAS_BANNED_CHARS, LINUX_ALIAS_MAX_LENGTH, LINUX_ALIAS_RESERVED_NAMES } from '../constants/linux-email.constants';
@@ -9,7 +9,7 @@ import { linuxAliasValidator } from './linux-alias.validator';
 
 // The validator only reads `control.value`, so a minimal stub is sufficient.
 const control = (value: unknown): AbstractControl => ({ value }) as AbstractControl;
-const validate = (value: unknown) => linuxAliasValidator()(control(value));
+const validate = (value: unknown): ValidationErrors | null => linuxAliasValidator()(control(value));
 
 describe('linuxAliasValidator', () => {
   it('defers empty/nullish input to the required validator (returns null)', () => {
