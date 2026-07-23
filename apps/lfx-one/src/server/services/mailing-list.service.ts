@@ -560,13 +560,7 @@ export class MailingListService {
       member_uid: memberId,
     });
 
-    // Poll the query service until the updated member is indexed
-    const indexed = await this.pollUntilResourceIndexed<MailingListMember>(req, 'update_mailing_list_member', 'groupsio_member', 'member_uid', memberId, {
-      mailing_list_uid: mailingListId,
-      member_uid: memberId,
-    });
-
-    return indexed ?? updatedMember;
+    return updatedMember;
   }
 
   /**
