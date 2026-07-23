@@ -98,16 +98,19 @@ test.describe('Org Project Detail — leaderboards', () => {
   test('renders both side-by-side boards with the viewing-org row at its ranked position', async ({ page }) => {
     await expect(page.getByTestId('project-detail-leaderboard-technical')).toBeVisible();
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem')).toBeVisible();
-    await expect(page.getByTestId('project-detail-leaderboard-technical-viewing-row')).toBeVisible();
-    await expect(page.getByTestId('project-detail-leaderboard-ecosystem-viewing-row')).toBeVisible();
     await expect(page.getByTestId('project-detail-trend-group')).toBeVisible();
 
     // The viewing org is no longer pinned to the top. Calculated Influence assigns contiguous ranks,
-    // so within the rendered page each row's rank equals the first row's rank plus its offset, and the
-    // viewing row sits at its own rank position. Asserting contiguity relative to the first rendered
-    // rank (rather than a hardcoded 1) keeps this correct even if the board ever paginates; a pinned
-    // out-of-order row would break contiguity. The viewing-row visibility check above establishes that
-    // the viewing org renders on the current page.
+    // so within the rendered page each row's rank equals the first row's rank plus its offset; a pinned
+    // out-of-order row would break that contiguity. This rank-order guard is asserted FIRST and is
+    // page-independent (it keys off the first rendered rank, not a hardcoded 1), so a genuine ordering
+    // regression surfaces on the rank assertion rather than being masked by a viewing-row precondition.
+    //
+    // Precondition for the viewing-row checks below: the test project returns a single page of orgs
+    // (<= the paginator page size), so the viewing org always renders on this page. If a future fixture
+    // pushed the viewing org past page 1 the viewing-row checks would need to step the paginator first;
+    // the rank-order guard above would still hold unchanged. The custom message keeps that failure mode
+    // legible instead of opaque.
     for (const board of ['technical', 'ecosystem'] as const) {
       const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
       const count = await rows.count();
@@ -126,7 +129,8 @@ test.describe('Org Project Detail — leaderboards', () => {
       for (let i = 0; i < ranks.length; i++) {
         expect(ranks[i]).toBe(ranks[0] + i);
       }
-      expect(viewingIndex).toBeGreaterThanOrEqual(0);
+
+      expect(viewingIndex, `viewing-org row expected on the first ${board} page for this fixture (rank <= page size)`).toBeGreaterThanOrEqual(0);
       expect(ranks[viewingIndex]).toBe(ranks[0] + viewingIndex);
     }
   });
