@@ -3,7 +3,7 @@
 
 import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormControlStatus, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
@@ -41,7 +41,7 @@ export class AcceptInviteOrganizationDialogComponent {
   public readonly submitting = signal(false);
 
   private readonly formValue = this.initFormValue();
-  private readonly urlStatus = toSignal(this.urlControl.statusChanges.pipe(startWith(this.urlControl.status)));
+  private readonly urlStatus = signal<FormControlStatus>(this.urlControl.status);
 
   protected readonly isNewOrg = computed(() => {
     const value = this.formValue();
@@ -58,6 +58,10 @@ export class AcceptInviteOrganizationDialogComponent {
       }
     });
 
+    this.urlControl.statusChanges.pipe(takeUntilDestroyed()).subscribe((status) => {
+      this.urlStatus.set(status);
+    });
+
     effect(() => {
       if (this.isNewOrg()) {
         this.urlControl.setValidators([trimmedRequired(), httpsUrlValidator()]);
@@ -65,6 +69,9 @@ export class AcceptInviteOrganizationDialogComponent {
         this.urlControl.clearValidators();
       }
       this.urlControl.updateValueAndValidity({ emitEvent: false });
+      // Manually sync after updateValueAndValidity({ emitEvent: false }) since
+      // suppressing the event means statusChanges won't fire for validator changes.
+      this.urlStatus.set(this.urlControl.status);
     });
   }
 
