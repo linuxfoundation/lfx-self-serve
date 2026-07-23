@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, output, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { SelectComponent } from '@components/select/select.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
 import { Committee, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
@@ -14,7 +14,7 @@ import { EMPTY, finalize, map, startWith, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-newsletter-audience-step',
-  imports: [ReactiveFormsModule, MultiSelectComponent, PopoverModule, ProgressSpinnerModule],
+  imports: [ReactiveFormsModule, SelectComponent, PopoverModule, ProgressSpinnerModule],
   templateUrl: './newsletter-audience-step.component.html',
 })
 export class NewsletterAudienceStepComponent {
@@ -38,6 +38,15 @@ export class NewsletterAudienceStepComponent {
   // === Outputs ===
   public readonly retryCommittees = output<void>();
 
+  // === Forms ===
+  // The shared `form` input carries `committeeUids: string[]` end-to-end — recipient
+  // count, save payload, review/list counts, and server validation all expect an
+  // array. The picker is constrained to one group at a time, so this local form holds
+  // the scalar selection; it's bridged to the shared array control in initSync().
+  protected readonly audienceForm = new FormGroup({
+    committeeUid: new FormControl<string | null>(null),
+  });
+
   // === Signals ===
   protected readonly recipients = signal<NewsletterRecipient[]>([]);
   protected readonly recipientsLoading = signal<boolean>(false);
@@ -58,6 +67,10 @@ export class NewsletterAudienceStepComponent {
   );
   protected readonly selectedCount: Signal<number> = computed(() => this.committeeUidsValue().length);
   protected readonly hasCommittees = computed(() => this.committeeOptions().length > 0);
+
+  public constructor() {
+    this.initSync();
+  }
 
   protected onShowRecipients(event: Event): void {
     const popover = this.recipientsPopover();
@@ -88,6 +101,27 @@ export class NewsletterAudienceStepComponent {
           this.recipientsError.set('Could not load recipients. Please try again.');
         },
       });
+  }
+
+  // Bridges the local single-value `audienceForm` control to the shared array
+  // control both directions: incoming committeeUids (draft hydration, audience
+  // normalization) mirror into the local control with emitEvent: false so the
+  // write-back below doesn't re-fire; user selections write back as a 1-element
+  // array (or [] when cleared).
+  private initSync(): void {
+    effect(() => {
+      const uid = this.committeeUidsValue()[0] ?? null;
+      const control = this.audienceForm.controls.committeeUid;
+      if (control.value !== uid) {
+        control.setValue(uid, { emitEvent: false });
+      }
+    });
+
+    this.audienceForm.controls.committeeUid.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((uid) => {
+      this.form()
+        .get('committeeUids')
+        ?.setValue(uid ? [uid] : []);
+    });
   }
 
   private initCommitteeUidsValue(): Signal<string[]> {
