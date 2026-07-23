@@ -149,8 +149,8 @@ async function stubNewsletterApis(page: Page, draft: Newsletter): Promise<void> 
       body: JSON.stringify([
         {
           uid: MOCK_COMMITTEE_UID,
-          name: 'Technical Steering Committee',
-          category: 'Technical',
+          name: 'Community Newsletter',
+          category: 'Newsletter',
         },
       ]),
     })
