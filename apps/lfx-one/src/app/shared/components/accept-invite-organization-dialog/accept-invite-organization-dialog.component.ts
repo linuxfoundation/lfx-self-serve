@@ -23,7 +23,10 @@ export class AcceptInviteOrganizationDialogComponent {
   private readonly config = inject(DynamicDialogConfig<AcceptInviteOrganizationDialogData>);
 
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
-  private resolvedOrganizationName = '';
+  // Tracks the CDP-canonical name of the last resolved org so the valueChanges
+  // handler can distinguish a CDP-confirmed name from free text (and avoid
+  // clearing the pre-resolved id when the same name is re-set programmatically).
+  private resolvedOrganizationName = this.config.data?.organization?.id ? (this.config.data.organization.name ?? '') : '';
 
   public readonly committeeName = this.config.data?.committeeName ?? 'this group';
   public readonly form = new FormGroup({
@@ -38,11 +41,14 @@ export class AcceptInviteOrganizationDialogComponent {
   public readonly submitting = signal(false);
 
   private readonly formValue = this.initFormValue();
+  private readonly urlStatus = toSignal(this.urlControl.statusChanges.pipe(startWith(this.urlControl.status)));
 
   protected readonly isNewOrg = computed(() => {
     const value = this.formValue();
     return !value?.organization_id && !!value?.organization?.trim();
   });
+
+  protected readonly canConfirm = computed(() => !this.submitting() && (!this.isNewOrg() || this.urlStatus() === 'VALID'));
 
   public constructor() {
     this.organizationControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((name) => {
