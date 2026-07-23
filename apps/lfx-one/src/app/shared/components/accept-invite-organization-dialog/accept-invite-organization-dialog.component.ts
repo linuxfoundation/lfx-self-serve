@@ -57,7 +57,7 @@ export class AcceptInviteOrganizationDialogComponent {
     const hasName = !!(vals?.organization ?? '').trim();
     const pendingSearch = search?.searchTerm() ?? '';
     if (!hasName && pendingSearch) return true;
-    if (!hasName) return false;
+    if (!hasName) return true;
     if (!vals?.organization_id) {
       return this.urlStatus() !== 'VALID';
     }
@@ -80,6 +80,9 @@ export class AcceptInviteOrganizationDialogComponent {
       const normalizedName = (name ?? '').trim();
       if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
         this.form.patchValue({ organization_id: null }, { emitEvent: false });
+      }
+      if (!normalizedName) {
+        this.organizationControl.markAsTouched();
       }
     });
 
