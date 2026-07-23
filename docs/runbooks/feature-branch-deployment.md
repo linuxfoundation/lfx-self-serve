@@ -91,7 +91,8 @@ Pod logs surface Express/Node.js errors that do not appear in the browser:
 
 ```bash
 # Requires kubectl access to the dev cluster
-kubectl logs -n ui-pr-<N> \
+# Replace 123 with your PR number
+kubectl logs -n ui-pr-123 \
   -l app.kubernetes.io/name=lfx-self-serve \
   --tail=100
 ```
