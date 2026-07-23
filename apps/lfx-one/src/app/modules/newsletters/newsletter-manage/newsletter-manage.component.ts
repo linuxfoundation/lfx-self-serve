@@ -38,6 +38,7 @@ import {
   filter,
   finalize,
   map,
+  merge,
   of,
   Subject,
   switchMap,
@@ -150,12 +151,20 @@ export class NewsletterManageComponent {
   // === Recipient summary ===
   protected readonly recipientCount = signal<number | null>(null);
   protected readonly recipientCountLoading = signal<boolean>(false);
+  // Draft-load fires an immediate count request for the (possibly unfiltered)
+  // saved uids; audience normalization can follow shortly after with a
+  // setValue for the filtered uids. Routing both through one switchMap-based
+  // pipeline (rather than each firing its own independent subscription)
+  // cancels the stale in-flight request instead of letting it race the
+  // normalized one and clobber the displayed count.
+  private readonly recipientCountTrigger$ = new Subject<string[]>();
 
   // === Newsletter-eligible committees ===
   // Fetched once here (not duplicated in the audience-step child) and passed down
   // via inputs, since the upstream endpoint fans out through fetchAllQueryResources.
   protected readonly committeesLoading = signal<boolean>(false);
   protected readonly committeesError = signal<string | null>(null);
+  private readonly retryCommittees$ = new Subject<void>();
   protected readonly committees: Signal<Committee[]> = this.initCommittees();
 
   // null means "not yet loaded, or the fetch failed" — pruning is skipped in both
@@ -356,6 +365,10 @@ export class NewsletterManageComponent {
     });
   }
 
+  protected retryCommittees(): void {
+    this.retryCommittees$.next();
+  }
+
   private goToList(tab?: 'draft' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
@@ -383,42 +396,50 @@ export class NewsletterManageComponent {
   }
 
   private initRecipientCount(): void {
-    this.form.controls.committeeUids.valueChanges
-      .pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual), takeUntilDestroyed(this.destroyRef))
-      .subscribe((uids) => this.fetchRecipientCountFor(uids ?? []));
+    merge(this.form.controls.committeeUids.valueChanges.pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual)), this.recipientCountTrigger$)
+      .pipe(
+        switchMap((uids) => this.fetchRecipientCount$(uids ?? [])),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
   }
 
   private fetchRecipientCountFor(uids: string[]): void {
+    this.recipientCountTrigger$.next(uids);
+  }
+
+  private fetchRecipientCount$(uids: string[]) {
     if (!uids || uids.length === 0) {
       this.recipientCount.set(0);
-      return;
+      return EMPTY;
     }
     if (!this.hasContext()) {
-      return;
+      return EMPTY;
     }
     this.recipientCountLoading.set(true);
-    this.newsletterService
-      .getRecipientCount(this.projectUid(), { committee_uids: uids })
-      .pipe(
-        take(1),
-        finalize(() => this.recipientCountLoading.set(false))
-      )
-      .subscribe({
+    return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
+      finalize(() => this.recipientCountLoading.set(false)),
+      tap({
         next: (res) => this.recipientCount.set(res.count),
         error: () => this.recipientCount.set(null),
-      });
+      }),
+      catchError(() => EMPTY)
+    );
   }
 
   private initCommittees(): Signal<Committee[]> {
     return toSignal(
-      toObservable(this.projectUid).pipe(
-        distinctUntilChanged(),
+      merge(toObservable(this.projectUid).pipe(distinctUntilChanged()), this.retryCommittees$.pipe(map(() => this.projectUid()))).pipe(
         switchMap((uid) => {
           this.committeesError.set(null);
           if (!uid) return of([] as Committee[]);
           this.committeesLoading.set(true);
           return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
             catchError(() => {
+              // A single transient failure otherwise leaves eligibleCommitteeUids()
+              // null forever — Send, save, and step-1 proceed all stay blocked with
+              // no way to recover short of navigating away. retryCommittees() gives
+              // users (surfaced on the Review screen) an explicit way back in.
               this.committeesError.set('Could not load groups. Please try again.');
               return of([] as Committee[]);
             }),
