@@ -193,7 +193,7 @@ synced via GitHub Actions.
    ```yaml
    # secrets/lfx/cloud.yml
    My LFX Self Serve Secret:
-     tags: [lfx_v2, pcc]
+     tags: [lfx_v2, pcc, lfx_self_serve]
      envs: [development, staging, production]
      source:
        onepassword:
