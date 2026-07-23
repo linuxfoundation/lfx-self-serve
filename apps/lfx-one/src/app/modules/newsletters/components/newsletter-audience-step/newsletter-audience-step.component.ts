@@ -111,7 +111,7 @@ export class NewsletterAudienceStepComponent {
           }
           this.loadingCommittees.set(true);
           this.committeesLoaded.set(false);
-          return this.committeeService.getCommitteesByProject(uid).pipe(
+          return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
             catchError(() => {
               this.committeesError.set('Could not load groups. Please try again.');
               return of([] as Committee[]);
