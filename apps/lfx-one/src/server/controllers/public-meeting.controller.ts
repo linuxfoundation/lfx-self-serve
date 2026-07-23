@@ -8,7 +8,13 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
-import { addInvitedStatusToMeeting, applyHostKeyVisibility, checkPastMeetingAccess, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import {
+  addInvitedStatusToMeeting,
+  applyHostKeyVisibility,
+  checkPastMeetingAccess,
+  enrichMeetingsWithCreatedBy,
+  stripHostKey,
+} from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
