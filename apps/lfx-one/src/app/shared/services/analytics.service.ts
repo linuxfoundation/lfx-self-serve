@@ -56,6 +56,7 @@ import {
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
+  EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   ParticipatingOrgsSummaryResponse,
   TrainingCertificationSummaryResponse,
@@ -1111,6 +1112,16 @@ export class AnalyticsService {
         });
       })
     );
+  }
+
+  /**
+   * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab.
+   * Emits null on error so the tiles fall back to dashes rather than measured zeros.
+   */
+  public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
+    return this.http
+      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } })
+      .pipe(catchError(() => of(null)));
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {

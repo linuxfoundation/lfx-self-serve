@@ -4,7 +4,6 @@
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
@@ -33,7 +32,6 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
   imports: [
     ReactiveFormsModule,
     SelectComponent,
-    ButtonComponent,
     FilterPillsComponent,
     OverviewTabComponent,
     AttributionSectionComponent,

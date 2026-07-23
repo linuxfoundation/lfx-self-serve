@@ -2705,6 +2705,42 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/events-overview-summary
+   * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab
+   * (registrations, attendees, speakers, countries, organizations, events, sponsorship $).
+   */
+  public async getEventsOverviewSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_overview_summary');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_events_overview_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_events_overview_summary',
+        });
+      }
+
+      const response = await this.projectService.getEventsOverviewSummary(foundationSlug);
+
+      logger.success(req, 'get_events_overview_summary', startTime, {
+        foundation_slug: foundationSlug,
+        project_id: response.projectId,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/brand-reach
    * Get brand reach metrics (total digital reach across social + owned sites)
    */

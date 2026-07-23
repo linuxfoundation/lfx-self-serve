@@ -635,6 +635,36 @@ export interface EventsSummaryResponse {
   sponsorshipProgressPct: number;
 }
 
+/**
+ * A single Events Summary metric: its period value and the period-over-period change.
+ * `changeFraction` is a ratio from Snowflake (0.52 = +52%), not a percentage; null when
+ * there is no prior-period baseline to compare against.
+ */
+export interface EventsOverviewMetric {
+  value: number;
+  changeFraction: number | null;
+}
+
+/**
+ * Foundation-wide events summary for the Marketing Impact Overview tab, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (per-project, pre-computed period
+ * columns) + MARKETING_EVENT_SPONSORSHIPS. One row per foundation slug (project spine rolls
+ * children up). Counts are for the selected period (YTD by default).
+ */
+export interface EventsOverviewSummaryResponse {
+  /** Snowflake PROJECT_ID echoed for PCC deep-link navigation; '' when the slug resolves to nothing. */
+  projectId: string;
+  registrations: EventsOverviewMetric;
+  attendees: EventsOverviewMetric;
+  speakers: EventsOverviewMetric;
+  countries: EventsOverviewMetric;
+  /** "Organizations" tile — COMPANIES_COUNT in the source model. */
+  organizations: EventsOverviewMetric;
+  events: EventsOverviewMetric;
+  /** Sponsorship revenue in dollars; no YoY change is modeled, so changeFraction is null. */
+  sponsorship: EventsOverviewMetric;
+}
+
 // ============================================
 // Training & Certification (Health Metrics Card)
 // ============================================
