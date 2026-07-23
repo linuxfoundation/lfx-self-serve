@@ -427,9 +427,12 @@ export class MeetingDetailsComponent implements OnInit {
   }
 
   private buildTimezoneOptions(date: Date): { label: string; value: string }[] {
-    return TIMEZONES.map((tz) => ({
-      label: `${tz.label} (${getTimezoneUtcOffsetString(tz.value, date)})`,
-      value: tz.value,
-    }));
+    return TIMEZONES.map((tz) => {
+      const offset = getTimezoneUtcOffsetString(tz.value, date);
+      return {
+        label: offset ? `${tz.label} (${offset})` : tz.label,
+        value: tz.value,
+      };
+    });
   }
 }

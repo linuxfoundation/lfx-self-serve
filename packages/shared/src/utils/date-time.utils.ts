@@ -233,6 +233,7 @@ export function parseTime12Hour(time: string): { hours: number; minutes: number 
 export function getTimezoneUtcOffsetString(timezone: string, date: Date): string {
   try {
     const offsetMs = getTimezoneOffset(timezone, date);
+    if (!Number.isFinite(offsetMs)) return '';
     const sign = offsetMs >= 0 ? '+' : '-';
     const absMs = Math.abs(offsetMs);
     const hours = Math.floor(absMs / 3_600_000);
