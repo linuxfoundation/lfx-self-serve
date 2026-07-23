@@ -108,11 +108,12 @@ function buildProject() {
   return { name: 'Proj', slug: 'proj', logo_url: 'logo', uid: PROJECT_UID, parent_uid: 'parent' };
 }
 
-function buildReqRes(authenticated: boolean) {
+function buildReqRes(authenticated: boolean, hasUserToken = true) {
   const req = {
     params: { id: MEETING_ID },
     query: {},
-    bearerToken: 'user-token',
+    // Optional-auth routes can be authenticated with no user bearer token (refresh failure).
+    bearerToken: hasUserToken ? 'user-token' : undefined,
     oidc: { isAuthenticated: () => authenticated },
     path: '/public/api/meetings/' + MEETING_ID,
     log: {},
@@ -194,6 +195,20 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
 
     await controller.getMeetingById(req, res, next);
 
+    expect(checkAccessMock).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.host_key).toBeUndefined();
+    expect(payload.meeting.can_view_host_key).toBe(false);
+  });
+
+  it('fails closed when authenticated but no user token was captured (never checks access as the M2M identity)', async () => {
+    // Optional-auth refresh failure: isAuthenticated() true, but no user bearer token.
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(true, /* hasUserToken */ false);
+
+    await controller.getMeetingById(req, res, next);
+
+    // The access check must NOT run under the application (M2M) identity.
     expect(checkAccessMock).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBeUndefined();

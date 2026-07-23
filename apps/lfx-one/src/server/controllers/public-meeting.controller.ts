@@ -84,15 +84,19 @@ export class PublicMeetingController {
         });
       }
 
-      // Resolve host-key visibility (organizer OR project writer OR committee writer) for
-      // authenticated users. This sets meeting.organizer (used for the registrant counts below)
-      // and meeting.can_view_host_key, and strips host_key when the user isn't authorized —
-      // the single source of truth for the gate across every response branch.
-      if (isAuthenticated) {
+      // Resolve host-key visibility (organizer OR project writer OR committee writer). This sets
+      // meeting.organizer (used for the registrant counts below) and meeting.can_view_host_key,
+      // and strips host_key when the user isn't authorized — the single source of truth for the
+      // gate across every response branch.
+      //
+      // Guard on originalToken, not just isAuthenticated: this is an optional-auth route, so a
+      // token-refresh failure can leave isAuthenticated() true with NO user token captured
+      // (originalToken === undefined) while req.bearerToken still holds the M2M token. Running the
+      // access check in that state would evaluate the application identity — which may hold writer
+      // relations — and leak the host key. Fail closed unless we hold the user's own token.
+      if (isAuthenticated && originalToken !== undefined) {
         // Temporarily restore user's original token for the access check
-        if (originalToken !== undefined) {
-          req.bearerToken = originalToken;
-        }
+        req.bearerToken = originalToken;
 
         try {
           await applyHostKeyVisibility(req, this.accessCheckService, meeting);
