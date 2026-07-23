@@ -134,7 +134,7 @@ export class MailingListManageComponent {
     // Determine if we need to create a shared service first
     const isCreatingService = this.needsSharedServiceCreation() && !this.isEditMode();
     const serviceCreation$: Observable<GroupsIOService | null> = isCreatingService ? this.createSharedService() : of(null);
-    let serviceWasCreated = false;
+    let serviceWasCreated: boolean = false;
 
     serviceCreation$
       .pipe(
