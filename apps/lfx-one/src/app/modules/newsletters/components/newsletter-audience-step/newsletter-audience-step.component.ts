@@ -57,7 +57,7 @@ export class NewsletterAudienceStepComponent {
 
   public constructor() {
     effect(() => {
-      if (!this.committeesLoaded()) return;
+      if (!this.committeesLoaded() || this.committeesError()) return;
 
       const eligibleUids = new Set(this.committeeOptions().map((option) => option.value));
       const current = this.committeeUidsValue();
