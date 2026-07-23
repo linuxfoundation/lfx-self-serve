@@ -50,15 +50,19 @@ export class AcceptInviteOrganizationDialogComponent {
 
   private readonly orgInvalid = computed(() => {
     const search = this.organizationSearch();
+    const vals = this.formValue();
     if (search?.manualMode()) {
+      const urlValue = (vals?.organization_url ?? '').trim();
+      if (!urlValue) return true;
       return this.urlStatus() !== 'VALID';
     }
-    const vals = this.formValue();
     const hasName = !!(vals?.organization ?? '').trim();
     const pendingSearch = search?.searchTerm() ?? '';
     if (!hasName && pendingSearch) return true;
     if (!hasName) return true;
     if (!vals?.organization_id) {
+      const urlValue = (vals?.organization_url ?? '').trim();
+      if (!urlValue) return true;
       return this.urlStatus() !== 'VALID';
     }
     return false;
