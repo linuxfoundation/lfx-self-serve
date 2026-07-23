@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
-import type {
-  FoundationHealthScore,
-  FoundationHealthScoreDistributionResponse,
-  HealthStatusFilterOption,
-  HealthStatusFilterValue,
-} from '../interfaces';
+import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthStatusFilterOption, HealthStatusFilterValue } from '../interfaces';
 
 export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
 
