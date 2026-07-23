@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { NEWSLETTER_COMMITTEE_CATEGORY, NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
@@ -18,6 +18,7 @@ import {
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
+import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -74,6 +75,7 @@ export class NewsletterManageComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly newsletterService = inject(NewsletterService);
+  private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
@@ -148,6 +150,11 @@ export class NewsletterManageComponent {
   protected readonly recipientCount = signal<number | null>(null);
   protected readonly recipientCountLoading = signal<boolean>(false);
 
+  // === Newsletter-eligible committees ===
+  // null means "not yet loaded, or the fetch failed" — pruning is skipped in both
+  // cases so a transient error or in-flight load never wipes a valid selection.
+  private readonly eligibleCommitteeUids: Signal<Set<string> | null> = this.initEligibleCommitteeUids();
+
   // === Validation gates ===
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
   public readonly bodyFilled = computed(() => stripHtml(this.bodyValue() ?? '').length > 0);
@@ -179,6 +186,7 @@ export class NewsletterManageComponent {
     this.initSaveChannel();
     this.initAutosave();
     this.initRecipientCount();
+    this.initAudienceNormalization();
   }
 
   protected goToStep(step: number | undefined): void {
@@ -365,6 +373,42 @@ export class NewsletterManageComponent {
         next: (res) => this.recipientCount.set(res.count),
         error: () => this.recipientCount.set(null),
       });
+  }
+
+  private initEligibleCommitteeUids(): Signal<Set<string> | null> {
+    return toSignal(
+      toObservable(this.projectUid).pipe(
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          if (!uid) return of(null as Set<string> | null);
+          return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
+            map((committees) => new Set(committees.filter((c) => c.category === NEWSLETTER_COMMITTEE_CATEGORY).map((c) => c.uid))),
+            catchError(() => of(null as Set<string> | null))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Owns audience normalization at the form level so it applies regardless of which
+   * step/view is mounted — the audience step's own picker only renders while the
+   * stepper is on step 1, but save/send can happen from the Review view.
+   */
+  private initAudienceNormalization(): void {
+    effect(() => {
+      const eligible = this.eligibleCommitteeUids();
+      if (!eligible) return;
+
+      const control = this.form.controls.committeeUids;
+      const current = control.value ?? [];
+      const filtered = current.filter((uid) => eligible.has(uid));
+      if (filtered.length !== current.length) {
+        control.setValue(filtered);
+      }
+    });
   }
 
   private runSend(): void {
