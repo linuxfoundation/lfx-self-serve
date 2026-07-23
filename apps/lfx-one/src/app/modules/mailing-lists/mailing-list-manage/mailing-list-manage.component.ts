@@ -60,6 +60,7 @@ export class MailingListManageComponent {
   public readonly servicesLoaded = signal<boolean>(false);
   public readonly parentService = signal<GroupsIOService | null>(null);
   private readonly internalStep = signal<number>(1);
+  private readonly createdService = signal<GroupsIOService | null>(null);
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -132,10 +133,15 @@ export class MailingListManageComponent {
     // Determine if we need to create a shared service first
     const isCreatingService = this.needsSharedServiceCreation() && !this.isEditMode();
     const serviceCreation$: Observable<GroupsIOService | null> = isCreatingService ? this.createSharedService() : of(null);
+    let serviceWasCreated = false;
 
     serviceCreation$
       .pipe(
         switchMap((newService: GroupsIOService | null) => {
+          if (newService) {
+            this.createdService.set(newService);
+            serviceWasCreated = true;
+          }
           const service = newService ?? this.selectedService();
           if (!service?.uid) {
             return throwError(() => new Error('Parent service is required'));
@@ -152,11 +158,11 @@ export class MailingListManageComponent {
             summary: 'Success',
             detail: `Mailing list ${this.isEditMode() ? 'updated' : 'created'} successfully`,
           });
-          this.router.navigate(['/mailing-lists']);
+          this.router.navigate(this.backLink());
         },
         error: (error: Error) => {
           const httpStatus = (error as any).status as number | undefined;
-          const isDuplicateName = !this.isEditMode() && httpStatus === 409;
+          const isDuplicateName = !this.isEditMode() && httpStatus === 409 && (!isCreatingService || serviceWasCreated);
 
           if (isDuplicateName) {
             const groupNameControl = this.form().get('group_name');
@@ -164,7 +170,7 @@ export class MailingListManageComponent {
             groupNameControl?.markAsTouched();
             this.internalStep.set(1);
           } else {
-            const isServiceError = isCreatingService && error?.message?.includes('service');
+            const isServiceError = isCreatingService && !serviceWasCreated;
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
@@ -254,6 +260,7 @@ export class MailingListManageComponent {
         tap(() => {
           this.servicesLoaded.set(false);
           this.parentService.set(null);
+          this.createdService.set(null);
         }),
         filter((project): project is NonNullable<typeof project> => project !== null),
         switchMap((project) =>
@@ -298,12 +305,15 @@ export class MailingListManageComponent {
   }
 
   private initSelectedService(): Signal<GroupsIOService | null> {
-    return computed(() => this.availableServices()[0] ?? null);
+    return computed(() => this.createdService() ?? this.availableServices()[0] ?? null);
   }
 
   private initNeedsSharedServiceCreation(): Signal<boolean> {
     return computed(
-      () => this.parentService() !== null && this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0
+      () =>
+        this.createdService() === null &&
+        this.parentService() !== null &&
+        this.availableServices().filter((service) => service.type === GroupsIOServiceType.SHARED).length === 0
     );
   }
 
