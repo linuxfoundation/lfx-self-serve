@@ -48,7 +48,32 @@ export class AcceptInviteOrganizationDialogComponent {
     return !value?.organization_id && !!value?.organization?.trim();
   });
 
-  protected readonly canConfirm = computed(() => !this.submitting() && (!this.isNewOrg() || this.urlStatus() === 'VALID'));
+  private readonly orgInvalid = computed(() => {
+    const search = this.organizationSearch();
+    if (search?.manualMode()) {
+      return this.urlStatus() !== 'VALID';
+    }
+    const vals = this.formValue();
+    const hasName = !!(vals?.organization ?? '').trim();
+    const pendingSearch = search?.searchTerm() ?? '';
+    if (!hasName && pendingSearch) return true;
+    if (!hasName) return false;
+    if (!vals?.organization_id) {
+      return this.urlStatus() !== 'VALID';
+    }
+    return false;
+  });
+
+  protected readonly showOrgWarning = computed(() => {
+    if (!this.orgInvalid()) return false;
+    if (this.organizationSearch()?.manualMode()) return false;
+    const vals = this.formValue();
+    const hasName = !!(vals?.organization ?? '').trim();
+    if (!hasName) return !!(this.organizationSearch()?.searchTerm() ?? '');
+    return true;
+  });
+
+  protected readonly canConfirm = computed(() => !this.submitting() && !this.orgInvalid());
 
   public constructor() {
     this.organizationControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((name) => {
