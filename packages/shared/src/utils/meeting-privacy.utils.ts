@@ -49,7 +49,7 @@ export function getMeetingPrivacyIcon(visibility: MeetingVisibility | null, rest
  * (organizer OR project writer OR committee writer): it sets `can_view_host_key` and strips
  * `host_key` for anyone unauthorized. The UI must not re-derive that audience — it renders the
  * host key only when the BFF both marks the viewer authorized AND supplies a key. Callers gate
- * on meeting time (upcoming only) separately.
+ * on the meeting's join window separately (see {@link isHostKeyVisibleForJoinWindow}).
  */
 export function isHostKeyVisible(meeting: Pick<Meeting, 'host_key' | 'can_view_host_key'> | null | undefined): boolean {
   return !!meeting?.can_view_host_key && !!meeting?.host_key;

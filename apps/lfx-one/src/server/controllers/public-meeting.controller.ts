@@ -159,10 +159,13 @@ export class PublicMeetingController {
         return;
       }
 
-      // Authenticated registered participants and organizers can access private/restricted
-      // meeting details without a password in the URL — their registrant record is the gate.
+      // Authenticated registered participants, organizers, and project/committee writers can
+      // access private/restricted meeting details without a password in the URL — their
+      // registrant record or FGA writer/organizer relation is the gate. can_view_host_key is
+      // true only for organizer/project-writer/committee-writer, so it admits the writers who
+      // would otherwise fall through to the password gate despite managing the meeting.
       // host_key was already stripped above for anyone not authorized to view it.
-      if (meeting.invited || meeting.organizer) {
+      if (meeting.invited || meeting.organizer || meeting.can_view_host_key) {
         res.json({
           meeting,
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
