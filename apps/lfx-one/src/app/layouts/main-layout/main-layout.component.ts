@@ -10,6 +10,7 @@ import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.c
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
+import { isProfileHubPath } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -46,10 +47,8 @@ export class MainLayoutComponent {
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
 
-  // True on the /profile hub, where the fixed profile rail is shown. Drives the right-side gutter
-  // (pr-[300px]) on <main> so page content and the shared footer stay clear of the rail. Only the
-  // me-lens /profile route uses ProfileLayoutComponent; org/foundation/project profile pages live
-  // under lens-prefixed paths (e.g. /org/...), so a /profile prefix match is exact enough here.
+  // True on the /profile hub — drives the pr-[300px] right gutter on <main> so content/footer
+  // clear the fixed rail. Only the me-lens /profile route uses ProfileLayoutComponent.
   protected readonly isProfileHub = signal(false);
 
   /**
@@ -66,7 +65,7 @@ export class MainLayoutComponent {
   public constructor() {
     // Seed the profile-hub flag from the current URL so the right gutter is correct on the first
     // paint / hard load, before the first NavigationEnd fires.
-    this.isProfileHub.set(this.computeIsProfileHub());
+    this.isProfileHub.set(isProfileHubPath(this.router.url));
 
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
@@ -77,7 +76,7 @@ export class MainLayoutComponent {
       .subscribe(() => {
         this.appService.closeMobileSidebar();
         this.selectorPanelOpen.set(false);
-        this.isProfileHub.set(this.computeIsProfileHub());
+        this.isProfileHub.set(isProfileHubPath(this.router.url));
         this.syncLensFromRoute();
       });
 
@@ -114,12 +113,6 @@ export class MainLayoutComponent {
     if (!visible) {
       this.appService.closeMobileSidebar();
     }
-  }
-
-  /** Whether the current URL is under the /profile hub (drops any query string, matches on segment boundary). */
-  private computeIsProfileHub(): boolean {
-    const path = this.router.url.split('?')[0];
-    return path === '/profile' || path.startsWith('/profile/');
   }
 
   /**

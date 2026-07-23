@@ -75,11 +75,7 @@
 
   <!-- Main Content Area -->
   <!-- On the profile hub, reserve a right gutter (pr-[300px]) so content and the footer clear the fixed profile rail. -->
-  <!-- Transition is scoped to margin (not `all`) so the profile gutter applies instantly rather than animating over 300ms. -->
-  <main
-    class="flex-1 min-w-0 transition-[margin] duration-300 lg:ml-[348px] flex flex-col"
-    [ngClass]="{ 'pr-[300px]': isProfileHub() }"
-    data-testid="main-content">
+  <main class="flex-1 min-w-0 lg:ml-[348px] flex flex-col" [ngClass]="{ 'pr-[300px]': isProfileHub() }" data-testid="main-content">
     <!-- Mobile Menu Button -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
