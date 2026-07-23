@@ -31,6 +31,8 @@ export class NewsletterReviewComponent {
   public readonly sending = input<boolean>(false);
   public readonly testSending = input<boolean>(false);
   public readonly deleting = input<boolean>(false);
+  public readonly committeesError = input<string | null>(null);
+  public readonly committeesLoading = input<boolean>(false);
 
   // === Outputs ===
   public readonly editAudience = output<void>();
@@ -40,6 +42,7 @@ export class NewsletterReviewComponent {
   public readonly sendTest = output<void>();
   public readonly preview = output<void>();
   public readonly delete = output<void>();
+  public readonly retryCommittees = output<void>();
 
   // === Reactive form mirrors ===
   protected readonly committeeUids: Signal<string[]> = this.initControlValue<string[]>('committeeUids', []);
