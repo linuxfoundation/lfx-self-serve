@@ -27,8 +27,11 @@ import {
   CreateProjectDocumentRequest,
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
+  EventCompScore,
   EventGrowthResponse,
   EventGrowthTopEvent,
+  EventRosterResponse,
+  EventRosterRow,
   EventsOverviewMetric,
   EventsOverviewSummaryResponse,
   EventsSummaryResponse,
@@ -4871,6 +4874,100 @@ export class ProjectService {
       // No YoY change is modeled for sponsorship revenue.
       sponsorship: metric(sponsorshipRow?.SPONSORSHIP_REVENUE, null),
     };
+  }
+
+  /**
+   * Get the Event Roster for a foundation — one row per event with registration and
+   * sponsorship actual-vs-goal, comparison rating, and CFP status.
+   *
+   * Sourced from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (per event) left
+   * joined to sponsorship actuals aggregated from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. A goal
+   * of 0 means "no goal required" for that event (the UI renders no progress bar). Defaults to
+   * upcoming events only; pass includePast to return the full history.
+   */
+  public async getEventRoster(foundationSlug: string, includePast = false): Promise<EventRosterResponse> {
+    logger.debug(undefined, 'get_event_roster', 'Fetching event roster from Snowflake', {
+      foundation_slug: foundationSlug,
+      include_past: includePast,
+    });
+
+    interface RosterRow {
+      EVENT_ID: string;
+      EVENT_NAME: string;
+      START_DATE: string;
+      EVENT_IS_PAST: boolean;
+      EVENT_COUNTRY: string | null;
+      EVENT_URL: string | null;
+      REG_ACTUAL: number | null;
+      REG_GOAL: number | null;
+      SPON_ACTUAL: number;
+      SPON_GOAL: number | null;
+      REGREV_ACTUAL: number | null;
+      REGREV_GOAL: number | null;
+      VS_LY: number | null;
+      COMP_SCORE: string | null;
+      CFP_STATUS: string | null;
+    }
+
+    const pastFilter = includePast ? '' : 'AND r.EVENT_IS_PAST = FALSE';
+
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      ),
+      sponsorship AS (
+        SELECT EVENT_ID, SUM(IFNULL(SPONSORSHIP_REV_ALL_TIME, 0)) AS SPON_ACTUAL
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER
+        GROUP BY EVENT_ID
+      )
+      SELECT
+        r.EVENT_ID,
+        r.EVENT_NAME,
+        TO_CHAR(r.EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        r.EVENT_IS_PAST,
+        r.EVENT_COUNTRY,
+        r.EVENT_URL,
+        r.COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
+        r.EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        IFNULL(sp.SPON_ACTUAL, 0) AS SPON_ACTUAL,
+        r.EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
+        NULL AS REGREV_ACTUAL,
+        r.EVENT_REGISTRATION_REVENUE_GOAL AS REGREV_GOAL,
+        r.PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        r.COMP_SCORE,
+        r.CFP_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
+      INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
+      LEFT JOIN sponsorship sp ON r.EVENT_ID = sp.EVENT_ID
+      WHERE 1 = 1 ${pastFilter}
+      ORDER BY r.EVENT_START_DATE
+    `;
+
+    const result = await this.snowflakeService.execute<RosterRow>(query, [foundationSlug]);
+
+    const normalizeScore = (score: string | null): EventCompScore => {
+      const s = (score ?? '').toLowerCase();
+      return s === 'high' || s === 'medium' || s === 'low' ? s : 'unknown';
+    };
+
+    const events: EventRosterRow[] = result.rows.map((row) => ({
+      eventId: row.EVENT_ID,
+      eventName: row.EVENT_NAME,
+      startDate: row.START_DATE,
+      isPast: row.EVENT_IS_PAST,
+      country: row.EVENT_COUNTRY ?? '',
+      eventUrl: row.EVENT_URL ?? '',
+      registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
+      sponsorshipRevenue: { actual: row.SPON_ACTUAL ?? 0, goal: row.SPON_GOAL ?? 0 },
+      registrationRevenue: { actual: row.REGREV_ACTUAL ?? 0, goal: row.REGREV_GOAL ?? 0 },
+      vsLastYear: row.VS_LY,
+      compScore: normalizeScore(row.COMP_SCORE),
+      cfpStatus: row.CFP_STATUS ?? '',
+    }));
+
+    return { projectId: '', events };
   }
 
   /**

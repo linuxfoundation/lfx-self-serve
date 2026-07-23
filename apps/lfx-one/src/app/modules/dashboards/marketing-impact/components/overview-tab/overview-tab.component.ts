@@ -11,12 +11,13 @@ import { catchError, combineLatest, finalize, forkJoin, of, switchMap } from 'rx
 import type { MarketingImpactFocusProgram, OverviewKpiData, PerformanceSummaryKpi } from '@lfx-one/shared/interfaces';
 
 import { AttributionSectionComponent } from '../attribution-section/attribution-section.component';
+import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsSummarySectionComponent } from '../events-summary-section/events-summary-section.component';
 import { SparklineKpiCardComponent } from '../sparkline-kpi-card/sparkline-kpi-card.component';
 
 @Component({
   selector: 'lfx-overview-tab',
-  imports: [SparklineKpiCardComponent, AttributionSectionComponent, EventsSummarySectionComponent],
+  imports: [SparklineKpiCardComponent, AttributionSectionComponent, EventsSummarySectionComponent, EventRosterSectionComponent],
   templateUrl: './overview-tab.component.html',
 })
 export class OverviewTabComponent {

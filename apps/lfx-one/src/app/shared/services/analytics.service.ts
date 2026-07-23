@@ -56,6 +56,7 @@ import {
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
+  EventRosterResponse,
   EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   ParticipatingOrgsSummaryResponse,
@@ -1122,6 +1123,18 @@ export class AnalyticsService {
     return this.http
       .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } })
       .pipe(catchError(() => of(null)));
+  }
+
+  /**
+   * Foundation event roster (upcoming by default; pass includePast for the full history).
+   * Emits an empty roster on error so the table shows its empty state rather than breaking.
+   */
+  public getEventRoster(foundationSlug: string, includePast = false): Observable<EventRosterResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (includePast) {
+      params['includePast'] = 'true';
+    }
+    return this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(catchError(() => of({ projectId: '', events: [] })));
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {

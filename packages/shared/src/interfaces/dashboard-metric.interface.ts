@@ -645,6 +645,40 @@ export interface EventsOverviewMetric {
   changeFraction: number | null;
 }
 
+/** Comparison rating for an upcoming event's registration pace (from COMP_SCORE). */
+export type EventCompScore = 'high' | 'medium' | 'low' | 'unknown';
+
+/**
+ * One event row for the Event Roster table, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS joined to sponsorship actuals.
+ * Goals of 0 mean "no goal required" — the UI renders no progress bar in that case (matches PCC).
+ */
+export interface EventRosterRow {
+  eventId: string;
+  eventName: string;
+  /** Event start date, ISO (YYYY-MM-DD). */
+  startDate: string;
+  isPast: boolean;
+  country: string;
+  /** Public event URL (Cvent etc.) for the row link-out; '' when unknown. */
+  eventUrl: string;
+  registrations: { actual: number; goal: number };
+  /** Sponsorship revenue in dollars — actual summed from the tier table, goal from the event. */
+  sponsorshipRevenue: { actual: number; goal: number };
+  registrationRevenue: { actual: number; goal: number };
+  /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
+  vsLastYear: number | null;
+  compScore: EventCompScore;
+  /** CFP / speaking-proposal status text, e.g. "Review Complete"; '' when none. */
+  cfpStatus: string;
+}
+
+/** Event Roster response for a foundation: upcoming (default) or all events. */
+export interface EventRosterResponse {
+  projectId: string;
+  events: EventRosterRow[];
+}
+
 /**
  * Foundation-wide events summary for the Marketing Impact Overview tab, sourced from
  * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (per-project, pre-computed period
