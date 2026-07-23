@@ -135,7 +135,7 @@ export class MeetingDetailsComponent implements OnInit {
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((newDate) => {
         this.handleStartDateChange(newDate as Date);
-        this.timezoneOptions.set(this.buildTimezoneOptions(newDate as Date));
+        this.timezoneOptions.set(this.buildTimezoneOptions((newDate as Date) ?? new Date()));
       });
 
     // Watch for isRecurring changes to reset recurrence
