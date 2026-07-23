@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '../enums';
-import type { Meeting } from '../interfaces';
+import type { Meeting, MeetingOccurrence } from '../interfaces';
+import { canJoinMeeting } from './meeting.utils';
 
 /**
  * Returns a human-readable label for the combined meeting privacy state.
@@ -52,4 +53,19 @@ export function getMeetingPrivacyIcon(visibility: MeetingVisibility | null, rest
  */
 export function isHostKeyVisible(meeting: Pick<Meeting, 'host_key' | 'can_view_host_key'> | null | undefined): boolean {
   return !!meeting?.can_view_host_key && !!meeting?.host_key;
+}
+
+/**
+ * Whether the host-key chip should render on the meeting detail/join page.
+ * @description Combines the authorization gate ({@link isHostKeyVisible}) with the meeting's
+ * join window: the chip renders only from the early-join time (`start − early_join_time_minutes`)
+ * through the end of the meeting — the exact same window as the Join button and the early-join
+ * banner ({@link canJoinMeeting}), not merely "any upcoming meeting".
+ *
+ * Rationale: Zoom host keys belong to the shared license account and may be rotated per
+ * occurrence, so displaying the key before the meeting is joinable is both wider exposure and
+ * potentially stale. Gating on the join window mirrors PCC's posture.
+ */
+export function isHostKeyVisibleForJoinWindow(meeting: Meeting | null | undefined, occurrence?: MeetingOccurrence | null): boolean {
+  return !!meeting && canJoinMeeting(meeting, occurrence) && isHostKeyVisible(meeting);
 }

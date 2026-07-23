@@ -50,7 +50,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisibleForJoinWindow } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -183,8 +183,10 @@ export class MeetingJoinComponent implements OnInit {
   protected showAllFiles = signal(false);
   // Host key is masked by default; the reveal toggle flips this.
   protected showHostKey = signal(false);
-  // Single gate for the host-key UI: upcoming meeting AND the BFF authorized this viewer and sent a key.
-  protected hostKeyVisible = computed(() => !this.isPastMeeting() && isHostKeyVisible(this.meeting()));
+  // Single gate for the host-key chip: the BFF authorized this viewer (and sent a key) AND the
+  // meeting is inside its join window (early-join → end) — the same window as the Join button.
+  // Host keys can rotate per occurrence, so we don't surface them before the meeting is joinable.
+  protected hostKeyVisible = computed(() => isHostKeyVisibleForJoinWindow(this.meeting(), this.currentOccurrence()));
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —

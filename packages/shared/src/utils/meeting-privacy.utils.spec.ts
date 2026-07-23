@@ -1,10 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+// isHostKeyVisibleForJoinWindow pulls meeting.utils, which transitively imports
+// @angular/common/http (HttpParams) — its declarations need the Angular JIT compiler when loaded
+// outside an Angular bootstrap (as under Vitest). Importing the compiler first provides that facade.
+import '@angular/compiler';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingVisibility } from '../enums';
-import { getMeetingPrivacyIcon, getMeetingPrivacyLabel, isHostKeyVisible } from './meeting-privacy.utils';
+import type { Meeting } from '../interfaces';
+import { getMeetingPrivacyIcon, getMeetingPrivacyLabel, isHostKeyVisible, isHostKeyVisibleForJoinWindow } from './meeting-privacy.utils';
 
 describe('getMeetingPrivacyLabel', () => {
   it('returns "Public" for public + unrestricted', () => {
@@ -68,5 +74,65 @@ describe('isHostKeyVisible', () => {
   it('is false for null/undefined meetings', () => {
     expect(isHostKeyVisible(null)).toBe(false);
     expect(isHostKeyVisible(undefined)).toBe(false);
+  });
+});
+
+describe('isHostKeyVisibleForJoinWindow', () => {
+  // Fixed meeting: starts 12:00Z, 60 min long, 10 min early-join.
+  // Join window (per canJoinMeeting) = [11:50Z, 13:40Z] (end + 40 min buffer).
+  const START = '2026-01-01T12:00:00.000Z';
+
+  function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
+    return {
+      start_time: START,
+      duration: 60,
+      early_join_time_minutes: 10,
+      can_view_host_key: true,
+      host_key: '123456',
+      ...overrides,
+    } as Meeting;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is hidden before the early-join window opens', () => {
+    vi.setSystemTime(new Date('2026-01-01T11:00:00.000Z'));
+    expect(isHostKeyVisibleForJoinWindow(buildMeeting())).toBe(false);
+  });
+
+  it('is visible during the early-join window (before start)', () => {
+    vi.setSystemTime(new Date('2026-01-01T11:55:00.000Z'));
+    expect(isHostKeyVisibleForJoinWindow(buildMeeting())).toBe(true);
+  });
+
+  it('is visible while the meeting is in progress', () => {
+    vi.setSystemTime(new Date('2026-01-01T12:30:00.000Z'));
+    expect(isHostKeyVisibleForJoinWindow(buildMeeting())).toBe(true);
+  });
+
+  it('is hidden after the meeting ends', () => {
+    vi.setSystemTime(new Date('2026-01-01T14:00:00.000Z'));
+    expect(isHostKeyVisibleForJoinWindow(buildMeeting())).toBe(false);
+  });
+
+  it('is hidden inside the window when the viewer is not authorized', () => {
+    vi.setSystemTime(new Date('2026-01-01T12:30:00.000Z'));
+    expect(isHostKeyVisibleForJoinWindow(buildMeeting({ can_view_host_key: false }))).toBe(false);
+  });
+
+  it('is hidden inside the window when no host_key was supplied', () => {
+    vi.setSystemTime(new Date('2026-01-01T12:30:00.000Z'));
+    expect(isHostKeyVisibleForJoinWindow(buildMeeting({ host_key: undefined }))).toBe(false);
+  });
+
+  it('is false for null/undefined meetings', () => {
+    expect(isHostKeyVisibleForJoinWindow(null)).toBe(false);
+    expect(isHostKeyVisibleForJoinWindow(undefined)).toBe(false);
   });
 });
