@@ -368,6 +368,17 @@ export class MeetingManageComponent {
 
     // Prepare meeting data
     const meetingData = this.prepareMeetingData();
+
+    if (!meetingData.project_uid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Project is required. Please select a project before saving.',
+      });
+      this.submitting.set(false);
+      return;
+    }
+
     const meetingId = this.meetingId()!;
     const updateMeeting$ = this.meetingService.updateMeeting(meetingId, meetingData as UpdateMeetingRequest, 'single');
 
@@ -532,7 +543,10 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: this.meeting()?.project_uid || this.projectContextService.activeContextUid(),
+      // Falls back to the locked committee's own project_uid when the project slot isn't seeded —
+      // a committee-only writer (no direct project-viewer relation) has no project resolvable via
+      // `?project=`'s guard seeding, so `activeContextUid()` would otherwise be empty (LFXV2-2755).
+      project_uid: this.meeting()?.project_uid || this.projectContextService.activeContextUid() || this.committeeContext()?.project_uid || '',
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,

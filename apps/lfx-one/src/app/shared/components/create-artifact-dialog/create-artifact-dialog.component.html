@@ -14,23 +14,47 @@
   </div>
 
   <!-- Foundation / project — reuses the sidebar project-selector (search + All/Foundations/Projects tabs,
-       logos, role badges). Fed the writer-scoped `selectorItems` via the curated `items` input so the list
-       is only projects the user holds `writer` on, not the view-scoped nav catalog. -->
-  <div class="flex flex-col gap-1">
-    <label class="text-sm text-gray-900">
-      Select Foundation/Project
-      <span class="text-red-500">*</span>
-    </label>
-    <lfx-project-selector
-      [lens]="'project'"
-      [hybridMode]="true"
-      [items]="selectorItems()"
-      [selectedProject]="selectedContext()"
-      searchPlaceholder="Search foundations and projects..."
-      emptyMessage="No foundations or projects available"
-      (itemSelected)="onItemSelected($event)"
-      data-testid="create-artifact-project-select" />
-  </div>
+       logos, role badges). Fed the writer-scoped `projectSelectorItems` via the curated `items` input so
+       the list is only projects the user holds `writer` on, not the view-scoped nav catalog. -->
+  @if (showProjectSelector()) {
+    <div class="flex flex-col gap-1">
+      <label class="text-sm text-gray-900">
+        Select Foundation/Project
+        <span class="text-red-500">*</span>
+      </label>
+      <lfx-project-selector
+        [lens]="'project'"
+        [hybridMode]="true"
+        [items]="projectSelectorItems()"
+        [selectedProject]="selectedContext()"
+        searchPlaceholder="Search foundations and projects..."
+        emptyMessage="No foundations or projects available"
+        (itemSelected)="onProjectItemSelected($event)"
+        data-testid="create-artifact-project-select" />
+    </div>
+  }
+
+  <!-- Group / committee — same selector component in flat (non-hybrid) mode, since committees have
+       no Foundations/Projects split. Only rendered for artifact types that accept a committee target
+       and only when the user holds at least one committee `writer` grant.
+       Known cosmetic divergence: `lens="project"` is passed only to satisfy the selector's required
+       input (it has no `'group'`/`'committee'` lens); its "Project" subtext under the trigger is
+       therefore inaccurate for a committee selection. The "Select Group" label above disambiguates,
+       so this is accepted rather than threading a new lens kind through the shared selector. -->
+  @if (showCommitteeSelector()) {
+    <div class="flex flex-col gap-1">
+      <label class="text-sm text-gray-900">Select Group</label>
+      <lfx-project-selector
+        [lens]="'project'"
+        [hybridMode]="false"
+        [items]="committeeSelectorItems()"
+        [selectedProject]="selectedContext()"
+        searchPlaceholder="Search groups..."
+        emptyMessage="No groups available"
+        (itemSelected)="onCommitteeItemSelected($event)"
+        data-testid="create-artifact-committee-select" />
+    </div>
+  }
 
   <!-- Actions -->
   <div class="flex justify-end gap-3" data-testid="create-artifact-modal-actions">

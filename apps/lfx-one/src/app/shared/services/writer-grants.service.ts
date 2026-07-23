@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, computed, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
+import { afterNextRender, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CreatableProject, Project } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation } from '@lfx-one/shared/utils';
@@ -13,15 +13,11 @@ import { map } from 'rxjs';
  *
  * `GET /api/projects` batch access-checks every visible project and returns `writer` per
  * project, so this reflects real authorization rather than inferring it from a persona.
- * Owned here rather than in a consumer because two independent consumers need it and must
- * not depend on each other:
- *  - {@link LensService} widens the allowed lens set to cover projects the user can write
- *    to (LFXV2-2754) — a `writer` grant is authority over that project, so the lens that
- *    reaches it must be available regardless of which persona was detected.
- *  - {@link CreatePermissionService} scopes the create quick-link to the same grants.
  *
- * Dependency direction matters: this service injects only `ProjectService` (which injects
- * only `HttpClient`), so `LensService` can consume it without a cycle.
+ * Sole consumer today is {@link CreatePermissionService}, which scopes the create quick-link
+ * to these grants. `LensService` previously widened the allowed-lens set from this signal too
+ * (LFXV2-2754), but LFXV2-2755 reverted that — lens derivation is persona-only again since the
+ * create flow now resolves its target from an explicit selection rather than the active lens.
  *
  * Resolves to `[]` while loading and on error — callers fail closed. The error half relies
  * on `ProjectService.getProjects()` catching internally and emitting `[]`; a local
@@ -38,12 +34,6 @@ export class WriterGrantsService {
 
   /** Projects the user holds `writer` on. Empty until the post-hydration fetch resolves. */
   public readonly writerProjects: Signal<CreatableProject[]> = this.grants.asReadonly();
-
-  /** True once at least one writer-held project satisfies `computeIsFoundation`. */
-  public readonly hasWriterFoundation: Signal<boolean> = computed(() => this.grants().some((project) => project.isFoundation));
-
-  /** True once at least one writer-held project is a non-foundation project. */
-  public readonly hasWriterProject: Signal<boolean> = computed(() => this.grants().some((project) => !project.isFoundation));
 
   public constructor() {
     // Fetch after hydration, not at construction. The endpoint paginates every visible project
