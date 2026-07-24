@@ -36,7 +36,7 @@ export class CreateTargetPickerComponent {
 
   protected readonly searchControl = new FormControl<string>('');
 
-  /** Whether this artifact type allows a committee-scoped writer to create against it — drives the search placeholder copy. */
+  /** Whether this artifact type allows a committee-scoped writer to create against it — drives the search placeholder and empty-state copy. */
   protected readonly supportsCommitteeTarget: Signal<boolean> = computed(() => COMMITTEE_WRITE_ARTIFACT_TYPES.includes(this.artifactType()));
   protected readonly searchPlaceholder: Signal<string> = computed(() =>
     this.supportsCommitteeTarget() ? 'Search projects and groups...' : 'Search projects...'
