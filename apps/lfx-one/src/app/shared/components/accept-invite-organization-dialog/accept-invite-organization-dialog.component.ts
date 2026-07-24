@@ -3,7 +3,7 @@
 
 import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormControlStatus, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
@@ -23,7 +23,10 @@ export class AcceptInviteOrganizationDialogComponent {
   private readonly config = inject(DynamicDialogConfig<AcceptInviteOrganizationDialogData>);
 
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
-  private resolvedOrganizationName = '';
+  // Tracks the CDP-canonical name of the last resolved org so the valueChanges
+  // handler can distinguish a CDP-confirmed name from free text (and avoid
+  // clearing the pre-resolved id when the same name is re-set programmatically).
+  private resolvedOrganizationName = this.config.data?.organization?.id ? (this.config.data.organization.name ?? '') : '';
 
   public readonly committeeName = this.config.data?.committeeName ?? 'this group';
   public readonly form = new FormGroup({
@@ -38,11 +41,46 @@ export class AcceptInviteOrganizationDialogComponent {
   public readonly submitting = signal(false);
 
   private readonly formValue = this.initFormValue();
+  private readonly urlStatus = signal<FormControlStatus>(this.urlControl.status);
 
   protected readonly isNewOrg = computed(() => {
     const value = this.formValue();
     return !value?.organization_id && !!value?.organization?.trim();
   });
+
+  private readonly orgInvalid = computed(() => {
+    const search = this.organizationSearch();
+    const vals = this.formValue();
+    if (search?.manualMode()) {
+      if (!(vals?.organization ?? '').trim()) return true;
+      const urlValue = (vals?.organization_url ?? '').trim();
+      if (!urlValue) return true;
+      return this.urlStatus() !== 'VALID';
+    }
+    const hasName = !!(vals?.organization ?? '').trim();
+    if (!hasName) return true;
+    if (!vals?.organization_id) {
+      const urlValue = (vals?.organization_url ?? '').trim();
+      if (!urlValue) return true;
+      return this.urlStatus() !== 'VALID';
+    }
+    // Block if visible search term was edited without a new selection — confirmed name/id may be stale.
+    const searchTerm = search?.searchTerm() ?? '';
+    const orgName = (vals?.organization ?? '').trim();
+    if (searchTerm && searchTerm.toLowerCase() !== orgName.toLowerCase()) return true;
+    return false;
+  });
+
+  protected readonly showOrgWarning = computed(() => {
+    if (!this.orgInvalid()) return false;
+    if (this.organizationSearch()?.manualMode()) return false;
+    const vals = this.formValue();
+    const hasName = !!(vals?.organization ?? '').trim();
+    if (!hasName) return !!(this.organizationSearch()?.searchTerm() ?? '');
+    return true;
+  });
+
+  protected readonly canConfirm = computed(() => !this.submitting() && !this.orgInvalid());
 
   public constructor() {
     this.organizationControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((name) => {
@@ -50,6 +88,13 @@ export class AcceptInviteOrganizationDialogComponent {
       if (!normalizedName || normalizedName !== this.resolvedOrganizationName) {
         this.form.patchValue({ organization_id: null }, { emitEvent: false });
       }
+      if (!normalizedName) {
+        this.organizationControl.markAsTouched();
+      }
+    });
+
+    this.urlControl.statusChanges.pipe(takeUntilDestroyed()).subscribe((status) => {
+      this.urlStatus.set(status);
     });
 
     effect(() => {
@@ -59,6 +104,9 @@ export class AcceptInviteOrganizationDialogComponent {
         this.urlControl.clearValidators();
       }
       this.urlControl.updateValueAndValidity({ emitEvent: false });
+      // Manually sync after updateValueAndValidity({ emitEvent: false }) since
+      // suppressing the event means statusChanges won't fire for validator changes.
+      this.urlStatus.set(this.urlControl.status);
     });
   }
 
@@ -82,7 +130,8 @@ export class AcceptInviteOrganizationDialogComponent {
 
     this.submitting.set(true);
     const orgSearch = this.organizationSearch();
-    const resolve$ = orgSearch ? orgSearch.resolveCurrentEntry() : null;
+    const alreadyResolved = !!this.formValue()?.organization_id;
+    const resolve$ = orgSearch && !alreadyResolved ? orgSearch.resolveCurrentEntry() : null;
 
     const finish = (): void => {
       const raw = this.form.getRawValue();

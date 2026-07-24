@@ -129,6 +129,42 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     await expect(page.getByText('Add another verified email to change this.')).toBeVisible();
   });
 
+  test('keeps the forward dropdown visible with a hint when a preserved external target is the only option', async ({ page }) => {
+    // Alias-as-primary + no verified alternates would normally yield zero forward options,
+    // but a pre-existing *external* forwardTo (one not among the user's verified emails) is
+    // deliberately preserved so the user still sees and can keep their current target. The
+    // select must stay visible with the "add another" hint — not collapse to the empty state.
+    // Distinct from the primary-as-only-option case above: here the sole option comes from the
+    // forwardTo-preservation branch, with the primary excluded because it equals the alias.
+    const aliasEmail = `${ALIAS}@${DOMAIN}`;
+    const externalForward = 'someone@external.com';
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: EmailManagementData = { primary_email: aliasEmail, alternate_emails: [] };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    await page.route('**/api/profile/identities', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = { state: 'claimed', domain: DOMAIN, alias: ALIAS, email: aliasEmail, forwardTo: externalForward };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-select')).toBeVisible();
+    // The preserved external target is the selected option — proves the preservation branch fired.
+    await expect(page.getByTestId('linux-email-forward-select')).toContainText(externalForward);
+    await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+    await expect(page.getByText('Add another verified email to change this.')).toBeVisible();
+  });
+
   test('shows the empty-state message and hides the select when no verified email can be forwarded to', async ({ page }) => {
     // Genuine-empty case: the only verified email is the claimed alias itself (so it's
     // excluded from forwardOptions) and no external forwardTo is saved — zero options.

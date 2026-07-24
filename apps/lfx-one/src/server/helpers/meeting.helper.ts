@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { AccessCheckAccessType, AccessCheckRequest, AccessCheckResourceType, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { AccessCheckService } from '../services/access-check.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
@@ -114,6 +115,71 @@ export async function enrichMeetingsWithCreatedBy<T extends Meeting>(req: Reques
     const createdBy = createdByMap.get(keyOf(meeting)!);
     return createdBy ? { ...meeting, created_by: createdBy } : meeting;
   });
+}
+
+/**
+ * Removes the Zoom host key from a meeting response.
+ *
+ * The host key is a 6-digit credential that grants Zoom host privileges to whoever holds it,
+ * so it must never reach a client that isn't authorized to see it (see {@link applyHostKeyVisibility}).
+ * Used directly on response paths where the host key is never surfaced (list views, past meetings,
+ * anonymous callers, create echoes).
+ *
+ * @param meeting - The meeting (or partial) to strip; no-ops on null/undefined
+ */
+export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void {
+  if (meeting) {
+    delete meeting.host_key;
+  }
+}
+
+/**
+ * Resolves whether the current user may view a meeting's Zoom host key and mutates the meeting
+ * accordingly. This is the single source of truth for host-key visibility on detail endpoints.
+ *
+ * The audience is any of three DISTINCT OpenFGA relations, OR-ed together:
+ *   - meeting organizer (`v1_meeting#organizer`)
+ *   - project writer (`project#writer`)
+ *   - writer on ANY committee attached to the meeting (`committee#writer`)
+ *
+ * All checks are batched into a single `/access-check` round-trip (no sequential per-committee
+ * calls). The check is fail-closed: on any upstream error the access-check service returns
+ * all-false, so the host key is stripped.
+ *
+ * Sets `meeting.organizer` (still consumed downstream for registrant-count gating) and
+ * `meeting.can_view_host_key` (the single gate the frontend reads), and deletes `host_key`
+ * when the user is not authorized.
+ *
+ * MUST be called with the user's own bearer token active on `req` — NOT an M2M token — or the
+ * access check evaluates against the application identity instead of the user.
+ *
+ * @param req - Express request object with the user's auth context
+ * @param accessCheckService - Access-check service instance
+ * @param meeting - The meeting to gate (mutated in place)
+ */
+export async function applyHostKeyVisibility(req: Request, accessCheckService: AccessCheckService, meeting: Meeting): Promise<void> {
+  const requests: AccessCheckRequest[] = [
+    { resource: 'v1_meeting', id: meeting.id, access: 'organizer' },
+    { resource: 'project', id: meeting.project_uid, access: 'writer' },
+    ...(meeting.committees ?? [])
+      .filter((committee) => committee?.uid)
+      .map((committee) => ({ resource: 'committee' as AccessCheckResourceType, id: committee.uid, access: 'writer' as AccessCheckAccessType })),
+  ];
+
+  const results = await accessCheckService.checkAccess(req, requests);
+
+  // Derive the gate from the three named relations explicitly (not "any true in the batch"), so a
+  // future unrelated entry added to `requests` can't silently widen host-key visibility.
+  const isOrganizer = results.get(meeting.id) ?? false;
+  const isProjectWriter = results.get(meeting.project_uid) ?? false;
+  const isCommitteeWriter = (meeting.committees ?? []).some((committee) => !!committee?.uid && (results.get(committee.uid) ?? false));
+
+  meeting.organizer = isOrganizer;
+  meeting.can_view_host_key = isOrganizer || isProjectWriter || isCommitteeWriter;
+
+  if (!meeting.can_view_host_key) {
+    stripHostKey(meeting);
+  }
 }
 
 /**

@@ -14,8 +14,10 @@ import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
   lfxColors,
   PROJECT_HEALTH_CATEGORY_BADGE,
-  PROJECT_HEALTH_CATEGORY_CHART_COLOR,
   PROJECT_HEALTH_CATEGORY_LABEL,
+  PROJECT_HEALTH_CHART_CATEGORIES,
+  PROJECT_HEALTH_CHART_CATEGORY_COLOR,
+  PROJECT_HEALTH_CHART_CATEGORY_LABEL,
   PROJECT_HEALTH_SCORE_CATEGORIES,
   PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE,
   PROJECT_HEALTH_STATUS_FILTER_OPTIONS,
@@ -59,10 +61,15 @@ export class ProjectHealthScoresDrawerComponent {
   private readonly fb = inject(FormBuilder);
 
   // === Static Options ===
+  // The 5 scored categories, used for the table's status badges/filters.
   protected readonly categories = PROJECT_HEALTH_SCORE_CATEGORIES;
   protected readonly categoryBadge = PROJECT_HEALTH_CATEGORY_BADGE;
   protected readonly categoryLabel = PROJECT_HEALTH_CATEGORY_LABEL;
-  protected readonly chartColor = PROJECT_HEALTH_CATEGORY_CHART_COLOR;
+  // The 6 chart bars (leading Unscored + 5 scored), used for the chart and its legend so the
+  // legend always matches what the bars actually show.
+  protected readonly chartCategories = PROJECT_HEALTH_CHART_CATEGORIES;
+  protected readonly chartCategoryLabel = PROJECT_HEALTH_CHART_CATEGORY_LABEL;
+  protected readonly chartColor = PROJECT_HEALTH_CHART_CATEGORY_COLOR;
   protected readonly unscoredBadge = PROJECT_HEALTH_UNSCORED_BADGE;
   protected readonly statusFilterOptions = PROJECT_HEALTH_STATUS_FILTER_OPTIONS;
 
@@ -82,8 +89,8 @@ export class ProjectHealthScoresDrawerComponent {
         displayColors: true,
         callbacks: {
           title: (items) => {
-            const category = PROJECT_HEALTH_SCORE_CATEGORIES[items[0]?.dataIndex ?? 0];
-            return PROJECT_HEALTH_CATEGORY_LABEL[category];
+            const category = PROJECT_HEALTH_CHART_CATEGORIES[items[0]?.dataIndex ?? 0];
+            return PROJECT_HEALTH_CHART_CATEGORY_LABEL[category];
           },
           label: (ctx) => `${(ctx.parsed.y as number).toLocaleString()} projects`,
         },
@@ -143,6 +150,9 @@ export class ProjectHealthScoresDrawerComponent {
   protected readonly scoredLabel: Signal<string> = computed(() => this.initScoredLabel());
 
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
+  // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
+  // draw (the leading Unscored bar), so this must not collapse to hasData() (scored-only).
+  protected readonly hasChartData: Signal<boolean> = computed(() => this.scoredProjects() > 0 || this.data().unscored > 0);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!this.search().trim() || this.selectedStatuses().size > 0);
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
@@ -194,11 +204,11 @@ export class ProjectHealthScoresDrawerComponent {
     return computed(() => {
       const d = this.data();
       return {
-        labels: PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => PROJECT_HEALTH_CATEGORY_LABEL[category]),
+        labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
         datasets: [
           {
-            data: PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => d[category]),
-            backgroundColor: PROJECT_HEALTH_SCORE_CATEGORIES.map((category) => this.chartColor[category]),
+            data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => d[category] ?? 0),
+            backgroundColor: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]),
             borderRadius: 4,
             borderSkipped: 'start',
           },

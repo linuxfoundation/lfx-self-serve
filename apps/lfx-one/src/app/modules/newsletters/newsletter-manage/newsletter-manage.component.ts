@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, Injector, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { NEWSLETTER_COMMITTEE_CATEGORY, NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
+  Committee,
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
@@ -19,6 +20,7 @@ import {
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
+import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -37,6 +39,7 @@ import {
   filter,
   finalize,
   map,
+  merge,
   of,
   Subject,
   switchMap,
@@ -74,7 +77,9 @@ export class NewsletterManageComponent {
   protected readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly newsletterService = inject(NewsletterService);
+  private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
@@ -159,6 +164,32 @@ export class NewsletterManageComponent {
   // === Recipient summary ===
   protected readonly recipientCount = signal<number | null>(null);
   protected readonly recipientCountLoading = signal<boolean>(false);
+  // Draft-load fires an immediate count request for the (possibly unfiltered)
+  // saved uids; audience normalization can follow shortly after with a
+  // setValue for the filtered uids. Routing both through one switchMap-based
+  // pipeline (rather than each firing its own independent subscription)
+  // cancels the stale in-flight request instead of letting it race the
+  // normalized one and clobber the displayed count.
+  private readonly recipientCountTrigger$ = new Subject<string[]>();
+
+  // === Newsletter-eligible committees ===
+  // Fetched once here (not duplicated in the audience-step child) and passed down
+  // via inputs, since the upstream endpoint fans out through fetchAllQueryResources.
+  protected readonly committeesLoading = signal<boolean>(false);
+  protected readonly committeesError = signal<string | null>(null);
+  private readonly retryCommittees$ = new Subject<void>();
+  protected readonly committees: Signal<Committee[]> = this.initCommittees();
+
+  // null means "not yet loaded, or the fetch failed" — pruning is skipped in both
+  // cases so a transient error or in-flight load never wipes a valid selection.
+  private readonly eligibleCommitteeUids: Signal<Set<string> | null> = computed(() => {
+    if (this.committeesLoading() || this.committeesError()) return null;
+    return new Set(
+      this.committees()
+        .filter((c) => c.category === NEWSLETTER_COMMITTEE_CATEGORY)
+        .map((c) => c.uid)
+    );
+  });
 
   // === Validation gates ===
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
@@ -202,9 +233,15 @@ export class NewsletterManageComponent {
   private readonly isBlocksMode = computed(() => this.bodyLayoutValue() !== null);
   private readonly bodyUsable = computed(() => this.bodyRendered() && (!this.isBlocksMode() || !this.isDirty()));
   public readonly canPreview = computed(() => this.bodyUsable());
+  // Gates Send on eligibility having actually resolved — while committees are
+  // still loading (or the fetch failed), eligibleCommitteeUids() is null and
+  // initAudienceNormalization() deliberately skips pruning, so a stale/legacy
+  // non-Newsletter audience could otherwise be sent before it's ever checked.
+  public readonly audienceNormalized = computed(() => this.eligibleCommitteeUids() !== null);
   public readonly canSend = computed(
     () =>
       this.audienceFilled() &&
+      this.audienceNormalized() &&
       this.subjectFilled() &&
       this.bodyRendered() &&
       // Also require actual content, not just a non-empty body_html: bodyRendered
@@ -215,7 +252,8 @@ export class NewsletterManageComponent {
       !this.isDirty() &&
       this.hasContext() &&
       !this.submitting() &&
-      !this.resolvingSend()
+      !this.resolvingSend() &&
+      !this.savingDraft()
   );
   public readonly canSendTest = computed(
     () => this.subjectFilled() && this.bodyUsable() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
@@ -224,7 +262,17 @@ export class NewsletterManageComponent {
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly canGoNext = computed(() => this.currentStep() < this.totalSteps && this.canProceed());
   public readonly canSaveDraft = computed(
-    () => this.hasContext() && this.audienceFilled() && this.subjectFilled() && this.bodyPersistable() && this.edEmail().length > 0 && !this.savingDraft()
+    () =>
+      this.hasContext() &&
+      this.audienceFilled() &&
+      this.audienceNormalized() &&
+      this.subjectFilled() &&
+      // bodyPersistable (not bodyFilled): an emptied blocks canvas is a
+      // deliberate edit that must remain saveable so the cleared layout reaches
+      // the server rather than reverting on reload.
+      this.bodyPersistable() &&
+      this.edEmail().length > 0 &&
+      !this.savingDraft()
   );
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => NEWSLETTER_STEP_TITLES[this.currentStep()] ?? '');
@@ -241,6 +289,7 @@ export class NewsletterManageComponent {
     this.initSaveChannel();
     this.initAutosave();
     this.initRecipientCount();
+    this.initAudienceNormalization();
   }
 
   protected goToStep(step: number | undefined): void {
@@ -433,6 +482,10 @@ export class NewsletterManageComponent {
     return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   }
 
+  protected retryCommittees(): void {
+    this.retryCommittees$.next();
+  }
+
   private goToList(tab?: 'draft' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
@@ -443,7 +496,7 @@ export class NewsletterManageComponent {
   private computeCanProceed(step: number): boolean {
     switch (step) {
       case 1:
-        return this.audienceFilled();
+        return this.audienceFilled() && this.audienceNormalized();
       case 2:
         return this.subjectFilled() && this.bodyFilled();
       case 3:
@@ -465,30 +518,81 @@ export class NewsletterManageComponent {
   }
 
   private initRecipientCount(): void {
-    this.form.controls.committeeUids.valueChanges
-      .pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual), takeUntilDestroyed(this.destroyRef))
-      .subscribe((uids) => this.fetchRecipientCountFor(uids ?? []));
+    merge(this.form.controls.committeeUids.valueChanges.pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual)), this.recipientCountTrigger$)
+      .pipe(
+        switchMap((uids) => this.fetchRecipientCount$(uids ?? [])),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
   }
 
   private fetchRecipientCountFor(uids: string[]): void {
+    this.recipientCountTrigger$.next(uids);
+  }
+
+  private fetchRecipientCount$(uids: string[]) {
     if (!uids || uids.length === 0) {
       this.recipientCount.set(0);
-      return;
+      return EMPTY;
     }
     if (!this.hasContext()) {
-      return;
+      return EMPTY;
     }
     this.recipientCountLoading.set(true);
-    this.newsletterService
-      .getRecipientCount(this.projectUid(), { committee_uids: uids })
-      .pipe(
-        take(1),
-        finalize(() => this.recipientCountLoading.set(false))
-      )
-      .subscribe({
+    return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
+      finalize(() => this.recipientCountLoading.set(false)),
+      tap({
         next: (res) => this.recipientCount.set(res.count),
         error: () => this.recipientCount.set(null),
-      });
+      }),
+      catchError(() => EMPTY)
+    );
+  }
+
+  private initCommittees(): Signal<Committee[]> {
+    return toSignal(
+      merge(toObservable(this.projectUid).pipe(distinctUntilChanged()), this.retryCommittees$.pipe(map(() => this.projectUid()))).pipe(
+        switchMap((uid) => {
+          this.committeesError.set(null);
+          if (!uid) return of([] as Committee[]);
+          this.committeesLoading.set(true);
+          return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
+            catchError(() => {
+              // A single transient failure otherwise leaves eligibleCommitteeUids()
+              // null forever — Send, save, and step-1 proceed all stay blocked with
+              // no way to recover short of navigating away. retryCommittees() gives
+              // users (surfaced on the Review screen) an explicit way back in.
+              this.committeesError.set('Could not load groups. Please try again.');
+              return of([] as Committee[]);
+            }),
+            finalize(() => this.committeesLoading.set(false))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      ),
+      { initialValue: [] as Committee[] }
+    );
+  }
+
+  /**
+   * Owns audience normalization at the form level so it applies regardless of which
+   * step/view is mounted — the audience step's own picker only renders while the
+   * stepper is on step 1, but save/send can happen from the Review view. Tracks
+   * `committeeUidsValue` (not just `eligibleCommitteeUids`) so a draft loaded via
+   * `patchValue({ emitEvent: false })` after eligibility has already resolved still
+   * gets re-checked.
+   */
+  private initAudienceNormalization(): void {
+    effect(() => {
+      const eligible = this.eligibleCommitteeUids();
+      const current = this.committeeUidsValue();
+      if (!eligible) return;
+
+      const filtered = current.filter((uid) => eligible.has(uid));
+      if (filtered.length !== current.length) {
+        this.form.controls.committeeUids.setValue(filtered);
+      }
+    });
   }
 
   private runSend(): void {
@@ -506,10 +610,31 @@ export class NewsletterManageComponent {
     }
     this.submitting.set(true);
 
-    this.newsletterService
-      .sendNewsletter(this.projectUid(), id, this.version())
+    // Audience normalization only mutates the form; runSend sends the *persisted*
+    // newsletter by id/version, so a normalized-but-unsaved committee_uids value
+    // would otherwise still deliver to the stale, un-normalized audience on the
+    // server. Force a save first whenever the form has drifted from what's saved.
+    //
+    // Wait out any autosave already in flight first — saveDraft isn't routed
+    // through the saveTrigger$/concatMap channel here, so firing it directly
+    // while autosave's own PUT is still pending would race the same version
+    // and one of the two would 409. canSend also disables Send while
+    // savingDraft() is true; this is defense-in-depth for the click that
+    // slips in during the flip.
+    // toObservable requires an injection context; runSend is invoked from the confirm-dialog's
+    // accept callback (a plain event handler), so the injector must be passed explicitly here.
+    const ensureSaved$ = toObservable(this.savingDraft, { injector: this.injector }).pipe(
+      filter((saving) => !saving),
+      take(1),
+      switchMap(() => (this.snapshotMatchesLastSaved() ? of(true) : this.saveDraft(true).pipe(map((draft) => draft !== null))))
+    );
+
+    ensureSaved$
       .pipe(
-        take(1),
+        switchMap((saved) => {
+          if (!saved) return EMPTY;
+          return this.newsletterService.sendNewsletter(this.projectUid(), id, this.version());
+        }),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
@@ -860,7 +985,7 @@ export class NewsletterManageComponent {
   private hasAnythingToSave(): boolean {
     // bodyPersistable (not bodyFilled): an emptied blocks canvas must autosave,
     // otherwise the cleared layout never reaches the server and reverts on reload.
-    return this.audienceFilled() && this.subjectFilled() && this.bodyPersistable();
+    return this.audienceFilled() && this.audienceNormalized() && this.subjectFilled() && this.bodyPersistable();
   }
 
   private saveDraft(isManual = false) {

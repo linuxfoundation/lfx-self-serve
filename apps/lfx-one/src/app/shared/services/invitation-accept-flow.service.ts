@@ -10,10 +10,11 @@ import {
   InvitationAcceptContext,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { currentEmployerFromWorkExperiences, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { currentEmployerFromWorkExperiences, invitationRequiresOrganization, normalizeToUrl } from '@lfx-one/shared/utils';
 import { InvitationService } from '@services/invitation.service';
+import { OrganizationService } from '@services/organization.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'rxjs';
+import { EMPTY, Observable, catchError, from, map, of, switchMap, take, timeout } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -21,6 +22,7 @@ import { EMPTY, Observable, catchError, from, map, of, switchMap, take } from 'r
 export class InvitationAcceptFlowService {
   private readonly dialogService = inject(DialogService);
   private readonly invitationService = inject(InvitationService);
+  private readonly organizationService = inject(OrganizationService);
   private readonly http = inject(HttpClient);
 
   /**
@@ -49,12 +51,58 @@ export class InvitationAcceptFlowService {
         );
 
     return contextReady$.pipe(
+      switchMap((ctx) => this.preResolveOrganization(ctx)),
       switchMap((ctx) => from(this.openOrganizationDialog(ctx))),
       switchMap((result) => {
         if (!result?.organization) {
           return EMPTY;
         }
         return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, result.organization);
+      })
+    );
+  }
+
+  /**
+   * Attempts to resolve an org name to a CDP id before the dialog opens so a pre-filled
+   * name with no id is not treated as a brand-new org requiring a manual website entry.
+   *
+   * Uses a two-step read-only approach to avoid the find-or-create side effect of calling
+   * resolveOrganization directly with an empty or unverified domain:
+   *  1. Search by name (read-only GET) to find the CDP-canonical domain.
+   *  2. Resolve only on an exact name match, using the canonical domain so the CDP call
+   *     is almost certainly a find (not a create).
+   *
+   * Times out after 2 s and silently falls through — the dialog handles the unresolved case.
+   */
+  private preResolveOrganization(ctx: InvitationAcceptContext): Observable<InvitationAcceptContext> {
+    const org = ctx.organization;
+    if (!org?.name?.trim() || org.id) {
+      return of(ctx);
+    }
+    return this.organizationService.searchOrganizations(org.name).pipe(
+      take(1),
+      switchMap((suggestions) => {
+        const match = suggestions.find((s) => s.name.toLowerCase() === org.name!.toLowerCase().trim());
+        if (!match) {
+          return of(ctx);
+        }
+        return this.organizationService.resolveOrganization(match.name, match.domain).pipe(
+          take(1),
+          map((resolved) => ({
+            ...ctx,
+            organization: {
+              ...org,
+              id: resolved.id || null,
+              name: resolved.name || org.name,
+              website: normalizeToUrl(match.domain) ?? org.website,
+            },
+          }))
+        );
+      }),
+      timeout(2000),
+      catchError((error) => {
+        console.warn('[InvitationAcceptFlowService] Org pre-resolution failed; opening dialog with unresolved context', error);
+        return of(ctx);
       })
     );
   }

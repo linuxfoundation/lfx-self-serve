@@ -27,10 +27,11 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
 ]);
 
 /**
- * ProfileLayoutComponent is the two-column shell for the Profile & Account hub.
- * It provides:
- * - Left column: page head, subtab navigation, and the router outlet for child pages
- * - Right column: the sticky profile panel (lfx-profile-panel) bound to the user's CombinedProfile
+ * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
+ * - Content column: page head, subtab navigation, and the router outlet for child pages
+ * - A fixed, full-height 300px profile rail (lfx-profile-panel) pinned to the right edge at every
+ *   screen size — never stacks above the content, never changes width, and sits above page content
+ *   (z-40); MainLayoutComponent reserves a matching right gutter so content/footer stay clear of it
  *
  * The layout owns the profile data fetch, optimistic updates, the edit drawer, and the
  * Flow C (management-token) auth-return handling; the panel is presentational and emits

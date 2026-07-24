@@ -42,13 +42,16 @@
         [sending]="submitting()"
         [testSending]="testSending()"
         [deleting]="deletingDraft()"
+        [committeesError]="committeesError()"
+        [committeesLoading]="committeesLoading()"
         (editAudience)="enterStep(1)"
         (editContent)="enterStep(2)"
         (editSend)="enterStep(3)"
         (send)="onSend()"
         (sendTest)="onSendTest()"
         (preview)="openPreviewDrawer()"
-        (delete)="onDeleteDraft()">
+        (delete)="onDeleteDraft()"
+        (retryCommittees)="retryCommittees()">
       </lfx-newsletter-review>
     }
   } @else {
@@ -165,8 +168,12 @@
                   <lfx-newsletter-audience-step
                     [form]="form"
                     [projectUid]="projectUid()"
+                    [committees]="committees()"
+                    [committeesLoading]="committeesLoading()"
+                    [committeesError]="committeesError()"
                     [recipientCount]="recipientCount()"
-                    [recipientCountLoading]="recipientCountLoading()">
+                    [recipientCountLoading]="recipientCountLoading()"
+                    (retryCommittees)="retryCommittees()">
                   </lfx-newsletter-audience-step>
                 </ng-template>
               </p-step-panel>

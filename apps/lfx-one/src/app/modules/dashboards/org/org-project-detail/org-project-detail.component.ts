@@ -554,7 +554,7 @@ export class OrgProjectDetailComponent {
           };
         });
       const query = search.trim().toLowerCase();
-      return this.pinViewingRow(query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked);
+      return query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked;
     }
 
     const valued = sourceRows.map((row) => {
@@ -591,12 +591,7 @@ export class OrgProjectDetailComponent {
       };
     });
     const query = search.trim().toLowerCase();
-    return this.pinViewingRow(query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked);
-  }
-
-  private pinViewingRow<T extends { isViewingOrg: boolean }>(rows: T[]): T[] {
-    const idx = rows.findIndex((r) => r.isViewingOrg);
-    return idx > 0 ? [rows[idx], ...rows.slice(0, idx), ...rows.slice(idx + 1)] : rows;
+    return query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked;
   }
 
   private initActiveTab(): OrgLensProjectDetailTab {

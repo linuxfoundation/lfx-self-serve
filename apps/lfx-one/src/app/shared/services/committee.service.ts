@@ -38,6 +38,17 @@ export class CommitteeService {
     return this.getCommittees(params);
   }
 
+  /**
+   * Same request as `getCommitteesByProject`, but propagates HTTP errors instead of
+   * swallowing them to `[]`. Use when the caller needs to distinguish a fetch failure
+   * from a genuinely empty result.
+   */
+  public getCommitteesByProjectOrThrow(uid: string): Observable<Committee[]> {
+    const params = new HttpParams().set('tags', `project_uid:${uid}`);
+
+    return this.http.get<Committee[]>('/api/committees', { params });
+  }
+
   public getCommitteesCountByProject(uid: string): Observable<number> {
     const params = new HttpParams().set('tags', `project_uid:${uid}`);
     return this.http

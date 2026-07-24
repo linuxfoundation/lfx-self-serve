@@ -1659,22 +1659,28 @@ export class ProjectService {
 
     const result = await this.snowflakeService.execute<FoundationHealthScoreDistributionRow>(query, [foundationSlug]);
 
-    // Map categories to response structure (case-insensitive)
+    // Map categories to response structure (case-insensitive). "Unscored" is an additive
+    // dbt bucket (COALESCE(health_score_category, 'Unscored')) so every project counted in
+    // FOUNDATION_TOTAL_PROJECTS_DETAIL maps to exactly one bar, scored or not.
     const distribution = {
       excellent: 0,
       healthy: 0,
       stable: 0,
       unsteady: 0,
       critical: 0,
+      unscored: 0,
     };
 
+    // Fold any category outside the 5 scored values into `unscored` to mirror the detail
+    // endpoint's normalizeHealthScoreCategory (→ null → Unscored), so chart and table agree.
     result.rows.forEach((row) => {
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
       if (category === 'excellent') distribution.excellent = row.PROJECT_COUNT;
-      if (category === 'healthy') distribution.healthy = row.PROJECT_COUNT;
-      if (category === 'stable') distribution.stable = row.PROJECT_COUNT;
-      if (category === 'unsteady') distribution.unsteady = row.PROJECT_COUNT;
-      if (category === 'critical') distribution.critical = row.PROJECT_COUNT;
+      else if (category === 'healthy') distribution.healthy = row.PROJECT_COUNT;
+      else if (category === 'stable') distribution.stable = row.PROJECT_COUNT;
+      else if (category === 'unsteady') distribution.unsteady = row.PROJECT_COUNT;
+      else if (category === 'critical') distribution.critical = row.PROJECT_COUNT;
+      else distribution.unscored += row.PROJECT_COUNT;
     });
 
     return distribution;
@@ -1688,9 +1694,10 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
-    // Latest daily row per project (keyed on PROJECT_SLUG — different PROJECT_ID
-    // systems); a null category on the newest row flows through as Unscored,
-    // matching normalizeHealthScoreCategory and the FOUNDATION_HEALTH_SCORE_DISTRIBUTION counts.
+    // HEALTH_SCORE_CATEGORY is folded directly into FOUNDATION_TOTAL_PROJECTS_DETAIL by dbt (a
+    // slug-only LEFT JOIN to PROJECT_HEALTH_METRICS_LATEST, the shared per-project latest-score
+    // selection). FOUNDATION_HEALTH_SCORE_DISTRIBUTION counts over this same model, so the chart
+    // and this table can never disagree. Absent categories are null; the drawer renders "Unscored".
     const query = `
       SELECT
         d.PROJECT_ID,
@@ -1702,20 +1709,14 @@ export class ProjectService {
         d.MAINTAINERS_CURRENT_COUNT,
         d.STARS_YTD_COUNT,
         d.LAST_UPDATED_TS,
-        h.HEALTH_SCORE_CATEGORY
+        d.HEALTH_SCORE_CATEGORY
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
-      LEFT JOIN (
-        SELECT PROJECT_SLUG, HEALTH_SCORE_CATEGORY
-        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
-        WHERE FOUNDATION_SLUG = ?
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY PROJECT_SLUG ORDER BY METRIC_DATE DESC) = 1
-      ) h ON d.PROJECT_SLUG = h.PROJECT_SLUG
       WHERE d.FOUNDATION_SLUG = ?
       ORDER BY d.PROJECT_NAME ASC
     `;
 
     try {
-      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug, foundationSlug]);
+      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug]);
 
       const projects = result.rows.map((row) => ({
         id: row.PROJECT_SLUG,
@@ -6153,6 +6154,7 @@ export class ProjectService {
       stable: 0,
       unsteady: 0,
       critical: 0,
+      unscored: 0,
     });
 
     const batch = await this.getMultiFoundationSummaryBatch(req, slugs).catch((error) => {
@@ -6853,6 +6855,7 @@ export class ProjectService {
         stable: 0,
         unsteady: 0,
         critical: 0,
+        unscored: 0,
       };
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
       if (category === 'excellent') existing.excellent = row.PROJECT_COUNT;
@@ -6860,6 +6863,9 @@ export class ProjectService {
       else if (category === 'stable') existing.stable = row.PROJECT_COUNT;
       else if (category === 'unsteady') existing.unsteady = row.PROJECT_COUNT;
       else if (category === 'critical') existing.critical = row.PROJECT_COUNT;
+      // Fold 'unscored' and any unexpected category into `unscored` to match the
+      // detail endpoint's normalizeHealthScoreCategory (→ null → Unscored in the drawer).
+      else existing.unscored += row.PROJECT_COUNT;
       healthScoresBySlug.set(row.FOUNDATION_SLUG, existing);
     });
 
