@@ -3,8 +3,6 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import type { EmailManagementData } from './user-profile.interface';
-
 /**
  * Linux.com (vanity) email alias forwarding.
  *
@@ -22,12 +20,6 @@ import type { EmailManagementData } from './user-profile.interface';
 /** The four states the Linux.com email tab can render. */
 export type LinuxAliasState = 'not_purchased' | 'purchased_unclaimed' | 'claimed' | 'service_unavailable';
 
-/** Aggregate data the Linux.com email tab component renders from. */
-export interface LinuxEmailData {
-  alias: LinuxAliasData | null;
-  emails: EmailManagementData | null;
-}
-
 /** Aggregate state returned by `GET /api/profile/linux-email`. */
 export interface LinuxAliasData {
   state: LinuxAliasState;
@@ -39,6 +31,14 @@ export interface LinuxAliasData {
   email: string | null;
   /** Current forwarding destination, or null when not yet set / not readable without re-auth. */
   forwardTo: string | null;
+  /**
+   * The user's primary verified email, read server-side from the same
+   * `user_emails.read` this endpoint already makes. Lets the tab default the
+   * forward selection and build forward options without a second client fetch.
+   * Null in `service_unavailable` (emails could not be read) or when the account
+   * has no primary email.
+   */
+  primaryEmail: string | null;
   /** membership-ui CTA URL, present only in the `not_purchased` state. */
   purchaseUrl?: string;
   /**
