@@ -412,14 +412,20 @@ export class FoundationHealthComponent {
     let changePercentage: string | undefined;
     if (data.momDeltaPercent !== null) {
       const sign = data.momDeltaPercent > 0 ? '+' : '';
-      const arrow = data.momDeltaPercent > 0 ? '▲' : '▼';
-      changePercentage = `${arrow} ${sign}${data.momDeltaPercent.toFixed(1)}% vs last month`;
+      let arrow = '';
+      if (data.momDirection === 'up') {
+        arrow = '▲';
+      } else if (data.momDirection === 'down') {
+        arrow = '▼';
+      }
+      const prefix = arrow ? `${arrow} ` : '';
+      changePercentage = `${prefix}${sign}${data.momDeltaPercent.toFixed(1)}% vs last month`;
     }
 
     return {
       ...metric,
       loading: this.activeContributorsMonthlyDistinctLoading(),
-      value: data.latest ? data.latest.toLocaleString('en-US') : '',
+      value: data.monthlyData.length > 0 ? data.latest.toLocaleString('en-US') : '',
       subtitle: 'Monthly distinct active contributors',
       trend,
       changePercentage,

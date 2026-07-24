@@ -1364,10 +1364,20 @@ export class ProjectService {
       row_count: result.rows.length,
     });
 
-    const monthlyData = result.rows.map((row) => row.MONTHLY_ACTIVE_CONTRIBUTORS);
-    const monthlyLabels = result.rows.map((row) => {
+    // Drop future-materialized rows so a row dated past the current month can't
+    // become the displayed headline or skew the MoM pair; mirrors the date-only
+    // UTC handling used elsewhere in this service.
+    const now = new Date();
+    const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
+    const rows = result.rows.filter((row) => {
       const date = new Date(row.MONTH_START_DATE);
-      return date.toLocaleDateString('en-US', { month: 'short' });
+      return date.getUTCFullYear() * 12 + date.getUTCMonth() <= currentMonthOrdinal;
+    });
+
+    const monthlyData = rows.map((row) => row.MONTHLY_ACTIVE_CONTRIBUTORS);
+    const monthlyLabels = rows.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
     });
 
     // MoM is only meaningful when the two most recent rows are ADJACENT calendar
@@ -1378,20 +1388,18 @@ export class ProjectService {
     let latest = 0;
     let momDeltaPercent: number | null = null;
     let momDirection: 'up' | 'down' | 'flat' = 'flat';
-    if (result.rows.length > 0) {
-      const newest = result.rows[result.rows.length - 1];
+    if (rows.length > 0) {
+      const newest = rows[rows.length - 1];
       latest = newest.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
-      if (result.rows.length >= 2) {
-        const prior = result.rows[result.rows.length - 2];
+      if (rows.length >= 2) {
+        const prior = rows[rows.length - 2];
         const rowOrdinal = (value: string | Date): number => {
           const date = new Date(value);
           return date.getUTCFullYear() * 12 + date.getUTCMonth();
         };
-        const now = new Date();
-        const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
         const newestOrdinal = rowOrdinal(newest.MONTH_START_DATE);
         const priorOrdinal = rowOrdinal(prior.MONTH_START_DATE);
-        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= currentMonthOrdinal - 1;
+        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= currentMonthOrdinal - 1 && newestOrdinal <= currentMonthOrdinal;
         const previous = prior.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
         if (validPair && previous > 0) {
           momDeltaPercent = Number((((latest - previous) / previous) * 100).toFixed(1));
