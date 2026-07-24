@@ -149,10 +149,10 @@ costs the author attention; spend it only where it changes the outcome:
 - **On a re-review, the new pushes first.** Focus on what changed since the
   last review round. If any prior review comments or resolved threads on this
   PR are visible to you, do not repeat them.
-- **Never duplicate the deterministic pipeline.** Prettier, ESLint, strict
-  TypeScript type-check, the license-header check, and commitlint run on
-  every push (the Playwright E2E suite runs on a schedule, not per push — do
-  not treat it as per-push coverage). Formatting, import order, naming
+- **Never duplicate the deterministic pipeline.** Formatting, linting, strict
+  type-checking, license headers, and PR-title lint are enforced by CI and
+  local hooks, and the Playwright E2E suite runs on a schedule (not per push —
+  do not treat it as per-push coverage). Formatting, import order, naming
   preferences, and anything a linter or the compiler already catches are not
   findings. This is not a blanket pass on everything visual: the repo's
   documented Tailwind and PrimeNG-wrapper conventions (e.g. `flex flex-col

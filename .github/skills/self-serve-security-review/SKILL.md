@@ -159,13 +159,13 @@ the concrete mechanism in the code each time.
   trace, an internal/upstream detail, a filesystem path, or an identity signal
   (e.g. "user exists") to an unauthenticated caller.
 - **URLs, redirects, and SSRF.** These guards are sink-specific — match the
-  finding to the right one. Server-side redirect targets (the `returnTo` URL,
-  cookie-domain checks) pass `validateAndSanitizeUrl`; server-side fetches of a
-  user-controlled URL go through `fetchSafeUrl` (scheme allowlist, private-IP
-  blocklist, post-DNS re-resolution against rebinding, redirect cap); a
-  user-supplied link normalized for client rendering uses the shared
-  `normalizeToUrl` (HTTP(S)-scheme validation, `packages/shared/src/utils/url.utils.ts`)
-  — do not demand the server redirect helper on Angular link handling. Flag a
+  finding to the right one. A server-side redirect target (e.g. the `returnTo`
+  URL) passes `validateAndSanitizeUrl`; a server-side fetch of a user-controlled
+  URL goes through the SSRF-safe fetch helper (`fetchSafeUrl`); a user-supplied
+  link normalized for client rendering uses the shared `normalizeToUrl` — do not
+  demand the server redirect helper on Angular link handling. Confirm each
+  guard's actual behavior at its call site rather than assuming a specific
+  mechanism. Flag a
   server redirect built from untrusted input without `validateAndSanitizeUrl`, a
   `fetch`/HTTP call to a user-controlled host that bypasses `fetchSafeUrl`, a
   non-`http(s)` scheme reaching a sink, or a missing `encodeURIComponent` on a
@@ -181,8 +181,8 @@ the concrete mechanism in the code each time.
   Prefer text interpolation or a sanitizing pipe.
 - **PII and logging.** Recipient/member emails and names are PII. The Pino logger
   redacts configured paths and `LoggerService` offers sanitization; flag a new
-  log line or error that emits a raw email/name/token, metadata logged without
-  sanitization, or a response that exposes PII to a caller not authorized for
+  log line or error that emits a raw email/name/token, PII metadata logged
+  without sanitization, or a response that exposes PII to a caller not authorized for
   that fact — the per-fact pass above decides that; an authorized caller
   legitimately receiving a member's name, or their own profile, is not a leak.
   Logging non-PII identifiers and URLs is fine.
@@ -224,10 +224,10 @@ finding rests on a missing server-side check, never on whether an id can be
 guessed — but identifier *format* validation against the upstream contract
 remains a legitimate code-review concern (the knowledge base's
 `regex-too-loose-for-id-format` pattern) and is not suppressed by this rule.
-Precedents recorded in `docs/reviews/knowledge-base/known-false-positives.md`:
-environment variables and runtime config read server-side are trusted inputs;
-logging URLs and non-PII is fine; a client-side guard absent server enforcement
-is a UX gap, not a vuln, unless the server check is *also* missing.
+Some settled precedents: environment variables and runtime config read
+server-side are trusted inputs; logging URLs and non-PII is fine; an *absent*
+client-side guard is only a UX gap when server enforcement is present — a
+missing server-side check is itself the vulnerability, not a false positive.
 
 ## Reporting
 
