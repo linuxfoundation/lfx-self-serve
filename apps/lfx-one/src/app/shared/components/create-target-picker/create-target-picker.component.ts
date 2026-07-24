@@ -6,7 +6,7 @@ import { Component, computed, inject, input, output, signal, Signal, WritableSig
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CreatableArtifactType, CreatePickerNode, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
-import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
+import { debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
 
 import { CreateTargetTreeNodeComponent } from './create-target-tree-node.component';
 
@@ -88,7 +88,8 @@ export class CreateTargetPickerComponent {
           if (trimmed.length < MIN_SEARCH_LENGTH) {
             return of(EMPTY_RESULT);
           }
-          return this.pickerService.search(trimmed, this.artifactType()).pipe(catchError(() => of(EMPTY_RESULT)));
+          // No catchError here — CreateTargetPickerService.search() already fails closed to EMPTY_RESULT.
+          return this.pickerService.search(trimmed, this.artifactType());
         }),
         tap(() => this.searchLoadedSignal.set(true))
       ),

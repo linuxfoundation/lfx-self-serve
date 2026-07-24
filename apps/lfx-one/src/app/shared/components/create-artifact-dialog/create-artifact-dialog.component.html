@@ -19,7 +19,11 @@
       Select Foundation/Project/Group
       <span class="text-red-500">*</span>
     </label>
-    <lfx-create-target-picker [artifactType]="artifact.type" (targetSelected)="onTargetSelected($event)" data-testid="create-artifact-target-picker" />
+    <lfx-create-target-picker
+      [artifactType]="artifact.type"
+      [selectedTarget]="selectedTarget()"
+      (targetSelected)="onTargetSelected($event)"
+      data-testid="create-artifact-target-picker" />
   </div>
 
   <!-- Actions -->

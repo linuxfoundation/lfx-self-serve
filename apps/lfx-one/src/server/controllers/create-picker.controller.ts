@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreatableArtifactType } from '@lfx-one/shared/interfaces';
+import { CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
+import { CreatableArtifactType, CreatePickerChildrenQuery } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { CreatePickerService } from '../services/create-picker.service';
 
-const VALID_ARTIFACT_TYPES: CreatableArtifactType[] = ['meeting', 'newsletter', 'vote', 'survey', 'group', 'mailing-list'];
+const VALID_ARTIFACT_TYPES: CreatableArtifactType[] = CREATABLE_ARTIFACTS.map((artifact) => artifact.type);
 const VALID_PARENT_TYPES = ['project', 'committee'];
 
 function parseArtifactType(req: Request, operation: string): CreatableArtifactType {
@@ -80,7 +81,8 @@ export class CreatePickerController {
         });
       }
 
-      const result = await this.createPickerService.getChildren(req, parentType as 'project' | 'committee', parentUid, artifactType);
+      const query: CreatePickerChildrenQuery = { parentType: parentType as 'project' | 'committee', parentUid, artifactType };
+      const result = await this.createPickerService.getChildren(req, query.parentType, query.parentUid, query.artifactType);
 
       logger.success(req, 'get_create_picker_children', startTime, {
         project_count: result.projects.length,

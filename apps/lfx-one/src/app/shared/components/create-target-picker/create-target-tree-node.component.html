@@ -2,26 +2,35 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col">
-  <button
-    type="button"
-    class="flex items-center gap-2 p-2 w-full text-left rounded-lg transition-colors"
-    [style.padding-left.rem]="0.5 + depth() * 1.25"
-    [class.bg-blue-50]="isSelected()"
-    [class.hover:bg-gray-100]="!isSelected()"
-    (click)="select()"
-    [attr.data-testid]="'create-target-node-' + node().uid"
-    [attr.data-selected]="isSelected()">
-    <span class="shrink-0 size-5 flex items-center justify-center" (click)="toggleExpand($event)" data-testid="create-target-node-toggle">
+  <div class="flex items-center gap-1" [style.padding-left.rem]="0.5 + depth() * 1.25">
+    <!-- Separate focusable control from the row's select button below — a click-handling span
+         nested inside a button is not independently keyboard-reachable. -->
+    <button
+      type="button"
+      class="shrink-0 size-6 flex items-center justify-center rounded hover:bg-gray-100"
+      (click)="toggleExpand($event)"
+      [attr.aria-expanded]="expanded()"
+      [attr.aria-label]="(expanded() ? 'Collapse ' : 'Expand ') + label()"
+      data-testid="create-target-node-toggle">
       <i class="fa-light fa-chevron-right text-gray-400 text-xs transition-transform" [class.rotate-90]="expanded()" aria-hidden="true"></i>
-    </span>
-    <i [class]="icon() + ' text-gray-400 shrink-0'" aria-hidden="true"></i>
-    <span class="flex-1 min-w-0 truncate text-sm text-gray-900">{{ label() }}</span>
-    <i
-      class="fa-light fa-check text-blue-500 shrink-0 transition-opacity"
-      [class.opacity-100]="isSelected()"
-      [class.opacity-0]="!isSelected()"
-      [attr.aria-hidden]="!isSelected()"></i>
-  </button>
+    </button>
+    <button
+      type="button"
+      class="flex items-center gap-2 p-2 flex-1 min-w-0 text-left rounded-lg transition-colors"
+      [class.bg-blue-50]="isSelected()"
+      [class.hover:bg-gray-100]="!isSelected()"
+      (click)="select()"
+      [attr.data-testid]="'create-target-node-' + node().uid"
+      [attr.data-selected]="isSelected()">
+      <i [class]="icon() + ' text-gray-400 shrink-0'" aria-hidden="true"></i>
+      <span class="flex-1 min-w-0 truncate text-sm text-gray-900">{{ label() }}</span>
+      <i
+        class="fa-light fa-check text-blue-500 shrink-0 transition-opacity"
+        [class.opacity-100]="isSelected()"
+        [class.opacity-0]="!isSelected()"
+        [attr.aria-hidden]="!isSelected()"></i>
+    </button>
+  </div>
 
   @if (expanded()) {
     <div class="flex flex-col">

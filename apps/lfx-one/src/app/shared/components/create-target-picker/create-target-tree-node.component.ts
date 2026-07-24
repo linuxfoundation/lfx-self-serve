@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CreatableArtifactType, CreatePickerNode } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
 
@@ -18,6 +19,7 @@ import { CreateTargetPickerService } from '@services/create-target-picker.servic
 })
 export class CreateTargetTreeNodeComponent {
   private readonly pickerService = inject(CreateTargetPickerService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly node = input.required<CreatePickerNode>();
   public readonly artifactType = input.required<CreatableArtifactType>();
@@ -59,10 +61,13 @@ export class CreateTargetTreeNodeComponent {
   private loadChildren(): void {
     this.loadingChildren.set(true);
     const target = this.node();
-    this.pickerService.getChildren(target.kind, target.uid, this.artifactType()).subscribe((result) => {
-      this.children.set([...result.projects, ...result.committees]);
-      this.loadingChildren.set(false);
-      this.childrenLoaded.set(true);
-    });
+    this.pickerService
+      .getChildren(target.kind, target.uid, this.artifactType())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((result) => {
+        this.children.set([...result.projects, ...result.committees]);
+        this.loadingChildren.set(false);
+        this.childrenLoaded.set(true);
+      });
   }
 }

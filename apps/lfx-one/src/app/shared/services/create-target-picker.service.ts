@@ -22,18 +22,33 @@ export class CreateTargetPickerService {
   /** Top-level direct-grant tree nodes for the given artifact type. */
   public getTree(artifactType: CreatableArtifactType): Observable<CreatePickerResultSet> {
     const params = new HttpParams().set('artifactType', artifactType);
-    return this.http.get<CreatePickerResultSet>('/api/create-picker/tree', { params }).pipe(catchError(() => of(EMPTY_RESULT)));
+    return this.http.get<CreatePickerResultSet>('/api/create-picker/tree', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load create-picker tree:', error);
+        return of(EMPTY_RESULT);
+      })
+    );
   }
 
   /** Lazy fan-out for one tree node. */
   public getChildren(parentType: 'project' | 'committee', parentUid: string, artifactType: CreatableArtifactType): Observable<CreatePickerResultSet> {
     const params = new HttpParams().set('parentType', parentType).set('parentUid', parentUid).set('artifactType', artifactType);
-    return this.http.get<CreatePickerResultSet>('/api/create-picker/tree/children', { params }).pipe(catchError(() => of(EMPTY_RESULT)));
+    return this.http.get<CreatePickerResultSet>('/api/create-picker/tree/children', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load create-picker children:', error);
+        return of(EMPTY_RESULT);
+      })
+    );
   }
 
   /** Type-ahead search across both resource types. */
   public search(term: string, artifactType: CreatableArtifactType): Observable<CreatePickerResultSet> {
     const params = new HttpParams().set('q', term).set('artifactType', artifactType);
-    return this.http.get<CreatePickerResultSet>('/api/create-picker/search', { params }).pipe(catchError(() => of(EMPTY_RESULT)));
+    return this.http.get<CreatePickerResultSet>('/api/create-picker/search', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to search create-picker targets:', error);
+        return of(EMPTY_RESULT);
+      })
+    );
   }
 }
