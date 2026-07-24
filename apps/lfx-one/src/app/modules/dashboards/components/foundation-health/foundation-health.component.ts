@@ -116,9 +116,7 @@ export class FoundationHealthComponent {
   // default while loading so the drawer headline never flashes the previous
   // foundation's average against the newly loaded chart.
   protected readonly reconciledActiveContributorsData = computed<UniqueContributorsDailyResponse>(() =>
-    this.activeContributorsLoading()
-      ? { data: [], avgContributors: 0, totalDays: 0 }
-      : this.activeContributorsData()
+    this.activeContributorsLoading() ? { data: [], avgContributors: 0, totalDays: 0 } : this.activeContributorsData()
   );
 
   public readonly selectedFilter = signal<string>('all');
