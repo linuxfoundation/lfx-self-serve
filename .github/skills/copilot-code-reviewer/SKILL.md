@@ -122,7 +122,7 @@ Three sources, each authoritative for its own domain:
 A reviewer the team trusts is quiet unless it has something real. Every comment
 costs the author attention; spend it only where it changes the outcome:
 
-- **High confidence only.** Comment only when you have HIGH CONFIDENCE (>80%)
+- **High confidence only.** Comment only when you have HIGH CONFIDENCE (>=80%)
   that the issue is real and will cause a concrete problem — a bug, a security
   issue, data loss, a broken contract, or a violation of a documented standard —
   and you can ground it in the actual file, function, or contract. If you are

@@ -51,7 +51,7 @@ Run a focused, **diff-aware** review, not a whole-repo audit:
    - *Assessment*: trace each input to its sink and confirm a guard sits on the
      path the data actually takes, not three functions away.
 4. **Confidence-gate every finding** (1-10, report only >= 8, matching the
-   reviewer skill's >80% gate). A few real findings beat a speculative list.
+   reviewer skill's >=80% gate). A few real findings beat a speculative list.
 5. **Evidence, not vibes.** Each finding names the file and function, what the
    attacker controls, the boundary crossed, the concrete impact, and the fix.
 
