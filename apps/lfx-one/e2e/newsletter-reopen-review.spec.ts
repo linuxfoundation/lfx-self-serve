@@ -250,7 +250,7 @@ test.describe('Newsletter reopen — empty-state coverage', () => {
     await gotoEditUrl(page);
 
     await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('newsletter-review-audience-empty'), 'audience empty-state copy should appear').toContainText('No groups selected yet');
+    await expect(page.getByTestId('newsletter-review-audience-empty'), 'audience empty-state copy should appear').toContainText('No group selected yet');
     // The summary line should NOT render when the empty-state branch is active.
     await expect(page.getByTestId('newsletter-review-audience-summary')).toHaveCount(0);
   });
@@ -298,6 +298,82 @@ test.describe('Newsletter reopen — audience normalization with mixed committee
     // normalization must prune the ineligible one before the audience is ever sent,
     // otherwise a stale non-Newsletter uid could be delivered to on a later Send.
     await expect(page.getByTestId('newsletter-review-audience-summary'), 'audience summary should only count the eligible group').toContainText('1 group');
+  });
+});
+
+test.describe('Newsletter reopen — single-group audience picker', () => {
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['executive-director']);
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page);
+    await stubProjectApi(page);
+  });
+
+  test('reopening a saved draft hydrates the selected group in the picker', async ({ page }) => {
+    await stubNewsletterApis(page, buildDraft());
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await page.getByTestId('newsletter-review-audience-edit-btn').click();
+
+    await expect(page.getByTestId('newsletter-audience-committees'), 'picker should hydrate the saved group').toContainText('Community Newsletter', {
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+
+  test('a legacy multi-group draft is narrowed to a single selection in the picker', async ({ page }) => {
+    const secondEligibleUid = 'c0000000-0000-0000-0000-000000000ddd';
+    await stubNewsletterApis(page, buildDraft({ committee_uids: [MOCK_COMMITTEE_UID, secondEligibleUid] }), [
+      { uid: MOCK_COMMITTEE_UID, name: 'Community Newsletter', category: 'Newsletter' },
+      { uid: secondEligibleUid, name: 'Security Newsletter', category: 'Newsletter' },
+    ]);
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    // Both uids are Newsletter-eligible, so this exercises the picker's own narrowing
+    // (not the host's eligibility pruning), and the review card must agree.
+    await expect(page.getByTestId('newsletter-review-audience-summary'), 'review summary should reflect the narrowed selection').toContainText('1 group');
+
+    await page.getByTestId('newsletter-review-audience-edit-btn').click();
+    await expect(page.getByTestId('newsletter-audience-committees'), 'picker should show exactly one selected group').toContainText('Community Newsletter', {
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+
+  test('selecting a different group replaces the prior selection, and Clear empties it', async ({ page }) => {
+    const secondEligibleUid = 'c0000000-0000-0000-0000-000000000ddd';
+    await stubNewsletterApis(page, buildDraft(), [
+      { uid: MOCK_COMMITTEE_UID, name: 'Community Newsletter', category: 'Newsletter' },
+      { uid: secondEligibleUid, name: 'Security Newsletter', category: 'Newsletter' },
+    ]);
+    await gotoEditUrl(page);
+
+    await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await page.getByTestId('newsletter-review-audience-edit-btn').click();
+
+    const picker = page.getByTestId('newsletter-audience-committees');
+    await expect(picker, 'picker should hydrate the saved group first').toContainText('Community Newsletter', { timeout: ELEMENT_TIMEOUT });
+
+    await picker.click();
+    await page.getByRole('option', { name: 'Security Newsletter', exact: true }).click();
+    await expect(picker, 'selecting a second group should replace the first, not add to it').toContainText('Security Newsletter');
+    await expect(picker, 'the prior selection should no longer be shown').not.toContainText('Community Newsletter');
+
+    await page.getByTestId('newsletter-manage-back-to-review').click();
+    await expect(
+      page.getByTestId('newsletter-review-audience-summary'),
+      'the shared committeeUids control should reflect the replacement, not just the local display'
+    ).toContainText('1 group');
+
+    await page.getByTestId('newsletter-review-audience-edit-btn').click();
+    await picker.locator('.p-select-clear-icon').click();
+    await expect(picker, 'Clear should empty the selection').toContainText('Pick a group');
+
+    await page.getByTestId('newsletter-manage-back-to-review').click();
+    await expect(
+      page.getByTestId('newsletter-review-audience-empty'),
+      'the shared committeeUids control should reflect the clear, not just the local display'
+    ).toBeVisible();
   });
 });
 
