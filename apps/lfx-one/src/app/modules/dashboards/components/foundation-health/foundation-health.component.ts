@@ -78,7 +78,6 @@ export class FoundationHealthComponent {
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
-  private readonly activeContributorsLoading = signal(true);
   private readonly activeContributorsMonthlyDistinctLoading = signal(true);
   private readonly eventsLoading = signal(true);
 
@@ -406,26 +405,21 @@ export class FoundationHealthComponent {
     const values = data.monthlyData;
     const labels = data.monthlyLabels;
 
-    const latest = values.length ? values[values.length - 1] : 0;
-    const prior = values.length > 1 ? values[values.length - 2] : null;
-
-    let trend: DashboardMetricCard['trend'] = 'neutral';
+    // MoM (delta + direction) is validated server-side for adjacent, current
+    // months; render it directly instead of re-deriving from the last two
+    // array entries (which may be non-adjacent when a month is missing).
+    const trend: DashboardMetricCard['trend'] = data.momDirection === 'flat' ? 'neutral' : data.momDirection;
     let changePercentage: string | undefined;
-    if (prior !== null && prior !== 0) {
-      const deltaPercent = ((latest - prior) / prior) * 100;
-      if (deltaPercent > 0) {
-        trend = 'up';
-      } else if (deltaPercent < 0) {
-        trend = 'down';
-      }
-      const sign = deltaPercent > 0 ? '+' : '';
-      changePercentage = `${sign}${deltaPercent.toFixed(1)}% vs last month`;
+    if (data.momDeltaPercent !== null) {
+      const sign = data.momDeltaPercent > 0 ? '+' : '';
+      const arrow = data.momDeltaPercent > 0 ? '▲' : '▼';
+      changePercentage = `${arrow} ${sign}${data.momDeltaPercent.toFixed(1)}% vs last month`;
     }
 
     return {
       ...metric,
       loading: this.activeContributorsMonthlyDistinctLoading(),
-      value: values.length ? latest.toLocaleString() : '',
+      value: data.latest ? data.latest.toLocaleString('en-US') : '',
       subtitle: 'Monthly distinct active contributors',
       trend,
       changePercentage,
@@ -738,16 +732,7 @@ export class FoundationHealthComponent {
 
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        tap(() => this.activeContributorsLoading.set(true)),
-        switchMap((foundationSlug) =>
-          this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(
-            tap(() => this.activeContributorsLoading.set(false)),
-            catchError(() => {
-              this.activeContributorsLoading.set(false);
-              return of(defaultValue);
-            })
-          )
-        )
+        switchMap((foundationSlug) => this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(catchError(() => of(defaultValue))))
       ),
       { initialValue: defaultValue }
     );
@@ -757,6 +742,9 @@ export class FoundationHealthComponent {
     const defaultValue: FoundationActiveContributorsMonthlyDistinctResponse = {
       monthlyData: [],
       monthlyLabels: [],
+      latest: 0,
+      momDeltaPercent: null,
+      momDirection: 'flat',
     };
 
     return toSignal(

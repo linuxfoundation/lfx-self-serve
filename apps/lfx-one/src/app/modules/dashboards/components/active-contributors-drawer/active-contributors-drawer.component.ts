@@ -134,7 +134,7 @@ export class ActiveContributorsDrawerComponent {
         padding: 10,
         cornerRadius: 6,
         callbacks: {
-          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} contributors`,
+          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString('en-US')} contributors`,
         },
       },
     },
@@ -149,7 +149,7 @@ export class ActiveContributorsDrawerComponent {
         display: true,
         grid: { color: lfxColors.gray[200], lineWidth: 1 },
         border: { display: false, dash: [3, 3] },
-        ticks: { color: lfxColors.gray[500], font: { size: 12 }, callback: (v) => (v as number).toLocaleString() },
+        ticks: { color: lfxColors.gray[500], font: { size: 12 }, callback: (v) => (v as number).toLocaleString('en-US') },
         beginAtZero: true,
       },
     },
@@ -286,20 +286,13 @@ export class ActiveContributorsDrawerComponent {
 
   private initMomDelta(): Signal<ActiveContributorsMoMDelta> {
     return computed(() => {
-      const data = this.momData().monthlyData;
-      const latest = data.length ? data[data.length - 1] : 0;
-      const prior = data.length > 1 ? data[data.length - 2] : null;
-      if (prior === null || prior === 0) {
-        return { latest, deltaPercent: null, direction: 'flat' };
-      }
-      const deltaPercent = ((latest - prior) / prior) * 100;
-      let direction: ActiveContributorsMoMDelta['direction'] = 'flat';
-      if (deltaPercent > 0) {
-        direction = 'up';
-      } else if (deltaPercent < 0) {
-        direction = 'down';
-      }
-      return { latest, deltaPercent, direction };
+      const mom = this.momData();
+      // delta + direction are validated server-side for adjacent, current months.
+      return {
+        latest: mom.latest,
+        deltaPercent: mom.momDeltaPercent,
+        direction: mom.momDirection,
+      };
     });
   }
 

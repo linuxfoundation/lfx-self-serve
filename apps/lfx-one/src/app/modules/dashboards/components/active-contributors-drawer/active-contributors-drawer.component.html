@@ -63,7 +63,7 @@
           <div class="flex items-baseline gap-2">
             @if (momDelta(); as delta) {
               <span class="text-xl font-semibold text-gray-900" data-testid="active-contributors-drawer-mom-metric">
-                {{ delta.latest.toLocaleString() }}
+                {{ delta.latest.toLocaleString('en-US') }}
               </span>
               @if (delta.deltaPercent !== null) {
                 <span
@@ -73,9 +73,13 @@
                   [class.text-gray-500]="delta.direction === 'flat'"
                   data-testid="active-contributors-drawer-mom-delta">
                   @if (delta.direction === 'up') {
-                    ▲
+                    <span aria-hidden="true">▲</span>
+                    <span class="sr-only">Increased </span>
                   } @else if (delta.direction === 'down') {
-                    ▼
+                    <span aria-hidden="true">▼</span>
+                    <span class="sr-only">Decreased </span>
+                  } @else {
+                    <span class="sr-only">No change </span>
                   }
                   {{ formatMomDelta(delta.deltaPercent) }}% vs last month
                 </span>
@@ -149,10 +153,10 @@
         <button
           type="button"
           class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
-          pTooltip="Share of total contributions made by each contributor tier over the last 12 months. The Top 10% drives most of the activity; the Bottom 50% contributes very little."
+          pTooltip="Share of total contributions made by each contributor tier over the last 12 months."
           tooltipPosition="top"
           tooltipEvent="both"
-          aria-label="Share of total contributions made by each contributor tier over the last 12 months. The Top 10% drives most of the activity; the Bottom 50% contributes very little.">
+          aria-label="Share of total contributions made by each contributor tier over the last 12 months.">
           <i class="fa-light fa-circle-info"></i>
         </button>
       </div>

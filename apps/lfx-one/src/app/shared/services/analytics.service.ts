@@ -74,7 +74,7 @@ import {
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
-import { HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
+import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { catchError, Observable, of, shareReplay } from 'rxjs';
 
 /**
@@ -351,7 +351,7 @@ export class AnalyticsService {
       .get<FoundationActiveContributorsMonthlyDistinctResponse>('/api/analytics/foundation-active-contributors-monthly-distinct', {
         params: { foundationSlug },
       })
-      .pipe(catchError(() => of({ monthlyData: [], monthlyLabels: [] })));
+      .pipe(catchError(() => of(DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT)));
   }
 
   /**

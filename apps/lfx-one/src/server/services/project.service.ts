@@ -1370,7 +1370,41 @@ export class ProjectService {
       return date.toLocaleDateString('en-US', { month: 'short' });
     });
 
-    return { monthlyData, monthlyLabels };
+    // MoM is only meaningful when the two most recent rows are ADJACENT calendar
+    // months and the newest row is current (or one month stale, tolerating a
+    // monthly materialization lag). Otherwise a missing month would silently
+    // compare non-adjacent months and label it "vs last month". Mirrors the
+    // adjacency+recency guard used for mention MoM above.
+    let latest = 0;
+    let momDeltaPercent: number | null = null;
+    let momDirection: 'up' | 'down' | 'flat' = 'flat';
+    if (result.rows.length > 0) {
+      const newest = result.rows[result.rows.length - 1];
+      latest = newest.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
+      if (result.rows.length >= 2) {
+        const prior = result.rows[result.rows.length - 2];
+        const rowOrdinal = (value: string | Date): number => {
+          const date = new Date(value);
+          return date.getUTCFullYear() * 12 + date.getUTCMonth();
+        };
+        const now = new Date();
+        const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
+        const newestOrdinal = rowOrdinal(newest.MONTH_START_DATE);
+        const priorOrdinal = rowOrdinal(prior.MONTH_START_DATE);
+        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= currentMonthOrdinal - 1;
+        const previous = prior.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
+        if (validPair && previous > 0) {
+          momDeltaPercent = Number((((latest - previous) / previous) * 100).toFixed(1));
+          if (momDeltaPercent > 0) {
+            momDirection = 'up';
+          } else if (momDeltaPercent < 0) {
+            momDirection = 'down';
+          }
+        }
+      }
+    }
+
+    return { monthlyData, monthlyLabels, latest, momDeltaPercent, momDirection };
   }
 
   /**

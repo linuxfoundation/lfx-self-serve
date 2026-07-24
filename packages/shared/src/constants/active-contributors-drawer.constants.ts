@@ -12,6 +12,9 @@ export const DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY: FoundationActiveCon
 export const DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT: FoundationActiveContributorsMonthlyDistinctResponse = {
   monthlyData: [],
   monthlyLabels: [],
+  latest: 0,
+  momDeltaPercent: null,
+  momDirection: 'flat',
 };
 
 export const DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION: FoundationContributorsDistributionResponse = { distribution: [] };
