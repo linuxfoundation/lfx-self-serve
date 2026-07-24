@@ -486,8 +486,21 @@ export class NewsletterManageComponent {
     return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
       finalize(() => this.recipientCountLoading.set(false)),
       tap({
-        next: (res) => this.recipientCount.set(res.count),
-        error: () => this.recipientCount.set(null),
+        // Apply the response only if the requested uids still match the current
+        // selection: a trigger fired just before a group switch can otherwise
+        // land during the valueChanges debounce window and briefly show the old
+        // group's count. The mirror is updated synchronously (initFormMirrors /
+        // populateFormFromDraft), so a match here is authoritative.
+        next: (res) => {
+          if (this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.recipientCount.set(res.count);
+          }
+        },
+        error: () => {
+          if (this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.recipientCount.set(null);
+          }
+        },
       }),
       catchError(() => EMPTY)
     );

@@ -105,6 +105,11 @@ export class CommitteeService {
     return this.http.get<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`);
   }
 
+  /**
+   * Creates a committee member. By default the new member receives a
+   * notification email; pass `options.skipNotification` to suppress it
+   * (the BFF forwards it upstream as the X-Skip-Notification header).
+   */
   public createCommitteeMember(
     committeeId: string,
     memberData: CreateCommitteeMemberRequest,
