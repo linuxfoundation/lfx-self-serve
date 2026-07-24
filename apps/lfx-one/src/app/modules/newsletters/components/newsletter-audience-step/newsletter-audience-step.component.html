@@ -9,7 +9,7 @@
 
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
-      <label class="text-sm font-medium text-gray-700">Group</label>
+      <label class="text-sm font-medium text-gray-700" for="newsletter-audience-committee">Group</label>
       @if (selectedCount() > 0 && recipientCount() !== null) {
         @if (recipientCountLoading()) {
           <span class="text-xs text-gray-500" data-testid="newsletter-audience-recipient-pill">Calculating recipients…</span>
@@ -58,6 +58,7 @@
         [filter]="true"
         filterPlaceholder="Search groups"
         [showClear]="true"
+        inputId="newsletter-audience-committee"
         styleClass="w-full"
         data-testid="newsletter-audience-committees">
       </lfx-select>

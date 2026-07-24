@@ -250,7 +250,7 @@ test.describe('Newsletter reopen — empty-state coverage', () => {
     await gotoEditUrl(page);
 
     await expect(page.getByTestId('newsletter-review'), 'review screen should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('newsletter-review-audience-empty'), 'audience empty-state copy should appear').toContainText('No groups selected yet');
+    await expect(page.getByTestId('newsletter-review-audience-empty'), 'audience empty-state copy should appear').toContainText('No group selected yet');
     // The summary line should NOT render when the empty-state branch is active.
     await expect(page.getByTestId('newsletter-review-audience-summary')).toHaveCount(0);
   });
