@@ -5,8 +5,10 @@ import { NEWSLETTER_RAW_CONTENT_MAX_LENGTH, NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH 
 import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
+  NewsletterLayout,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
+  NewsletterRenderPreviewPayload,
   NewsletterStatus,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -21,6 +23,9 @@ import { NewsletterService } from '../services/newsletter.service';
 
 const SUBJECT_MAX_LENGTH = 200;
 const BODY_MAX_LENGTH = 100_000;
+// Structured layout is JSON, so it runs larger than the rendered HTML; bound the
+// serialized size defensively (body_html has its own cap) to reject runaway payloads.
+const BODY_LAYOUT_MAX_LENGTH = 500_000;
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
 
@@ -154,6 +159,64 @@ export class NewsletterController {
       const newsletter = await this.newsletterService.createNewsletter(req, projectUid, payload);
       logger.success(req, 'newsletter_create', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
       res.status(201).json(newsletter);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/templates
+   */
+  public async getTemplates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_templates_list', { project_uid: projectUid });
+
+    try {
+      const result = await this.newsletterService.getTemplates(req, projectUid);
+      logger.success(req, 'newsletter_templates_list', startTime, { count: result.templates.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/templates/:templateKey/manifest
+   */
+  public async getTemplateManifest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const templateKey = String(req.params['templateKey'] || '').trim();
+    const startTime = logger.startOperation(req, 'newsletter_template_manifest', { project_uid: projectUid, template_key: templateKey });
+
+    try {
+      const manifest = await this.newsletterService.getTemplateManifest(req, projectUid, templateKey);
+      logger.success(req, 'newsletter_template_manifest', startTime, { template_key: templateKey, block_count: manifest.blocks.length });
+      res.json(manifest);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectUid/newsletters/render-preview
+   *
+   * Renders a layout to its final email HTML server-side (the same MJML render
+   * the send path uses), so the composer can report the authoritative sent-email
+   * size and source rather than estimating from the client preview.
+   */
+  public async renderPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise
+    // without reaching next(error), which can hang the request. Keeping them in
+    // the try routes any throw to the error handler.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_render_preview', { project_uid: projectUid });
+      const payload = req.body as NewsletterRenderPreviewPayload;
+      this.validateRenderPreviewPayload(payload, req.path, 'newsletter_render_preview');
+      const result = await this.newsletterService.renderPreview(req, projectUid, payload);
+      logger.success(req, 'newsletter_render_preview', startTime, { bytes: Buffer.byteLength(result.body_html, 'utf8') });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -411,7 +474,11 @@ export class NewsletterController {
     return optOutId;
   }
 
-  private validateCommonPayload(payload: { subject?: string; body_html?: string; ed_reply_email?: string }, path: string, operation: string): void {
+  private validateCommonPayload(
+    payload: { subject?: string; body_html?: string; body_layout?: NewsletterLayout | null; ed_reply_email?: string },
+    path: string,
+    operation: string
+  ): void {
     const fieldErrors: Record<string, string> = {};
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
@@ -420,10 +487,36 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+    // The body may arrive as raw HTML or as a structured block layout. The
+    // newsletter service renders body_layout to body_html on write. Tri-state: an
+    // absent (undefined) or explicit `null` layout selects the body_html path; a
+    // present (non-null) layout object is authoritative upstream (blocks mode).
+    //
+    // A present layout must be STRUCTURALLY valid (blocks is an array) but MAY be
+    // empty: clearing the canvas emits `blocks: []`, a deliberate DRAFT state the
+    // author must be able to persist (rejecting it 400s the save, so the emptied
+    // draft silently reverts to its old content on reload). A wrapper-only layout
+    // renders fine upstream and can be saved; the non-empty requirement lives on
+    // the SEND gate (canSend / bodyFilled), not on draft validation, so an empty
+    // newsletter can be saved but not sent.
+    const layoutPresent = payload?.body_layout !== undefined && payload?.body_layout !== null;
+    const layoutValid = layoutPresent && Array.isArray(payload.body_layout!.blocks);
+    const hasBodyHtml = typeof payload?.body_html === 'string' && payload.body_html.trim().length > 0;
+    if (layoutPresent && !layoutValid) {
+      fieldErrors['body_layout'] = 'A block layout must have a blocks array';
+    } else if (!hasBodyHtml && !layoutValid) {
+      // Neither authored html nor a (blocks-mode) layout — nothing to persist.
       fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
+    } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
+      // Only cap authored body_html on the HTML-only path. In blocks mode the
+      // upstream ignores request body_html and re-derives it from body_layout, so
+      // capping the (server-rendered, echoed-back) body_html here would reject the
+      // autosave of a large composed email the composer only means to WARN about
+      // (the ~102 KB Gmail-clipping threshold). The layout has its own size cap.
       fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    }
+    if (layoutValid && JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -448,14 +541,52 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
-      fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
-      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    // A layout test send recompiles the email from body_layout upstream (the
+    // request body_html is the echoed server render), so require/cap body_html
+    // only on the HTML-only path. Otherwise a large composed newsletter — one the
+    // composer only WARNS about at the ~102 KB Gmail-clipping threshold — cannot
+    // be test-sent. Size-cap the layout itself instead.
+    const layoutValid =
+      payload?.body_layout !== undefined && payload?.body_layout !== null && Array.isArray(payload.body_layout.blocks) && payload.body_layout.blocks.length > 0;
+    if (!layoutValid) {
+      if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+        fieldErrors['body_html'] = 'Body is required';
+      } else if (payload.body_html.length > BODY_MAX_LENGTH) {
+        fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+      }
+    } else if (JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
       fieldErrors['to_email'] = 'A valid to_email is required';
+    }
+
+    // Parity with validateCommonPayload: the client sends ed_reply_email on every
+    // test send, and a layout test recompiles the wrapper's "To reply, email …"
+    // row (and the email's reply-to) from it, so require a valid address here too
+    // rather than silently accepting a missing/malformed one.
+    if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
+      fieldErrors['ed_reply_email'] = 'A valid ed_reply_email is required';
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      throw ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+  }
+
+  private validateRenderPreviewPayload(payload: NewsletterRenderPreviewPayload, path: string, operation: string): void {
+    const fieldErrors: Record<string, string> = {};
+
+    const layout = payload?.body_layout;
+    if (!layout || typeof layout !== 'object' || !Array.isArray(layout.blocks)) {
+      fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
+    } else if (JSON.stringify(layout).length > BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `body_layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer`;
     }
 
     if (Object.keys(fieldErrors).length > 0) {

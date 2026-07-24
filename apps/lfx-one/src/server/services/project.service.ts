@@ -124,8 +124,7 @@ import {
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
-import type { PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
-import type { MoMDirection } from '@lfx-one/shared/interfaces';
+import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
@@ -364,6 +363,101 @@ export class ProjectService {
 
     // ROOT is an administrative pseudo-project — exclude from search results.
     return resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
+  /**
+   * Direct-FGA-grant projects for the create picker's default tree — NOT a full enumeration.
+   * `filter_grants=direct` narrows the query-service result set to resources the caller holds a
+   * direct OpenFGA tuple on, before any of our own access-check runs. Small by construction (a
+   * user's own direct grants), unlike `getProjects`'s unscoped pull.
+   */
+  public async getDirectGrantProjects(req: Request, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        filter_grants: 'direct',
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+  }
+
+  /**
+   * Child projects of a parent (foundation or project), for the create picker's lazy tree
+   * fan-out. Reuses the same `parent=project:<uid>` query-service filter as
+   * `getFoundationProjectUids`, but returns full access-checked `Project` rows instead of bare UIDs.
+   */
+  public async getChildProjects(req: Request, parentUid: string, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        parent: `project:${parentUid}`,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+  }
+
+  /**
+   * Type-ahead project search for the create picker. Batch-access-checked to the relevant
+   * relation per page — inherited access is evaluated here (unlike `filter_grants=direct`), so a
+   * writer via inheritance is found through search even when the direct-grant tree under-shows
+   * them. Distinct from `searchProjects` (unpaginated, unchecked, used by the header's public
+   * project search) — different consumer, different contract, kept separate rather than
+   * overloading that method's semantics.
+   *
+   * Keeps paging through raw name matches — not just the first page — until either `pageSize`
+   * permitted results have been collected or upstream pages run out, bounded by a small page
+   * cap. A single unchecked page would silently miss an inherited-writer match that happens to
+   * land on page 2+ behind a run of visible-but-non-writable matches on page 1 — exactly the
+   * scenario this method exists to reach.
+   */
+  public async searchCreatableProjects(
+    req: Request,
+    searchQuery: string,
+    includeMeetingCoordinator: boolean = false,
+    pageSize: number = 20
+  ): Promise<Project[]> {
+    // Bounds the raw-match scan (5 pages × page_size) so a generic search term can't turn this
+    // into an unbounded crawl — still vastly better than the single-page cutoff this replaces.
+    const SEARCH_PAGE_LIMIT = 5;
+    const permitted: Project[] = [];
+    let pageToken: string | undefined;
+    let pagesFetched = 0;
+
+    logger.debug(req, 'search_creatable_projects', 'Scanning name matches for creatable projects', { page_size: pageSize, page_limit: SEARCH_PAGE_LIMIT });
+
+    do {
+      const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'project',
+          name: searchQuery,
+          page_size: pageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }
+      );
+      pagesFetched++;
+
+      const filtered = resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+      const page = await this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+      permitted.push(...page);
+      pageToken = page_token;
+    } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    if (pageToken && pagesFetched >= SEARCH_PAGE_LIMIT) {
+      logger.warning(req, 'search_creatable_projects', 'Hit the search page cap with more pages remaining', {
+        pages_fetched: pagesFetched,
+        permitted_count: permitted.length,
+      });
+    }
+
+    return permitted.slice(0, pageSize);
   }
 
   /**
@@ -7020,5 +7114,31 @@ export class ProjectService {
     const prev = all.find((m) => m.month === prevStr);
     if (!prev || prev.followers === 0) return null;
     return Math.round(((current.followers - prev.followers) / prev.followers) * 1000) / 10;
+  }
+
+  /**
+   * Shared writer/`meeting_coordinator` filtering for `getDirectGrantProjects`,
+   * `getChildProjects`, and `searchCreatableProjects`. Mirrors `getProjectById`'s "skip
+   * meeting_coordinator check for writers" shortcut, batched: only non-writers get the extra
+   * `meeting_coordinator` check when it's requested at all.
+   */
+  private async filterToCreatableProjects(req: Request, projects: Project[], includeMeetingCoordinator: boolean): Promise<Project[]> {
+    if (projects.length === 0) {
+      return projects;
+    }
+
+    const writerChecked = await this.accessCheckService.addAccessToResources(req, projects, 'project');
+    if (!includeMeetingCoordinator) {
+      return writerChecked.filter((p) => p.writer === true);
+    }
+
+    const nonWriters = writerChecked.filter((p) => p.writer !== true);
+    if (nonWriters.length === 0) {
+      return writerChecked.filter((p) => p.writer === true);
+    }
+
+    const coordinatorChecks: AccessCheckRequest[] = nonWriters.map((p) => ({ resource: 'project', id: p.uid, access: 'meeting_coordinator' }));
+    const coordinatorResults = await this.accessCheckService.checkAccess(req, coordinatorChecks);
+    return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(p.uid) === true);
   }
 }
