@@ -609,6 +609,7 @@ export class ProfileController {
           alias,
           email,
           forwardTo: forward?.target_email ?? null,
+          primaryEmail: emails.primary_email ?? null,
           ...(forwardAuthRequired
             ? {
                 forwardAuthRequired: true,
@@ -632,7 +633,7 @@ export class ProfileController {
       const state = purchased ? 'purchased_unclaimed' : 'not_purchased';
 
       logger.success(req, 'get_linux_alias', startTime, { state });
-      res.json(this.linuxAliasState(state, domain));
+      res.json(this.linuxAliasState(state, domain, emails.primary_email ?? null));
     } catch (error) {
       next(error);
     }
@@ -719,7 +720,11 @@ export class ProfileController {
       }
 
       logger.success(req, 'claim_linux_alias', startTime, { domain });
-      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo } satisfies LinuxAliasData);
+      // primaryEmail is null here: this handler doesn't read user_emails, and the client
+      // refetches via getLinuxAlias() after a successful claim rather than consuming this body.
+      res
+        .status(200)
+        .json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo, primaryEmail: null } satisfies LinuxAliasData);
     } catch (error) {
       next(error);
     }
@@ -2243,13 +2248,18 @@ export class ProfileController {
   }
 
   /** Build a LinuxAliasData for a non-claimed state (no alias/forward yet). */
-  private linuxAliasState(state: 'not_purchased' | 'purchased_unclaimed' | 'service_unavailable', domain: string): LinuxAliasData {
+  private linuxAliasState(
+    state: 'not_purchased' | 'purchased_unclaimed' | 'service_unavailable',
+    domain: string,
+    primaryEmail: string | null = null
+  ): LinuxAliasData {
     return {
       state,
       domain,
       alias: null,
       email: null,
       forwardTo: null,
+      primaryEmail,
       ...(state === 'not_purchased' ? { purchaseUrl: PURCHASE_LINUX_URL } : {}),
     };
   }
