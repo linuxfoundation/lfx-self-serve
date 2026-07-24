@@ -23,8 +23,9 @@ user's OIDC session and brokers each authenticated business request to the
 microservice mesh **with that user's identity and bearer token**. It also
 exposes a deliberately **public surface** — the data-bearing `/meetings/` join
 pages and `/public/api`, plus `/docs`, health, and a few non-data utility
-routes — whose endpoints have no user session and act with an M2M token
-instead. `auth.middleware.ts` is the authoritative inventory for routes that
+routes — reachable without a user session, where handlers use M2M credentials
+for the upstream calls that need them (optional-auth routes may still carry a
+user token). `auth.middleware.ts` is the authoritative inventory for routes that
 reach the auth middleware (the OIDC login/logout/callback routes mount earlier
 in `server.ts`), so verify a route's class there before calling a public route
 a regression. So the
@@ -107,9 +108,12 @@ the concrete mechanism in the code each time.
   `.claude/rules/development-rules.md`. Endpoints must act with the authenticated
   user's bearer token; an M2M token is the *application's* identity and erases
   user identity, per-user authorization, and the audit trail. M2M is legitimate
-  only on the public surface (no user session) or for an explicit privileged
-  upstream call from an already-authorized route, scoped to that one call, with
-  the user's token/context restored immediately after. Flag: an M2M token on a
+  when an upstream call genuinely needs application credentials and the user's
+  token/context is preserved and restored around it: on the public surface where
+  there is no session, or as a scoped sub-call from an authenticated route —
+  including an optional-auth handler that still carries a user token for its
+  user-specific work. What matters is what the upstream call is authorized to do
+  and that the user token is preserved, not the mere absence of a session. Flag: an M2M token on a
   new or existing `/api` route to do normal work, M2M used to skip a per-user
   authorization check, an M2M call whose scope is wider than the one upstream
   request that needs it, or a privileged call that never restores the user

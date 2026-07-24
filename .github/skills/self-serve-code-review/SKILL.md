@@ -104,10 +104,9 @@ Run these on the changed code, scaled to the size of the change:
   exists, breaks the UI-library-independence the repo deliberately keeps.
 - **SSR safety.** Browser-only APIs (`window`, `document`, `localStorage`,
   `navigator`, the observers) must sit behind a browser-only boundary — an
-  `isPlatformBrowser` guard, or an Angular render callback that does not run
-  during SSR (`afterNextRender` / `afterRender`, used in this repo's
-  `custom-preloading.strategy.ts` and `scroll-shadow.directive.ts`); either is
-  acceptable. Browser-only libraries must be lazy-imported inside that boundary
+  `isPlatformBrowser` guard, or an Angular render callback that does not execute
+  during SSR; either is acceptable. Browser-only libraries must be lazy-imported
+  inside that boundary
   — a static top-level import crashes the SSR bundle even when the call site is
   guarded. The failure only shows under `yarn build`, not `yarn start`. (Security
   consequences of SSR — secret leakage into the client — are the security skill's
