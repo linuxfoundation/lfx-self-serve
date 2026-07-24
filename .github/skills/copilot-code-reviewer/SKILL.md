@@ -147,9 +147,12 @@ costs the author attention; spend it only where it changes the outcome:
 - **Never duplicate the deterministic pipeline.** Prettier, ESLint, strict
   TypeScript type-check, the license-header check, and commitlint run on
   every push (the Playwright E2E suite runs on a schedule, not per push — do
-  not treat it as per-push coverage). Style, formatting, import order,
-  naming preferences, and anything a linter or the compiler would catch are not
-  findings.
+  not treat it as per-push coverage). Formatting, import order, naming
+  preferences, and anything a linter or the compiler already catches are not
+  findings. This is not a blanket pass on everything visual: the repo's
+  documented Tailwind and PrimeNG-wrapper conventions (e.g. `flex flex-col
+  gap-*` over `space-y-*`, no raw `<p-*>` in feature templates) are *not*
+  lint-enforced, and `/self-serve-code-review` still expects them held to.
 - **One comment per issue.** If the same defect repeats across lines or files,
   raise it once and note where else it applies.
 - **No generic advice.** A finding that could apply to any Angular or Express

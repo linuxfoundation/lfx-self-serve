@@ -21,7 +21,10 @@ description: >
 LFX One is the **authenticated front door** for every persona. It holds the
 user's OIDC session and brokers every business request to the microservice mesh
 **with that user's identity and bearer token**, and it exposes a deliberately
-**public surface** (the `/meetings/` join pages, `/public/api`, `/docs`). So the
+**public surface** — the data-bearing `/meetings/` join pages and `/public/api`,
+plus `/docs`, health, and a few non-data utility routes; `auth.middleware.ts`
+is the authoritative route inventory, so verify a route's class there before
+calling a public route a regression. So the
 failure modes that matter here are a cross-user or cross-persona **authorization
 bypass**, a **session or token leak**, **member PII exposure**, and anything that
 lets an **anonymous caller** reach more than the public surface intends. Those
@@ -147,14 +150,18 @@ the concrete mechanism in the code each time.
   in dev/debug (`error-serializer.ts`). Flag a new error path that returns a stack
   trace, an internal/upstream detail, a filesystem path, or an identity signal
   (e.g. "user exists") to an unauthenticated caller.
-- **URLs, redirects, and SSRF.** User-supplied URLs must pass
-  `validateAndSanitizeUrl` (the `returnTo` redirect, cookie-domain checks), and
-  server-side fetches of a user-controlled URL must go through `fetchSafeUrl`
-  (scheme allowlist, private-IP blocklist, post-DNS re-resolution against
-  rebinding, redirect cap). Flag a redirect or `href` built from untrusted input
-  without validation, a `fetch`/HTTP call to a user-controlled host that bypasses
-  `fetchSafeUrl`, a non-`http(s)` scheme reaching a sink, or a missing
-  `encodeURIComponent` on a value interpolated into a URL.
+- **URLs, redirects, and SSRF.** These guards are sink-specific — match the
+  finding to the right one. Server-side redirect targets (the `returnTo` URL,
+  cookie-domain checks) pass `validateAndSanitizeUrl`; server-side fetches of a
+  user-controlled URL go through `fetchSafeUrl` (scheme allowlist, private-IP
+  blocklist, post-DNS re-resolution against rebinding, redirect cap); a
+  user-supplied link normalized for client rendering uses the shared
+  `normalizeToUrl` (HTTP(S)-scheme validation, `packages/shared/src/utils/url.utils.ts`)
+  — do not demand the server redirect helper on Angular link handling. Flag a
+  server redirect built from untrusted input without `validateAndSanitizeUrl`, a
+  `fetch`/HTTP call to a user-controlled host that bypasses `fetchSafeUrl`, a
+  non-`http(s)` scheme reaching a sink, or a missing `encodeURIComponent` on a
+  value interpolated into a URL.
 - **Client-side XSS.** Angular's default sanitizer strips `<script>` from
   `[innerHTML]`, so the real risk is `DomSanitizer.bypassSecurityTrustHtml`
   (or `bypassSecurityTrustResourceUrl`) applied to user- or project-supplied
