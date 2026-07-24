@@ -876,6 +876,12 @@ function isViewerOrganizer(organizer: MeetingUserInfo, viewerUsername?: string |
  * access check ("can I manage this") that includes inherited grants, so staff would match meetings
  * they never created — contradicting the "Organized by you" chip on the same card.
  *
+ * Callers without a `hosts` list (e.g. the My Meetings list filter, which filters ahead of any
+ * per-card registrants fetch) only ever match on `created_by`. A real Zoom co-host who isn't the
+ * creator therefore won't match here even though the chip on their own card would recognize them
+ * as "you" once that card's registrants drawer resolves hosts — an accepted gap, since matching
+ * it at list-filter time would mean fetching registrants for every meeting up front.
+ *
  * @param meeting - Any object carrying an optional `created_by` (Meeting / PastMeeting).
  * @param viewerUsername - The current user's username/LFID (prefix-tolerant, case-insensitive).
  * @param hosts - Optional host candidates, when the surface has them (see collectMeetingOrganizers).

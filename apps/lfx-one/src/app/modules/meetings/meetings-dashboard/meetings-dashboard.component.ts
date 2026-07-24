@@ -686,6 +686,15 @@ export class MeetingsDashboardComponent {
     if (organizerOnly) {
       // Matches the card's "Organized by you" chip (created_by-derived), NOT meeting.organizer —
       // that FGA flag includes inherited grants, so it would surface meetings the user never created.
+      //
+      // Deliberately called without a `hosts` list, so this only ever matches on created_by — the
+      // same basis the chip uses before a card's registrants drawer has been opened. Once opened,
+      // collectMeetingOrganizers folds real Zoom co-hosts into the chip's organizer set too (see its
+      // JSDoc), so a co-host who isn't the creator can see "Organized by you" on their own card yet
+      // not match this filter. Accepted: host data only exists via the per-card registrants fetch
+      // (MeetingRegistrantsDisplayComponent → resolvedHostsChange), so matching it here would mean
+      // fetching registrants for every meeting in the list up front — real new API cost this
+      // client-side filter (LFXV2-2824) doesn't take on.
       filtered = filtered.filter((m) => isMeetingOrganizedByViewer(m, viewerUsername));
     }
 
