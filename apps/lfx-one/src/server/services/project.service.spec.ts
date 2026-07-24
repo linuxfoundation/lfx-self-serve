@@ -114,7 +114,7 @@ describe('ProjectService — create picker methods', () => {
       addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
-      checkAccess.mockResolvedValueOnce(new Map([['b', true]]));
+      checkAccess.mockResolvedValueOnce(new Map([['b#meeting_coordinator', true]]));
 
       const result = await service.getDirectGrantProjects(req, true);
 
