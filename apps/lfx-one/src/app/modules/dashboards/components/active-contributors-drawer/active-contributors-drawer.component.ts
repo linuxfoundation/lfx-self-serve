@@ -178,14 +178,8 @@ export class ActiveContributorsDrawerComponent {
     })
   );
 
-  // Headline uses the canonical 12-month daily average supplied by the parent
-  // (UniqueContributorsDailyResponse.avgContributors) rather than a recomputed
-  // unweighted mean of per-month averages, so the summary matches the value
-  // shown elsewhere and the daily-data request is not fetched and discarded.
-  protected readonly metricValue: Signal<string> = computed(() => {
-    const avg = this.data().avgContributors;
-    return avg > 0 ? Math.round(avg).toLocaleString('en-US') : '';
-  });
+  // Headline reuses the parent's canonical 12-month daily average instead of recomputing it.
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
   protected readonly hasData: Signal<boolean> = computed(() => this.data().avgContributors > 0);
 
   private readonly drawerData = this.initDrawerData();
@@ -212,6 +206,13 @@ export class ActiveContributorsDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    return computed(() => {
+      const avg = this.data().avgContributors;
+      return avg > 0 ? Math.round(avg).toLocaleString('en-US') : '';
+    });
+  }
+
   private initDrawerData(): Signal<{
     monthly: FoundationActiveContributorsMonthlyResponse;
     distribution: FoundationContributorsDistributionResponse;

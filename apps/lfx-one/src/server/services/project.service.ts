@@ -1394,11 +1394,8 @@ export class ProjectService {
       return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
     });
 
-    // MoM is only meaningful when the two most recent rows are ADJACENT calendar
-    // months and the newest row is current (or one month stale, tolerating a
-    // monthly materialization lag). Otherwise a missing month would silently
-    // compare non-adjacent months and label it "vs last month". Mirrors the
-    // adjacency+recency guard used for mention MoM above.
+    // MoM requires the two newest rows to be adjacent calendar months and the newest
+    // to be current (or one stale); otherwise a missing month would mislabel the delta.
     let latest = 0;
     let momDeltaPercent: number | null = null;
     let momDirection: 'up' | 'down' | 'flat' = 'flat';

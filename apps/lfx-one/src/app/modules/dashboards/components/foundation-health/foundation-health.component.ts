@@ -111,10 +111,7 @@ export class FoundationHealthComponent {
     this.healthScoresLoading() ? DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION : this.healthScoresData()
   );
 
-  // activeContributorsData (the daily average feeding the drawer headline) retains
-  // the prior foundation's avgContributors during a switch; surface the zeroed
-  // default while loading so the drawer headline never flashes the previous
-  // foundation's average against the newly loaded chart.
+  // Surface a zeroed default while loading so the drawer headline never shows the prior foundation's average.
   protected readonly reconciledActiveContributorsData = computed<UniqueContributorsDailyResponse>(() =>
     this.activeContributorsLoading() ? { data: [], avgContributors: 0, totalDays: 0 } : this.activeContributorsData()
   );
@@ -414,9 +411,7 @@ export class FoundationHealthComponent {
     const values = data.monthlyData;
     const labels = data.monthlyLabels;
 
-    // MoM (delta + direction) is validated server-side for adjacent, current
-    // months; render it directly instead of re-deriving from the last two
-    // array entries (which may be non-adjacent when a month is missing).
+    // MoM is server-validated for adjacent current months; render it directly.
     const trend: DashboardMetricCard['trend'] = data.momDirection === 'flat' ? 'neutral' : data.momDirection;
     let changePercentage: string | undefined;
     if (data.momDeltaPercent !== null) {
