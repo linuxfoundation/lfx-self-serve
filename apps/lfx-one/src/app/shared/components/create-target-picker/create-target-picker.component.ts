@@ -4,6 +4,7 @@
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { COMMITTEE_WRITE_ARTIFACT_TYPES } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerNode, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
 import { debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
@@ -34,6 +35,12 @@ export class CreateTargetPickerComponent {
   public readonly targetSelected = output<CreatePickerNode>();
 
   protected readonly searchControl = new FormControl<string>('');
+
+  /** Whether this artifact type allows a committee-scoped writer to create against it — drives the search placeholder copy. */
+  protected readonly supportsCommitteeTarget: Signal<boolean> = computed(() => COMMITTEE_WRITE_ARTIFACT_TYPES.includes(this.artifactType()));
+  protected readonly searchPlaceholder: Signal<string> = computed(() =>
+    this.supportsCommitteeTarget() ? 'Search projects and groups...' : 'Search projects...'
+  );
 
   protected readonly searchTerm = this.initSearchTerm();
   protected readonly isSearching: Signal<boolean> = computed(() => (this.searchTerm() ?? '').trim().length >= MIN_SEARCH_LENGTH);

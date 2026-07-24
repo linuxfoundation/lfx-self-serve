@@ -7,7 +7,7 @@
     <input
       [formControl]="searchControl"
       type="text"
-      placeholder="Search projects and groups..."
+      [placeholder]="searchPlaceholder()"
       class="pl-10 h-9 w-full text-sm rounded-lg border border-gray-200 focus:!ring-1 focus:!ring-blue-500 focus:!outline-none"
       data-testid="create-target-search-input" />
   </div>
@@ -55,9 +55,17 @@
     @if (isEmpty()) {
       <div class="text-center py-8 text-gray-500 text-sm" data-testid="create-target-empty-state">
         @if (isSearching()) {
-          No projects or groups you can create in match "{{ searchTerm() }}".
+          @if (supportsCommitteeTarget()) {
+            No projects or groups you can create in match "{{ searchTerm() }}".
+          } @else {
+            No projects you can create in match "{{ searchTerm() }}".
+          }
         } @else {
-          Nothing here yet — try searching for a project or group.
+          @if (supportsCommitteeTarget()) {
+            Nothing here yet — try searching for a project or group.
+          } @else {
+            Nothing here yet — try searching for a project.
+          }
         }
       </div>
     }

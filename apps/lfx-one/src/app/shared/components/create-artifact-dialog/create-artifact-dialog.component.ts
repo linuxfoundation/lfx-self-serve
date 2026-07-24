@@ -5,7 +5,7 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CreateTargetPickerComponent } from '@components/create-target-picker/create-target-picker.component';
-import { CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
+import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
 import { CreatableArtifactConfig, CreatableArtifactType, CreatePickerNode, ProjectContext } from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -37,6 +37,12 @@ export class CreateArtifactDialogComponent {
 
   // Header + primary CTA copy, e.g. "Create Meeting".
   protected readonly createLabel = `Create ${this.artifact.label}`;
+
+  // Only meeting/survey/vote allow a committee-scoped writer to create against them — the picker
+  // label shouldn't promise "Group" as an option for types that can't actually target one.
+  protected readonly targetLabel = COMMITTEE_WRITE_ARTIFACT_TYPES.includes(this.artifact.type)
+    ? 'Select Foundation/Project/Group'
+    : 'Select Foundation/Project';
 
   protected readonly selectedTarget: WritableSignal<CreatePickerNode | null> = signal<CreatePickerNode | null>(null);
   protected readonly canContinue: Signal<boolean> = computed(() => this.selectedTarget() !== null);
