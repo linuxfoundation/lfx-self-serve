@@ -11,7 +11,11 @@ import {
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
   NewsletterSendResult,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -42,6 +46,18 @@ export class NewsletterService {
 
   public getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
     return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid);
+  }
+
+  public getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.newsletterClient.getTemplates(req, projectUid);
+  }
+
+  public renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.newsletterClient.renderPreview(req, projectUid, payload);
+  }
+
+  public getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.newsletterClient.getTemplateManifest(req, projectUid, templateKey);
   }
 
   public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {

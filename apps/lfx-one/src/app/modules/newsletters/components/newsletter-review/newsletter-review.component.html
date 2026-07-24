@@ -109,6 +109,12 @@
                 {{ subjectDisplay() }}
               </div>
             </div>
+            @if (templateLabel(); as tmpl) {
+              <div>
+                <div class="text-xs uppercase tracking-wide text-gray-500">Template</div>
+                <div class="text-sm font-medium text-gray-900 mt-1" data-testid="newsletter-review-content-template">{{ tmpl }}</div>
+              </div>
+            }
             @if (hasBody()) {
               <div>
                 <div class="text-xs uppercase tracking-wide text-gray-500">Preview</div>
@@ -139,6 +145,7 @@
           severity="secondary"
           [text]="true"
           size="small"
+          [disabled]="!canPreview()"
           (onClick)="preview.emit()"
           data-testid="newsletter-review-preview-btn">
         </lfx-button>

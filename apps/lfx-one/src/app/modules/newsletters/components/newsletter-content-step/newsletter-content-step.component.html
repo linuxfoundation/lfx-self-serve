@@ -2,9 +2,43 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="newsletter-content-step">
-  <div>
-    <h2 class="text-base font-semibold text-gray-900">Write your newsletter</h2>
-    <p class="text-sm text-gray-500 mt-1">Write a subject line and body. You can also generate a draft with AI and edit it before sending.</p>
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div>
+      <h2 class="text-base font-semibold text-gray-900">Write your newsletter</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        Add a subject line, then build the body — with content blocks, or as a simple written body you can generate with AI.
+      </p>
+    </div>
+
+    <!-- Editor toggle: block composer vs. the simple rich-text + AI editor. -->
+    <div
+      class="flex shrink-0 overflow-hidden rounded-md border border-gray-200"
+      role="group"
+      aria-label="Body editor"
+      data-testid="newsletter-content-editor-toggle">
+      <button
+        type="button"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
+        [class.bg-blue-50]="editorMode() === 'blocks'"
+        [class.text-blue-600]="editorMode() === 'blocks'"
+        [attr.aria-pressed]="editorMode() === 'blocks'"
+        data-testid="newsletter-content-editor-blocks"
+        (click)="setMode('blocks')">
+        <i class="fa-light fa-cube" aria-hidden="true"></i>
+        Blocks
+      </button>
+      <button
+        type="button"
+        class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
+        [class.bg-blue-50]="editorMode() === 'simple'"
+        [class.text-blue-600]="editorMode() === 'simple'"
+        [attr.aria-pressed]="editorMode() === 'simple'"
+        data-testid="newsletter-content-editor-simple"
+        (click)="setMode('simple')">
+        <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+        Simple
+      </button>
+    </div>
   </div>
 
   <div class="flex flex-col gap-2">
@@ -19,40 +53,53 @@
     </lfx-input-text>
   </div>
 
-  <div class="flex flex-col gap-2 flex-1">
-    <div class="flex items-center justify-between gap-3">
-      <label class="text-sm font-medium text-gray-700">Body</label>
-      <div class="flex items-center gap-4">
-        <button
-          type="button"
-          (click)="openGenerateDrawer()"
-          [disabled]="!hasContext()"
-          class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
-          data-testid="newsletter-content-generate-link">
-          <i class="fa-light fa-sparkles"></i>
-          @if (bodyFilled()) {
-            Regenerate with AI
-          } @else {
-            Generate this with AI
-          }
-        </button>
-        @if (savedLabel(); as label) {
-          <span class="flex items-center gap-1 text-xs text-gray-400" data-testid="newsletter-content-saved-indicator">
-            <i class="fa-light fa-circle-check text-emerald-500"></i>
-            {{ label }}
-          </span>
-        }
-      </div>
+  @if (editorMode() === 'blocks') {
+    <div class="flex flex-1 flex-col gap-2">
+      <span id="newsletter-body-label" class="text-sm font-medium text-gray-700">Body</span>
+      <lfx-newsletter-block-composer
+        ngSkipHydration
+        aria-labelledby="newsletter-body-label"
+        [initialLayout]="initialLayout()"
+        (layoutChange)="onLayoutChange($event)"
+        data-testid="newsletter-content-composer">
+      </lfx-newsletter-block-composer>
     </div>
-    <lfx-rich-editor
-      [form]="form()"
-      control="bodyHtml"
-      placeholder="Share updates, recognize contributors, or announce what's next…"
-      [editorStyle]="{ minHeight: '480px' }"
-      dataTest="newsletter-content-body">
-    </lfx-rich-editor>
-    <p class="mt-1 text-xs text-gray-500">Paste directly from Google Docs or Word. Markdown isn't supported here.</p>
-  </div>
+  } @else {
+    <div class="flex flex-1 flex-col gap-2">
+      <div class="flex items-center justify-between gap-3">
+        <label class="text-sm font-medium text-gray-700">Body</label>
+        <div class="flex items-center gap-4">
+          <button
+            type="button"
+            (click)="openGenerateDrawer()"
+            [disabled]="!hasContext()"
+            class="flex items-center gap-1.5 text-xs font-medium text-blue-600 transition-colors hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-300"
+            data-testid="newsletter-content-generate-link">
+            <i class="fa-light fa-sparkles" aria-hidden="true"></i>
+            @if (bodyFilled()) {
+              Regenerate with AI
+            } @else {
+              Generate this with AI
+            }
+          </button>
+          @if (savedLabel(); as label) {
+            <span class="flex items-center gap-1 text-xs text-gray-400" data-testid="newsletter-content-saved-indicator">
+              <i class="fa-light fa-circle-check text-emerald-500" aria-hidden="true"></i>
+              {{ label }}
+            </span>
+          }
+        </div>
+      </div>
+      <lfx-rich-editor
+        [form]="form()"
+        control="bodyHtml"
+        placeholder="Share updates, recognize contributors, or announce what's next…"
+        [editorStyle]="{ minHeight: '480px' }"
+        dataTest="newsletter-content-body">
+      </lfx-rich-editor>
+      <p class="mt-1 text-xs text-gray-500">Paste directly from Google Docs or Word. Markdown isn't supported here.</p>
+    </div>
+  }
 </div>
 
 <lfx-newsletter-generate-drawer
