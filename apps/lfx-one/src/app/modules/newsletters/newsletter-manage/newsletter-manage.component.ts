@@ -200,6 +200,15 @@ export class NewsletterManageComponent {
   // initAudienceNormalization() deliberately skips pruning, so a stale/legacy
   // non-Newsletter audience could otherwise be sent before it's ever checked.
   public readonly audienceNormalized = computed(() => this.eligibleCommitteeUids() !== null);
+  // Send resolves recipients live from committee membership, so an inline add
+  // still in flight for the selected group must land before an (irreversible)
+  // send — otherwise that email is silently omitted from this newsletter. Step
+  // navigation stays non-blocking; only Send waits, and adds settle in seconds.
+  private readonly hasPendingAudienceAdds = computed(() => {
+    const committeeUid = this.committeeUidsValue()[0];
+    if (!committeeUid) return false;
+    return this.audienceEmailAdds().some((e) => e.committeeUid === committeeUid && e.status === 'pending');
+  });
   public readonly canSend = computed(
     () =>
       this.audienceFilled() &&
@@ -209,7 +218,8 @@ export class NewsletterManageComponent {
       this.hasContext() &&
       !this.submitting() &&
       !this.resolvingSend() &&
-      !this.savingDraft()
+      !this.savingDraft() &&
+      !this.hasPendingAudienceAdds()
   );
   public readonly canSendTest = computed(
     () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
