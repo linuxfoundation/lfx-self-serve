@@ -119,12 +119,17 @@ the concrete mechanism in the code each time.
   requirement — those are top-scale. A new, correctly filtered `/public/api`
   endpoint is deliberate public surface: scrutinize it with the per-fact
   data-exposure pass rather than flagging it for existing.
-- **Identity and impersonation.** User identity must come from the effective-
-  identity helpers (`getEffectiveEmail`, `getEffectiveUsername`, …), never from
-  `req.oidc.user.*` directly: impersonation lets an admin/ED act as another user,
-  and reading the raw OIDC identity bypasses that context and mis-attributes the
-  action. Flag a new identity read that skips the helpers, or any path that lets
-  the impersonation session be set or widened without the established check.
+- **Identity and impersonation.** Whenever the code means *the acting
+  subject*, identity must come from the effective-identity helpers
+  (`getEffectiveEmail`, `getEffectiveUsername`, …), not from
+  `req.oidc.user.*` directly: impersonation lets an admin/ED act as another
+  user, and reading the raw OIDC identity there bypasses that context and
+  mis-attributes the action. A deliberate read of the real session actor is
+  legitimate where the actor is the point — the impersonation machinery
+  recording who the impersonator is (`impersonation.service.ts`), or an audit
+  of the real caller. Flag a raw read used as the effective subject, or any
+  path that lets the impersonation session be set or widened without the
+  established check.
 - **Persona-based authorization is server-verified.** The persona cookie is
   unsigned and client-spoofable; it seeds the UI only. A real access decision
   (ED-only routes, writer/edit permission) must be verified server-side
@@ -158,8 +163,11 @@ the concrete mechanism in the code each time.
   untrusted URL. Prefer text interpolation or a sanitizing pipe.
 - **PII and logging.** Recipient/member emails and names are PII. The Pino logger
   redacts configured paths and `LoggerService` offers sanitization; flag a new
-  log line, error, or response that emits a raw email/name/token, or metadata
-  logged without sanitization. Logging non-PII identifiers and URLs is fine.
+  log line or error that emits a raw email/name/token, metadata logged without
+  sanitization, or a response that exposes PII to a caller not authorized for
+  that fact — the per-fact pass above decides that; an authorized caller
+  legitimately receiving a member's name, or their own profile, is not a leak.
+  Logging non-PII identifiers and URLs is fine.
 - **Secrets across the SSR boundary.** Server-only secrets and config (API keys,
   client secrets, M2M credentials) must never cross into the client bundle —
   through a provider, a `TransferState` payload, an Angular environment, or
@@ -181,7 +189,8 @@ Signal discipline keeps the reviewer trusted. Do not raise:
 - Outdated third-party dependencies (managed separately); a *new* dependency's
   risk belongs to the architecture lens.
 - Theoretical race or timing issues with no practical exploit.
-- Test-only files, Markdown, and docs.
+- Test-only files, Markdown, and docs — except a committed secret or
+  credential, which is a finding anywhere (see the secrets anchor above).
 - Log spoofing, regex-DoS, and missing audit logs.
 - SSRF that only controls a path; it counts when the attacker controls host or
   protocol.
