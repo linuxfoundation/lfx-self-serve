@@ -1032,8 +1032,8 @@ export class MeetingManageComponent {
         year: 'numeric',
       });
 
-      const projectSlug = project?.slug?.toUpperCase() || '';
-      const generatedTitle = `${projectSlug} ${meetingType} Meeting - ${formattedDate}`;
+      const projectName = project?.name || '';
+      const generatedTitle = `${projectName} ${meetingType} Meeting - ${formattedDate}`;
       form.get('title')?.setValue(generatedTitle);
     }
   }

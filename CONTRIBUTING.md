@@ -308,14 +308,58 @@ yarn e2e:headed      # visible browser
 
 ### Deploy Preview
 
-Contributors with write access to the repository have the option to add
-the **deploy-preview** label to their pull request. Adding this label will
-deploy the pull request to a hosted Kubernetes development cluster in an
-isolated namespace. A link to the hosted deployment will be added as a
-comment to the pull request.
+Contributors with write access to the repository can deploy a pull request
+to a live Kubernetes development cluster by adding the **deploy-preview**
+label. The preview runs on the shared dev environment backends using the
+`dev-cluster` Angular build configuration.
 
-When the pull request is closed or the **deploy-preview** label is
-removed, the deployment will be removed.
+**Prerequisites:**
+
+- Write access to the repository (fork PRs are excluded)
+- An open pull request
+
+**How it works:**
+
+1. Add the **deploy-preview** label to your open PR.
+2. The `Deploy Branch to Development` GitHub Actions workflow triggers,
+   builds a Docker image tagged `ui-pr-<PR number>`, and pushes it to the
+   container registry.
+3. ArgoCD picks up the new image and deploys it to the isolated namespace
+   `ui-pr-<PR number>` on the dev cluster.
+4. The bot posts (or updates) a comment on the PR with the deployment URL:
+   `https://ui-pr-<PR number>.dev.v2.cluster.linuxfound.info`
+
+Builds typically complete within 5–10 minutes. Re-pushing commits to the
+branch while the label is applied will re-trigger the build and update the
+existing deployment.
+
+**Cleanup:**
+
+Removing the **deploy-preview** label or closing the pull request triggers
+the cleanup job, which posts a removal notice on the PR. The ArgoCD
+ApplicationSet automatically removes the namespace and all associated
+resources.
+
+**Verification:**
+
+Once the bot comment appears, open the URL in a browser and log in with a
+dev-environment account. The Angular app should load without a blank screen.
+Navigate to your feature and confirm expected behavior. If the URL is
+unreachable, wait 2–3 minutes for ArgoCD to finish reconciling, then reload.
+
+**Troubleshooting:**
+
+- **No bot comment after 10 minutes** — check the Actions tab on GitHub for
+  workflow run failures. Confirm the label is applied and the PR is not from
+  a fork.
+- **Deployment not updating after a push** — verify the workflow triggered on
+  the new commit; re-applying the label will force a fresh run if needed.
+- **Authentication errors in the preview** — the preview shares the dev
+  cluster's Auth0 tenant; ensure your account has dev-environment access.
+
+For advanced scenarios (adding secrets, changing resource limits, pod-level
+debugging), see the full
+[Feature Branch Deployment Runbook](docs/runbooks/feature-branch-deployment.md).
 
 ## Questions?
 
