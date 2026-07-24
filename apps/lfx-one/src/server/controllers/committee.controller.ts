@@ -382,7 +382,7 @@ export class CommitteeController {
    */
   public async createCommitteeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const skipNotification = req.query['skip_notification'] === 'true';
+    const skipNotification = getStringQueryParam(req, 'skip_notification') === 'true';
     const startTime = logger.startOperation(req, 'create_committee_member', {
       committee_id: id,
       member_data: logger.sanitize(req.body),
