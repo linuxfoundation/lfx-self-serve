@@ -133,6 +133,63 @@ export interface MeetingCommittee {
   name?: string;
 }
 
+/**
+ * User info embedded in meeting responses (the meeting creator / organizer).
+ * @description Mirrors the upstream ITX `created_by` shape returned on the indexed
+ * `v1_meeting` projection. Used to display the meeting organizer's name.
+ */
+export interface MeetingUserInfo {
+  /** Display name of the user */
+  name: string;
+  /** LFID username of the user */
+  username: string;
+  /** Email address of the user */
+  email: string;
+  /** Profile picture URL */
+  profile_picture?: string;
+}
+
+/**
+ * A single organizer entry for the "Organized by" chip — a display name plus an optional
+ * `mailto:` link (absent when the organizer record has no email → rendered as plain text).
+ */
+export interface MeetingOrganizerLink {
+  /** Stable identity for `@for` tracking (username, else email, else name) — names can collide. */
+  key: string;
+  /** Display name (full name, falling back to username, then email). */
+  name: string;
+  /** True when this organizer is the current viewer (rendered as "you", never a mailto link). */
+  isYou: boolean;
+  /** Pre-filled `mailto:` URL, or null when the organizer has no email. */
+  mailto: string | null;
+}
+
+/**
+ * The resolved view model for a meeting's "Organized by" chip: the primary organizer, any
+ * overflow (for the "+N" popover), and the total count.
+ */
+export interface MeetingOrganizerChipModel {
+  /** Total number of organizers. */
+  count: number;
+  /** The primary (first) organizer shown inline. */
+  primary: MeetingOrganizerLink;
+  /** Additional organizers listed in the "+N" popover. */
+  overflow: MeetingOrganizerLink[];
+}
+
+/**
+ * Minimal host-candidate shape for the organizer host-fallback derivation.
+ * Satisfied structurally by both {@link MeetingRegistrant} and {@link PastMeetingParticipant}.
+ */
+export interface MeetingHostCandidate {
+  first_name?: string | null;
+  last_name?: string | null;
+  username?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  host?: boolean;
+}
+
 /** Indexed v1_meeting zoom_config; AI flags use ai_companion_enabled / ai_summary_require_approval vs top-level ai_summary_enabled / require_ai_summary_approval. */
 export interface MeetingZoomConfig {
   /** Zoom numeric meeting ID */
@@ -155,6 +212,14 @@ export interface Meeting {
   modified_at: string;
   /** Write access permission for current user (response only) */
   organizer?: boolean;
+  /**
+   * The meeting creator, used to display the organizer's name (response only).
+   * Present on the indexed `v1_meeting` list projection; the ITX detail payload and
+   * webhook-created past meetings omit it, so the BFF enriches those paths by joining
+   * back to the live `v1_meeting` record. Absent when the creator is a service account
+   * (e.g. `zoom.webhooks`) or the series meeting no longer exists.
+   */
+  created_by?: MeetingUserInfo;
 
   // Required API fields
   /** UUID of the LF project */
@@ -207,6 +272,8 @@ export interface Meeting {
 
   /** 6-digit Zoom host key */
   host_key?: string;
+  /** Whether the current user may view host_key (organizer OR project writer OR committee writer). Response-only. */
+  can_view_host_key?: boolean;
   /** Zoom meeting passcode */
   passcode?: string;
 

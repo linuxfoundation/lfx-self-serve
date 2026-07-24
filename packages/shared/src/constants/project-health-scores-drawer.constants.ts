@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
-import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthStatusFilterOption } from '../interfaces';
+import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthStatusFilterOption, HealthStatusFilterValue } from '../interfaces';
 
 export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
 
@@ -15,10 +15,15 @@ export const DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION: FoundationHealthScore
   stable: 0,
   unsteady: 0,
   critical: 0,
+  unscored: 0,
 };
 
 // Ordered health buckets (low → high), matching the distribution chart's bar order.
 export const PROJECT_HEALTH_SCORE_CATEGORIES: readonly FoundationHealthScore[] = ['critical', 'unsteady', 'stable', 'healthy', 'excellent'];
+
+// Chart bar order including the additive "unscored" bucket (dbt's COALESCE(..., 'Unscored')
+// row) as a leading bar, so every table row -- scored or not -- maps to a chart bar.
+export const PROJECT_HEALTH_CHART_CATEGORIES: readonly HealthStatusFilterValue[] = ['unscored', ...PROJECT_HEALTH_SCORE_CATEGORIES];
 
 // Display label per health category (table badge + chart axis / tooltip title).
 export const PROJECT_HEALTH_CATEGORY_LABEL: Record<FoundationHealthScore, string> = {
@@ -59,13 +64,26 @@ export const PROJECT_HEALTH_UNSCORED_BADGE: { bg: string; text: string; label: s
   label: 'Unscored',
 };
 
-// Drawer table status-filter pills: the 5 scored categories plus an "Unscored" bucket
-// for projects whose per-project health score hasn't been emitted yet (null category).
+// Chart axis / tooltip label per bar, including the leading "Unscored" bar.
+export const PROJECT_HEALTH_CHART_CATEGORY_LABEL: Record<HealthStatusFilterValue, string> = {
+  ...PROJECT_HEALTH_CATEGORY_LABEL,
+  unscored: PROJECT_HEALTH_UNSCORED_BADGE.label,
+};
+
+// Chart bar fill color per bar, including a neutral gray for the leading "Unscored" bar
+// (matches the gray scale used by the Unscored badge/filter pill).
+export const PROJECT_HEALTH_CHART_CATEGORY_COLOR: Record<HealthStatusFilterValue, string> = {
+  ...PROJECT_HEALTH_CATEGORY_CHART_COLOR,
+  unscored: lfxColors.gray[400],
+};
+
+// Drawer table status-filter pills: the "Unscored" bucket (projects whose per-project
+// health score hasn't been emitted yet, null category) followed by the 5 scored categories.
 export const PROJECT_HEALTH_STATUS_FILTER_OPTIONS: readonly HealthStatusFilterOption[] = [
+  { value: 'unscored', ...PROJECT_HEALTH_UNSCORED_BADGE },
   ...PROJECT_HEALTH_SCORE_CATEGORIES.map((value) => ({
     value,
     label: PROJECT_HEALTH_CATEGORY_LABEL[value],
     ...PROJECT_HEALTH_CATEGORY_BADGE[value],
   })),
-  { value: 'unscored', ...PROJECT_HEALTH_UNSCORED_BADGE },
 ];

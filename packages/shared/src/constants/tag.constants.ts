@@ -61,6 +61,7 @@ export const COMMITTEE_CATEGORY_SEVERITY: Record<string, TagSeverity> = {
   'Technical Steering Committee': 'secondary',
   'Technical Oversight Committee/Technical Advisory Committee': 'secondary',
   'Technical Mailing List': 'secondary',
+  Newsletter: 'secondary',
   Maintainers: 'info',
   Committers: 'info',
 

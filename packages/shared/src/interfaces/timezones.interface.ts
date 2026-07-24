@@ -10,6 +10,6 @@ export interface TimezoneOption {
   label: string;
   /** IANA timezone identifier value */
   value: string;
-  /** UTC offset string representation */
+  /** Standard-time UTC offset string (e.g. "-08:00"). Not DST-aware — use getTimezoneUtcOffsetString() for display labels. */
   offset: string;
 }

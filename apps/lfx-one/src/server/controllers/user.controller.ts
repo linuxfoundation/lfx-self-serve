@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { stripHostKey } from '../helpers/meeting.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
@@ -165,6 +166,9 @@ export class UserController {
       // server-side FGA lookup). Auth middleware has already ensured the user is authenticated.
       const meetings = await this.userService.getUserMeetings(req, projectUid, foundationUid);
 
+      // List cards never surface the Zoom host key — strip it from every item unconditionally.
+      meetings.forEach((meeting) => stripHostKey(meeting));
+
       logger.success(req, 'get_user_meetings', startTime, {
         project_uid: projectUid,
         foundation_uid: foundationUid,
@@ -215,6 +219,9 @@ export class UserController {
       // Get user's past meetings from service
       const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, foundationUid);
 
+      // Past meetings never surface the Zoom host key.
+      pastMeetings.forEach((meeting) => stripHostKey(meeting));
+
       logger.success(req, 'get_user_past_meetings', startTime, {
         project_uid: projectUid,
         foundation_uid: foundationUid,
@@ -254,6 +261,9 @@ export class UserController {
       // No email extraction needed — the service uses req.bearerToken (via filter_grants=direct
       // server-side FGA lookup). Auth middleware has already ensured the user is authenticated.
       const pastMeetings = await this.userService.getUserLatestPastMeetings(req, projectUid, foundationUid);
+
+      // Past meetings never surface the Zoom host key.
+      pastMeetings.forEach((meeting) => stripHostKey(meeting));
 
       logger.success(req, 'get_user_latest_past_meetings', startTime, {
         count: pastMeetings.length,

@@ -170,6 +170,8 @@ export interface ProjectHealthDistribution {
   unsteady: number;
   /** Number of projects with critical status */
   critical: number;
+  /** Number of projects with no health score (dbt's Unscored bucket) */
+  unscored: number;
 }
 
 /**
@@ -275,8 +277,7 @@ export interface ProjectTableRow {
   maintainers: number;
   stars: number;
   lastUpdated: string | null;
-  // Latest health-score category from PROJECT_HEALTH_METRICS_DAILY; null when the
-  // project has no computed score yet (it comes from a separate Snowflake table).
+  // Newest health-score category from PROJECT_HEALTH_METRICS_LATEST; null when unscored.
   healthScoreCategory: FoundationHealthScore | null;
 }
 

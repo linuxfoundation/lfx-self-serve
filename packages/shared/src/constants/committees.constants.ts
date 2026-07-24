@@ -97,6 +97,12 @@ export const COMMITTEE_CATEGORY_CONFIGS: Record<string, CommitteeCategoryInfo> =
     examples: 'Project maintainers, release managers, core team',
     color: lfxColors.blue[500],
   },
+  Newsletter: {
+    icon: 'fa-light fa-newspaper',
+    description: 'Communication channel for newsletters and regular updates',
+    examples: 'Project newsletter, announcement digest, community updates',
+    color: lfxColors.violet[500],
+  },
   'Marketing Committee/Sub Committee': {
     icon: 'fa-light fa-chart-line-up',
     description: 'Drives marketing initiatives and community growth',
@@ -180,6 +186,7 @@ export const COMMITTEE_CATEGORIES = [
   { label: 'Government Advisory Council', value: 'Government Advisory Council' },
   { label: 'Legal Committee', value: 'Legal Committee' },
   { label: 'Maintainers', value: 'Maintainers' },
+  { label: 'Newsletter', value: 'Newsletter' },
   { label: 'Marketing Committee/Sub Committee', value: 'Marketing Committee/Sub Committee' },
   { label: 'Marketing Mailing List', value: 'Marketing Mailing List' },
   { label: 'Marketing Oversight Committee/Marketing Advisory Committee', value: 'Marketing Oversight Committee/Marketing Advisory Committee' },
@@ -192,6 +199,13 @@ export const COMMITTEE_CATEGORIES = [
   { label: 'Working Group', value: 'Working Group' },
   { label: 'Other', value: 'Other' },
 ];
+
+/**
+ * Committee category value used to identify newsletter-eligible groups
+ * @description Only committees tagged with this category should be selectable as a newsletter's audience
+ * @readonly
+ */
+export const NEWSLETTER_COMMITTEE_CATEGORY = 'Newsletter';
 
 /**
  * Filtered committee categories for specific UI contexts
@@ -305,6 +319,9 @@ const COMMITTEE_TYPE_COLORS = {
   // Technical roles
   Maintainers: 'bg-blue-100 text-blue-800',
   Committers: 'bg-blue-100 text-blue-800',
+
+  // Newsletters
+  Newsletter: 'bg-blue-100 text-blue-700',
 
   // Marketing and outreach
   'Marketing Oversight Committee/Marketing Advisory Committee': 'bg-violet-100 text-violet-700',
@@ -537,6 +554,7 @@ export const CATEGORY_BEHAVIORAL_CLASS: Record<string, GroupBehavioralClass> = {
   // ── special-interest-group (community / discussion / marketing outreach) ──
   'Special Interest Group': 'special-interest-group',
   'Technical Mailing List': 'special-interest-group',
+  Newsletter: 'special-interest-group',
   'Marketing Committee/Sub Committee': 'special-interest-group',
   'Marketing Mailing List': 'special-interest-group',
   'Marketing Oversight Committee/Marketing Advisory Committee': 'special-interest-group',

@@ -61,10 +61,10 @@
 
       <!-- Legend -->
       <div class="flex flex-wrap gap-3" data-testid="project-health-scores-drawer-legend">
-        @for (category of categories; track category) {
+        @for (category of chartCategories; track category) {
           <div class="flex items-center gap-1.5">
             <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="chartColor[category]"></span>
-            <span class="text-xs text-gray-600">{{ categoryLabel[category] }}</span>
+            <span class="text-xs text-gray-600">{{ chartCategoryLabel[category] }}</span>
           </div>
         }
       </div>
@@ -75,7 +75,7 @@
           <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
           <span class="sr-only">Loading health score distribution…</span>
         </div>
-      } @else if (hasData()) {
+      } @else if (hasChartData()) {
         <div class="h-[280px]" data-testid="project-health-scores-drawer-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
         </div>
@@ -147,7 +147,12 @@
                         class="flex-shrink-0 w-7 h-7 rounded-md bg-slate-100 text-slate-500 text-xs font-semibold flex items-center justify-center uppercase">
                         {{ project.projectName.charAt(0) || '·' }}
                       </span>
-                      <span class="font-medium text-slate-900">{{ project.projectName }}</span>
+                      <span class="flex flex-col">
+                        <span class="font-medium text-slate-900">{{ project.projectName }}</span>
+                        @if (project.lastUpdated) {
+                          <span class="text-xs text-slate-500">Updated {{ project.lastUpdated }}</span>
+                        }
+                      </span>
                     </div>
                   </td>
                   <td class="text-right py-3 px-4 text-slate-700">{{ project.maintainers | number }}</td>

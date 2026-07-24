@@ -171,6 +171,11 @@
                       } @else {
                         <p-skeleton width="14rem" height="1.5rem" borderRadius="9999px" animation="wave" data-testid="meeting-badge-datetime-skeleton" />
                       }
+                      <lfx-meeting-organizer
+                        [meeting]="meeting()"
+                        [hosts]="organizerChipHosts()"
+                        [pastMeeting]="isPastMeeting()"
+                        [startTime]="currentOccurrence()?.start_time || meeting().start_time"></lfx-meeting-organizer>
                     </div>
                   }
 
@@ -249,6 +254,42 @@
                         icon="fa-light fa-sparkles"
                         styleClass="!text-purple-500"
                         data-testid="meeting-badge-ai-summary"></lfx-tag>
+                    }
+
+                    <!-- Host Key Chip (upcoming; organizer / project writer / committee writer only). Click/Enter/Space toggles inline reveal. -->
+                    @if (hostKeyVisible()) {
+                      <div class="inline-flex items-center gap-1" data-testid="meeting-host-key">
+                        <!-- On reveal, aria-label is dropped so the tag's visible "Host Key: <value>" becomes the accessible name (AT users get the digits). aria-describedby keeps the help text in the a11y tree (pTooltip alone is visual-only). -->
+                        <button
+                          type="button"
+                          class="cursor-pointer hover:opacity-70 transition-opacity rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          (click)="toggleHostKey()"
+                          [attr.aria-pressed]="showHostKey()"
+                          [attr.aria-label]="showHostKey() ? null : 'Show host key'"
+                          aria-describedby="host-key-help"
+                          pTooltip="Enter this key in Zoom to claim host privileges."
+                          tooltipPosition="top"
+                          data-testid="host-key-toggle">
+                          <lfx-tag
+                            [value]="showHostKey() ? 'Host Key: ' + meeting().host_key : 'Host Key'"
+                            severity="secondary"
+                            icon="fa-light fa-key"
+                            styleClass="!text-blue-600 cursor-pointer"
+                            data-testid="meeting-badge-host-key"></lfx-tag>
+                        </button>
+                        <span id="host-key-help" class="sr-only">Enter this key in Zoom to claim host privileges.</span>
+                        @if (showHostKey()) {
+                          <lfx-button
+                            icon="fa-light fa-copy"
+                            [text]="true"
+                            size="small"
+                            severity="secondary"
+                            ariaLabel="Copy host key"
+                            tooltip="Copy host key"
+                            (onClick)="copyHostKey()"
+                            data-testid="host-key-copy"></lfx-button>
+                        }
+                      </div>
                     }
                   </div>
 
