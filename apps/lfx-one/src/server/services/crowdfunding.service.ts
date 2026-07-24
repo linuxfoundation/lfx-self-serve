@@ -25,9 +25,9 @@ import {
   BackendAnnouncement,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
-  BackendDonation,
   BackendGoalInput,
   BackendInitiative,
+  BackendMyTransactionListResponse,
   BackendSponsorshipTierInput,
   BackendSubscription,
   BackendTransactionList,
@@ -41,7 +41,7 @@ import {
   mapAnnouncementWire,
   mapToInitiativeBase,
   mapToInitiativeDetail,
-  mapCfDonationToMyDonation,
+  mapMyTransactionToMyDonation,
   mapSubscriptionToRecurringDonation,
   mapToTransaction,
   mapPaymentMethodWire,
@@ -278,14 +278,10 @@ export class CrowdfundingService {
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<{ data: BackendDonation[]; meta: { total: number; limit: number; offset: number } }>(
-      req,
-      'getMyDonations',
-      `/v1/me/donations?limit=${limit}&offset=${off}`
-    );
+    const raw = await cfFetch<BackendMyTransactionListResponse>(req, 'getMyDonations', `/v1/me/transactions?type=donations&limit=${limit}&offset=${off}`);
 
-    logger.success(req, 'cf_get_my_donations', startTime, { total: raw.meta.total });
-    return { data: raw.data.map(mapCfDonationToMyDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+    logger.success(req, 'cf_get_my_donations', startTime, { total: raw.total_count });
+    return { data: raw.data.map(mapMyTransactionToMyDonation), total: raw.total_count, pageSize: raw.limit, offset: raw.offset };
   }
 
   public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {

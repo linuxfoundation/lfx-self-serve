@@ -94,23 +94,25 @@ export interface BackendTransactionList {
   size: number;
 }
 
-/** Raw snake_case donation shape from GET /v1/me/donations on the upstream crowdfunding service. */
-export interface BackendDonation {
+/** Raw snake_case transaction shape from GET /v1/me/transactions on the upstream crowdfunding service. */
+export interface BackendMyTransaction {
   id: string;
-  initiative_id?: string;
-  initiative_name?: string;
-  category?: string;
+  type: 'donation' | 'reimbursement';
   amount_cents: number;
-  po_number?: string;
-  payment_method?: string;
-  status?: string;
-  created_on: string;
-  updated_on: string;
+  date: string;
+  category?: string;
+  recurring: boolean;
+  initiative_name?: string;
+  donor_name?: string;
+  donor_type?: 'organization' | 'individual';
+  donor_logo_url?: string;
 }
 
-export interface BackendDonationListResponse {
-  data: BackendDonation[];
-  meta: { total: number; limit: number; offset: number };
+export interface BackendMyTransactionListResponse {
+  data: BackendMyTransaction[];
+  total_count: number;
+  limit: number;
+  offset: number;
 }
 
 /** Raw snake_case subscription shape from GET /v1/me/subscriptions on the upstream crowdfunding service. */
