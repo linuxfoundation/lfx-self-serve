@@ -19,12 +19,15 @@ description: >
 # Self Serve Security Review
 
 LFX One is the **authenticated front door** for every persona. It holds the
-user's OIDC session and brokers every business request to the microservice mesh
-**with that user's identity and bearer token**, and it exposes a deliberately
-**public surface** — the data-bearing `/meetings/` join pages and `/public/api`,
-plus `/docs`, health, and a few non-data utility routes; `auth.middleware.ts`
-is the authoritative route inventory, so verify a route's class there before
-calling a public route a regression. So the
+user's OIDC session and brokers each authenticated business request to the
+microservice mesh **with that user's identity and bearer token**. It also
+exposes a deliberately **public surface** — the data-bearing `/meetings/` join
+pages and `/public/api`, plus `/docs`, health, and a few non-data utility
+routes — whose endpoints have no user session and act with an M2M token
+instead. `auth.middleware.ts` is the authoritative inventory for routes that
+reach the auth middleware (the OIDC login/logout/callback routes mount earlier
+in `server.ts`), so verify a route's class there before calling a public route
+a regression. So the
 failure modes that matter here are a cross-user or cross-persona **authorization
 bypass**, a **session or token leak**, **member PII exposure**, and anything that
 lets an **anonymous caller** reach more than the public surface intends. Those
@@ -167,8 +170,11 @@ the concrete mechanism in the code each time.
   `[innerHTML]`, so the real risk is `DomSanitizer.bypassSecurityTrustHtml`
   (or `bypassSecurityTrustResourceUrl`) applied to user- or project-supplied
   content, or such content flowing into a code path where a bypass already lives.
-  Flag those; flag `window.open`/`target="_blank"` without `rel="noopener"` on an
-  untrusted URL. Prefer text interpolation or a sanitizing pipe.
+  Flag those; flag `window.open` on an untrusted URL without `noopener` (it
+  needs the explicit feature), or an anchor that opts back in with
+  `rel="opener"` — but a plain `target="_blank"` link is implicitly `noopener`
+  in modern browsers, so a missing `rel` on an anchor is not itself a finding.
+  Prefer text interpolation or a sanitizing pipe.
 - **PII and logging.** Recipient/member emails and names are PII. The Pino logger
   redacts configured paths and `LoggerService` offers sanitization; flag a new
   log line or error that emits a raw email/name/token, metadata logged without

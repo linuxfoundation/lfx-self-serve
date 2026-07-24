@@ -30,7 +30,9 @@ and org admins. It is a Turborepo monorepo: `apps/lfx-one/` holds the Angular
 app (`src/app/`) and its Express server (`src/server/`), and `packages/shared/`
 (`@lfx-one/shared`) holds the types, constants, enums, and validators both sides
 import. Unlike the Go microservices (committee, project, meeting, mailing-list,
-newsletter, …), this repo owns no domain resource and no datastore.
+newsletter, …), this repo owns no domain resource and no domain datastore — it
+persists session and token state in Valkey (`session-store.service.ts`) but no
+business data.
 
 The Express server is a **thin BFF, not an orchestration engine**. It
 authenticates the user (Auth0 in production, Authelia locally, via
@@ -43,7 +45,9 @@ token. The main path is the generic
 service-owned REST paths like `/committees/...`); some flows instead use direct
 NATS request-reply (`nats.service.ts`) or Snowflake analytics
 (`snowflake.service.ts`). The durable boundary is **no domain ownership** — it
-owns no resource and no datastore — not an absence of all orchestration. On the
+owns no business resource and persists no domain data (its Valkey session store
+holds only auth/session state) — not an absence of all orchestration or
+infrastructure storage. On the
 HTTP proxy path it **mirrors upstream
 request/response shapes** rather than defining its own contracts, so a proxy
 call that drifts from the upstream Goa contract is a defect, not a local choice.
@@ -52,8 +56,9 @@ the public `/meetings/` pages, `/docs`, and a few deliberately public utility
 routes (`/invite/error`, `/auth-error`, `/sitemap.xml`, `/robots.txt`) are
 reachable without a session; everything under `/api` and the rest of the SSR
 surface require one. The route table in
-`server/middleware/auth.middleware.ts` is the authority — verify there, not
-against this summary. The app renders under SSR and then
+`server/middleware/auth.middleware.ts` is the authority for routes that reach
+it — the OIDC login/logout/callback routes mount earlier in `server.ts` — so
+verify there, not against this summary. The app renders under SSR and then
 hydrates, so browser-only code must be guarded and no server-only secret may
 cross into the client bundle. Place each change against this shape.
 

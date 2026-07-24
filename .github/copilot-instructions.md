@@ -24,9 +24,11 @@ user's bearer token, mirroring upstream request/response shapes rather than
 defining its own contracts. Authentication is selective — a small public surface
 (the `/meetings/` pages, `/public/api`, `/docs`, health, and a few utility
 routes like `/invite/error`, `/auth-error`, `/sitemap.xml`, `/robots.txt`) is
-reachable without a session; everything else requires one, with the route
-table in `apps/lfx-one/src/server/middleware/auth.middleware.ts` as the
-authority. The app renders under SSR and then
+reachable without a session; everything else that reaches the auth middleware
+requires one. The route table in
+`apps/lfx-one/src/server/middleware/auth.middleware.ts` is authoritative for
+those routes, while the OIDC login/logout/callback routes mount in `server.ts`
+ahead of it. The app renders under SSR and then
 hydrates, so browser-only code must be guarded and no server-only secret may
 cross into the client bundle.
 

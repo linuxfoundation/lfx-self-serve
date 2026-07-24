@@ -103,10 +103,13 @@ Run these on the changed code, scaled to the size of the change:
   in a feature template, or a hand-rolled type where the wrapped interface
   exists, breaks the UI-library-independence the repo deliberately keeps.
 - **SSR safety.** Browser-only APIs (`window`, `document`, `localStorage`,
-  `navigator`, the observers) must sit behind `isPlatformBrowser`, and
-  browser-only libraries must be lazy-imported inside that guard — a static
-  top-level import crashes the SSR bundle even when the call site is guarded. The
-  failure only shows under `yarn build`, not `yarn start`. (Security
+  `navigator`, the observers) must sit behind a browser-only boundary — an
+  `isPlatformBrowser` guard, or an Angular render callback that does not run
+  during SSR (`afterNextRender` / `afterRender`, used in this repo's
+  `custom-preloading.strategy.ts` and `scroll-shadow.directive.ts`); either is
+  acceptable. Browser-only libraries must be lazy-imported inside that boundary
+  — a static top-level import crashes the SSR bundle even when the call site is
+  guarded. The failure only shows under `yarn build`, not `yarn start`. (Security
   consequences of SSR — secret leakage into the client — are the security skill's
   job.)
 - **Critical constants.** A changed constant is a behavior change even when the
