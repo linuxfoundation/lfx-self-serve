@@ -63,7 +63,7 @@
           <div class="flex items-baseline gap-2">
             @if (momDelta(); as delta) {
               <span class="text-xl font-semibold text-gray-900" data-testid="active-contributors-drawer-mom-metric">
-                {{ delta.latest.toLocaleString('en-US') }}
+                {{ delta.latestLabel }}
               </span>
               @if (delta.deltaPercent !== null) {
                 <span
@@ -81,7 +81,7 @@
                   } @else {
                     <span class="sr-only">No change </span>
                   }
-                  {{ formatMomDelta(delta.deltaPercent) }}% vs last month
+                  {{ delta.deltaLabel }}% vs last month
                 </span>
               }
             }

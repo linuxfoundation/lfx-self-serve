@@ -125,6 +125,7 @@ import {
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
 import type { PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
+import type { MoMDirection } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
@@ -1398,7 +1399,7 @@ export class ProjectService {
     // to be current (or one stale); otherwise a missing month would mislabel the delta.
     let latest = 0;
     let momDeltaPercent: number | null = null;
-    let momDirection: 'up' | 'down' | 'flat' = 'flat';
+    let momDirection: MoMDirection = 'flat';
     if (rows.length > 0) {
       const newest = rows[rows.length - 1];
       latest = newest.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;

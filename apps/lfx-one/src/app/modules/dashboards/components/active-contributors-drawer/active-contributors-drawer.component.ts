@@ -200,11 +200,6 @@ export class ActiveContributorsDrawerComponent {
     this.visible.set(false);
   }
 
-  // Magnitude only — the up/down arrow already conveys direction
-  protected formatMomDelta(value: number): string {
-    return Math.abs(value).toFixed(1);
-  }
-
   // === Private Initializers ===
   private initMetricValue(): Signal<string> {
     return computed(() => {
@@ -298,7 +293,9 @@ export class ActiveContributorsDrawerComponent {
       // delta + direction are validated server-side for adjacent, current months.
       return {
         latest: mom.latest,
+        latestLabel: mom.latest.toLocaleString('en-US'),
         deltaPercent: mom.momDeltaPercent,
+        deltaLabel: mom.momDeltaPercent === null ? '' : Math.abs(mom.momDeltaPercent).toFixed(1),
         direction: mom.momDirection,
       };
     });

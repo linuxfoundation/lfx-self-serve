@@ -706,6 +706,9 @@ export interface FoundationActiveContributorsMonthlyDistinctRow {
   MONTHLY_ACTIVE_CONTRIBUTORS: number;
 }
 
+/** Month-over-month direction for the active-contributors metric. */
+export type MoMDirection = 'up' | 'down' | 'flat';
+
 /**
  * API response for foundation monthly-distinct active contributors.
  * `latest`, `momDeltaPercent`, and `momDirection` are computed server-side so
@@ -720,16 +723,20 @@ export interface FoundationActiveContributorsMonthlyDistinctResponse {
   latest: number;
   /** MoM delta percent; null when no valid adjacent prior month exists. */
   momDeltaPercent: number | null;
-  momDirection: 'up' | 'down' | 'flat';
+  momDirection: MoMDirection;
 }
 
 /**
- * Latest-month headline count + month-over-month delta for the monthly-distinct chart
+ * Latest-month headline count + month-over-month delta for the monthly-distinct chart.
+ * `latestLabel` / `deltaLabel` are pre-formatted display strings so the template
+ * reads plain props instead of re-running toLocaleString / toFixed each pass.
  */
 export interface ActiveContributorsMoMDelta {
   latest: number;
+  latestLabel: string;
   deltaPercent: number | null; // null when there is no prior month to compare
-  direction: 'up' | 'down' | 'flat';
+  deltaLabel: string; // '' when deltaPercent is null
+  direction: MoMDirection;
 }
 
 /**
