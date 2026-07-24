@@ -113,9 +113,12 @@ the concrete mechanism in the code each time.
   This mapping *is* the public-vs-protected boundary. Flag: a new route that
   lands on the catch-all with the wrong class, a route moved from `required` to
   `optional`/`public`, a pattern that is unanchored or ordered so a protected
-  path matches a more permissive rule first (fail-open), or any **new
-  unauthenticated route or `/public/api` endpoint** — that last is the top of the
-  scale.
+  path matches a more permissive rule first (fail-open), a **new
+  unauthenticated route outside the documented public surface**, or a
+  `/public/api` endpoint that fails the visibility-filter-before-pagination
+  requirement — those are top-scale. A new, correctly filtered `/public/api`
+  endpoint is deliberate public surface: scrutinize it with the per-fact
+  data-exposure pass rather than flagging it for existing.
 - **Identity and impersonation.** User identity must come from the effective-
   identity helpers (`getEffectiveEmail`, `getEffectiveUsername`, …), never from
   `req.oidc.user.*` directly: impersonation lets an admin/ED act as another user,
