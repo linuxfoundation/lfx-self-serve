@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, DestroyRef, inject, Injectable } from '@angular/core';
+import { afterNextRender, DestroyRef, inject, Injectable, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { environment } from '@environments/environment';
@@ -29,8 +29,11 @@ export class PlausibleService {
   private static readonly deferredPageviewPattern = /^\/meetings\/\d+(-\d{13})?$/;
 
   private scriptLoaded = false;
-  private analyticsReady = false;
+  private readonly analyticsReady = signal(false);
   private impersonating = false;
+
+  /** True once the Plausible script has executed. Owners of deferred pageviews (deferredPageviewPattern routes) must gate on this before calling trackPage() — calls made earlier are silently dropped. */
+  public readonly ready = this.analyticsReady.asReadonly();
 
   /**
    * Enable or disable analytics suppression for the current session.
@@ -57,7 +60,7 @@ export class PlausibleService {
 
   // Auto-prepends sanitized path/url/title — callers only supply context.
   public trackPage(context?: PlausiblePageviewContext): void {
-    if (typeof window === 'undefined' || this.impersonating || !this.analyticsReady || !window.plausible) {
+    if (typeof window === 'undefined' || this.impersonating || !this.analyticsReady() || !window.plausible) {
       return;
     }
 
@@ -98,7 +101,7 @@ export class PlausibleService {
    * @param properties Event properties
    */
   public trackEvent(eventName: string, properties?: Record<string, unknown>): void {
-    if (typeof window === 'undefined' || this.impersonating || !this.analyticsReady || !window.plausible) {
+    if (typeof window === 'undefined' || this.impersonating || !this.analyticsReady() || !window.plausible) {
       return;
     }
 
@@ -145,7 +148,7 @@ export class PlausibleService {
       // analyticsReady is gated on the real script loading — onload fires
       // only after the bundle has executed and replaced the queue stub.
       script.onload = () => {
-        this.analyticsReady = true;
+        this.analyticsReady.set(true);
         if (PlausibleService.deferredPageviewPattern.test(window.location.pathname)) {
           return;
         }
