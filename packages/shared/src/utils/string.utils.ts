@@ -66,6 +66,20 @@ export function toTitleCase(value: string): string {
 }
 
 /**
+ * Humanize a snake_case / kebab-case / camelCase field key into a readable
+ * Title Case label. Used by the newsletter block-composer when a field schema
+ * omits an explicit `label`.
+ * Example: `humanizeFieldKey('blog_link')` → `'Blog Link'`.
+ */
+export function humanizeFieldKey(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  return toTitleCase(spaced);
+}
+
+/**
  * Stable 0/1 parity for zebra-striping by row identity (not list position): positional
  * `index % 2` flips when a list filters and produces a `transition-colors` cross-fade on rows
  * the user didn't touch. Trade-off: adjacency isn't guaranteed alternating.
