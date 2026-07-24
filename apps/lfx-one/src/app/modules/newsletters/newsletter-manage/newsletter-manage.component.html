@@ -171,9 +171,12 @@
                     [committees]="committees()"
                     [committeesLoading]="committeesLoading()"
                     [committeesError]="committeesError()"
+                    [committeeUidsValue]="committeeUidsValue()"
                     [recipientCount]="recipientCount()"
                     [recipientCountLoading]="recipientCountLoading()"
-                    (retryCommittees)="retryCommittees()">
+                    [emailAdds]="audienceEmailAdds()"
+                    (retryCommittees)="retryCommittees()"
+                    (addEmail)="onAddAudienceEmail($event)">
                   </lfx-newsletter-audience-step>
                 </ng-template>
               </p-step-panel>

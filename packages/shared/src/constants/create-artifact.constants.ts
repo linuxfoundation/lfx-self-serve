@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreatableArtifactConfig } from '../interfaces/create-artifact.interface';
+import { CreatableArtifactConfig, CreatableArtifactType } from '../interfaces/create-artifact.interface';
 
 /**
  * Type-selection entries for the rail "Create" quick-link menu + dialog. Array
@@ -64,3 +64,20 @@ export const CREATABLE_ARTIFACTS: CreatableArtifactConfig[] = [
     group: 'organize',
   },
 ];
+
+/**
+ * Artifact types (singular `CreatableArtifactType` form) that a committee writer — not just a
+ * project writer — may create against, provided a `committee_uid` is carried into the flow. Must
+ * stay in sync with `COMMITTEE_WRITE_FEATURES` below, which mirrors the same set in the plural
+ * `data.writeFeature` route-config vocabulary already used by `meetings.routes.ts`,
+ * `surveys.routes.ts`, and `votes.routes.ts`.
+ */
+export const COMMITTEE_WRITE_ARTIFACT_TYPES: CreatableArtifactType[] = ['meeting', 'survey', 'vote'];
+
+/**
+ * Same set as `COMMITTEE_WRITE_ARTIFACT_TYPES`, spelled in the plural `writeFeature` vocabulary
+ * that route `data` blocks and `writerGuard` already use. Derived (every entry here is a regular
+ * "+s" plural of its `COMMITTEE_WRITE_ARTIFACT_TYPES` counterpart) rather than hand-maintained, so
+ * the guard and the create-picker backend can't drift apart on which types allow a committee target.
+ */
+export const COMMITTEE_WRITE_FEATURES: readonly string[] = COMMITTEE_WRITE_ARTIFACT_TYPES.map((type) => `${type}s`);

@@ -175,6 +175,8 @@
                 [chartOptions]="card.chartOptions"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
+                [trend]="card.trend"
+                [changePercentage]="card.changePercentage"
                 [loading]="card.loading"
                 [clickable]="!!card.drawerType"
                 (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
@@ -219,7 +221,7 @@
 <lfx-active-contributors-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ActiveContributors"
   (visibleChange)="handleDrawerClose()"
-  [data]="activeContributorsData()"></lfx-active-contributors-drawer>
+  [data]="reconciledActiveContributorsData()"></lfx-active-contributors-drawer>
 
 <lfx-maintainers-drawer
   [visible]="activeDrawer() === DashboardDrawerType.Maintainers"

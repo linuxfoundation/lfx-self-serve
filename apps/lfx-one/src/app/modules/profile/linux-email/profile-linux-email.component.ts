@@ -13,12 +13,12 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
-import { EmailManagementData, EnrichedIdentity, LinuxAliasData, LinuxEmailData, LinuxForwardOption } from '@lfx-one/shared/interfaces';
+import { EnrichedIdentity, LinuxAliasData, LinuxForwardOption } from '@lfx-one/shared/interfaces';
 import { linuxAliasValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
-import { BehaviorSubject, catchError, finalize, forkJoin, map, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-linux-email',
@@ -65,12 +65,12 @@ export class ProfileLinuxEmailComponent {
   private readonly savedForwardTo = signal<string>('');
 
   // Data signals
-  public data: Signal<LinuxEmailData> = this.initData();
+  public data: Signal<LinuxAliasData | null> = this.initData();
 
   // Derived view state
-  public state = computed(() => this.data().alias?.state ?? null);
-  public domain = computed(() => this.data().alias?.domain ?? '');
-  public email = computed(() => this.data().alias?.email ?? null);
+  public state = computed(() => this.data()?.state ?? null);
+  public domain = computed(() => this.data()?.domain ?? '');
+  public email = computed(() => this.data()?.email ?? null);
 
   // True only when the user has changed the forward-to selection from its saved value.
   public forwardDirty: Signal<boolean> = this.initForwardDirty();
@@ -81,14 +81,14 @@ export class ProfileLinuxEmailComponent {
   // GitHub) are excluded since you can't forward email to them, and the claimed
   // alias is excluded since you can't forward an address to itself.
   public forwardOptions = computed((): LinuxForwardOption[] => {
-    const { alias, emails } = this.data();
+    const alias = this.data();
     const identities = this.identities();
 
     const aliasEmail = alias?.email?.toLowerCase().trim();
     const seen = new Set<string>();
     const options: LinuxForwardOption[] = [];
 
-    const add = (address: string | undefined, isPrimary: boolean): void => {
+    const add = (address: string | null | undefined, isPrimary: boolean): void => {
       const value = address?.toLowerCase().trim();
       if (!value || value === aliasEmail || seen.has(value)) return;
       seen.add(value);
@@ -97,7 +97,7 @@ export class ProfileLinuxEmailComponent {
       options.push({ label: isPrimary ? `${address} (Primary)` : address!, value });
     };
 
-    add(emails?.primary_email, true);
+    add(alias?.primaryEmail, true);
     for (const identity of identities) {
       if (identity.type === 'email' && identity.displayState === 'verified') add(identity.value, false);
     }
@@ -121,17 +121,11 @@ export class ProfileLinuxEmailComponent {
     return this.forwardOptions().some((option) => option.value !== saved);
   });
 
-  // True only on a failed getUserEmails() fetch, not a genuine lack of a primary
-  // email — a successful /api/profile/emails response always has a non-empty
-  // primary_email (server-side fallback), so `emails === null` here only ever
-  // means the request errored (see initData's catchError).
-  public emailsLoadFailed = computed((): boolean => this.data().emails === null);
-
   // Public methods
 
   public purchase(): void {
     if (!isPlatformBrowser(this.platformId)) return;
-    const url = this.data().alias?.purchaseUrl;
+    const url = this.data()?.purchaseUrl;
     if (url) {
       window.open(url, '_blank', 'noopener');
     }
@@ -232,19 +226,21 @@ export class ProfileLinuxEmailComponent {
     });
   }
 
-  private initData(): Signal<LinuxEmailData> {
+  private initData(): Signal<LinuxAliasData | null> {
     return toSignal(
       this.refresh.pipe(
         switchMap(() => {
           this.loading.set(true);
-          return forkJoin({
-            alias: this.userService
-              .getLinuxAlias()
-              .pipe(catchError(() => of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null }))),
-            emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-          }).pipe(
-            tap(({ alias, emails }) => {
-              this.applyFormDefaults(alias, emails);
+          // Single server call: getLinuxAlias reads user_emails.read server-side and
+          // returns the primary email inline, so the tab no longer makes a second
+          // getUserEmails() round-trip for the same data. If it fails, the emails read
+          // failed too, so service_unavailable (whole-tab retry) is the right state.
+          return this.userService.getLinuxAlias().pipe(
+            catchError(() =>
+              of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null, primaryEmail: null })
+            ),
+            tap((alias) => {
+              this.applyFormDefaults(alias);
               this.maybeReauthForForward(alias);
               this.maybeShowForwardRecoveryToast(alias);
             }),
@@ -252,7 +248,7 @@ export class ProfileLinuxEmailComponent {
           );
         })
       ),
-      { initialValue: { alias: null, emails: null } }
+      { initialValue: null }
     );
   }
 
@@ -300,8 +296,8 @@ export class ProfileLinuxEmailComponent {
   }
 
   /** Default the forward selection to the current target (if any) or the primary email. */
-  private applyFormDefaults(alias: LinuxAliasData | null, emails: EmailManagementData | null): void {
-    const primary = (emails?.primary_email ?? '').toLowerCase().trim();
+  private applyFormDefaults(alias: LinuxAliasData | null): void {
+    const primary = (alias?.primaryEmail ?? '').toLowerCase().trim();
 
     if (alias?.state === 'claimed') {
       // Select only a real forward target. When it hasn't loaded (re-auth pending, or the

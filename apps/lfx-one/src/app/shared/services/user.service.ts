@@ -44,6 +44,12 @@ export class UserService {
   public impersonator: WritableSignal<Impersonator | null> = signal<Impersonator | null>(null);
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
+  /**
+   * The viewer's LFID as it appears on meeting `created_by` / host records — null when unresolved.
+   * Single source for viewer-identity comparisons (e.g. the "Organized by you" chip and the
+   * "Organized by me" meetings filter), so those surfaces can never resolve identity differently.
+   */
+  public readonly viewerUsername: Signal<string | null> = this.initViewerUsername();
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
@@ -368,6 +374,15 @@ export class UserService {
    */
   public getSalesforceId(): Observable<SalesforceIdResponse> {
     return this.http.get<SalesforceIdResponse>('/api/user/salesforce-id').pipe(take(1));
+  }
+
+  private initViewerUsername(): Signal<string | null> {
+    return computed(() => {
+      const user = this.user();
+      // The optional `username` alias is often absent; the namespaced LFID claim is the canonical
+      // identity (it matches meeting created_by/host usernames), so fall back to it.
+      return user?.username || user?.['https://sso.linuxfoundation.org/claims/username'] || null;
+    });
   }
 
   private initUserInitials(): Signal<string> {

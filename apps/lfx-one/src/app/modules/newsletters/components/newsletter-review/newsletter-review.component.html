@@ -37,7 +37,7 @@
           @if (committeesError(); as error) {
             <p class="text-sm text-red-600" role="alert" data-testid="newsletter-review-audience-error">{{ error }}</p>
           } @else if (audienceEmpty()) {
-            <p class="text-sm text-amber-600" data-testid="newsletter-review-audience-empty">No groups selected yet — add at least one to send.</p>
+            <p class="text-sm text-amber-600" data-testid="newsletter-review-audience-empty">No group selected yet — pick one to send.</p>
           } @else {
             <p class="text-sm text-gray-700" data-testid="newsletter-review-audience-summary">
               {{ groupsLabel() }}

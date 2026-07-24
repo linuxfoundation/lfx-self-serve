@@ -123,6 +123,15 @@ export interface CreateCommitteeMemberRequest {
 }
 
 /**
+ * Client-side options for creating a committee member. Not part of the upstream
+ * request body — the BFF translates these into request metadata.
+ */
+export interface CreateCommitteeMemberOptions {
+  /** When true, the BFF sends X-Skip-Notification upstream so the member gets no invite/notification email. */
+  skipNotification?: boolean;
+}
+
+/**
  * Raw form values from the member form dialog
  * @description Typed shape of the FormGroup.getRawValue() output in MemberFormComponent
  */

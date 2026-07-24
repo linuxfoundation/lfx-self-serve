@@ -129,9 +129,13 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches all committees based on query parameters
+   * Fetches all committees based on query parameters. `skipMailingListEnrichment` bypasses the
+   * batched `groupsio_mailing_list` lookup below for callers (e.g. the create picker's lazy
+   * children fan-out) that only need identity/project/writer fields and never render
+   * `has_mailing_list` — every such call otherwise paid for a query-service round trip whose
+   * result was immediately discarded.
    */
-  public async getCommittees(req: Request, query: Record<string, any> = {}): Promise<Committee[]> {
+  public async getCommittees(req: Request, query: Record<string, any> = {}, options: { skipMailingListEnrichment?: boolean } = {}): Promise<Committee[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
@@ -171,12 +175,15 @@ export class CommitteeService {
     // total_members is already indexed by the committee-service as part of
     // CommitteeBaseWithReadonlyAttributes — no separate per-committee count call needed.
     const committeeUids = committees.map((c) => c.uid).filter(Boolean);
-    const committeesWithMailingList = committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Set<string>();
+    const committeesWithMailingList =
+      options.skipMailingListEnrichment || committeeUids.length === 0 ? new Set<string>() : await this.getCommitteesWithMailingList(req, committeeUids);
 
     committees = committees.map((committee) => ({
       ...committee,
       total_members: committee.total_members ?? 0,
-      has_mailing_list: committeesWithMailingList.has(committee.uid),
+      // Omit rather than default to false when the lookup was skipped — false means a confirmed
+      // absence, and no lookup ran to confirm one.
+      ...(options.skipMailingListEnrichment ? {} : { has_mailing_list: committeesWithMailingList.has(committee.uid) }),
     }));
 
     // Add writer access field (used by the access filter below and consumed by the UI)
@@ -215,6 +222,81 @@ export class CommitteeService {
     const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
 
     return count;
+  }
+
+  /**
+   * Direct-FGA-grant committees for the create picker's default tree — NOT a full enumeration.
+   * Mirrors `ProjectService.getDirectGrantProjects`: `filter_grants=direct` narrows the
+   * query-service result set to the caller's own direct tuples before any access-check runs.
+   * Filtered to `writer === true` — this method exists for the create picker only, so the
+   * broader "public || writer || member" semantics `getCommittees` applies for its other
+   * (unscoped-listing) callers don't apply here.
+   */
+  public async getDirectGrantCommittees(req: Request): Promise<Committee[]> {
+    const resources = await fetchAllQueryResources<Committee>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee',
+        filter_grants: 'direct',
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    const committees = await this.accessCheckService.addAccessToResources(req, resources, 'committee');
+    return committees.filter((c) => c.writer === true);
+  }
+
+  /**
+   * Type-ahead committee search for the create picker, filtered to `writer === true` after a
+   * per-page batch access-check — inherited access is evaluated here (unlike
+   * `filter_grants=direct`), so a committee writer via inheritance is found through search even
+   * when the direct-grant tree under-shows them.
+   *
+   * Keeps paging through raw name matches until either `pageSize` permitted results have been
+   * collected or upstream pages run out, bounded by a small page cap. A single unchecked page
+   * would silently miss an inherited-writer match on page 2+ behind a run of visible-but-non-writable
+   * matches on page 1 — exactly the scenario this method exists to reach.
+   */
+  public async searchCreatableCommittees(req: Request, searchQuery: string, pageSize: number = 20): Promise<Committee[]> {
+    // Bounds the raw-match scan (5 pages × page_size) so a generic search term can't turn this
+    // into an unbounded crawl — still vastly better than the single-page cutoff this replaces.
+    const SEARCH_PAGE_LIMIT = 5;
+    const permitted: Committee[] = [];
+    let pageToken: string | undefined;
+    let pagesFetched = 0;
+
+    logger.debug(req, 'search_creatable_committees', 'Scanning name matches for creatable committees', { page_size: pageSize, page_limit: SEARCH_PAGE_LIMIT });
+
+    do {
+      const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'committee',
+          name: searchQuery,
+          page_size: pageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }
+      );
+      pagesFetched++;
+
+      const committees = await this.accessCheckService.addAccessToResources(
+        req,
+        resources.map((resource) => resource.data),
+        'committee'
+      );
+      permitted.push(...committees.filter((c) => c.writer === true));
+      pageToken = page_token;
+    } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    if (pageToken && pagesFetched >= SEARCH_PAGE_LIMIT) {
+      logger.warning(req, 'search_creatable_committees', 'Hit the search page cap with more pages remaining', {
+        pages_fetched: pagesFetched,
+        permitted_count: permitted.length,
+      });
+    }
+
+    return permitted.slice(0, pageSize);
   }
 
   /**
@@ -467,12 +549,29 @@ export class CommitteeService {
   /**
    * Creates a new committee member
    */
-  public async createCommitteeMember(req: Request, committeeId: string, data: CreateCommitteeMemberRequest): Promise<CommitteeMember> {
-    const newMember = await this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members`, 'POST', {}, data);
+  public async createCommitteeMember(
+    req: Request,
+    committeeId: string,
+    data: CreateCommitteeMemberRequest,
+    skipNotification: boolean = false
+  ): Promise<CommitteeMember> {
+    // The upstream committee-service takes the suppression intent as the
+    // X-Skip-Notification header (not a body attribute), defaulting to false.
+    const customHeaders = skipNotification ? { 'X-Skip-Notification': 'true' } : undefined;
+    const newMember = await this.microserviceProxy.proxyRequest<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members`,
+      'POST',
+      {},
+      data,
+      customHeaders
+    );
 
     logger.debug(req, 'create_committee_member', 'Committee member created successfully', {
       committee_uid: committeeId,
       member_uid: newMember.uid,
+      skip_notification: skipNotification,
     });
 
     return newMember;

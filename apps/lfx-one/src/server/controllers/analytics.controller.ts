@@ -739,6 +739,42 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/foundation-active-contributors-monthly-distinct
+   * Get monthly DISTINCT active contributors for a foundation (last 12 months)
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationActiveContributorsMonthlyDistinct(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_active_contributors_monthly_distinct');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_active_contributors_monthly_distinct',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_foundation_active_contributors_monthly_distinct',
+        });
+      }
+
+      const response = await this.projectService.getFoundationActiveContributorsMonthlyDistinct(foundationSlug);
+
+      logger.success(req, 'get_foundation_active_contributors_monthly_distinct', startTime, {
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/foundation-contributors-distribution
    * Get contributor distribution by percentile band for a foundation
    * Query params: foundationSlug (required)
