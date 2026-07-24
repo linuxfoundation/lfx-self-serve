@@ -38,6 +38,10 @@ export class CreatePickerService {
    * Top-level nodes for the picker's default tree: the user's direct-grant projects, plus any
    * direct-grant committees whose associated project is NOT itself in that project set (those
    * nest under their project client-side instead, once the client expands it).
+   *
+   * Also excludes any project/committee whose immediate parent is itself in the direct-grant set
+   * — that node already surfaces once its parent is expanded (`getChildren` re-checks it
+   * independently), so keeping it at the root too would render it twice.
    */
   public async getTree(req: Request, artifactType: CreatableArtifactType): Promise<CreatePickerResultSet> {
     const includeMeetingCoordinator = artifactType === 'meeting';
@@ -49,10 +53,12 @@ export class CreatePickerService {
     ]);
 
     const projectUids = new Set(directProjects.map((p) => p.uid));
-    const orphanCommittees = directCommittees.filter((c) => !projectUids.has(c.project_uid));
+    const committeeUids = new Set(directCommittees.map((c) => c.uid));
+    const rootProjects = directProjects.filter((p) => !projectUids.has(p.parent_uid));
+    const orphanCommittees = directCommittees.filter((c) => !projectUids.has(c.project_uid) && !(c.parent_uid && committeeUids.has(c.parent_uid)));
 
     return {
-      projects: directProjects.map((p) => this.toProjectNode(p)),
+      projects: rootProjects.map((p) => this.toProjectNode(p)),
       committees: await this.toCommitteeNodes(req, orphanCommittees),
     };
   }
@@ -85,7 +91,11 @@ export class CreatePickerService {
         projects: childProjects.map((p) => this.toProjectNode(p)),
         committees: await this.toCommitteeNodes(
           req,
-          projectCommittees.filter((c) => c.writer === true)
+          // tags=project_uid: returns every committee under the project, top-level AND nested —
+          // exclude nested ones (parent_uid set) so a sub-committee doesn't render both directly
+          // under the project and again once its actual parent committee is expanded. Mirrors the
+          // existing `!parent_uid` top-level filter in committee-basic-info.component.ts.
+          projectCommittees.filter((c) => c.writer === true && !c.parent_uid)
         ),
       };
     }

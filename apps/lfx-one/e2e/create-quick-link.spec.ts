@@ -31,21 +31,28 @@
  *       post-selection permission error is possible because the empty state renders before any
  *       row could be picked
  * - S8: typing a real search term switches the picker from the tree view to search results
+ * - S9: (separate describe block, own beforeEach — no shared skipWhenNoCreatePermission gate)
+ *       when the direct-grant tree is empty for the test account, a real search must still surface
+ *       a writable target — the exact inherited-writer/search-fallback path this rebuild exists
+ *       for. Self-skips (not the whole suite) if this account isn't currently in the
+ *       empty-tree/search-reachable bucket, since that shape isn't guaranteed by a single real
+ *       account — but when it is, this exercises the path directly rather than only asserting
+ *       picker shape.
  *
- * What this suite does NOT attempt: a deterministic "inherited-writer reachable only via search"
- * or "committee target selectable for meeting but not newsletter" scenario. Both require a
- * fixture user with a specific, known grant shape (direct grants on some resources but not
- * others) that this suite's single real `TEST_USERNAME`/`TEST_PASSWORD` account cannot
- * guarantee — consistent with this file's existing real-API, name-agnostic approach, it asserts
- * on picker *shape* (search works, empty state fails closed, tree vs. search toggle) rather than
- * a specific grant fixture it doesn't control.
+ * What this suite does NOT attempt: a deterministic "committee target selectable for meeting but
+ * not newsletter" scenario. That requires a fixture user with a specific, known grant shape
+ * (committee-only writer with no project grant) that this suite's single real
+ * `TEST_USERNAME`/`TEST_PASSWORD` account cannot guarantee — consistent with this file's existing
+ * real-API, name-agnostic approach, it asserts on picker *shape* (search works, empty state fails
+ * closed, tree vs. search toggle) rather than a specific grant fixture it doesn't control.
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD (see global-setup.ts)
  * - The test user must hold a direct grant on, or be search-reachable to, at least one project or
- *   committee for the suite to run past `beforeEach`; otherwise it skips (see
- *   `skipWhenNoCreatePermission`).
+ *   committee for S1-S8 to run past `beforeEach`; otherwise they skip (see
+ *   `skipWhenNoCreatePermission`). S9 lives in its own describe block with a lighter beforeEach
+ *   and self-skips independently — see its inline comment.
  *
  * Note: this suite stops at the dialog boundary. It does not assert the post-Continue
  * create page — that path is enforced by each route's writerGuard.
@@ -220,5 +227,41 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(pickerResults(page).locator('[data-testid^="create-target-search-result-"], [data-testid="create-target-empty-state"]').first()).toBeVisible({
       timeout: 10_000,
     });
+  });
+});
+
+test.describe('Create Quick-Link — search-fallback for an inherited-writer (LFXV2-2838)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+  });
+
+  // S9 — the direct-grant tree can legitimately under-show an inherited-writer user by design;
+  // search must still surface their target. Deliberately outside the shared beforeEach above (no
+  // skipWhenNoCreatePermission gate) since it specifically needs the case that gate excludes: an
+  // empty tree.
+  test('S9: an inherited-writer with an empty direct-grant tree still finds their target via search', async ({ page }) => {
+    await openDialogForType(page, 'meeting');
+
+    const firstNode = pickerResults(page).locator('[data-testid^="create-target-node-"]').first();
+    const treeEmptyState = page.getByTestId('create-target-empty-state');
+    await expect(firstNode.or(treeEmptyState)).toBeVisible({ timeout: 10_000 });
+
+    const treeIsEmpty = await treeEmptyState.isVisible().catch(() => false);
+    if (!treeIsEmpty) {
+      test.skip(true, 'Test user has a direct-grant tree row — this test only covers the empty-tree/search-only path.');
+    }
+
+    await page.getByTestId('create-target-search-input').fill('on');
+    const searchResult = pickerResults(page).locator('[data-testid^="create-target-search-result-"]').first();
+    const searchEmptyState = page.getByTestId('create-target-empty-state');
+    await expect(searchResult.or(searchEmptyState)).toBeVisible({ timeout: 10_000 });
+
+    if (!(await searchResult.isVisible().catch(() => false))) {
+      test.skip(true, 'Test user has no search-reachable target either — cannot exercise the search-fallback path with this account.');
+    }
+
+    await searchResult.click();
+    await expect(continueButton(page)).toBeEnabled();
   });
 });

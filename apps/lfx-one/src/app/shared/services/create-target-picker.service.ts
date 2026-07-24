@@ -29,15 +29,14 @@ export class CreateTargetPickerService {
     );
   }
 
-  /** Lazy fan-out for one tree node. */
+  /**
+   * Lazy fan-out for one tree node. Unlike `getTree()`/`search()`, errors are NOT swallowed here —
+   * the caller (the tree node itself) needs to tell a real failure (worth retrying on next expand)
+   * apart from a confirmed, genuinely empty result (a real leaf — must not retry indefinitely).
+   */
   public getChildren(parentType: 'project' | 'committee', parentUid: string, artifactType: CreatableArtifactType): Observable<CreatePickerResultSet> {
     const params = new HttpParams().set('parentType', parentType).set('parentUid', parentUid).set('artifactType', artifactType);
-    return this.http.get<CreatePickerResultSet>('/api/create-picker/tree/children', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load create-picker children:', error);
-        return of(EMPTY_CREATE_PICKER_RESULT);
-      })
-    );
+    return this.http.get<CreatePickerResultSet>('/api/create-picker/tree/children', { params });
   }
 
   /** Type-ahead search across both resource types. */

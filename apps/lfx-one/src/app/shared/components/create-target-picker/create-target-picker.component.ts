@@ -7,11 +7,12 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { COMMITTEE_WRITE_ARTIFACT_TYPES, EMPTY_CREATE_PICKER_RESULT } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerNode, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
-import { debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
+import { distinctUntilChanged, of, startWith, switchMap, tap, timer } from 'rxjs';
 
 import { CreateTargetTreeNodeComponent } from './create-target-tree-node.component';
 
 const MIN_SEARCH_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Create-flow target picker (LFXV2-2838): a lazy direct-grant tree by default, switching to
@@ -97,15 +98,24 @@ export class CreateTargetPickerComponent {
         startWith(''),
         distinctUntilChanged(),
         tap(() => this.searchLoadedSignal.set(false)),
-        debounceTime(300),
-        switchMap((term) => {
-          const trimmed = (term ?? '').trim();
-          if (trimmed.length < MIN_SEARCH_LENGTH) {
-            return of(EMPTY_CREATE_PICKER_RESULT);
-          }
-          // No catchError here — CreateTargetPickerService.search() already fails closed to EMPTY_CREATE_PICKER_RESULT.
-          return this.pickerService.search(trimmed, this.artifactType());
-        }),
+        // The debounce lives INSIDE switchMap's inner observable (not as its own operator before
+        // it) so a new keystroke cancels it immediately, whether the prior term is still waiting
+        // out its debounce window or already has a request in flight — otherwise a slow request
+        // for a stale term could resolve after the user has moved on to a new term but before the
+        // new term's own debounce fires, briefly showing/selecting results for a query that's no
+        // longer on screen.
+        switchMap((term) =>
+          timer(SEARCH_DEBOUNCE_MS).pipe(
+            switchMap(() => {
+              const trimmed = (term ?? '').trim();
+              if (trimmed.length < MIN_SEARCH_LENGTH) {
+                return of(EMPTY_CREATE_PICKER_RESULT);
+              }
+              // No catchError here — CreateTargetPickerService.search() already fails closed to EMPTY_CREATE_PICKER_RESULT.
+              return this.pickerService.search(trimmed, this.artifactType());
+            })
+          )
+        ),
         tap(() => this.searchLoadedSignal.set(true))
       ),
       { initialValue: EMPTY_CREATE_PICKER_RESULT }

@@ -43,12 +43,12 @@ import { CreatePickerService } from './create-picker.service';
 
 const req = {} as unknown as Request;
 
-function project(uid: string, isFoundation = false) {
-  return { uid, name: uid, slug: uid, isFoundationStub: isFoundation };
+function project(uid: string, isFoundation = false, parentUid = '') {
+  return { uid, name: uid, slug: uid, isFoundationStub: isFoundation, parent_uid: parentUid };
 }
 
-function committee(uid: string, projectUid: string) {
-  return { uid, name: uid, project_uid: projectUid, writer: true };
+function committee(uid: string, projectUid: string, parentUid?: string) {
+  return { uid, name: uid, project_uid: projectUid, parent_uid: parentUid, writer: true };
 }
 
 describe('CreatePickerService', () => {
@@ -121,6 +121,27 @@ describe('CreatePickerService', () => {
 
       expect(result.committees).toEqual([]);
     });
+
+    it('excludes a direct-grant child project from the root when its parent project is also directly granted', async () => {
+      getDirectGrantProjects.mockResolvedValueOnce([project('parent-proj'), project('child-proj', false, 'parent-proj')]);
+      getDirectGrantCommittees.mockResolvedValueOnce([]);
+
+      const result = await service.getTree(req, 'meeting');
+
+      expect(result.projects.map((p) => p.uid)).toEqual(['parent-proj']);
+    });
+
+    it('excludes a direct-grant sub-committee from the root when its parent committee is also directly granted', async () => {
+      getDirectGrantProjects.mockResolvedValueOnce([]);
+      getDirectGrantCommittees.mockResolvedValueOnce([
+        committee('parent-committee', 'unrelated-project'),
+        committee('sub-committee', 'unrelated-project', 'parent-committee'),
+      ]);
+
+      const result = await service.getTree(req, 'meeting');
+
+      expect(result.committees.map((c) => c.uid)).toEqual(['parent-committee']);
+    });
   });
 
   describe('getChildren', () => {
@@ -153,6 +174,15 @@ describe('CreatePickerService', () => {
       const result = await service.getChildren(req, 'project', 'parent-uid', 'meeting');
 
       expect(result.committees).toEqual([]);
+    });
+
+    it("excludes nested sub-committees from a project node's direct committee children", async () => {
+      getChildProjects.mockResolvedValueOnce([]);
+      getCommittees.mockResolvedValueOnce([committee('top-level', 'parent-uid'), committee('nested', 'parent-uid', 'top-level')]);
+
+      const result = await service.getChildren(req, 'project', 'parent-uid', 'meeting');
+
+      expect(result.committees.map((c) => c.uid)).toEqual(['top-level']);
     });
 
     it('returns nothing for a committee parent when the artifact type disallows committee targets', async () => {

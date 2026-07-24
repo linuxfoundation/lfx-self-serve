@@ -32,6 +32,9 @@ export class CreateTargetTreeNodeComponent {
   protected readonly expanded: WritableSignal<boolean> = signal(false);
   protected readonly loadingChildren: WritableSignal<boolean> = signal(false);
   protected readonly childrenLoaded: WritableSignal<boolean> = signal(false);
+  // Distinct from `children().length === 0`: a confirmed-empty leaf (successful load, zero
+  // children) must not retry on every re-expand the way a genuinely failed request should.
+  protected readonly loadFailed: WritableSignal<boolean> = signal(false);
   protected readonly children: WritableSignal<CreatePickerNode[]> = signal<CreatePickerNode[]>([]);
 
   // Tracks the in-flight getChildren() request so a retry (collapse + re-expand before the first
@@ -51,11 +54,9 @@ export class CreateTargetTreeNodeComponent {
       return;
     }
     this.expanded.set(true);
-    // Retry whenever the cached list is empty, not just on the first-ever expand:
-    // CreateTargetPickerService.getChildren() fails closed to an empty result on error, so a
-    // transient failure would otherwise look identical to a genuine "no sub-items" node and never
-    // get retried without closing and reopening the whole dialog.
-    if (!this.childrenLoaded() || this.children().length === 0) {
+    // Retry on a failed load, not on a confirmed-empty one — a real leaf (successfully loaded,
+    // zero children) must not refetch on every re-expand the way a transient failure should.
+    if (!this.childrenLoaded() || this.loadFailed()) {
       this.loadChildren();
     }
   }
@@ -70,15 +71,23 @@ export class CreateTargetTreeNodeComponent {
 
   private loadChildren(): void {
     this.loadingChildren.set(true);
+    this.loadFailed.set(false);
     this.childrenSubscription?.unsubscribe();
     const target = this.node();
     this.childrenSubscription = this.pickerService
       .getChildren(target.kind, target.uid, this.artifactType())
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((result) => {
-        this.children.set([...result.projects, ...result.committees]);
-        this.loadingChildren.set(false);
-        this.childrenLoaded.set(true);
+      .subscribe({
+        next: (result) => {
+          this.children.set([...result.projects, ...result.committees]);
+          this.loadingChildren.set(false);
+          this.childrenLoaded.set(true);
+        },
+        error: (error) => {
+          console.error('Failed to load create-picker children:', error);
+          this.loadingChildren.set(false);
+          this.loadFailed.set(true);
+        },
       });
   }
 }
