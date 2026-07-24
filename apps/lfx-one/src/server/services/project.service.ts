@@ -31,6 +31,8 @@ import {
   EventGrowthTopEvent,
   EventsSummaryResponse,
   FlywheelConversionResponse,
+  FoundationActiveContributorsMonthlyDistinctResponse,
+  FoundationActiveContributorsMonthlyDistinctRow,
   FoundationActiveContributorsMonthlyResponse,
   FoundationActiveContributorsMonthlyRow,
   FoundationCodeCommitsDailyRow,
@@ -108,6 +110,7 @@ import {
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
   RevenueImpactResponse,
+  SnowflakeQueryResult,
   SocialMediaMonthlyResponse,
   SocialMediaPlatformMonthly,
   SocialMediaPlatformMonthlyRow,
@@ -121,7 +124,7 @@ import {
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
-import type { AccessCheckRequest, PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
+import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
@@ -1419,6 +1422,94 @@ export class ProjectService {
     });
 
     return { monthlyData, monthlyLabels };
+  }
+
+  /**
+   * Get monthly DISTINCT active contributors for a foundation (last 12 months)
+   * Queries FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY (COUNT DISTINCT member_id per month)
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Monthly distinct contributor counts with short month labels
+   */
+  public async getFoundationActiveContributorsMonthlyDistinct(foundationSlug: string): Promise<FoundationActiveContributorsMonthlyDistinctResponse> {
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetching monthly distinct active contributors', {
+      foundation_slug: foundationSlug,
+    });
+
+    const query = `
+      SELECT
+        MONTH_START_DATE,
+        MONTHLY_ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
+        AND MONTH_START_DATE >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
+      ORDER BY MONTH_START_DATE ASC
+    `;
+
+    let result: SnowflakeQueryResult<FoundationActiveContributorsMonthlyDistinctRow>;
+    try {
+      result = await this.snowflakeService.execute<FoundationActiveContributorsMonthlyDistinctRow>(query, [foundationSlug], {
+        expectMissingObject: true,
+      });
+    } catch (error) {
+      // Pre-dbt deploy the monthly table is absent; degrade to the empty
+      // response the PR description promises instead of 5xx per dashboard load.
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Monthly distinct table not deployed yet; returning empty response', {
+        foundation_slug: foundationSlug,
+      });
+      return { monthlyData: [], monthlyLabels: [], latest: 0, momDeltaPercent: null, momDirection: 'flat' };
+    }
+
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetched monthly distinct active contributors', {
+      row_count: result.rows.length,
+    });
+
+    // Drop future-materialized rows so a row dated past the current month can't
+    // become the displayed headline or skew the MoM pair; mirrors the date-only
+    // UTC handling used elsewhere in this service.
+    const now = new Date();
+    const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
+    const rows = result.rows.filter((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.getUTCFullYear() * 12 + date.getUTCMonth() <= currentMonthOrdinal;
+    });
+
+    const monthlyData = rows.map((row) => row.MONTHLY_ACTIVE_CONTRIBUTORS);
+    const monthlyLabels = rows.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    });
+
+    // MoM requires the two newest rows to be adjacent calendar months and the newest
+    // to be current (or one stale); otherwise a missing month would mislabel the delta.
+    let latest = 0;
+    let momDeltaPercent: number | null = null;
+    let momDirection: MoMDirection = 'flat';
+    if (rows.length > 0) {
+      const newest = rows[rows.length - 1];
+      latest = newest.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
+      if (rows.length >= 2) {
+        const prior = rows[rows.length - 2];
+        const rowOrdinal = (value: string | Date): number => {
+          const date = new Date(value);
+          return date.getUTCFullYear() * 12 + date.getUTCMonth();
+        };
+        const newestOrdinal = rowOrdinal(newest.MONTH_START_DATE);
+        const priorOrdinal = rowOrdinal(prior.MONTH_START_DATE);
+        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= currentMonthOrdinal - 1 && newestOrdinal <= currentMonthOrdinal;
+        const previous = prior.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
+        if (validPair && previous > 0) {
+          momDeltaPercent = Number((((latest - previous) / previous) * 100).toFixed(1));
+          if (momDeltaPercent > 0) {
+            momDirection = 'up';
+          } else if (momDeltaPercent < 0) {
+            momDirection = 'down';
+          }
+        }
+      }
+    }
+
+    return { monthlyData, monthlyLabels, latest, momDeltaPercent, momDirection };
   }
 
   /**

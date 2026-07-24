@@ -15,6 +15,7 @@
       [tooltipDisabled]="!option.fullLabel || option.fullLabel === option.label"
       tooltipPosition="top"
       [attr.aria-label]="option.fullLabel || option.label"
+      [attr.aria-pressed]="selectedFilter() === option.id"
       [attr.data-testid]="'filter-pill-' + option.id">
       {{ option.label }}
     </button>
