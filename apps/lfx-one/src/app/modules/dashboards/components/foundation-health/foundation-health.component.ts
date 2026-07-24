@@ -37,10 +37,11 @@ import type {
   DashboardMetricCard,
   FoundationActiveContributorsMonthlyDistinctResponse,
   FoundationCompanyBusFactorResponse,
+  FoundationEventsQuarterlyResponse,
   FoundationHealthScoreDistributionResponse,
+  FoundationMaintainersMonthlyResponse,
   FoundationMaintainersResponse,
   FoundationValueConcentrationResponse,
-  HealthEventsMonthlyResponse,
   UniqueContributorsDailyResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -77,6 +78,7 @@ export class FoundationHealthComponent {
   private readonly softwareValueLoading = signal(true);
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
+  private readonly maintainersMonthlyLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
   private readonly activeContributorsMonthlyDistinctLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
@@ -94,10 +96,11 @@ export class FoundationHealthComponent {
   protected readonly softwareValueData = this.initializeSoftwareValueData();
   protected readonly companyBusFactorData = this.initializeCompanyBusFactorData();
   protected readonly maintainersData = this.initializeMaintainersData();
+  protected readonly maintainersMonthlyData = this.initializeMaintainersMonthlyData();
   protected readonly healthScoresData = this.initializeHealthScoresData();
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
   protected readonly activeContributorsMonthlyDistinctData = this.initializeActiveContributorsMonthlyDistinctData();
-  protected readonly eventsData = this.initializeEventsData();
+  protected readonly eventsQuarterlyData = this.initializeEventsQuarterlyData();
 
   // totalProjectsData retains the prior foundation's total until the next request
   // resolves; surface 0 while loading so the card and drawer never reconcile a
@@ -238,6 +241,26 @@ export class FoundationHealthComponent {
     return PRIMARY_FOUNDATION_HEALTH_METRICS.find((m) => m.title === title)!;
   }
 
+  // Latest-vs-prior-period delta for a series (oldest→newest). Returns neutral + undefined when no prior period or prior is 0.
+  private computePeriodChange(values: number[], periodLabel = 'vs last month'): { trend: DashboardMetricCard['trend']; changePercentage: string | undefined } {
+    const latest = values.length ? values[values.length - 1] : 0;
+    const prior = values.length > 1 ? values[values.length - 2] : null;
+
+    let trend: DashboardMetricCard['trend'] = 'neutral';
+    let changePercentage: string | undefined;
+    if (prior !== null && prior !== 0) {
+      const deltaPercent = ((latest - prior) / prior) * 100;
+      if (deltaPercent > 0) {
+        trend = 'up';
+      } else if (deltaPercent < 0) {
+        trend = 'down';
+      }
+      const sign = deltaPercent > 0 ? '+' : '';
+      changePercentage = `${sign}${deltaPercent.toFixed(1)}% ${periodLabel}`;
+    }
+    return { trend, changePercentage };
+  }
+
   private formatSoftwareValue(valueInMillions: number): string {
     if (valueInMillions >= 1000) {
       const billions = valueInMillions / 1000;
@@ -248,12 +271,15 @@ export class FoundationHealthComponent {
 
   private transformTotalProjects(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.totalProjectsData();
+    const { trend, changePercentage } = this.computePeriodChange(data.monthlyData);
 
     return {
       ...metric,
       loading: this.totalProjectsLoading(),
       value: data.totalProjects.toLocaleString(),
       subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} projects`,
+      trend,
+      changePercentage,
       chartData: {
         labels: data.monthlyLabels,
         datasets: [
@@ -289,12 +315,15 @@ export class FoundationHealthComponent {
 
   private transformTotalMembers(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.totalMembersData();
+    const { trend, changePercentage } = this.computePeriodChange(data.monthlyData);
 
     return {
       ...metric,
       loading: this.totalMembersLoading(),
       value: data.totalMembers.toLocaleString(),
       subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} members`,
+      trend,
+      changePercentage,
       chartData: {
         labels: data.monthlyLabels,
         datasets: [
@@ -473,12 +502,15 @@ export class FoundationHealthComponent {
     const asOfLabel = data.asOfDate
       ? new Date(`${data.asOfDate}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
       : null;
+    const { trend, changePercentage } = this.computePeriodChange(this.maintainersMonthlyData().monthlyData);
 
     return {
       ...metric,
-      loading: this.maintainersLoading(),
+      loading: this.maintainersLoading() || this.maintainersMonthlyLoading(),
       value: data.currentMaintainers.toLocaleString(),
       subtitle: asOfLabel ? `As of ${asOfLabel}` : 'Distinct active maintainers',
+      trend,
+      changePercentage,
       chartData: {
         labels: data.trendLabels,
         datasets: [
@@ -513,26 +545,21 @@ export class FoundationHealthComponent {
   }
 
   private transformEvents(metric: DashboardMetricCard): DashboardMetricCard {
-    const data = this.eventsData();
-
-    // Reverse the data to show oldest to newest for chart rendering
-    const chartData = [...data.data].reverse();
-    const eventCounts = chartData.map((row) => row.EVENT_COUNT);
-    const chartLabels = chartData.map((row) => {
-      const date = new Date(row.MONTH_START_DATE);
-      return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-    });
+    const data = this.eventsQuarterlyData();
+    const { trend, changePercentage } = this.computePeriodChange(data.quarterlyData, 'vs last quarter');
 
     return {
       ...metric,
       loading: this.eventsLoading(),
-      value: data.totalEvents.toLocaleString(),
-      subtitle: `Total events over ${data.totalMonths} months`,
+      value: data.quarterlyData.length ? data.quarterlyData[data.quarterlyData.length - 1].toLocaleString() : '0',
+      subtitle: 'Total events last quarter',
+      trend,
+      changePercentage,
       chartData: {
-        labels: chartLabels,
+        labels: data.quarterlyLabels,
         datasets: [
           {
-            data: eventCounts,
+            data: data.quarterlyData,
             backgroundColor: metric.chartColor || lfxColors.blue[500],
             borderColor: metric.chartColor || lfxColors.blue[500],
             borderWidth: 0,
@@ -708,6 +735,30 @@ export class FoundationHealthComponent {
     );
   }
 
+  private initializeMaintainersMonthlyData() {
+    const defaultValue: FoundationMaintainersMonthlyResponse = {
+      monthlyData: [],
+      monthlyLabels: [],
+    };
+
+    return toSignal(
+      this.selectedFoundationSlug$.pipe(
+        tap(() => this.maintainersMonthlyLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationMaintainersMonthly(foundationSlug).pipe(
+            tap(() => this.maintainersMonthlyLoading.set(false)),
+            catchError((error) => {
+              console.error('Failed to load foundation maintainers monthly data', error);
+              this.maintainersMonthlyLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
+  }
+
   private initializeHealthScoresData() {
     const defaultValue: FoundationHealthScoreDistributionResponse = {
       excellent: 0,
@@ -785,18 +836,17 @@ export class FoundationHealthComponent {
     );
   }
 
-  private initializeEventsData() {
-    const defaultValue: HealthEventsMonthlyResponse = {
-      data: [],
-      totalEvents: 0,
-      totalMonths: 0,
+  private initializeEventsQuarterlyData() {
+    const defaultValue: FoundationEventsQuarterlyResponse = {
+      quarterlyData: [],
+      quarterlyLabels: [],
     };
 
     return toSignal(
       this.selectedFoundationSlug$.pipe(
         tap(() => this.eventsLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getHealthEventsMonthly(foundationSlug, 'foundation').pipe(
+          this.analyticsService.getFoundationEventsQuarterly(foundationSlug).pipe(
             tap(() => this.eventsLoading.set(false)),
             catchError(() => {
               this.eventsLoading.set(false);
