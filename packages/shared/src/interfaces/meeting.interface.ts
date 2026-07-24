@@ -1267,3 +1267,24 @@ export interface MeetingTypeBadge {
  * Derived from the {@link PAST_MEETING_SORT} constant so the union stays in sync with it.
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
+
+/**
+ * Client-side filter criteria applied to the Me lens meeting lists (My Meetings), which are
+ * fetched once and filtered in the browser rather than re-queried per filter change.
+ */
+export interface MeLensMeetingFilters {
+  /** Case-insensitive substring matched against the meeting title. */
+  searchQuery: string;
+  /** Exact `meeting_type` match; null means all types. */
+  meetingType: string | null;
+  /** Foundation project UID — matches the foundation itself and its non-foundation children. */
+  foundation: string | null;
+  /** Project UID; takes precedence over `foundation` when both are set. */
+  project: string | null;
+  /** Keep only meetings with no RSVP recorded (upcoming only). */
+  pendingRsvpOnly: boolean;
+  /** Keep only meetings the viewer organized (created), matching the "Organized by you" chip. */
+  organizerOnly: boolean;
+  /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
+  viewerUsername: string | null;
+}
