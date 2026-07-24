@@ -35,12 +35,16 @@ newsletter, …), this repo owns no domain resource and no datastore.
 The Express server is a **thin BFF, not an orchestration engine**. It
 authenticates the user (Auth0 in production, Authelia locally, via
 `express-openid-connect`), holds the OIDC session, resolves persona and
-impersonation context server-side, and proxies business requests to the V2
-microservice mesh through the API gateway, attaching the user's bearer token —
-all via the generic `server/services/microservice-proxy.service.ts`, with
-callers passing `/query/resources` for cross-resource reads, `/itx/...` for
-certain writes, or service-owned REST paths (e.g. `/committees/...`) for
-both. It **mirrors upstream
+impersonation context server-side, and proxies most business requests to the
+V2 microservice mesh through the API gateway, attaching the user's bearer
+token. The main path is the generic
+`server/services/microservice-proxy.service.ts` (callers passing
+`/query/resources` for cross-resource reads, `/itx/...` for certain writes, or
+service-owned REST paths like `/committees/...`); some flows instead use direct
+NATS request-reply (`nats.service.ts`) or Snowflake analytics
+(`snowflake.service.ts`). The durable boundary is **no domain ownership** — it
+owns no resource and no datastore — not an absence of all orchestration. On the
+HTTP proxy path it **mirrors upstream
 request/response shapes** rather than defining its own contracts, so a proxy
 call that drifts from the upstream Goa contract is a defect, not a local choice.
 Authentication is **selective**: health (`/livez`, `/readyz`), `/public/api`,

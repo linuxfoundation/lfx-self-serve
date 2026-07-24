@@ -113,8 +113,10 @@ Run these on the changed code, scaled to the size of the change:
   intentional and what its blast radius is; an unexplained constant change is a
   finding.
 - **Protected files.** Changes to `server.ts`, the singleton services, build/format
-  config, or `CLAUDE.md` carry repo-owner weight; a casual edit to one is worth
-  flagging even when the change itself looks benign.
+  config, or `CLAUDE.md` carry repo-owner weight and warrant closer scrutiny —
+  raise one when its risk or intent is unclear, not merely because a sensitive
+  file was touched (a clean, well-understood edit to one is not itself a
+  finding).
 
 ## Judgment calls
 
