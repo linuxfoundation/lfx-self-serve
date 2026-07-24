@@ -181,7 +181,9 @@ export class CommitteeService {
     committees = committees.map((committee) => ({
       ...committee,
       total_members: committee.total_members ?? 0,
-      has_mailing_list: options.skipMailingListEnrichment ? false : committeesWithMailingList.has(committee.uid),
+      // Omit rather than default to false when the lookup was skipped — false means a confirmed
+      // absence, and no lookup ran to confirm one.
+      ...(options.skipMailingListEnrichment ? {} : { has_mailing_list: committeesWithMailingList.has(committee.uid) }),
     }));
 
     // Add writer access field (used by the access filter below and consumed by the UI)

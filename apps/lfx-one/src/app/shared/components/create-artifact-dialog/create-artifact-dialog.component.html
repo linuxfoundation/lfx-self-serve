@@ -14,18 +14,18 @@
   </div>
 
   <!-- Target picker: lazy direct-grant tree by default, type-ahead search on ≥2 chars (LFXV2-2838) -->
-  <div class="flex flex-col gap-1">
-    <label class="text-sm text-gray-900">
+  <fieldset class="flex flex-col gap-1 border-0 m-0 p-0">
+    <legend class="text-sm text-gray-900 p-0">
       {{ targetLabel }}
       <span class="text-red-500">*</span>
-    </label>
+    </legend>
     <lfx-create-target-picker
       [artifactType]="artifact.type"
       [selectedTarget]="selectedTarget()"
       (targetSelected)="onTargetSelected($event)"
       (selectionCleared)="onSelectionCleared()"
       data-testid="create-artifact-target-picker" />
-  </div>
+  </fieldset>
 
   <!-- Actions -->
   <div class="flex justify-end gap-3" data-testid="create-artifact-modal-actions">

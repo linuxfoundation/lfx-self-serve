@@ -45,7 +45,7 @@
       } @empty {
         @if (!loadingChildren()) {
           @if (loadFailed()) {
-            <p class="text-xs text-red-400 py-1" [style.padding-left.rem]="0.5 + (depth() + 1) * 1.25">Couldn't load — collapse and re-expand to retry</p>
+            <p class="text-xs text-red-600 py-1" [style.padding-left.rem]="0.5 + (depth() + 1) * 1.25">Couldn't load — collapse and re-expand to retry</p>
           } @else {
             <p class="text-xs text-gray-400 py-1" [style.padding-left.rem]="0.5 + (depth() + 1) * 1.25">No sub-items</p>
           }

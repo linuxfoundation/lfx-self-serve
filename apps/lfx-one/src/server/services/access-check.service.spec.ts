@@ -64,6 +64,25 @@ describe('AccessCheckService.checkAccess', () => {
     expect(result.get('y')).toBe(false);
   });
 
+  it('does not let a duplicated request tuple misalign a later distinct resource', async () => {
+    // 'a' is requested twice; upstream dedupes the repeated tuple server-side, returning only 2
+    // result lines for 3 requests. The old index-based implementation would misalign
+    // resources[1] (the duplicate 'a') against results[1] (actually resource 'b''s line),
+    // corrupting 'a' and losing 'b' entirely.
+    proxyRequest.mockResolvedValueOnce({
+      results: ['project:a#writer@user:alice\ttrue', 'project:b#writer@user:alice\tfalse'],
+    });
+
+    const result = await service.checkAccess(req, [
+      { resource: 'project', id: 'a', access: 'writer' },
+      { resource: 'project', id: 'a', access: 'writer' },
+      { resource: 'project', id: 'b', access: 'writer' },
+    ]);
+
+    expect(result.get('a')).toBe(true);
+    expect(result.get('b')).toBe(false);
+  });
+
   it('fails closed when the upstream response omits a tuple entirely', async () => {
     // Only one of two requested tuples came back — e.g. a partial/short response.
     proxyRequest.mockResolvedValueOnce({

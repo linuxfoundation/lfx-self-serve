@@ -8,9 +8,10 @@ import { CreatableArtifactType, CreatePickerResultSet } from '@lfx-one/shared/in
 import { catchError, Observable, of } from 'rxjs';
 
 /**
- * Thin HTTP wrapper around the create picker's three BFF endpoints (LFXV2-2838). Every call
- * fails closed to an empty result set rather than surfacing an error — a picker that can't load
- * should look empty, not broken, since the create dialog has no error-recovery UI of its own.
+ * Thin HTTP wrapper around the create picker's three BFF endpoints (LFXV2-2838). `getTree()` and
+ * `search()` fail closed to an empty result set rather than surfacing an error — a picker that
+ * can't load should look empty, not broken, since the create dialog has no error-recovery UI of
+ * its own. `getChildren()` is the exception — see its own doc comment.
  */
 @Injectable({
   providedIn: 'root',
