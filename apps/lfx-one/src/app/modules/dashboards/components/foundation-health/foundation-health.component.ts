@@ -439,7 +439,9 @@ export class FoundationHealthComponent {
             fill: true,
             tension: 0.4,
             borderWidth: 2,
-            pointRadius: 0,
+            // A single-point line dataset has no segment, so the sole point
+            // must be visible or the sparkline renders blank for new foundations.
+            pointRadius: values.length === 1 ? 3 : 0,
           },
         ],
       },

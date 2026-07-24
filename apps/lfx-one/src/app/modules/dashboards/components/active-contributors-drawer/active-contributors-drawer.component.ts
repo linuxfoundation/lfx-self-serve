@@ -178,17 +178,15 @@ export class ActiveContributorsDrawerComponent {
     })
   );
 
-  // Headline mirrors the chart's own monthly averages (mean of the per-month
-  // daily-unique averages) so summary and bars share one SQL source and reconcile.
+  // Headline uses the canonical 12-month daily average supplied by the parent
+  // (UniqueContributorsDailyResponse.avgContributors) rather than a recomputed
+  // unweighted mean of per-month averages, so the summary matches the value
+  // shown elsewhere and the daily-data request is not fetched and discarded.
   protected readonly metricValue: Signal<string> = computed(() => {
-    const values = this.monthlyTrendData().monthlyData;
-    if (values.length === 0) {
-      return '';
-    }
-    const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
-    return Math.round(avg).toLocaleString('en-US');
+    const avg = this.data().avgContributors;
+    return avg > 0 ? Math.round(avg).toLocaleString('en-US') : '';
   });
-  protected readonly hasData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
+  protected readonly hasData: Signal<boolean> = computed(() => this.data().avgContributors > 0);
 
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);
@@ -316,6 +314,10 @@ export class ActiveContributorsDrawerComponent {
             borderColor: lfxColors.blue[500],
             backgroundColor: hexToRgba(lfxColors.blue[400], 0.2),
             fill: true,
+            // A single-point line dataset has no segment, so the sole point
+            // must be visible or the chart renders blank for new foundations.
+            pointRadius: monthlyData.length === 1 ? 3 : 0,
+            pointHoverRadius: 4,
           },
         ],
       };
