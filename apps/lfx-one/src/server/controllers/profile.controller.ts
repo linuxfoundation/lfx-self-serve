@@ -567,6 +567,12 @@ export class ProfileController {
         return;
       }
 
+      // Match GET /api/profile/emails (see getEmails): fall back to the session OIDC
+      // email when auth-service omits a primary, so accounts in that gap keep their
+      // primary forward option and claim-form default instead of seeing "no verified email".
+      const sessionEmail = getEffectiveEmail(req) ?? undefined;
+      const primaryEmail = emails.primary_email || sessionEmail || null;
+
       const suffix = `@${domain}`;
       // Scan alternate emails first; also cover the edge case where the claimed alias is the
       // user's primary email, which would otherwise be missed and read as unclaimed.
@@ -609,7 +615,7 @@ export class ProfileController {
           alias,
           email,
           forwardTo: forward?.target_email ?? null,
-          primaryEmail: emails.primary_email ?? null,
+          primaryEmail,
           ...(forwardAuthRequired
             ? {
                 forwardAuthRequired: true,
@@ -633,7 +639,7 @@ export class ProfileController {
       const state = purchased ? 'purchased_unclaimed' : 'not_purchased';
 
       logger.success(req, 'get_linux_alias', startTime, { state });
-      res.json(this.linuxAliasState(state, domain, emails.primary_email ?? null));
+      res.json(this.linuxAliasState(state, domain, primaryEmail));
     } catch (error) {
       next(error);
     }

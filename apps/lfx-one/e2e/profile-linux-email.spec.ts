@@ -187,6 +187,16 @@ test.describe('Linux.com email — forwarding target visibility', () => {
 
   test('shows the normal hint on a first-time claim with a single verified email', async ({ page }) => {
     await stubIdentities(page);
+
+    // Regression guard for the perf goal of this tab: the primary email now arrives inline on
+    // the linux-email response, so the tab must not make a second /api/profile/emails round-trip.
+    // Count GET hits (fulfilling so the assertion fails loudly rather than hanging if reintroduced).
+    let emailsFetchCount = 0;
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() === 'GET') emailsFetchCount++;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ primary_email: PRIMARY_EMAIL, alternate_emails: [] }) });
+    });
+
     await page.route('**/api/profile/linux-email', (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
       const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null, primaryEmail: PRIMARY_EMAIL };
@@ -200,6 +210,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claim-forward-select')).toBeVisible();
     await expect(page.getByText('Choose one of your verified email addresses.')).toBeVisible();
+    expect(emailsFetchCount).toBe(0);
   });
 });
 
