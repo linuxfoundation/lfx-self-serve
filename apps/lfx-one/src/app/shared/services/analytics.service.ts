@@ -8,6 +8,7 @@ import {
   ActiveWeeksStreakResponse,
   CertifiedEmployeesResponse,
   CodeCommitsDailyResponse,
+  FoundationActiveContributorsMonthlyDistinctResponse,
   FoundationActiveContributorsMonthlyResponse,
   FoundationCompanyBusFactorResponse,
   FoundationContributorsMentoredResponse,
@@ -73,7 +74,7 @@ import {
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
-import { HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
+import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { catchError, Observable, of, shareReplay } from 'rxjs';
 
 /**
@@ -339,6 +340,18 @@ export class AnalyticsService {
     return this.http
       .get<FoundationActiveContributorsMonthlyResponse>('/api/analytics/foundation-active-contributors-monthly', { params: { foundationSlug } })
       .pipe(catchError(() => of({ monthlyData: [], monthlyLabels: [] })));
+  }
+
+  /**
+   * Get monthly DISTINCT active contributors for a foundation (last 12 months)
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationActiveContributorsMonthlyDistinct(foundationSlug: string): Observable<FoundationActiveContributorsMonthlyDistinctResponse> {
+    return this.http
+      .get<FoundationActiveContributorsMonthlyDistinctResponse>('/api/analytics/foundation-active-contributors-monthly-distinct', {
+        params: { foundationSlug },
+      })
+      .pipe(catchError(() => of(DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT)));
   }
 
   /**

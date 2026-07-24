@@ -7,7 +7,12 @@ import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { SelectComponent } from '@components/select/select.component';
-import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY, DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION, lfxColors } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY,
+  DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
+  DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION,
+  lfxColors,
+} from '@lfx-one/shared/constants';
 import { buildLensAwareInsightsUrl, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -17,6 +22,8 @@ import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
+  ActiveContributorsMoMDelta,
+  FoundationActiveContributorsMonthlyDistinctResponse,
   FoundationActiveContributorsMonthlyResponse,
   FoundationContributorsDistributionResponse,
   UniqueContributorsDailyResponse,
@@ -36,10 +43,9 @@ export class ActiveContributorsDrawerComponent {
   // === Static Options ===
   protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
 
-  protected readonly trendChartOptions: ChartOptions<'line'> = {
+  protected readonly trendChartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -70,7 +76,7 @@ export class ActiveContributorsDrawerComponent {
         beginAtZero: true,
       },
     },
-    datasets: { line: { tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 } },
+    datasets: { bar: { barPercentage: 0.6, categoryPercentage: 0.7 } },
   };
 
   protected readonly distributionChartOptions: ChartOptions<'bar'> = {
@@ -113,6 +119,43 @@ export class ActiveContributorsDrawerComponent {
     datasets: { bar: { barPercentage: 0.6, categoryPercentage: 0.7 } },
   };
 
+  protected readonly momChartOptions: ChartOptions<'line'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+        titleColor: lfxColors.gray[900],
+        bodyColor: lfxColors.gray[600],
+        borderColor: lfxColors.gray[200],
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 6,
+        callbacks: {
+          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString('en-US')} contributors`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        display: true,
+        grid: { display: false },
+        border: { display: false },
+        ticks: { color: lfxColors.gray[500], font: { size: 12 }, maxRotation: 0 },
+      },
+      y: {
+        display: true,
+        grid: { color: lfxColors.gray[200], lineWidth: 1 },
+        border: { display: false, dash: [3, 3] },
+        ticks: { color: lfxColors.gray[500], font: { size: 12 }, callback: (v) => (v as number).toLocaleString('en-US') },
+        beginAtZero: true,
+      },
+    },
+    datasets: { line: { tension: 0.4, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 } },
+  };
+
   // === Forms ===
   protected readonly headerForm: FormGroup = this.fb.group({
     timeRange: [{ value: 'last-12-months', disabled: true }],
@@ -135,26 +178,50 @@ export class ActiveContributorsDrawerComponent {
     })
   );
 
-  protected readonly metricValue: Signal<string> = computed(() => this.data().avgContributors.toLocaleString());
+  // Headline uses the canonical 12-month daily average supplied by the parent
+  // (UniqueContributorsDailyResponse.avgContributors) rather than a recomputed
+  // unweighted mean of per-month averages, so the summary matches the value
+  // shown elsewhere and the daily-data request is not fetched and discarded.
+  protected readonly metricValue: Signal<string> = computed(() => {
+    const avg = this.data().avgContributors;
+    return avg > 0 ? Math.round(avg).toLocaleString('en-US') : '';
+  });
   protected readonly hasData: Signal<boolean> = computed(() => this.data().avgContributors > 0);
 
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);
   protected readonly distributionData: Signal<FoundationContributorsDistributionResponse> = computed(() => this.drawerData().distribution);
+  protected readonly momData: Signal<FoundationActiveContributorsMonthlyDistinctResponse> = computed(() => this.drawerData().mom);
   protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
   protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
+  protected readonly hasMomData: Signal<boolean> = computed(() => this.momData().monthlyData.length > 0);
 
-  protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
+  protected readonly trendChartData: Signal<ChartData<'bar'>> = this.initTrendChartData();
   protected readonly distributionChartData: Signal<ChartData<'bar'>> = this.initDistributionChartData();
+  protected readonly momDelta: Signal<ActiveContributorsMoMDelta> = this.initMomDelta();
+  protected readonly momChartData: Signal<ChartData<'line'>> = this.initMomChartData();
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
+  // Magnitude only — the up/down arrow already conveys direction
+  protected formatMomDelta(value: number): string {
+    return Math.abs(value).toFixed(1);
+  }
+
   // === Private Initializers ===
-  private initDrawerData(): Signal<{ monthly: FoundationActiveContributorsMonthlyResponse; distribution: FoundationContributorsDistributionResponse }> {
-    const defaultValue = { monthly: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY, distribution: DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION };
+  private initDrawerData(): Signal<{
+    monthly: FoundationActiveContributorsMonthlyResponse;
+    distribution: FoundationContributorsDistributionResponse;
+    mom: FoundationActiveContributorsMonthlyDistinctResponse;
+  }> {
+    const defaultValue = {
+      monthly: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY,
+      distribution: DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION,
+      mom: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
+    };
     return toSignal(
       toObservable(this.visible).pipe(
         skip(1),
@@ -172,6 +239,7 @@ export class ActiveContributorsDrawerComponent {
           return forkJoin({
             monthly: this.analyticsService.getFoundationActiveContributorsMonthly(slug),
             distribution: this.analyticsService.getFoundationContributorsDistribution(slug),
+            mom: this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(slug),
           }).pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
@@ -185,7 +253,7 @@ export class ActiveContributorsDrawerComponent {
     );
   }
 
-  private initTrendChartData(): Signal<ChartData<'line'>> {
+  private initTrendChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const { monthlyData, monthlyLabels } = this.monthlyTrendData();
       return {
@@ -193,9 +261,8 @@ export class ActiveContributorsDrawerComponent {
         datasets: [
           {
             data: monthlyData,
-            borderColor: lfxColors.blue[500],
-            backgroundColor: hexToRgba(lfxColors.blue[400], 0.2),
-            fill: true,
+            backgroundColor: lfxColors.blue[500],
+            borderRadius: 4,
           },
         ],
       };
@@ -218,6 +285,39 @@ export class ActiveContributorsDrawerComponent {
             backgroundColor: distribution.map((d) => bandColors[d.band] ?? lfxColors.gray[400]),
             borderRadius: 4,
             borderSkipped: 'start',
+          },
+        ],
+      };
+    });
+  }
+
+  private initMomDelta(): Signal<ActiveContributorsMoMDelta> {
+    return computed(() => {
+      const mom = this.momData();
+      // delta + direction are validated server-side for adjacent, current months.
+      return {
+        latest: mom.latest,
+        deltaPercent: mom.momDeltaPercent,
+        direction: mom.momDirection,
+      };
+    });
+  }
+
+  private initMomChartData(): Signal<ChartData<'line'>> {
+    return computed(() => {
+      const { monthlyData, monthlyLabels } = this.momData();
+      return {
+        labels: monthlyLabels,
+        datasets: [
+          {
+            data: monthlyData,
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[400], 0.2),
+            fill: true,
+            // A single-point line dataset has no segment, so the sole point
+            // must be visible or the chart renders blank for new foundations.
+            pointRadius: monthlyData.length === 1 ? 3 : 0,
+            pointHoverRadius: 4,
           },
         ],
       };

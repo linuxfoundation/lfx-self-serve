@@ -43,20 +43,82 @@
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="active-contributors-drawer-content">
+    <!-- Monthly Distinct (MoM) Section -->
+    <div class="flex flex-col gap-3" data-testid="active-contributors-drawer-mom-section">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h3 class="text-sm font-medium text-gray-900">Active Contributors (Monthly Distinct)</h3>
+          <button
+            type="button"
+            class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+            pTooltip="Unique people who contributed at any point in each month. Each person is counted once per month, so someone active on many days still counts as one."
+            tooltipPosition="top"
+            tooltipEvent="both"
+            aria-label="Unique people who contributed at any point in each month. Each person is counted once per month, so someone active on many days still counts as one.">
+            <i class="fa-light fa-circle-info"></i>
+          </button>
+        </div>
+
+        @if (hasMomData()) {
+          <div class="flex items-baseline gap-2">
+            @if (momDelta(); as delta) {
+              <span class="text-xl font-semibold text-gray-900" data-testid="active-contributors-drawer-mom-metric">
+                {{ delta.latest.toLocaleString('en-US') }}
+              </span>
+              @if (delta.deltaPercent !== null) {
+                <span
+                  class="text-sm font-medium"
+                  [class.text-emerald-600]="delta.direction === 'up'"
+                  [class.text-red-600]="delta.direction === 'down'"
+                  [class.text-gray-500]="delta.direction === 'flat'"
+                  data-testid="active-contributors-drawer-mom-delta">
+                  @if (delta.direction === 'up') {
+                    <span aria-hidden="true">▲</span>
+                    <span class="sr-only">Increased </span>
+                  } @else if (delta.direction === 'down') {
+                    <span aria-hidden="true">▼</span>
+                    <span class="sr-only">Decreased </span>
+                  } @else {
+                    <span class="sr-only">No change </span>
+                  }
+                  {{ formatMomDelta(delta.deltaPercent) }}% vs last month
+                </span>
+              }
+            }
+          </div>
+        }
+      </div>
+
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="active-contributors-drawer-mom-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasMomData()) {
+        <div class="h-[240px]" data-testid="active-contributors-drawer-mom-chart">
+          <lfx-chart type="line" [data]="momChartData()" [options]="momChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="active-contributors-drawer-mom-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No monthly contributor data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
     <!-- Monthly Trend Section -->
     <div class="flex flex-col gap-3" data-testid="active-contributors-drawer-trend-section">
       <!-- Section Header -->
       <div class="flex items-center justify-between">
         <!-- Title + Tooltip -->
         <div class="flex items-center gap-2">
-          <h3 class="text-sm font-medium text-gray-900">Active Contributors</h3>
+          <h3 class="text-sm font-medium text-gray-900">Active Contributors (Monthly Average)</h3>
           <button
             type="button"
             class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
-            pTooltip="Monthly average unique contributors across the foundation over the last 12 months"
+            pTooltip="Average number of unique contributors active on a typical day in each month. Lower than the monthly-distinct count because the same person on multiple days is averaged, not stacked."
             tooltipPosition="top"
             tooltipEvent="both"
-            aria-label="Monthly average unique contributors across the foundation over the last 12 months">
+            aria-label="Average number of unique contributors active on a typical day in each month. Lower than the monthly-distinct count because the same person on multiple days is averaged, not stacked.">
             <i class="fa-light fa-circle-info"></i>
           </button>
         </div>
@@ -74,7 +136,7 @@
         </div>
       } @else if (hasTrendData()) {
         <div class="h-[240px]" data-testid="active-contributors-drawer-trend-chart">
-          <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+          <lfx-chart type="bar" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
         </div>
       } @else {
         <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="active-contributors-drawer-trend-empty">
@@ -91,10 +153,10 @@
         <button
           type="button"
           class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
-          pTooltip="Share of total contributions made by each percentile group of contributors over the last 12 months"
+          pTooltip="Share of total contributions made by each contributor tier over the last 12 months."
           tooltipPosition="top"
           tooltipEvent="both"
-          aria-label="Share of total contributions made by each percentile group of contributors over the last 12 months">
+          aria-label="Share of total contributions made by each contributor tier over the last 12 months.">
           <i class="fa-light fa-circle-info"></i>
         </button>
       </div>

@@ -699,6 +699,40 @@ export interface FoundationActiveContributorsMonthlyResponse {
 }
 
 /**
+ * Single month row from FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY (distinct per month)
+ */
+export interface FoundationActiveContributorsMonthlyDistinctRow {
+  MONTH_START_DATE: string;
+  MONTHLY_ACTIVE_CONTRIBUTORS: number;
+}
+
+/**
+ * API response for foundation monthly-distinct active contributors.
+ * `latest`, `momDeltaPercent`, and `momDirection` are computed server-side so
+ * both consumers render a pre-validated month-over-month delta rather than
+ * re-deriving it from the last two array entries (which may be non-adjacent
+ * when a month is absent from the materialized table).
+ */
+export interface FoundationActiveContributorsMonthlyDistinctResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  /** Most recent month's distinct contributor count (0 when no rows). */
+  latest: number;
+  /** MoM delta percent; null when no valid adjacent prior month exists. */
+  momDeltaPercent: number | null;
+  momDirection: 'up' | 'down' | 'flat';
+}
+
+/**
+ * Latest-month headline count + month-over-month delta for the monthly-distinct chart
+ */
+export interface ActiveContributorsMoMDelta {
+  latest: number;
+  deltaPercent: number | null; // null when there is no prior month to compare
+  direction: 'up' | 'down' | 'flat';
+}
+
+/**
  * Single percentile band row from FOUNDATION_CONTRIBUTORS_DISTRIBUTION
  */
 export interface FoundationContributorsDistributionRow {
