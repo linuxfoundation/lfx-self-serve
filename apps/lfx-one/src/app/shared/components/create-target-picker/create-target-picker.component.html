@@ -3,6 +3,12 @@
 
 <div class="flex flex-col gap-2" data-testid="create-target-picker">
   <div class="relative">
+    <!-- Not the lfx-input-text wrapper: it renders `data-test` (via `dataTest()`), not
+         `data-testid` — this repo's e2e suite selects exclusively via `data-testid`
+         (getByTestId), and the wrapper's `<ng-container>` root has nowhere for a raw
+         `data-testid` attribute placed on the host tag to fall through to. Converting would
+         silently break every `getByTestId('create-target-search-input')` selector in
+         create-quick-link.spec.ts (S4, S7, S8, S9). -->
     <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true"></i>
     <input
       [formControl]="searchControl"

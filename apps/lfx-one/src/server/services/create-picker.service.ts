@@ -14,6 +14,7 @@ import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { CommitteeService } from './committee.service';
+import { logger } from './logger.service';
 import { ProjectService } from './project.service';
 
 /**
@@ -47,6 +48,8 @@ export class CreatePickerService {
     const includeMeetingCoordinator = artifactType === 'meeting';
     const includeCommittees = COMMITTEE_WRITE_ARTIFACT_TYPES.includes(artifactType);
 
+    logger.debug(req, 'get_create_picker_tree', 'Fetching direct-grant tree', { artifact_type: artifactType, include_committees: includeCommittees });
+
     const [directProjects, directCommittees] = await Promise.all([
       this.projectService.getDirectGrantProjects(req, includeMeetingCoordinator),
       includeCommittees ? this.committeeService.getDirectGrantCommittees(req) : Promise.resolve([]),
@@ -56,6 +59,13 @@ export class CreatePickerService {
     const committeeUids = new Set(directCommittees.map((c) => c.uid));
     const rootProjects = directProjects.filter((p) => !projectUids.has(p.parent_uid));
     const orphanCommittees = directCommittees.filter((c) => !projectUids.has(c.project_uid) && !(c.parent_uid && committeeUids.has(c.parent_uid)));
+
+    logger.debug(req, 'get_create_picker_tree', 'Partitioned direct grants into root nodes', {
+      direct_project_count: directProjects.length,
+      direct_committee_count: directCommittees.length,
+      root_project_count: rootProjects.length,
+      orphan_committee_count: orphanCommittees.length,
+    });
 
     return {
       projects: rootProjects.map((p) => this.toProjectNode(p)),
@@ -78,6 +88,12 @@ export class CreatePickerService {
   ): Promise<CreatePickerResultSet> {
     const includeMeetingCoordinator = artifactType === 'meeting';
     const includeCommittees = COMMITTEE_WRITE_ARTIFACT_TYPES.includes(artifactType);
+
+    logger.debug(req, 'get_create_picker_children', 'Fetching lazy tree fan-out', {
+      parent_type: parentType,
+      parent_uid: parentUid,
+      artifact_type: artifactType,
+    });
 
     if (parentType === 'project') {
       const [childProjects, projectCommittees] = await Promise.all([
@@ -125,10 +141,17 @@ export class CreatePickerService {
     const includeMeetingCoordinator = artifactType === 'meeting';
     const includeCommittees = COMMITTEE_WRITE_ARTIFACT_TYPES.includes(artifactType);
 
+    logger.debug(req, 'search_create_picker', 'Searching creatable projects/committees', { term_length: term.length, artifact_type: artifactType });
+
     const [projects, committees] = await Promise.all([
       this.projectService.searchCreatableProjects(req, term, includeMeetingCoordinator),
       includeCommittees ? this.committeeService.searchCreatableCommittees(req, term) : Promise.resolve([]),
     ]);
+
+    logger.debug(req, 'search_create_picker', 'Search results resolved', {
+      permitted_project_count: projects.length,
+      permitted_committee_count: committees.length,
+    });
 
     return {
       projects: projects.map((p) => this.toProjectNode(p)),
@@ -162,11 +185,13 @@ export class CreatePickerService {
     const projectUids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
     const projectsByUid = await this.projectService.getProjectsByIds(req, projectUids);
 
-    return committees
-      .filter((c) => projectsByUid.has(c.project_uid))
-      .map((c) => {
-        const project = projectsByUid.get(c.project_uid)!;
-        return {
+    return committees.flatMap((c): CreatePickerCommitteeNode[] => {
+      const project = projectsByUid.get(c.project_uid);
+      if (!project) {
+        return [];
+      }
+      return [
+        {
           kind: 'committee',
           uid: c.uid,
           name: c.name,
@@ -174,7 +199,8 @@ export class CreatePickerService {
           projectSlug: project.slug,
           projectName: project.name,
           isFoundation: computeIsFoundation(project),
-        };
-      });
+        },
+      ];
+    });
   }
 }

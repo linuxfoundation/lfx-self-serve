@@ -261,6 +261,8 @@ export class CommitteeService {
     let pageToken: string | undefined;
     let pagesFetched = 0;
 
+    logger.debug(req, 'search_creatable_committees', 'Scanning name matches for creatable committees', { page_size: pageSize, page_limit: SEARCH_PAGE_LIMIT });
+
     do {
       const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
         req,
@@ -284,6 +286,13 @@ export class CommitteeService {
       permitted.push(...committees.filter((c) => c.writer === true));
       pageToken = page_token;
     } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    if (pageToken && pagesFetched >= SEARCH_PAGE_LIMIT) {
+      logger.warning(req, 'search_creatable_committees', 'Hit the search page cap with more pages remaining', {
+        pages_fetched: pagesFetched,
+        permitted_count: permitted.length,
+      });
+    }
 
     return permitted.slice(0, pageSize);
   }

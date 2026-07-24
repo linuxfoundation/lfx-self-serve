@@ -427,6 +427,8 @@ export class ProjectService {
     let pageToken: string | undefined;
     let pagesFetched = 0;
 
+    logger.debug(req, 'search_creatable_projects', 'Scanning name matches for creatable projects', { page_size: pageSize, page_limit: SEARCH_PAGE_LIMIT });
+
     do {
       const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
         req,
@@ -447,6 +449,13 @@ export class ProjectService {
       permitted.push(...page);
       pageToken = page_token;
     } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    if (pageToken && pagesFetched >= SEARCH_PAGE_LIMIT) {
+      logger.warning(req, 'search_creatable_projects', 'Hit the search page cap with more pages remaining', {
+        pages_fetched: pagesFetched,
+        permitted_count: permitted.length,
+      });
+    }
 
     return permitted.slice(0, pageSize);
   }

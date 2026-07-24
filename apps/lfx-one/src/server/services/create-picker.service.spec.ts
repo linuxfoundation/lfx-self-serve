@@ -36,6 +36,9 @@ vi.mock('./committee.service', () => ({
     public getCommittees = getCommittees;
   },
 }));
+vi.mock('./logger.service', () => ({
+  logger: { debug: vi.fn(), warning: vi.fn(), startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
+}));
 
 import type { Request } from 'express';
 
