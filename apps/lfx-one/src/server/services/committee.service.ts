@@ -129,9 +129,13 @@ export class CommitteeService {
   }
 
   /**
-   * Fetches all committees based on query parameters
+   * Fetches all committees based on query parameters. `skipMailingListEnrichment` bypasses the
+   * batched `groupsio_mailing_list` lookup below for callers (e.g. the create picker's lazy
+   * children fan-out) that only need identity/project/writer fields and never render
+   * `has_mailing_list` — every such call otherwise paid for a query-service round trip whose
+   * result was immediately discarded.
    */
-  public async getCommittees(req: Request, query: Record<string, any> = {}): Promise<Committee[]> {
+  public async getCommittees(req: Request, query: Record<string, any> = {}, options: { skipMailingListEnrichment?: boolean } = {}): Promise<Committee[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
@@ -171,12 +175,13 @@ export class CommitteeService {
     // total_members is already indexed by the committee-service as part of
     // CommitteeBaseWithReadonlyAttributes — no separate per-committee count call needed.
     const committeeUids = committees.map((c) => c.uid).filter(Boolean);
-    const committeesWithMailingList = committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Set<string>();
+    const committeesWithMailingList =
+      options.skipMailingListEnrichment || committeeUids.length === 0 ? new Set<string>() : await this.getCommitteesWithMailingList(req, committeeUids);
 
     committees = committees.map((committee) => ({
       ...committee,
       total_members: committee.total_members ?? 0,
-      has_mailing_list: committeesWithMailingList.has(committee.uid),
+      has_mailing_list: options.skipMailingListEnrichment ? false : committeesWithMailingList.has(committee.uid),
     }));
 
     // Add writer access field (used by the access filter below and consumed by the UI)

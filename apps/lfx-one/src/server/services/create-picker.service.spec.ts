@@ -132,7 +132,7 @@ describe('CreatePickerService', () => {
 
       expect(result.projects.map((p) => p.uid)).toEqual(['child-project']);
       expect(result.committees.map((c) => c.uid)).toEqual(['project-committee']);
-      expect(getCommittees).toHaveBeenCalledWith(req, { tags: 'project_uid:parent-uid' });
+      expect(getCommittees).toHaveBeenCalledWith(req, { tags: 'project_uid:parent-uid' }, { skipMailingListEnrichment: true });
     });
 
     it('fans out a committee node into child committees only', async () => {
@@ -142,7 +142,7 @@ describe('CreatePickerService', () => {
 
       expect(result.projects).toEqual([]);
       expect(result.committees.map((c) => c.uid)).toEqual(['sub-committee']);
-      expect(getCommittees).toHaveBeenCalledWith(req, { parent: 'committee:parent-committee-uid' });
+      expect(getCommittees).toHaveBeenCalledWith(req, { parent: 'committee:parent-committee-uid' }, { skipMailingListEnrichment: true });
       expect(getChildProjects).not.toHaveBeenCalled();
     });
 

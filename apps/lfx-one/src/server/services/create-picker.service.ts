@@ -76,7 +76,9 @@ export class CreatePickerService {
     if (parentType === 'project') {
       const [childProjects, projectCommittees] = await Promise.all([
         this.projectService.getChildProjects(req, parentUid, includeMeetingCoordinator),
-        includeCommittees ? this.committeeService.getCommittees(req, { tags: `project_uid:${parentUid}` }) : Promise.resolve([]),
+        includeCommittees
+          ? this.committeeService.getCommittees(req, { tags: `project_uid:${parentUid}` }, { skipMailingListEnrichment: true })
+          : Promise.resolve([]),
       ]);
 
       return {
@@ -92,7 +94,7 @@ export class CreatePickerService {
       return { projects: [], committees: [] };
     }
 
-    const childCommittees = await this.committeeService.getCommittees(req, { parent: `committee:${parentUid}` });
+    const childCommittees = await this.committeeService.getCommittees(req, { parent: `committee:${parentUid}` }, { skipMailingListEnrichment: true });
     return {
       projects: [],
       committees: await this.toCommitteeNodes(
