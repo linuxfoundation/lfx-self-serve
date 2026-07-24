@@ -50,8 +50,8 @@ Run a focused, **diff-aware** review, not a whole-repo audit:
      known shapes, not a substitute for tracing the actual path.
    - *Assessment*: trace each input to its sink and confirm a guard sits on the
      path the data actually takes, not three functions away.
-4. **Confidence-gate every finding** (1-10, report only >= 7). A few real findings
-   beat a speculative list.
+4. **Confidence-gate every finding** (1-10, report only >= 8, matching the
+   reviewer skill's >80% gate). A few real findings beat a speculative list.
 5. **Evidence, not vibes.** Each finding names the file and function, what the
    attacker controls, the boundary crossed, the concrete impact, and the fix.
 
@@ -186,12 +186,15 @@ Signal discipline keeps the reviewer trusted. Do not raise:
 - SSRF that only controls a path; it counts when the attacker controls host or
   protocol.
 
-Precedents (see `docs/reviews/knowledge-base/known-false-positives.md`): UUIDs and
-opaque ids are unguessable and need no validation (an authorization finding rests
-on a missing server-side check, not on guessing an id); environment variables and
-runtime config read server-side are trusted inputs; logging URLs and non-PII is
-fine; a client-side guard absent server enforcement is a UX gap, not a vuln,
-unless the server check is *also* missing.
+Unguessability is not authorization, in either direction: an authorization
+finding rests on a missing server-side check, never on whether an id can be
+guessed — but identifier *format* validation against the upstream contract
+remains a legitimate code-review concern (the knowledge base's
+`regex-too-loose-for-id-format` pattern) and is not suppressed by this rule.
+Precedents recorded in `docs/reviews/knowledge-base/known-false-positives.md`:
+environment variables and runtime config read server-side are trusted inputs;
+logging URLs and non-PII is fine; a client-side guard absent server enforcement
+is a UX gap, not a vuln, unless the server check is *also* missing.
 
 ## Reporting
 

@@ -37,15 +37,19 @@ authenticates the user (Auth0 in production, Authelia locally, via
 `express-openid-connect`), holds the OIDC session, resolves persona and
 impersonation context server-side, and proxies business requests to the V2
 microservice mesh through the API gateway, attaching the user's bearer token —
-callers route reads through `/query/resources` and writes through `/itx/...`
-paths, all via the generic `server/services/microservice-proxy.service.ts`. It
-**mirrors upstream
+all via the generic `server/services/microservice-proxy.service.ts`, with
+callers passing `/query/resources` for cross-resource reads, `/itx/...` for
+certain writes, or service-owned REST paths (e.g. `/committees/...`) for
+both. It **mirrors upstream
 request/response shapes** rather than defining its own contracts, so a proxy
 call that drifts from the upstream Goa contract is a defect, not a local choice.
 Authentication is **selective**: health (`/livez`, `/readyz`), `/public/api`,
-the public `/meetings/` pages, and `/docs` are reachable without a session;
-everything under `/api` and the rest of the SSR surface require one
-(`server/middleware/auth.middleware.ts`). The app renders under SSR and then
+the public `/meetings/` pages, `/docs`, and a few deliberately public utility
+routes (`/invite/error`, `/auth-error`, `/sitemap.xml`, `/robots.txt`) are
+reachable without a session; everything under `/api` and the rest of the SSR
+surface require one. The route table in
+`server/middleware/auth.middleware.ts` is the authority — verify there, not
+against this summary. The app renders under SSR and then
 hydrates, so browser-only code must be guarded and no server-only secret may
 cross into the client bundle. Place each change against this shape.
 
@@ -134,8 +138,9 @@ costs the author attention; spend it only where it changes the outcome:
   last review round. If any prior review comments or resolved threads on this
   PR are visible to you, do not repeat them.
 - **Never duplicate the deterministic pipeline.** Prettier, ESLint, strict
-  TypeScript type-check, the license-header check, commitlint, and the
-  Playwright E2E suite run on every push. Style, formatting, import order,
+  TypeScript type-check, the license-header check, and commitlint run on
+  every push (the Playwright E2E suite runs on a schedule, not per push — do
+  not treat it as per-push coverage). Style, formatting, import order,
   naming preferences, and anything a linter or the compiler would catch are not
   findings.
 - **One comment per issue.** If the same defect repeats across lines or files,
