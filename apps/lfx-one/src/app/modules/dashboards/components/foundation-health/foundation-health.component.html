@@ -230,9 +230,7 @@
   (visibleChange)="handleDrawerClose()"
   [data]="maintainersData()"></lfx-maintainers-drawer>
 
-<lfx-events-drawer
-  [visible]="activeDrawer() === DashboardDrawerType.Events"
-  (visibleChange)="handleDrawerClose()"></lfx-events-drawer>
+<lfx-events-drawer [visible]="activeDrawer() === DashboardDrawerType.Events" (visibleChange)="handleDrawerClose()"></lfx-events-drawer>
 
 <lfx-project-health-scores-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
