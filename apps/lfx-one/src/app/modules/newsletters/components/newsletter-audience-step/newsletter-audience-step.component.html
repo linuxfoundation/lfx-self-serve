@@ -4,12 +4,12 @@
 <div class="flex flex-col gap-4" data-testid="newsletter-audience-step">
   <div>
     <h2 class="text-base font-semibold text-gray-900">Who's this for?</h2>
-    <p class="text-sm text-gray-500 mt-1">Pick the groups that should receive this newsletter. Members in multiple groups only get one email.</p>
+    <p class="text-sm text-gray-500 mt-1">Pick the group that should receive this newsletter.</p>
   </div>
 
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
-      <label class="text-sm font-medium text-gray-700">Groups</label>
+      <label class="text-sm font-medium text-gray-700">Group</label>
       @if (selectedCount() > 0 && recipientCount() !== null) {
         @if (recipientCountLoading()) {
           <span class="text-xs text-gray-500" data-testid="newsletter-audience-recipient-pill">Calculating recipients…</span>
@@ -48,19 +48,19 @@
         No newsletter groups available. Create a group with the Newsletter category first.
       </div>
     } @else {
-      <lfx-multi-select
-        [form]="form()"
-        control="committeeUids"
+      <lfx-select
+        [form]="audienceForm"
+        control="committeeUid"
         [options]="committeeOptions()"
         optionLabel="label"
         optionValue="value"
-        optionSubLabel="category"
-        placeholder="Pick the groups that should receive this newsletter"
+        placeholder="Pick a group"
         [filter]="true"
-        filterPlaceHolder="Search groups"
+        filterPlaceholder="Search groups"
+        [showClear]="true"
         styleClass="w-full"
         data-testid="newsletter-audience-committees">
-      </lfx-multi-select>
+      </lfx-select>
     }
   </div>
 
