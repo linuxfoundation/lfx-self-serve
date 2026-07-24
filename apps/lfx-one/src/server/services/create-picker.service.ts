@@ -87,16 +87,18 @@ export class CreatePickerService {
           : Promise.resolve([]),
       ]);
 
+      const writableCommittees = projectCommittees.filter((c) => c.writer === true);
+      const writableUids = new Set(writableCommittees.map((c) => c.uid));
+      // tags=project_uid: returns every committee under the project, top-level AND nested — nest a
+      // committee under its actual parent (exclude it here) only when that parent is ALSO writable
+      // and will therefore render as an expandable row under this project. If the parent isn't
+      // writable (or isn't under this project at all), it's invisible in the tree, so surface the
+      // committee directly here instead of making it unreachable.
+      const directChildCommittees = writableCommittees.filter((c) => !c.parent_uid || !writableUids.has(c.parent_uid));
+
       return {
         projects: childProjects.map((p) => this.toProjectNode(p)),
-        committees: await this.toCommitteeNodes(
-          req,
-          // tags=project_uid: returns every committee under the project, top-level AND nested —
-          // exclude nested ones (parent_uid set) so a sub-committee doesn't render both directly
-          // under the project and again once its actual parent committee is expanded. Mirrors the
-          // existing `!parent_uid` top-level filter in committee-basic-info.component.ts.
-          projectCommittees.filter((c) => c.writer === true && !c.parent_uid)
-        ),
+        committees: await this.toCommitteeNodes(req, directChildCommittees),
       };
     }
 

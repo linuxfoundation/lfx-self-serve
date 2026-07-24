@@ -4,14 +4,13 @@
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { COMMITTEE_WRITE_ARTIFACT_TYPES, EMPTY_CREATE_PICKER_RESULT } from '@lfx-one/shared/constants';
+import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATE_PICKER_MIN_SEARCH_LENGTH, EMPTY_CREATE_PICKER_RESULT } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerNode, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
-import { distinctUntilChanged, of, startWith, switchMap, tap, timer } from 'rxjs';
+import { distinctUntilChanged, filter, map, of, pairwise, startWith, switchMap, tap, timer } from 'rxjs';
 
 import { CreateTargetTreeNodeComponent } from './create-target-tree-node.component';
 
-const MIN_SEARCH_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
@@ -34,9 +33,12 @@ export class CreateTargetPickerComponent {
   public readonly selectedTarget = input<CreatePickerNode | null>(null);
 
   public readonly targetSelected = output<CreatePickerNode>();
-  // Emitted whenever the search term changes — the caller's `selectedTarget` may no longer be part
-  // of the view this produces (tree vs. search, or a different search term entirely), so a stale
-  // pick must not stay selectable/continuable. See create-artifact-dialog's canContinue.
+  // Emitted whenever the active view changes in a way that can invalidate the caller's
+  // `selectedTarget` — entering search, changing the search term while already searching, or
+  // leaving search back to the tree. NOT emitted for a keystroke that stays under
+  // CREATE_PICKER_MIN_SEARCH_LENGTH while already under it — the tree view (and whatever was selected in it)
+  // hasn't changed, so clearing there would drop a still-valid, still-visible tree selection.
+  // See create-artifact-dialog's canContinue.
   public readonly selectionCleared = output<void>();
 
   protected readonly searchControl = new FormControl<string>('');
@@ -48,7 +50,7 @@ export class CreateTargetPickerComponent {
   );
 
   protected readonly searchTerm = this.initSearchTerm();
-  protected readonly isSearching: Signal<boolean> = computed(() => (this.searchTerm() ?? '').trim().length >= MIN_SEARCH_LENGTH);
+  protected readonly isSearching: Signal<boolean> = computed(() => (this.searchTerm() ?? '').trim().length >= CREATE_PICKER_MIN_SEARCH_LENGTH);
 
   private readonly treeLoadedSignal: WritableSignal<boolean> = signal(false);
   private readonly searchLoadedSignal: WritableSignal<boolean> = signal(false);
@@ -71,7 +73,15 @@ export class CreateTargetPickerComponent {
   });
 
   public constructor() {
-    this.searchControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.selectionCleared.emit());
+    this.searchControl.valueChanges
+      .pipe(
+        startWith(''),
+        map((term) => (term ?? '').trim().length >= CREATE_PICKER_MIN_SEARCH_LENGTH),
+        pairwise(),
+        filter(([wasSearching, isSearchingNow]) => wasSearching || isSearchingNow),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.selectionCleared.emit());
   }
 
   protected onNodeSelected(node: CreatePickerNode): void {
@@ -108,7 +118,7 @@ export class CreateTargetPickerComponent {
           timer(SEARCH_DEBOUNCE_MS).pipe(
             switchMap(() => {
               const trimmed = (term ?? '').trim();
-              if (trimmed.length < MIN_SEARCH_LENGTH) {
+              if (trimmed.length < CREATE_PICKER_MIN_SEARCH_LENGTH) {
                 return of(EMPTY_CREATE_PICKER_RESULT);
               }
               // No catchError here — CreateTargetPickerService.search() already fails closed to EMPTY_CREATE_PICKER_RESULT.

@@ -176,13 +176,22 @@ describe('CreatePickerService', () => {
       expect(result.committees).toEqual([]);
     });
 
-    it("excludes nested sub-committees from a project node's direct committee children", async () => {
+    it("excludes nested sub-committees from a project node's direct committee children when their parent is reachable there", async () => {
       getChildProjects.mockResolvedValueOnce([]);
       getCommittees.mockResolvedValueOnce([committee('top-level', 'parent-uid'), committee('nested', 'parent-uid', 'top-level')]);
 
       const result = await service.getChildren(req, 'project', 'parent-uid', 'meeting');
 
       expect(result.committees.map((c) => c.uid)).toEqual(['top-level']);
+    });
+
+    it('keeps a nested committee under the project directly when its parent committee is not writable/reachable there', async () => {
+      getChildProjects.mockResolvedValueOnce([]);
+      getCommittees.mockResolvedValueOnce([committee('nested-orphan', 'parent-uid', 'unreachable-parent')]);
+
+      const result = await service.getChildren(req, 'project', 'parent-uid', 'meeting');
+
+      expect(result.committees.map((c) => c.uid)).toEqual(['nested-orphan']);
     });
 
     it('returns nothing for a committee parent when the artifact type disallows committee targets', async () => {

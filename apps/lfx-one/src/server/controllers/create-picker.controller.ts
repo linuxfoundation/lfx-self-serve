@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
+import { CREATABLE_ARTIFACTS, CREATE_PICKER_MIN_SEARCH_LENGTH } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerChildrenQuery } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -111,8 +111,8 @@ export class CreatePickerController {
       const artifactType = parseArtifactType(req, 'search_create_picker');
       const { q } = req.query;
 
-      if (typeof q !== 'string' || q.trim().length < 2) {
-        throw ServiceValidationError.forField('q', 'q is required and must be at least 2 characters', {
+      if (typeof q !== 'string' || q.trim().length < CREATE_PICKER_MIN_SEARCH_LENGTH) {
+        throw ServiceValidationError.forField('q', `q is required and must be at least ${CREATE_PICKER_MIN_SEARCH_LENGTH} characters`, {
           operation: 'search_create_picker',
           service: 'create_picker_controller',
           path: req.path,
