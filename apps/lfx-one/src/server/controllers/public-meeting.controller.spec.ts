@@ -129,6 +129,7 @@ function buildReqRes(authenticated: boolean, hasUserToken = true) {
   return { req, res, next };
 }
 
+// checkAccess now keys results as "id#access" (e.g. "meeting-1111#organizer").
 function accessMap(entries: Array<[string, boolean]>): Map<string, boolean> {
   return new Map(entries);
 }
@@ -154,8 +155,8 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     checkAccessMock.mockResolvedValue(
       accessMap([
-        [MEETING_ID, false],
-        [PROJECT_UID, false],
+        [`${MEETING_ID}#organizer`, false],
+        [`${MEETING_ID}#host`, false],
       ])
     );
     const { req, res, next } = buildReqRes(true);
@@ -171,7 +172,12 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   it('keeps host_key for a meeting organizer', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
-    checkAccessMock.mockResolvedValue(accessMap([[MEETING_ID, true]]));
+    checkAccessMock.mockResolvedValue(
+      accessMap([
+        [`${MEETING_ID}#organizer`, true],
+        [`${MEETING_ID}#host`, true],
+      ])
+    );
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -181,13 +187,13 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     expect(payload.meeting.can_view_host_key).toBe(true);
   });
 
-  it('keeps host_key for a project writer who is not the organizer', async () => {
+  it('keeps host_key for a project writer who is not the organizer (host=true via FGA derivation)', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
     checkAccessMock.mockResolvedValue(
       accessMap([
-        [MEETING_ID, false],
-        [PROJECT_UID, true],
+        [`${MEETING_ID}#organizer`, false],
+        [`${MEETING_ID}#host`, true],
       ])
     );
     const { req, res, next } = buildReqRes(true);
@@ -213,7 +219,12 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   it('responds without host_key when getMeetingHostKey throws a non-fatal error', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.getMeetingHostKey.mockRejectedValue(new Error('query service 503'));
-    checkAccessMock.mockResolvedValue(accessMap([[MEETING_ID, true]]));
+    checkAccessMock.mockResolvedValue(
+      accessMap([
+        [`${MEETING_ID}#organizer`, true],
+        [`${MEETING_ID}#host`, true],
+      ])
+    );
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -256,8 +267,8 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: true }));
     checkAccessMock.mockResolvedValue(
       accessMap([
-        [MEETING_ID, false],
-        [PROJECT_UID, false],
+        [`${MEETING_ID}#organizer`, false],
+        [`${MEETING_ID}#host`, false],
       ])
     );
     const { req, res, next } = buildReqRes(true);

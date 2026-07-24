@@ -21,7 +21,7 @@ export class AccessCheckService {
    * Check access permissions for multiple resources
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
-   * @returns Map of resource IDs to their access status
+   * @returns Map keyed by "id#access" to their access status (e.g. "meeting-1#organizer")
    */
   public async checkAccess(req: Request, resources: AccessCheckRequest[]): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
@@ -82,7 +82,7 @@ export class AccessCheckService {
           }
         }
 
-        resultMap.set(resource.id, hasAccess);
+        resultMap.set(`${resource.id}#${resource.access}`, hasAccess);
         userAccessInfo.push({ resourceId: resource.id, username, hasAccess });
       }
 
@@ -101,7 +101,7 @@ export class AccessCheckService {
       // Return map with all false values as fallback
       const fallbackMap = new Map<string, boolean>();
       for (const resource of resources) {
-        fallbackMap.set(resource.id, false);
+        fallbackMap.set(`${resource.id}#${resource.access}`, false);
       }
       return fallbackMap;
     }
@@ -115,7 +115,7 @@ export class AccessCheckService {
    */
   public async checkSingleAccess(req: Request, resource: AccessCheckRequest): Promise<boolean> {
     const results = await this.checkAccess(req, [resource]);
-    return results.get(resource.id) || false;
+    return results.get(`${resource.id}#${resource.access}`) || false;
   }
 
   /**
@@ -149,7 +149,7 @@ export class AccessCheckService {
     // Add access field to each resource
     return resources.map((resource) => ({
       ...resource,
-      [accessType]: accessResults.get(this.getResourceId(resource)) || false,
+      [accessType]: accessResults.get(`${this.getResourceId(resource)}#${accessType}`) || false,
     }));
   }
 

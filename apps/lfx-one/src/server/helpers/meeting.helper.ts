@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { AccessCheckAccessType, AccessCheckRequest, AccessCheckResourceType, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -166,18 +166,17 @@ export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'dur
  * Resolves whether the current user may view a meeting's Zoom host key and mutates the meeting
  * accordingly. This is the single source of truth for host-key visibility on detail endpoints.
  *
- * `meeting.organizer` is always resolved via FGA — it also gates private-meeting access and
- * registrant-count fetches, so it must reflect the real role regardless of time window.
+ * `meeting.organizer` is always resolved via `v1_meeting#organizer` — it gates private-meeting
+ * access and registrant-count fetches independently of host-key visibility.
  *
  * `meeting.can_view_host_key` requires BOTH gates to pass:
- *   1. Time window — current time is within [effective_start − 70 min, effective_start + duration + 40 min)
+ *   1. FGA `v1_meeting#host` — covers direct co-hosts (registrants with Host=true) AND anyone
+ *      with the derived organizer relation (project writers, committee writers, meeting coordinators)
+ *      via the FGA model: host = [user] or auditor, auditor = organizer or auditor from project
+ *   2. Time window — current time is within [effective_start − 70 min, effective_start + duration + 40 min)
  *      where effective_start = next_occurrence_start_time ?? start_time  (mirrors PCC)
- *   2. FGA role — the caller holds any of:
- *        - meeting organizer (`v1_meeting#organizer`)
- *        - project writer (`project#writer`)
- *        - writer on ANY committee attached to the meeting (`committee#writer`)
  *
- * All FGA checks are batched into a single `/access-check` round-trip. The check is fail-closed:
+ * Both checks are batched into a single `/access-check` round-trip. The check is fail-closed:
  * on any upstream error the access-check service returns all-false, so the host key is stripped.
  *
  * MUST be called with the user's own bearer token active on `req` — NOT an M2M token — or the
@@ -188,28 +187,16 @@ export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'dur
  * @param meeting - The meeting to gate (mutated in place)
  */
 export async function applyHostKeyVisibility(req: Request, accessCheckService: AccessCheckService, meeting: Meeting): Promise<void> {
-  const requests: AccessCheckRequest[] = [
+  const results = await accessCheckService.checkAccess(req, [
     { resource: 'v1_meeting', id: meeting.id, access: 'organizer' },
-    { resource: 'project', id: meeting.project_uid, access: 'writer' },
-    ...(meeting.committees ?? [])
-      .filter((committee) => committee?.uid)
-      .map((committee) => ({ resource: 'committee' as AccessCheckResourceType, id: committee.uid, access: 'writer' as AccessCheckAccessType })),
-  ];
+    { resource: 'v1_meeting', id: meeting.id, access: 'host' },
+  ]);
 
-  const results = await accessCheckService.checkAccess(req, requests);
+  // organizer gates private-meeting access and registrant counts independently of host-key.
+  meeting.organizer = results.get(`${meeting.id}#organizer`) ?? false;
 
-  // Derive the gate from the three named relations explicitly (not "any true in the batch"), so a
-  // future unrelated entry added to `requests` can't silently widen host-key visibility.
-  const isOrganizer = results.get(meeting.id) ?? false;
-  const isProjectWriter = results.get(meeting.project_uid) ?? false;
-  const isCommitteeWriter = (meeting.committees ?? []).some((committee) => !!committee?.uid && (results.get(committee.uid) ?? false));
-
-  // organizer is set unconditionally — it also gates private-meeting access and registrant counts.
-  meeting.organizer = isOrganizer;
-
-  // can_view_host_key requires BOTH role AND time-window.
-  const hasRole = isOrganizer || isProjectWriter || isCommitteeWriter;
-  meeting.can_view_host_key = hasRole && isWithinHostKeyWindow(meeting);
+  // can_view_host_key requires host relation AND time-window.
+  meeting.can_view_host_key = (results.get(`${meeting.id}#host`) ?? false) && isWithinHostKeyWindow(meeting);
 
   if (!meeting.can_view_host_key) {
     stripHostKey(meeting);

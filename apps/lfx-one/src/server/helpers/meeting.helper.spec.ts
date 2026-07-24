@@ -117,7 +117,6 @@ describe('enrichMeetingsWithCreatedBy', () => {
 const MEETING_ID = 'meeting-1111';
 const PROJECT_UID = 'project-2222';
 const COMMITTEE_A = 'committee-aaaa';
-const COMMITTEE_B = 'committee-bbbb';
 
 // Returns an ISO string offset by `offsetMs` from now. Used to build start_time values
 // that land inside or outside the host-key visibility window without relying on fixed dates.
@@ -146,19 +145,21 @@ function mockAccessCheck(results: Map<string, boolean>): { service: AccessCheckS
 }
 
 describe('applyHostKeyVisibility', () => {
+  // Helper: build the composite-keyed map that checkAccess now returns.
+  function accessMap(organizer: boolean, host: boolean): Map<string, boolean> {
+    return new Map([
+      [`${MEETING_ID}#organizer`, organizer],
+      [`${MEETING_ID}#host`, host],
+    ]);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('keeps host_key for a meeting organizer', async () => {
+  it('keeps host_key for a meeting organizer (has both organizer and host via FGA derivation)', async () => {
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, true],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service } = mockAccessCheck(accessMap(true, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -167,15 +168,10 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBe('123456');
   });
 
-  it('keeps host_key for a project writer who is not the organizer', async () => {
+  it('keeps host_key for a direct co-host who is not the meeting organizer', async () => {
+    // host=true but organizer=false: registrant with Host=true, not a project/committee writer.
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, false],
-        [PROJECT_UID, true],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service } = mockAccessCheck(accessMap(false, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -184,32 +180,9 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBe('123456');
   });
 
-  it('keeps host_key for a writer on any attached committee', async () => {
-    const meeting = buildMeeting({ committees: [{ uid: COMMITTEE_A }, { uid: COMMITTEE_B }] });
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, false],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-        [COMMITTEE_B, true],
-      ])
-    );
-
-    await applyHostKeyVisibility(req, service, meeting);
-
-    expect(meeting.can_view_host_key).toBe(true);
-    expect(meeting.host_key).toBe('123456');
-  });
-
-  it('strips host_key when the user has none of the three relations (the leak regression)', async () => {
+  it('strips host_key when the user has neither organizer nor host relation (the leak regression)', async () => {
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, false],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service } = mockAccessCheck(accessMap(false, false));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -218,44 +191,23 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBeUndefined();
   });
 
-  it('batches organizer + project + every committee into a single access-check call', async () => {
-    const meeting = buildMeeting({ committees: [{ uid: COMMITTEE_A }, { uid: COMMITTEE_B }] });
-    const { service, checkAccess } = mockAccessCheck(new Map());
+  it('batches organizer and host checks into a single access-check call', async () => {
+    const meeting = buildMeeting();
+    const { service, checkAccess } = mockAccessCheck(accessMap(false, false));
 
     await applyHostKeyVisibility(req, service, meeting);
 
     expect(checkAccess).toHaveBeenCalledTimes(1);
     expect(checkAccess).toHaveBeenCalledWith(req, [
       { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' },
-      { resource: 'project', id: PROJECT_UID, access: 'writer' },
-      { resource: 'committee', id: COMMITTEE_A, access: 'writer' },
-      { resource: 'committee', id: COMMITTEE_B, access: 'writer' },
+      { resource: 'v1_meeting', id: MEETING_ID, access: 'host' },
     ]);
-  });
-
-  it('handles a meeting with no committees (organizer + project only)', async () => {
-    const meeting = buildMeeting({ committees: [] });
-    const { service, checkAccess } = mockAccessCheck(new Map([[PROJECT_UID, true]]));
-
-    await applyHostKeyVisibility(req, service, meeting);
-
-    expect(checkAccess).toHaveBeenCalledWith(req, [
-      { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' },
-      { resource: 'project', id: PROJECT_UID, access: 'writer' },
-    ]);
-    expect(meeting.can_view_host_key).toBe(true);
   });
 
   it('strips host_key and sets can_view_host_key=false outside the time window, but still resolves organizer via FGA', async () => {
     // Starts in 3 days — well beyond the 70-min pre-window.
     const meeting = buildMeeting({ start_time: isoOffset(3 * 24 * 60 * MIN), duration: 60 });
-    const { service, checkAccess } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, true],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service, checkAccess } = mockAccessCheck(accessMap(true, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -267,10 +219,10 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBeUndefined();
   });
 
-  it('keeps host_key when the organizer is inside the time window', async () => {
+  it('keeps host_key when the host is inside the time window', async () => {
     // Starts in 30 min — inside the 70-min pre-window.
     const meeting = buildMeeting({ start_time: isoOffset(30 * MIN), duration: 60 });
-    const { service } = mockAccessCheck(new Map([[MEETING_ID, true]]));
+    const { service } = mockAccessCheck(accessMap(true, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
