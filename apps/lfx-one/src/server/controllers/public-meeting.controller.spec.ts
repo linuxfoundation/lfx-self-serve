@@ -102,6 +102,10 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
     // host_key is NOT in the meeting API response — the controller fetches it separately
     // via getMeetingHostKey and sets it for authorized callers.
     committees: [],
+    // Start 1 min from now, 60-min duration — inside the 70-min pre-window so host-key
+    // tests exercise the actual fetch path rather than being rejected by the time gate.
+    start_time: new Date(Date.now() + 60_000).toISOString(),
+    duration: 60,
     ...overrides,
   } as Meeting;
 }

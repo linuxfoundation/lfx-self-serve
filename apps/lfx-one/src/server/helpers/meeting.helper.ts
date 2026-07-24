@@ -140,16 +140,21 @@ const HOST_KEY_LATE_MINUTES = 40;
 
 /**
  * Returns true when the current wall-clock time falls inside the host-key visibility window:
- * [start_time − 70 min, start_time + duration + 40 min).
+ * [effective_start − 70 min, effective_start + duration + 40 min).
  *
  * Mirrors PCC's showHostKey() logic. The key is account-level and can change leading up to a
  * meeting, so surfacing it days in advance risks showing a stale value.
  *
- * Falls back to false when start_time is absent or unparseable.
+ * For recurring meetings `start_time` is the series origin, which can be far in the past.
+ * `next_occurrence_start_time` is preferred when present so the window tracks the actual
+ * upcoming occurrence rather than the series root.
+ *
+ * Falls back to false when no usable start time is present or parseable.
  */
-export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration'>, now = new Date()): boolean {
-  if (!meeting.start_time) return false;
-  const startMs = Date.parse(meeting.start_time);
+export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'>, now = new Date()): boolean {
+  const effectiveStart = meeting.next_occurrence_start_time || meeting.start_time;
+  if (!effectiveStart) return false;
+  const startMs = Date.parse(effectiveStart);
   if (isNaN(startMs)) return false;
   const windowStart = startMs - HOST_KEY_EARLY_MINUTES * 60_000;
   const windowEnd = startMs + (meeting.duration ?? 0) * 60_000 + HOST_KEY_LATE_MINUTES * 60_000;
@@ -161,9 +166,12 @@ export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'dur
  * Resolves whether the current user may view a meeting's Zoom host key and mutates the meeting
  * accordingly. This is the single source of truth for host-key visibility on detail endpoints.
  *
- * Two gates must both pass:
- *   1. Time window — current time is within [start_time − 70 min, start_time + duration + 40 min)
- *      (mirrors PCC; the key is account-level and can change leading up to the meeting)
+ * `meeting.organizer` is always resolved via FGA — it also gates private-meeting access and
+ * registrant-count fetches, so it must reflect the real role regardless of time window.
+ *
+ * `meeting.can_view_host_key` requires BOTH gates to pass:
+ *   1. Time window — current time is within [effective_start − 70 min, effective_start + duration + 40 min)
+ *      where effective_start = next_occurrence_start_time ?? start_time  (mirrors PCC)
  *   2. FGA role — the caller holds any of:
  *        - meeting organizer (`v1_meeting#organizer`)
  *        - project writer (`project#writer`)
@@ -171,10 +179,6 @@ export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'dur
  *
  * All FGA checks are batched into a single `/access-check` round-trip. The check is fail-closed:
  * on any upstream error the access-check service returns all-false, so the host key is stripped.
- *
- * Sets `meeting.organizer` (still consumed downstream for registrant-count gating) and
- * `meeting.can_view_host_key` (the single gate the frontend reads), and deletes `host_key`
- * when either gate fails.
  *
  * MUST be called with the user's own bearer token active on `req` — NOT an M2M token — or the
  * access check evaluates against the application identity instead of the user.
@@ -184,14 +188,6 @@ export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'dur
  * @param meeting - The meeting to gate (mutated in place)
  */
 export async function applyHostKeyVisibility(req: Request, accessCheckService: AccessCheckService, meeting: Meeting): Promise<void> {
-  // Time gate: strip immediately if we're outside the visibility window.
-  if (!isWithinHostKeyWindow(meeting)) {
-    meeting.organizer = false;
-    meeting.can_view_host_key = false;
-    stripHostKey(meeting);
-    return;
-  }
-
   const requests: AccessCheckRequest[] = [
     { resource: 'v1_meeting', id: meeting.id, access: 'organizer' },
     { resource: 'project', id: meeting.project_uid, access: 'writer' },
@@ -208,8 +204,12 @@ export async function applyHostKeyVisibility(req: Request, accessCheckService: A
   const isProjectWriter = results.get(meeting.project_uid) ?? false;
   const isCommitteeWriter = (meeting.committees ?? []).some((committee) => !!committee?.uid && (results.get(committee.uid) ?? false));
 
+  // organizer is set unconditionally — it also gates private-meeting access and registrant counts.
   meeting.organizer = isOrganizer;
-  meeting.can_view_host_key = isOrganizer || isProjectWriter || isCommitteeWriter;
+
+  // can_view_host_key requires BOTH role AND time-window.
+  const hasRole = isOrganizer || isProjectWriter || isCommitteeWriter;
+  meeting.can_view_host_key = hasRole && isWithinHostKeyWindow(meeting);
 
   if (!meeting.can_view_host_key) {
     stripHostKey(meeting);

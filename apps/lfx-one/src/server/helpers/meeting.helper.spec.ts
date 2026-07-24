@@ -246,14 +246,23 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.can_view_host_key).toBe(true);
   });
 
-  it('strips host_key and skips the FGA check when the meeting is outside the time window', async () => {
+  it('strips host_key and sets can_view_host_key=false outside the time window, but still resolves organizer via FGA', async () => {
     // Starts in 3 days — well beyond the 70-min pre-window.
     const meeting = buildMeeting({ start_time: isoOffset(3 * 24 * 60 * MIN), duration: 60 });
-    const { service, checkAccess } = mockAccessCheck(new Map([[MEETING_ID, true]]));
+    const { service, checkAccess } = mockAccessCheck(
+      new Map([
+        [MEETING_ID, true],
+        [PROJECT_UID, false],
+        [COMMITTEE_A, false],
+      ])
+    );
 
     await applyHostKeyVisibility(req, service, meeting);
 
-    expect(checkAccess).not.toHaveBeenCalled();
+    // FGA still runs so organizer is set correctly (gates private-meeting access and registrant counts).
+    expect(checkAccess).toHaveBeenCalledTimes(1);
+    expect(meeting.organizer).toBe(true);
+    // Time gate blocks host-key visibility regardless of role.
     expect(meeting.can_view_host_key).toBe(false);
     expect(meeting.host_key).toBeUndefined();
   });
@@ -265,46 +274,80 @@ describe('applyHostKeyVisibility', () => {
 
     await applyHostKeyVisibility(req, service, meeting);
 
+    expect(meeting.organizer).toBe(true);
     expect(meeting.can_view_host_key).toBe(true);
     expect(meeting.host_key).toBe('123456');
   });
 });
 
 describe('isWithinHostKeyWindow', () => {
+  // Pin a fixed reference point so boundary assertions are fully deterministic.
+  const NOW = new Date('2025-06-01T12:00:00.000Z');
+  const nowMs = NOW.getTime();
+
+  function iso(offsetMs: number): string {
+    return new Date(nowMs + offsetMs).toISOString();
+  }
+
   it('returns true when now is exactly at the window start (start_time − 70 min)', () => {
-    const startMs = Date.now() + 70 * MIN;
-    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(true);
+    // start_time = now + 70 min → windowStart = now exactly
+    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when now is one ms before the window start', () => {
+    const oneMsBefore = new Date(nowMs - 1);
+    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, oneMsBefore)).toBe(false);
   });
 
   it('returns true during the meeting itself', () => {
-    // now is 15 min past start_time
-    const startMs = Date.now() - 15 * MIN;
-    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(true);
+    // start_time = 15 min ago; now is 15 min past start, well inside window
+    expect(isWithinHostKeyWindow({ start_time: iso(-15 * MIN), duration: 60 }, NOW)).toBe(true);
   });
 
   it('returns true up to 40 min after meeting end', () => {
-    // now is 30 min after end (start + 60 min duration), still inside the 40-min tail
-    const startMs = Date.now() - 90 * MIN;
-    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(true);
+    // start_time = 90 min ago, duration = 60 → end = 30 min ago, tail ends at now + 10 min
+    expect(isWithinHostKeyWindow({ start_time: iso(-90 * MIN), duration: 60 }, NOW)).toBe(true);
   });
 
-  it('returns false when now is just past the window end (start + duration + 40 min)', () => {
-    // now is 41 min after end — just outside
-    const startMs = Date.now() - (60 + 41) * MIN;
-    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(false);
+  it('returns false when now is exactly at the window end (start + duration + 40 min)', () => {
+    // windowEnd = start + 60 + 40 = now → exclusive upper bound, must be false
+    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 40) * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when now is just past the window end', () => {
+    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 41) * MIN), duration: 60 }, NOW)).toBe(false);
   });
 
   it('returns false when the meeting is more than 70 min away', () => {
-    const startMs = Date.now() + 71 * MIN;
-    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(false);
+    expect(isWithinHostKeyWindow({ start_time: iso(71 * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('prefers next_occurrence_start_time over start_time for recurring meetings', () => {
+    // series start_time is 30 days in the past (window long closed)
+    // next_occurrence_start_time is 30 min from now (inside window)
+    expect(
+      isWithinHostKeyWindow(
+        {
+          start_time: iso(-30 * 24 * 60 * MIN),
+          next_occurrence_start_time: iso(30 * MIN),
+          duration: 60,
+        },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('falls back to start_time when next_occurrence_start_time is absent', () => {
+    // start_time is 30 min from now — inside window
+    expect(isWithinHostKeyWindow({ start_time: iso(30 * MIN), duration: 60 }, NOW)).toBe(true);
   });
 
   it('returns false when start_time is absent', () => {
-    expect(isWithinHostKeyWindow({ start_time: '', duration: 60 })).toBe(false);
+    expect(isWithinHostKeyWindow({ start_time: '', duration: 60 }, NOW)).toBe(false);
   });
 
   it('returns false when start_time is not a valid date', () => {
-    expect(isWithinHostKeyWindow({ start_time: 'not-a-date', duration: 60 })).toBe(false);
+    expect(isWithinHostKeyWindow({ start_time: 'not-a-date', duration: 60 }, NOW)).toBe(false);
   });
 });
 
