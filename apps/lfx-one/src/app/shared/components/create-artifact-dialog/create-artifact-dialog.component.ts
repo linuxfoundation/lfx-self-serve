@@ -51,6 +51,13 @@ export class CreateArtifactDialogComponent {
     this.selectedTarget.set(node);
   }
 
+  // The picker's active result set just changed out from under the current pick (new search term,
+  // or a switch between tree/search view) — clear it so Continue can't fire on a row that's no
+  // longer visible or selectable.
+  public onSelectionCleared(): void {
+    this.selectedTarget.set(null);
+  }
+
   public onContinue(): void {
     const target = this.selectedTarget();
     if (!target) {

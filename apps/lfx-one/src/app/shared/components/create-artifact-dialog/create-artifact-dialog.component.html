@@ -23,6 +23,7 @@
       [artifactType]="artifact.type"
       [selectedTarget]="selectedTarget()"
       (targetSelected)="onTargetSelected($event)"
+      (selectionCleared)="onSelectionCleared()"
       data-testid="create-artifact-target-picker" />
   </div>
 

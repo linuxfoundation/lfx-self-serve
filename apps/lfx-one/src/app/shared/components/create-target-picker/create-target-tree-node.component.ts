@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, input, output, signal, Signal,
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CreatableArtifactType, CreatePickerNode } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
+import { Subscription } from 'rxjs';
 
 /**
  * One row of the create picker's lazy direct-grant tree — recursively renders its own children
@@ -32,6 +33,11 @@ export class CreateTargetTreeNodeComponent {
   protected readonly loadingChildren: WritableSignal<boolean> = signal(false);
   protected readonly childrenLoaded: WritableSignal<boolean> = signal(false);
   protected readonly children: WritableSignal<CreatePickerNode[]> = signal<CreatePickerNode[]>([]);
+
+  // Tracks the in-flight getChildren() request so a retry (collapse + re-expand before the first
+  // one resolves) cancels it instead of racing it — otherwise a slow first response landing after
+  // a successful retry can overwrite `children` with its own (possibly empty) result.
+  private childrenSubscription?: Subscription;
 
   protected readonly key: Signal<string> = computed(() => `${this.node().kind}:${this.node().uid}`);
   protected readonly isSelected: Signal<boolean> = computed(() => this.selectedKey() === this.key());
@@ -64,8 +70,9 @@ export class CreateTargetTreeNodeComponent {
 
   private loadChildren(): void {
     this.loadingChildren.set(true);
+    this.childrenSubscription?.unsubscribe();
     const target = this.node();
-    this.pickerService
+    this.childrenSubscription = this.pickerService
       .getChildren(target.kind, target.uid, this.artifactType())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => {

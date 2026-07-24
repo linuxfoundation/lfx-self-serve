@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { Router } from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import {
   ALL_LENSES,
   DEFAULT_LENS,
@@ -15,6 +15,7 @@ import {
 import { Lens, LensOption, NavLens } from '@lfx-one/shared/interfaces';
 import { deriveAllowedLenses } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
+import { filter, take } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -36,7 +37,13 @@ export class LensService {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   private readonly selectedLens: WritableSignal<Lens>;
-  /** Set only by `setContextLens()`; makes `activeLens` bypass the persona-lens clamp for the create flow. Cleared by any normal `setLens()`/`switchLens()` call. */
+  /**
+   * Set only by `setContextLens()`; makes `activeLens` bypass the persona-lens clamp for the
+   * create flow. Cleared by any normal `setLens()`/`switchLens()` call, or automatically once the
+   * navigation `setContextLens()` was called for concludes (see `setContextLens`) — it must not
+   * outlive that one navigation, since a committee-only writer may hold no lens capable of
+   * clearing it through the normal UI.
+   */
   private readonly contextLensOverride: WritableSignal<Lens | null> = signal(null);
 
   /** Last foundation/project lens viewed — lets the merged 'Projects' entry (hybrid personas) return to a foundation. */
@@ -105,10 +112,27 @@ export class LensService {
    * exactly the users this method exists to unblock. `contextLensOverride` makes `activeLens`
    * (and everything downstream of it — `lensRedirectGuard`, `ProjectContextService.activeContext`)
    * bypass that clamp until a normal `setLens()`/`switchLens()` call clears it.
+   *
+   * The override also self-clears once the navigation this call is for concludes (success,
+   * cancel, or error) — without that, a persona whose allowed lenses never include `lens` (e.g. a
+   * committee-only writer creating against a project/foundation target) has no normal
+   * `setLens()`/`switchLens()` call left to run, since the lens-switcher UI only offers lenses
+   * `getAllowedLensIds()` admits. Left unscoped, the override would silently stick past this one
+   * navigation and clamp every subsequent route (including lens-agnostic ones like `/profile`) to
+   * `lens` for the rest of the session.
    */
   public setContextLens(lens: Lens): void {
     this.contextLensOverride.set(lens);
     this.applyLensSelection(lens);
+    this.router.events
+      .pipe(
+        filter(
+          (event) =>
+            event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError || event instanceof NavigationSkipped
+        ),
+        take(1)
+      )
+      .subscribe(() => this.contextLensOverride.set(null));
   }
 
   private applyLensSelection(lens: Lens): void {

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { COMMITTEE_WRITE_ARTIFACT_TYPES, EMPTY_CREATE_PICKER_RESULT } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerNode, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
@@ -27,11 +27,16 @@ const MIN_SEARCH_LENGTH = 2;
 })
 export class CreateTargetPickerComponent {
   private readonly pickerService = inject(CreateTargetPickerService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly artifactType = input.required<CreatableArtifactType>();
   public readonly selectedTarget = input<CreatePickerNode | null>(null);
 
   public readonly targetSelected = output<CreatePickerNode>();
+  // Emitted whenever the search term changes — the caller's `selectedTarget` may no longer be part
+  // of the view this produces (tree vs. search, or a different search term entirely), so a stale
+  // pick must not stay selectable/continuable. See create-artifact-dialog's canContinue.
+  public readonly selectionCleared = output<void>();
 
   protected readonly searchControl = new FormControl<string>('');
 
@@ -63,6 +68,10 @@ export class CreateTargetPickerComponent {
     const result = this.activeResult();
     return this.loaded() && result.projects.length === 0 && result.committees.length === 0;
   });
+
+  public constructor() {
+    this.searchControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.selectionCleared.emit());
+  }
 
   protected onNodeSelected(node: CreatePickerNode): void {
     this.targetSelected.emit(node);
