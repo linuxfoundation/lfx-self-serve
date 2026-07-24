@@ -44,6 +44,9 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 // meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer from shared/utils;
 // stub it so the real barrel (and its MeetingType enum dependency) isn't pulled into the mock graph.
 vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
+// meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
+// module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
+vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40 }));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 
 vi.mock('../services/meeting.service', () => ({

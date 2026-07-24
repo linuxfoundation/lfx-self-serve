@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { HOST_KEY_EARLY_MINUTES, HOST_KEY_LATE_MINUTES } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -132,11 +133,6 @@ export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void
     delete meeting.host_key;
   }
 }
-
-// Minutes before meeting start when the host key becomes visible (matches PCC).
-const HOST_KEY_EARLY_MINUTES = 70;
-// Minutes after meeting end when the host key is no longer visible (matches PCC).
-const HOST_KEY_LATE_MINUTES = 40;
 
 /**
  * Returns true when the current wall-clock time falls inside the host-key visibility window:

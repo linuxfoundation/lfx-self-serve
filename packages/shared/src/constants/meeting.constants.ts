@@ -13,6 +13,19 @@ import { lfxColors } from './colors.constants';
 export const MEETING_ORGANIZER_SKIP_IDENTIFIERS = ['zoom.webhooks', 'zoom.events'];
 
 /**
+ * Host-key visibility window — minutes before meeting start when the key becomes visible.
+ * Mirrors PCC's showHostKey() logic. The Zoom host key is account-level and can change
+ * leading up to a meeting, so exposing it too early risks showing a stale value.
+ */
+export const HOST_KEY_EARLY_MINUTES = 70;
+
+/**
+ * Host-key visibility window — minutes after meeting end when the key is no longer visible.
+ * Mirrors PCC's showHostKey() logic.
+ */
+export const HOST_KEY_LATE_MINUTES = 40;
+
+/**
  * Available meeting platforms and their configurations
  * @description Defines the supported platforms for hosting meetings
  */

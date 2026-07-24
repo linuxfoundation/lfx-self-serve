@@ -27,6 +27,9 @@ vi.mock('@lfx-one/shared/utils', () => ({
   },
 }));
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
+// meeting.helper now imports HOST_KEY_* from shared/constants; stub the barrel so the
+// full constants module graph (which imports shared/enums for ArtifactVisibility etc.) doesn't load.
+vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40 }));
 
 // Stub the services constructed at module load so importing the helper doesn't pull in the
 // microservice proxy / access-check / committee stack. enrichMeetingsWithCreatedBy exercises
