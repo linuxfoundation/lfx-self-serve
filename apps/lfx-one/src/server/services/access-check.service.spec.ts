@@ -43,8 +43,8 @@ describe('AccessCheckService.checkAccess', () => {
       { resource: 'project', id: 'b', access: 'writer' },
     ]);
 
-    expect(result.get('a')).toBe(false);
-    expect(result.get('b')).toBe(true);
+    expect(result.get('a#writer')).toBe(false);
+    expect(result.get('b#writer')).toBe(true);
   });
 
   it('deduplicates identical tuples without misattributing them to different resources', async () => {
@@ -60,8 +60,8 @@ describe('AccessCheckService.checkAccess', () => {
       { resource: 'committee', id: 'y', access: 'writer' },
     ]);
 
-    expect(result.get('x')).toBe(true);
-    expect(result.get('y')).toBe(false);
+    expect(result.get('x#writer')).toBe(true);
+    expect(result.get('y#writer')).toBe(false);
   });
 
   it('does not let a duplicated request tuple misalign a later distinct resource', async () => {
@@ -79,8 +79,8 @@ describe('AccessCheckService.checkAccess', () => {
       { resource: 'project', id: 'b', access: 'writer' },
     ]);
 
-    expect(result.get('a')).toBe(true);
-    expect(result.get('b')).toBe(false);
+    expect(result.get('a#writer')).toBe(true);
+    expect(result.get('b#writer')).toBe(false);
   });
 
   it('fails closed when the upstream response omits a tuple entirely', async () => {
@@ -94,8 +94,8 @@ describe('AccessCheckService.checkAccess', () => {
       { resource: 'project', id: 'b', access: 'writer' },
     ]);
 
-    expect(result.get('a')).toBe(true);
-    expect(result.get('b')).toBe(false);
+    expect(result.get('a#writer')).toBe(true);
+    expect(result.get('b#writer')).toBe(false);
   });
 
   it('returns an empty map without calling upstream for an empty input', async () => {
@@ -110,6 +110,6 @@ describe('AccessCheckService.checkAccess', () => {
 
     const result = await service.checkAccess(req, [{ resource: 'project', id: 'a', access: 'writer' }]);
 
-    expect(result.get('a')).toBe(false);
+    expect(result.get('a#writer')).toBe(false);
   });
 });

@@ -225,7 +225,9 @@ export class MeetingService {
    * Fetches the host key for a meeting from the v1_meeting_host_credentials indexed object.
    *
    * The query service enforces FGA on this object type (access_check_relation: "host" on
-   * v1_meeting), so it only returns data when the caller holds an organizer/writer relation.
+   * v1_meeting), so it only returns data when the caller holds the derived host relation —
+   * covering direct Zoom co-hosts (registrants with Host=true) as well as anyone with an
+   * organizer/writer/coordinator role (project writers, committee writers, meeting coordinators).
    * Must be called with the user's bearer token active on req — NOT an M2M token.
    *
    * Returns the 6-digit host key string, or null when the user has no access or no credentials
