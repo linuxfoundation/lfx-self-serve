@@ -699,6 +699,31 @@ export interface FoundationActiveContributorsMonthlyResponse {
 }
 
 /**
+ * Single month row from FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY (distinct per month)
+ */
+export interface FoundationActiveContributorsMonthlyDistinctRow {
+  MONTH_START_DATE: string;
+  MONTHLY_ACTIVE_CONTRIBUTORS: number;
+}
+
+/**
+ * API response for foundation monthly-distinct active contributors
+ */
+export interface FoundationActiveContributorsMonthlyDistinctResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+}
+
+/**
+ * Latest-month headline count + month-over-month delta for the monthly-distinct chart
+ */
+export interface ActiveContributorsMoMDelta {
+  latest: number;
+  deltaPercent: number | null; // null when there is no prior month to compare
+  direction: 'up' | 'down' | 'flat';
+}
+
+/**
  * Single percentile band row from FOUNDATION_CONTRIBUTORS_DISTRIBUTION
  */
 export interface FoundationContributorsDistributionRow {

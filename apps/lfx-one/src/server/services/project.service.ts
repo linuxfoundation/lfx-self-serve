@@ -31,6 +31,8 @@ import {
   EventGrowthTopEvent,
   EventsSummaryResponse,
   FlywheelConversionResponse,
+  FoundationActiveContributorsMonthlyDistinctResponse,
+  FoundationActiveContributorsMonthlyDistinctRow,
   FoundationActiveContributorsMonthlyResponse,
   FoundationActiveContributorsMonthlyRow,
   FoundationCodeCommitsDailyRow,
@@ -1329,6 +1331,42 @@ export class ProjectService {
     const monthlyData = result.rows.map((row) => row.MONTHLY_AVG_CONTRIBUTORS);
     const monthlyLabels = result.rows.map((row) => {
       const date = new Date(row.MONTH_START);
+      return date.toLocaleDateString('en-US', { month: 'short' });
+    });
+
+    return { monthlyData, monthlyLabels };
+  }
+
+  /**
+   * Get monthly DISTINCT active contributors for a foundation (last 12 months)
+   * Queries FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY (COUNT DISTINCT member_id per month)
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Monthly distinct contributor counts with short month labels
+   */
+  public async getFoundationActiveContributorsMonthlyDistinct(foundationSlug: string): Promise<FoundationActiveContributorsMonthlyDistinctResponse> {
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetching monthly distinct active contributors', {
+      foundation_slug: foundationSlug,
+    });
+
+    const query = `
+      SELECT
+        MONTH_START_DATE,
+        MONTHLY_ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
+        AND MONTH_START_DATE >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
+      ORDER BY MONTH_START_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationActiveContributorsMonthlyDistinctRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetched monthly distinct active contributors', {
+      row_count: result.rows.length,
+    });
+
+    const monthlyData = result.rows.map((row) => row.MONTHLY_ACTIVE_CONTRIBUTORS);
+    const monthlyLabels = result.rows.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
       return date.toLocaleDateString('en-US', { month: 'short' });
     });
 

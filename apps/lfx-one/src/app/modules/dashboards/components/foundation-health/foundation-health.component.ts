@@ -35,6 +35,7 @@ import { TotalValueDrawerComponent } from '../total-value-drawer/total-value-dra
 import type {
   CompanyBusFactor,
   DashboardMetricCard,
+  FoundationActiveContributorsMonthlyDistinctResponse,
   FoundationCompanyBusFactorResponse,
   FoundationHealthScoreDistributionResponse,
   FoundationMaintainersResponse,
@@ -78,6 +79,7 @@ export class FoundationHealthComponent {
   private readonly maintainersLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
+  private readonly activeContributorsMonthlyDistinctLoading = signal(true);
   private readonly eventsLoading = signal(true);
 
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(
@@ -94,6 +96,7 @@ export class FoundationHealthComponent {
   protected readonly maintainersData = this.initializeMaintainersData();
   protected readonly healthScoresData = this.initializeHealthScoresData();
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
+  protected readonly activeContributorsMonthlyDistinctData = this.initializeActiveContributorsMonthlyDistinctData();
   protected readonly eventsData = this.initializeEventsData();
 
   // totalProjectsData retains the prior foundation's total until the next request
@@ -399,26 +402,38 @@ export class FoundationHealthComponent {
   }
 
   private transformActiveContributors(metric: DashboardMetricCard): DashboardMetricCard {
-    const data = this.activeContributorsData();
+    const data = this.activeContributorsMonthlyDistinctData();
+    const values = data.monthlyData;
+    const labels = data.monthlyLabels;
 
-    // Reverse the data to show oldest to newest for chart rendering
-    const chartData = [...data.data].reverse();
-    const contributorValues = chartData.map((row) => row.DAILY_UNIQUE_CONTRIBUTORS);
-    const chartLabels = chartData.map((row) => {
-      const date = new Date(row.ACTIVITY_DATE);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    });
+    const latest = values.length ? values[values.length - 1] : 0;
+    const prior = values.length > 1 ? values[values.length - 2] : null;
+
+    let trend: DashboardMetricCard['trend'] = 'neutral';
+    let changePercentage: string | undefined;
+    if (prior !== null && prior !== 0) {
+      const deltaPercent = ((latest - prior) / prior) * 100;
+      if (deltaPercent > 0) {
+        trend = 'up';
+      } else if (deltaPercent < 0) {
+        trend = 'down';
+      }
+      const sign = deltaPercent > 0 ? '+' : '';
+      changePercentage = `${sign}${deltaPercent.toFixed(1)}% vs last month`;
+    }
 
     return {
       ...metric,
-      loading: this.activeContributorsLoading(),
-      value: data.avgContributors.toLocaleString(),
-      subtitle: 'Average active contributors over the past year',
+      loading: this.activeContributorsMonthlyDistinctLoading(),
+      value: values.length ? latest.toLocaleString() : '',
+      subtitle: 'Monthly distinct active contributors',
+      trend,
+      changePercentage,
       chartData: {
-        labels: chartLabels,
+        labels,
         datasets: [
           {
-            data: contributorValues,
+            data: values,
             borderColor: lfxColors.blue[500],
             backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
@@ -729,6 +744,29 @@ export class FoundationHealthComponent {
             tap(() => this.activeContributorsLoading.set(false)),
             catchError(() => {
               this.activeContributorsLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
+  }
+
+  private initializeActiveContributorsMonthlyDistinctData() {
+    const defaultValue: FoundationActiveContributorsMonthlyDistinctResponse = {
+      monthlyData: [],
+      monthlyLabels: [],
+    };
+
+    return toSignal(
+      this.selectedFoundationSlug$.pipe(
+        tap(() => this.activeContributorsMonthlyDistinctLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(foundationSlug).pipe(
+            tap(() => this.activeContributorsMonthlyDistinctLoading.set(false)),
+            catchError(() => {
+              this.activeContributorsMonthlyDistinctLoading.set(false);
               return of(defaultValue);
             })
           )
