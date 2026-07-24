@@ -156,8 +156,10 @@ the concrete mechanism in the code each time.
 - **Errors and information disclosure.** Errors reach the client through the
   custom error classes' controlled `toResponse()`; stack traces are emitted only
   in dev/debug (`error-serializer.ts`). Flag a new error path that returns a stack
-  trace, an internal/upstream detail, a filesystem path, or an identity signal
-  (e.g. "user exists") to an unauthenticated caller.
+  trace, an internal/upstream detail, or a filesystem path to a caller not
+  entitled to it, or an identity signal (e.g. a differentiated "user exists"
+  response) to any caller not authorized to learn that result — the enumeration
+  risk is not limited to anonymous callers.
 - **URLs, redirects, and SSRF.** These guards are sink-specific — match the
   finding to the right one. A server-side redirect target (e.g. the `returnTo`
   URL) passes `validateAndSanitizeUrl`; a server-side fetch of a user-controlled
