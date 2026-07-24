@@ -239,7 +239,7 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      { type: 'v1_meeting_host_credentials', tags: `meeting_id:${meetingId}`, limit: 1 }
+      { type: 'v1_meeting_host_credentials', tags: `meeting_id:${meetingId}` }
     );
 
     const hostKey = resources?.[0]?.data?.host_key;

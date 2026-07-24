@@ -31,6 +31,7 @@ const {
     getMeetingRegistrantsByEmail: vi.fn(),
     // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
+    getMeetingHostKey: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -98,7 +99,8 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
     project_uid: PROJECT_UID,
     visibility: MeetingVisibility.PUBLIC,
     restricted: false,
-    host_key: '123456',
+    // host_key is NOT in the meeting API response — the controller fetches it separately
+    // via getMeetingHostKey and sets it for authorized callers.
     committees: [],
     ...overrides,
   } as Meeting;
@@ -138,6 +140,8 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     getEffectiveUsernameMock.mockReturnValue('user');
     projectSvc.getProjectById.mockResolvedValue(buildProject());
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    // Default: host key fetch returns null (no access); authorized tests override this.
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
     // Default invited helper: not invited, host_key preserved on the returned object.
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
   });
@@ -162,6 +166,7 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
 
   it('keeps host_key for a meeting organizer', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
     checkAccessMock.mockResolvedValue(accessMap([[MEETING_ID, true]]));
     const { req, res, next } = buildReqRes(true);
 
@@ -174,6 +179,7 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
 
   it('keeps host_key for a project writer who is not the organizer', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
     checkAccessMock.mockResolvedValue(
       accessMap([
         [MEETING_ID, false],
@@ -187,6 +193,32 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBe('123456');
     expect(payload.meeting.can_view_host_key).toBe(true);
+  });
+
+  it('does not call getMeetingHostKey for an unauthenticated caller', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(meetingSvc.getMeetingHostKey).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.host_key).toBeUndefined();
+  });
+
+  it('responds without host_key when getMeetingHostKey throws a non-fatal error', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingHostKey.mockRejectedValue(new Error('query service 503'));
+    checkAccessMock.mockResolvedValue(accessMap([[MEETING_ID, true]]));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    // The controller should not propagate the error — the meeting is still returned.
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.host_key).toBeUndefined();
   });
 
   it('strips host_key for an unauthenticated caller and never runs an access check', async () => {
