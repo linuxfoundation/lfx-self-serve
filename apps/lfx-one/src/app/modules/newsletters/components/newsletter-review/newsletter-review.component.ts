@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { stripHtml } from '@lfx-one/shared/utils';
+import { NewsletterLayout } from '@lfx-one/shared/interfaces';
+import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
+import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
 @Component({
@@ -14,9 +16,10 @@ import { EMPTY, startWith, switchMap } from 'rxjs';
   imports: [ButtonComponent, TagComponent],
   templateUrl: './newsletter-review.component.html',
 })
-export class NewsletterReviewComponent {
+export class NewsletterReviewComponent implements OnInit {
   // === Services ===
   private readonly destroyRef = inject(DestroyRef);
+  private readonly manifestService = inject(NewsletterManifestService);
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
@@ -28,6 +31,7 @@ export class NewsletterReviewComponent {
   public readonly edEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);
+  public readonly canPreview = input<boolean>(false);
   public readonly sending = input<boolean>(false);
   public readonly testSending = input<boolean>(false);
   public readonly deleting = input<boolean>(false);
@@ -48,6 +52,7 @@ export class NewsletterReviewComponent {
   protected readonly committeeUids: Signal<string[]> = this.initControlValue<string[]>('committeeUids', []);
   protected readonly subjectValue: Signal<string> = this.initControlValue<string>('subject', '');
   protected readonly bodyValue: Signal<string> = this.initControlValue<string>('bodyHtml', '');
+  protected readonly bodyLayoutValue: Signal<NewsletterLayout | null> = this.initControlValue<NewsletterLayout | null>('bodyLayout', null);
 
   // === Derived display values ===
   protected readonly committeeCount = computed(() => this.committeeUids().length);
@@ -60,10 +65,38 @@ export class NewsletterReviewComponent {
     if (count === null) return null;
     return `${count} ${count === 1 ? 'recipient' : 'recipients'}`;
   });
+  // Label for the newsletter's block library (blocks-mode drafts only; empty for
+  // html-only drafts). Prefer the catalog's curated label so the name matches
+  // the composer picker exactly; fall back to humanizing the key when the
+  // catalog hasn't loaded (e.g. landing straight on review without opening the
+  // editor this session).
+  protected readonly templateLabel = computed(() => {
+    const layout = this.bodyLayoutValue();
+    if (!layout) return ''; // html-only draft: no library
+    const key = layout.template_key;
+    // A keyless layout (a new draft, or one saved before per-newsletter selection)
+    // renders with project-NEUTRAL chrome over the block superset — NOT a specific
+    // library. Labelling it with the default library's name (e.g. "AAIF User
+    // Community") would misstate what gets sent, so show a neutral label; a
+    // present key uses the catalog's curated label (or a humanized key).
+    if (!key) return 'Default (neutral)';
+    return this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
+  });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
   protected readonly hasSubject = computed(() => this.subjectValue().trim().length > 0);
   protected readonly bodyPlainText = computed(() => stripHtml(this.bodyValue() ?? '').trim());
-  protected readonly hasBody = computed(() => this.bodyPlainText().length > 0);
+  // A blocks-mode draft is "filled" as soon as it has composed blocks, even
+  // before render-on-write syncs body_html back — otherwise the review card
+  // wrongly shows "Add body content" (and hides Preview) for a valid layout
+  // draft. Mirrors the manage component's layout-aware `bodyFilled`.
+  protected readonly hasBody = computed(() => {
+    const layout = this.bodyLayoutValue();
+    // Layout-authoritative, mirroring the manage component: a present layout is
+    // content only when it has blocks (an emptied layout is not); fall back to
+    // the plain-text body only for html-only (simple) drafts.
+    if (layout) return (layout.blocks?.length ?? 0) > 0;
+    return this.bodyPlainText().length > 0;
+  });
   protected readonly bodyPreview = computed(() => {
     const text = this.bodyPlainText();
     if (!text) return '';
@@ -71,6 +104,13 @@ export class NewsletterReviewComponent {
   });
   protected readonly audienceEmpty = computed(() => this.committeeCount() === 0);
   protected readonly contentIncomplete = computed(() => !this.hasSubject() || !this.hasBody());
+
+  public ngOnInit(): void {
+    // Ensure the template catalog is available so `templateLabel` can show the
+    // curated label. Cached + browser-only in the service, so this is a cheap
+    // no-op when the composer already loaded it.
+    this.manifestService.loadTemplates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+  }
 
   private initControlValue<T>(controlName: string, fallback: T): Signal<T> {
     return toSignal(
