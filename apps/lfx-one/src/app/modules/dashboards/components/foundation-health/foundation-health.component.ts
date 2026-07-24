@@ -79,6 +79,7 @@ export class FoundationHealthComponent {
   private readonly maintainersLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
   private readonly activeContributorsMonthlyDistinctLoading = signal(true);
+  private readonly activeContributorsLoading = signal(true);
   private readonly eventsLoading = signal(true);
 
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(
@@ -108,6 +109,16 @@ export class FoundationHealthComponent {
   // never renders the previous foundation's buckets for the newly selected one.
   protected readonly reconciledHealthScoresData = computed(() =>
     this.healthScoresLoading() ? DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION : this.healthScoresData()
+  );
+
+  // activeContributorsData (the daily average feeding the drawer headline) retains
+  // the prior foundation's avgContributors during a switch; surface the zeroed
+  // default while loading so the drawer headline never flashes the previous
+  // foundation's average against the newly loaded chart.
+  protected readonly reconciledActiveContributorsData = computed<UniqueContributorsDailyResponse>(() =>
+    this.activeContributorsLoading()
+      ? { data: [], avgContributors: 0, totalDays: 0 }
+      : this.activeContributorsData()
   );
 
   public readonly selectedFilter = signal<string>('all');
@@ -740,7 +751,16 @@ export class FoundationHealthComponent {
 
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(catchError(() => of(defaultValue))))
+        tap(() => this.activeContributorsLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(
+            tap(() => this.activeContributorsLoading.set(false)),
+            catchError(() => {
+              this.activeContributorsLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
       { initialValue: defaultValue }
     );
