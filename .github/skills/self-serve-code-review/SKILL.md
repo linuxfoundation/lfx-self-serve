@@ -46,7 +46,10 @@ it. They live in:
   tokens, upstream-contract verification, code-quality rules).
 - **The four `docs/reviews/` checklists** — `frontend-checklist.md` (PrimeNG
   wrapper strategy: no raw `<p-*>` in feature templates, no function calls in
-  templates — only signal reads and pipes — component organization),
+  render-time expressions — interpolation and property bindings should read
+  signals or pipes, not call methods that re-run every change detection; event
+  bindings like `(click)="save()"` are the normal exception — component
+  organization),
   `backend-checklist.md` (the three-file service/controller/route pattern,
   controller-vs-service separation, custom error classes, user bearer tokens vs
   M2M, upstream API validation, protected files), `shared-and-sql-checklist.md`,

@@ -118,9 +118,10 @@ the concrete mechanism in the code each time.
   `optional`/`public`, a pattern that is unanchored or ordered so a protected
   path matches a more permissive rule first (fail-open), a **new
   unauthenticated route outside the documented public surface**, or a
-  `/public/api` endpoint that fails the visibility-filter-before-pagination
-  requirement — those are top-scale. A new, correctly filtered `/public/api`
-  endpoint is deliberate public surface: scrutinize it with the per-fact
+  `/public/api` endpoint from which a private record can reach the anonymous
+  caller — those are top-scale. A new `/public/api` endpoint that keeps private
+  records out of the anonymous response is deliberate public surface:
+  scrutinize it with the per-fact
   data-exposure pass rather than flagging it for existing.
 - **Identity and impersonation.** Whenever the code means *the acting
   subject*, identity must come from the effective-identity helpers
@@ -181,9 +182,15 @@ the concrete mechanism in the code each time.
   runtime config that ships to the browser. Only deliberately public runtime
   config may reach the client. Flag a server secret newly exposed to the client.
 - **Public-data visibility.** A `/public/api` endpoint returning meeting/event or
-  project data must filter to public visibility **before** paginating, so an
-  anonymous caller cannot page into private records. Flag a public read whose
-  visibility filter is missing or applied after the page bound.
+  project data must keep private records out of the anonymous response. When a
+  public endpoint exposes *paginated* results to the caller, that means
+  filtering to public visibility **before** the page bound, so a private record
+  cannot occupy a page slot; an endpoint that fetches all upstream pages and
+  filters before emitting a single response (e.g. the public calendar ICS
+  feeds) satisfies it by filtering before the response. Flag a public read
+  where a private record can actually reach the caller — an unfiltered feed, or
+  a paginated public response filtered only after the page bound — not a
+  fetch-all-then-filter aggregate.
 
 ## What not to flag
 
