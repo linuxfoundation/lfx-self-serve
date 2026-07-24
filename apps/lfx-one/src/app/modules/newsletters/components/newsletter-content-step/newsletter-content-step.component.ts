@@ -176,6 +176,17 @@ export class NewsletterContentStepComponent implements OnInit {
       // Drop the authored html; blocks become the source and the server
       // re-derives body_html on save.
       this.form().get('bodyHtml')?.setValue('');
+      // Seed a non-null empty layout when entering Blocks from a null layout.
+      // Without it, a switch from a populated simple draft leaves bodyLayout null
+      // AND body_html empty, so bodyPersistable is false and neither autosave nor
+      // manual save can persist the confirmed discard — the old simple body then
+      // reverts on reload. The composer re-emits with its real manifest
+      // wrapper_key as soon as a block is added (mirrors its own 'default'
+      // fallback in toLayout()).
+      if (this.form().get('bodyLayout')?.value == null) {
+        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', blocks: [] };
+        this.form().get('bodyLayout')?.setValue(emptyLayout);
+      }
     }
     // Force initialLayout to re-read the live control so the composer re-seeds
     // from the cleared/current layout rather than the frozen initial value.

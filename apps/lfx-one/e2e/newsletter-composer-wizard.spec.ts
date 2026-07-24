@@ -434,7 +434,10 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
       page.getByTestId('newsletter-manage-draft-btn').click(),
     ]);
     const payload = request.postDataJSON() as UpdateNewsletterRequest;
-    expect(payload.body_layout ?? null).toBeNull();
+    // The form seeds a legacy draft's missing body_layout as null (not undefined),
+    // and the tri-state save sends that explicit null to CLEAR any stored layout —
+    // so assert null exactly, which also catches a regression to an omitted field.
+    expect(payload.body_layout).toBeNull();
     expect(payload.body_html).toBeTruthy();
   });
 

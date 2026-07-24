@@ -205,10 +205,13 @@ export class NewsletterController {
    * size and source rather than estimating from the client preview.
    */
   public async renderPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_render_preview', { project_uid: projectUid });
-
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise
+    // without reaching next(error), which can hang the request. Keeping them in
+    // the try routes any throw to the error handler.
     try {
+      const projectUid = this.requireProjectUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_render_preview', { project_uid: projectUid });
       const payload = req.body as NewsletterRenderPreviewPayload;
       this.validateRenderPreviewPayload(payload, req.path, 'newsletter_render_preview');
       const result = await this.newsletterService.renderPreview(req, projectUid, payload);
@@ -557,6 +560,14 @@ export class NewsletterController {
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
       fieldErrors['to_email'] = 'A valid to_email is required';
+    }
+
+    // Parity with validateCommonPayload: the client sends ed_reply_email on every
+    // test send, and a layout test recompiles the wrapper's "To reply, email …"
+    // row (and the email's reply-to) from it, so require a valid address here too
+    // rather than silently accepting a missing/malformed one.
+    if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
+      fieldErrors['ed_reply_email'] = 'A valid ed_reply_email is required';
     }
 
     if (Object.keys(fieldErrors).length > 0) {

@@ -575,6 +575,19 @@ function classList(attrs: Record<string, string>, extra?: string): string {
 const URL_ATTRS = new Set(['href', 'src']);
 
 /**
+ * Attribute-specific URL gate. `href` additionally accepts `mailto:` — the
+ * wrapper manifest emits `mailto:{{edition.reply_email}}` and the upstream
+ * declarative renderer allows it, so the preview must not silently drop a link
+ * that IS present in the sent email. `src` stays http(s)-only (an image source
+ * can never be a mailto). The `mailto:` scheme is non-executable, so allowing it
+ * here does not reopen the `javascript:` / `data:` hole `isValidUrl` closes.
+ */
+function isSafeUrlForAttr(attr: string, value: string): boolean {
+  if (attr === 'href' && /^\s*mailto:/i.test(value)) return true;
+  return isValidUrl(value);
+}
+
+/**
  * Resolve and serialise the passthrough attributes for an emitted element. URL
  * attributes (`href`/`src`) are gated through the shared `isValidUrl` before
  * emission — a `javascript:` / `data:` value bound from a content field (the
@@ -588,7 +601,7 @@ function passthrough(_tag: string, attrs: Record<string, string>, content: Recor
   for (const a of PASSTHROUGH_ATTRS) {
     if (attrs[a] === undefined) continue;
     const resolved = resolveAttr(attrs[a], content);
-    if (URL_ATTRS.has(a) && !isValidUrl(resolved)) continue;
+    if (URL_ATTRS.has(a) && !isSafeUrlForAttr(a, resolved)) continue;
     out.push(`${a}="${escapeAttr(resolved)}"`);
   }
   return out.join(' ');

@@ -410,14 +410,12 @@ export class NewsletterManageComponent {
         subject: this.form.controls.subject.value,
         body_html: this.form.controls.bodyHtml.value,
         to_email: this.edEmail(),
-        // A block-composer draft renders a complete emitter email into body_html,
-        // so flag it as a layout send — otherwise the service re-wraps it in the
-        // legacy chrome and the test email is double-wrapped.
-        is_layout: (this.bodyLayoutValue()?.blocks?.length ?? 0) > 0,
-        // Send the structured layout too: the service recompiles the test email
-        // from it with the unsubscribe/compliance footer suppressed, so the test
-        // email doesn't carry a dangling empty "Unsubscribe" row. Null for simple
-        // drafts (the service then wraps body_html the legacy way).
+        // body_layout is the SOLE layout-send trigger: when present, the service
+        // recompiles the test email from it with the unsubscribe/compliance footer
+        // suppressed (so the test email carries no dangling empty "Unsubscribe"
+        // row) instead of wrapping body_html the legacy way. Null for simple
+        // drafts. The deprecated is_layout flag is ignored upstream, so we no
+        // longer send it.
         body_layout: this.bodyLayoutValue(),
         // The reply-to address the layout recompile binds into the "To reply,
         // email …" row and the email's reply-to — without it a layout test email
@@ -463,6 +461,10 @@ export class NewsletterManageComponent {
     });
   }
 
+  protected retryCommittees(): void {
+    this.retryCommittees$.next();
+  }
+
   /** The still-missing requirements that block a draft save, for user feedback. */
   private missingDraftRequirements(): string[] {
     const missing: string[] = [];
@@ -480,10 +482,6 @@ export class NewsletterManageComponent {
   private formatMissing(items: string[]): string {
     if (items.length === 1) return items[0];
     return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-  }
-
-  protected retryCommittees(): void {
-    this.retryCommittees$.next();
   }
 
   private goToList(tab?: 'draft' | 'sent'): void {
