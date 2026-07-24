@@ -62,6 +62,60 @@
         styleClass="w-full"
         data-testid="newsletter-audience-committees">
       </lfx-select>
+
+      @if (selectedCommitteeUid()) {
+        <div class="flex flex-col gap-2 mt-2" data-testid="newsletter-audience-email-add-section">
+          <div class="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800" data-testid="newsletter-audience-email-add-banner">
+            Adding an email here automatically adds it to the <span class="font-medium">{{ selectedCommitteeName() }}</span> group, so it's remembered for
+            future newsletters — a one-time step.
+          </div>
+
+          <form [formGroup]="emailAddForm" (ngSubmit)="onAddEmail()" class="flex items-center gap-2">
+            <div class="flex-1">
+              <lfx-input-text
+                [form]="emailAddForm"
+                control="email"
+                type="email"
+                id="newsletter-audience-email-add"
+                placeholder="Add an email to this group…"
+                dataTest="newsletter-audience-email-add-input">
+              </lfx-input-text>
+            </div>
+            <lfx-button label="Add" type="submit" size="small" severity="secondary" [outlined]="true" data-testid="newsletter-audience-email-add-btn">
+            </lfx-button>
+          </form>
+
+          @if (visibleEmailAdds().length > 0) {
+            <ul class="flex flex-col gap-1" data-testid="newsletter-audience-email-add-list">
+              @for (entry of visibleEmailAdds(); track entry.email) {
+                <li class="flex items-center gap-2 px-1 py-0.5 text-sm text-gray-700" data-testid="newsletter-audience-email-add-item">
+                  <span class="break-all">{{ entry.email }}</span>
+                  @switch (entry.status) {
+                    @case ('pending') {
+                      <p-progressSpinner styleClass="!w-3.5 !h-3.5" strokeWidth="4" ariaLabel="Adding to group"></p-progressSpinner>
+                    }
+                    @case ('added') {
+                      <i class="fa-light fa-check text-emerald-600" aria-hidden="true"></i>
+                      <span class="sr-only">Added to group</span>
+                    }
+                    @case ('already') {
+                      <span class="text-xs text-gray-500">Already exists in this group</span>
+                    }
+                    @case ('invalid') {
+                      <i class="fa-light fa-circle-exclamation text-amber-600" aria-hidden="true"></i>
+                      <span class="text-xs text-amber-700">{{ entry.reason }}</span>
+                    }
+                    @case ('failed') {
+                      <i class="fa-light fa-circle-exclamation text-red-600" aria-hidden="true"></i>
+                      <span class="text-xs text-red-700">{{ entry.reason }}</span>
+                    }
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      }
     }
   </div>
 

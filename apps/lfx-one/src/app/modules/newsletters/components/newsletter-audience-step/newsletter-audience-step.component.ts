@@ -4,9 +4,11 @@
 import { Component, computed, DestroyRef, inject, input, output, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
-import { Committee, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-one/shared/interfaces';
+import { Committee, NewsletterAudienceEmailAdd, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -14,7 +16,7 @@ import { finalize, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-newsletter-audience-step',
-  imports: [ReactiveFormsModule, SelectComponent, PopoverModule, ProgressSpinnerModule],
+  imports: [ReactiveFormsModule, SelectComponent, PopoverModule, ProgressSpinnerModule, InputTextComponent, ButtonComponent],
   templateUrl: './newsletter-audience-step.component.html',
 })
 export class NewsletterAudienceStepComponent {
@@ -39,9 +41,14 @@ export class NewsletterAudienceStepComponent {
   public readonly committeeUidsValue = input<string[]>([]);
   public readonly recipientCount = input<number | null>(null);
   public readonly recipientCountLoading = input<boolean>(false);
+  // Per-email add state is owned by the host (this panel is destroyed on step
+  // navigation, so in-flight adds and their statuses must outlive it).
+  public readonly emailAdds = input<NewsletterAudienceEmailAdd[]>([]);
 
   // === Outputs ===
   public readonly retryCommittees = output<void>();
+  // Raw email string as typed; validation, dedupe, and state live on the host.
+  public readonly addEmail = output<string>();
 
   // === Forms ===
   // The shared `form` input carries `committeeUids: string[]` end-to-end — recipient
@@ -50,6 +57,13 @@ export class NewsletterAudienceStepComponent {
   // the scalar selection; it's bridged to the shared array control in initSync().
   protected readonly audienceForm = new FormGroup({
     committeeUid: new FormControl<string | null>(null),
+  });
+
+  // Inline "add email to the selected group" input. Submitting emits the raw
+  // value to the host and clears the control immediately — adds are async and
+  // never block further typing or step navigation.
+  protected readonly emailAddForm = new FormGroup({
+    email: new FormControl<string>('', { nonNullable: true }),
   });
 
   // === Signals ===
@@ -70,9 +84,30 @@ export class NewsletterAudienceStepComponent {
   );
   protected readonly selectedCount: Signal<number> = computed(() => this.committeeUidsValue().length);
   protected readonly hasCommittees = computed(() => this.committeeOptions().length > 0);
+  protected readonly selectedCommitteeUid = computed<string | null>(() => this.committeeUidsValue()[0] ?? null);
+  protected readonly selectedCommitteeName = computed<string>(() => {
+    const uid = this.selectedCommitteeUid();
+    if (!uid) return 'the selected';
+    const committee = this.committees().find((c) => c.uid === uid);
+    return committee?.name || 'the selected';
+  });
+  // Adds are scoped per group: switching groups swaps the visible list, and
+  // entries for a previously selected group reappear on switch-back.
+  protected readonly visibleEmailAdds = computed<NewsletterAudienceEmailAdd[]>(() => {
+    const uid = this.selectedCommitteeUid();
+    if (!uid) return [];
+    return this.emailAdds().filter((e) => e.committeeUid === uid);
+  });
 
   public constructor() {
     this.initSync();
+  }
+
+  protected onAddEmail(): void {
+    const value = this.emailAddForm.controls.email.value;
+    if (!value.trim()) return;
+    this.addEmail.emit(value);
+    this.emailAddForm.controls.email.setValue('');
   }
 
   protected onShowRecipients(event: Event): void {

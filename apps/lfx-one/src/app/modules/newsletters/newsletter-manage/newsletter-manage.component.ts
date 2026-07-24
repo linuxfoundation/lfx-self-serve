@@ -13,12 +13,13 @@ import {
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
+  NewsletterAudienceEmailAdd,
   NewsletterManageViewMode,
   NewsletterSendResult,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
+import { formatRelativeTime, isValidEmail, stripHtml } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -162,6 +163,13 @@ export class NewsletterManageComponent {
   // cancels the stale in-flight request instead of letting it race the
   // normalized one and clobber the displayed count.
   private readonly recipientCountTrigger$ = new Subject<string[]>();
+
+  // === Audience email adds ===
+  // Owned here (not by the audience step) because the stepper destroys the step
+  // panel on navigation — in-flight adds and their per-email statuses must
+  // survive the user moving between steps. The step renders this filtered to
+  // the currently selected group.
+  protected readonly audienceEmailAdds = signal<NewsletterAudienceEmailAdd[]>([]);
 
   // === Newsletter-eligible committees ===
   // Fetched once here (not duplicated in the audience-step child) and passed down
@@ -373,6 +381,54 @@ export class NewsletterManageComponent {
     this.retryCommittees$.next();
   }
 
+  // Fired by the audience step for each email the user submits. Every add is an
+  // independent, non-blocking request: the step's input clears immediately and
+  // the per-email status here drives the inline indicator.
+  protected onAddAudienceEmail(raw: string): void {
+    const committeeUid = this.committeeUidsValue()[0];
+    if (!committeeUid) return;
+
+    const email = raw.trim().toLowerCase();
+    if (!email) return;
+
+    // pending/added/already entries are in flight or settled — retyping is a
+    // no-op. invalid/failed entries are replaced so retyping acts as a retry.
+    // This keeps (committeeUid, email) unique, which the step's @for tracking
+    // relies on.
+    const existing = this.audienceEmailAdds().find((e) => e.committeeUid === committeeUid && e.email === email);
+    if (existing && existing.status !== 'invalid' && existing.status !== 'failed') return;
+
+    const entry: NewsletterAudienceEmailAdd = isValidEmail(email)
+      ? { email, committeeUid, status: 'pending' }
+      : { email, committeeUid, status: 'invalid', reason: 'Not a valid email' };
+    this.audienceEmailAdds.update((entries) => [...entries.filter((e) => !(e.committeeUid === committeeUid && e.email === email)), entry]);
+
+    if (entry.status === 'invalid') return;
+
+    // Intentionally NOT takeUntilDestroyed: HttpClient aborts the request on
+    // unsubscribe, which would silently cancel in-flight adds if the user left
+    // the page. createCommitteeMember pipes take(1) and HTTP observables
+    // complete after one response, so each subscription cleans itself up.
+    this.committeeService.createCommitteeMember(committeeUid, { email }, { skipNotification: true }).subscribe({
+      next: () => {
+        this.updateAudienceEmailAdd(committeeUid, email, { status: 'added' });
+        // Refresh the recipient pill only if this group is still the selected
+        // audience — an add resolving after a group switch must not clobber
+        // the new group's count.
+        if (this.committeeUidsValue()[0] === committeeUid) {
+          this.fetchRecipientCountFor(this.committeeUidsValue());
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        if (err.status === 409) {
+          this.updateAudienceEmailAdd(committeeUid, email, { status: 'already' });
+        } else {
+          this.updateAudienceEmailAdd(committeeUid, email, { status: 'failed', reason: this.audienceAddFailureReason(err) });
+        }
+      },
+    });
+  }
+
   private goToList(tab?: 'draft' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
@@ -410,6 +466,18 @@ export class NewsletterManageComponent {
 
   private fetchRecipientCountFor(uids: string[]): void {
     this.recipientCountTrigger$.next(uids);
+  }
+
+  private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
+    this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
+  }
+
+  private audienceAddFailureReason(err: HttpErrorResponse): string {
+    const message = err?.error?.message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
+    return 'Could not add. Try again.';
   }
 
   private fetchRecipientCount$(uids: string[]) {

@@ -32,6 +32,32 @@ export interface NewsletterRecipientCountPayload {
   committee_uids: string[];
 }
 
+/**
+ * Lifecycle of a single inline "add email to the audience group" attempt.
+ *
+ * - `pending`: the create-member request is in flight.
+ * - `added`: the member was created in the group (with notification suppressed).
+ * - `already`: the group already has a member with this email — benign outcome.
+ * - `invalid`: the input failed client-side email validation; no request was sent.
+ * - `failed`: the create-member request was rejected upstream.
+ */
+export type NewsletterAudienceEmailAddStatus = 'pending' | 'added' | 'already' | 'invalid' | 'failed';
+
+/**
+ * Per-email state for the audience step's inline add-to-group flow. Owned by
+ * the manage host (the stepper destroys the step panel on navigation) and
+ * rendered by the audience step filtered to the currently selected group.
+ */
+export interface NewsletterAudienceEmailAdd {
+  /** Normalized (trimmed, lowercased) email; for invalid tokens, the trimmed raw input. */
+  email: string;
+  /** Committee the add was fired against — list rendering is scoped by this. */
+  committeeUid: string;
+  status: NewsletterAudienceEmailAddStatus;
+  /** Human-readable reason shown for `invalid` / `failed`. */
+  reason?: string;
+}
+
 export interface NewsletterRecipientCount {
   count: number;
 }
