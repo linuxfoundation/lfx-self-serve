@@ -171,6 +171,22 @@ export class MeetingController {
       // stripped for everyone else. Runs on the authenticated user's token (active on this route).
       await applyHostKeyVisibility(req, this.accessCheckService, meetingWithInvitedStatus);
 
+      // host_key is no longer on the v2 meeting API response — fetch it from the separately
+      // indexed v1_meeting_host_credentials object (FGA-gated by host relation on v1_meeting).
+      if (meetingWithInvitedStatus.can_view_host_key) {
+        try {
+          const hostKey = await this.meetingService.getMeetingHostKey(req, uid);
+          if (hostKey) {
+            meetingWithInvitedStatus.host_key = hostKey;
+          }
+        } catch (error) {
+          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
+            meeting_id: uid,
+            err: error,
+          });
+        }
+      }
+
       // The ITX detail payload omits created_by — join back to the live v1_meeting index so
       // the organizer name can be shown. Single meeting keyed on its own UID.
       const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meetingWithInvitedStatus], (m) => m.id);

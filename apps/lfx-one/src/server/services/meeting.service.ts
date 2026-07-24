@@ -222,6 +222,31 @@ export class MeetingService {
   }
 
   /**
+   * Fetches the host key for a meeting from the v1_meeting_host_credentials indexed object.
+   *
+   * The query service enforces FGA on this object type (access_check_relation: "host" on
+   * v1_meeting), so it only returns data when the caller holds an organizer/writer relation.
+   * Must be called with the user's bearer token active on req — NOT an M2M token.
+   *
+   * Returns the 6-digit host key string, or null when the user has no access or no credentials
+   * document has been indexed yet.
+   */
+  public async getMeetingHostKey(req: Request, meetingId: string): Promise<string | null> {
+    logger.debug(req, 'get_meeting_host_key', 'Fetching host key credentials', { meeting_id: meetingId });
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ host_key: string }>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { type: 'v1_meeting_host_credentials', tags: `meeting_id:${meetingId}`, limit: 1 }
+    );
+
+    const hostKey = resources?.[0]?.data?.host_key;
+    return hostKey || null;
+  }
+
+  /**
    * Fetches a single past meeting by UID via ITX endpoint
    */
   public async getPastMeetingById(req: Request, pastMeetingUid: string): Promise<PastMeeting> {

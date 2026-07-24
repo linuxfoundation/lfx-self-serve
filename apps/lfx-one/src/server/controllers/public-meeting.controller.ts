@@ -100,6 +100,23 @@ export class PublicMeetingController {
 
         try {
           await applyHostKeyVisibility(req, this.accessCheckService, meeting);
+
+          // host_key is no longer on the v2 meeting API response — fetch it from the
+          // separately indexed v1_meeting_host_credentials object (FGA-gated by host relation).
+          // Must run while the user's own token is active, before restoring M2M below.
+          if (meeting.can_view_host_key) {
+            try {
+              const hostKey = await this.meetingService.getMeetingHostKey(req, id);
+              if (hostKey) {
+                meeting.host_key = hostKey;
+              }
+            } catch (error) {
+              logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
+                meeting_id: id,
+                err: error,
+              });
+            }
+          }
         } catch (error) {
           // If the access check fails, log but fail closed (no organizer, no host key)
           logger.warning(req, 'get_public_meeting_by_id', 'Failed to check host key access, continuing with no access', {
