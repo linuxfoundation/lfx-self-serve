@@ -80,8 +80,11 @@ Run these on the changed code, scaled to the size of the change:
   that a mock was called; new components get `data-testid` hooks and the dual
   E2E coverage the repo expects where appropriate. Missing tests on
   contract-bearing or security-sensitive code is always worth flagging.
-- **Performance**: no unbounded fetch where the upstream is cursor-paginated
-  (`/query/resources` carries a cursor — use it), no work in a template
+- **Performance**: for a caller-facing list, page the cursor through to the
+  caller rather than draining every upstream page into one response
+  (`/query/resources` carries a cursor — use it); a deliberate all-pages fetch
+  for a complete-set operation (via the established all-pages helper) is a
+  supported pattern, not a defect. No work in a template
   expression (it re-runs every change detection), no waterfall of sequential
   awaits that should be concurrent, no payload loaded server-side and shipped
   whole into the client bundle via TransferState.
