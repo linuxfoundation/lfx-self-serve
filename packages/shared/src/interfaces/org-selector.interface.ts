@@ -20,6 +20,12 @@ export interface OrgItem {
   isMember?: boolean;
   /** Spec 022 — populated only for inherited (cascading) rows; the parent org's display name, used to render the dropdown tooltip. */
   parentName?: string | null;
+  /**
+   * LFXV2-2750 — role source carried on the row itself. Populated only for `foundation-auditor` rows, which are
+   * resolved per-search (they are not part of the cached grants resolution, so the client cannot look them up in
+   * a uid set). Absent for grants-derived rows, whose persona is resolved from the role-grants sets.
+   */
+  roleSource?: OrgRolePersona;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -268,8 +274,13 @@ export interface MemberServiceB2bOrgResponse {
   is_member?: boolean;
 }
 
-/** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
-export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
+/**
+ * Per-row caller role persona (spec 022 D-005 + FR-011a). The variants are pairwise disjoint per uid;
+ * `direct-*` rows get the Edit (pen) affordance, `inherited-*` rows get a tooltip-only disclosure, and
+ * `foundation-auditor` rows (LFXV2-2750) are view-only member orgs surfaced because the caller holds the
+ * FGA `auditor` relation on the org's foundation — always rendered with the eye (never the pen).
+ */
+export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor' | 'foundation-auditor';
 
 /** Resolved per-uid role with source qualifier and the parent uid it inherits from (cascading rows only) — spec 022 D-005. Crossed-service payload between `OrgRoleGrantsService` and `OrgNavigationService`. */
 export interface ResolvedOrgRole {
@@ -301,4 +312,30 @@ export interface AccessAwareOrgsCacheEntry {
   upstreamFailed: boolean;
   loadedAt: string;
   username: string;
+}
+
+/** LFXV2-2750 — a foundation (project) the caller holds the FGA `auditor` relation on. */
+export interface AuditedFoundation {
+  /** Project uid — interpolated into the `project:<uid>#auditor` access-check tuple. */
+  uid: string;
+  /** Project slug — interpolated into the `project_slug:` project_membership data filter. */
+  slug: string;
+}
+
+/** LFXV2-2750 — a member org of an audited foundation, resolved by the search-driven lookup. */
+export interface FoundationAuditorOrgEntry {
+  /** b2b_org uid (18-char SFID). */
+  uid: string;
+  /** b2b_org indexed display doc (name/logo/domain). */
+  doc: B2bOrgIndexedDoc;
+}
+
+/** LFXV2-2750 — result of appending foundation-auditor member orgs to the grants-derived selector rows. */
+export interface AppendFoundationAuditorItemsResult {
+  /** Grants-derived rows followed by the appended view-only `foundation-auditor` rows. */
+  items: OrgItem[];
+  /** True when the cap was reached and one or more foundation-auditor rows were dropped. */
+  truncated: boolean;
+  /** Number of `foundation-auditor` rows actually appended. */
+  addedCount: number;
 }

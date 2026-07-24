@@ -227,6 +227,84 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
   });
 });
 
+// S10b — foundation-auditor row (LFXV2-2750) renders view-only: the "Foundation Auditor"
+// label, the eye icon (never the pen), and the view-only-via-foundation tooltip. These rows are
+// resolved per-search and carry `roleSource` on the row itself, so the row — not a role-grants
+// uid set — drives the decoration. Both BFF endpoints are stubbed for determinism (as in S10).
+test.describe('Org Selector — foundation-auditor row decoration (S10b)', () => {
+  test('S10b: foundation-auditor row shows the "Foundation Auditor" label, eye icon (no pen), and view-only tooltip', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // Org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
+    const ORG_UID = '0014100000Te2QjAAJ';
+    const ORG_NAME = 'Fujitsu Limited';
+    const GRANTED_UID = '0014100000TdzYmAAJ';
+
+    // A direct grant keeps the selector's visibility gate open (foundation-auditor status is not
+    // knowable up front — it is resolved per-search).
+    await page.route('**/api/orgs/me/role-grants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          writers: [GRANTED_UID],
+          auditors: [],
+          cascadingWriters: [],
+          cascadingAuditors: [],
+          username: 'e2e-foundation-auditor',
+          loaded_at: new Date().toISOString(),
+        }),
+      })
+    );
+
+    await page.route('**/api/nav/org-items*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              uid: GRANTED_UID,
+              accountId: GRANTED_UID,
+              name: 'Red Hat, Inc.',
+              logoUrl: null,
+              primaryDomain: 'redhat.com',
+              isMember: true,
+              parentName: null,
+            },
+            {
+              uid: ORG_UID,
+              accountId: ORG_UID,
+              name: ORG_NAME,
+              logoUrl: null,
+              primaryDomain: 'fujitsu.com',
+              isMember: true,
+              parentName: null,
+              roleSource: 'foundation-auditor',
+            },
+          ],
+          next_page_token: null,
+          upstream_failed: false,
+          total: 2,
+        }),
+      })
+    );
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await openSelector(page);
+
+    const badge = page.getByTestId(`org-item-${ORG_UID}-role-badge`);
+    await expect(badge).toBeVisible({ timeout: 10_000 });
+    await expect(badge).toHaveAttribute('data-role-label', 'Foundation Auditor');
+    await expect(badge).toHaveAttribute('data-role-tooltip', /View-only access via foundation membership/);
+    // View-only semantics: the eye icon, never the Edit (pen) affordance.
+    const icon = badge.locator('i');
+    await expect(icon).toHaveClass(/fa-eye/);
+    await expect(icon).not.toHaveClass(/fa-pen-to-square/);
+  });
+});
+
 // S11 — upstream-failure deterministic empty state. Stub both BFF
 // endpoints to simulate the deleted-mock-fallback path, then assert the empty state
 // renders and no rows leak through.

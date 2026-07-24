@@ -81,7 +81,9 @@ export class OrgSelectorComponent {
     const inheritedAuditorSet = this.orgRoleGrantsService.inheritedAuditorSet();
     const parentNameByUid = this.orgRoleGrantsService.parentNameByUid();
     return this.items().map((item) => {
-      const persona = this.resolvePersona(item.uid, writerSet, auditorSet, inheritedWriterSet, inheritedAuditorSet);
+      // LFXV2-2750 — foundation-auditor rows are resolved per-search and carry their role source on the row
+      // itself (they're absent from the cached grants sets), so the row wins when present.
+      const persona = item.roleSource ?? this.resolvePersona(item.uid, writerSet, auditorSet, inheritedWriterSet, inheritedAuditorSet);
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
@@ -213,20 +215,28 @@ export class OrgSelectorComponent {
       case 'inherited-writer':
       case 'inherited-auditor':
         return 'Org Admin Viewer (inherited)';
+      // LFXV2-2750 — view-only member org surfaced via a foundation-level auditor grant.
+      case 'foundation-auditor':
+        return 'Foundation Auditor';
       default:
         return '';
     }
   }
 
-  /** Direct writer → pen (edit); everyone else (direct/inherited viewer + the impossible inherited-writer) → eye. Inherited rows are view-only, so they never get the edit icon. */
+  /** Direct writer → pen (edit); every viewer variant (direct/inherited auditor, foundation auditor, and the impossible inherited-writer) → eye. View-only rows never get the edit icon. */
   private personaToIcon(persona: OrgRolePersona | null): string {
     if (persona === 'direct-writer') return 'fa-light fa-pen-to-square';
-    if (persona === 'direct-auditor' || persona === 'inherited-auditor' || persona === 'inherited-writer') return 'fa-light fa-eye';
+    if (persona === 'direct-auditor' || persona === 'inherited-auditor' || persona === 'inherited-writer' || persona === 'foundation-auditor')
+      return 'fa-light fa-eye';
     return '';
   }
 
   /** Inherited-only tooltip text. Empty string for direct rows so PrimeNG hides the tooltip. Per FGA model, only auditor cascades — writer never cascades to children. */
   private personaToTooltip(persona: OrgRolePersona | null, parentName: string): string {
+    // LFXV2-2750 — foundation-auditor rows carry no parent org; disclose the view-only foundation source instead.
+    if (persona === 'foundation-auditor') {
+      return 'View-only access via foundation membership';
+    }
     if (!parentName) return '';
     if (persona === 'inherited-auditor') {
       return `View-only access inherited from ${parentName}`;

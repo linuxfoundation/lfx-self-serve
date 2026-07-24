@@ -1,19 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP } from '@lfx-one/shared/constants';
 import { B2bOrgIndexedDoc, GetOrgItemsParams, OrgItem, OrgItemsResponse, ResolvedOrgRole } from '@lfx-one/shared/interfaces';
+import { appendFoundationAuditorItems } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { FoundationAuditorOrgsService, isFoundationAuditorOrgSelectorEnabled } from './foundation-auditor-orgs.service';
 import { logger } from './logger.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
 export class OrgNavigationService {
   private readonly orgRoleGrants: OrgRoleGrantsService;
+  private readonly foundationAuditorOrgs: FoundationAuditorOrgsService;
 
   public constructor() {
     this.orgRoleGrants = new OrgRoleGrantsService();
+    this.foundationAuditorOrgs = new FoundationAuditorOrgsService();
   }
 
   public async getOrgItems(req: Request, params: GetOrgItemsParams): Promise<OrgItemsResponse> {
@@ -40,17 +45,16 @@ export class OrgNavigationService {
 
     const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
 
-    if (access.resolved.size === 0 && access.orgDocByUid.size === 0) {
-      return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
-    }
-
     // Spec 002: the b2b_org uid IS the 18-char SFID (member-service v0.7.0), so the account id is the
     // uid itself — no NATS UUID→SFID resolution, and no rows dropped for a missing sfid.
     const items = this.buildOrgItems(req, access.resolved, access.orgDocByUid);
 
     const filteredItems = this.applySearch(items, name);
     const sortedItems = this.applySort(filteredItems, name);
-    const pinnedItems = this.applySelectedUidPin(sortedItems, items, selectedUid, pageToken);
+    // LFXV2-2750 — append view-only member orgs of foundations the caller audits that match the search term.
+    // Runs after the grants filter/sort so grants-derived rows always rank first; no-ops without a search term.
+    const withFoundationAuditors = await this.appendFoundationAuditorMatches(req, username, sortedItems, name);
+    const pinnedItems = this.applySelectedUidPin(withFoundationAuditors, items, selectedUid, pageToken);
 
     logger.debug(req, 'build_org_items', 'Built access-aware org items', {
       item_count: pinnedItems.length,
@@ -61,9 +65,45 @@ export class OrgNavigationService {
     return {
       items: pinnedItems,
       next_page_token: null,
-      upstream_failed: false,
+      upstream_failed: access.upstreamFailed,
       total: pinnedItems.length,
     };
+  }
+
+  /**
+   * LFXV2-2750 — append view-only member orgs of foundations the caller audits, matching the typeahead term.
+   * Gated by the env kill-switch (default off) and no-ops for a too-short term, so the default dropdown stays
+   * exactly today's grants-only list. Fail-soft: any lookup failure returns the grants-only rows unchanged.
+   */
+  private async appendFoundationAuditorMatches(req: Request, username: string, baseItems: OrgItem[], name: string | undefined): Promise<OrgItem[]> {
+    if (!isFoundationAuditorOrgSelectorEnabled()) {
+      logger.debug(req, 'append_foundation_auditor_items', 'Skipped — FOUNDATION_AUDITOR_ORG_SELECTOR_ENABLED is not enabled', {
+        flag_value: process.env['FOUNDATION_AUDITOR_ORG_SELECTOR_ENABLED'] ?? '<unset>',
+      });
+      return baseItems;
+    }
+
+    try {
+      const matches = await this.foundationAuditorOrgs.findAuditedMemberOrgs(req, username, name);
+      if (matches.length === 0) {
+        return baseItems;
+      }
+
+      const appended = appendFoundationAuditorItems(baseItems, matches, FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP);
+      if (appended.truncated) {
+        logger.warning(req, 'append_foundation_auditor_items', 'Foundation-auditor row cap reached — truncating', {
+          cap: FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP,
+          added: appended.addedCount,
+        });
+      }
+      logger.debug(req, 'append_foundation_auditor_items', 'Appended foundation-auditor member orgs', {
+        added: appended.addedCount,
+      });
+      return appended.items;
+    } catch (error) {
+      logger.warning(req, 'append_foundation_auditor_items', 'Foundation-auditor lookup failed — returning grants-only list', { err: error });
+      return baseItems;
+    }
   }
 
   /** One omission branch (FR-005 + spec Edge Cases): missing org doc → skip+warn `missing_org_doc`. Spec 002: the uid IS the account id (SFID), so there is no `missing_sfid` omission. */
