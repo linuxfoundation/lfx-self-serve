@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Latest-vs-prior-period delta for an oldest→newest numeric series. The trend
- * arrow is gated on the rounded delta (not the raw value) so a near-zero change
- * never renders a direction arrow alongside a displayed "0.0%" — the arrow and
- * the number must always agree. Returns neutral + undefined when there is no
- * prior period or the prior value is 0 (avoids divide-by-zero).
- */
+/** Gates the trend arrow on the rounded delta so it never contradicts the displayed "0.0%". Returns neutral + undefined when there is no prior period or the prior value is 0. */
 export function computePeriodChange(
   values: number[],
   periodLabel = 'vs last month'

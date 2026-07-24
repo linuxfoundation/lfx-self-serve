@@ -599,7 +599,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationTotalProjects(foundationSlug).pipe(
             tap(() => this.totalProjectsLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation total projects', error);
               this.totalProjectsLoading.set(false);
               return of(defaultValue);
             })
@@ -623,7 +624,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationTotalMembers(foundationSlug).pipe(
             tap(() => this.totalMembersLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation total members', error);
               this.totalMembersLoading.set(false);
               return of(defaultValue);
             })
@@ -654,7 +656,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationValueConcentration(foundationSlug).pipe(
             tap(() => this.softwareValueLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation software value', error);
               this.softwareValueLoading.set(false);
               return of(defaultValue);
             })
@@ -679,7 +682,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getCompanyBusFactor(foundationSlug).pipe(
             tap(() => this.companyBusFactorLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation company bus factor', error);
               this.companyBusFactorLoading.set(false);
               return of(defaultValue);
             })
@@ -704,7 +708,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainers(foundationSlug).pipe(
             tap(() => this.maintainersLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation maintainers', error);
               this.maintainersLoading.set(false);
               return of(defaultValue);
             })
@@ -727,7 +732,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainersMonthly(foundationSlug).pipe(
             tap(() => this.maintainersMonthlyLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation maintainers monthly', error);
               this.maintainersMonthlyLoading.set(false);
               return of(defaultValue);
             })
@@ -754,7 +760,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationHealthScoreDistribution(foundationSlug).pipe(
             tap(() => this.healthScoresLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation health score distribution', error);
               this.healthScoresLoading.set(false);
               return of(defaultValue);
             })
@@ -778,7 +785,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(
             tap(() => this.activeContributorsLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation active contributors', error);
               this.activeContributorsLoading.set(false);
               return of(defaultValue);
             })
@@ -827,7 +835,8 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationEventsQuarterly(foundationSlug).pipe(
             tap(() => this.eventsLoading.set(false)),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load foundation events quarterly', error);
               this.eventsLoading.set(false);
               return of(defaultValue);
             })
