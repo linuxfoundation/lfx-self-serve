@@ -87,8 +87,9 @@ Three sources, each authoritative for its own domain:
   `references/repo-map.md` lists the upstream repos) and
   `skills/lfx-platform-architecture/SKILL.md` (the gateway, OpenFGA
   authorization, NATS, query-service). Peer repos are not checked out where you
-  run: when a finding depends on an upstream contract you cannot read, say so
-  explicitly in the finding rather than guessing.
+  run: when a finding would depend on an upstream contract you cannot read, do
+  not assert it as a defect — note the unverified dependency so the author can
+  confirm it, rather than guessing or publishing a low-confidence finding.
 
 ## How to review
 

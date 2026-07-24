@@ -45,7 +45,8 @@ it. They live in:
   `ssr-safety.md`, and `development-rules.md` (the shared package, M2M-vs-user
   tokens, upstream-contract verification, code-quality rules).
 - **The four `docs/reviews/` checklists** — `frontend-checklist.md` (PrimeNG
-  wrapper strategy: no raw `<p-*>` in feature templates, no function calls in
+  wrapper strategy: prefer the LFX wrapper over a raw `<p-*>` in feature
+  templates unless a documented exception applies, no function calls in
   render-time expressions — interpolation and property bindings should read
   signals or pipes, not call methods that re-run every change detection; event
   bindings like `(click)="save()"` are the normal exception — component
