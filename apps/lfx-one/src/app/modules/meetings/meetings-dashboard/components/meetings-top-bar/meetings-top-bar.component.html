@@ -14,6 +14,15 @@
       data-testid="pending-rsvp-filter-pills" />
   }
 
+  <!-- Organized by me Filter Pills (Me lens, upcoming + past) -->
+  @if (showOrganizerFilter()) {
+    <lfx-filter-pills
+      [options]="organizerPillOptions"
+      [selectedFilter]="organizerOnly() ? 'organizer' : ''"
+      (filterChange)="onOrganizerPillChange()"
+      data-testid="organizer-filter-pills" />
+  }
+
   <!-- Search Input -->
   <div class="flex-1">
     <lfx-input-text

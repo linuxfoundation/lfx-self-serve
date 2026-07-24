@@ -17,6 +17,7 @@ import {
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
   getMeetingOrganizerDisplayName,
+  isMeetingOrganizedByViewer,
   isUnresolvableParticipantName,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
@@ -400,6 +401,68 @@ describe('buildMeetingOrganizerChip', () => {
     expect(chip?.overflow[0].mailto).toContain('mailto:ada@example.com');
     // No-email organizer → plain text (null mailto).
     expect(chip?.overflow[1].mailto).toBeNull();
+  });
+});
+
+describe('isMeetingOrganizedByViewer', () => {
+  const meetingBy = (createdBy: { name: string; username: string; email: string }, extra: Partial<Meeting> = {}): Meeting =>
+    ({ created_by: createdBy, ...extra }) as Meeting;
+
+  const ada = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+  const grace = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+
+  it('matches when created_by is the viewer', () => {
+    expect(isMeetingOrganizedByViewer(meetingBy(ada), 'alovelace')).toBe(true);
+  });
+
+  it('ignores case and any auth-provider prefix on the viewer username', () => {
+    expect(isMeetingOrganizedByViewer(meetingBy(ada), 'auth0|ALovelace')).toBe(true);
+  });
+
+  it('does not match a meeting created by someone else', () => {
+    expect(isMeetingOrganizedByViewer(meetingBy(grace), 'alovelace')).toBe(false);
+  });
+
+  it('ignores the organizer FGA flag — inherited manage grants must not widen the filter', () => {
+    // Staff regression: `organizer: true` means "can manage", not "created". Matching on it would
+    // surface every meeting a staff member has an inherited grant on.
+    expect(isMeetingOrganizedByViewer(meetingBy(grace, { organizer: true }), 'alovelace')).toBe(false);
+  });
+
+  it('does not match service-account or empty created_by', () => {
+    expect(isMeetingOrganizedByViewer(meetingBy({ name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' }), 'zoom.webhooks')).toBe(false);
+    expect(isMeetingOrganizedByViewer(meetingBy({ name: '', username: '', email: '' }), 'alovelace')).toBe(false);
+    expect(isMeetingOrganizedByViewer({} as Meeting, 'alovelace')).toBe(false);
+    expect(isMeetingOrganizedByViewer(null, 'alovelace')).toBe(false);
+  });
+
+  it('never matches when the viewer is unresolved — an empty viewer must not select every meeting', () => {
+    expect(isMeetingOrganizedByViewer(meetingBy(ada), null)).toBe(false);
+    expect(isMeetingOrganizedByViewer(meetingBy(ada), '')).toBe(false);
+    expect(isMeetingOrganizedByViewer(meetingBy({ name: 'No Username', username: '', email: 'x@example.com' }), '')).toBe(false);
+  });
+
+  it('matches a host-flagged viewer when the surface supplies hosts', () => {
+    const hosts = [{ first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true }];
+    expect(isMeetingOrganizedByViewer(meetingBy(ada), 'ghopper', hosts)).toBe(true);
+    expect(isMeetingOrganizedByViewer(meetingBy(ada), 'alovelace', hosts)).toBe(true);
+  });
+
+  it('agrees with the chip: the filter matches exactly when the chip renders an "Organized by you" entry', () => {
+    const cases: { meeting: Meeting; viewer: string | null }[] = [
+      { meeting: meetingBy(ada), viewer: 'alovelace' },
+      { meeting: meetingBy(ada), viewer: 'auth0|alovelace' },
+      { meeting: meetingBy(grace), viewer: 'alovelace' },
+      { meeting: meetingBy(grace, { organizer: true }), viewer: 'alovelace' },
+      { meeting: meetingBy({ name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' }), viewer: 'zoom.webhooks' },
+      { meeting: meetingBy(ada), viewer: null },
+    ];
+
+    for (const { meeting, viewer } of cases) {
+      const chip = buildMeetingOrganizerChip(collectMeetingOrganizers(meeting), viewer);
+      const chipSaysYou = !!chip && [chip.primary, ...chip.overflow].some((link) => link.isYou);
+      expect(isMeetingOrganizedByViewer(meeting, viewer)).toBe(chipSaysYou);
+    }
   });
 });
 

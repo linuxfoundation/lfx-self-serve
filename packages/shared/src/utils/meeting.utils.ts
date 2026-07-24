@@ -859,6 +859,36 @@ function normalizeUsername(username: string | null | undefined): string {
 }
 
 /**
+ * Whether a resolved organizer IS the current viewer — the single comparison behind both the
+ * chip's "you" variant and the "Organized by me" list filter, so the two can never disagree.
+ * An absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
+ * meeting).
+ */
+function isViewerOrganizer(organizer: MeetingUserInfo, viewerUsername?: string | null): boolean {
+  const viewer = normalizeUsername(viewerUsername);
+  return !!viewer && normalizeUsername(organizer.username) === viewer;
+}
+
+/**
+ * Whether the viewer is one of the meeting's organizers — the predicate behind the "Organized by
+ * me" filter on My Meetings (LFXV2-2824). Deliberately derived from `created_by` (via
+ * {@link collectMeetingOrganizers}) and NOT from `meeting.organizer`: that flag is a per-viewer FGA
+ * access check ("can I manage this") that includes inherited grants, so staff would match meetings
+ * they never created — contradicting the "Organized by you" chip on the same card.
+ *
+ * @param meeting - Any object carrying an optional `created_by` (Meeting / PastMeeting).
+ * @param viewerUsername - The current user's username/LFID (prefix-tolerant, case-insensitive).
+ * @param hosts - Optional host candidates, when the surface has them (see collectMeetingOrganizers).
+ */
+export function isMeetingOrganizedByViewer(
+  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  viewerUsername?: string | null,
+  hosts?: ReadonlyArray<MeetingHostCandidate>
+): boolean {
+  return collectMeetingOrganizers(meeting, hosts).some((organizer) => isViewerOrganizer(organizer, viewerUsername));
+}
+
+/**
  * Builds the "Organized by" chip view model from resolved organizers, the viewer's username, and
  * the meeting context needed to pre-fill a `mailto:` per organizer. Returns `null` when there are
  * no organizers so the caller omits the chip entirely.
@@ -876,9 +906,8 @@ export function buildMeetingOrganizerChip(
     return null;
   }
 
-  const viewer = normalizeUsername(viewerUsername);
   const toLink = (organizer: MeetingUserInfo, index: number): MeetingOrganizerLink => {
-    const isYou = !!viewer && normalizeUsername(organizer.username) === viewer;
+    const isYou = isViewerOrganizer(organizer, viewerUsername);
     const name = getMeetingOrganizerDisplayName(organizer);
     return {
       // Suffix the identity with its position so two name-only organizers sharing a display name
