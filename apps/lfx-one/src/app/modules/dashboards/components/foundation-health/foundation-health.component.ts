@@ -17,7 +17,7 @@ import {
   PRIMARY_FOUNDATION_HEALTH_METRICS,
 } from '@lfx-one/shared/constants';
 import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
-import { hexToRgba } from '@lfx-one/shared/utils';
+import { hexToRgba, computePeriodChange } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -241,26 +241,6 @@ export class FoundationHealthComponent {
     return PRIMARY_FOUNDATION_HEALTH_METRICS.find((m) => m.title === title)!;
   }
 
-  // Latest-vs-prior-period delta for a series (oldest→newest). Returns neutral + undefined when no prior period or prior is 0.
-  private computePeriodChange(values: number[], periodLabel = 'vs last month'): { trend: DashboardMetricCard['trend']; changePercentage: string | undefined } {
-    const latest = values.length ? values[values.length - 1] : 0;
-    const prior = values.length > 1 ? values[values.length - 2] : null;
-
-    let trend: DashboardMetricCard['trend'] = 'neutral';
-    let changePercentage: string | undefined;
-    if (prior !== null && prior !== 0) {
-      const deltaPercent = ((latest - prior) / prior) * 100;
-      if (deltaPercent > 0) {
-        trend = 'up';
-      } else if (deltaPercent < 0) {
-        trend = 'down';
-      }
-      const sign = deltaPercent > 0 ? '+' : '';
-      changePercentage = `${sign}${deltaPercent.toFixed(1)}% ${periodLabel}`;
-    }
-    return { trend, changePercentage };
-  }
-
   private formatSoftwareValue(valueInMillions: number): string {
     if (valueInMillions >= 1000) {
       const billions = valueInMillions / 1000;
@@ -271,7 +251,7 @@ export class FoundationHealthComponent {
 
   private transformTotalProjects(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.totalProjectsData();
-    const { trend, changePercentage } = this.computePeriodChange(data.monthlyData);
+    const { trend, changePercentage } = computePeriodChange(data.monthlyData);
 
     return {
       ...metric,
@@ -315,7 +295,7 @@ export class FoundationHealthComponent {
 
   private transformTotalMembers(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.totalMembersData();
-    const { trend, changePercentage } = this.computePeriodChange(data.monthlyData);
+    const { trend, changePercentage } = computePeriodChange(data.monthlyData);
 
     return {
       ...metric,
@@ -502,7 +482,7 @@ export class FoundationHealthComponent {
     const asOfLabel = data.asOfDate
       ? new Date(`${data.asOfDate}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
       : null;
-    const { trend, changePercentage } = this.computePeriodChange(this.maintainersMonthlyData().monthlyData);
+    const { trend, changePercentage } = computePeriodChange(this.maintainersMonthlyData().monthlyData);
 
     return {
       ...metric,
@@ -546,7 +526,7 @@ export class FoundationHealthComponent {
 
   private transformEvents(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.eventsQuarterlyData();
-    const { trend, changePercentage } = this.computePeriodChange(data.quarterlyData, 'vs last quarter');
+    const { trend, changePercentage } = computePeriodChange(data.quarterlyData, 'vs last quarter');
 
     return {
       ...metric,
@@ -747,8 +727,7 @@ export class FoundationHealthComponent {
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainersMonthly(foundationSlug).pipe(
             tap(() => this.maintainersMonthlyLoading.set(false)),
-            catchError((error) => {
-              console.error('Failed to load foundation maintainers monthly data', error);
+            catchError(() => {
               this.maintainersMonthlyLoading.set(false);
               return of(defaultValue);
             })
