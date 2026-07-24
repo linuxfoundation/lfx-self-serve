@@ -35,6 +35,7 @@ import { TotalValueDrawerComponent } from '../total-value-drawer/total-value-dra
 import type {
   CompanyBusFactor,
   DashboardMetricCard,
+  FoundationActiveContributorsMonthlyDistinctResponse,
   FoundationCompanyBusFactorResponse,
   FoundationHealthScoreDistributionResponse,
   FoundationMaintainersResponse,
@@ -77,6 +78,7 @@ export class FoundationHealthComponent {
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
+  private readonly activeContributorsMonthlyDistinctLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
   private readonly eventsLoading = signal(true);
 
@@ -94,6 +96,7 @@ export class FoundationHealthComponent {
   protected readonly maintainersData = this.initializeMaintainersData();
   protected readonly healthScoresData = this.initializeHealthScoresData();
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
+  protected readonly activeContributorsMonthlyDistinctData = this.initializeActiveContributorsMonthlyDistinctData();
   protected readonly eventsData = this.initializeEventsData();
 
   // totalProjectsData retains the prior foundation's total until the next request
@@ -106,6 +109,11 @@ export class FoundationHealthComponent {
   // never renders the previous foundation's buckets for the newly selected one.
   protected readonly reconciledHealthScoresData = computed(() =>
     this.healthScoresLoading() ? DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION : this.healthScoresData()
+  );
+
+  // Surface a zeroed default while loading so the drawer headline never shows the prior foundation's average.
+  protected readonly reconciledActiveContributorsData = computed<UniqueContributorsDailyResponse>(() =>
+    this.activeContributorsLoading() ? { data: [], avgContributors: 0, totalDays: 0 } : this.activeContributorsData()
   );
 
   public readonly selectedFilter = signal<string>('all');
@@ -399,32 +407,45 @@ export class FoundationHealthComponent {
   }
 
   private transformActiveContributors(metric: DashboardMetricCard): DashboardMetricCard {
-    const data = this.activeContributorsData();
+    const data = this.activeContributorsMonthlyDistinctData();
+    const values = data.monthlyData;
+    const labels = data.monthlyLabels;
 
-    // Reverse the data to show oldest to newest for chart rendering
-    const chartData = [...data.data].reverse();
-    const contributorValues = chartData.map((row) => row.DAILY_UNIQUE_CONTRIBUTORS);
-    const chartLabels = chartData.map((row) => {
-      const date = new Date(row.ACTIVITY_DATE);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    });
+    // MoM is server-validated for adjacent current months; render it directly.
+    const trend: DashboardMetricCard['trend'] = data.momDirection === 'flat' ? 'neutral' : data.momDirection;
+    let changePercentage: string | undefined;
+    if (data.momDeltaPercent !== null) {
+      const sign = data.momDeltaPercent > 0 ? '+' : '';
+      let arrow = '';
+      if (data.momDirection === 'up') {
+        arrow = '▲';
+      } else if (data.momDirection === 'down') {
+        arrow = '▼';
+      }
+      const prefix = arrow ? `${arrow} ` : '';
+      changePercentage = `${prefix}${sign}${data.momDeltaPercent.toFixed(1)}% vs last month`;
+    }
 
     return {
       ...metric,
-      loading: this.activeContributorsLoading(),
-      value: data.avgContributors.toLocaleString(),
-      subtitle: 'Average active contributors over the past year',
+      loading: this.activeContributorsMonthlyDistinctLoading(),
+      value: data.monthlyData.length > 0 ? data.latest.toLocaleString('en-US') : '',
+      subtitle: 'Monthly distinct active contributors',
+      trend,
+      changePercentage,
       chartData: {
-        labels: chartLabels,
+        labels,
         datasets: [
           {
-            data: contributorValues,
+            data: values,
             borderColor: lfxColors.blue[500],
             backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
-            pointRadius: 0,
+            // A single-point line dataset has no segment, so the sole point
+            // must be visible or the sparkline renders blank for new foundations.
+            pointRadius: values.length === 1 ? 3 : 0,
           },
         ],
       },
@@ -729,6 +750,32 @@ export class FoundationHealthComponent {
             tap(() => this.activeContributorsLoading.set(false)),
             catchError(() => {
               this.activeContributorsLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
+  }
+
+  private initializeActiveContributorsMonthlyDistinctData() {
+    const defaultValue: FoundationActiveContributorsMonthlyDistinctResponse = {
+      monthlyData: [],
+      monthlyLabels: [],
+      latest: 0,
+      momDeltaPercent: null,
+      momDirection: 'flat',
+    };
+
+    return toSignal(
+      this.selectedFoundationSlug$.pipe(
+        tap(() => this.activeContributorsMonthlyDistinctLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(foundationSlug).pipe(
+            tap(() => this.activeContributorsMonthlyDistinctLoading.set(false)),
+            catchError(() => {
+              this.activeContributorsMonthlyDistinctLoading.set(false);
               return of(defaultValue);
             })
           )

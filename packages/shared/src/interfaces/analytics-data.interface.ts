@@ -699,6 +699,47 @@ export interface FoundationActiveContributorsMonthlyResponse {
 }
 
 /**
+ * Single month row from FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY (distinct per month)
+ */
+export interface FoundationActiveContributorsMonthlyDistinctRow {
+  MONTH_START_DATE: string;
+  MONTHLY_ACTIVE_CONTRIBUTORS: number;
+}
+
+/** Month-over-month direction for the active-contributors metric. */
+export type MoMDirection = 'up' | 'down' | 'flat';
+
+/**
+ * API response for foundation monthly-distinct active contributors.
+ * `latest`, `momDeltaPercent`, and `momDirection` are computed server-side so
+ * both consumers render a pre-validated month-over-month delta rather than
+ * re-deriving it from the last two array entries (which may be non-adjacent
+ * when a month is absent from the materialized table).
+ */
+export interface FoundationActiveContributorsMonthlyDistinctResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  /** Most recent month's distinct contributor count (0 when no rows). */
+  latest: number;
+  /** MoM delta percent; null when no valid adjacent prior month exists. */
+  momDeltaPercent: number | null;
+  momDirection: MoMDirection;
+}
+
+/**
+ * Latest-month headline count + month-over-month delta for the monthly-distinct chart.
+ * `latestLabel` / `deltaLabel` are pre-formatted display strings so the template
+ * reads plain props instead of re-running toLocaleString / toFixed each pass.
+ */
+export interface ActiveContributorsMoMDelta {
+  latest: number;
+  latestLabel: string;
+  deltaPercent: number | null; // null when there is no prior month to compare
+  deltaLabel: string; // '' when deltaPercent is null
+  direction: MoMDirection;
+}
+
+/**
  * Single percentile band row from FOUNDATION_CONTRIBUTORS_DISTRIBUTION
  */
 export interface FoundationContributorsDistributionRow {
