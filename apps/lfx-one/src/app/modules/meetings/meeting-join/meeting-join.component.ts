@@ -1300,6 +1300,9 @@ export class MeetingJoinComponent implements OnInit {
     // doesn't block the pageview forever. Sub-projects whose parent doesn't land in time record
     // project_* correctly and leave foundation_* empty (see buildPageviewContext callsite below).
     const PARENT_FETCH_TIMEOUT_MS = 2000;
+    // Created here (injection context) rather than inside the switchMap below — toObservable()
+    // calls inject() internally and throws NG0203 when invoked from an async stream callback.
+    const parentProject$ = toObservable(this.parentProject);
     toObservable(this.project)
       .pipe(
         filter((p): p is Partial<Project> => !!p?.slug),
@@ -1308,7 +1311,7 @@ export class MeetingJoinComponent implements OnInit {
             return of({ project, parent: null as Project | null });
           }
           return merge(
-            toObservable(this.parentProject).pipe(
+            parentProject$.pipe(
               filter((parent): parent is Project => !!parent),
               map((parent) => ({ project, parent: parent as Project | null }))
             ),
