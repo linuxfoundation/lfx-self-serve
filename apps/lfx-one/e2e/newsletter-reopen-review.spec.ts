@@ -359,8 +359,21 @@ test.describe('Newsletter reopen — single-group audience picker', () => {
     await expect(picker, 'selecting a second group should replace the first, not add to it').toContainText('Security Newsletter');
     await expect(picker, 'the prior selection should no longer be shown').not.toContainText('Community Newsletter');
 
+    await page.getByTestId('newsletter-manage-back-to-review').click();
+    await expect(
+      page.getByTestId('newsletter-review-audience-summary'),
+      'the shared committeeUids control should reflect the replacement, not just the local display'
+    ).toContainText('1 group');
+
+    await page.getByTestId('newsletter-review-audience-edit-btn').click();
     await picker.locator('.p-select-clear-icon').click();
     await expect(picker, 'Clear should empty the selection').toContainText('Pick a group');
+
+    await page.getByTestId('newsletter-manage-back-to-review').click();
+    await expect(
+      page.getByTestId('newsletter-review-audience-empty'),
+      'the shared committeeUids control should reflect the clear, not just the local display'
+    ).toBeVisible();
   });
 });
 

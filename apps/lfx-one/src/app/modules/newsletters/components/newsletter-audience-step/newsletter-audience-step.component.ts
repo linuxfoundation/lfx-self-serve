@@ -110,9 +110,9 @@ export class NewsletterAudienceStepComponent {
   // control both directions: incoming committeeUids (draft hydration, audience
   // normalization) mirror into the local control with emitEvent: false so the
   // write-back below doesn't re-fire; user selections write back as a 1-element
-  // array (or [] when cleared). A legacy multi-group draft is narrowed to its
-  // first uid in the shared control too, not just in the local display, so
-  // send/review/recipient counts can't stay out of sync with what the picker shows.
+  // array (or [] when cleared). Narrowing a legacy multi-group draft to a single
+  // uid is the host's job (NewsletterManageComponent.initAudienceNormalization),
+  // not this component's — Review can be mounted instead of this step on reopen.
   private initSync(): void {
     toObservable(this.committeeUidsValue)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -121,11 +121,6 @@ export class NewsletterAudienceStepComponent {
         const control = this.audienceForm.controls.committeeUid;
         if (control.value !== uid) {
           control.setValue(uid, { emitEvent: false });
-        }
-        if (committeeUids.length > 1) {
-          this.form()
-            .get('committeeUids')
-            ?.setValue(uid ? [uid] : []);
         }
       });
 

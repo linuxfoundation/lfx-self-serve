@@ -462,7 +462,8 @@ export class NewsletterManageComponent {
    * stepper is on step 1, but save/send can happen from the Review view. Tracks
    * `committeeUidsValue` (not just `eligibleCommitteeUids`) so a draft loaded via
    * `patchValue({ emitEvent: false })` after eligibility has already resolved still
-   * gets re-checked.
+   * gets re-checked. Also narrows a legacy multi-group draft to its first uid here
+   * (not just in the audience step), since Review is what's mounted on reopen.
    */
   private initAudienceNormalization(): void {
     effect(() => {
@@ -471,8 +472,9 @@ export class NewsletterManageComponent {
       if (!eligible) return;
 
       const filtered = current.filter((uid) => eligible.has(uid));
-      if (filtered.length !== current.length) {
-        this.form.controls.committeeUids.setValue(filtered);
+      const narrowed = filtered.length > 1 ? filtered.slice(0, 1) : filtered;
+      if (narrowed.length !== current.length || narrowed.some((uid, i) => uid !== current[i])) {
+        this.form.controls.committeeUids.setValue(narrowed);
       }
     });
   }
