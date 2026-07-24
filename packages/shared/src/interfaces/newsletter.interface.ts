@@ -49,7 +49,7 @@ export type NewsletterAudienceEmailAddStatus = 'pending' | 'added' | 'already' |
  * rendered by the audience step filtered to the currently selected group.
  */
 export interface NewsletterAudienceEmailAdd {
-  /** Normalized (trimmed, lowercased) email; for invalid tokens, the trimmed raw input. */
+  /** Normalized (trimmed, lowercased) email — invalid tokens are normalized the same way. */
   email: string;
   /** Committee the add was fired against — list rendering is scoped by this. */
   committeeUid: string;

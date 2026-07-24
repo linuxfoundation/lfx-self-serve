@@ -20,6 +20,7 @@ import {
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, isValidEmail, stripHtml } from '@lfx-one/shared/utils';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -391,12 +392,13 @@ export class NewsletterManageComponent {
     const email = raw.trim().toLowerCase();
     if (!email) return;
 
-    // pending/added/already entries are in flight or settled — retyping is a
-    // no-op. invalid/failed entries are replaced so retyping acts as a retry.
-    // This keeps (committeeUid, email) unique, which the step's @for tracking
-    // relies on.
+    // pending/added entries are in flight or just confirmed — retyping is a
+    // no-op. invalid/failed/already entries are replaced so retyping acts as a
+    // retry ('already' can become 'added' if the member was removed elsewhere
+    // since). This keeps (committeeUid, email) unique, which the step's @for
+    // tracking relies on.
     const existing = this.audienceEmailAdds().find((e) => e.committeeUid === committeeUid && e.email === email);
-    if (existing && existing.status !== 'invalid' && existing.status !== 'failed') return;
+    if (existing && (existing.status === 'pending' || existing.status === 'added')) return;
 
     const entry: NewsletterAudienceEmailAdd = isValidEmail(email)
       ? { email, committeeUid, status: 'pending' }
@@ -423,7 +425,7 @@ export class NewsletterManageComponent {
         if (err.status === 409) {
           this.updateAudienceEmailAdd(committeeUid, email, { status: 'already' });
         } else {
-          this.updateAudienceEmailAdd(committeeUid, email, { status: 'failed', reason: this.audienceAddFailureReason(err) });
+          this.updateAudienceEmailAdd(committeeUid, email, { status: 'failed', reason: extractErrorMessage(err, 'Could not add. Try again.') });
         }
       },
     });
@@ -470,14 +472,6 @@ export class NewsletterManageComponent {
 
   private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
     this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
-  }
-
-  private audienceAddFailureReason(err: HttpErrorResponse): string {
-    const message = err?.error?.message;
-    if (typeof message === 'string' && message.trim().length > 0) {
-      return message;
-    }
-    return 'Could not add. Try again.';
   }
 
   private fetchRecipientCount$(uids: string[]) {

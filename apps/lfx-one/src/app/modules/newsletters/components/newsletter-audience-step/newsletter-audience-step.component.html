@@ -86,7 +86,7 @@
           </form>
 
           @if (visibleEmailAdds().length > 0) {
-            <ul class="flex flex-col gap-1" data-testid="newsletter-audience-email-add-list">
+            <ul class="flex flex-col gap-1" aria-live="polite" data-testid="newsletter-audience-email-add-list">
               @for (entry of visibleEmailAdds(); track entry.email) {
                 <li class="flex items-center gap-2 px-1 py-0.5 text-sm text-gray-700" data-testid="newsletter-audience-email-add-item">
                   <span class="break-all">{{ entry.email }}</span>

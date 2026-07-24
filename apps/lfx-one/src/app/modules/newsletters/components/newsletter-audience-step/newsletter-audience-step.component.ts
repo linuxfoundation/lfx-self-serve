@@ -85,11 +85,12 @@ export class NewsletterAudienceStepComponent {
   protected readonly selectedCount: Signal<number> = computed(() => this.committeeUidsValue().length);
   protected readonly hasCommittees = computed(() => this.committeeOptions().length > 0);
   protected readonly selectedCommitteeUid = computed<string | null>(() => this.committeeUidsValue()[0] ?? null);
+  // Fallback reads as "the selected group" in the banner sentence.
   protected readonly selectedCommitteeName = computed<string>(() => {
     const uid = this.selectedCommitteeUid();
-    if (!uid) return 'the selected';
+    if (!uid) return 'selected';
     const committee = this.committees().find((c) => c.uid === uid);
-    return committee?.name || 'the selected';
+    return committee?.name || 'selected';
   });
   // Adds are scoped per group: switching groups swaps the visible list, and
   // entries for a previously selected group reappear on switch-back.
