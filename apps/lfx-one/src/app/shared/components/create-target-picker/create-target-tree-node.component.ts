@@ -45,7 +45,11 @@ export class CreateTargetTreeNodeComponent {
       return;
     }
     this.expanded.set(true);
-    if (!this.childrenLoaded()) {
+    // Retry whenever the cached list is empty, not just on the first-ever expand:
+    // CreateTargetPickerService.getChildren() fails closed to an empty result on error, so a
+    // transient failure would otherwise look identical to a genuine "no sub-items" node and never
+    // get retried without closing and reopening the whole dialog.
+    if (!this.childrenLoaded() || this.children().length === 0) {
       this.loadChildren();
     }
   }

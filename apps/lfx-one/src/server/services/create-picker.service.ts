@@ -133,24 +133,34 @@ export class CreatePickerService {
   }
 
   /**
-   * Reuses `ProjectService.enrichWithProjectData` (already used elsewhere to enrich items keyed
-   * by `project_uid`) to resolve each committee's `is_foundation`/`project_slug`/`project_name`
-   * in one deduplicated batch, rather than a bespoke lookup.
+   * Resolves each committee's parent project via `ProjectService.getProjectsByIds` — a true
+   * single-request-per-chunk batch (`filters_or=uid:X`), not `enrichWithProjectData`'s N
+   * individual per-project lookups. Committees whose project can't be resolved are omitted
+   * entirely rather than emitted with blank `projectSlug`/`projectName`: a picked row with an
+   * empty project slug would navigate with `?project=` empty, which `writerGuard` cannot resolve —
+   * exactly the post-selection dead end this picker is supposed to make impossible.
    */
   private async toCommitteeNodes(req: Request, committees: Committee[]): Promise<CreatePickerCommitteeNode[]> {
     if (committees.length === 0) {
       return [];
     }
 
-    const enriched = await this.projectService.enrichWithProjectData(req, committees);
-    return enriched.map((c) => ({
-      kind: 'committee',
-      uid: c.uid,
-      name: c.name,
-      projectUid: c.project_uid,
-      projectSlug: c.project_slug,
-      projectName: c.project_name,
-      isFoundation: c.is_foundation,
-    }));
+    const projectUids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
+    const projectsByUid = await this.projectService.getProjectsByIds(req, projectUids);
+
+    return committees
+      .filter((c) => projectsByUid.has(c.project_uid))
+      .map((c) => {
+        const project = projectsByUid.get(c.project_uid)!;
+        return {
+          kind: 'committee',
+          uid: c.uid,
+          name: c.name,
+          projectUid: c.project_uid,
+          projectSlug: project.slug,
+          projectName: project.name,
+          isFoundation: computeIsFoundation(project),
+        };
+      });
   }
 }

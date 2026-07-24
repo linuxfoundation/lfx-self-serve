@@ -4,14 +4,13 @@
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { COMMITTEE_WRITE_ARTIFACT_TYPES } from '@lfx-one/shared/constants';
+import { COMMITTEE_WRITE_ARTIFACT_TYPES, EMPTY_CREATE_PICKER_RESULT } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerNode, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
 import { CreateTargetPickerService } from '@services/create-target-picker.service';
 import { debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
 
 import { CreateTargetTreeNodeComponent } from './create-target-tree-node.component';
 
-const EMPTY_RESULT: CreatePickerResultSet = { projects: [], committees: [] };
 const MIN_SEARCH_LENGTH = 2;
 
 /**
@@ -79,7 +78,7 @@ export class CreateTargetPickerComponent {
         switchMap((artifactType) => this.pickerService.getTree(artifactType)),
         tap(() => this.treeLoadedSignal.set(true))
       ),
-      { initialValue: EMPTY_RESULT }
+      { initialValue: EMPTY_CREATE_PICKER_RESULT }
     );
   }
 
@@ -93,14 +92,14 @@ export class CreateTargetPickerComponent {
         switchMap((term) => {
           const trimmed = (term ?? '').trim();
           if (trimmed.length < MIN_SEARCH_LENGTH) {
-            return of(EMPTY_RESULT);
+            return of(EMPTY_CREATE_PICKER_RESULT);
           }
-          // No catchError here — CreateTargetPickerService.search() already fails closed to EMPTY_RESULT.
+          // No catchError here — CreateTargetPickerService.search() already fails closed to EMPTY_CREATE_PICKER_RESULT.
           return this.pickerService.search(trimmed, this.artifactType());
         }),
         tap(() => this.searchLoadedSignal.set(true))
       ),
-      { initialValue: EMPTY_RESULT }
+      { initialValue: EMPTY_CREATE_PICKER_RESULT }
     );
   }
 }

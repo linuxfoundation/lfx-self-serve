@@ -76,7 +76,8 @@ export const COMMITTEE_WRITE_ARTIFACT_TYPES: CreatableArtifactType[] = ['meeting
 
 /**
  * Same set as `COMMITTEE_WRITE_ARTIFACT_TYPES`, spelled in the plural `writeFeature` vocabulary
- * that route `data` blocks and `writerGuard` already use. Kept as the single source of truth so
+ * that route `data` blocks and `writerGuard` already use. Derived (every entry here is a regular
+ * "+s" plural of its `COMMITTEE_WRITE_ARTIFACT_TYPES` counterpart) rather than hand-maintained, so
  * the guard and the create-picker backend can't drift apart on which types allow a committee target.
  */
-export const COMMITTEE_WRITE_FEATURES: readonly string[] = ['meetings', 'surveys', 'votes'];
+export const COMMITTEE_WRITE_FEATURES: readonly string[] = COMMITTEE_WRITE_ARTIFACT_TYPES.map((type) => `${type}s`);

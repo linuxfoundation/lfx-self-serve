@@ -20,6 +20,7 @@
       [class.bg-blue-50]="isSelected()"
       [class.hover:bg-gray-100]="!isSelected()"
       (click)="select()"
+      [attr.aria-pressed]="isSelected()"
       [attr.data-testid]="'create-target-node-' + node().uid"
       [attr.data-selected]="isSelected()">
       <i [class]="icon() + ' text-gray-400 shrink-0'" aria-hidden="true"></i>

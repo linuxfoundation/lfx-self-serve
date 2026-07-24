@@ -184,6 +184,10 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     // Require the lens prefix explicitly (foundation|project) — a bare /meetings/create would mean
     // the alignment didn't happen, so it must NOT match.
     await expect(page).toHaveURL(/\/(foundation|project)\/meetings\/create\?.*project=/, { timeout: 15_000 });
+    // The regex above matches `project=` with an empty value too — assert the param actually
+    // carries a usable slug, since an empty one is exactly what a mis-resolved target would produce.
+    const project = new URL(page.url()).searchParams.get('project');
+    expect(project).toBeTruthy();
   });
 
   // S7 — fail-closed empty state: a nonsense search term surfaces "no matches", not an error
@@ -203,6 +207,7 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     const searchInput = page.getByTestId('create-target-search-input');
     await searchInput.fill('a');
     // Single char: still the tree, not search — a tree node row is still identifiable.
+    await expect(pickerResults(page).locator('[data-testid^="create-target-node-"]').first()).toBeVisible();
     await searchInput.fill('an');
     // ≥2 chars: search mode. Either a result row or the empty state renders, never both absent.
     await expect(pickerResults(page).locator('[data-testid^="create-target-search-result-"], [data-testid="create-target-empty-state"]').first()).toBeVisible({

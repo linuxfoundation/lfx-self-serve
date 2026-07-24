@@ -36,6 +36,8 @@ export class LensService {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   private readonly selectedLens: WritableSignal<Lens>;
+  /** Set only by `setContextLens()`; makes `activeLens` bypass the persona-lens clamp for the create flow. Cleared by any normal `setLens()`/`switchLens()` call. */
+  private readonly contextLensOverride: WritableSignal<Lens | null> = signal(null);
 
   /** Last foundation/project lens viewed — lets the merged 'Projects' entry (hybrid personas) return to a foundation. */
   private readonly navLensSelection: WritableSignal<NavLens>;
@@ -80,6 +82,8 @@ export class LensService {
     if (!allowed.includes(lens)) {
       return false;
     }
+    // A deliberate, persona-gated switch supersedes any pending create-flow override.
+    this.contextLensOverride.set(null);
     this.applyLensSelection(lens);
     return true;
   }
@@ -94,8 +98,16 @@ export class LensService {
    * legitimate, already-authorized picks purely because the persona doesn't happen to hold a
    * matching lens. `setLens()` keeps that gate for every other caller (sidebar, lens-switcher,
    * dashboards) — this method exists so the create flow doesn't have to go through it.
+   *
+   * `applyLensSelection()` alone isn't enough: `activeLens` re-derives its value from
+   * `selectedLens` through `getAllowedLensIds()` on every read, so setting `selectedLens` without
+   * also recording an override would silently get clamped straight back to `DEFAULT_LENS` for
+   * exactly the users this method exists to unblock. `contextLensOverride` makes `activeLens`
+   * (and everything downstream of it — `lensRedirectGuard`, `ProjectContextService.activeContext`)
+   * bypass that clamp until a normal `setLens()`/`switchLens()` call clears it.
    */
   public setContextLens(lens: Lens): void {
+    this.contextLensOverride.set(lens);
     this.applyLensSelection(lens);
   }
 
@@ -112,6 +124,10 @@ export class LensService {
 
   private initActiveLens(): Signal<Lens> {
     return computed(() => {
+      const override = this.contextLensOverride();
+      if (override) {
+        return override;
+      }
       const selected = this.selectedLens();
       const allowed = this.getAllowedLensIds();
       return allowed.includes(selected) ? selected : DEFAULT_LENS;

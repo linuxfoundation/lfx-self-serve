@@ -7,12 +7,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // exercise only CreatePickerService's own logic (relation-set selection, direct-grant
 // nesting/partitioning, node shaping), not the underlying query-service calls (covered in
 // project.service.spec.ts / committee.service.spec.ts).
-const { getDirectGrantProjects, getChildProjects, searchCreatableProjects, getProjectsByIds, enrichWithProjectData } = vi.hoisted(() => ({
+const { getDirectGrantProjects, getChildProjects, searchCreatableProjects, getProjectsByIds } = vi.hoisted(() => ({
   getDirectGrantProjects: vi.fn(),
   getChildProjects: vi.fn(),
   searchCreatableProjects: vi.fn(),
   getProjectsByIds: vi.fn(),
-  enrichWithProjectData: vi.fn(),
 }));
 const { getDirectGrantCommittees, searchCreatableCommittees, getCommittees } = vi.hoisted(() => ({
   getDirectGrantCommittees: vi.fn(),
@@ -28,7 +27,6 @@ vi.mock('./project.service', () => ({
     public getChildProjects = getChildProjects;
     public searchCreatableProjects = searchCreatableProjects;
     public getProjectsByIds = getProjectsByIds;
-    public enrichWithProjectData = enrichWithProjectData;
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -61,18 +59,16 @@ describe('CreatePickerService', () => {
     getChildProjects.mockReset();
     searchCreatableProjects.mockReset();
     getProjectsByIds.mockReset();
-    enrichWithProjectData.mockReset();
     getDirectGrantCommittees.mockReset();
     searchCreatableCommittees.mockReset();
     getCommittees.mockReset();
 
-    // Default: enrichWithProjectData attaches is_foundation/project_slug/project_name per its
-    // real contract shape (keyed off project_uid).
-    enrichWithProjectData.mockImplementation((_req: Request, committees: any[]) =>
-      Promise.resolve(
-        committees.map((c) => ({ ...c, project_slug: c.project_uid, project_name: c.project_uid, is_foundation: c.project_uid === 'foundation-project' }))
-      )
-    );
+    // Default: every requested project_uid resolves — individual tests override this to exercise
+    // the "project couldn't be resolved" omission path.
+    getProjectsByIds.mockImplementation((_req: Request, uids: string[] | Set<string>) => {
+      const uidArray = Array.from(uids);
+      return Promise.resolve(new Map(uidArray.map((uid) => [uid, { uid, slug: uid, name: uid, isFoundationStub: uid === 'foundation-project' }])));
+    });
 
     service = new CreatePickerService();
   });
@@ -114,6 +110,16 @@ describe('CreatePickerService', () => {
 
       await service.getTree(req, 'vote');
       expect(getDirectGrantProjects).toHaveBeenLastCalledWith(req, false);
+    });
+
+    it('omits a committee whose project cannot be resolved, rather than emitting blank project fields', async () => {
+      getDirectGrantProjects.mockResolvedValueOnce([]);
+      getDirectGrantCommittees.mockResolvedValueOnce([committee('orphan-unresolvable', 'missing-project')]);
+      getProjectsByIds.mockResolvedValueOnce(new Map());
+
+      const result = await service.getTree(req, 'meeting');
+
+      expect(result.committees).toEqual([]);
     });
   });
 

@@ -3,10 +3,9 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { EMPTY_CREATE_PICKER_RESULT } from '@lfx-one/shared/constants';
 import { CreatableArtifactType, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
-
-const EMPTY_RESULT: CreatePickerResultSet = { projects: [], committees: [] };
 
 /**
  * Thin HTTP wrapper around the create picker's three BFF endpoints (LFXV2-2838). Every call
@@ -25,7 +24,7 @@ export class CreateTargetPickerService {
     return this.http.get<CreatePickerResultSet>('/api/create-picker/tree', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load create-picker tree:', error);
-        return of(EMPTY_RESULT);
+        return of(EMPTY_CREATE_PICKER_RESULT);
       })
     );
   }
@@ -36,7 +35,7 @@ export class CreateTargetPickerService {
     return this.http.get<CreatePickerResultSet>('/api/create-picker/tree/children', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load create-picker children:', error);
-        return of(EMPTY_RESULT);
+        return of(EMPTY_CREATE_PICKER_RESULT);
       })
     );
   }
@@ -47,7 +46,7 @@ export class CreateTargetPickerService {
     return this.http.get<CreatePickerResultSet>('/api/create-picker/search', { params }).pipe(
       catchError((error) => {
         console.error('Failed to search create-picker targets:', error);
-        return of(EMPTY_RESULT);
+        return of(EMPTY_CREATE_PICKER_RESULT);
       })
     );
   }
