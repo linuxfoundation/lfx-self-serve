@@ -80,6 +80,26 @@ export class LensService {
     if (!allowed.includes(lens)) {
       return false;
     }
+    this.applyLensSelection(lens);
+    return true;
+  }
+
+  /**
+   * Aligns `activeContext`'s lens-gated slot and the `/foundation/`/`/project/` route prefix to
+   * `lens`, without checking whether the current persona is allowed it (LFXV2-2838).
+   *
+   * Not a persona-lens switch — scoped strictly to the create picker, which has already proven
+   * access to the specific project/committee explicitly (a direct grant or a batch access-check
+   * that evaluates inherited access), so gating on `getAllowedLensIds()` here would reject
+   * legitimate, already-authorized picks purely because the persona doesn't happen to hold a
+   * matching lens. `setLens()` keeps that gate for every other caller (sidebar, lens-switcher,
+   * dashboards) — this method exists so the create flow doesn't have to go through it.
+   */
+  public setContextLens(lens: Lens): void {
+    this.applyLensSelection(lens);
+  }
+
+  private applyLensSelection(lens: Lens): void {
     if ((lens === 'foundation' || lens === 'project') && lens !== this.navLensSelection()) {
       this.navLensSelection.set(lens);
       this.persistNavLensToCookie(lens);
@@ -88,7 +108,6 @@ export class LensService {
       this.selectedLens.set(lens);
       this.persistToCookie(lens);
     }
-    return true;
   }
 
   private initActiveLens(): Signal<Lens> {

@@ -269,3 +269,4 @@ export * from './entity-project-context.interface';
 
 // Create artifact quick-link interfaces (rail "Create" button + dialog)
 export * from './create-artifact.interface';
+export * from './create-picker.interface';

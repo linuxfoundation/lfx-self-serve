@@ -1,76 +1,72 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal } from '@angular/core';
+import { afterNextRender, computed, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
-import { CreatableArtifactType, CreatableProject } from '@lfx-one/shared/interfaces';
-import { WriterGrantsService } from '@services/writer-grants.service';
+import { CreatableArtifactType, CreatePickerResultSet } from '@lfx-one/shared/interfaces';
+import { CreateTargetPickerService } from '@services/create-target-picker.service';
+
+const EMPTY_RESULT: CreatePickerResultSet = { projects: [], committees: [] };
 
 /**
- * Decides whether the rail "Create" quick-link (and which artifact types) is
- * offered to the current user, and which projects/foundations they may target.
+ * Decides whether the rail "Create" quick-link (and which artifact types) is offered to the
+ * current user — LFXV2-2838.
  *
- * Eligibility is the project `writer` grant, and nothing else — the same signal
- * `writerGuard` enforces. `GET /api/projects` batch access-checks every visible
- * project and returns `writer` per project, so this reflects real per-project
- * authorization rather than inferring it from a persona.
+ * Sourced from the create picker's own `GET /api/create-picker/tree` (probed with
+ * `artifactType: 'meeting'`, the broadest relation set — project writer, project
+ * `meeting_coordinator`, and committee writer all included) rather than `GET /api/projects`
+ * (unpaginated, batch access-checks every visible project). This used to go through
+ * `WriterGrantsService.writerProjects`, which is exactly that full pull; `LensService` still
+ * uses `WriterGrantsService` for its own (unrelated, general-navigation) lens-widening, but the
+ * create path no longer touches it.
  *
- * This list was previously intersected with the lenses the user's persona holds,
- * on the reasoning that `ProjectContextService.activeContext` is lens-gated so an
- * unreachable lens would dead-end at "Create". That was true, but it made the wrong
- * side give way: it silently hid projects the user provably administers. A user
- * holding `writer` on 81 foundations while detecting as `contributor` could target
- * none of them (LFXV2-2754). The lens is now derived from the grant instead —
- * `LensService.getAllowedLensIds` admits any lens the user holds `writer` within —
- * so alignment succeeds for exactly the projects listed here and the intersection
- * is redundant. Do not reintroduce a persona-derived filter on this list; persona
- * and `writer` are independent, and `writer` is the one that confers authority.
+ * All-or-nothing by design: a `writer`/`meeting_coordinator`/committee-writer grant is not
+ * per-type, so every type is offered together once any direct-grant target exists. This probes
+ * direct grants only (search isn't run here — that would mean enumerating), so it's intentionally
+ * an *undershow*: a user reachable only through the picker's search (inherited writer, no direct
+ * grants) won't light up this button. The create routes' `writerGuard` remains the actual
+ * authority regardless of what this button advertises — it only ever narrows the affordance, it
+ * never grants access.
  *
- * Everything resolves to `[]` while loading and on error, keeping the rail button
- * hidden until eligibility is proven — fail closed. The error half of that relies on
- * `ProjectService.getProjects()` catching internally and emitting `[]`.
+ * Everything resolves to `[]` while loading and on error (the underlying service fails closed),
+ * keeping the rail button hidden until eligibility is proven.
  *
- * Granularity note: `writer` is not the whole story upstream. Meetings are broader
- * (`meeting_coordinator` and committee-writer also qualify), so users holding only
- * those roles are still under-shown — they source no project `writer` at all, so the
- * client cannot see them. This is a UX affordance only — the create routes'
- * `writerGuard` remains authoritative for non-ED personas, so the button never grants
- * access, it only advertises it. A `GET /api/projects/creatable` endpoint encoding the
- * per-type grants (LFXV2-2753) is what closes that remaining gap.
- *
- * Persona note (ED): gating is purely the FGA `writer` relation, with NO ED fast-path —
- * unlike `writerGuard`, which synchronously allows the `executive-director` persona
- * because an ED is not reliably granted a per-project `writer` relation. So an ED whose
- * `GET /api/projects` returns no `writer: true` project sees no "Create" shortcut at all.
- * This is an accepted trade-off (LFXV2-2721): the shortcut is deliberately a writer-scoped
- * affordance, and EDs still create through the in-page flows, which carry their own ED
- * fast-path. Reinstating the button for those EDs would mean sourcing their foundations
- * from persona/lens data — the writer-scoped list is empty for them — which loosens the
- * writer filter this feature is scoped to; out of scope here by design.
+ * Persona note (ED): still no ED fast-path here, unlike `writerGuard` — unchanged trade-off from
+ * before this rebuild (LFXV2-2721).
  */
 @Injectable({
   providedIn: 'root',
 })
 export class CreatePermissionService {
-  private readonly writerGrantsService = inject(WriterGrantsService);
+  private readonly pickerService = inject(CreateTargetPickerService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  /** Projects the user may create on — exactly those they hold `writer` on (see class doc). */
-  public readonly creatableProjects: Signal<CreatableProject[]> = this.writerGrantsService.writerProjects;
+  private readonly eligibility: WritableSignal<CreatePickerResultSet> = signal(EMPTY_RESULT);
 
-  /**
-   * Artifact types offered to the user — all types when they can create anywhere, else none.
-   *
-   * All-or-nothing by design: a `writer` grant is not per-type, so every type is offered together.
-   * A new `CREATABLE_ARTIFACTS` entry therefore inherits visibility for free — it does NOT get
-   * independent gating. Do not assume adding a type here narrows who sees it. The per-type
-   * intersection this feeds (`lens-switcher`'s `creatableArtifacts` filter) is consequently a
-   * no-op today; it exists so the switcher stays correct if a future `GET /api/projects/creatable`
-   * endpoint makes this list a genuine per-type subset (see class doc).
-   */
+  /** True when the user has at least one direct-grant project or committee to create against. */
+  private readonly hasEligibleTarget: Signal<boolean> = computed(() => {
+    const result = this.eligibility();
+    return result.projects.length > 0 || result.committees.length > 0;
+  });
+
+  /** Artifact types offered to the user — all types when eligible, else none (see class doc). */
   public readonly creatableTypes: Signal<CreatableArtifactType[]> = computed(() =>
-    this.creatableProjects().length > 0 ? CREATABLE_ARTIFACTS.map((artifact) => artifact.type) : []
+    this.hasEligibleTarget() ? CREATABLE_ARTIFACTS.map((artifact) => artifact.type) : []
   );
 
-  /** True when the user can create on at least one project. */
-  public readonly canShowCreateButton: Signal<boolean> = computed(() => this.creatableProjects().length > 0);
+  /** True when the user can create on at least one project or committee. */
+  public readonly canShowCreateButton: Signal<boolean> = this.hasEligibleTarget;
+
+  public constructor() {
+    // Deferred to after the first render, mirroring the previous full-pull's SSR-safety
+    // rationale even though this probe is now cheap (direct-grant only) — any avoidable HTTP
+    // round trip during SSR still risks TTFB, so it stays off the critical render path.
+    afterNextRender(() => {
+      this.pickerService
+        .getTree('meeting')
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((result) => this.eligibility.set(result));
+    });
+  }
 }

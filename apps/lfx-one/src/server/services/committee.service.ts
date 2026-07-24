@@ -218,6 +218,46 @@ export class CommitteeService {
   }
 
   /**
+   * Direct-FGA-grant committees for the create picker's default tree — NOT a full enumeration.
+   * Mirrors `ProjectService.getDirectGrantProjects`: `filter_grants=direct` narrows the
+   * query-service result set to the caller's own direct tuples before any access-check runs.
+   * Filtered to `writer === true` — this method exists for the create picker only, so the
+   * broader "public || writer || member" semantics `getCommittees` applies for its other
+   * (unscoped-listing) callers don't apply here.
+   */
+  public async getDirectGrantCommittees(req: Request): Promise<Committee[]> {
+    const resources = await fetchAllQueryResources<Committee>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee',
+        filter_grants: 'direct',
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    const committees = await this.accessCheckService.addAccessToResources(req, resources, 'committee');
+    return committees.filter((c) => c.writer === true);
+  }
+
+  /**
+   * Type-ahead committee search for the create picker. A single small page, filtered to
+   * `writer === true` after the batch access-check — inherited access is evaluated here (unlike
+   * `filter_grants=direct`), so a committee writer via inheritance is found through search even
+   * when the direct-grant tree under-shows them.
+   */
+  public async searchCreatableCommittees(req: Request, searchQuery: string, pageSize: number = 20): Promise<Committee[]> {
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'committee',
+      name: searchQuery,
+      page_size: pageSize,
+    });
+    const committees = await this.accessCheckService.addAccessToResources(
+      req,
+      resources.map((resource) => resource.data),
+      'committee'
+    );
+    return committees.filter((c) => c.writer === true);
+  }
+
+  /**
    * Fetches a single committee by ID.
    *
    * @param options.includeMembership When true, enriches the response with the caller's
