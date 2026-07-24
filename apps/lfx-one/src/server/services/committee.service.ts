@@ -538,12 +538,29 @@ export class CommitteeService {
   /**
    * Creates a new committee member
    */
-  public async createCommitteeMember(req: Request, committeeId: string, data: CreateCommitteeMemberRequest): Promise<CommitteeMember> {
-    const newMember = await this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members`, 'POST', {}, data);
+  public async createCommitteeMember(
+    req: Request,
+    committeeId: string,
+    data: CreateCommitteeMemberRequest,
+    skipNotification: boolean = false
+  ): Promise<CommitteeMember> {
+    // The upstream committee-service takes the suppression intent as the
+    // X-Skip-Notification header (not a body attribute), defaulting to false.
+    const customHeaders = skipNotification ? { 'X-Skip-Notification': 'true' } : undefined;
+    const newMember = await this.microserviceProxy.proxyRequest<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members`,
+      'POST',
+      {},
+      data,
+      customHeaders
+    );
 
     logger.debug(req, 'create_committee_member', 'Committee member created successfully', {
       committee_uid: committeeId,
       member_uid: newMember.uid,
+      skip_notification: skipNotification,
     });
 
     return newMember;

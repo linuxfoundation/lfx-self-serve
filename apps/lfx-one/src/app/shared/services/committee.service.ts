@@ -14,6 +14,7 @@ import {
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  CreateCommitteeMemberOptions,
   CreateCommitteeMemberRequest,
   MyCommittee,
   QueryServiceCountResponse,
@@ -104,8 +105,19 @@ export class CommitteeService {
     return this.http.get<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`);
   }
 
-  public createCommitteeMember(committeeId: string, memberData: CreateCommitteeMemberRequest): Observable<CommitteeMember> {
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData).pipe(take(1));
+  /**
+   * Creates a committee member. By default the new member receives a
+   * notification email; pass `options.skipNotification` to suppress it
+   * (the BFF forwards it upstream as the X-Skip-Notification header).
+   */
+  public createCommitteeMember(
+    committeeId: string,
+    memberData: CreateCommitteeMemberRequest,
+    options?: CreateCommitteeMemberOptions
+  ): Observable<CommitteeMember> {
+    const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
+
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(take(1));
   }
 
   public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Observable<CommitteeMember> {
