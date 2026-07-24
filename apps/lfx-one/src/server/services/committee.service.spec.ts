@@ -36,8 +36,8 @@ import { CommitteeService } from './committee.service';
 
 const req = {} as unknown as Request;
 
-function pageOf(committees: Partial<Committee>[]): QueryServiceResponse<Committee> {
-  return { resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c as Committee })), page_token: undefined } as QueryServiceResponse<Committee>;
+function pageOf(committees: Partial<Committee>[], pageToken?: string): QueryServiceResponse<Committee> {
+  return { resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c as Committee })), page_token: pageToken } as QueryServiceResponse<Committee>;
 }
 
 describe('CommitteeService — create picker methods', () => {
@@ -83,6 +83,30 @@ describe('CommitteeService — create picker methods', () => {
       const result = await service.searchCreatableCommittees(req, 'security');
 
       expect(result.map((c) => c.uid)).toEqual(['writer-committee']);
+    });
+
+    it('continues to the next page when the first page has no writer-permitted matches', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only' }], 'token-2'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'inherited-writer' }]));
+      addAccessToResources.mockImplementation((_req: Request, committees: Committee[]) =>
+        Promise.resolve(committees.map((c) => ({ ...c, writer: c.uid === 'inherited-writer' })))
+      );
+
+      const result = await service.searchCreatableCommittees(req, 'security');
+
+      expect(result.map((c) => c.uid)).toEqual(['inherited-writer']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'token-2' });
+    });
+
+    it('stops paging once the page cap is reached, even if pages remain', async () => {
+      proxyRequest.mockResolvedValue(pageOf([{ uid: 'no-match' }], 'more'));
+      addAccessToResources.mockImplementation((_req: Request, committees: Committee[]) => Promise.resolve(committees.map((c) => ({ ...c, writer: false }))));
+
+      const result = await service.searchCreatableCommittees(req, 'security');
+
+      expect(result).toEqual([]);
+      expect(proxyRequest).toHaveBeenCalledTimes(5);
     });
   });
 

@@ -398,12 +398,18 @@ export class ProjectService {
   }
 
   /**
-   * Type-ahead project search for the create picker. A single small page (`page_size`, no
-   * pagination loop) batch-access-checked to the relevant relation — inherited access is
-   * evaluated here (unlike `filter_grants=direct`), so a writer via inheritance is found through
-   * search even when the direct-grant tree under-shows them. Distinct from `searchProjects`
-   * (unpaginated, unchecked, used by the header's public project search) — different consumer,
-   * different contract, kept separate rather than overloading that method's semantics.
+   * Type-ahead project search for the create picker. Batch-access-checked to the relevant
+   * relation per page — inherited access is evaluated here (unlike `filter_grants=direct`), so a
+   * writer via inheritance is found through search even when the direct-grant tree under-shows
+   * them. Distinct from `searchProjects` (unpaginated, unchecked, used by the header's public
+   * project search) — different consumer, different contract, kept separate rather than
+   * overloading that method's semantics.
+   *
+   * Keeps paging through raw name matches — not just the first page — until either `pageSize`
+   * permitted results have been collected or upstream pages run out, bounded by a small page
+   * cap. A single unchecked page would silently miss an inherited-writer match that happens to
+   * land on page 2+ behind a run of visible-but-non-writable matches on page 1 — exactly the
+   * scenario this method exists to reach.
    */
   public async searchCreatableProjects(
     req: Request,
@@ -411,13 +417,35 @@ export class ProjectService {
     includeMeetingCoordinator: boolean = false,
     pageSize: number = 20
   ): Promise<Project[]> {
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'project',
-      name: searchQuery,
-      page_size: pageSize,
-    });
-    const filtered = resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+    // Bounds the raw-match scan (5 pages × page_size) so a generic search term can't turn this
+    // into an unbounded crawl — still vastly better than the single-page cutoff this replaces.
+    const SEARCH_PAGE_LIMIT = 5;
+    const permitted: Project[] = [];
+    let pageToken: string | undefined;
+    let pagesFetched = 0;
+
+    do {
+      const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'project',
+          name: searchQuery,
+          page_size: pageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }
+      );
+      pagesFetched++;
+
+      const filtered = resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+      const page = await this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+      permitted.push(...page);
+      pageToken = page_token;
+    } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    return permitted.slice(0, pageSize);
   }
 
   /**

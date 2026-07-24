@@ -56,8 +56,8 @@ import { ProjectService } from './project.service';
 
 const req = {} as unknown as Request;
 
-function pageOf(projects: Partial<Project>[]): QueryServiceResponse<Project> {
-  return { resources: projects.map((p) => ({ id: `project:${p.uid}`, data: p as Project })), page_token: undefined } as QueryServiceResponse<Project>;
+function pageOf(projects: Partial<Project>[], pageToken?: string): QueryServiceResponse<Project> {
+  return { resources: projects.map((p) => ({ id: `project:${p.uid}`, data: p as Project })), page_token: pageToken } as QueryServiceResponse<Project>;
 }
 
 /** Every param object any of the three create-picker project methods sent to the query service. */
@@ -146,6 +146,32 @@ describe('ProjectService — create picker methods', () => {
 
       expect(result.map((p) => p.uid)).toEqual(['match-1']);
       expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'kubernetes', page_size: 20 });
+    });
+
+    it('continues to the next page when the first page has no writer-permitted matches', async () => {
+      // Page 1: visible-but-non-writable matches only. Page 2: the actual inherited-writer match.
+      // A single-page search would return [] here even though a real target exists.
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'inherited-writer', slug: 'inherited-writer' }]));
+      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'inherited-writer' })))
+      );
+
+      const result = await service.searchCreatableProjects(req, 'kubernetes');
+
+      expect(result.map((p) => p.uid)).toEqual(['inherited-writer']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'token-2' });
+    });
+
+    it('stops paging once the page cap is reached, even if pages remain', async () => {
+      proxyRequest.mockResolvedValue(pageOf([{ uid: 'no-match', slug: 'no-match' }], 'more'));
+      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+
+      const result = await service.searchCreatableProjects(req, 'kubernetes');
+
+      expect(result).toEqual([]);
+      expect(proxyRequest).toHaveBeenCalledTimes(5);
     });
   });
 

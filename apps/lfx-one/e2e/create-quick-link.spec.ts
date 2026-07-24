@@ -5,14 +5,15 @@
  * Create Quick-Link E2E — smoke set.
  *
  * Exercises the rail "Create" button → type popover → target-picker dialog (LFXV2-2838 rebuild).
- * Rail visibility is driven by CreatePermissionService, which now probes
- * `GET /api/create-picker/tree` (direct-grant projects/committees only) instead of the old
- * full `GET /api/projects` pull. The eligible targets are the authenticated test user's real
- * direct grants, so these tests assert structure/behavior rather than specific project names,
- * and skip entirely when the user has no create permission (the button is hidden).
+ * The rail button and its menu are unconditional — `CreatePermissionService` no longer gates
+ * either on any eligibility probe, since a probe that could say "no" would hide the button (or
+ * empty the menu behind it) for exactly the inherited-writer/committee-only users this rebuild
+ * exists to serve. The create-target picker's own fail-closed empty state is the real signal for
+ * "nothing to create here" now, so `skipWhenNoCreatePermission` opens the Meeting picker itself
+ * and skips only if that empty state is what renders — never the button's own visibility.
  *
  * Coverage map:
- * - S1: rail "Create" button renders for a create-capable user
+ * - S1: rail "Create" button renders (unconditional; a basic smoke check that the button exists at all)
  * - S2: clicking it opens a popover listing the six artifact types, in grouped order, with descriptions
  * - S3: picking a type opens the dialog (header + target picker) with Continue disabled,
  *       and picking a direct-grant tree row enables Continue
@@ -42,8 +43,9 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD (see global-setup.ts)
- * - The test user must hold a direct grant on at least one project or committee for S1–S3 to
- *   run; otherwise the suite skips (no create permission → no button, by design).
+ * - The test user must hold a direct grant on, or be search-reachable to, at least one project or
+ *   committee for the suite to run past `beforeEach`; otherwise it skips (see
+ *   `skipWhenNoCreatePermission`).
  *
  * Note: this suite stops at the dialog boundary. It does not assert the post-Continue
  * create page — that path is enforced by each route's writerGuard.
@@ -69,12 +71,22 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// Skip when the test user has no create permission — the button is intentionally absent.
+// Skip when the test user has no writable target at all. The rail button and its menu are now
+// unconditional by design (CreatePermissionService no longer gates on any eligibility probe —
+// the picker's own empty state is the real signal), so this opens the Meeting picker itself and
+// skips only if neither a tree row nor a real target ever renders — just the empty state.
 async function skipWhenNoCreatePermission(page: Page): Promise<void> {
-  const trigger = page.getByTestId('create-rail-button');
-  const visible = await trigger.isVisible().catch(() => false);
-  if (!visible) {
-    test.skip(true, 'Test user holds no direct-grant project or committee — button hidden by design.');
+  await openDialogForType(page, 'meeting');
+
+  const firstNode = pickerResults(page).locator('[data-testid^="create-target-node-"]').first();
+  const emptyState = page.getByTestId('create-target-empty-state');
+  await expect(firstNode.or(emptyState)).toBeVisible({ timeout: 10_000 });
+
+  const isEmpty = await emptyState.isVisible().catch(() => false);
+  await page.getByTestId('create-artifact-cancel-button').click();
+
+  if (isEmpty) {
+    test.skip(true, 'Test user holds no direct-grant or search-reachable project/committee.');
   }
 }
 
@@ -103,16 +115,11 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    // Give the direct-grant probe a moment to resolve before gating.
-    await page
-      .getByTestId('create-rail-button')
-      .waitFor({ state: 'visible', timeout: RAIL_TIMEOUT })
-      .catch(() => undefined);
     await skipWhenNoCreatePermission(page);
   });
 
-  // S1 — rail button renders for a create-capable user
-  test('S1: the rail "Create" button is visible for a create-capable user', async ({ page }) => {
+  // S1 — rail button renders (basic smoke check; visibility is unconditional by design)
+  test('S1: the rail "Create" button is visible', async ({ page }) => {
     await expect(page.getByTestId('create-rail-button')).toBeVisible({ timeout: RAIL_TIMEOUT });
   });
 

@@ -238,23 +238,49 @@ export class CommitteeService {
   }
 
   /**
-   * Type-ahead committee search for the create picker. A single small page, filtered to
-   * `writer === true` after the batch access-check — inherited access is evaluated here (unlike
+   * Type-ahead committee search for the create picker, filtered to `writer === true` after a
+   * per-page batch access-check — inherited access is evaluated here (unlike
    * `filter_grants=direct`), so a committee writer via inheritance is found through search even
    * when the direct-grant tree under-shows them.
+   *
+   * Keeps paging through raw name matches until either `pageSize` permitted results have been
+   * collected or upstream pages run out, bounded by a small page cap. A single unchecked page
+   * would silently miss an inherited-writer match on page 2+ behind a run of visible-but-non-writable
+   * matches on page 1 — exactly the scenario this method exists to reach.
    */
   public async searchCreatableCommittees(req: Request, searchQuery: string, pageSize: number = 20): Promise<Committee[]> {
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'committee',
-      name: searchQuery,
-      page_size: pageSize,
-    });
-    const committees = await this.accessCheckService.addAccessToResources(
-      req,
-      resources.map((resource) => resource.data),
-      'committee'
-    );
-    return committees.filter((c) => c.writer === true);
+    // Bounds the raw-match scan (5 pages × page_size) so a generic search term can't turn this
+    // into an unbounded crawl — still vastly better than the single-page cutoff this replaces.
+    const SEARCH_PAGE_LIMIT = 5;
+    const permitted: Committee[] = [];
+    let pageToken: string | undefined;
+    let pagesFetched = 0;
+
+    do {
+      const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'committee',
+          name: searchQuery,
+          page_size: pageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }
+      );
+      pagesFetched++;
+
+      const committees = await this.accessCheckService.addAccessToResources(
+        req,
+        resources.map((resource) => resource.data),
+        'committee'
+      );
+      permitted.push(...committees.filter((c) => c.writer === true));
+      pageToken = page_token;
+    } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    return permitted.slice(0, pageSize);
   }
 
   /**
