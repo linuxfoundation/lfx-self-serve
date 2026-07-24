@@ -133,22 +133,48 @@ export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void
   }
 }
 
+// Minutes before meeting start when the host key becomes visible (matches PCC).
+const HOST_KEY_EARLY_MINUTES = 70;
+// Minutes after meeting end when the host key is no longer visible (matches PCC).
+const HOST_KEY_LATE_MINUTES = 40;
+
+/**
+ * Returns true when the current wall-clock time falls inside the host-key visibility window:
+ * [start_time − 70 min, start_time + duration + 40 min).
+ *
+ * Mirrors PCC's showHostKey() logic. The key is account-level and can change leading up to a
+ * meeting, so surfacing it days in advance risks showing a stale value.
+ *
+ * Falls back to false when start_time is absent or unparseable.
+ */
+export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration'>, now = new Date()): boolean {
+  if (!meeting.start_time) return false;
+  const startMs = Date.parse(meeting.start_time);
+  if (isNaN(startMs)) return false;
+  const windowStart = startMs - HOST_KEY_EARLY_MINUTES * 60_000;
+  const windowEnd = startMs + (meeting.duration ?? 0) * 60_000 + HOST_KEY_LATE_MINUTES * 60_000;
+  const nowMs = now.getTime();
+  return nowMs >= windowStart && nowMs < windowEnd;
+}
+
 /**
  * Resolves whether the current user may view a meeting's Zoom host key and mutates the meeting
  * accordingly. This is the single source of truth for host-key visibility on detail endpoints.
  *
- * The audience is any of three DISTINCT OpenFGA relations, OR-ed together:
- *   - meeting organizer (`v1_meeting#organizer`)
- *   - project writer (`project#writer`)
- *   - writer on ANY committee attached to the meeting (`committee#writer`)
+ * Two gates must both pass:
+ *   1. Time window — current time is within [start_time − 70 min, start_time + duration + 40 min)
+ *      (mirrors PCC; the key is account-level and can change leading up to the meeting)
+ *   2. FGA role — the caller holds any of:
+ *        - meeting organizer (`v1_meeting#organizer`)
+ *        - project writer (`project#writer`)
+ *        - writer on ANY committee attached to the meeting (`committee#writer`)
  *
- * All checks are batched into a single `/access-check` round-trip (no sequential per-committee
- * calls). The check is fail-closed: on any upstream error the access-check service returns
- * all-false, so the host key is stripped.
+ * All FGA checks are batched into a single `/access-check` round-trip. The check is fail-closed:
+ * on any upstream error the access-check service returns all-false, so the host key is stripped.
  *
  * Sets `meeting.organizer` (still consumed downstream for registrant-count gating) and
  * `meeting.can_view_host_key` (the single gate the frontend reads), and deletes `host_key`
- * when the user is not authorized.
+ * when either gate fails.
  *
  * MUST be called with the user's own bearer token active on `req` — NOT an M2M token — or the
  * access check evaluates against the application identity instead of the user.
@@ -158,6 +184,14 @@ export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void
  * @param meeting - The meeting to gate (mutated in place)
  */
 export async function applyHostKeyVisibility(req: Request, accessCheckService: AccessCheckService, meeting: Meeting): Promise<void> {
+  // Time gate: strip immediately if we're outside the visibility window.
+  if (!isWithinHostKeyWindow(meeting)) {
+    meeting.organizer = false;
+    meeting.can_view_host_key = false;
+    stripHostKey(meeting);
+    return;
+  }
+
   const requests: AccessCheckRequest[] = [
     { resource: 'v1_meeting', id: meeting.id, access: 'organizer' },
     { resource: 'project', id: meeting.project_uid, access: 'writer' },

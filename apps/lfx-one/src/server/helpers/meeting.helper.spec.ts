@@ -44,7 +44,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getUsernameFromAuth: vi.fn() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
-import { applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from './meeting.helper';
+import { applyHostKeyVisibility, enrichMeetingsWithCreatedBy, isWithinHostKeyWindow, stripHostKey } from './meeting.helper';
 
 const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
@@ -119,13 +119,23 @@ const PROJECT_UID = 'project-2222';
 const COMMITTEE_A = 'committee-aaaa';
 const COMMITTEE_B = 'committee-bbbb';
 
+// Returns an ISO string offset by `offsetMs` from now. Used to build start_time values
+// that land inside or outside the host-key visibility window without relying on fixed dates.
+function isoOffset(offsetMs: number): string {
+  return new Date(Date.now() + offsetMs).toISOString();
+}
+
+const MIN = 60_000;
+
 function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
     id: MEETING_ID,
     project_uid: PROJECT_UID,
     host_key: '123456',
     committees: [{ uid: COMMITTEE_A }],
-    // Only the fields the gate reads matter; cast the rest.
+    // Default: starts in 1 min, 60-min duration — well inside the 70-min pre-window.
+    start_time: isoOffset(1 * MIN),
+    duration: 60,
     ...overrides,
   } as Meeting;
 }
@@ -234,6 +244,67 @@ describe('applyHostKeyVisibility', () => {
       { resource: 'project', id: PROJECT_UID, access: 'writer' },
     ]);
     expect(meeting.can_view_host_key).toBe(true);
+  });
+
+  it('strips host_key and skips the FGA check when the meeting is outside the time window', async () => {
+    // Starts in 3 days — well beyond the 70-min pre-window.
+    const meeting = buildMeeting({ start_time: isoOffset(3 * 24 * 60 * MIN), duration: 60 });
+    const { service, checkAccess } = mockAccessCheck(new Map([[MEETING_ID, true]]));
+
+    await applyHostKeyVisibility(req, service, meeting);
+
+    expect(checkAccess).not.toHaveBeenCalled();
+    expect(meeting.can_view_host_key).toBe(false);
+    expect(meeting.host_key).toBeUndefined();
+  });
+
+  it('keeps host_key when the organizer is inside the time window', async () => {
+    // Starts in 30 min — inside the 70-min pre-window.
+    const meeting = buildMeeting({ start_time: isoOffset(30 * MIN), duration: 60 });
+    const { service } = mockAccessCheck(new Map([[MEETING_ID, true]]));
+
+    await applyHostKeyVisibility(req, service, meeting);
+
+    expect(meeting.can_view_host_key).toBe(true);
+    expect(meeting.host_key).toBe('123456');
+  });
+});
+
+describe('isWithinHostKeyWindow', () => {
+  it('returns true when now is exactly at the window start (start_time − 70 min)', () => {
+    const startMs = Date.now() + 70 * MIN;
+    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(true);
+  });
+
+  it('returns true during the meeting itself', () => {
+    // now is 15 min past start_time
+    const startMs = Date.now() - 15 * MIN;
+    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(true);
+  });
+
+  it('returns true up to 40 min after meeting end', () => {
+    // now is 30 min after end (start + 60 min duration), still inside the 40-min tail
+    const startMs = Date.now() - 90 * MIN;
+    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(true);
+  });
+
+  it('returns false when now is just past the window end (start + duration + 40 min)', () => {
+    // now is 41 min after end — just outside
+    const startMs = Date.now() - (60 + 41) * MIN;
+    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(false);
+  });
+
+  it('returns false when the meeting is more than 70 min away', () => {
+    const startMs = Date.now() + 71 * MIN;
+    expect(isWithinHostKeyWindow({ start_time: new Date(startMs).toISOString(), duration: 60 })).toBe(false);
+  });
+
+  it('returns false when start_time is absent', () => {
+    expect(isWithinHostKeyWindow({ start_time: '', duration: 60 })).toBe(false);
+  });
+
+  it('returns false when start_time is not a valid date', () => {
+    expect(isWithinHostKeyWindow({ start_time: 'not-a-date', duration: 60 })).toBe(false);
   });
 });
 
