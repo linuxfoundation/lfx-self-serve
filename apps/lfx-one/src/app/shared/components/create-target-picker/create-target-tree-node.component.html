@@ -11,7 +11,7 @@
       (click)="toggleExpand($event)"
       [attr.aria-expanded]="expanded()"
       [attr.aria-label]="(expanded() ? 'Collapse ' : 'Expand ') + label()"
-      data-testid="create-target-node-toggle">
+      data-testid="create-target-toggle">
       <i class="fa-light fa-chevron-right text-gray-400 text-xs transition-transform" [class.rotate-90]="expanded()" aria-hidden="true"></i>
     </button>
     <button

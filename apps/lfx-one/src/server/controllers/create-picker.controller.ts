@@ -24,6 +24,27 @@ function parseArtifactType(req: Request, operation: string): CreatableArtifactTy
   return artifactType as CreatableArtifactType;
 }
 
+function parseChildrenQuery(req: Request, artifactType: CreatableArtifactType): CreatePickerChildrenQuery {
+  const { parentType, parentUid } = req.query;
+
+  if (typeof parentType !== 'string' || !VALID_PARENT_TYPES.includes(parentType)) {
+    throw ServiceValidationError.forField('parentType', 'parentType is required and must be "project" or "committee"', {
+      operation: 'get_create_picker_children',
+      service: 'create_picker_controller',
+      path: req.path,
+    });
+  }
+  if (typeof parentUid !== 'string' || !parentUid) {
+    throw ServiceValidationError.forField('parentUid', 'parentUid is required', {
+      operation: 'get_create_picker_children',
+      service: 'create_picker_controller',
+      path: req.path,
+    });
+  }
+
+  return { parentType: parentType as 'project' | 'committee', parentUid, artifactType };
+}
+
 /**
  * Controller for the create picker's tree/search endpoints (LFXV2-2838). Backs a lazy
  * direct-grant tree + type-ahead search — no handler here ever enumerates every project.
@@ -64,24 +85,7 @@ export class CreatePickerController {
 
     try {
       const artifactType = parseArtifactType(req, 'get_create_picker_children');
-      const { parentType, parentUid } = req.query;
-
-      if (typeof parentType !== 'string' || !VALID_PARENT_TYPES.includes(parentType)) {
-        throw ServiceValidationError.forField('parentType', 'parentType is required and must be "project" or "committee"', {
-          operation: 'get_create_picker_children',
-          service: 'create_picker_controller',
-          path: req.path,
-        });
-      }
-      if (typeof parentUid !== 'string' || !parentUid) {
-        throw ServiceValidationError.forField('parentUid', 'parentUid is required', {
-          operation: 'get_create_picker_children',
-          service: 'create_picker_controller',
-          path: req.path,
-        });
-      }
-
-      const query: CreatePickerChildrenQuery = { parentType: parentType as 'project' | 'committee', parentUid, artifactType };
+      const query = parseChildrenQuery(req, artifactType);
       const result = await this.createPickerService.getChildren(req, query.parentType, query.parentUid, query.artifactType);
 
       logger.success(req, 'get_create_picker_children', startTime, {
