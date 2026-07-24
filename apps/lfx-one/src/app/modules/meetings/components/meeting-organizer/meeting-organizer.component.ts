@@ -46,12 +46,8 @@ export class MeetingOrganizerComponent {
 
       const meeting = this.meeting();
       const organizers = collectMeetingOrganizers(meeting, this.hosts());
-      // The optional `username` alias is often absent; the namespaced LFID claim is the canonical
-      // identity (matches the created_by/host username), so fall back to it for the "you" variant.
-      const user = this.userService.user();
-      const viewerUsername = user?.username || user?.['https://sso.linuxfoundation.org/claims/username'] || null;
 
-      return buildMeetingOrganizerChip(organizers, viewerUsername, {
+      return buildMeetingOrganizerChip(organizers, this.userService.viewerUsername(), {
         meetingTitle: meeting.title,
         meetingDate: this.formatMeetingDate(meeting),
         detailUrl: this.buildDetailUrl(meeting),
