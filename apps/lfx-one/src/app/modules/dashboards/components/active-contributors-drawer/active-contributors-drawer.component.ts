@@ -178,8 +178,17 @@ export class ActiveContributorsDrawerComponent {
     })
   );
 
-  protected readonly metricValue: Signal<string> = computed(() => this.data().avgContributors.toLocaleString());
-  protected readonly hasData: Signal<boolean> = computed(() => this.data().avgContributors > 0);
+  // Headline mirrors the chart's own monthly averages (mean of the per-month
+  // daily-unique averages) so summary and bars share one SQL source and reconcile.
+  protected readonly metricValue: Signal<string> = computed(() => {
+    const values = this.monthlyTrendData().monthlyData;
+    if (values.length === 0) {
+      return '';
+    }
+    const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return Math.round(avg).toLocaleString('en-US');
+  });
+  protected readonly hasData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
 
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);

@@ -110,6 +110,7 @@ import {
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
   RevenueImpactResponse,
+  SnowflakeQueryResult,
   SocialMediaMonthlyResponse,
   SocialMediaPlatformMonthly,
   SocialMediaPlatformMonthlyRow,
@@ -1358,7 +1359,20 @@ export class ProjectService {
       ORDER BY MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<FoundationActiveContributorsMonthlyDistinctRow>(query, [foundationSlug]);
+    let result: SnowflakeQueryResult<FoundationActiveContributorsMonthlyDistinctRow>;
+    try {
+      result = await this.snowflakeService.execute<FoundationActiveContributorsMonthlyDistinctRow>(query, [foundationSlug], {
+        expectMissingObject: true,
+      });
+    } catch (error) {
+      // Pre-dbt deploy the monthly table is absent; degrade to the empty
+      // response the PR description promises instead of 5xx per dashboard load.
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Monthly distinct table not deployed yet; returning empty response', {
+        foundation_slug: foundationSlug,
+      });
+      return { monthlyData: [], monthlyLabels: [], latest: 0, momDeltaPercent: null, momDirection: 'flat' };
+    }
 
     logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetched monthly distinct active contributors', {
       row_count: result.rows.length,
