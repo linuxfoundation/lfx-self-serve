@@ -13,17 +13,19 @@ import {
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
+  NewsletterAudienceEmailAdd,
   NewsletterManageViewMode,
   NewsletterSendResult,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, stripHtml } from '@lfx-one/shared/utils';
+import { formatRelativeTime, isValidEmail, stripHtml } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -163,6 +165,13 @@ export class NewsletterManageComponent {
   // normalized one and clobber the displayed count.
   private readonly recipientCountTrigger$ = new Subject<string[]>();
 
+  // === Audience email adds ===
+  // Owned here (not by the audience step) because the stepper destroys the step
+  // panel on navigation — in-flight adds and their per-email statuses must
+  // survive the user moving between steps. The step renders this filtered to
+  // the currently selected group.
+  protected readonly audienceEmailAdds = signal<NewsletterAudienceEmailAdd[]>([]);
+
   // === Newsletter-eligible committees ===
   // Fetched once here (not duplicated in the audience-step child) and passed down
   // via inputs, since the upstream endpoint fans out through fetchAllQueryResources.
@@ -191,6 +200,15 @@ export class NewsletterManageComponent {
   // initAudienceNormalization() deliberately skips pruning, so a stale/legacy
   // non-Newsletter audience could otherwise be sent before it's ever checked.
   public readonly audienceNormalized = computed(() => this.eligibleCommitteeUids() !== null);
+  // Send resolves recipients live from committee membership, so an inline add
+  // still in flight for the selected group must land before an (irreversible)
+  // send — otherwise that email is silently omitted from this newsletter. Step
+  // navigation stays non-blocking; only Send waits, and adds settle in seconds.
+  private readonly hasPendingAudienceAdds = computed(() => {
+    const committeeUid = this.committeeUidsValue()[0];
+    if (!committeeUid) return false;
+    return this.audienceEmailAdds().some((e) => e.committeeUid === committeeUid && e.status === 'pending');
+  });
   public readonly canSend = computed(
     () =>
       this.audienceFilled() &&
@@ -200,7 +218,8 @@ export class NewsletterManageComponent {
       this.hasContext() &&
       !this.submitting() &&
       !this.resolvingSend() &&
-      !this.savingDraft()
+      !this.savingDraft() &&
+      !this.hasPendingAudienceAdds()
   );
   public readonly canSendTest = computed(
     () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
@@ -373,6 +392,55 @@ export class NewsletterManageComponent {
     this.retryCommittees$.next();
   }
 
+  // Fired by the audience step for each email the user submits. Every add is an
+  // independent, non-blocking request: the step's input clears immediately and
+  // the per-email status here drives the inline indicator.
+  protected onAddAudienceEmail(raw: string): void {
+    const committeeUid = this.committeeUidsValue()[0];
+    if (!committeeUid) return;
+
+    const email = raw.trim().toLowerCase();
+    if (!email) return;
+
+    // pending/added entries are in flight or just confirmed — retyping is a
+    // no-op. invalid/failed/already entries are replaced so retyping acts as a
+    // retry ('already' can become 'added' if the member was removed elsewhere
+    // since). This keeps (committeeUid, email) unique, which the step's @for
+    // tracking relies on.
+    const existing = this.audienceEmailAdds().find((e) => e.committeeUid === committeeUid && e.email === email);
+    if (existing && (existing.status === 'pending' || existing.status === 'added')) return;
+
+    const entry: NewsletterAudienceEmailAdd = isValidEmail(email)
+      ? { email, committeeUid, status: 'pending' }
+      : { email, committeeUid, status: 'invalid', reason: 'Not a valid email' };
+    this.audienceEmailAdds.update((entries) => [...entries.filter((e) => !(e.committeeUid === committeeUid && e.email === email)), entry]);
+
+    if (entry.status === 'invalid') return;
+
+    // Intentionally NOT takeUntilDestroyed: HttpClient aborts the request on
+    // unsubscribe, which would silently cancel in-flight adds if the user left
+    // the page. createCommitteeMember pipes take(1) and HTTP observables
+    // complete after one response, so each subscription cleans itself up.
+    this.committeeService.createCommitteeMember(committeeUid, { email }, { skipNotification: true }).subscribe({
+      next: () => {
+        this.updateAudienceEmailAdd(committeeUid, email, { status: 'added' });
+        // Refresh the recipient pill only if this group is still the selected
+        // audience — an add resolving after a group switch must not clobber
+        // the new group's count.
+        if (this.committeeUidsValue()[0] === committeeUid) {
+          this.fetchRecipientCountFor(this.committeeUidsValue());
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        if (err.status === 409) {
+          this.updateAudienceEmailAdd(committeeUid, email, { status: 'already' });
+        } else {
+          this.updateAudienceEmailAdd(committeeUid, email, { status: 'failed', reason: extractErrorMessage(err, 'Could not add. Try again.') });
+        }
+      },
+    });
+  }
+
   private goToList(tab?: 'draft' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
@@ -412,6 +480,10 @@ export class NewsletterManageComponent {
     this.recipientCountTrigger$.next(uids);
   }
 
+  private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
+    this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
+  }
+
   private fetchRecipientCount$(uids: string[]) {
     if (!uids || uids.length === 0) {
       this.recipientCount.set(0);
@@ -424,8 +496,21 @@ export class NewsletterManageComponent {
     return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
       finalize(() => this.recipientCountLoading.set(false)),
       tap({
-        next: (res) => this.recipientCount.set(res.count),
-        error: () => this.recipientCount.set(null),
+        // Apply the response only if the requested uids still match the current
+        // selection: a trigger fired just before a group switch can otherwise
+        // land during the valueChanges debounce window and briefly show the old
+        // group's count. The mirror is updated synchronously (initFormMirrors /
+        // populateFormFromDraft), so a match here is authoritative.
+        next: (res) => {
+          if (this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.recipientCount.set(res.count);
+          }
+        },
+        error: () => {
+          if (this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.recipientCount.set(null);
+          }
+        },
       }),
       catchError(() => EMPTY)
     );
