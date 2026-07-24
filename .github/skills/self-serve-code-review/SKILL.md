@@ -104,8 +104,10 @@ Run these on the changed code, scaled to the size of the change:
   finding.
 - **PrimeNG independence.** Components are consumed through the LFX wrapper
   components, and types reference the PrimeNG component interface. A raw `<p-*>`
-  in a feature template, or a hand-rolled type where the wrapped interface
-  exists, breaks the UI-library-independence the repo deliberately keeps.
+  where an LFX wrapper exists, or a hand-rolled type where the wrapped interface
+  exists, breaks the UI-library-independence the repo deliberately keeps —
+  PrimeNG controls with a sanctioned direct use (documented exceptions) are
+  fine.
 - **SSR safety.** Browser-only APIs (`window`, `document`, `localStorage`,
   `navigator`, the observers) must sit behind a browser-only boundary — an
   `isPlatformBrowser` guard, or an Angular render callback that does not execute
@@ -137,5 +139,5 @@ Run these on the changed code, scaled to the size of the change:
 - **Know your limits.** Distinguish "this is wrong" from "this might be a problem
   depending on context", and say which one you mean. When a judgment depends on
   something you cannot see (an upstream microservice's contract, a deployment
-  value, a runtime feature flag), state the dependency in the finding instead of
-  guessing.
+  value, a runtime feature flag), note the dependency rather than asserting a
+  defect you cannot confirm.
