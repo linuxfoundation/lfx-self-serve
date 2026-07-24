@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, output, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
@@ -114,19 +114,20 @@ export class NewsletterAudienceStepComponent {
   // first uid in the shared control too, not just in the local display, so
   // send/review/recipient counts can't stay out of sync with what the picker shows.
   private initSync(): void {
-    effect(() => {
-      const committeeUids = this.committeeUidsValue();
-      const uid = committeeUids[0] ?? null;
-      const control = this.audienceForm.controls.committeeUid;
-      if (control.value !== uid) {
-        control.setValue(uid, { emitEvent: false });
-      }
-      if (committeeUids.length > 1) {
-        this.form()
-          .get('committeeUids')
-          ?.setValue(uid ? [uid] : []);
-      }
-    });
+    toObservable(this.committeeUidsValue)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((committeeUids) => {
+        const uid = committeeUids[0] ?? null;
+        const control = this.audienceForm.controls.committeeUid;
+        if (control.value !== uid) {
+          control.setValue(uid, { emitEvent: false });
+        }
+        if (committeeUids.length > 1) {
+          this.form()
+            .get('committeeUids')
+            ?.setValue(uid ? [uid] : []);
+        }
+      });
 
     this.audienceForm.controls.committeeUid.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((uid) => {
       this.form()
