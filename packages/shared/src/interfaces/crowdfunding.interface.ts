@@ -76,7 +76,6 @@ export interface CrowdfundingTransactionList {
 /** A donation made by the authenticated user — returned by GET /api/crowdfunding/my-donations. */
 export interface MyDonation {
   id: string;
-  /** Omitted until user-profile enrichment is available. */
   donorName?: string;
   donorLogoUrl?: string;
   donorType: 'organization' | 'member';
@@ -85,6 +84,8 @@ export interface MyDonation {
   date: number;
   initiativeId?: string;
   initiativeName?: string;
+  /** True when this donation was charged by a recurring subscription rather than a one-time payment. */
+  recurring: boolean;
 }
 
 export type MyDonationsResponse = OffsetPaginatedResponse<MyDonation>;
@@ -234,7 +235,6 @@ export interface DonationStats {
 }
 
 export type RecurringDonationStatus = 'active' | 'paused' | 'canceled';
-export type DonationKind = 'one-time' | 'monthly';
 
 export interface RecurringDonation {
   id: string;
@@ -261,17 +261,6 @@ export interface RecurringDonation {
 }
 
 export type RecurringDonationsResponse = OffsetPaginatedResponse<RecurringDonation>;
-
-export interface DonationHistoryItem {
-  id: string;
-  initiativeName: string;
-  initiativeIcon: string;
-  fundType: FundType;
-  fundTypeIcon: string;
-  date: string;
-  kind: DonationKind;
-  amount: number;
-}
 
 /** Matches CardDetails from the upstream crowdfunding payment API. */
 export interface PaymentMethod {
