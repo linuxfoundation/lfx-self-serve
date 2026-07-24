@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, effect, inject, input, output, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
@@ -10,7 +10,7 @@ import { Committee, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-
 import { NewsletterService } from '@services/newsletter.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
-import { EMPTY, finalize, map, startWith, switchMap, take } from 'rxjs';
+import { finalize, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-newsletter-audience-step',
@@ -32,6 +32,11 @@ export class NewsletterAudienceStepComponent {
   public readonly committees = input<Committee[]>([]);
   public readonly committeesLoading = input<boolean>(false);
   public readonly committeesError = input<string | null>(null);
+  // Mirrors the host's `committeeUidsValue` signal rather than re-deriving one from
+  // `committeeUids.valueChanges` — the host's is kept in sync even through
+  // `patchValue({ emitEvent: false })` draft hydration, which a local valueChanges-based
+  // signal here would miss entirely.
+  public readonly committeeUidsValue = input<string[]>([]);
   public readonly recipientCount = input<number | null>(null);
   public readonly recipientCountLoading = input<boolean>(false);
 
@@ -54,8 +59,6 @@ export class NewsletterAudienceStepComponent {
   protected readonly recipientsPopover = viewChild<Popover>('recipientsPopover');
 
   // === Reactive data ===
-  protected readonly committeeUidsValue: Signal<string[]> = this.initCommitteeUidsValue();
-
   protected readonly committeeOptions = computed<NewsletterCommitteeOption[]>(() =>
     this.committees()
       .filter((c) => c.category === NEWSLETTER_COMMITTEE_CATEGORY)
@@ -107,13 +110,21 @@ export class NewsletterAudienceStepComponent {
   // control both directions: incoming committeeUids (draft hydration, audience
   // normalization) mirror into the local control with emitEvent: false so the
   // write-back below doesn't re-fire; user selections write back as a 1-element
-  // array (or [] when cleared).
+  // array (or [] when cleared). A legacy multi-group draft is narrowed to its
+  // first uid in the shared control too, not just in the local display, so
+  // send/review/recipient counts can't stay out of sync with what the picker shows.
   private initSync(): void {
     effect(() => {
-      const uid = this.committeeUidsValue()[0] ?? null;
+      const committeeUids = this.committeeUidsValue();
+      const uid = committeeUids[0] ?? null;
       const control = this.audienceForm.controls.committeeUid;
       if (control.value !== uid) {
         control.setValue(uid, { emitEvent: false });
+      }
+      if (committeeUids.length > 1) {
+        this.form()
+          .get('committeeUids')
+          ?.setValue(uid ? [uid] : []);
       }
     });
 
@@ -122,20 +133,5 @@ export class NewsletterAudienceStepComponent {
         .get('committeeUids')
         ?.setValue(uid ? [uid] : []);
     });
-  }
-
-  private initCommitteeUidsValue(): Signal<string[]> {
-    return toSignal(
-      toObservable(this.form).pipe(
-        switchMap((fg) => {
-          const control = fg.get('committeeUids');
-          if (!control) return EMPTY;
-          return control.valueChanges.pipe(startWith(control.value));
-        }),
-        map((v): string[] => (Array.isArray(v) ? (v as string[]) : [])),
-        takeUntilDestroyed(this.destroyRef)
-      ),
-      { initialValue: [] as string[] }
-    );
   }
 }

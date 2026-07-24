@@ -141,7 +141,10 @@ export class NewsletterManageComponent {
   public readonly edEmail: Signal<string> = computed(() => this.userService.user()?.email ?? '');
 
   // === Form mirrors ===
-  private readonly committeeUidsValue = signal<string[]>([]);
+  // Public: the audience step consumes this directly rather than re-deriving its own
+  // valueChanges-based signal, since patchValue({ emitEvent: false }) on draft hydration
+  // (see populateFormFromDraft) would otherwise leave a child-owned signal stale forever.
+  public readonly committeeUidsValue = signal<string[]>([]);
   private readonly subjectValue = signal<string>('');
   private readonly bodyValue = signal<string>('');
 
