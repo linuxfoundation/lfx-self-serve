@@ -2,14 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { POLL_STATUS_LABELS, PollStatus } from '@lfx-one/shared';
+import { normalizePollStatus, POLL_STATUS_LABELS, PollStatus } from '@lfx-one/shared';
 
 @Pipe({
   name: 'pollStatusLabel',
 })
 export class PollStatusLabelPipe implements PipeTransform {
   public transform(status: PollStatus): string {
-    const normalized = (status as string).toLowerCase() as PollStatus;
-    return POLL_STATUS_LABELS[normalized] ?? status;
+    return POLL_STATUS_LABELS[normalizePollStatus(status)] ?? status;
   }
 }

@@ -44,9 +44,12 @@ export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
 /**
  * Lowercase a poll status before comparing or looking it up.
  * @description `Vote.status` has shipped with inconsistent casing before (fixed in
- * PollStatusLabelPipe / PollStatusSeverityPipe) — normalize once, here, rather than
- * re-deriving the same double-cast at every call site.
+ * PollStatusLabelPipe / PollStatusSeverityPipe, now both routed through this shared helper).
+ * Takes `string | null | undefined` rather than `PollStatus` — the `PollStatus` type marks
+ * `status` required and canonically-cased, but that guarantee is asserted rather than
+ * runtime-validated (some server-side vote mappers construct partial objects with `as Vote`),
+ * so the input type reflects what's actually received, not what the type system claims.
  */
-export function normalizePollStatus(status: PollStatus): PollStatus {
-  return (status as string).toLowerCase() as PollStatus;
+export function normalizePollStatus(status: string | null | undefined): PollStatus {
+  return (status ?? '').toLowerCase() as PollStatus;
 }
