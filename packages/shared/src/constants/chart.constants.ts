@@ -20,7 +20,7 @@ export const ZERO_BAR_STUB_PLUGIN = {
     ctx.fillStyle = lfxColors.gray[300];
     const datasets = chart.data.datasets ?? [];
     datasets.forEach((ds, datasetIndex) => {
-      const flagged = ds as (typeof ds) & { zeroStub?: boolean };
+      const flagged = ds as typeof ds & { zeroStub?: boolean };
       if (!flagged?.zeroStub) return;
       const meta = chart.getDatasetMeta(datasetIndex);
       if (meta?.type !== 'bar') return;
