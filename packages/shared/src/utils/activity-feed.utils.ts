@@ -12,6 +12,7 @@
 import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
+import type { PollStatus } from '../enums';
 import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
 import { getSurveyDisplayStatus } from './survey.utils';
 
@@ -39,20 +40,24 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       tab: 'meetings:past',
     }));
 
-  // Upstream Vote schema (lfx-v2-voting-service openapi3.yaml) marks `status` required with a
-  // fixed lowercase enum (disabled/active/ended) — no case normalization needed here.
+  // Poll status has shipped with inconsistent casing before (fixed in PollStatusLabelPipe /
+  // getSurveyDisplayStatus's sibling normalization) — lowercase + fall back to the raw value,
+  // matching the same pattern used for votes elsewhere in the app (e.g. votes-table.component).
   const voteItems: ActivityFeedItem[] = input.votingEnabled
     ? [...input.votes]
         .sort((a, b) => (b.last_modified_time ?? b.creation_time ?? '').localeCompare(a.last_modified_time ?? a.creation_time ?? ''))
         .slice(0, PER_SOURCE_LIMIT)
-        .map((v) => ({
-          type: 'vote' as const,
-          key: `vote-${v.uid}`,
-          label: `Vote ${POLL_STATUS_LABELS[v.status]}: ${v.name}`,
-          timestamp: v.last_modified_time ?? v.creation_time ?? '',
-          icon: 'fa-light fa-check-to-slot',
-          tab: 'votes',
-        }))
+        .map((v) => {
+          const normalizedStatus = (v.status as string)?.toLowerCase() as PollStatus;
+          return {
+            type: 'vote' as const,
+            key: `vote-${v.uid}`,
+            label: `Vote ${POLL_STATUS_LABELS[normalizedStatus] ?? v.status}: ${v.name}`,
+            timestamp: v.last_modified_time ?? v.creation_time ?? '',
+            icon: 'fa-light fa-check-to-slot',
+            tab: 'votes',
+          };
+        })
     : [];
 
   const surveyItems: ActivityFeedItem[] = [...input.surveys]

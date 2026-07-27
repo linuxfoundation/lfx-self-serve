@@ -146,4 +146,14 @@ describe('buildActivityFeed', () => {
     const items = buildActivityFeed(emptyInput({ votes: [vote({ status: PollStatus.ENDED })] }));
     expect(items[0].label).toBe('Vote Ended: Q1 Budget');
   });
+
+  it('normalizes an uppercase/mixed-case vote status before mapping through POLL_STATUS_LABELS', () => {
+    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: 'ACTIVE' as PollStatus })] }));
+    expect(items[0].label).toBe('Vote Active: Q1 Budget');
+  });
+
+  it('falls back to the raw vote status when it has no POLL_STATUS_LABELS entry', () => {
+    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: 'archived' as PollStatus })] }));
+    expect(items[0].label).toBe('Vote archived: Q1 Budget');
+  });
 });
