@@ -84,7 +84,7 @@ test.describe('Group About tab — Robust Structural Tests (LFXV2-1713)', () => 
     test('About root container carries the two-column grid layout contract', async ({ page }) => {
       const root = page.getByTestId('committee-about');
       await expect(root).toBeAttached();
-      await expect(root).toHaveClass(/grid/);
+      await expect(root).toHaveClass(/lg:grid-cols-2/);
     });
 
     test('description, cadence, parent, and key-information cards are nested inside the About root', async ({ page }) => {
