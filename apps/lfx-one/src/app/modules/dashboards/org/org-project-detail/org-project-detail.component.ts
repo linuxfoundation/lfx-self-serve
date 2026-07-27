@@ -487,7 +487,10 @@ export class OrgProjectDetailComponent {
   }
 
   private resetLeaderboardSearch(): void {
-    this.searchForm.reset({ technical: '', ecosystem: '' }, { emitEvent: false });
+    // Emit the reset so the empty value flows through the same debounced valueChanges pipe: debounceTime
+    // keeps only the latest value, so a keystroke typed just before an org/slug change is superseded by
+    // this '' and can't fire a stale server search after the input is already cleared.
+    this.searchForm.reset({ technical: '', ecosystem: '' });
     this.techSearch.set('');
     this.ecoSearch.set('');
   }

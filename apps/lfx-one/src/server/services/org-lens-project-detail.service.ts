@@ -581,7 +581,9 @@ export class OrgLensProjectDetailService {
     // Bound ILIKE parameter — never string-interpolated. Numeric LIMIT/OFFSET are clamped ints.
     const searchClause = hasSearch ? 'WHERE ORG_NAME ILIKE ?' : '';
     const countParams = hasSearch ? [slug, timeRangeType, `%${search}%`] : [slug, timeRangeType];
-    const pageParams = [...countParams, limit, offset];
+    // Snowflake rejects bind placeholders in LIMIT/OFFSET, so the already-clamped integers are
+    // interpolated as literals (matching every other paginated Snowflake query in this service).
+    const pageParams = countParams;
 
     const pageSql = `
       SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
@@ -593,7 +595,7 @@ export class OrgLensProjectDetailService {
       )
       ${searchClause}
       ORDER BY DIM_RANK
-      LIMIT ? OFFSET ?
+      LIMIT ${limit} OFFSET ${offset}
     `;
     const countSql = `
       SELECT COUNT(*) AS N
@@ -629,14 +631,15 @@ export class OrgLensProjectDetailService {
     const hasSearch = search.length > 0;
     const searchClause = hasSearch ? ' AND ORG_NAME ILIKE ?' : '';
     const params = hasSearch ? [slug, timeRangeType, boardType, `%${search}%`] : [slug, timeRangeType, boardType];
-    const pageParams = [...params, limit, offset];
+    // Snowflake rejects binds in LIMIT/OFFSET; interpolate the clamped integers (see fetchInfluenceBoardPage).
+    const pageParams = params;
 
     const pageSql = `
       SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
       FROM ${this.activityLeaderboardsTable()}
       WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
-      ORDER BY RANK ASC, ORG_ACCOUNT_ID ASC
-      LIMIT ? OFFSET ?
+      ORDER BY RANK ASC NULLS LAST, ORG_ACCOUNT_ID ASC
+      LIMIT ${limit} OFFSET ${offset}
     `;
     const countSql = `
       SELECT COUNT(*) AS N

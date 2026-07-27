@@ -227,14 +227,18 @@ test.describe('Org Project Detail — leaderboards', () => {
     const totalBefore = await boardTotal(page);
 
     // Selecting a larger page size issues a fresh server request at pageSize=25 (total is unchanged).
-    const sizeRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('pageSize') === '25';
+    // Wait for the RESPONSE (not just the request) so we assert against rendered data, not the loading skeletons.
+    const sizeResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('pageSize') === '25' && response.ok();
     });
     await page.locator(`${TECH_BOARD} .p-paginator-rpp-dropdown`).click();
     await page.getByRole('option', { name: '25', exact: true }).click();
-    await sizeRequest;
+    await sizeResponse;
 
+    // Poll on a real rendered rank first (skeleton rows carry no rank text → NaN), so the row count
+    // below is asserted against the resolved page rather than the 25 loading skeletons.
+    await expect.poll(async () => Number((await rows.first().locator('td').first().innerText()).trim())).toBeGreaterThanOrEqual(1);
     await expect.poll(async () => rows.count()).toBeGreaterThan(10);
     expect(await boardTotal(page), 'total row count is unchanged by page size').toBe(totalBefore);
   });
