@@ -16,6 +16,7 @@ import { normalizePollStatus, PollStatus, POLL_STATUS_SEVERITY, TagSeverity } fr
 })
 export class PollStatusSeverityPipe implements PipeTransform {
   public transform(status: PollStatus): TagSeverity {
-    return POLL_STATUS_SEVERITY[normalizePollStatus(status)] ?? 'secondary';
+    const key = normalizePollStatus(status);
+    return key ? POLL_STATUS_SEVERITY[key] : 'secondary';
   }
 }

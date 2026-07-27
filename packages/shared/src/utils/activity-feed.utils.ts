@@ -44,14 +44,17 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
     ? [...input.votes]
         .sort((a, b) => (b.last_modified_time ?? b.creation_time ?? '').localeCompare(a.last_modified_time ?? a.creation_time ?? ''))
         .slice(0, PER_SOURCE_LIMIT)
-        .map((v) => ({
-          type: 'vote' as const,
-          key: `vote-${v.uid}`,
-          label: `Vote ${POLL_STATUS_LABELS[normalizePollStatus(v.status)] ?? v.status}: ${v.name}`,
-          timestamp: v.last_modified_time ?? v.creation_time ?? '',
-          icon: 'fa-light fa-check-to-slot',
-          tab: 'votes',
-        }))
+        .map((v) => {
+          const statusKey = normalizePollStatus(v.status);
+          return {
+            type: 'vote' as const,
+            key: `vote-${v.uid}`,
+            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status}: ${v.name}`,
+            timestamp: v.last_modified_time ?? v.creation_time ?? '',
+            icon: 'fa-light fa-check-to-slot',
+            tab: 'votes',
+          };
+        })
     : [];
 
   const surveyItems: ActivityFeedItem[] = [...input.surveys]
