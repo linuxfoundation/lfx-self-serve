@@ -199,14 +199,14 @@ describe('convertRecurrenceToPattern', () => {
 
 describe('selectCommitteeCadenceMeeting', () => {
   const recurring = { uid: 'm1', recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } } as Meeting;
-  const oneOff = { uid: 'm2', recurrence: null } as unknown as Meeting;
+  const oneOff = { uid: 'm2', recurrence: null } as Meeting;
 
   it('returns null for an empty list', () => {
     expect(selectCommitteeCadenceMeeting([])).toBeNull();
   });
 
   it('returns the first meeting when none are recurring', () => {
-    const oneOff2 = { uid: 'm3', recurrence: null } as unknown as Meeting;
+    const oneOff2 = { uid: 'm3', recurrence: null } as Meeting;
     expect(selectCommitteeCadenceMeeting([oneOff, oneOff2])).toBe(oneOff);
   });
 
@@ -216,6 +216,11 @@ describe('selectCommitteeCadenceMeeting', () => {
 
   it('returns the single meeting when only one exists', () => {
     expect(selectCommitteeCadenceMeeting([oneOff])).toBe(oneOff);
+  });
+
+  it('treats a meeting with recurrence entirely absent the same as an explicit null (truthy check, not a strict null check)', () => {
+    const noRecurrenceField = { uid: 'm4' } as Meeting;
+    expect(selectCommitteeCadenceMeeting([noRecurrenceField, recurring])).toBe(recurring);
   });
 });
 
@@ -252,13 +257,18 @@ describe('buildCommitteeCadenceSummary', () => {
   });
 
   it('labels a non-recurring meeting as "One-time meeting"', () => {
-    const meeting = { recurrence: null, duration: 30, platform: 'Zoom' } as unknown as Meeting;
+    const meeting = { recurrence: null, duration: 30, platform: 'Zoom' } as Meeting;
     expect(buildCommitteeCadenceSummary([meeting])).toBe('One-time meeting · 30 min · Zoom');
   });
 
   it('omits the platform segment when platform is absent', () => {
-    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 60 } as unknown as Meeting;
+    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 60 } as Meeting;
     expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday · 60 min');
+  });
+
+  it('omits the duration segment when duration is falsy', () => {
+    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 0, platform: 'Zoom' } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday · Zoom');
   });
 });
 

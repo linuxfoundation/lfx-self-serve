@@ -4,6 +4,7 @@
 import { HttpParams } from '@angular/common/http';
 
 import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { RecurrenceType } from '../enums';
 import {
   CustomRecurrencePattern,
   Meeting,
@@ -186,7 +187,7 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
  * (as opposed to the create/edit form, which builds `CustomRecurrencePattern` from form state directly).
  */
 export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): CustomRecurrencePattern {
-  const type = recurrence.type ?? 2;
+  const type = recurrence.type ?? RecurrenceType.WEEKLY;
   const monthlyDay = recurrence.monthly_day;
   const monthlyWeek = recurrence.monthly_week;
   const monthlyWeekDay = recurrence.monthly_week_day;
@@ -194,9 +195,9 @@ export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): Custo
   const repeatInterval = recurrence.repeat_interval ?? 1;
 
   let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
-  if (type === 1) patternType = 'daily';
-  else if (type === 2) patternType = 'weekly';
-  else if (type === 3) patternType = 'monthly';
+  if (type === RecurrenceType.DAILY) patternType = 'daily';
+  else if (type === RecurrenceType.WEEKLY) patternType = 'weekly';
+  else if (type === RecurrenceType.MONTHLY) patternType = 'monthly';
 
   let monthlyType: 'dayOfMonth' | 'dayOfWeek' = 'dayOfMonth';
   if (monthlyDay !== undefined) monthlyType = 'dayOfMonth';
@@ -233,11 +234,11 @@ export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): Custo
  */
 export function selectCommitteeCadenceMeeting(meetings: Meeting[]): Meeting | null {
   if (meetings.length === 0) return null;
-  return meetings.find((m) => m.recurrence !== null) ?? meetings[0];
+  return meetings.find((m) => !!m.recurrence) ?? meetings[0];
 }
 
 /**
- * Builds the About-tab "Meeting Cadence" display string, e.g. "Bi-weekly on Thursdays · 60 min · Zoom".
+ * Builds the About-tab "Meeting Cadence" display string, e.g. "Every 2 weeks on Thursday · 60 min · Zoom".
  */
 export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
   const meeting = selectCommitteeCadenceMeeting(meetings);
@@ -245,7 +246,8 @@ export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
     return 'No recurring meetings scheduled';
   }
   const recurrenceLabel = meeting.recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(meeting.recurrence)).fullSummary : 'One-time meeting';
-  return [recurrenceLabel, `${meeting.duration} min`, meeting.platform].filter(Boolean).join(' · ');
+  const durationLabel = meeting.duration ? `${meeting.duration} min` : null;
+  return [recurrenceLabel, durationLabel, meeting.platform].filter(Boolean).join(' · ');
 }
 
 /**

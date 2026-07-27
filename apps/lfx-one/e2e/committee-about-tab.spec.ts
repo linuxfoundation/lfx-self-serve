@@ -100,6 +100,22 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('committee-about-join-cta')).toHaveCount(0);
   });
 
+  test('description empty state: shows "No description yet." when the committee has no description', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false, description: null }) });
+    await gotoAboutTab(page);
+
+    await expect(page.getByTestId('committee-about-description-card')).toContainText('No description yet.', { timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('channels empty state: an admin with no configured channels sees "No channels configured"', async ({ page }) => {
+    await mockCommitteeApis(page, {
+      committee: baseCommittee({ my_role: 'Chair', writer: true, chat_channel: null, website: null, mailing_list: null }),
+    });
+    await gotoAboutTab(page);
+
+    await expect(page.getByTestId('committee-about-channels-card')).toContainText('No channels configured', { timeout: DATA_LOAD_TIMEOUT });
+  });
+
   test('admin (canEdit): edit description button is visible and opens the edit dialog', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true }) });
     await gotoAboutTab(page);
