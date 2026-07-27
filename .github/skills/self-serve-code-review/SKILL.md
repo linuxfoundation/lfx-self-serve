@@ -88,8 +88,12 @@ Run these on the changed code, scaled to the size of the change:
   for a complete-set operation (via the established all-pages helper) is a
   supported pattern, not a defect. No work in a template
   expression (it re-runs every change detection), no waterfall of sequential
-  awaits that should be concurrent, no payload loaded server-side and shipped
-  whole into the client bundle via TransferState.
+  awaits that should be concurrent, and no oversized or unread `TransferState`
+  payload. Transferring server-rendered state is the established hydration path
+  here (`AuthContext`, runtime config) and it saves a duplicate client fetch, so
+  the finding is state the client never reads or a result set big enough to
+  bloat every SSR document — not the transfer itself. A server-only secret
+  crossing that boundary is a security finding, not a performance one.
 - **Readability and structure**: the change reads like the surrounding code;
   names say what a thing is or does; no nested ternaries; duplicated logic that
   wants a shared helper is a finding when it traps the next editor.

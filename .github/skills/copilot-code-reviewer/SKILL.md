@@ -166,9 +166,12 @@ costs the author attention; spend it only where it changes the outcome:
   lint-enforced, and `self-serve-code-review` still expects them held to.
 - **One comment per issue.** If the same defect repeats across lines or files,
   raise it once and note where else it applies.
-- **No generic advice.** A finding that could apply to any Angular or Express
-  app does not belong here; tie every comment to this application's shape,
-  invariants, or documented standards.
+- **No generic advice.** The test is the shape of the comment, not the category
+  of the defect: abstract counsel that could be pasted into any review — "add a
+  null check", "consider extracting a helper", "add tests", with nothing behind
+  it — does not belong here. A concrete defect you can point at in this diff is
+  a finding however ordinary its kind; a null dereference, an off-by-one, or a
+  dropped error still breaks this application.
 
 Every comment states the problem, why it matters in this application, and what
 a fix looks like, grounded in the actual file, function, component, template,
