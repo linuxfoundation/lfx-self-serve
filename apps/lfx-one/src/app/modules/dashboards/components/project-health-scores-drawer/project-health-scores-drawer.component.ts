@@ -127,7 +127,15 @@ export class ProjectHealthScoresDrawerComponent {
   public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
   // True while the parent's foundation health-score distribution request is in flight.
-  // The parent zeroes `data`/`total` during this window, so without this gate the header badge and chart would render "no scores" while the independently-loaded projects table can already show scored badges.
+  // Gates only the parts of the drawer that depend on `data` (summary + chart). The header
+  // badge additionally waits on `totalProjectsLoading` via `distributionLoading`, because
+  // `scoredLabel` reads `total`.
+  public readonly healthScoresLoading = input<boolean>(false);
+
+  // True while either the health-score distribution OR the total-projects request is in flight.
+  // The parent zeroes `data`/`total` during this window, so without this gate the header badge
+  // would render "no scores" while the independently-loaded projects table can already show
+  // scored badges.
   public readonly distributionLoading = input<boolean>(false);
 
   // Total foundation projects (from FOUNDATION_TOTAL_PROJECTS_MONTHLY) — may exceed

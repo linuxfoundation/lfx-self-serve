@@ -60,7 +60,7 @@
       </div>
 
       <!-- Healthy-or-better summary -->
-      @if (!distributionLoading() && hasData()) {
+      @if (!healthScoresLoading() && hasData()) {
         <p class="text-sm text-gray-600" data-testid="project-health-scores-drawer-healthy-summary">
           <span class="font-semibold text-gray-900">{{ healthyOrBetterPct() }}%</span>
           of scored projects are healthy or better — {{ healthyOrBetterCount().toLocaleString('en-US') }} of {{ scoredProjects().toLocaleString('en-US') }}
@@ -78,7 +78,7 @@
       </div>
 
       <!-- Chart -->
-      @if (distributionLoading()) {
+      @if (healthScoresLoading()) {
         <div class="h-[280px] flex items-center justify-center" role="status" aria-live="polite" data-testid="project-health-scores-drawer-chart-loading">
           <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
           <span class="sr-only">Loading health score distribution…</span>

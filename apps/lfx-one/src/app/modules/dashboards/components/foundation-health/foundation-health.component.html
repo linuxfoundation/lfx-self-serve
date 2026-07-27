@@ -215,6 +215,7 @@
   [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
   (visibleChange)="handleDrawerClose()"
   [data]="reconciledHealthScoresData()"
+  [healthScoresLoading]="healthScoresLoading()"
   [distributionLoading]="healthScoresLoading() || totalProjectsLoading()"
   [total]="reconciledTotalProjects()"></lfx-project-health-scores-drawer>
 
