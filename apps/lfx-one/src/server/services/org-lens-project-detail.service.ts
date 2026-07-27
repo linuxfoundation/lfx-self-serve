@@ -622,7 +622,7 @@ export class OrgLensProjectDetailService {
       SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
              LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, DIM_RANK AS RANK
       FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ACCOUNT_ID ASC) AS DIM_RANK
+        SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC) AS DIM_RANK
         FROM ${this.leaderboardTable()}
         WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}
       )
@@ -673,7 +673,10 @@ export class OrgLensProjectDetailService {
       SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
       FROM ${this.activityLeaderboardsTable()}
       WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
-      ORDER BY RANK ASC NULLS LAST, ORG_ACCOUNT_ID ASC
+      -- RANK and ORG_ACCOUNT_ID are both nullable, so they are not a total order for OFFSET paging.
+      -- ORG_ORGANIZATION_ID is the activity model's unique per-row grain key (its own rank tie-break),
+      -- so it guarantees a stable order — page boundaries can't skip or duplicate rows.
+      ORDER BY RANK ASC NULLS LAST, ORG_ORGANIZATION_ID ASC
       LIMIT ${limit} OFFSET ${offset}
     `;
     const countSql = `
@@ -1199,7 +1202,9 @@ export class OrgLensProjectDetailService {
         WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
         -- One Salesforce account can span multiple leaderboard rows (one per crowd.dev org); pick its
         -- best-ranked row deterministically so the Our-Influence band chips never flip between requests.
-        ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC
+        -- ORG_ORGANIZATION_ID is the unique per-row key (matches resolveViewerCohort) and breaks any
+        -- rank/score/name tie that would otherwise let the LIMIT 1 pick flip.
+        ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC
         LIMIT 1
       `,
       [slug, timeRangeType, orgUid]
