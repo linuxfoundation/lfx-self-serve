@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Unit tests for committee.utils.ts. Run via Vitest (`yarn test`, scoped to packages/shared).
+// Unit tests for committee.utils.ts — `yarn test` (this file runs under the packages/shared Vitest project).
 //
 // All fixtures use synthetic placeholder identities — never real user data.
 
