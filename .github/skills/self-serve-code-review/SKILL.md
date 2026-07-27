@@ -81,7 +81,9 @@ Run these on the changed code, scaled to the size of the change:
 - **Tests**: new or changed behavior has tests that assert real behavior, not
   that a mock was called; new components get `data-testid` hooks and the dual
   E2E coverage the repo expects where appropriate. Missing tests on
-  contract-bearing or security-sensitive code is always worth flagging.
+  contract-bearing or security-sensitive code is worth raising when you can name
+  the untested behavior and what breaking it would cost — not as a standing
+  request for coverage.
 - **Performance**: for a caller-facing list, page the cursor through to the
   caller rather than draining every upstream page into one response
   (`/query/resources` carries a cursor — use it); a deliberate all-pages fetch
@@ -95,8 +97,8 @@ Run these on the changed code, scaled to the size of the change:
   bloat every SSR document — not the transfer itself. A server-only secret
   crossing that boundary is a security finding, not a performance one.
 - **Readability and structure**: the change reads like the surrounding code;
-  names say what a thing is or does; no nested ternaries; duplicated logic that
-  wants a shared helper is a finding when it traps the next editor.
+  names say what a thing is or does; duplicated logic that wants a shared helper
+  is a finding when it traps the next editor.
 - **Code truthfulness**: comments, docs, and the PR description match what the
   code actually does; a stale comment, a dead branch, a `data-testid` that lies
   about the element, or a TODO dressed as done is a finding.
