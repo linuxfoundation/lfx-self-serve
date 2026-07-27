@@ -5,7 +5,7 @@ import { afterNextRender, DestroyRef, inject, Injectable, Signal, signal, Writab
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { WriterSummary } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
 import { map } from 'rxjs';
 
@@ -69,15 +69,7 @@ export class WriterGrantsService {
   private runDeferredSweep(): void {
     this.projectService
       .getProjects()
-      .pipe(
-        map(
-          (projects): WriterSummary => ({
-            hasWriterFoundation: projects.some((project) => project.writer === true && computeIsFoundation(project)),
-            hasWriterProject: projects.some((project) => project.writer === true && !computeIsFoundation(project)),
-          })
-        ),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .pipe(map(summarizeWriterGrants), takeUntilDestroyed(this.destroyRef))
       .subscribe((summary) => this.widen(summary));
   }
 

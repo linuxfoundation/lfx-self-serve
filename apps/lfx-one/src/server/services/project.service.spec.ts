@@ -29,6 +29,17 @@ vi.mock('@lfx-one/shared/constants', () => ({
 vi.mock('@lfx-one/shared/enums', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({
   computeIsFoundation,
+  // Real reduction logic (mirrors packages/shared's summarizeWriterGrants) over the mocked
+  // computeIsFoundation, so getWriterSummary tests can drive foundation/non-foundation outcomes
+  // via computeIsFoundation.mockReturnValue/mockImplementation as before. summarizeWriterGrants
+  // itself has its own coverage in packages/shared/src/utils/project.utils.spec.ts.
+  summarizeWriterGrants: (projects: Project[]) => {
+    const writerProjects = projects.filter((p) => p.writer === true);
+    return {
+      hasWriterFoundation: writerProjects.some((p) => computeIsFoundation(p)),
+      hasWriterProject: writerProjects.some((p) => !computeIsFoundation(p)),
+    };
+  },
   getDefaultMarketingImpactMonth: vi.fn(),
   nullifyEmptyStrings: vi.fn(),
   resolvePeriodRange: vi.fn(),

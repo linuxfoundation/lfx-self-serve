@@ -3,7 +3,7 @@
 
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
-import type { EnrichedPersonaProject, LensItem, Project, ProjectContext } from '../interfaces';
+import type { EnrichedPersonaProject, LensItem, Project, ProjectContext, WriterSummary } from '../interfaces';
 
 export function toProjectContext(project: EnrichedPersonaProject): ProjectContext {
   return {
@@ -57,4 +57,21 @@ export function computeIsFoundation(project: Project | null): boolean {
     Array.isArray(project.funding_model) &&
     project.funding_model.includes('Membership')
   );
+}
+
+/**
+ * Reduces a project list to a {@link WriterSummary} — whether it contains at least one
+ * writer-held foundation, and at least one writer-held non-foundation project. Filters to
+ * `writer === true` itself so callers can't accidentally widen access by passing an
+ * un-access-checked or differently-scoped list (LFXV2-2857): both `WriterGrantsService`'s
+ * deferred sweep (client, over the unscoped `getProjects()` result) and
+ * `ProjectService.getWriterSummary` (server, over the already writer-filtered
+ * `getDirectGrantProjects()` result) call this so the two runtimes can't drift apart.
+ */
+export function summarizeWriterGrants(projects: Project[]): WriterSummary {
+  const writerProjects = projects.filter((project) => project.writer === true);
+  return {
+    hasWriterFoundation: writerProjects.some((project) => computeIsFoundation(project)),
+    hasWriterProject: writerProjects.some((project) => !computeIsFoundation(project)),
+  };
 }

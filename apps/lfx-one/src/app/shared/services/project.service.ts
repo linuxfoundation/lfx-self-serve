@@ -21,7 +21,10 @@ export class ProjectService {
     const cacheKey = params?.toString() || '';
     if (!this.projectsCache.has(cacheKey)) {
       const projects$ = this.http.get<Project[]>('/api/projects', { params }).pipe(
-        catchError(() => of([])),
+        catchError((error) => {
+          console.error('Failed to fetch projects:', error);
+          return of([]);
+        }),
         shareReplay(1)
       );
       this.projectsCache.set(cacheKey, projects$);

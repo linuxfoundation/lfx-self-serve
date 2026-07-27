@@ -125,7 +125,7 @@ import {
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
 import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange, summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -386,15 +386,15 @@ export class ProjectService {
   /**
    * Boolean writer-grant summary for `WriterGrantsService`'s bootstrap fast path (LFXV2-2857).
    * Reduces `getDirectGrantProjects` (direct-tuple-only, cheap — see its docstring) instead of
-   * `getProjects`'s unscoped sweep + batch access-check. `getDirectGrantProjects` already filters
-   * to `writer === true`, so no further access-check is needed here.
+   * `getProjects`'s unscoped sweep + batch access-check, via the shared `summarizeWriterGrants`
+   * reducer (also used by `WriterGrantsService`'s deferred sweep, so both runtimes agree on what
+   * counts as a writer-held foundation/project — and `summarizeWriterGrants` filters to
+   * `writer === true` itself, so this stays correct even if `getDirectGrantProjects`'s
+   * `includeMeetingCoordinator` default ever changes).
    */
   public async getWriterSummary(req: Request): Promise<WriterSummary> {
     const projects = await this.getDirectGrantProjects(req);
-    const summary: WriterSummary = {
-      hasWriterFoundation: projects.some((p) => computeIsFoundation(p)),
-      hasWriterProject: projects.some((p) => !computeIsFoundation(p)),
-    };
+    const summary = summarizeWriterGrants(projects);
 
     logger.debug(req, 'get_writer_summary', 'Reduced direct-grant projects to writer summary', {
       direct_grant_count: projects.length,
