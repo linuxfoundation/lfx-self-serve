@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of, retry, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -20,7 +20,11 @@ export class ProjectService {
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
     if (!this.projectsCache.has(cacheKey)) {
+      // One retry before the fail-closed fallback: shareReplay(1) pins whatever value lands here
+      // for the rest of the session (every caller shares this cache key), so a bare transient
+      // blip shouldn't get to permanently poison it to `[]`.
       const projects$ = this.http.get<Project[]>('/api/projects', { params }).pipe(
+        retry({ count: 1, delay: 1000 }),
         catchError((error) => {
           console.error('Failed to fetch projects:', error);
           return of([]);

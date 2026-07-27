@@ -25,6 +25,12 @@ export const lensRedirectGuard: CanActivateFn = (_route, state) => {
   // subsequent ones — the same URL resolving differently by timing. Accepted rather than gated on a
   // readiness signal, which would block every flat-route navigation on the grants request.
   //
+  // Since LFXV2-2857, a direct writer grant resolves this quickly (sub-second, WriterGrantsService's
+  // fast path), but an *inherited-only* grant (e.g. foundation-level writer reaching a non-foundation
+  // child with no direct tuple on it) only resolves once the idle-deferred full sweep runs — up to
+  // `IDLE_SWEEP_TIMEOUT_MS` (15s) after first paint, plus that sweep's own request latency. So the
+  // un-redirected window for that user class is meaningfully longer than a single hydration tick.
+  //
   // The un-redirected flat route is a functional page, and — crucially — the create flows on it no
   // longer resolve the wrong target while it is un-redirected: the flat write routes also run
   // `projectQueryParamGuard`, which seeds the context slot from the `?project=` param (deriving

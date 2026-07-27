@@ -17,16 +17,20 @@ import { map } from 'rxjs';
  *
  * Two-phase, both kicked off post-hydration in `afterNextRender` (LFXV2-2857):
  *  - **Fast path** — `ProjectService.getWriterSummary()` hits a `filter_grants=direct`-scoped
- *    endpoint (sub-second). Direct grants only, so it under-reports *inherited* access (e.g. a
- *    foundation-level writer's implicit access to a non-foundation child they hold no direct
- *    tuple on).
+ *    endpoint (typically sub-second for a normal direct-grant count, though it still paginates
+ *    and access-checks server-side, so it isn't a hard bound). Direct grants only, so it
+ *    under-reports *inherited* access (e.g. a foundation-level writer's implicit access to a
+ *    non-foundation child they hold no direct tuple on).
  *  - **Deferred sweep** — the existing unscoped `ProjectService.getProjects()` (the same call
  *    that used to run here directly and block bootstrap for 11-19s), rescheduled via
  *    `requestIdleCallback` so it starts well after first paint and doesn't count toward RUM's
- *    `@view.loading_time`. Resolves inherited access. Runs every bootstrap (deliberately
- *    uncached: identity-scoped state here would need to invalidate on impersonation start/stop,
- *    both of which reload in-tab — see `docs/architecture/backend/impersonation.md` — and the
- *    idle-deferred call is cheap enough that re-running it isn't worth that risk).
+ *    `@view.loading_time`. Resolves inherited access. Server-side cost is unchanged — this only
+ *    moves it off the bootstrap-blocking path, it doesn't make the call itself cheaper. Runs
+ *    every bootstrap (deliberately uncached: identity-scoped state here would need to invalidate
+ *    on impersonation start/stop, both of which reload in-tab — see
+ *    `docs/architecture/backend/impersonation.md` — and re-running an idle-deferred call beats
+ *    that invalidation risk). Skipped entirely once both signals are already `true`, since an
+ *    OR-merge can no longer change the outcome.
  *
  * Both signals start `false` and only ever OR-merge to `true` as either call resolves — never
  * back — so the fast path, deferred sweep, and their arrival order don't matter to the consumer.
@@ -67,6 +71,11 @@ export class WriterGrantsService {
   }
 
   private runDeferredSweep(): void {
+    // Signals only ever widen — with both already true, the sweep's result can't change anything.
+    if (this.hasWriterFoundationInternal() && this.hasWriterProjectInternal()) {
+      return;
+    }
+
     this.projectService
       .getProjects()
       .pipe(map(summarizeWriterGrants), takeUntilDestroyed(this.destroyRef))
@@ -75,9 +84,11 @@ export class WriterGrantsService {
 
   private runWhenIdle(cb: () => void): void {
     if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
+      const id = requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
+      this.destroyRef.onDestroy(() => cancelIdleCallback(id));
     } else {
-      setTimeout(cb, IDLE_SWEEP_FALLBACK_DELAY_MS);
+      const id = setTimeout(cb, IDLE_SWEEP_FALLBACK_DELAY_MS);
+      this.destroyRef.onDestroy(() => clearTimeout(id));
     }
   }
 }
