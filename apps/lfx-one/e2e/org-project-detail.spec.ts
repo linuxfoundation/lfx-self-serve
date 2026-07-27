@@ -140,32 +140,59 @@ test.describe('Org Project Detail — leaderboards', () => {
   });
 
   test('activity count mode also renders boards in rank order with the viewing org not pinned', async ({ page }) => {
-    // buildBoard() drops the pin in the Activity Count branch too, sorting by warehouse rank ascending
-    // (rows with no warehouse rank sort last and render a positional `i + 1` fallback). So each row's
-    // rank is non-decreasing versus the previous row EXCEPT for a trailing fallback row, whose rank
-    // equals its 1-based position. A viewing row pinned out of order would satisfy neither condition.
-    // We assert only the rendered rank order — not the viewing row's presence — because unpinning
-    // explicitly allows the viewing org to fall onto a later paginator page. Both boards load
-    // independently, so await each table before reading its rows to avoid a race.
+    // The Activity Count branch drops the pin too, ordering by warehouse rank ascending with
+    // unknown-rank rows sorting last and rendering an explicit '—' (never a positional fallback). We
+    // assert only the rendered rank order — not the viewing row's presence — because unpinning
+    // explicitly allows the viewing org to fall onto a later paginator page.
+    //
+    // Switching metric triggers a fresh server reload that swaps in skeleton rows, so wait for the
+    // activity page-0 response of BOTH boards (not just the tables, which are already on screen from
+    // the influence load) and for the skeletons to clear — otherwise the assertion could run against
+    // empty skeleton text or stale influence ranks and still pass.
+    const activityLoaded = (['technical', 'ecosystem'] as const).map((board) =>
+      page.waitForResponse(
+        (response) => {
+          const url = new URL(response.url());
+          return (
+            url.pathname.endsWith(`/leaderboard/${board}`) &&
+            url.searchParams.get('metric') === 'activity' &&
+            url.searchParams.get('page') === '0' &&
+            response.status() === 200
+          );
+        },
+        { timeout: DATA_LOAD_TIMEOUT }
+      )
+    );
     await page.getByTestId('project-detail-metric-activity').click();
     await expect(page).toHaveURL(/metric=activity/);
-    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await Promise.all(activityLoaded);
 
     for (const board of ['technical', 'ecosystem'] as const) {
       const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
+      // Wait past the skeleton reload: the first row's rank cell resolves to a real value (a number or '—').
+      await expect.poll(async () => (await rows.first().locator('td').first().innerText()).trim()).not.toBe('');
       const count = await rows.count();
       expect(count).toBeGreaterThan(0);
 
-      const ranks: number[] = [];
+      const rankTexts: string[] = [];
       for (let i = 0; i < count; i++) {
-        ranks.push(Number((await rows.nth(i).locator('td').first().innerText()).trim()));
+        rankTexts.push((await rows.nth(i).locator('td').first().innerText()).trim());
       }
 
-      for (let i = 1; i < ranks.length; i++) {
-        const nonDecreasing = ranks[i] >= ranks[i - 1];
-        const positionalFallback = ranks[i] === i + 1;
-        expect(nonDecreasing || positionalFallback).toBe(true);
+      // Numeric warehouse ranks come first and must be non-decreasing; unknown-rank rows render '—' and
+      // sort last, so once one appears every later row is '—' too. No positional fallback is allowed.
+      let seenUnknown = false;
+      let prev = -Infinity;
+      for (const text of rankTexts) {
+        if (text === '—') {
+          seenUnknown = true;
+          continue;
+        }
+        expect(seenUnknown, `numeric rank "${text}" must not appear after an unknown '—' row`).toBe(false);
+        const rank = Number(text);
+        expect(Number.isFinite(rank)).toBe(true);
+        expect(rank).toBeGreaterThanOrEqual(prev);
+        prev = rank;
       }
     }
   });
