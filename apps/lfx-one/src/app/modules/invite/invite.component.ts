@@ -76,6 +76,7 @@ export class InviteComponent implements OnInit {
         committeeName: invite.committee_name,
         organization: invite.organization,
         organization_required: true,
+        fromLfidInvite: true,
       })
       .pipe(take(1))
       .subscribe({
