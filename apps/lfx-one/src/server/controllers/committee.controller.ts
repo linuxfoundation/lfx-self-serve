@@ -729,7 +729,7 @@ export class CommitteeController {
       // flow — the invite UID was already known from the JWT, but the FGA invitee tuple may not
       // have propagated yet. The committee-service is authoritative for invite existence and org
       // requirements in all cases (LFXV2-2453).
-      if (!body.from_lfid_invite) {
+      if (body.from_lfid_invite !== true) {
         // Determine org-required using the invite's own organization_required field — accessible
         // to the invitee via the email-scoped query index regardless of committee-viewer status.
         const userEmail = getEffectiveEmail(req);
