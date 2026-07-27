@@ -1,20 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule, NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { IDENTITY_PROVIDER_OPTIONS } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
+import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputOtp } from 'primeng/inputotp';
 
 @Component({
   selector: 'lfx-add-account-dialog',
-  imports: [ButtonComponent, InputTextComponent, FormsModule, ReactiveFormsModule, InputOtp],
+  imports: [ButtonComponent, InputTextComponent, FormsModule, ReactiveFormsModule, InputOtp, OpenIntercomDirective],
   templateUrl: './add-account-dialog.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -38,6 +40,10 @@ export class AddAccountDialogComponent {
   public codeSent = signal(false);
   public verificationCode = signal('');
   public verificationError = signal('');
+  // Shows the "contact support" link whenever the visible error is an already-linked
+  // conflict — detected from the message text via the same shared util the backend uses,
+  // so it works regardless of which subscribe callback set the error.
+  public readonly showSupportLink = computed(() => isIdentityAlreadyLinkedError(this.verificationError()));
   public isVerifying = signal(false);
 
   private readonly resendCooldownUtil = useResendCooldown(this.destroyRef);
