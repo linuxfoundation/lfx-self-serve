@@ -145,6 +145,20 @@ export function getStringQueryParam(req: Request, name: string): string | undefi
 }
 
 /**
+ * Escapes SQL LIKE/ILIKE metacharacters in user-supplied search text so the term matches LITERALLY.
+ *
+ * `%` and `_` are LIKE wildcards; without escaping, a search for "%" matches every row (and inflates a
+ * paginated total), and "_" matches any single character. Pair the returned value with an `ESCAPE '!'`
+ * clause on the predicate, e.g. `COL ILIKE ? ESCAPE '!'` bound to `` `%${escapeSqlLikePattern(term)}%` ``.
+ * `!` is the escape character (chosen over backslash, which Snowflake also interprets inside string
+ * literals — a double-escaping footgun); the `!` itself is escaped so a literal "!" in a name (e.g.
+ * "Yahoo!") still matches. Verified against Snowflake `ILIKE … ESCAPE '!'`.
+ */
+export function escapeSqlLikePattern(term: string): string {
+  return term.replace(/[!%_]/g, (ch) => `!${ch}`);
+}
+
+/**
  * Validates and narrows a raw range string to a HealthMetricsRange.
  * Throws ServiceValidationError when the value is not in the allowed set.
  */

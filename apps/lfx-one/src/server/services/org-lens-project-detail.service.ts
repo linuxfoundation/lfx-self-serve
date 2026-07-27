@@ -9,7 +9,8 @@ import type {
   OrgLensCardRosterPage,
   OrgLensHeroBlock,
   OrgLensInfluenceBlock,
-  OrgLensLeaderboardBlock,
+  OrgLensLeaderboardMetric,
+  OrgLensLeaderboardPage,
   OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
   OrgLensProjectHealth,
@@ -22,6 +23,7 @@ import type {
 import { buildInsightsUrl, classifyHealthScore } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -167,10 +169,6 @@ interface LeaderboardRow {
   LEVEL_TECHNICAL: string | null;
   LEVEL_ECOSYSTEM: string | null;
   RANK: number | null;
-  ACTIVITY_CONTRIBUTIONS: number | null;
-  ACTIVITY_CONTRIBUTIONS_PCT: number | null;
-  ACTIVITY_COLLABORATIONS: number | null;
-  ACTIVITY_COLLABORATIONS_PCT: number | null;
 }
 
 /**
@@ -193,6 +191,10 @@ export class OrgLensProjectDetailService {
   // Sparklines are emitted as a dense, contiguous, current-month-anchored monthly array; the
   // shipped component maps points to a fixed 36-month label axis by position and slices per range.
   private static readonly sparklineMonths = 36;
+
+  // Upper bound on the requested page. Guards against a huge/precision-lost query value overflowing
+  // page*size into an unsafe integer OFFSET (which Snowflake rejects → 500); leaderboards never approach it.
+  private static readonly maxBoardPage = 100_000;
 
   // Static drawer definition metadata for the 14 cards (LFXV2-1885 DN9 Phase 1): definition copy,
   // total-column semantics, table headers, project-total aggregation, and the ecosystem cards'
@@ -409,16 +411,17 @@ export class OrgLensProjectDetailService {
     const isNonLf = heroRow.IS_LF_PROJECT !== true;
     const foundationLabel = heroRow.FOUNDATION_NAME ?? 'Outside LF';
 
-    const [cardRows, sparkRows, leaderboardRows] = await Promise.all([
+    const [cardRows, sparkRows, viewing] = await Promise.all([
       this.fetchCards(orgUid, slug, timeRangeType),
       this.fetchSparklines(orgUid, slug),
-      this.fetchLeaderboard(orgUid, slug, timeRangeType).catch(() => [] as LeaderboardRow[]),
+      // Only the viewing org's own row is needed here (for the section-title band chips), so fetch
+      // that single row rather than the whole board — the board itself is now paged separately.
+      this.fetchViewingLeaderboardRow(orgUid, slug, timeRangeType).catch(() => null),
     ]);
 
     const cards = cardRows[0] ?? null;
     const sparklineIndex = this.buildSparklineIndex(sparkRows);
     const monthAxis = this.monthAxis();
-    const viewing = leaderboardRows.find((row) => row.ORG_ACCOUNT_ID === orgUid) ?? null;
 
     const block: OrgLensInfluenceBlock = {
       technical: this.buildTechnicalCards(cards, sparklineIndex, monthAxis),
@@ -455,12 +458,28 @@ export class OrgLensProjectDetailService {
     return block;
   }
 
-  public async getTechnicalBoard(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensLeaderboardBlock | null> {
-    return this.fetchLeaderboardBlock(orgUid, projectSlug, range, 'technical');
+  public async getTechnicalBoard(
+    orgUid: string,
+    projectSlug: string,
+    range: OrgLensLeaderboardTimeRange,
+    metric: OrgLensLeaderboardMetric,
+    page: number,
+    pageSize: number,
+    search: string
+  ): Promise<OrgLensLeaderboardPage | null> {
+    return this.fetchBoardPage(orgUid, projectSlug, range, 'technical', metric, page, pageSize, search);
   }
 
-  public async getEcosystemBoard(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensLeaderboardBlock | null> {
-    return this.fetchLeaderboardBlock(orgUid, projectSlug, range, 'ecosystem');
+  public async getEcosystemBoard(
+    orgUid: string,
+    projectSlug: string,
+    range: OrgLensLeaderboardTimeRange,
+    metric: OrgLensLeaderboardMetric,
+    page: number,
+    pageSize: number,
+    search: string
+  ): Promise<OrgLensLeaderboardPage | null> {
+    return this.fetchBoardPage(orgUid, projectSlug, range, 'ecosystem', metric, page, pageSize, search);
   }
 
   public async getCardDrawer(
@@ -488,17 +507,34 @@ export class OrgLensProjectDetailService {
     return section;
   }
 
-  private async fetchLeaderboardBlock(
+  /**
+   * One server-paginated, server-searched page of a leaderboard board for one dimension
+   * (technical / ecosystem) and metric (Calculated Influence / Activity Count). Ranking and paging
+   * happen in SQL over the FULL org set (no top-N cap); the viewing org is flagged per row and lands
+   * at its true rank on whatever page it falls (no top-pinning). A missing (org, slug) catalog row is
+   * the page-level 404 gate, consistent with every other block.
+   */
+  private async fetchBoardPage(
     orgUid: string,
     projectSlug: string,
     range: OrgLensLeaderboardTimeRange,
-    dimension: 'technical' | 'ecosystem'
-  ): Promise<OrgLensLeaderboardBlock | null> {
+    dimension: 'technical' | 'ecosystem',
+    metric: OrgLensLeaderboardMetric,
+    page: number,
+    pageSize: number,
+    search: string
+  ): Promise<OrgLensLeaderboardPage | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    const key = buildOrgCacheKey(orgUid, `project-detail-board-${dimension}:${this.paramSignature([slug, range])}`);
+    const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
+    const safePage = Math.min(Math.max(Math.trunc(page) || 0, 0), OrgLensProjectDetailService.maxBoardPage);
+    const offset = safePage * safeSize;
+    const term = search.trim();
+
+    const cacheKey = `project-detail-board-${dimension}-${metric}:${this.paramSignature([slug, range, safePage, safeSize, term.toLowerCase()])}`;
+    const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensLeaderboardBlock>(key, OrgLensProjectDetailService.isLeaderboardBlock);
+      const cached = await valkeyService.getJson<OrgLensLeaderboardPage>(key, OrgLensProjectDetailService.isLeaderboardPage);
       if (cached !== null) return cached;
     }
 
@@ -506,22 +542,164 @@ export class OrgLensProjectDetailService {
     if (!heroRow) return null;
     const isNonLf = heroRow.IS_LF_PROJECT !== true;
 
-    const [leaderboardRows, activityBoardRows] = await Promise.all([
-      this.fetchLeaderboard(orgUid, slug, timeRangeType),
-      this.fetchActivityLeaderboards(orgUid, slug, timeRangeType),
-    ]);
+    let block: OrgLensLeaderboardPage;
+    // Non-LF projects have no ecosystem influence, so this board is empty. The server is authoritative:
+    // the client renders the "Non-LF" marker only and no longer guards this itself.
+    if (dimension === 'ecosystem' && metric === 'influence' && isNonLf) {
+      block = { rows: [], total: 0, isNonLfProject: isNonLf };
+    } else {
+      const { rows, total } =
+        metric === 'activity'
+          ? await this.fetchActivityBoardPage(slug, timeRangeType, dimension, orgUid, safeSize, offset, term)
+          : await this.fetchInfluenceBoardPage(slug, timeRangeType, dimension, orgUid, isNonLf, safeSize, offset, term);
+      block = { rows, total, isNonLfProject: isNonLf };
+    }
 
-    const trendByAccount = new Map<string, TrendSeries>();
-    const activityLeaderboards = this.mapActivityLeaderboards(activityBoardRows, orgUid, trendByAccount);
-    const block: OrgLensLeaderboardBlock = {
-      influence: leaderboardRows.map((row) => this.mapLeaderboardRow(row, orgUid, isNonLf, trendByAccount)),
-      activity: dimension === 'technical' ? activityLeaderboards.contributions : activityLeaderboards.collaborations,
-      isNonLfProject: isNonLf,
-    };
     if (key !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return block;
+  }
+
+  /**
+   * The leaderboard tables store one ranked cohort per viewing organization (keyed by
+   * MY_ORGANIZATION_ID) plus a generic MY_ORGANIZATION_ID IS NULL cohort. Ranking or counting across
+   * all cohorts would duplicate organizations and inflate ranks/totals, so every board page must scope
+   * to a single cohort: resolve the viewer's ORG_ORGANIZATION_ID and use their cohort when it has rows,
+   * else the NULL cohort (mirrors the pre-pagination loader). Returns the WHERE fragment plus its bind
+   * params to apply identically to the ranked/page source and the count query.
+   */
+  private async resolveViewerCohort(table: string, slug: string, timeRangeType: string, orgUid: string): Promise<{ clause: string; params: string[] }> {
+    // One Salesforce account can map to several leaderboard rows (multiple crowd.dev orgs), so the pick
+    // must be deterministic — otherwise a per-page cohort lookup could resolve a different
+    // MY_ORGANIZATION_ID (or flip to the null cohort) on each page request and make ranks/totals/row
+    // membership disagree across pages. Order identically to fetchViewingLeaderboardRow (best-ranked
+    // row first) with ORG_ORGANIZATION_ID as a final unique tiebreak.
+    const orgIdResult = await this.snowflakeService.execute<{ ORG_ORGANIZATION_ID: string }>(
+      `SELECT ORG_ORGANIZATION_ID FROM ${this.leaderboardTable()} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
+       ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC LIMIT 1`,
+      [slug, timeRangeType, orgUid]
+    );
+    const viewerOrgId = orgIdResult.rows[0]?.ORG_ORGANIZATION_ID;
+    if (viewerOrgId) {
+      const viewerCount = await this.snowflakeService.execute<{ N: number }>(
+        `SELECT COUNT(*) AS N FROM ${table} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND MY_ORGANIZATION_ID = ?`,
+        [slug, timeRangeType, viewerOrgId]
+      );
+      if (this.num(viewerCount.rows[0]?.N ?? 0) > 0) {
+        return { clause: 'MY_ORGANIZATION_ID = ?', params: [viewerOrgId] };
+      }
+    }
+    return { clause: 'MY_ORGANIZATION_ID IS NULL', params: [] };
+  }
+
+  /**
+   * A page of the Calculated Influence board for one dimension. There is no stored per-dimension
+   * rank (the warehouse combined RANK is the combined-influence order), so rank is derived here via
+   * ROW_NUMBER() over the FULL set ordered by that dimension's score. Search filters rows AFTER
+   * ranking, so a matched org keeps its true board rank (e.g. an org ranked #250 stays "#250").
+   */
+  private async fetchInfluenceBoardPage(
+    slug: string,
+    timeRangeType: string,
+    dimension: 'technical' | 'ecosystem',
+    orgUid: string,
+    isNonLf: boolean,
+    limit: number,
+    offset: number,
+    search: string
+  ): Promise<{ rows: OrgLensProjectLeaderboardRow[]; total: number }> {
+    const scoreColumn = dimension === 'technical' ? 'SCORE_TECHNICAL' : 'SCORE_ECOSYSTEM';
+    const cohort = await this.resolveViewerCohort(this.leaderboardTable(), slug, timeRangeType, orgUid);
+    const hasSearch = search.length > 0;
+    // Rank + count are scoped to the resolved viewer cohort; ORG_NAME ILIKE is a bound param. Snowflake
+    // rejects binds in LIMIT/OFFSET, so the already-clamped integers are interpolated as literals.
+    // ESCAPE '!' + escaped term so a user-typed % or _ matches literally (never a wildcard), keeping the
+    // page and count predicates consistent with the old client-side literal-substring search.
+    const searchClause = hasSearch ? "WHERE ORG_NAME ILIKE ? ESCAPE '!'" : '';
+    const baseParams = [slug, timeRangeType, ...cohort.params];
+    const pageParams = hasSearch ? [...baseParams, `%${escapeSqlLikePattern(search)}%`] : baseParams;
+    const countParams = pageParams;
+
+    const pageSql = `
+      SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
+             LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, DIM_RANK AS RANK
+      FROM (
+        SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC) AS DIM_RANK
+        FROM ${this.leaderboardTable()}
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}
+      )
+      ${searchClause}
+      ORDER BY DIM_RANK
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    const countSql = `
+      SELECT COUNT(*) AS N
+      FROM ${this.leaderboardTable()}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}${hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : ''}
+    `;
+
+    const [pageResult, countResult] = await Promise.all([
+      this.snowflakeService.execute<LeaderboardRow>(pageSql, pageParams),
+      this.snowflakeService.execute<{ N: number }>(countSql, countParams),
+    ]);
+    return {
+      rows: pageResult.rows.map((row) => this.mapInfluenceRow(row, orgUid, isNonLf)),
+      total: this.num(countResult.rows[0]?.N ?? 0),
+    };
+  }
+
+  /**
+   * A page of an Activity Count board for one dimension. The gold-sourced activity model already
+   * carries rank / total / percentage over the FULL org set, so this just filters, orders by that
+   * precomputed RANK, and pages — no ranking is re-implemented. Search preserves rank as above.
+   */
+  private async fetchActivityBoardPage(
+    slug: string,
+    timeRangeType: string,
+    dimension: 'technical' | 'ecosystem',
+    orgUid: string,
+    limit: number,
+    offset: number,
+    search: string
+  ): Promise<{ rows: OrgLensProjectLeaderboardRow[]; total: number }> {
+    const boardType = dimension === 'technical' ? 'contributions' : 'collaborations';
+    const cohort = await this.resolveViewerCohort(this.activityLeaderboardsTable(), slug, timeRangeType, orgUid);
+    const hasSearch = search.length > 0;
+    // Scope to the viewer cohort; ORG_NAME ILIKE is bound. Snowflake rejects binds in LIMIT/OFFSET,
+    // so the clamped integers are interpolated as literals (see fetchInfluenceBoardPage).
+    // ESCAPE '!' + escaped term so a user-typed % or _ matches literally; shared by the page and count
+    // predicates so the paginated total can't be inflated by wildcard interpretation.
+    const searchClause = hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : '';
+    const params = hasSearch
+      ? [slug, timeRangeType, boardType, ...cohort.params, `%${escapeSqlLikePattern(search)}%`]
+      : [slug, timeRangeType, boardType, ...cohort.params];
+    const pageParams = params;
+
+    const pageSql = `
+      SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
+      FROM ${this.activityLeaderboardsTable()}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
+      -- RANK and ORG_ACCOUNT_ID are both nullable, so they are not a total order for OFFSET paging.
+      -- ORG_ORGANIZATION_ID is the activity model's unique per-row grain key (its own rank tie-break),
+      -- so it guarantees a stable order — page boundaries can't skip or duplicate rows.
+      ORDER BY RANK ASC NULLS LAST, ORG_ORGANIZATION_ID ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    const countSql = `
+      SELECT COUNT(*) AS N
+      FROM ${this.activityLeaderboardsTable()}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
+    `;
+
+    const [pageResult, countResult] = await Promise.all([
+      this.snowflakeService.execute<ActivityBoardRow>(pageSql, pageParams),
+      this.snowflakeService.execute<{ N: number }>(countSql, params),
+    ]);
+    return {
+      rows: pageResult.rows.map((row) => this.mapActivityRow(row, dimension, orgUid)),
+      total: this.num(countResult.rows[0]?.N ?? 0),
+    };
   }
 
   private async fetchHeroRow(orgUid: string, slug: string): Promise<HeroRow | null> {
@@ -1021,60 +1199,56 @@ export class OrgLensProjectDetailService {
     return series;
   }
 
-  private async fetchActivityLeaderboards(orgUid: string, slug: string, timeRangeType: string): Promise<ActivityBoardRow[]> {
-    const sql = (viewerClause: string): string => `
-      SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
-      FROM ${this.activityLeaderboardsTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${viewerClause}
-      ORDER BY BOARD_TYPE ASC, RANK ASC
-    `;
-    const orgIdResult = await this.snowflakeService.execute<{ ORG_ORGANIZATION_ID: string }>(
+  /** The viewing org's own leaderboard row (for the Our-Influence tab's band chips); null if absent. */
+  private async fetchViewingLeaderboardRow(orgUid: string, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
+    const result = await this.snowflakeService.execute<LeaderboardRow>(
       `
-        SELECT ORG_ORGANIZATION_ID
+        SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
+               LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, RANK
         FROM ${this.leaderboardTable()}
         WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
+        -- One Salesforce account can span multiple leaderboard rows (one per crowd.dev org); pick its
+        -- best-ranked row deterministically so the Our-Influence band chips never flip between requests.
+        -- ORG_ORGANIZATION_ID is the unique per-row key (matches resolveViewerCohort) and breaks any
+        -- rank/score/name tie that would otherwise let the LIMIT 1 pick flip.
+        ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC
         LIMIT 1
       `,
       [slug, timeRangeType, orgUid]
     );
-    const viewerOrgId = orgIdResult.rows[0]?.ORG_ORGANIZATION_ID;
-    if (viewerOrgId) {
-      const viewer = await this.snowflakeService.execute<ActivityBoardRow>(sql('MY_ORGANIZATION_ID = ?'), [slug, timeRangeType, viewerOrgId]);
-      if (viewer.rows.length > 0) {
-        return viewer.rows;
-      }
-    }
-    const fallback = await this.snowflakeService.execute<ActivityBoardRow>(sql('MY_ORGANIZATION_ID IS NULL'), [slug, timeRangeType]);
-    return fallback.rows;
+    return result.rows[0] ?? null;
   }
 
-  private mapActivityLeaderboards(
-    rows: ActivityBoardRow[],
-    orgUid: string,
-    trendByAccount: Map<string, TrendSeries>
-  ): {
-    contributions: OrgLensProjectLeaderboardRow[];
-    collaborations: OrgLensProjectLeaderboardRow[];
-  } {
-    const contributions: OrgLensProjectLeaderboardRow[] = [];
-    const collaborations: OrgLensProjectLeaderboardRow[] = [];
-    for (const row of rows) {
-      const mapped = this.mapActivityBoardRow(row, orgUid, trendByAccount);
-      if (row.BOARD_TYPE === 'contributions') {
-        contributions.push(mapped);
-      } else if (row.BOARD_TYPE === 'collaborations') {
-        collaborations.push(mapped);
-      }
-    }
-    return { contributions, collaborations };
+  /** Map a combined-leaderboard row to a Calculated Influence board row (scores + bands + rank). */
+  private mapInfluenceRow(row: LeaderboardRow, orgUid: string, isNonLf: boolean): OrgLensProjectLeaderboardRow {
+    return {
+      orgName: row.ORG_NAME ?? '',
+      orgLogoUrl: row.ORG_LOGO_URL ?? '',
+      scores: {
+        combined: this.round1(this.num(row.SCORE_COMBINED)),
+        technical: this.round1(this.num(row.SCORE_TECHNICAL)),
+        ecosystem: this.round1(this.num(row.SCORE_ECOSYSTEM)),
+      },
+      levels: {
+        combined: this.mapBand(row.LEVEL_COMBINED) ?? 'silent',
+        technical: this.mapBand(row.LEVEL_TECHNICAL) ?? 'silent',
+        ecosystem: isNonLf ? null : (this.mapBand(row.LEVEL_ECOSYSTEM) ?? 'silent'),
+      },
+      // Calculated Influence rows carry no activity totals — Activity Count mode reads the
+      // separate activity-leaderboards model — so this is a zero placeholder the board never renders.
+      activityCount: { contributions: 0, collaborations: 0, contributionsPct: 0, collaborationsPct: 0 },
+      // Rank is the DIM_RANK computed in fetchInfluenceBoardPage; leave undefined only if RANK is
+      // somehow absent so the client never renders "#0" for a real row.
+      warehouseRank: this.numOrNull(row.RANK) === null ? undefined : Math.round(this.num(row.RANK)),
+      isViewingOrg: row.ORG_ACCOUNT_ID === orgUid,
+    };
   }
 
-  private mapActivityBoardRow(row: ActivityBoardRow, orgUid: string, trendByAccount: Map<string, TrendSeries>): OrgLensProjectLeaderboardRow {
-    const isContributions = row.BOARD_TYPE === 'contributions';
+  /** Map a gold-sourced activity board row to an Activity Count board row (total/pct + warehouse rank). */
+  private mapActivityRow(row: ActivityBoardRow, dimension: 'technical' | 'ecosystem', orgUid: string): OrgLensProjectLeaderboardRow {
+    const isContributions = dimension === 'technical';
     const total = Math.round(this.num(row.ACTIVITY_TOTAL));
     const pct = this.round1(this.num(row.ACTIVITY_PCT));
-    const series = row.ORG_ACCOUNT_ID ? (trendByAccount.get(row.ORG_ACCOUNT_ID)?.combined ?? []) : [];
-    const trendSparkline = this.trendSparkline12(series);
     return {
       orgName: row.ORG_NAME ?? '',
       orgLogoUrl: row.ORG_LOGO_URL ?? '',
@@ -1086,43 +1260,9 @@ export class OrgLensProjectDetailService {
         contributionsPct: isContributions ? pct : 0,
         collaborationsPct: isContributions ? 0 : pct,
       },
-      trendSparkline,
-      trendDeltaPct: this.yoyDelta(series),
-      // Leave undefined when the warehouse RANK is absent so the client falls back to positional
-      // order instead of rendering "#0" (num() would coerce a NULL rank to 0).
       warehouseRank: this.numOrNull(row.RANK) === null ? undefined : Math.round(this.num(row.RANK)),
       isViewingOrg: row.ORG_ACCOUNT_ID === orgUid,
     };
-  }
-
-  private async fetchLeaderboard(orgUid: string, slug: string, timeRangeType: string): Promise<LeaderboardRow[]> {
-    const sql = (viewerClause: string): string => `
-      SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
-             LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, RANK,
-             ACTIVITY_CONTRIBUTIONS, ACTIVITY_CONTRIBUTIONS_PCT,
-             ACTIVITY_COLLABORATIONS, ACTIVITY_COLLABORATIONS_PCT
-      FROM ${this.leaderboardTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${viewerClause}
-      ORDER BY RANK ASC
-    `;
-    const orgIdResult = await this.snowflakeService.execute<{ ORG_ORGANIZATION_ID: string }>(
-      `
-        SELECT ORG_ORGANIZATION_ID
-        FROM ${this.leaderboardTable()}
-        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
-        LIMIT 1
-      `,
-      [slug, timeRangeType, orgUid]
-    );
-    const viewerOrgId = orgIdResult.rows[0]?.ORG_ORGANIZATION_ID;
-    if (viewerOrgId) {
-      const viewer = await this.snowflakeService.execute<LeaderboardRow>(sql('MY_ORGANIZATION_ID = ?'), [slug, timeRangeType, viewerOrgId]);
-      if (viewer.rows.length > 0) {
-        return viewer.rows;
-      }
-    }
-    const fallback = await this.snowflakeService.execute<LeaderboardRow>(sql('MY_ORGANIZATION_ID IS NULL'), [slug, timeRangeType]);
-    return fallback.rows;
   }
 
   private mapHero(row: HeroRow, slug: string, foundationLabel: string): OrgLensProjectHero {
@@ -1315,49 +1455,6 @@ export class OrgLensProjectDetailService {
     return { key, label, scopeLabel, sparkline, projectSparkline, caption };
   }
 
-  private mapLeaderboardRow(row: LeaderboardRow, orgUid: string, isNonLf: boolean, trendByAccount: Map<string, TrendSeries>): OrgLensProjectLeaderboardRow {
-    const series = row.ORG_ACCOUNT_ID ? (trendByAccount.get(row.ORG_ACCOUNT_ID)?.combined ?? []) : [];
-    return {
-      orgName: row.ORG_NAME ?? '',
-      orgLogoUrl: row.ORG_LOGO_URL ?? '',
-      scores: {
-        combined: this.round1(this.num(row.SCORE_COMBINED)),
-        technical: this.round1(this.num(row.SCORE_TECHNICAL)),
-        ecosystem: this.round1(this.num(row.SCORE_ECOSYSTEM)),
-      },
-      levels: {
-        combined: this.mapBand(row.LEVEL_COMBINED) ?? 'silent',
-        technical: this.mapBand(row.LEVEL_TECHNICAL) ?? 'silent',
-        ecosystem: isNonLf ? null : (this.mapBand(row.LEVEL_ECOSYSTEM) ?? 'silent'),
-      },
-      activityCount: {
-        contributions: Math.round(this.num(row.ACTIVITY_CONTRIBUTIONS)),
-        collaborations: Math.round(this.num(row.ACTIVITY_COLLABORATIONS)),
-        contributionsPct: this.round1(this.num(row.ACTIVITY_CONTRIBUTIONS_PCT)),
-        collaborationsPct: this.round1(this.num(row.ACTIVITY_COLLABORATIONS_PCT)),
-      },
-      trendSparkline: this.trendSparkline12(series),
-      trendDeltaPct: this.yoyDelta(series),
-      isViewingOrg: row.ORG_ACCOUNT_ID === orgUid,
-    };
-  }
-
-  // Per §DN7 the leaderboard trend column is a fixed trailing-12-month series paired with a
-  // 1-year delta — independent of the ?range= toggle (which scopes scores/activity counts, not
-  // this sparkline). Always take the last 12 monthly points (oldest → newest).
-  private trendSparkline12(series: number[]): number[] {
-    return series.slice(-12);
-  }
-
-  /** Year-over-year delta as a signed fraction from a monthly combined series (last vs 12 months prior). */
-  private yoyDelta(series: number[]): number {
-    if (series.length < 13) return 0;
-    const last = series[series.length - 1];
-    const prior = series[series.length - 13];
-    if (prior === 0) return 0;
-    return Math.round(((last - prior) / prior) * 1000) / 1000;
-  }
-
   /** Precomputed warehouse level string → wire band tier. */
   private mapBand(level: string | null): OrgLensProjectBand | null {
     switch ((level ?? '').toLowerCase()) {
@@ -1541,10 +1638,10 @@ export class OrgLensProjectDetailService {
     return Array.isArray((value as OrgLensTrendBlock).trend);
   }
 
-  private static isLeaderboardBlock(value: unknown): value is OrgLensLeaderboardBlock {
+  private static isLeaderboardPage(value: unknown): value is OrgLensLeaderboardPage {
     if (value === null || typeof value !== 'object') return false;
-    const candidate = value as OrgLensLeaderboardBlock;
-    return Array.isArray(candidate.influence) && Array.isArray(candidate.activity) && typeof candidate.isNonLfProject === 'boolean';
+    const candidate = value as OrgLensLeaderboardPage;
+    return Array.isArray(candidate.rows) && typeof candidate.total === 'number' && typeof candidate.isNonLfProject === 'boolean';
   }
 
   private static isCardDetailSection(value: unknown): value is OrgLensCardDetailSection {

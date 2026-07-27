@@ -39,18 +39,20 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   BlockState,
+  BoardDisplayRow,
+  BoardRenderState,
   HeroState,
   InfluenceCardVm,
   LeaderboardDimension,
   OrgLensCardDetailRow,
   OrgLensCardDetailSection,
   OrgLensInfluenceBlock,
-  OrgLensLeaderboardBlock,
   OrgLensLeaderboardMetric,
   OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
   OrgLensProjectDetailTab,
   OrgLensProjectInfluenceCard,
+  OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
@@ -106,8 +108,15 @@ export class OrgProjectDetailComponent {
   private readonly heroRetry = signal(0);
   private readonly influenceRetry = signal(0);
   private readonly trendRetry = signal(0);
-  private readonly techRetry = signal(0);
-  private readonly ecoRetry = signal(0);
+
+  // B7/B8 leaderboard boards — now server-paginated + server-searched. Each board holds its own
+  // page render state (rows, total, paginator position, in-flight overlay) and is driven imperatively
+  // (mirroring the roster drawer) so pagination keeps the prior rows visible under a loading overlay.
+  protected readonly techBoard = signal<BoardRenderState>(this.emptyBoardState());
+  protected readonly ecoBoard = signal<BoardRenderState>(this.emptyBoardState());
+  // Monotonic request tokens so a superseded board fetch (newer page / filter) is ignored on arrival.
+  private techBoardToken = 0;
+  private ecoBoardToken = 0;
 
   protected readonly techArrows = signal({ left: false, right: false });
   protected readonly ecoArrows = signal({ left: false, right: false });
@@ -158,6 +167,7 @@ export class OrgProjectDetailComponent {
     distinctUntilChanged()
   );
   private readonly range$ = toObservable(this.timeRange).pipe(distinctUntilChanged());
+  private readonly metric$ = toObservable(this.metric).pipe(distinctUntilChanged());
   private readonly influenceActivated$ = toObservable(this.activeTab).pipe(
     map((tab) => tab === 'pd-influence'),
     scan((seen, active) => seen || active, false),
@@ -175,18 +185,6 @@ export class OrgProjectDetailComponent {
     initialValue: { status: 'loading', data: null } as BlockState<OrgLensInfluenceBlock>,
   });
   protected readonly trendState = toSignal(this.buildTrendState(), { initialValue: { status: 'loading', data: null } as BlockState<OrgLensTrendBlock> });
-  protected readonly techBoardState = toSignal(
-    this.buildBoardState((uid, name, slug, range) => this.detailService.getTechnicalBoard(uid, name, slug, range), this.techRetry),
-    {
-      initialValue: { status: 'loading', data: null } as BlockState<OrgLensLeaderboardBlock>,
-    }
-  );
-  protected readonly ecoBoardState = toSignal(
-    this.buildBoardState((uid, name, slug, range) => this.detailService.getEcosystemBoard(uid, name, slug, range), this.ecoRetry),
-    {
-      initialValue: { status: 'loading', data: null } as BlockState<OrgLensLeaderboardBlock>,
-    }
-  );
 
   // Hero presentation — derived from the hero block.
   protected readonly hero = computed(() => this.heroState().data?.hero ?? null);
@@ -251,8 +249,6 @@ export class OrgProjectDetailComponent {
   protected readonly ecoSearch = signal('');
   protected readonly techSearchHasQuery = computed(() => this.techSearch().trim().length > 0);
   protected readonly ecoSearchHasQuery = computed(() => this.ecoSearch().trim().length > 0);
-  protected readonly technicalBoard = computed(() => this.buildBoard('technical', this.techSearch()));
-  protected readonly ecosystemBoard = computed(() => this.buildBoard('ecosystem', this.ecoSearch()));
 
   // Stacked area trend chart — top-10 companies + "All others" stacked by combined influence score,
   // built from the real per-org monthly series on the wire.
@@ -276,6 +272,27 @@ export class OrgProjectDetailComponent {
     combineLatest([this.orgUid$, this.slug$])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.resetLeaderboardSearch());
+
+    // Board reload driver — org / slug / range / metric changes re-request BOTH boards at page 0,
+    // once the Leaderboards tab has been activated (lazy on first activation). Superseded requests
+    // are dropped by the per-board request token, so a burst of changes yields one applied result.
+    combineLatest([this.orgUid$, this.slug$, this.range$, this.metric$, this.leaderboardsActivated$])
+      .pipe(
+        filter(([, , , , activated]) => activated),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.reloadBoard('technical');
+        this.reloadBoard('ecosystem');
+      });
+
+    // Server-side search — a debounced query change re-requests only that board at page 0.
+    toObservable(this.techSearch)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => this.reloadBoard('technical'));
+    toObservable(this.ecoSearch)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => this.reloadBoard('ecosystem'));
 
     // Refresh horizontal scroll arrows when the Our-Influence cards change.
     toObservable(
@@ -337,11 +354,20 @@ export class OrgProjectDetailComponent {
   }
 
   protected retryTechnicalBoard(): void {
-    this.techRetry.update((v) => v + 1);
+    this.reloadBoard('technical');
   }
 
   protected retryEcosystemBoard(): void {
-    this.ecoRetry.update((v) => v + 1);
+    this.reloadBoard('ecosystem');
+  }
+
+  /** lfx-table lazy-load callback for a board — fetch the requested page / page size server-side. */
+  protected onTechnicalBoardLazyLoad(event: { first?: number; rows?: number }): void {
+    this.onBoardLazyLoad('technical', event);
+  }
+
+  protected onEcosystemBoardLazyLoad(event: { first?: number; rows?: number }): void {
+    this.onBoardLazyLoad('ecosystem', event);
   }
 
   protected retryDrawer(): void {
@@ -461,7 +487,10 @@ export class OrgProjectDetailComponent {
   }
 
   private resetLeaderboardSearch(): void {
-    this.searchForm.reset({ technical: '', ecosystem: '' }, { emitEvent: false });
+    // Emit the reset so the empty value flows through the same debounced valueChanges pipe: debounceTime
+    // keeps only the latest value, so a keystroke typed just before an org/slug change is superseded by
+    // this '' and can't fire a stale server search after the input is already cleared.
+    this.searchForm.reset({ technical: '', ecosystem: '' });
     this.techSearch.set('');
     this.ecoSearch.set('');
   }
@@ -522,76 +551,112 @@ export class OrgProjectDetailComponent {
     return raw && PD_VALID_TIME_RANGES.has(raw) ? (raw as OrgLensLeaderboardTimeRange) : PD_DEFAULT_TIME_RANGE;
   }
 
+  private emptyBoardState(): BoardRenderState {
+    return { status: 'loading', rows: [], total: 0, first: 0, rowsPerPage: 10, loading: false };
+  }
+
+  private boardSignal(dimension: LeaderboardDimension) {
+    return dimension === 'technical' ? this.techBoard : this.ecoBoard;
+  }
+
+  /** Reset a board to the first page and (re)fetch it — used on org / slug / range / metric / search change. */
+  private reloadBoard(dimension: LeaderboardDimension): void {
+    this.loadBoardPage(dimension, 0, this.boardSignal(dimension)().rowsPerPage);
+  }
+
+  /** Paginator lazy-load handler — fetch the requested page / page size for one board. */
+  private onBoardLazyLoad(dimension: LeaderboardDimension, event: { first?: number; rows?: number }): void {
+    const current = this.boardSignal(dimension)();
+    const rowsPerPage = event.rows && event.rows > 0 ? event.rows : current.rowsPerPage;
+    const first = event.first ?? 0;
+    // Ignore the paginator echoing the page the programmatic reset already fetched.
+    if (first === current.first && rowsPerPage === current.rowsPerPage && current.status !== 'loading') return;
+    this.loadBoardPage(dimension, first, rowsPerPage);
+  }
+
   /**
-   * Rank one board's dimension (technical / ecosystem), then apply the search filter. Reads from that
-   * board's own block so each board paints as soon as its own fetch resolves. Returns all matching
-   * rows — the paginator handles slicing.
+   * Fetch one server-paginated, server-searched page of a board and apply it, unless a newer request
+   * has superseded this one (token guard). Keeps the prior rows visible under a loading overlay while
+   * the page is in flight, so pagination never flashes a skeleton.
    */
-  private buildBoard(dimension: LeaderboardDimension, search: string) {
-    const block = dimension === 'technical' ? this.techBoardState().data : this.ecoBoardState().data;
-    const isActivity = this.metric() === 'activity';
-    if (dimension === 'ecosystem' && !isActivity && this.isNonLfProject()) {
-      return [];
-    }
-    const sourceRows = isActivity ? (block?.activity ?? []) : (block?.influence ?? []);
+  private loadBoardPage(dimension: LeaderboardDimension, first: number, rowsPerPage: number): void {
+    const uid = this.accountContext.selectedAccount()?.uid;
+    const slug = this.projectSlug();
+    if (!uid || !slug) return;
 
-    if (isActivity) {
-      const ranked = [...sourceRows]
-        .sort((a, b) => (a.warehouseRank ?? Number.MAX_SAFE_INTEGER) - (b.warehouseRank ?? Number.MAX_SAFE_INTEGER))
-        .map((row, i) => {
-          const activity = dimension === 'technical' ? row.activityCount.contributions : row.activityCount.collaborations;
-          const activityPct = dimension === 'technical' ? row.activityCount.contributionsPct : row.activityCount.collaborationsPct;
-          return {
-            // Prefer the warehouse RANK; fall back to positional order so a missing rank never renders as "#0".
-            rank: row.warehouseRank ?? i + 1,
-            orgName: row.orgName,
-            orgLogoUrl: row.orgLogoUrl,
-            initials: this.initialsFor(row.orgName),
-            activityLabel: `${activity.toLocaleString('en-US')} - ${Math.round(activityPct)}%`,
-            bandLabel: '',
-            bandSeverity: 'secondary' as const,
-            isViewingOrg: row.isViewingOrg,
-          };
-        });
-      const query = search.trim().toLowerCase();
-      return query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked;
-    }
+    const range = this.timeRange();
+    const metric = this.metric();
+    const isActivity = metric === 'activity';
+    const search = (dimension === 'technical' ? this.techSearch() : this.ecoSearch()).trim();
+    const page = rowsPerPage > 0 ? Math.floor(first / rowsPerPage) : 0;
 
-    const valued = sourceRows.map((row) => {
-      // Each board ranks its own dimension: technical → contribution totals, ecosystem → collaboration totals.
-      const activity = dimension === 'technical' ? row.activityCount.contributions : row.activityCount.collaborations;
-      const activityPct = dimension === 'technical' ? row.activityCount.contributionsPct : row.activityCount.collaborationsPct;
-      return {
-        row,
-        level: row.levels[dimension],
-        activity,
-        activityPct,
-        sortKey: isActivity ? activity : row.scores[dimension],
-      };
+    const boardState = this.boardSignal(dimension);
+    const token = dimension === 'technical' ? ++this.techBoardToken : ++this.ecoBoardToken;
+
+    boardState.update((s) => ({ ...s, first, rowsPerPage, loading: true, status: s.status === 'ready' ? 'ready' : 'loading' }));
+
+    const fetch =
+      dimension === 'technical'
+        ? this.detailService.getTechnicalBoard(uid, this.orgName(), slug, range, metric, page, rowsPerPage, search)
+        : this.detailService.getEcosystemBoard(uid, this.orgName(), slug, range, metric, page, rowsPerPage, search);
+
+    fetch.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (result) => {
+        if (this.isBoardRequestStale(dimension, token)) return;
+        const rows = this.toDisplayRows(result?.rows ?? [], dimension, isActivity);
+        boardState.set({ status: 'ready', rows, total: result?.total ?? 0, first, rowsPerPage, loading: false });
+      },
+      error: (err: unknown) => {
+        console.error('[OrgProjectDetail] failed to load leaderboard board', err);
+        if (this.isBoardRequestStale(dimension, token)) return;
+        boardState.set({ status: 'error', rows: [], total: 0, first, rowsPerPage, loading: false });
+      },
     });
-    valued.sort((a, b) => b.sortKey - a.sortKey || a.row.orgName.localeCompare(b.row.orgName));
-    const ranked = valued.map((entry, i) => {
-      // Bands are precomputed per-org warehouse tiers (Silent/Participating/Contributing/Leading).
-      // Non-LF is a project-level classification, not a per-org band — it is surfaced once at the
-      // board/section level (ecosystemBoardNonLfMarker), never stamped on an individual org chip.
-      // A row with no mapped tier renders a blank chip.
-      const bandMeta = entry.level ? PD_BAND_TAG[entry.level] : null;
-      const activityLabel = isActivity
-        ? `${entry.activity.toLocaleString('en-US')} - ${Math.round(entry.activityPct)}%`
-        : entry.activity.toLocaleString('en-US');
+  }
+
+  private isBoardRequestStale(dimension: LeaderboardDimension, token: number): boolean {
+    return token !== (dimension === 'technical' ? this.techBoardToken : this.ecoBoardToken);
+  }
+
+  /**
+   * Map a server page of ranked rows to the board's display rows. Rows arrive pre-ranked and
+   * pre-paged, so the rank is read straight from the warehouse; when a warehouse rank is genuinely
+   * absent (nullable activity rank) the row keeps a null rank and the template renders an explicit
+   * unknown marker — the client never re-derives rank from row position (a page offset would show a
+   * misleading "#1" for an unranked org, especially after search resets the paginator to page 0).
+   */
+  private toDisplayRows(rows: OrgLensProjectLeaderboardRow[], dimension: LeaderboardDimension, isActivity: boolean): BoardDisplayRow[] {
+    return rows.map((row) => {
+      const rank = row.warehouseRank ?? null;
+      if (isActivity) {
+        const activity = dimension === 'technical' ? row.activityCount.contributions : row.activityCount.collaborations;
+        const activityPct = dimension === 'technical' ? row.activityCount.contributionsPct : row.activityCount.collaborationsPct;
+        return {
+          rank,
+          orgName: row.orgName,
+          orgLogoUrl: row.orgLogoUrl,
+          initials: this.initialsFor(row.orgName),
+          activityLabel: `${activity.toLocaleString('en-US')} - ${Math.round(activityPct)}%`,
+          bandLabel: '',
+          bandSeverity: 'secondary',
+          isViewingOrg: row.isViewingOrg,
+        };
+      }
+      // Bands are precomputed per-org warehouse tiers; Non-LF is surfaced once at the board level
+      // (ecosystemBoardNonLfMarker), never stamped on an individual org chip.
+      const level = row.levels[dimension];
+      const bandMeta = level ? PD_BAND_TAG[level] : null;
       return {
-        rank: i + 1,
-        orgName: entry.row.orgName,
-        orgLogoUrl: entry.row.orgLogoUrl,
-        initials: this.initialsFor(entry.row.orgName),
-        activityLabel,
+        rank,
+        orgName: row.orgName,
+        orgLogoUrl: row.orgLogoUrl,
+        initials: this.initialsFor(row.orgName),
+        activityLabel: '',
         bandLabel: bandMeta?.label ?? '',
-        bandSeverity: bandMeta?.severity ?? ('secondary' as const),
-        isViewingOrg: entry.row.isViewingOrg,
+        bandSeverity: bandMeta?.severity ?? 'secondary',
+        isViewingOrg: row.isViewingOrg,
       };
     });
-    const query = search.trim().toLowerCase();
-    return query ? ranked.filter((r) => r.orgName.toLowerCase().includes(query)) : ranked;
   }
 
   private initActiveTab(): OrgLensProjectDetailTab {
@@ -645,30 +710,6 @@ export class OrgProjectDetailComponent {
           catchError((err: unknown): Observable<BlockState<OrgLensTrendBlock>> => {
             console.error('[OrgProjectDetail] failed to load influence trend', err);
             return of<BlockState<OrgLensTrendBlock>>({ status: 'error', data: null });
-          })
-        )
-      )
-    );
-  }
-
-  /**
-   * B7/B8 — Leaderboard board stream (one dimension). Lazy on first pd-leaderboards activation and
-   * re-fetches on range change. Both boards use this builder with their own fetch + retry, so they
-   * fetch independently and in parallel — whichever lands first paints first.
-   */
-  private buildBoardState(
-    fetch: (uid: string, name: string, slug: string, range: OrgLensLeaderboardTimeRange) => Observable<OrgLensLeaderboardBlock | null>,
-    retry: Signal<number>
-  ): Observable<BlockState<OrgLensLeaderboardBlock>> {
-    return combineLatest([this.orgUid$, this.slug$, this.range$, this.leaderboardsActivated$, toObservable(retry)]).pipe(
-      filter(([, , , activated]) => activated),
-      switchMap(([uid, slug, range]) =>
-        fetch(uid, this.orgName(), slug, range).pipe(
-          map((block): BlockState<OrgLensLeaderboardBlock> => (block ? { status: 'ready', data: block } : { status: 'empty', data: null })),
-          startWith<BlockState<OrgLensLeaderboardBlock>>({ status: 'loading', data: null }),
-          catchError((err: unknown): Observable<BlockState<OrgLensLeaderboardBlock>> => {
-            console.error('[OrgProjectDetail] failed to load leaderboard board', err);
-            return of<BlockState<OrgLensLeaderboardBlock>>({ status: 'error', data: null });
           })
         )
       )
