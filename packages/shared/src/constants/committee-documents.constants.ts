@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TagSeverity } from '../interfaces/components.interface';
-import { CommitteeDocumentSource } from '../interfaces/committee.interface';
+import { CommitteeDocumentSource, CommitteeDocumentType } from '../interfaces/committee.interface';
 
 /** Recording type labels for human-readable display. */
 export const RECORDING_TYPE_LABELS: Record<string, string> = {
@@ -35,4 +35,14 @@ export const DOCUMENT_SOURCE_TAGS: Record<CommitteeDocumentSource, { value: stri
   recording: { value: 'Recording', severity: 'info', icon: 'fa-light fa-video' },
   transcript: { value: 'Transcript', severity: 'secondary', icon: 'fa-light fa-file-lines' },
   summary: { value: 'AI Summary', severity: 'contrast', icon: 'fa-light fa-sparkles' },
+};
+
+/**
+ * Display label for each CommitteeDocument.type — distinct from DOCUMENT_SOURCE_TAGS, which is
+ * keyed by the unrelated CommitteeDocumentSource enum and has no 'folder' variant.
+ */
+export const COMMITTEE_DOCUMENT_TYPE_LABELS: Record<CommitteeDocumentType, string> = {
+  file: 'Document',
+  link: 'Link',
+  folder: 'Folder',
 };

@@ -8,6 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  COMMITTEE_DOCUMENT_TYPE_LABELS,
   PAST_MEETING_SORT,
   PENDING_ACTION_EMPTY_GRACE_MS,
   PENDING_ACTION_FADE_OUT_MS,
@@ -21,7 +22,6 @@ import {
   ActivityFeedItem,
   Committee,
   CommitteeDocument,
-  CommitteeDocumentType,
   CommitteeMember,
   CommitteePendingActionRow,
   Meeting,
@@ -631,18 +631,15 @@ export class CommitteeOverviewComponent {
         });
 
       // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a
-      // folder or link doesn't misrepresent itself as a file in the feed.
-      // No shared label map exists for CommitteeDocumentType (DOCUMENT_SOURCE_TAGS is keyed by the
-      // unrelated CommitteeDocumentSource enum), but the icon is reused from the Documents tab's
-      // own helper so the two surfaces can't drift.
-      const documentTypeLabel: Record<CommitteeDocumentType, string> = { file: 'Document', link: 'Link', folder: 'Folder' };
+      // folder or link doesn't misrepresent itself as a file in the feed. The icon is reused from
+      // the Documents tab's own helper so the two surfaces can't drift.
       const documentItems: ActivityFeedItem[] = [...this.documents()]
         .sort((a, b) => (b.updated_at ?? b.created_at ?? '').localeCompare(a.updated_at ?? a.created_at ?? ''))
         .slice(0, perSourceLimit)
         .map((d) => ({
           type: 'document' as const,
           key: `document-${d.uid}`,
-          label: `${documentTypeLabel[d.type]}: ${d.name}`,
+          label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type]}: ${d.name}`,
           timestamp: d.updated_at ?? d.created_at ?? '',
           icon: getDocumentTypeIconClass(d.type),
           tab: 'documents',
