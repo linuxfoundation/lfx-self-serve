@@ -16,7 +16,11 @@ export const IDLE_SWEEP_TIMEOUT_MS = 15000;
 
 /**
  * `setTimeout` delay for `WriterGrantsService`'s deferred full sweep when `requestIdleCallback`
- * isn't available (LFXV2-2857) — unlike {@link IDLE_SWEEP_TIMEOUT_MS}, this is an unconditional
- * schedule with no idle detection behind it, so it stays short rather than reusing that ceiling.
+ * isn't available (LFXV2-2857) — e.g. Safari < 16.4. Unlike {@link IDLE_SWEEP_TIMEOUT_MS}, this
+ * fires unconditionally with no idle detection behind it, so it carries the same
+ * `@view.loading_time` re-entry risk that constant's ceiling is built to avoid. Kept short
+ * anyway: this path only runs on a shrinking, already-legacy browser slice, and leaving
+ * inherited-writer-grant resolution unresolved for 15s on every bootstrap there is the worse
+ * trade-off. Revisit if that browser share stops being negligible.
  */
 export const IDLE_SWEEP_FALLBACK_DELAY_MS = 2000;
