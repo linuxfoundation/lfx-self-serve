@@ -47,3 +47,12 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }
+
+/**
+ * Whether an error is worth retrying — a beat of time could plausibly fix a network drop (0),
+ * rate limit (429), or upstream 5xx, but not a client error like an expired session (401) or a
+ * permission/not-found response (403/404).
+ */
+export function isTransientHttpError(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
+}

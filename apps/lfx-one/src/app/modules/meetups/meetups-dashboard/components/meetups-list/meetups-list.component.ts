@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetupsService } from '@app/shared/services/meetups.service';
@@ -18,6 +17,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, retry, skip, switchMap, throwError, timer } from 'rxjs';
+
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
 import { MeetupsTableComponent } from '../meetups-table/meetups-table.component';
 
@@ -137,7 +138,7 @@ export class MeetupsListComponent {
           return this.meetupsService.getMyMeetups({ isPast, offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }).pipe(
             retry({
               count: this.transientRetryCount,
-              delay: (error: unknown) => (this.isTransientLoadError(error) ? timer(this.transientRetryDelayMs) : throwError(() => error)),
+              delay: (error: unknown) => (isTransientHttpError(error) ? timer(this.transientRetryDelayMs) : throwError(() => error)),
             }),
             catchError(() => {
               if (this.activeTab() === tabId) {
@@ -174,9 +175,5 @@ export class MeetupsListComponent {
       summary: 'Error',
       detail: 'Failed to load meetups. Please try again.',
     });
-  }
-
-  private isTransientLoadError(error: unknown): boolean {
-    return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
   }
 }
