@@ -56,6 +56,8 @@ export class CommitteeTableComponent {
   public showProjectFilter = input<boolean>(false);
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
   public projectOptions = input<{ label: string; value: string | null }[]>([]);
+  /** When false, suppresses the built-in search/voting-status filter bar. Used by the All Groups foundation-grouped view, which renders one shared filter bar above N per-group `<lfx-committee-table>` instances instead of duplicating it per group. Defaults to true — every existing caller is unaffected. */
+  public showFilterBar = input<boolean>(true);
 
   // Outputs
   public readonly refresh = output<void>();

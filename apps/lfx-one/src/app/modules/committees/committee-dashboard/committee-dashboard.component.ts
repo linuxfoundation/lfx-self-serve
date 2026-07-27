@@ -2,15 +2,33 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, getGroupBehavioralClass } from '@lfx-one/shared/constants';
-import { Committee, GroupBehavioralClass, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
+import {
+  BEHAVIORAL_CLASS_CONFIG,
+  COMMITTEE_LABEL,
+  FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
+  getGroupBehavioralClass,
+  GROUPS_VIEW_MODE_STORAGE_KEY,
+  OTHER_GROUPS_LABEL,
+} from '@lfx-one/shared/constants';
+import {
+  Committee,
+  CommitteeFoundationGroup,
+  GroupBehavioralClass,
+  GroupsViewMode,
+  MyCommittee,
+  ProjectContext,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
+import { slugify } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
@@ -38,10 +56,22 @@ import {
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
+import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ButtonComponent, CardComponent, CommitteeInvitationsComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    CommitteeInvitationsComponent,
+    CommitteeTableComponent,
+    MyGroupsCardGridComponent,
+    SkeletonModule,
+    EmptyStateComponent,
+    StatCardGridComponent,
+    InputTextComponent,
+    SelectComponent,
+  ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -67,6 +97,8 @@ export class CommitteeDashboardComponent {
   public foundationFilter = signal<string | null>(null);
   public projectFilter = signal<string | null>(null);
   public behavioralClassFilter = signal<GroupBehavioralClass | null>(null);
+  public viewMode = signal<GroupsViewMode>('list');
+  private readonly groupExpansion = signal<Record<string, boolean>>({});
 
   protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
   protected readonly behavioralClassKeys = Object.keys(BEHAVIORAL_CLASS_CONFIG) as GroupBehavioralClass[];
@@ -94,6 +126,15 @@ export class CommitteeDashboardComponent {
   protected readonly personaLoaded = this.personaService.personaLoaded;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
+
+  // My Groups list↔card view toggle
+  public readonly isListView: Signal<boolean> = computed(() => this.viewMode() === 'list');
+  public readonly isCardView: Signal<boolean> = computed(() => this.viewMode() === 'card');
+
+  // All Groups foundation grouping — only activates when scoped to a foundation
+  public readonly showFoundationGrouping: Signal<boolean> = computed(() => !this.isMeLens() && this.isFoundationContext());
+  public readonly groupExpansionMap: Signal<Record<string, boolean>> = computed(() => this.groupExpansion());
+  public foundationGroups: Signal<CommitteeFoundationGroup[]>;
 
   // Statistics
   public totalCommittees: Signal<number>;
@@ -138,6 +179,7 @@ export class CommitteeDashboardComponent {
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
+    this.foundationGroups = this.initializeFoundationGroups();
 
     // Initialize statistics
     this.totalCommittees = computed(() => this.committees().length);
@@ -182,7 +224,22 @@ export class CommitteeDashboardComponent {
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe();
+
+      this.restoreViewMode();
     }
+
+    // Keep newly-appearing foundation groups expanded by default without clobbering a user's
+    // manual collapse of a group that's still present after a filter change re-runs the computed.
+    effect(() => {
+      const keys = this.foundationGroups().map((group) => group.key);
+      this.groupExpansion.update((state) => {
+        const next: Record<string, boolean> = {};
+        for (const key of keys) {
+          next[key] = key in state ? state[key] : true;
+        }
+        return next;
+      });
+    });
   }
 
   /**
@@ -258,6 +315,15 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(cls);
   }
 
+  public setViewMode(mode: GroupsViewMode): void {
+    this.viewMode.set(mode);
+    this.persistViewMode(mode);
+  }
+
+  public toggleGroupExpansion(key: string): void {
+    this.groupExpansion.update((state) => ({ ...state, [key]: !state[key] }));
+  }
+
   public onFoundationFilterChange(value: string | null): void {
     this.foundationFilter.set(value);
     this.projectFilter.set(null);
@@ -266,6 +332,10 @@ export class CommitteeDashboardComponent {
 
   public onProjectFilterChange(value: string | null): void {
     this.projectFilter.set(value);
+  }
+
+  protected groupTestIdSlug(label: string): string {
+    return slugify(label);
   }
 
   private resetScopeFilters(): void {
@@ -542,5 +612,57 @@ export class CommitteeDashboardComponent {
       });
       return counts;
     });
+  }
+
+  /**
+   * Groups the already-filtered All Groups list by resolved foundation/project label.
+   * Reads `filteredCommittees()` (not the raw `committees()`) so search/behavioral-class/voting-status
+   * filters keep working identically whether grouping is active or not — a group with zero members
+   * after filtering simply has no bucket, so it's never rendered with an empty header.
+   */
+  private initializeFoundationGroups(): Signal<CommitteeFoundationGroup[]> {
+    return computed(() => {
+      if (!this.showFoundationGrouping()) return [];
+      const source = this.filteredCommittees();
+      if (source.length === 0) return [];
+
+      const buckets = new Map<string, CommitteeFoundationGroup>();
+      for (const committee of source) {
+        const label = committee.is_foundation
+          ? committee.project_name || committee.foundation_name || FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL
+          : committee.project_name || committee.foundation_name || OTHER_GROUPS_LABEL;
+        const key = label;
+        if (!buckets.has(key)) {
+          buckets.set(key, { key, label, isFoundationLevel: !!committee.is_foundation, committees: [] });
+        }
+        buckets.get(key)!.committees.push(committee);
+      }
+
+      return [...buckets.values()].sort((a, b) => {
+        if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
+        if (a.label === OTHER_GROUPS_LABEL) return 1;
+        if (b.label === OTHER_GROUPS_LABEL) return -1;
+        return a.label.localeCompare(b.label);
+      });
+    });
+  }
+
+  private restoreViewMode(): void {
+    try {
+      const stored = localStorage.getItem(GROUPS_VIEW_MODE_STORAGE_KEY);
+      if (stored === 'list' || stored === 'card') {
+        this.viewMode.set(stored);
+      }
+    } catch {
+      // Corrupt or inaccessible storage — fall back to the 'list' default.
+    }
+  }
+
+  private persistViewMode(mode: GroupsViewMode): void {
+    try {
+      localStorage.setItem(GROUPS_VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // Ignore quota / disabled-storage errors — view mode is a best-effort convenience.
+    }
   }
 }

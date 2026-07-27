@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!hasItems()) {
+  <lfx-empty-state
+    [withCard]="false"
+    icon="fa-light fa-users-rectangle"
+    [title]="'No ' + committeeLabel.plural.toLowerCase() + ' yet'"
+    subtitle="Groups you're a member of will appear here.">
+  </lfx-empty-state>
+} @else if (committees().length === 0) {
+  <lfx-empty-state
+    [withCard]="false"
+    icon="fa-light fa-eyes"
+    title="No results found"
+    subtitle="Try adjusting your filter criteria"
+    ctaLabel="Reset filters"
+    ctaIcon="fa-light fa-arrow-rotate-left"
+    (ctaClick)="resetRequested.emit()">
+  </lfx-empty-state>
+} @else {
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="groups-card-grid">
+    @for (item of cards(); track item.committee.uid) {
+      <div
+        class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 h-full flex flex-col gap-3 cursor-pointer"
+        (click)="rowClick.emit(item.committee)"
+        [attr.data-testid]="'groups-card-grid-item-' + item.committee.uid">
+        <div class="flex items-start justify-between gap-2">
+          <h3 class="text-base font-semibold text-gray-900">{{ item.committee.name || '-' }}</h3>
+          @if (!item.committee.public) {
+            <i class="fa-light fa-lock w-3 h-3 text-gray-500 mt-1" aria-label="Private"></i>
+          }
+        </div>
+
+        @if (item.committee.classDisplay) {
+          <span
+            class="inline-flex items-center gap-1 self-start text-xs font-medium px-2 py-0.5 rounded-full"
+            [class]="item.committee.classDisplay.bgColor + ' ' + item.committee.classDisplay.color">
+            <i [class]="item.committee.classDisplay.icon + ' text-[10px]'" aria-hidden="true"></i>
+            {{ item.committee.classDisplay.label }}
+          </span>
+        }
+
+        @if (item.committee.project_name || item.committee.foundation_name) {
+          <p class="text-xs text-gray-500">{{ item.committee.project_name || item.committee.foundation_name }}</p>
+        }
+
+        <div class="flex flex-wrap items-center gap-3 mt-auto pt-3 border-t border-gray-100">
+          <lfx-badge [value]="item.committee.my_role || 'Member'" [severity]="item.roleBadgeSeverity"></lfx-badge>
+          <span class="inline-flex items-center gap-1 text-xs text-gray-500">
+            <i class="fa-light fa-users" aria-hidden="true"></i>
+            {{ item.committee.total_members }}
+          </span>
+          <span class="inline-flex items-center gap-1 text-xs text-gray-400">
+            <i class="fa-light fa-clock" aria-hidden="true"></i>
+            {{ item.lastActivityLabel }}
+          </span>
+        </div>
+      </div>
+    }
+  </div>
+}

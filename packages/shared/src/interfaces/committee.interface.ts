@@ -464,6 +464,23 @@ export interface MyCommittee extends Committee {
   my_member_uid?: string;
 }
 
+/** My Groups list↔card view toggle. Deliberately separate from the meetings-only `ViewMode` ('list'|'calendar') — different valid states. */
+export type GroupsViewMode = 'list' | 'card';
+
+/**
+ * One foundation/project bucket in the All Groups foundation-grouped view.
+ * Built entirely client-side from the already-filtered committees list — no new upstream shape.
+ */
+export interface CommitteeFoundationGroup {
+  /** Stable key for the expansion-state map and the data-testid slug — currently the resolved label itself. */
+  key: string;
+  /** Human-readable header text. */
+  label: string;
+  /** True for the (at most one) bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. */
+  isFoundationLevel: boolean;
+  committees: Committee[];
+}
+
 /**
  * Data required to create a new committee
  * @description Input payload for committee creation API
