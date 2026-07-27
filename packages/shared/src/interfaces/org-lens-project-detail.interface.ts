@@ -11,6 +11,8 @@
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
+import type { TagSeverity } from './components.interface';
+
 /** Dimension keyed by each side-by-side leaderboard. */
 export type LeaderboardDimension = 'technical' | 'ecosystem';
 
@@ -126,8 +128,8 @@ export interface OrgLensCardRosterPage {
 }
 
 /**
- * One organization row on the project leaderboard. Rank is derived client-side from the active
- * score-type / metric; the influence bands are precomputed in the warehouse and carried on the wire.
+ * One organization row on the project leaderboard. Rank is precomputed server-side over the full
+ * ranked set (see `warehouseRank`); the influence bands are precomputed in the warehouse and carried on the wire.
  */
 export interface OrgLensProjectLeaderboardRow {
   orgName: string;
@@ -144,11 +146,20 @@ export interface OrgLensProjectLeaderboardRow {
     contributionsPct: number;
     collaborationsPct: number;
   };
-  /** Trailing 12-month combined series (fixed window, not range-scoped), oldest → newest. */
-  trendSparkline: number[];
-  /** 1-year delta as a signed fraction (e.g. 0.12 = +12%). */
-  trendDeltaPct: number;
-  /** Precomputed warehouse rank for Activity Count mode boards (org-dashboard parity). */
+  /**
+   * Trailing 12-month combined series (fixed window, not range-scoped), oldest → newest.
+   * Optional: the paginated leaderboard boards do not render a per-row trend column, so board
+   * rows omit it (Decision 4) — only surfaces where a consumer renders the sparkline.
+   */
+  trendSparkline?: number[];
+  /** 1-year delta as a signed fraction (e.g. 0.12 = +12%). Optional for the same reason as trendSparkline. */
+  trendDeltaPct?: number;
+  /**
+   * The org's 1-based position on this board over the FULL ranked set, precomputed server-side
+   * (dimension score rank in Calculated Influence mode; warehouse activity rank in Activity mode).
+   * The board renders this rank directly — under server-side pagination the client no longer derives
+   * rank from row position, so a page never restarts numbering at 1.
+   */
   warehouseRank?: number;
   /** Marks the viewing org's own row — rendered at its rank-ordered position and visually highlighted (not pinned to the top). */
   isViewingOrg: boolean;
@@ -208,15 +219,41 @@ export interface OrgLensTrendBlock {
 }
 
 /**
- * B7/B8 Leaderboard block for one dimension (technical or ecosystem). Carries both the Calculated
- * Influence rows and the dimension's Activity Count rows so switching the metric toggle is a
- * client-side slice that never re-fetches. Range-scoped.
+ * B7/B8 Leaderboard board page for one dimension (technical or ecosystem) and one metric
+ * (Calculated Influence or Activity Count). The board is now paged and searched server-side over
+ * the FULL ranked organization set (no top-N cap), so each request returns just the requested page
+ * of rows plus the total matching count for the paginator. Rows arrive pre-ranked and pre-paged;
+ * the client renders them in order. Switching metric / range / search re-requests page 0.
  */
-export interface OrgLensLeaderboardBlock {
-  /** Calculated Influence rows (ranked client-side by this board's dimension). */
-  influence: OrgLensProjectLeaderboardRow[];
-  /** Activity Count rows for this board's dimension (contributions for technical, collaborations for ecosystem). */
-  activity: OrgLensProjectLeaderboardRow[];
+export interface OrgLensLeaderboardPage {
+  /** The requested page of ranked rows for this board's dimension + metric, ordered by rank. */
+  rows: OrgLensProjectLeaderboardRow[];
+  /** Total organizations on this board matching the current filter (search), across all pages. */
+  total: number;
   /** Project-level non-LF marker (ecosystem board only surfaces it). */
   isNonLfProject: boolean;
+}
+
+/** One rendered leaderboard-board row (already ranked + paged server-side). */
+export interface BoardDisplayRow {
+  rank: number;
+  orgName: string;
+  orgLogoUrl: string;
+  initials: string;
+  /** Activity Count cell text (e.g. "1,234 - 12%"); empty in Calculated Influence mode. */
+  activityLabel: string;
+  /** Band chip label for Calculated Influence mode; empty in Activity mode. */
+  bandLabel: string;
+  bandSeverity: TagSeverity;
+  isViewingOrg: boolean;
+}
+
+/** Per-board render state for a server-paginated leaderboard board. */
+export interface BoardRenderState {
+  status: OrgLensBlockStatus;
+  rows: BoardDisplayRow[];
+  total: number;
+  first: number;
+  rowsPerPage: number;
+  loading: boolean;
 }

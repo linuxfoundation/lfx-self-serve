@@ -100,11 +100,19 @@
         margin-left: auto;
         font-size: 0.875rem !important;
         color: #6b7280;
+        // Keep the "Showing X to Y of Z" report on a single line so the rpp
+        // dropdown stays clustered beside it (Dano mock: report + select as one
+        // right-aligned group) instead of the dropdown orphaning to a new line.
+        white-space: nowrap;
       }
 
       .p-paginator-rpp-dropdown {
         order: 7;
-        margin-left: 1.5rem;
+        // Dano mock spaces the report and the rows-per-page select by ~10px; the
+        // previous 1.5rem was wide enough to push the select onto its own line in
+        // the narrow half-width leaderboard cards.
+        margin-left: 0.625rem;
+        flex-shrink: 0;
       }
     }
   }

@@ -8,7 +8,7 @@
  * - data-testid resolution smoke test (breadcrumb, hero, tabs, card groups, trend)
  * - tab strip switching (click + keyboard) with ?tab= URL persistence
  * - leaderboard ranking, score/metric toggles with ?metric= persistence,
- *   Activity Count hiding the band tags, and Show more pagination
+ *   Activity Count hiding the band tags, and server-side pagination + search over the full ranked set
  * - not-found (404) panel for an unknown slug
  *
  * Prerequisites:
@@ -188,11 +188,85 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByRole('columnheader', { name: 'Total contributions' }).first()).toBeVisible();
   });
 
-  test('search filters a board to matching organizations', async ({ page }) => {
-    await page.locator('[data-test="project-detail-search-technical"]').fill('Google');
-    const rows = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('Google');
+  // The leaderboard boards are now server-paginated + server-searched over the FULL ranked org set
+  // (no top-10 cap). These specs exercise that contract against live data: `k8s` has hundreds of
+  // ranked orgs, so the technical board spans many pages. Assertions key off the OUTGOING request
+  // params (page / pageSize / search) rather than exact row contents, so they stay stable as the
+  // underlying warehouse data shifts. Requires the uncapped platinum leaderboard model in the target
+  // environment (shipped by the lf-dbt side of LFXV2-2815).
+  const TECH_BOARD = '[data-testid="project-detail-leaderboard-technical"]';
+
+  /** Parse the "Showing X to Y of Z" paginator report into its total (Z). */
+  async function boardTotal(page: import('@playwright/test').Page): Promise<number> {
+    const report = await page.locator(`${TECH_BOARD} .p-paginator-current`).innerText();
+    return Number(report.replace(/,/g, '').match(/of\s+(\d+)/)?.[1] ?? '0');
+  }
+
+  test('paginates to organizations ranked beyond the first page (full list, not top-10)', async ({ page }) => {
+    const rows = page.locator(`${TECH_BOARD} tbody tr`);
+
+    // Full list — the paginator total exceeds ten (the legacy cap), and the first page starts at rank 1.
+    expect(await boardTotal(page), 'k8s technical board should expose more than ten ranked orgs').toBeGreaterThan(10);
+    expect(Number((await rows.first().locator('td').first().innerText()).trim())).toBe(1);
+
+    // Advancing the paginator asks the server for page index 1 (a real lazy load, not a client slice).
+    const pageRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('page') === '1';
+    });
+    await page.locator(`${TECH_BOARD} button[aria-label="Next Page"]`).first().click();
+    await pageRequest;
+
+    // The first row on page 2 continues the ascending rank sequence past position ten.
+    await expect.poll(async () => Number((await rows.first().locator('td').first().innerText()).trim())).toBeGreaterThan(10);
+  });
+
+  test('changing the page size re-pages the full ranked set from the server', async ({ page }) => {
+    const rows = page.locator(`${TECH_BOARD} tbody tr`);
+    await expect(rows).toHaveCount(10); // default page size
+    const totalBefore = await boardTotal(page);
+
+    // Selecting a larger page size issues a fresh server request at pageSize=25 (total is unchanged).
+    const sizeRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('pageSize') === '25';
+    });
+    await page.locator(`${TECH_BOARD} .p-paginator-rpp-dropdown`).click();
+    await page.getByRole('option', { name: '25', exact: true }).click();
+    await sizeRequest;
+
+    await expect.poll(async () => rows.count()).toBeGreaterThan(10);
+    expect(await boardTotal(page), 'total row count is unchanged by page size').toBe(totalBefore);
+  });
+
+  test('server-side search finds an organization ranked beyond the first page at its true rank', async ({ page }) => {
+    const rows = page.locator(`${TECH_BOARD} tbody tr`);
+    expect(await boardTotal(page), 'this spec needs a project whose full list spans multiple pages').toBeGreaterThan(10);
+
+    // Step to page 2 and capture an org that ranks past position ten.
+    const pageRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('page') === '1';
+    });
+    await page.locator(`${TECH_BOARD} button[aria-label="Next Page"]`).first().click();
+    await pageRequest;
+    await expect.poll(async () => Number((await rows.first().locator('td').first().innerText()).trim())).toBeGreaterThan(10);
+
+    const targetRank = Number((await rows.first().locator('td').first().innerText()).trim());
+    const targetName = (await rows.first().locator('td').nth(1).locator('span.text-gray-900').innerText()).trim();
+
+    // Searching for that org (paginator resets to page 0 on a new query) must still find it — proving
+    // the search spans the whole ranked set, not just the current page — and its true rank is preserved.
+    const searchRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/leaderboard/technical') && (url.searchParams.get('search') ?? '').length > 0;
+    });
+    await page.locator('[data-test="project-detail-search-technical"]').fill(targetName);
+    await searchRequest;
+
+    const match = page.locator(`${TECH_BOARD} tbody tr`, { hasText: targetName }).first();
+    await expect(match).toBeVisible();
+    await expect(match.locator('td').first()).toHaveText(String(targetRank));
   });
 });
 
