@@ -3,7 +3,7 @@
 
 import { afterNextRender, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { IDLE_SWEEP_FALLBACK_DELAY_MS } from '@lfx-one/shared/constants';
+import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
@@ -83,7 +83,7 @@ export class WriterGrantsService {
 
   private runWhenIdle(cb: () => void): void {
     if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(cb, { timeout: IDLE_SWEEP_FALLBACK_DELAY_MS });
+      requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
     } else {
       setTimeout(cb, IDLE_SWEEP_FALLBACK_DELAY_MS);
     }
