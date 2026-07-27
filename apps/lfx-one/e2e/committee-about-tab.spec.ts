@@ -92,6 +92,24 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('group-join-cta-join-btn')).toBeVisible();
   });
 
+  test('visitor of an invite-only group: sees the invite-only notice, not the join CTA', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'invite_only' }) });
+    await gotoCommitteeTab(page);
+
+    await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('group-join-cta-invite-only-notice')).toBeVisible();
+    await expect(page.getByTestId('group-join-cta-visitor-cta')).toHaveCount(0);
+  });
+
+  test('visitor of an application-mode group: neither the join CTA nor the invite-only notice renders', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'application' }) });
+    await gotoCommitteeTab(page);
+
+    await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('group-join-cta-visitor-cta')).toHaveCount(0);
+    await expect(page.getByTestId('group-join-cta-invite-only-notice')).toHaveCount(0);
+  });
+
   test('member: no edit affordances, no join CTA', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false }) });
     await gotoCommitteeTab(page);

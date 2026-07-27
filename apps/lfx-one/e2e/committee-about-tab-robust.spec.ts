@@ -123,4 +123,18 @@ test.describe('Group About tab — Robust Structural Tests (LFXV2-1713)', () => 
       await expect(page.getByTestId('committee-view-tabs')).toBeAttached();
     });
   });
+
+  test.describe('Join CTA nesting contract (visitor)', () => {
+    test('the join CTA and its button are nested under the About root for a visitor', async ({ page }) => {
+      await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'open' }) });
+      await gotoCommitteeTab(page);
+      await expect(page.getByTestId('committee-about')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+
+      const about = page.getByTestId('committee-about');
+      const joinCta = about.getByTestId('committee-about-join-cta');
+      await expect(joinCta).toBeAttached();
+      await expect(joinCta.getByTestId('group-join-cta-visitor-cta')).toBeAttached();
+      await expect(joinCta.getByTestId('group-join-cta-join-btn')).toBeAttached();
+    });
+  });
 });
