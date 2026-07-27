@@ -487,23 +487,6 @@ export class NewsletterManageComponent {
     this.retryCommittees$.next();
   }
 
-  /** The still-missing requirements that block a draft save, for user feedback. */
-  private missingDraftRequirements(): string[] {
-    const missing: string[] = [];
-    if (!this.audienceFilled()) missing.push('an audience');
-    if (!this.subjectFilled()) missing.push('a subject');
-    // bodyPersistable, matching canSaveDraft: an emptied block layout is
-    // saveable, so the warning must not claim content is missing when only
-    // another field (e.g. audience) is.
-    if (!this.bodyPersistable()) missing.push('some newsletter content');
-    if (this.edEmail().length === 0) missing.push('a reply-to email');
-    return missing;
-  }
-
-  /** Join a list into readable prose: "a", "a and b", or "a, b, and c". */
-  private formatMissing(items: string[]): string {
-    if (items.length === 1) return items[0];
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   // Fired by the audience step for each email the user submits. Every add is an
   // independent, non-blocking request: the step's input clears immediately and
   // the per-email status here drives the inline indicator.
@@ -551,6 +534,25 @@ export class NewsletterManageComponent {
         }
       },
     });
+  }
+
+  /** The still-missing requirements that block a draft save, for user feedback. */
+  private missingDraftRequirements(): string[] {
+    const missing: string[] = [];
+    if (!this.audienceFilled()) missing.push('an audience');
+    if (!this.subjectFilled()) missing.push('a subject');
+    // bodyPersistable, matching canSaveDraft: an emptied block layout is
+    // saveable, so the warning must not claim content is missing when only
+    // another field (e.g. audience) is.
+    if (!this.bodyPersistable()) missing.push('some newsletter content');
+    if (this.edEmail().length === 0) missing.push('a reply-to email');
+    return missing;
+  }
+
+  /** Join a list into readable prose: "a", "a and b", or "a, b, and c". */
+  private formatMissing(items: string[]): string {
+    if (items.length === 1) return items[0];
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   }
 
   private goToList(tab?: 'draft' | 'sent'): void {
