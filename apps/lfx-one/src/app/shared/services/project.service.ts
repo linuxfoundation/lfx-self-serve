@@ -31,7 +31,12 @@ export class ProjectService {
 
   /** Fail-closed on error, mirroring getProjects — a transport failure must not silently widen access. */
   public getWriterSummary(): Observable<WriterSummary> {
-    return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(catchError(() => of({ hasWriterFoundation: false, hasWriterProject: false })));
+    return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
+      catchError((error) => {
+        console.error('Failed to fetch writer summary:', error);
+        return of({ hasWriterFoundation: false, hasWriterProject: false });
+      })
+    );
   }
 
   public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {

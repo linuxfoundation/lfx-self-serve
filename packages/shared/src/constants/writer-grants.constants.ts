@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * sessionStorage key for the merged `WriterSummary` produced by `WriterGrantsService`'s
- * deferred full sweep (LFXV2-2857). Written once the idle-triggered sweep resolves; read back
- * on the next bootstrap in the same tab session so a repeat page load gets the widened
- * foundation/project booleans immediately, without re-paying the slow unscoped sweep — and so
- * the sweep runs at most once per session (its presence is the "already ran" guard).
+ * Bound (ms) for `WriterGrantsService`'s deferred full sweep (LFXV2-2857): passed as
+ * `requestIdleCallback`'s `timeout` so a backgrounded/busy tab can't defer it indefinitely, and
+ * as the delay for the `setTimeout` fallback when `requestIdleCallback` isn't available.
  */
-export const WRITER_GRANTS_SESSION_CACHE_KEY = 'lfx-writer-grants-summary';
+export const IDLE_SWEEP_FALLBACK_DELAY_MS = 2000;

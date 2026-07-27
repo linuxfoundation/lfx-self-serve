@@ -391,10 +391,17 @@ export class ProjectService {
    */
   public async getWriterSummary(req: Request): Promise<WriterSummary> {
     const projects = await this.getDirectGrantProjects(req);
-    return {
+    const summary: WriterSummary = {
       hasWriterFoundation: projects.some((p) => computeIsFoundation(p)),
       hasWriterProject: projects.some((p) => !computeIsFoundation(p)),
     };
+
+    logger.debug(req, 'get_writer_summary', 'Reduced direct-grant projects to writer summary', {
+      direct_grant_count: projects.length,
+      ...summary,
+    });
+
+    return summary;
   }
 
   /**
