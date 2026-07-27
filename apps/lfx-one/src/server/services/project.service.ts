@@ -1340,7 +1340,7 @@ export class ProjectService {
         FROM monthly_counts
       ),
       spine AS (
-        SELECT DATEADD('month', 1 - ROW_NUMBER() OVER (ORDER BY SEQ4()), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        SELECT DATEADD('month', -SEQ4(), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
@@ -1348,11 +1348,10 @@ export class ProjectService {
         'The Linux Foundation' AS PROJECT_NAME,
         'tlf' AS PROJECT_SLUG,
         s.MONTH_START,
-        COALESCE(
-          (SELECT c.MEMBER_COUNT FROM cumulative c WHERE c.MONTH_START <= s.MONTH_START ORDER BY c.MONTH_START DESC LIMIT 1),
-          0
-        ) AS MEMBER_COUNT
+        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
       FROM spine s
+      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
+      GROUP BY s.MONTH_START
       ORDER BY s.MONTH_START ASC
     `
       : `
@@ -1381,7 +1380,7 @@ export class ProjectService {
         FROM monthly_counts
       ),
       spine AS (
-        SELECT DATEADD('month', 1 - ROW_NUMBER() OVER (ORDER BY SEQ4()), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        SELECT DATEADD('month', -SEQ4(), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
@@ -1389,12 +1388,11 @@ export class ProjectService {
         p.PROJECT_NAME,
         p.PROJECT_SLUG,
         s.MONTH_START,
-        COALESCE(
-          (SELECT c.MEMBER_COUNT FROM cumulative c WHERE c.MONTH_START <= s.MONTH_START ORDER BY c.MONTH_START DESC LIMIT 1),
-          0
-        ) AS MEMBER_COUNT
+        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
       FROM spine s
       CROSS JOIN proj p
+      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
+      GROUP BY s.MONTH_START, p.PROJECT_ID, p.PROJECT_NAME, p.PROJECT_SLUG
       ORDER BY s.MONTH_START ASC
     `;
 
