@@ -8,7 +8,8 @@ import type {
   OrgLensCardRosterPage,
   OrgLensHeroBlock,
   OrgLensInfluenceBlock,
-  OrgLensLeaderboardBlock,
+  OrgLensLeaderboardMetric,
+  OrgLensLeaderboardPage,
   OrgLensLeaderboardTimeRange,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
@@ -54,24 +55,38 @@ export class OrgLensProjectDetailService {
     return this.blockGet<OrgLensTrendBlock>(`${this.baseUrl(orgUid, projectSlug)}/trend`, { orgName });
   }
 
-  /** B7 — Technical leaderboard board (influence rows + contribution activity rows). */
+  /** B7 — Technical leaderboard board: one server-paged, server-searched page for the active metric. */
   public getTechnicalBoard(
     orgUid: string,
     orgName: string,
     projectSlug: string,
-    range: OrgLensLeaderboardTimeRange
-  ): Observable<OrgLensLeaderboardBlock | null> {
-    return this.blockGet<OrgLensLeaderboardBlock>(`${this.baseUrl(orgUid, projectSlug)}/leaderboard/technical`, { orgName, range });
+    range: OrgLensLeaderboardTimeRange,
+    metric: OrgLensLeaderboardMetric,
+    page: number,
+    pageSize: number,
+    search: string
+  ): Observable<OrgLensLeaderboardPage | null> {
+    return this.blockGet<OrgLensLeaderboardPage>(
+      `${this.baseUrl(orgUid, projectSlug)}/leaderboard/technical`,
+      this.boardParams(orgName, range, metric, page, pageSize, search)
+    );
   }
 
-  /** B8 — Ecosystem leaderboard board (influence rows + collaboration activity rows). */
+  /** B8 — Ecosystem leaderboard board: one server-paged, server-searched page for the active metric. */
   public getEcosystemBoard(
     orgUid: string,
     orgName: string,
     projectSlug: string,
-    range: OrgLensLeaderboardTimeRange
-  ): Observable<OrgLensLeaderboardBlock | null> {
-    return this.blockGet<OrgLensLeaderboardBlock>(`${this.baseUrl(orgUid, projectSlug)}/leaderboard/ecosystem`, { orgName, range });
+    range: OrgLensLeaderboardTimeRange,
+    metric: OrgLensLeaderboardMetric,
+    page: number,
+    pageSize: number,
+    search: string
+  ): Observable<OrgLensLeaderboardPage | null> {
+    return this.blockGet<OrgLensLeaderboardPage>(
+      `${this.baseUrl(orgUid, projectSlug)}/leaderboard/ecosystem`,
+      this.boardParams(orgName, range, metric, page, pageSize, search)
+    );
   }
 
   /** B5 — Card detail drawer definition (+ column headers) for one card; the roster rows come from getCardRoster. */
@@ -99,6 +114,21 @@ export class OrgLensProjectDetailService {
     return this.http
       .get<OrgLensCardRosterPage>(url, { params: { orgName, range, page: String(page), pageSize: String(pageSize) } })
       .pipe(catchError((err: HttpErrorResponse) => (err.status === 404 ? of({ rows: [], total: 0 }) : throwError(() => err))));
+  }
+
+  /** Query params for a paginated board request; search is omitted when blank so the cache key stays clean. */
+  private boardParams(
+    orgName: string,
+    range: OrgLensLeaderboardTimeRange,
+    metric: OrgLensLeaderboardMetric,
+    page: number,
+    pageSize: number,
+    search: string
+  ): Record<string, string> {
+    const params: Record<string, string> = { orgName, range, metric, page: String(page), pageSize: String(pageSize) };
+    const term = search.trim();
+    if (term.length > 0) params['search'] = term;
+    return params;
   }
 
   private baseUrl(orgUid: string, projectSlug: string): string {

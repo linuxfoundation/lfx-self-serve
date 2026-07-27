@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { AccessCheckAccessType, AccessCheckRequest, AccessCheckResourceType, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { HOST_KEY_EARLY_MINUTES, HOST_KEY_LATE_MINUTES } from '@lfx-one/shared/constants';
+import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -134,21 +135,45 @@ export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void
 }
 
 /**
+ * Returns true when the current wall-clock time falls inside the host-key visibility window:
+ * [effective_start − 70 min, effective_start + duration + 40 min).
+ *
+ * Mirrors PCC's showHostKey() logic. The key is account-level and can change leading up to a
+ * meeting, so surfacing it days in advance risks showing a stale value.
+ *
+ * For recurring meetings `start_time` is the series origin, which can be far in the past.
+ * `next_occurrence_start_time` is preferred when present so the window tracks the actual
+ * upcoming occurrence rather than the series root.
+ *
+ * Falls back to false when no usable start time is present or parseable.
+ */
+export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'>, now = new Date()): boolean {
+  const effectiveStart = meeting.next_occurrence_start_time || meeting.start_time;
+  if (!effectiveStart) return false;
+  const startMs = Date.parse(effectiveStart);
+  if (isNaN(startMs)) return false;
+  const windowStart = startMs - HOST_KEY_EARLY_MINUTES * 60_000;
+  const windowEnd = startMs + (meeting.duration ?? 0) * 60_000 + HOST_KEY_LATE_MINUTES * 60_000;
+  const nowMs = now.getTime();
+  return nowMs >= windowStart && nowMs < windowEnd;
+}
+
+/**
  * Resolves whether the current user may view a meeting's Zoom host key and mutates the meeting
  * accordingly. This is the single source of truth for host-key visibility on detail endpoints.
  *
- * The audience is any of three DISTINCT OpenFGA relations, OR-ed together:
- *   - meeting organizer (`v1_meeting#organizer`)
- *   - project writer (`project#writer`)
- *   - writer on ANY committee attached to the meeting (`committee#writer`)
+ * `meeting.organizer` is always resolved via `v1_meeting#organizer` — it gates private-meeting
+ * access and registrant-count fetches independently of host-key visibility.
  *
- * All checks are batched into a single `/access-check` round-trip (no sequential per-committee
- * calls). The check is fail-closed: on any upstream error the access-check service returns
- * all-false, so the host key is stripped.
+ * `meeting.can_view_host_key` requires BOTH gates to pass:
+ *   1. FGA `v1_meeting#host` — covers direct co-hosts (registrants with Host=true) AND anyone
+ *      with the derived organizer relation (project writers, committee writers, meeting coordinators)
+ *      via the FGA model: host = [user] or auditor, auditor = organizer or auditor from project
+ *   2. Time window — current time is within [effective_start − 70 min, effective_start + duration + 40 min)
+ *      where effective_start = next_occurrence_start_time ?? start_time  (mirrors PCC)
  *
- * Sets `meeting.organizer` (still consumed downstream for registrant-count gating) and
- * `meeting.can_view_host_key` (the single gate the frontend reads), and deletes `host_key`
- * when the user is not authorized.
+ * Both checks are batched into a single `/access-check` round-trip. The check is fail-closed:
+ * on any upstream error the access-check service returns all-false, so the host key is stripped.
  *
  * MUST be called with the user's own bearer token active on `req` — NOT an M2M token — or the
  * access check evaluates against the application identity instead of the user.
@@ -158,24 +183,16 @@ export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void
  * @param meeting - The meeting to gate (mutated in place)
  */
 export async function applyHostKeyVisibility(req: Request, accessCheckService: AccessCheckService, meeting: Meeting): Promise<void> {
-  const requests: AccessCheckRequest[] = [
+  const results = await accessCheckService.checkAccess(req, [
     { resource: 'v1_meeting', id: meeting.id, access: 'organizer' },
-    { resource: 'project', id: meeting.project_uid, access: 'writer' },
-    ...(meeting.committees ?? [])
-      .filter((committee) => committee?.uid)
-      .map((committee) => ({ resource: 'committee' as AccessCheckResourceType, id: committee.uid, access: 'writer' as AccessCheckAccessType })),
-  ];
+    { resource: 'v1_meeting', id: meeting.id, access: 'host' },
+  ]);
 
-  const results = await accessCheckService.checkAccess(req, requests);
+  // organizer gates private-meeting access and registrant counts independently of host-key.
+  meeting.organizer = results.get(`${meeting.id}#organizer`) ?? false;
 
-  // Derive the gate from the three named relations explicitly (not "any true in the batch"), so a
-  // future unrelated entry added to `requests` can't silently widen host-key visibility.
-  const isOrganizer = results.get(meeting.id) ?? false;
-  const isProjectWriter = results.get(meeting.project_uid) ?? false;
-  const isCommitteeWriter = (meeting.committees ?? []).some((committee) => !!committee?.uid && (results.get(committee.uid) ?? false));
-
-  meeting.organizer = isOrganizer;
-  meeting.can_view_host_key = isOrganizer || isProjectWriter || isCommitteeWriter;
+  // can_view_host_key requires host relation AND time-window.
+  meeting.can_view_host_key = (results.get(`${meeting.id}#host`) ?? false) && isWithinHostKeyWindow(meeting);
 
   if (!meeting.can_view_host_key) {
     stripHostKey(meeting);

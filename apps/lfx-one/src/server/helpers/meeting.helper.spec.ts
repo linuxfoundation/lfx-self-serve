@@ -27,6 +27,9 @@ vi.mock('@lfx-one/shared/utils', () => ({
   },
 }));
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
+// meeting.helper now imports HOST_KEY_* from shared/constants; stub the barrel so the
+// full constants module graph (which imports shared/enums for ArtifactVisibility etc.) doesn't load.
+vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40 }));
 
 // Stub the services constructed at module load so importing the helper doesn't pull in the
 // microservice proxy / access-check / committee stack. enrichMeetingsWithCreatedBy exercises
@@ -44,7 +47,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getUsernameFromAuth: vi.fn() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
-import { applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from './meeting.helper';
+import { applyHostKeyVisibility, enrichMeetingsWithCreatedBy, isWithinHostKeyWindow, stripHostKey } from './meeting.helper';
 
 const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
@@ -117,7 +120,14 @@ describe('enrichMeetingsWithCreatedBy', () => {
 const MEETING_ID = 'meeting-1111';
 const PROJECT_UID = 'project-2222';
 const COMMITTEE_A = 'committee-aaaa';
-const COMMITTEE_B = 'committee-bbbb';
+
+// Returns an ISO string offset by `offsetMs` from now. Used to build start_time values
+// that land inside or outside the host-key visibility window without relying on fixed dates.
+function isoOffset(offsetMs: number): string {
+  return new Date(Date.now() + offsetMs).toISOString();
+}
+
+const MIN = 60_000;
 
 function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
@@ -125,7 +135,9 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
     project_uid: PROJECT_UID,
     host_key: '123456',
     committees: [{ uid: COMMITTEE_A }],
-    // Only the fields the gate reads matter; cast the rest.
+    // Default: starts in 1 min, 60-min duration — well inside the 70-min pre-window.
+    start_time: isoOffset(1 * MIN),
+    duration: 60,
     ...overrides,
   } as Meeting;
 }
@@ -136,19 +148,21 @@ function mockAccessCheck(results: Map<string, boolean>): { service: AccessCheckS
 }
 
 describe('applyHostKeyVisibility', () => {
+  // Helper: build the composite-keyed map that checkAccess now returns.
+  function accessMap(organizer: boolean, host: boolean): Map<string, boolean> {
+    return new Map([
+      [`${MEETING_ID}#organizer`, organizer],
+      [`${MEETING_ID}#host`, host],
+    ]);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('keeps host_key for a meeting organizer', async () => {
+  it('keeps host_key for a meeting organizer (has both organizer and host via FGA derivation)', async () => {
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, true],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service } = mockAccessCheck(accessMap(true, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -157,15 +171,10 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBe('123456');
   });
 
-  it('keeps host_key for a project writer who is not the organizer', async () => {
+  it('keeps host_key for a direct co-host who is not the meeting organizer', async () => {
+    // host=true but organizer=false: registrant with Host=true, not a project/committee writer.
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, false],
-        [PROJECT_UID, true],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service } = mockAccessCheck(accessMap(false, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -174,32 +183,9 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBe('123456');
   });
 
-  it('keeps host_key for a writer on any attached committee', async () => {
-    const meeting = buildMeeting({ committees: [{ uid: COMMITTEE_A }, { uid: COMMITTEE_B }] });
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, false],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-        [COMMITTEE_B, true],
-      ])
-    );
-
-    await applyHostKeyVisibility(req, service, meeting);
-
-    expect(meeting.can_view_host_key).toBe(true);
-    expect(meeting.host_key).toBe('123456');
-  });
-
-  it('strips host_key when the user has none of the three relations (the leak regression)', async () => {
+  it('strips host_key when the user has neither organizer nor host relation (the leak regression)', async () => {
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(
-      new Map([
-        [MEETING_ID, false],
-        [PROJECT_UID, false],
-        [COMMITTEE_A, false],
-      ])
-    );
+    const { service } = mockAccessCheck(accessMap(false, false));
 
     await applyHostKeyVisibility(req, service, meeting);
 
@@ -208,32 +194,115 @@ describe('applyHostKeyVisibility', () => {
     expect(meeting.host_key).toBeUndefined();
   });
 
-  it('batches organizer + project + every committee into a single access-check call', async () => {
-    const meeting = buildMeeting({ committees: [{ uid: COMMITTEE_A }, { uid: COMMITTEE_B }] });
-    const { service, checkAccess } = mockAccessCheck(new Map());
+  it('batches organizer and host checks into a single access-check call', async () => {
+    const meeting = buildMeeting();
+    const { service, checkAccess } = mockAccessCheck(accessMap(false, false));
 
     await applyHostKeyVisibility(req, service, meeting);
 
     expect(checkAccess).toHaveBeenCalledTimes(1);
     expect(checkAccess).toHaveBeenCalledWith(req, [
       { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' },
-      { resource: 'project', id: PROJECT_UID, access: 'writer' },
-      { resource: 'committee', id: COMMITTEE_A, access: 'writer' },
-      { resource: 'committee', id: COMMITTEE_B, access: 'writer' },
+      { resource: 'v1_meeting', id: MEETING_ID, access: 'host' },
     ]);
   });
 
-  it('handles a meeting with no committees (organizer + project only)', async () => {
-    const meeting = buildMeeting({ committees: [] });
-    const { service, checkAccess } = mockAccessCheck(new Map([[PROJECT_UID, true]]));
+  it('strips host_key and sets can_view_host_key=false outside the time window, but still resolves organizer via FGA', async () => {
+    // Starts in 3 days — well beyond the 70-min pre-window.
+    const meeting = buildMeeting({ start_time: isoOffset(3 * 24 * 60 * MIN), duration: 60 });
+    const { service, checkAccess } = mockAccessCheck(accessMap(true, true));
 
     await applyHostKeyVisibility(req, service, meeting);
 
-    expect(checkAccess).toHaveBeenCalledWith(req, [
-      { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' },
-      { resource: 'project', id: PROJECT_UID, access: 'writer' },
-    ]);
+    // FGA still runs so organizer is set correctly (gates private-meeting access and registrant counts).
+    expect(checkAccess).toHaveBeenCalledTimes(1);
+    expect(meeting.organizer).toBe(true);
+    // Time gate blocks host-key visibility regardless of role.
+    expect(meeting.can_view_host_key).toBe(false);
+    expect(meeting.host_key).toBeUndefined();
+  });
+
+  it('keeps host_key when the host is inside the time window', async () => {
+    // Starts in 30 min — inside the 70-min pre-window.
+    const meeting = buildMeeting({ start_time: isoOffset(30 * MIN), duration: 60 });
+    const { service } = mockAccessCheck(accessMap(true, true));
+
+    await applyHostKeyVisibility(req, service, meeting);
+
+    expect(meeting.organizer).toBe(true);
     expect(meeting.can_view_host_key).toBe(true);
+    expect(meeting.host_key).toBe('123456');
+  });
+});
+
+describe('isWithinHostKeyWindow', () => {
+  // Pin a fixed reference point so boundary assertions are fully deterministic.
+  const NOW = new Date('2025-06-01T12:00:00.000Z');
+  const nowMs = NOW.getTime();
+
+  function iso(offsetMs: number): string {
+    return new Date(nowMs + offsetMs).toISOString();
+  }
+
+  it('returns true when now is exactly at the window start (start_time − 70 min)', () => {
+    // start_time = now + 70 min → windowStart = now exactly
+    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when now is one ms before the window start', () => {
+    const oneMsBefore = new Date(nowMs - 1);
+    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, oneMsBefore)).toBe(false);
+  });
+
+  it('returns true during the meeting itself', () => {
+    // start_time = 15 min ago; now is 15 min past start, well inside window
+    expect(isWithinHostKeyWindow({ start_time: iso(-15 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns true up to 40 min after meeting end', () => {
+    // start_time = 90 min ago, duration = 60 → end = 30 min ago, tail ends at now + 10 min
+    expect(isWithinHostKeyWindow({ start_time: iso(-90 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when now is exactly at the window end (start + duration + 40 min)', () => {
+    // windowEnd = start + 60 + 40 = now → exclusive upper bound, must be false
+    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 40) * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when now is just past the window end', () => {
+    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 41) * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when the meeting is more than 70 min away', () => {
+    expect(isWithinHostKeyWindow({ start_time: iso(71 * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('prefers next_occurrence_start_time over start_time for recurring meetings', () => {
+    // series start_time is 30 days in the past (window long closed)
+    // next_occurrence_start_time is 30 min from now (inside window)
+    expect(
+      isWithinHostKeyWindow(
+        {
+          start_time: iso(-30 * 24 * 60 * MIN),
+          next_occurrence_start_time: iso(30 * MIN),
+          duration: 60,
+        },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('falls back to start_time when next_occurrence_start_time is absent', () => {
+    // start_time is 30 min from now — inside window
+    expect(isWithinHostKeyWindow({ start_time: iso(30 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when start_time is absent', () => {
+    expect(isWithinHostKeyWindow({ start_time: '', duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when start_time is not a valid date', () => {
+    expect(isWithinHostKeyWindow({ start_time: 'not-a-date', duration: 60 }, NOW)).toBe(false);
   });
 });
 
