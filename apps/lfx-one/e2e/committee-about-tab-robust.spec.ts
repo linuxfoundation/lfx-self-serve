@@ -64,10 +64,10 @@ async function mockCommitteeApis(page: Page, opts: { committee: Record<string, u
   });
 }
 
-async function gotoAboutTab(page: Page): Promise<void> {
+async function gotoCommitteeTab(page: Page, query = '?tab=about'): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
-  await page.goto(`/groups/${COMMITTEE_UID}?tab=about`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`/groups/${COMMITTEE_UID}${query}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }
 
@@ -76,24 +76,27 @@ test.setTimeout(120_000);
 test.describe('Group About tab — Robust Structural Tests (LFXV2-1713)', () => {
   test.beforeEach(async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee() });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
     await expect(page.getByTestId('committee-about')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test.describe('Container structure', () => {
-    test('About root container exists', async ({ page }) => {
-      await expect(page.getByTestId('committee-about')).toBeAttached();
+    test('About root container carries the two-column grid layout contract', async ({ page }) => {
+      const root = page.getByTestId('committee-about');
+      await expect(root).toBeAttached();
+      await expect(root).toHaveClass(/grid/);
     });
 
-    test('description, cadence, parent, and key-information cards are attached', async ({ page }) => {
-      await expect(page.getByTestId('committee-about-description-card')).toBeAttached();
-      await expect(page.getByTestId('committee-about-cadence-card')).toBeAttached();
-      await expect(page.getByTestId('committee-about-parent-card')).toBeAttached();
-      await expect(page.getByTestId('committee-about-key-info-card')).toBeAttached();
+    test('description, cadence, parent, and key-information cards are nested inside the About root', async ({ page }) => {
+      const about = page.getByTestId('committee-about');
+      await expect(about.getByTestId('committee-about-description-card')).toBeAttached();
+      await expect(about.getByTestId('committee-about-cadence-card')).toBeAttached();
+      await expect(about.getByTestId('committee-about-parent-card')).toBeAttached();
+      await expect(about.getByTestId('committee-about-key-info-card')).toBeAttached();
     });
 
-    test('channels card is attached when the committee has channels configured', async ({ page }) => {
-      await expect(page.getByTestId('committee-about-channels-card')).toBeAttached();
+    test('channels card is nested inside the About root when the committee has channels configured', async ({ page }) => {
+      await expect(page.getByTestId('committee-about').getByTestId('committee-about-channels-card')).toBeAttached();
     });
 
     test('cadence card contains the subscribe button and a summary node', async ({ page }) => {
@@ -104,9 +107,13 @@ test.describe('Group About tab — Robust Structural Tests (LFXV2-1713)', () => 
   });
 
   test.describe('Header/About duplication contract', () => {
-    test('the header description and channels testids are not attached while About is active', async ({ page }) => {
+    test('the header description/channels block toggles off for About and back on for Overview', async ({ page }) => {
       await expect(page.getByTestId('committee-view-description')).not.toBeAttached();
       await expect(page.getByTestId('committee-view-channels-card')).not.toBeAttached();
+
+      await gotoCommitteeTab(page, '?tab=overview');
+      await expect(page.getByTestId('committee-view-description')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('committee-view-channels-card')).toBeAttached();
     });
 
     test('the committee-view tab strip remains attached above the About body', async ({ page }) => {
