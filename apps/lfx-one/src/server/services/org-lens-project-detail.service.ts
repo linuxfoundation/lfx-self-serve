@@ -23,6 +23,7 @@ import type {
 import { buildInsightsUrl, classifyHealthScore } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -613,9 +614,11 @@ export class OrgLensProjectDetailService {
     const hasSearch = search.length > 0;
     // Rank + count are scoped to the resolved viewer cohort; ORG_NAME ILIKE is a bound param. Snowflake
     // rejects binds in LIMIT/OFFSET, so the already-clamped integers are interpolated as literals.
-    const searchClause = hasSearch ? 'WHERE ORG_NAME ILIKE ?' : '';
+    // ESCAPE '!' + escaped term so a user-typed % or _ matches literally (never a wildcard), keeping the
+    // page and count predicates consistent with the old client-side literal-substring search.
+    const searchClause = hasSearch ? "WHERE ORG_NAME ILIKE ? ESCAPE '!'" : '';
     const baseParams = [slug, timeRangeType, ...cohort.params];
-    const pageParams = hasSearch ? [...baseParams, `%${search}%`] : baseParams;
+    const pageParams = hasSearch ? [...baseParams, `%${escapeSqlLikePattern(search)}%`] : baseParams;
     const countParams = pageParams;
 
     const pageSql = `
@@ -633,7 +636,7 @@ export class OrgLensProjectDetailService {
     const countSql = `
       SELECT COUNT(*) AS N
       FROM ${this.leaderboardTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}${hasSearch ? ' AND ORG_NAME ILIKE ?' : ''}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}${hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : ''}
     `;
 
     const [pageResult, countResult] = await Promise.all([
@@ -665,8 +668,12 @@ export class OrgLensProjectDetailService {
     const hasSearch = search.length > 0;
     // Scope to the viewer cohort; ORG_NAME ILIKE is bound. Snowflake rejects binds in LIMIT/OFFSET,
     // so the clamped integers are interpolated as literals (see fetchInfluenceBoardPage).
-    const searchClause = hasSearch ? ' AND ORG_NAME ILIKE ?' : '';
-    const params = hasSearch ? [slug, timeRangeType, boardType, ...cohort.params, `%${search}%`] : [slug, timeRangeType, boardType, ...cohort.params];
+    // ESCAPE '!' + escaped term so a user-typed % or _ matches literally; shared by the page and count
+    // predicates so the paginated total can't be inflated by wildcard interpretation.
+    const searchClause = hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : '';
+    const params = hasSearch
+      ? [slug, timeRangeType, boardType, ...cohort.params, `%${escapeSqlLikePattern(search)}%`]
+      : [slug, timeRangeType, boardType, ...cohort.params];
     const pageParams = params;
 
     const pageSql = `

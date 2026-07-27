@@ -37,6 +37,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
@@ -75,8 +76,11 @@ export class OrgLensProjectsService {
     // multi-select's client-side substring filter (which matches the raw filter-box text). Trimming
     // here while the client filters on the raw text would let the client hide rows this query returned
     // for a stray leading/trailing space. `trimmed` still gates whether the filter applies at all.
-    const like = `%${query}%`;
-    const searchFilter = trimmed.length ? 'AND (PROJECT_NAME ILIKE ? OR PROJECT_SLUG ILIKE ?)' : '';
+    // Escape LIKE metacharacters + ESCAPE '!' so a typed % or _ matches literally — this also keeps the
+    // predicate identical to the PrimeNG multi-select's client-side filter, which matches % and _
+    // literally (plain substring), so the client can't hide a row the server returned.
+    const like = `%${escapeSqlLikePattern(query)}%`;
+    const searchFilter = trimmed.length ? "AND (PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!')" : '';
     const excludeFilter = excluded.length ? `AND PROJECT_SLUG NOT IN (${excluded.map(() => '?').join(', ')})` : '';
     const sql = `
       SELECT
