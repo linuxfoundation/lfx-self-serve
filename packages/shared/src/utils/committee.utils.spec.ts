@@ -1,12 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Unit tests for the committee member permission resolver (LFXV2-2059).
-//
-// NOTE: this repo has no unit-test runner wired yet (`ng test` has no target; testing is
-// Playwright E2E only). These specs are written against the pure resolver so they execute as-is
-// once a runner (e.g. Vitest via `@angular/build:unit-test`) is added — that wiring is a tracked
-// follow-up. They use the Vitest/Jest-compatible `describe`/`it`/`expect` globals.
+// Unit tests for committee.utils.ts. Run via Vitest (`yarn test`, scoped to packages/shared).
 //
 // All fixtures use synthetic placeholder identities — never real user data.
 
