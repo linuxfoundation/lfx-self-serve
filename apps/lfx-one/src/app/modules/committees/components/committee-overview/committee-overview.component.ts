@@ -39,7 +39,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -546,21 +546,26 @@ export class CommitteeOverviewComponent {
   private initDocuments(): Signal<CommitteeDocument[]> {
     // Documents only seed the activity feed, which the template never renders for a visitor
     // (behind !isVisitor()) — skip the fetch rather than issue a GET nothing will display.
-    // Reactive over myRoleLoading/isVisitor (not just committee) so the fetch fires once the role
-    // actually resolves, and documentsLoading is explicitly cleared on the skip path so
-    // activityFeedLoading() can't get stuck true for a visitor whose role never triggers a fetch.
+    // Derived from one combined computed (not combineLatest over three separate toObservable()
+    // sources) so committee/myRoleLoading/isVisitor — all recomputed together in the same signal
+    // flush — can't glitch through an inconsistent intermediate tick that fires then immediately
+    // cancels a request. While the role is still resolving, documentsLoading stays true (not
+    // cleared) so the feed keeps its skeleton instead of flashing empty for a soon-to-be member.
     return toSignal(
-      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading), toObservable(this.isVisitor)]).pipe(
-        filter(([c]) => !!c?.uid),
-        switchMap(([c, roleLoading, visitor]) => {
-          if (roleLoading || visitor) {
+      toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
+        filter(({ committee }) => !!committee?.uid),
+        switchMap(({ committee, roleLoading, visitor }) => {
+          if (roleLoading) {
+            return of<CommitteeDocument[]>([]);
+          }
+          if (visitor) {
             this.documentsLoading.set(false);
             return of<CommitteeDocument[]>([]);
           }
           this.documentsLoading.set(true);
           // No catchError here: CommitteeService.getCommitteeDocuments already falls back to
           // of([]) on failure, so a component-level handler would never fire.
-          return this.committeeService.getCommitteeDocuments(c.uid).pipe(finalize(() => this.documentsLoading.set(false)));
+          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(finalize(() => this.documentsLoading.set(false)));
         })
       ),
       { initialValue: [] }
