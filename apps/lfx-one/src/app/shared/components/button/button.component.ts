@@ -48,6 +48,8 @@ export class ButtonComponent {
 
   // Accessibility
   public readonly ariaLabel = input<string | undefined>(undefined);
+  /** Bound to the inner native button's `aria-pressed` — use for toggle/pressed-state buttons. `[attr.aria-pressed]` at the call site would only land on this component's host element, not the real button. */
+  public readonly ariaPressed = input<boolean | undefined>(undefined);
 
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);

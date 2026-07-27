@@ -169,4 +169,33 @@ test.describe('My Groups — list↔card view toggle', () => {
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`), 'matching card should remain').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_B}`), 'non-matching card should be filtered out').toHaveCount(0);
   });
+
+  test('a search matching nothing shows the "no results" empty state with a reset CTA', async ({ page }) => {
+    await gotoMyGroups(page);
+    await page.getByTestId('groups-view-card-btn').click();
+    await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.getByTestId('committee-search-input').locator('input').fill('no-such-group-xyz');
+
+    await expect(page.getByTestId('groups-card-grid-no-results'), 'no-results empty state should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toHaveCount(0);
+  });
+});
+
+test.describe('My Groups — card view empty state (no groups at all)', () => {
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['contributor']);
+    await stubPersona(page, ['contributor']);
+    await stubPendingInvitations(page);
+    await stubMyCommittees(page, []);
+  });
+
+  test('shows the "no groups yet" empty state in card view when the caller has no groups', async ({ page }) => {
+    await gotoMyGroups(page);
+    await page.getByTestId('groups-view-card-btn').click();
+
+    await expect(page.getByTestId('groups-card-grid-empty'), 'empty state should render for a zero-groups caller').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
 });

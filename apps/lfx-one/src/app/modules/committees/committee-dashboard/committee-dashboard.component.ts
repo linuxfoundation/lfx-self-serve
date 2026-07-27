@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import {
   BEHAVIORAL_CLASS_CONFIG,
@@ -54,6 +52,7 @@ import {
 } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { CommitteeFilterBarComponent } from '../components/committee-filter-bar/committee-filter-bar.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
@@ -63,14 +62,13 @@ import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-
   imports: [
     ButtonComponent,
     CardComponent,
+    CommitteeFilterBarComponent,
     CommitteeInvitationsComponent,
     CommitteeTableComponent,
     MyGroupsCardGridComponent,
     SkeletonModule,
     EmptyStateComponent,
     StatCardGridComponent,
-    InputTextComponent,
-    SelectComponent,
   ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
@@ -133,8 +131,9 @@ export class CommitteeDashboardComponent {
 
   // All Groups foundation grouping — only activates when scoped to a foundation
   public readonly showFoundationGrouping: Signal<boolean> = computed(() => !this.isMeLens() && this.isFoundationContext());
-  public readonly groupExpansionMap: Signal<Record<string, boolean>> = computed(() => this.groupExpansion());
   public foundationGroups: Signal<CommitteeFoundationGroup[]>;
+  /** Effective expansion state per group — defaults every group to expanded unless the user explicitly toggled it (tracked in `groupExpansion`). Deriving this instead of syncing `groupExpansion` via effect() avoids a collapsed-then-expanded flash on first render. */
+  public groupExpansionMap: Signal<Record<string, boolean>>;
 
   // Statistics
   public totalCommittees: Signal<number>;
@@ -180,6 +179,7 @@ export class CommitteeDashboardComponent {
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
     this.foundationGroups = this.initializeFoundationGroups();
+    this.groupExpansionMap = this.initializeGroupExpansionMap();
 
     // Initialize statistics
     this.totalCommittees = computed(() => this.committees().length);
@@ -224,22 +224,12 @@ export class CommitteeDashboardComponent {
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe();
-
-      this.restoreViewMode();
     }
 
-    // Keep newly-appearing foundation groups expanded by default without clobbering a user's
-    // manual collapse of a group that's still present after a filter change re-runs the computed.
-    effect(() => {
-      const keys = this.foundationGroups().map((group) => group.key);
-      this.groupExpansion.update((state) => {
-        const next: Record<string, boolean> = {};
-        for (const key of keys) {
-          next[key] = key in state ? state[key] : true;
-        }
-        return next;
-      });
-    });
+    // Deferred to afterNextRender (browser-only, post-hydration) rather than the constructor:
+    // restoring a 'card' view here would render a different template branch than the SSR HTML
+    // on the client's first pass, tripping Angular's hydration mismatch detection (NG0500).
+    afterNextRender(() => this.restoreViewMode());
   }
 
   /**
@@ -321,7 +311,8 @@ export class CommitteeDashboardComponent {
   }
 
   public toggleGroupExpansion(key: string): void {
-    this.groupExpansion.update((state) => ({ ...state, [key]: !state[key] }));
+    const currentlyExpanded = this.groupExpansionMap()[key];
+    this.groupExpansion.update((overrides) => ({ ...overrides, [key]: !currentlyExpanded }));
   }
 
   public onFoundationFilterChange(value: string | null): void {
@@ -332,10 +323,6 @@ export class CommitteeDashboardComponent {
 
   public onProjectFilterChange(value: string | null): void {
     this.projectFilter.set(value);
-  }
-
-  protected groupTestIdSlug(label: string): string {
-    return slugify(label);
   }
 
   private resetScopeFilters(): void {
@@ -615,8 +602,9 @@ export class CommitteeDashboardComponent {
   }
 
   /**
-   * Groups the already-filtered All Groups list by resolved foundation/project label.
-   * Reads `filteredCommittees()` (not the raw `committees()`) so search/behavioral-class/voting-status
+   * Groups the already-filtered All Groups list by `project_uid` (guaranteed unique and stable —
+   * unlike the resolved display label, which two distinct sub-projects can share). Reads
+   * `filteredCommittees()` (not the raw `committees()`) so search/behavioral-class/voting-status
    * filters keep working identically whether grouping is active or not — a group with zero members
    * after filtering simply has no bucket, so it's never rendered with an empty header.
    */
@@ -628,22 +616,46 @@ export class CommitteeDashboardComponent {
 
       const buckets = new Map<string, CommitteeFoundationGroup>();
       for (const committee of source) {
-        const label = committee.is_foundation
-          ? committee.project_name || committee.foundation_name || FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL
-          : committee.project_name || committee.foundation_name || OTHER_GROUPS_LABEL;
-        const key = label;
-        if (!buckets.has(key)) {
-          buckets.set(key, { key, label, isFoundationLevel: !!committee.is_foundation, committees: [] });
+        const key = committee.project_uid;
+        let bucket = buckets.get(key);
+        if (!bucket) {
+          const label = committee.is_foundation
+            ? committee.project_name || committee.foundation_name || FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL
+            : committee.project_name || committee.foundation_name || OTHER_GROUPS_LABEL;
+          bucket = { key, label, testIdSlug: '', isFoundationLevel: !!committee.is_foundation, committees: [] };
+          buckets.set(key, bucket);
         }
-        buckets.get(key)!.committees.push(committee);
+        bucket.committees.push(committee);
       }
 
-      return [...buckets.values()].sort((a, b) => {
+      const groups = [...buckets.values()].sort((a, b) => {
         if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
         if (a.label === OTHER_GROUPS_LABEL) return 1;
         if (b.label === OTHER_GROUPS_LABEL) return -1;
         return a.label.localeCompare(b.label);
       });
+
+      // Disambiguate testid slugs only when two groups genuinely share a label (rare) — keeps the
+      // common case's testid a clean, human-readable slug instead of always suffixing a raw uid.
+      const slugCounts = new Map<string, number>();
+      return groups.map((group) => {
+        const baseSlug = slugify(group.label);
+        const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
+        slugCounts.set(baseSlug, occurrence);
+        return { ...group, testIdSlug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}` };
+      });
+    });
+  }
+
+  /** Effective expansion state per visible group: expanded unless explicitly overridden in `groupExpansion`. */
+  private initializeGroupExpansionMap(): Signal<Record<string, boolean>> {
+    return computed(() => {
+      const overrides = this.groupExpansion();
+      const result: Record<string, boolean> = {};
+      for (const group of this.foundationGroups()) {
+        result[group.key] = group.key in overrides ? overrides[group.key] : true;
+      }
+      return result;
     });
   }
 
@@ -659,6 +671,7 @@ export class CommitteeDashboardComponent {
   }
 
   private persistViewMode(mode: GroupsViewMode): void {
+    if (!isPlatformBrowser(this.platformId)) return;
     try {
       localStorage.setItem(GROUPS_VIEW_MODE_STORAGE_KEY, mode);
     } catch {

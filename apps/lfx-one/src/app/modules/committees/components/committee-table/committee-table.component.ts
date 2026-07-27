@@ -8,8 +8,6 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
@@ -18,6 +16,7 @@ import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { PersonaService } from '@services/persona.service';
 
 import { TooltipModule } from 'primeng/tooltip';
+import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
 @Component({
   selector: 'lfx-committee-table',
@@ -30,8 +29,7 @@ import { TooltipModule } from 'primeng/tooltip';
     ButtonComponent,
     TableComponent,
     TagComponent,
-    InputTextComponent,
-    SelectComponent,
+    CommitteeFilterBarComponent,
     TooltipModule,
     PlatformIconPipe,
     PlatformLabelPipe,

@@ -171,6 +171,14 @@ async function gotoFoundationGroups(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/auth0\.com/);
 }
 
+async function gotoProjectGroups(page: Page): Promise<void> {
+  skipWhenAuthMissing();
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await page.goto(`/project/groups?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+}
+
 test.describe('All Groups — foundation tree-grouping', () => {
   test.beforeEach(async ({ page }) => {
     await setCookies(page, ['executive-director'], 'foundation');
@@ -221,5 +229,23 @@ test.describe('All Groups — foundation tree-grouping', () => {
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_SUB_A}`), 'matching committee should remain').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('groups-foundation-group-test-foundation'), 'a group with no matches should be entirely absent').toHaveCount(0);
     await expect(page.getByTestId('groups-foundation-group-beta-project'), 'a group with no matches should be entirely absent').toHaveCount(0);
+  });
+});
+
+test.describe('All Groups — single-project scope stays ungrouped', () => {
+  test.beforeEach(async ({ page }) => {
+    await setCookies(page, ['executive-director'], 'project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+  });
+
+  test('project-scoped route renders the flat table, with no foundation-group headers', async ({ page }) => {
+    await gotoProjectGroups(page);
+
+    await expect(page.getByTestId('committees-project-table'), 'flat, ungrouped table should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_BOARD}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('groups-foundation-group-test-foundation'), 'no group headers when scope is a single project').toHaveCount(0);
+    await expect(page.getByTestId('groups-foundation-group-alpha-project')).toHaveCount(0);
   });
 });

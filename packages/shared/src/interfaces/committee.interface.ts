@@ -472,10 +472,12 @@ export type GroupsViewMode = 'list' | 'card';
  * Built entirely client-side from the already-filtered committees list — no new upstream shape.
  */
 export interface CommitteeFoundationGroup {
-  /** Stable key for the expansion-state map and the data-testid slug — currently the resolved label itself. */
+  /** Stable key for the expansion-state map — the group's `project_uid`, guaranteed unique per sub-project/foundation. */
   key: string;
   /** Human-readable header text. */
   label: string;
+  /** Kebab-case, testid-safe slug derived from `label`, disambiguated against sibling groups sharing the same label. */
+  testIdSlug: string;
   /** True for the (at most one) bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. */
   isFoundationLevel: boolean;
   committees: Committee[];

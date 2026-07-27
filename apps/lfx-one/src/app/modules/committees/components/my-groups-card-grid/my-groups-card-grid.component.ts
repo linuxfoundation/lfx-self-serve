@@ -33,6 +33,13 @@ export class MyGroupsCardGridComponent {
     }))
   );
 
+  protected onCardKeydown(event: KeyboardEvent, committee: MyCommittee): void {
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.rowClick.emit(committee);
+  }
+
   private resolveRoleSeverity(role: CommitteeMemberRole | 'Member' | undefined): BadgeSeverity {
     switch (role) {
       case CommitteeMemberRole.CHAIR:
