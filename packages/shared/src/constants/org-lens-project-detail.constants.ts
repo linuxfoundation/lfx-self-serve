@@ -18,6 +18,9 @@ export const PD_VALID_TABS: ReadonlySet<string> = new Set<OrgLensProjectDetailTa
 export const PD_DEFAULT_METRIC: OrgLensLeaderboardMetric = 'influence';
 export const PD_VALID_METRICS: ReadonlySet<string> = new Set<OrgLensLeaderboardMetric>(['influence', 'activity']);
 
+/** Max leaderboard search length the board endpoint accepts; longer input is truncated before it reaches the cache key or the `ILIKE` term. */
+export const PD_MAX_SEARCH_LENGTH = 100;
+
 export const PD_DEFAULT_TIME_RANGE: OrgLensLeaderboardTimeRange = '2y';
 export const PD_VALID_TIME_RANGES: ReadonlySet<string> = new Set<OrgLensLeaderboardTimeRange>(['1y', '2y', 'all']);
 

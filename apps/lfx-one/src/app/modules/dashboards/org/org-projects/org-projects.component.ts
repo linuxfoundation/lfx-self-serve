@@ -308,7 +308,15 @@ export class OrgProjectsComponent {
     if (!this.canAddProjects()) {
       return;
     }
-    this.addProjectsForm.setValue({ projects: [] }, { emitEvent: false });
+    // Cancel any debounced search still pending from a previous session so it can't land
+    // after — and overwrite — this fresh empty search when the dialog is quickly reopened.
+    if (this.addableProjectsSearchDebounceTimer) {
+      clearTimeout(this.addableProjectsSearchDebounceTimer);
+      this.addableProjectsSearchDebounceTimer = null;
+    }
+    // Emit the reset (no emitEvent:false) so the derived form-value signal — and the
+    // selected count / confirm button / empty state that read it — clear immediately.
+    this.addProjectsForm.setValue({ projects: [] });
     this.addProjectsSearchQuery.set('');
     this.addableProjectOptions.set([]);
     this.selectedAddableProjectOptions.set([]);

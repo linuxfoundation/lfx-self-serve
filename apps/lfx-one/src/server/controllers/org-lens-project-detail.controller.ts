@@ -3,7 +3,14 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { FOUNDATION_ID_PATTERN, PD_DEFAULT_METRIC, PD_DEFAULT_TIME_RANGE, PD_VALID_METRICS, PD_VALID_TIME_RANGES } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_ID_PATTERN,
+  PD_DEFAULT_METRIC,
+  PD_DEFAULT_TIME_RANGE,
+  PD_MAX_SEARCH_LENGTH,
+  PD_VALID_METRICS,
+  PD_VALID_TIME_RANGES,
+} from '@lfx-one/shared/constants';
 import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -185,7 +192,8 @@ export class OrgLensProjectDetailController {
     const page = this.parseNonNegativeInt(req.query['page'], 0);
     // pageSize is clamped again in the service; clamp here too so the log/signature stay honest.
     const pageSize = Math.min(this.parseNonNegativeInt(req.query['pageSize'], 10) || 10, 100);
-    const search = getStringQueryParam(req, 'search')?.trim() ?? '';
+    // Cap length before it reaches the Valkey key / leading-wildcard ILIKE term (getStringQueryParam only narrows type).
+    const search = (getStringQueryParam(req, 'search')?.trim() ?? '').slice(0, PD_MAX_SEARCH_LENGTH);
     return { metric, page, pageSize, search };
   }
 

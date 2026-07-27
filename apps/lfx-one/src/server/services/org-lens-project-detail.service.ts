@@ -191,6 +191,10 @@ export class OrgLensProjectDetailService {
   // shipped component maps points to a fixed 36-month label axis by position and slices per range.
   private static readonly sparklineMonths = 36;
 
+  // Upper bound on the requested page. Guards against a huge/precision-lost query value overflowing
+  // page*size into an unsafe integer OFFSET (which Snowflake rejects → 500); leaderboards never approach it.
+  private static readonly maxBoardPage = 100_000;
+
   // Static drawer definition metadata for the 14 cards (LFXV2-1885 DN9 Phase 1): definition copy,
   // total-column semantics, table headers, project-total aggregation, and the ecosystem cards'
   // static source label. Technical cards' data source is derived from the platforms model per project.
@@ -522,7 +526,7 @@ export class OrgLensProjectDetailService {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
     const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
-    const safePage = Math.max(Math.trunc(page) || 0, 0);
+    const safePage = Math.min(Math.max(Math.trunc(page) || 0, 0), OrgLensProjectDetailService.maxBoardPage);
     const offset = safePage * safeSize;
     const term = search.trim();
 
@@ -538,7 +542,8 @@ export class OrgLensProjectDetailService {
     const isNonLf = heroRow.IS_LF_PROJECT !== true;
 
     let block: OrgLensLeaderboardPage;
-    // Non-LF projects have no ecosystem influence, so that board is empty (the client also guards).
+    // Non-LF projects have no ecosystem influence, so this board is empty. The server is authoritative:
+    // the client renders the "Non-LF" marker only and no longer guards this itself.
     if (dimension === 'ecosystem' && metric === 'influence' && isNonLf) {
       block = { rows: [], total: 0, isNonLfProject: isNonLf };
     } else {
