@@ -1340,7 +1340,7 @@ export class ProjectService {
         FROM monthly_counts
       ),
       spine AS (
-        SELECT DATEADD('month', -SEQ4(), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
@@ -1380,7 +1380,7 @@ export class ProjectService {
         FROM monthly_counts
       ),
       spine AS (
-        SELECT DATEADD('month', -SEQ4(), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
@@ -1717,7 +1717,7 @@ export class ProjectService {
 
     const query = `
       WITH spine AS (
-        SELECT DATEADD('month', -SEQ4(), DATE_TRUNC('MONTH', CURRENT_DATE())) AS METRIC_MONTH
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('month', -1, DATE_TRUNC('MONTH', CURRENT_DATE()))) AS METRIC_MONTH
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
@@ -1789,7 +1789,7 @@ export class ProjectService {
 
     const query = `
       WITH spine AS (
-        SELECT DATEADD('quarter', -SEQ4(), DATEADD('quarter', -1, DATE_TRUNC('QUARTER', CURRENT_DATE()))) AS QUARTER_START_DATE
+        SELECT DATEADD('quarter', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('quarter', -1, DATE_TRUNC('QUARTER', CURRENT_DATE()))) AS QUARTER_START_DATE
         FROM TABLE(GENERATOR(ROWCOUNT => 8))
       )
       SELECT

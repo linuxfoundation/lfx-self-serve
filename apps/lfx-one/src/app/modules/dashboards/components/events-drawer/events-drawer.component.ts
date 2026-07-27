@@ -127,7 +127,7 @@ export class EventsDrawerComponent {
   private readonly drawerData = this.initDrawerData();
   protected readonly quarterlyData: Signal<FoundationEventsQuarterlyResponse> = computed(() => this.drawerData().quarterly);
   protected readonly attendanceData: Signal<FoundationEventsAttendanceDistributionResponse> = computed(() => this.drawerData().attendance);
-  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.length > 0);
+  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.some((v) => v > 0));
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
   protected readonly metricValue: Signal<string> = this.initMetricValue();
 
