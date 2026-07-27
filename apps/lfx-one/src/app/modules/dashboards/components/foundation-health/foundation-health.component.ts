@@ -582,7 +582,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
-      loading: this.healthScoresLoading() || this.totalProjectsLoading(),
+      loading: this.healthScoresLoading(),
       value,
       subtitle: 'Projects rated by their health score',
       chartData: {
