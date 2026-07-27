@@ -45,15 +45,15 @@ export class ProjectService {
   /**
    * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
    * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
-   * set narrowed until the (much slower) deferred sweep eventually resolves it instead. A timeout
-   * doesn't retry — `TimeoutError` isn't an `HttpErrorResponse`, so `isTransientHttpError` rejects
-   * it — a stalled connection fails closed immediately rather than doubling the wait; the deferred
-   * sweep is the recovery path for that case, not a second attempt here.
+   * set narrowed until the (much slower) deferred sweep eventually resolves it instead.
    *
-   * `timeout()` sits below `retryTransientHttpError()` so it bounds the whole call (retries
-   * included) to `WRITER_SUMMARY_TIMEOUT_MS`, not just one attempt — `WriterGrantsService` only
-   * schedules its deferred sweep once this call settles, so an unbounded hang here would silently
-   * starve the sweep for the whole session.
+   * `timeout()` sits downstream of `retryTransientHttpError()` in the pipe, so it wraps the whole
+   * retried call rather than each individual attempt — a `TimeoutError` is terminal by
+   * construction (it's raised after `retry` has already passed through, never offered to
+   * `isTransientHttpError`), so a stalled connection fails closed at `WRITER_SUMMARY_TIMEOUT_MS`
+   * rather than doubling the wait with a second attempt. `WriterGrantsService` only schedules its
+   * deferred sweep once this call settles, so that bound matters: an unbounded hang here would
+   * silently starve the sweep — the recovery path for a stalled fast path — for the whole session.
    */
   public getWriterSummary(): Observable<WriterSummary> {
     return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
