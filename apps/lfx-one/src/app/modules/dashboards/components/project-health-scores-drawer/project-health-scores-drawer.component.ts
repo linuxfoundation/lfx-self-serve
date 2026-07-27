@@ -149,6 +149,18 @@ export class ProjectHealthScoresDrawerComponent {
 
   protected readonly scoredLabel: Signal<string> = computed(() => this.initScoredLabel());
 
+  // Mirrors the foundation-health card's focal KPI so the card's `%` and the drawer's
+  // summary can never drift apart.
+  protected readonly healthyOrBetterCount: Signal<number> = computed(() => {
+    const d = this.data();
+    return d.excellent + d.healthy;
+  });
+
+  protected readonly healthyOrBetterPct: Signal<number> = computed(() => {
+    const scored = this.scoredProjects();
+    return scored > 0 ? Math.round((this.healthyOrBetterCount() / scored) * 100) : 0;
+  });
+
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
   // draw (the leading Unscored bar), so this must not collapse to hasData() (scored-only).

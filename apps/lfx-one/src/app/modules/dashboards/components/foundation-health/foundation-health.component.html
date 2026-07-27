@@ -60,7 +60,8 @@
                 [testId]="card.testId"
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
-                [chartOptions]="barChartOptions"
+                [chartOptions]="card.chartOptions || barChartOptions"
+                [chartHeightClass]="'flex-1'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
@@ -148,15 +149,14 @@
                     <div class="flex-1 flex flex-col justify-end p-0">
                       <div class="flex items-end justify-between gap-1 h-16">
                         @for (item of healthScoreDistribution(); track item.category) {
-                          <div class="flex-1 min-w-0 flex flex-col items-center gap-1">
+                          <div
+                            class="flex-1 min-w-0 h-full flex flex-col items-center justify-end"
+                            [pTooltip]="item.category + ': ' + item.count"
+                            tooltipPosition="top">
                             <div
                               class="w-full rounded-t transition-all hover:opacity-80"
                               [style.backgroundColor]="item.color"
                               [style.height.px]="item.heightPx"></div>
-                            <div class="text-[10px] text-center leading-tight break-words">
-                              <div class="font-medium">{{ item.category }}</div>
-                              <div class="text-gray-500">{{ item.count }}</div>
-                            </div>
                           </div>
                         }
                       </div>

@@ -21,7 +21,47 @@ import { hexToRgba, computePeriodChange } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
+import { Chart } from 'chart.js';
+import type { ChartData, ChartType } from 'chart.js';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
+
+// Draws a 4px gray stub on the baseline for zero-value bars on datasets that
+// opt in via `zeroStub: true`. Chart.js renders zero-height bars invisibly,
+// which makes sparse quarterly charts read as "broken" rather than "zero".
+const ZERO_BAR_STUB_PLUGIN = {
+  id: 'lfxZeroBarStub',
+  afterDatasetsDraw(chart: Chart) {
+    const ds = chart.data.datasets?.[0] as (typeof chart.data.datasets)[0] & { zeroStub?: boolean };
+    if (!ds?.zeroStub) return;
+    const meta = chart.getDatasetMeta(0);
+    if (meta?.type !== 'bar') return;
+    const vScale = (meta as { vScale?: { getPixelForValue: (v: number) => number } }).vScale;
+    if (!vScale) return;
+    const values = ds.data as number[];
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = lfxColors.gray[300];
+    values.forEach((value, index) => {
+      if (value !== 0) return;
+      const bar = meta.data[index] as unknown as { x: number; width: number };
+      if (!bar) return;
+      const halfWidth = (bar.width || 4) / 2;
+      const base = vScale.getPixelForValue(0);
+      const stubHeight = 4;
+      ctx.beginPath();
+      ctx.roundRect(bar.x - halfWidth, base - stubHeight, halfWidth * 2, stubHeight, [2, 2, 0, 0]);
+      ctx.fill();
+    });
+    ctx.restore();
+  },
+};
+
+let zeroBarStubRegistered = false;
+if (!zeroBarStubRegistered) {
+  Chart.register(ZERO_BAR_STUB_PLUGIN);
+  zeroBarStubRegistered = true;
+}
 
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
 import { EventsDrawerComponent } from '../events-drawer/events-drawer.component';
@@ -52,6 +92,7 @@ import type {
     MetricCardComponent,
     DataCopilotComponent,
     ScrollShadowDirective,
+    TooltipModule,
     TotalValueDrawerComponent,
     TotalProjectsDrawerComponent,
     TotalMembersDrawerComponent,
@@ -230,10 +271,16 @@ export class FoundationHealthComponent {
 
       const maxCount = Math.max(...data.map((d) => d.count));
 
-      return data.map((item) => ({
-        ...item,
-        heightPx: maxCount > 0 ? Math.round((item.count / maxCount) * 64) : 0,
-      }));
+      return data.map((item) => {
+        // Zero-count buckets render as a 4px gray stub so the slot stays occupied and
+        // "zero" reads as zero (muted, minimal) rather than as missing/broken data.
+        const isZero = item.count === 0;
+        return {
+          ...item,
+          color: isZero ? lfxColors.gray[200] : item.color,
+          heightPx: isZero ? 4 : Math.round((item.count / maxCount) * 64),
+        };
+      });
     });
   }
 
@@ -527,6 +574,7 @@ export class FoundationHealthComponent {
   private transformEvents(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.eventsQuarterlyData();
     const { trend, changePercentage } = computePeriodChange(data.quarterlyData, 'vs last quarter');
+    const eventColor = metric.chartColor || lfxColors.blue[500];
 
     return {
       ...metric,
@@ -540,12 +588,15 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.quarterlyData,
-            backgroundColor: metric.chartColor || lfxColors.blue[500],
+            // Opt this dataset into the zero-bar stub plugin so empty quarters
+            // render as a 4px gray stub instead of invisible zero-height bars.
+            zeroStub: true,
+            backgroundColor: eventColor,
             // Pin hover color to the bar fill so the active bar doesn't darken (matches the events drawer).
-            hoverBackgroundColor: metric.chartColor || lfxColors.blue[500],
-            borderColor: metric.chartColor || lfxColors.blue[500],
+            hoverBackgroundColor: eventColor,
+            borderColor: eventColor,
             borderWidth: 0,
-          },
+          } as unknown as ChartData<ChartType>['datasets'][number],
         ],
       },
       chartOptions: {
@@ -570,20 +621,17 @@ export class FoundationHealthComponent {
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
     const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
-    const total = this.reconciledTotalProjects();
 
-    let subtitle = '';
-    if (scored > 0 || total > 0) {
-      // The two counts come from independent Snowflake tables; only reconcile
-      // against the total when it is loaded and not smaller than the scored count.
-      subtitle = total > scored ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored` : `${scored.toLocaleString()} projects scored`;
-    }
+    // "Healthy or better" is the card's health KPI; the distribution chart is the visualization,
+    // parallel to the sparkline/bar chart on the other foundation-health cards.
+    const healthyOrBetter = data.excellent + data.healthy;
+    const value = scored > 0 ? `${Math.round((healthyOrBetter / scored) * 100)}%` : '';
 
     return {
       ...metric,
       loading: this.healthScoresLoading() || this.totalProjectsLoading(),
-      value: '',
-      subtitle,
+      value,
+      subtitle: 'Projects rated by their health score',
       healthScores: data,
     };
   }

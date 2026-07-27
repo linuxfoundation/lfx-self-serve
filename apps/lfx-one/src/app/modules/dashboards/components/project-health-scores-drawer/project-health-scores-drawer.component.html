@@ -59,6 +59,14 @@
         </button>
       </div>
 
+      <!-- Healthy-or-better summary -->
+      @if (!distributionLoading() && hasData()) {
+        <p class="text-sm text-gray-600" data-testid="project-health-scores-drawer-healthy-summary">
+          <span class="font-semibold text-gray-900">{{ healthyOrBetterPct() }}%</span>
+          of scored projects are healthy or better — {{ healthyOrBetterCount().toLocaleString() }} of {{ scoredProjects().toLocaleString() }}
+        </p>
+      }
+
       <!-- Legend -->
       <div class="flex flex-wrap gap-3" data-testid="project-health-scores-drawer-legend">
         @for (category of chartCategories; track category) {
@@ -89,7 +97,18 @@
 
     <!-- Projects Table -->
     <div class="flex flex-col gap-3" data-testid="project-health-scores-drawer-table-section">
-      <h3 class="text-sm font-medium text-gray-900">Projects by health status</h3>
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">Projects by health status</h3>
+        <button
+          type="button"
+          class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+          pTooltip="Search and filter individual foundation projects by health status"
+          tooltipPosition="top"
+          tooltipEvent="both"
+          aria-label="Search and filter individual foundation projects by health status">
+          <i class="fa-light fa-circle-info"></i>
+        </button>
+      </div>
 
       <!-- Search -->
       <label for="project-health-scores-search" class="sr-only">Search projects by name</label>

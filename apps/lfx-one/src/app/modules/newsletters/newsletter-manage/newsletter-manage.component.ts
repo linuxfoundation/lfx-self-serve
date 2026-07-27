@@ -446,10 +446,9 @@ export class NewsletterManageComponent {
     const missing: string[] = [];
     if (!this.audienceFilled()) missing.push('an audience');
     if (!this.subjectFilled()) missing.push('a subject');
-    // bodyPersistable, matching canSaveDraft: an emptied block layout is
-    // saveable, so the warning must not claim content is missing when only
-    // another field (e.g. audience) is.
-    if (!this.bodyPersistable()) missing.push('some newsletter content');
+    // Match canSaveDraft: an emptied block layout is saveable, so the warning
+    // must not claim content is missing when only another field is.
+    if (!this.bodyFilled()) missing.push('some newsletter content');
     if (this.edEmail().length === 0) missing.push('a reply-to email');
     return missing;
   }
