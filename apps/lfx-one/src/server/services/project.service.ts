@@ -1716,14 +1716,19 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_maintainers_monthly', 'Fetching monthly maintainers', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -SEQ4(), DATE_TRUNC('MONTH', CURRENT_DATE())) AS METRIC_MONTH
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      )
       SELECT
-        METRIC_MONTH,
-        ACTIVE_MAINTAINERS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY
-      WHERE FOUNDATION_SLUG = ?
-        AND REPOSITORY_SCOPE = 'all_repos'
-        AND METRIC_MONTH >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY METRIC_MONTH ASC
+        s.METRIC_MONTH,
+        COALESCE(m.ACTIVE_MAINTAINERS, 0) AS ACTIVE_MAINTAINERS
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY m
+        ON m.METRIC_MONTH = s.METRIC_MONTH
+        AND m.FOUNDATION_SLUG = ?
+        AND m.REPOSITORY_SCOPE = 'all_repos'
+      ORDER BY s.METRIC_MONTH ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationMaintainersMonthlyRow>(query, [foundationSlug]);
@@ -1783,14 +1788,18 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_events_quarterly', 'Fetching quarterly events', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('quarter', -SEQ4(), DATEADD('quarter', -1, DATE_TRUNC('QUARTER', CURRENT_DATE()))) AS QUARTER_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 8))
+      )
       SELECT
-        QUARTER_START_DATE,
-        EVENT_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY
-      WHERE FOUNDATION_SLUG = ?
-        AND QUARTER_START_DATE >= DATEADD('quarter', -8, DATE_TRUNC('QUARTER', CURRENT_DATE()))
-        AND QUARTER_START_DATE < DATE_TRUNC('QUARTER', CURRENT_DATE())
-      ORDER BY QUARTER_START_DATE ASC
+        s.QUARTER_START_DATE,
+        COALESCE(e.EVENT_COUNT, 0) AS EVENT_COUNT
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY e
+        ON e.QUARTER_START_DATE = s.QUARTER_START_DATE
+        AND e.FOUNDATION_SLUG = ?
+      ORDER BY s.QUARTER_START_DATE ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationEventsQuarterlyRow>(query, [foundationSlug]);

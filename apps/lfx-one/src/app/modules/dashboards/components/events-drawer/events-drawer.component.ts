@@ -11,7 +11,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type { FoundationEventsAttendanceDistributionResponse, FoundationEventsQuarterlyResponse } from '@lfx-one/shared/interfaces';
@@ -143,15 +143,17 @@ export class EventsDrawerComponent {
   private initDrawerData(): Signal<{ quarterly: FoundationEventsQuarterlyResponse; attendance: FoundationEventsAttendanceDistributionResponse }> {
     const defaultValue = { quarterly: DEFAULT_FOUNDATION_EVENTS_QUARTERLY, attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);

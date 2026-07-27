@@ -541,6 +541,8 @@ export class FoundationHealthComponent {
           {
             data: data.quarterlyData,
             backgroundColor: metric.chartColor || lfxColors.blue[500],
+            // Pin hover color to the bar fill so the active bar doesn't darken (matches the events drawer).
+            hoverBackgroundColor: metric.chartColor || lfxColors.blue[500],
             borderColor: metric.chartColor || lfxColors.blue[500],
             borderWidth: 0,
           },

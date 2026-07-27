@@ -21,8 +21,9 @@ export function computePeriodChange(
     } else if (rounded < 0) {
       trend = 'down';
     }
-    const sign = rounded > 0 ? '+' : '';
-    const arrow = rounded > 0 ? '▲ ' : rounded < 0 ? '▼ ' : '';
+    const arrowByTrend: Record<'up' | 'down' | 'neutral', string> = { up: '▲ ', down: '▼ ', neutral: '' };
+    const arrow = arrowByTrend[trend];
+    const sign = trend === 'up' ? '+' : '';
     changePercentage = `${arrow}${sign}${rounded.toFixed(1)}% ${periodLabel}`;
   }
   return { trend, changePercentage };
