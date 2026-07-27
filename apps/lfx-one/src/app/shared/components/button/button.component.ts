@@ -50,15 +50,13 @@ export class ButtonComponent {
   public readonly ariaLabel = input<string | undefined>(undefined);
   /**
    * Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher).
-   * Reaches the real native button either way, but by two different paths: on the `href()` anchor
-   * branch `pButton` is a directive on the anchor itself, so `[attr.aria-pressed]` lands there
-   * directly; on the default `<p-button>` branch it's forwarded via PrimeNG's `pt` passthrough
-   * (`ptm('root')`) to the button `p-button` renders internally — a plain `[attr.aria-pressed]`
-   * there would only reach the `<p-button>` host element, not the real button.
+   * Applied by two different paths depending on which branch renders: on the `href()` anchor branch,
+   * `pButton` is a directive on the anchor itself, so `[attr.aria-pressed]` lands directly on that
+   * interactive element; on the default `<p-button>` branch, PrimeNG renders its own internal
+   * `<button>`, so the attribute is forwarded via the `pt` passthrough (`ptm('root')`) — a plain
+   * `[attr.aria-pressed]` there would only reach the `<p-button>` host, not the real button.
    */
   public readonly ariaPressed = input<boolean | undefined>(undefined);
-  /** `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. */
-  protected readonly ariaPressedPt = computed(() => ({ root: { 'aria-pressed': this.ariaPressed() } }));
 
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);
@@ -75,6 +73,9 @@ export class ButtonComponent {
   // Tooltip
   public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
+
+  /** `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. */
+  protected readonly ariaPressedPt = computed(() => ({ root: { 'aria-pressed': this.ariaPressed() } }));
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

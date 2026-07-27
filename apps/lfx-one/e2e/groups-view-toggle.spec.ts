@@ -137,6 +137,24 @@ test.describe('My Groups — list↔card view toggle', () => {
     await expect(page.getByTestId('committees-me-table')).toHaveCount(0);
   });
 
+  test('aria-pressed on the toggle buttons reflects the active view on the real native button', async ({ page }) => {
+    await gotoMyGroups(page);
+    await expect(page.getByTestId('groups-view-toggle')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // getByTestId resolves the <lfx-button> host — descend to the native <button> PrimeNG renders,
+    // since that's the element aria-pressed must land on for assistive tech to see it.
+    const listButton = page.getByTestId('groups-view-list-btn').locator('button');
+    const cardButton = page.getByTestId('groups-view-card-btn').locator('button');
+
+    await expect(listButton, 'list is the active view by default').toHaveAttribute('aria-pressed', 'true');
+    await expect(cardButton, 'card is not active by default').toHaveAttribute('aria-pressed', 'false');
+
+    await cardButton.click();
+
+    await expect(listButton, 'list should no longer be pressed after switching to card').toHaveAttribute('aria-pressed', 'false');
+    await expect(cardButton, 'card should be pressed after switching to it').toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('card grid shows role badge, member count, and relative last-updated text per card', async ({ page }) => {
     await gotoMyGroups(page);
     await page.getByTestId('groups-view-card-btn').click();

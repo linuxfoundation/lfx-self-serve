@@ -96,6 +96,11 @@ test.describe('My Groups view toggle — Structural Tests', () => {
     await expect(page.getByTestId('groups-view-card-btn')).toBeAttached();
   });
 
+  test('toggle buttons expose aria-pressed on the native button element', async ({ page }) => {
+    await expect(page.getByTestId('groups-view-list-btn').locator('button')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('groups-view-card-btn').locator('button')).toHaveAttribute('aria-pressed', 'false');
+  });
+
   test('switching to card view attaches the card-grid root and one card per committee', async ({ page }) => {
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId('groups-card-grid')).toBeAttached({ timeout: ELEMENT_TIMEOUT });
