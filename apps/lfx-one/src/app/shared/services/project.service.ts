@@ -3,11 +3,11 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
+import { WRITER_SUMMARY_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, retry, shareReplay, take, tap, throwError, timer } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, timeout } from 'rxjs';
 
-import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -29,7 +29,7 @@ export class ProjectService {
       // fallback. On failure, evict the key rather than caching `[]`: the retry only lowers how
       // often a stuck cache happens, it can't rule it out.
       const projects$ = this.http.get<Project[]>('/api/projects', { params }).pipe(
-        retry({ count: 1, delay: (error: unknown) => (isTransientHttpError(error) ? timer(TRANSIENT_RETRY_DELAY_MS) : throwError(() => error)) }),
+        retryTransientHttpError(),
         catchError((error) => {
           console.error('Failed to fetch projects:', error);
           this.projectsCache.delete(cacheKey);
@@ -45,11 +45,14 @@ export class ProjectService {
   /**
    * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
    * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
-   * set narrowed until the (much slower) deferred sweep eventually resolves it instead.
+   * set narrowed until the (much slower) deferred sweep eventually resolves it instead. Bounded by
+   * `WRITER_SUMMARY_TIMEOUT_MS`: `WriterGrantsService` only schedules its deferred sweep once this
+   * call settles, so an unbounded hang here would silently starve the sweep for the whole session.
    */
   public getWriterSummary(): Observable<WriterSummary> {
     return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
-      retry({ count: 1, delay: (error: unknown) => (isTransientHttpError(error) ? timer(TRANSIENT_RETRY_DELAY_MS) : throwError(() => error)) }),
+      timeout(WRITER_SUMMARY_TIMEOUT_MS),
+      retryTransientHttpError(),
       catchError((error) => {
         console.error('Failed to fetch writer summary:', error);
         return of({ hasWriterFoundation: false, hasWriterProject: false });
