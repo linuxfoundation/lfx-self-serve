@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { Component, computed, inject, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
@@ -11,14 +11,10 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type {
-  FoundationEventsAttendanceDistributionResponse,
-  FoundationEventsQuarterlyResponse,
-  HealthEventsMonthlyResponse,
-} from '@lfx-one/shared/interfaces';
+import type { FoundationEventsAttendanceDistributionResponse, FoundationEventsQuarterlyResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-events-drawer',
@@ -121,9 +117,6 @@ export class EventsDrawerComponent {
     timeRange: [{ value: 'last-12-months', disabled: true }],
   });
 
-  // === Inputs ===
-  public readonly data = input<HealthEventsMonthlyResponse>({ data: [], totalEvents: 0, totalMonths: 0 });
-
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -131,14 +124,12 @@ export class EventsDrawerComponent {
   protected readonly drawerLoading = signal(false);
 
   // === Computed Signals ===
-  protected readonly metricValue: Signal<string> = computed(() => this.data().totalEvents.toLocaleString());
-  protected readonly hasData: Signal<boolean> = computed(() => this.data().totalEvents > 0);
-
   private readonly drawerData = this.initDrawerData();
   protected readonly quarterlyData: Signal<FoundationEventsQuarterlyResponse> = computed(() => this.drawerData().quarterly);
   protected readonly attendanceData: Signal<FoundationEventsAttendanceDistributionResponse> = computed(() => this.drawerData().attendance);
-  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.length > 0);
+  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.some((v) => v > 0));
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
 
   protected readonly quarterlyChartData: Signal<ChartData<'bar'>> = this.initQuarterlyChartData();
   protected readonly attendanceChartData: Signal<ChartData<'bar'>> = this.initAttendanceChartData();
@@ -152,15 +143,17 @@ export class EventsDrawerComponent {
   private initDrawerData(): Signal<{ quarterly: FoundationEventsQuarterlyResponse; attendance: FoundationEventsAttendanceDistributionResponse }> {
     const defaultValue = { quarterly: DEFAULT_FOUNDATION_EVENTS_QUARTERLY, attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
@@ -189,12 +182,21 @@ export class EventsDrawerComponent {
         datasets: [
           {
             data: quarterlyData,
-            backgroundColor: lfxColors.blue[400],
+            backgroundColor: lfxColors.blue[500],
+            // Pin hover color to the bar's own fill so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: lfxColors.blue[500],
             borderRadius: 3,
             borderSkipped: 'start',
           },
         ],
       };
+    });
+  }
+
+  private initMetricValue(): Signal<string> {
+    return computed(() => {
+      const q = this.quarterlyData().quarterlyData;
+      return q.length ? q[q.length - 1].toLocaleString('en-US') : '0';
     });
   }
 
@@ -211,12 +213,15 @@ export class EventsDrawerComponent {
         Medium: lfxColors.emerald[400],
         Small: lfxColors.violet[500],
       };
+      const barColors = distribution.map((d) => bucketColors[d.bucket] ?? lfxColors.gray[400]);
       return {
         labels: distribution.map((d) => bucketLabels[d.bucket] ?? d.bucket),
         datasets: [
           {
             data: distribution.map((d) => d.eventCount),
-            backgroundColor: distribution.map((d) => bucketColors[d.bucket] ?? lfxColors.gray[400]),
+            backgroundColor: barColors,
+            // Pin hover color to each bar's own fill so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: barColors,
             borderRadius: 3,
             borderSkipped: 'start',
           },
