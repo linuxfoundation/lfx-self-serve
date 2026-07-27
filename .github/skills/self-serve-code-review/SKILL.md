@@ -128,8 +128,9 @@ Run these on the changed code, scaled to the size of the change:
   code "works": timeouts, retry/backoff values, page-size caps, cache TTLs,
   rate-limit tiers, feature-flag defaults, env-var keys, and upstream URLs or
   subjects. When the diff moves one, ask whether the change is stated and
-  intentional and what its blast radius is; an unexplained constant change is a
-  finding.
+  intentional and what its blast radius is. The finding is a blast radius the
+  change does not account for, not the absence of a sentence explaining it — a
+  correct new value needs no rationale to be correct.
 - **Protected files.** Changes to `server.ts`, the singleton services, build/format
   config, or `CLAUDE.md` carry repo-owner weight and warrant closer scrutiny —
   raise one when its risk or intent is unclear, not merely because a sensitive
