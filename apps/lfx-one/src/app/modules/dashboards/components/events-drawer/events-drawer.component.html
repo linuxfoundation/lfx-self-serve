@@ -62,7 +62,7 @@
         </div>
 
         <!-- Metric Value -->
-        @if (hasData()) {
+        @if (!drawerLoading() && hasQuarterlyData()) {
           <span class="text-xl font-semibold text-gray-900" data-testid="events-drawer-metric">{{ metricValue() }}</span>
         }
       </div>

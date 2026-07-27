@@ -1338,16 +1338,21 @@ export class ProjectService {
           MONTH_START,
           SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
         FROM monthly_counts
+      ),
+      spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
         NULL AS PROJECT_ID,
         'The Linux Foundation' AS PROJECT_NAME,
         'tlf' AS PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        s.MONTH_START,
+        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
+      FROM spine s
+      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
+      GROUP BY s.MONTH_START
+      ORDER BY s.MONTH_START ASC
     `
       : `
       WITH monthly_counts AS (
@@ -1369,16 +1374,26 @@ export class ProjectService {
           MONTH_START,
           SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
         FROM monthly_counts
+      ),
+      proj AS (
+        SELECT MAX(PROJECT_ID) AS PROJECT_ID, MAX(PROJECT_NAME) AS PROJECT_NAME, MAX(PROJECT_SLUG) AS PROJECT_SLUG
+        FROM monthly_counts
+      ),
+      spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        p.PROJECT_ID,
+        p.PROJECT_NAME,
+        p.PROJECT_SLUG,
+        s.MONTH_START,
+        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
+      FROM spine s
+      CROSS JOIN proj p
+      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
+      GROUP BY s.MONTH_START, p.PROJECT_ID, p.PROJECT_NAME, p.PROJECT_SLUG
+      ORDER BY s.MONTH_START ASC
     `;
 
     const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [...slugParams]);
@@ -1701,14 +1716,19 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_maintainers_monthly', 'Fetching monthly maintainers', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('month', -1, DATE_TRUNC('MONTH', CURRENT_DATE()))) AS METRIC_MONTH
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      )
       SELECT
-        METRIC_MONTH,
-        ACTIVE_MAINTAINERS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY
-      WHERE FOUNDATION_SLUG = ?
-        AND REPOSITORY_SCOPE = 'all_repos'
-        AND METRIC_MONTH >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY METRIC_MONTH ASC
+        s.METRIC_MONTH,
+        COALESCE(m.ACTIVE_MAINTAINERS, 0) AS ACTIVE_MAINTAINERS
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY m
+        ON m.METRIC_MONTH = s.METRIC_MONTH
+        AND m.FOUNDATION_SLUG = ?
+        AND m.REPOSITORY_SCOPE = 'all_repos'
+      ORDER BY s.METRIC_MONTH ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationMaintainersMonthlyRow>(query, [foundationSlug]);
@@ -1768,13 +1788,18 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_events_quarterly', 'Fetching quarterly events', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('quarter', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('quarter', -1, DATE_TRUNC('QUARTER', CURRENT_DATE()))) AS QUARTER_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 8))
+      )
       SELECT
-        QUARTER_START_DATE,
-        EVENT_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY
-      WHERE FOUNDATION_SLUG = ?
-        AND QUARTER_START_DATE >= DATEADD('quarter', -7, DATE_TRUNC('QUARTER', CURRENT_DATE()))
-      ORDER BY QUARTER_START_DATE ASC
+        s.QUARTER_START_DATE,
+        COALESCE(e.EVENT_COUNT, 0) AS EVENT_COUNT
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY e
+        ON e.QUARTER_START_DATE = s.QUARTER_START_DATE
+        AND e.FOUNDATION_SLUG = ?
+      ORDER BY s.QUARTER_START_DATE ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationEventsQuarterlyRow>(query, [foundationSlug]);
