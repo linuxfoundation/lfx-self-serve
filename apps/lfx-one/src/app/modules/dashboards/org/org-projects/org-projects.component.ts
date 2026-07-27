@@ -614,7 +614,12 @@ export class OrgProjectsComponent {
     this.addProjectsSearchError.set(false);
     try {
       const excludeSlugs = [...new Set(this.selectedWorkspace()?.projectSlugs ?? [])];
-      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, trimmed, excludeSlugs));
+      // Send the raw (un-trimmed) filter text so the server's substring match stays identical to the
+      // PrimeNG multi-select's client-side filter (which matches the raw box text). If the server
+      // trimmed but the client did not, a stray leading/trailing space would let the client hide rows
+      // the API already returned, leaving the panel misleadingly empty. `trimmed` is used only for the
+      // min-length gate above.
+      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, query, excludeSlugs));
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }

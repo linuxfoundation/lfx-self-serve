@@ -71,7 +71,11 @@ export class OrgLensProjectsService {
     }
 
     const excluded = [...new Set(excludeSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))];
-    const like = `%${trimmed}%`;
+    // Match on the raw query, not the trimmed one, so this predicate is identical to the PrimeNG
+    // multi-select's client-side substring filter (which matches the raw filter-box text). Trimming
+    // here while the client filters on the raw text would let the client hide rows this query returned
+    // for a stray leading/trailing space. `trimmed` still gates whether the filter applies at all.
+    const like = `%${query}%`;
     const searchFilter = trimmed.length ? 'AND (PROJECT_NAME ILIKE ? OR PROJECT_SLUG ILIKE ?)' : '';
     const excludeFilter = excluded.length ? `AND PROJECT_SLUG NOT IN (${excluded.map(() => '?').join(', ')})` : '';
     const sql = `
