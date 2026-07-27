@@ -50,11 +50,11 @@ export class ButtonComponent {
   public readonly ariaLabel = input<string | undefined>(undefined);
   /**
    * Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher).
-   * Applied by two different paths depending on which branch renders: on the `href()` anchor branch,
-   * `pButton` is a directive on the anchor itself, so `[attr.aria-pressed]` lands directly on that
-   * interactive element; on the default `<p-button>` branch, PrimeNG renders its own internal
-   * `<button>`, so the attribute is forwarded via the `pt` passthrough (`ptm('root')`) — a plain
-   * `[attr.aria-pressed]` there would only reach the `<p-button>` host, not the real button.
+   * Only meaningful on the default `<p-button>` branch (no `href`) — `aria-pressed` is valid only on
+   * `role="button"`, and the `href()` anchor branch renders as a link (implicit `role="link"`), where
+   * it would be invalid ARIA. Forwarded to the `<p-button>` branch's internal `<button>` via PrimeNG's
+   * `pt` passthrough (`ptm('root')`) — a plain `[attr.aria-pressed]` at the call site would only reach
+   * the `<p-button>` host, not the real button.
    */
   public readonly ariaPressed = input<boolean | undefined>(undefined);
 
