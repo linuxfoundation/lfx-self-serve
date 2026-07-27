@@ -21,7 +21,7 @@
         <p-skeleton width="75%" height="0.625rem" animation="wave" />
       </div>
       <!-- 3. Sparkline area -->
-      <div class="mt-1 w-full h-16">
+      <div class="mt-1 w-full" [ngClass]="chartHeightClass() || 'h-16'">
         <p-skeleton width="100%" height="100%" borderRadius="8px" animation="wave" />
       </div>
       <!-- 4. Big metric + delta pill -->
