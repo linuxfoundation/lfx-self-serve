@@ -441,24 +441,6 @@ export class NewsletterManageComponent {
     });
   }
 
-  /** The still-missing requirements that block a draft save, for user feedback. */
-  private missingDraftRequirements(): string[] {
-    const missing: string[] = [];
-    if (!this.audienceFilled()) missing.push('an audience');
-    if (!this.subjectFilled()) missing.push('a subject');
-    // Match canSaveDraft: an emptied block layout is saveable, so the warning
-    // must not claim content is missing when only another field is.
-    if (!this.bodyFilled()) missing.push('some newsletter content');
-    if (this.edEmail().length === 0) missing.push('a reply-to email');
-    return missing;
-  }
-
-  /** Join a list into readable prose: "a", "a and b", or "a, b, and c". */
-  private formatMissing(items: string[]): string {
-    if (items.length === 1) return items[0];
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-  }
-
   private goToList(tab?: 'draft' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,

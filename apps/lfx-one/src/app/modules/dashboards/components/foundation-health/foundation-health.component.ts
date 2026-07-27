@@ -56,6 +56,9 @@ const ZERO_BAR_STUB_PLUGIN = {
   },
 };
 
+// Registered globally (not per-chart) because the foundation-health cards are
+// the only charts opting in via `zeroStub: true`; the afterDatasetsDraw hook
+// no-ops for every other chart. Pure JS (no canvas access at import), so SSR-safe.
 let zeroBarStubRegistered = false;
 if (!zeroBarStubRegistered) {
   Chart.register(ZERO_BAR_STUB_PLUGIN);
@@ -560,6 +563,8 @@ export class FoundationHealthComponent {
             data: data.quarterlyData,
             // Opt this dataset into the zero-bar stub plugin so empty quarters
             // render as a 4px gray stub instead of invisible zero-height bars.
+            // chart.js exports ChartDataset as a type alias (not an interface),
+            // so module augmentation isn't possible — cast to attach zeroStub.
             zeroStub: true,
             backgroundColor: eventColor,
             // Pin hover color to the bar fill so the active bar doesn't darken (matches the events drawer).

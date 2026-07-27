@@ -117,9 +117,6 @@ export class EventsDrawerComponent {
     timeRange: [{ value: 'last-12-months', disabled: true }],
   });
 
-  // === Model Signals (two-way binding) ===
-  public readonly visible = model<boolean>(false);
-
   // === Inputs ===
   // Quarterly events data is already fetched eagerly by the parent for the card's
   // sparkline; reuse it so the quarterly chart renders instantly on click instead of
@@ -130,6 +127,9 @@ export class EventsDrawerComponent {
   // shows a spinner during a foundation switch while the drawer is open rather than
   // flashing the prior foundation's bars.
   public readonly dataLoading = input<boolean>(false);
+
+  // === Model Signals (two-way binding) ===
+  public readonly visible = model<boolean>(false);
 
   // === WritableSignals ===
   protected readonly drawerLoading = signal(false);

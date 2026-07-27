@@ -194,7 +194,6 @@ export class ActiveContributorsDrawerComponent {
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);
   protected readonly distributionData: Signal<FoundationContributorsDistributionResponse> = computed(() => this.drawerData().distribution);
-  protected readonly momDataSig: Signal<FoundationActiveContributorsMonthlyDistinctResponse> = computed(() => this.momData());
   protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
   protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
   protected readonly hasMomData: Signal<boolean> = computed(() => this.momData().monthlyData.length > 0);
@@ -295,7 +294,7 @@ export class ActiveContributorsDrawerComponent {
 
   private initMomDelta(): Signal<ActiveContributorsMoMDelta> {
     return computed(() => {
-      const mom = this.momDataSig();
+      const mom = this.momData();
       // delta + direction are validated server-side for adjacent, current months.
       return {
         latest: mom.latest,
@@ -309,7 +308,7 @@ export class ActiveContributorsDrawerComponent {
 
   private initMomChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
-      const { monthlyData, monthlyLabels } = this.momDataSig();
+      const { monthlyData, monthlyLabels } = this.momData();
       return {
         labels: monthlyLabels,
         datasets: [
