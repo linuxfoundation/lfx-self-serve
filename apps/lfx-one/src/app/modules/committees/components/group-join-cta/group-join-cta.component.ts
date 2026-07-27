@@ -16,9 +16,9 @@ import { Committee } from '@lfx-one/shared/interfaces';
 })
 export class GroupJoinCtaComponent {
   // Inputs
-  public committee = input.required<Committee>();
-  public isVisitor = input<boolean>(false);
-  public hasPendingInvite = input<boolean>(false);
+  public readonly committee = input.required<Committee>();
+  public readonly isVisitor = input<boolean>(false);
+  public readonly hasPendingInvite = input<boolean>(false);
 
   // Outputs
   public readonly joinRequested = output<void>();

@@ -8,7 +8,13 @@
       <i [class]="joinCtaIcon() + ' text-2xl text-blue-500'"></i>
       <h3 class="text-base font-semibold text-gray-900">{{ joinCtaTitle() }}</h3>
       <p class="text-sm text-gray-600 max-w-md">{{ joinCtaDescription() }}</p>
-      <lfx-button [label]="joinButtonLabel()" severity="info" size="small" [icon]="joinButtonIcon()" (onClick)="onJoinClick()"></lfx-button>
+      <lfx-button
+        [label]="joinButtonLabel()"
+        severity="info"
+        size="small"
+        [icon]="joinButtonIcon()"
+        (onClick)="onJoinClick()"
+        data-testid="group-join-cta-join-btn"></lfx-button>
     </div>
   </div>
 } @else if (showInviteOnlyNotice()) {

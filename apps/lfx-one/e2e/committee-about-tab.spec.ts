@@ -89,6 +89,7 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('committee-about-edit-description-btn')).toHaveCount(0);
     await expect(page.getByTestId('committee-about-join-cta')).toBeVisible();
     await expect(page.getByTestId('group-join-cta-visitor-cta')).toBeVisible();
+    await expect(page.getByTestId('group-join-cta-join-btn')).toBeVisible();
   });
 
   test('member: no edit affordances, no join CTA', async ({ page }) => {

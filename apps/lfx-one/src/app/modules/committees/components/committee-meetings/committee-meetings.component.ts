@@ -154,7 +154,7 @@ export class CommitteeMeetingsComponent {
       return;
     }
 
-    const feedUrl = `${environment.urls.home}/public/api/committees/${committee.uid}/calendar.ics`;
+    const feedUrl = `${environment.urls.home}/public/api/committees/${encodeURIComponent(committee.uid)}/calendar.ics`;
     const committeeName = committee.name ?? 'Committee';
 
     this.dialogService.open(IcalSubscribeDialogComponent, {

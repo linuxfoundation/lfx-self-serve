@@ -176,28 +176,6 @@ export class CommitteeOverviewComponent {
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
-  public isChairOrAbove: Signal<boolean> = computed(() => this.myRole() === 'Chair' || this.myRole() === 'Vice Chair');
-
-  public bannerType: Signal<'visitor' | 'member' | 'chair' | null> = computed(() => {
-    if (this.myRoleLoading()) {
-      return null;
-    }
-    if (this.myRole() === null) {
-      return 'visitor';
-    }
-    if (this.isChairOrAbove()) {
-      return 'chair';
-    }
-    return 'member';
-  });
-
-  public joinBannerText: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    const name = this.committee().name;
-    if (mode === 'open') return `Interested in ${name}? Click Join Group above to become a member.`;
-    if (mode === 'application') return `Interested in ${name}? Click Request to Join above to submit your application for admin review.`;
-    return `${name} is closed to new members. Contact a group admin for access.`;
-  });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>

@@ -25,7 +25,7 @@ import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, finalize, map, of, switchMap, take } from 'rxjs';
 
 import { DescriptionDialogComponent } from '../description-dialog/description-dialog.component';
 import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
@@ -35,9 +35,9 @@ import { MailingListEmailPipe } from '../committee-settings-tab/pipes/mailing-li
 /**
  * Group "About" tab — visitor-safe summary (description, channels, meeting cadence, parent
  * project/group, key information, join CTA). Channels/parent-group/sub-group data is passed down
- * from committee-view (which already fetches it for the always-mounted header) rather than
- * re-fetched here; only the meeting cadence is fetched independently, mirroring the Overview tab's
- * own independent meetings fetch.
+ * from committee-view (which already fetches it for the header) rather than re-fetched here; only
+ * the meeting cadence is fetched independently, mirroring the Overview tab's own independent
+ * meetings fetch.
  */
 @Component({
   selector: 'lfx-committee-about',
@@ -143,7 +143,7 @@ export class CommitteeAboutComponent {
     if (!committee?.uid) {
       return;
     }
-    const feedUrl = `${environment.urls.home}/public/api/committees/${committee.uid}/calendar.ics`;
+    const feedUrl = `${environment.urls.home}/public/api/committees/${encodeURIComponent(committee.uid)}/calendar.ics`;
     const committeeName = committee.name ?? 'Committee';
     this.dialogService.open(IcalSubscribeDialogComponent, {
       header: `Subscribe — ${committeeName}`,
@@ -196,9 +196,13 @@ export class CommitteeAboutComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c): c is Committee => !!c?.uid),
-        switchMap((c) => {
+        map((c) => c.uid),
+        // committeeUpdated (e.g. a description save) re-emits a new Committee object with the same
+        // uid — skip the redundant meetings round-trip when the id itself hasn't changed.
+        distinctUntilChanged(),
+        switchMap((uid) => {
           this.meetingsLoading.set(true);
-          return this.meetingService.getUpcomingMeetingsByCommittee(c.uid).pipe(
+          return this.meetingService.getUpcomingMeetingsByCommittee(uid).pipe(
             catchError((err) => {
               console.error('Failed to load committee meetings:', err);
               return of([]);
