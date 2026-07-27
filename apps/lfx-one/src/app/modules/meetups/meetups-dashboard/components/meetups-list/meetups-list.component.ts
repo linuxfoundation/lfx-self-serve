@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetupsService } from '@app/shared/services/meetups.service';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { DEFAULT_MEETUP_SORT_FIELD, DEFAULT_MEETUPS_PAGE_SIZE, EMPTY_MY_MEETUPS_RESPONSE } from '@lfx-one/shared/constants';
+import { DEFAULT_MEETUP_SORT_FIELD, DEFAULT_MEETUPS_PAGE_SIZE, EMPTY_MY_MEETUPS_RESPONSE, TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import {
   MeetupSortChangeEvent,
   MeetupSortField,
@@ -32,7 +32,6 @@ export class MeetupsListComponent {
   private readonly meetupsService = inject(MeetupsService);
   private readonly messageService = inject(MessageService);
   private readonly transientRetryCount = 2;
-  private readonly transientRetryDelayMs = 1000;
 
   public readonly activeTab = input<MeetupTabId>('upcoming');
   public readonly community = input<string | null>(null);
@@ -138,9 +137,10 @@ export class MeetupsListComponent {
           return this.meetupsService.getMyMeetups({ isPast, offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }).pipe(
             retry({
               count: this.transientRetryCount,
-              delay: (error: unknown) => (isTransientHttpError(error) ? timer(this.transientRetryDelayMs) : throwError(() => error)),
+              delay: (error: unknown) => (isTransientHttpError(error) ? timer(TRANSIENT_RETRY_DELAY_MS) : throwError(() => error)),
             }),
-            catchError(() => {
+            catchError((error) => {
+              console.error('Failed to load meetups:', error);
               if (this.activeTab() === tabId) {
                 this.showLoadError();
               }

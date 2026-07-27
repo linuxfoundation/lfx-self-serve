@@ -3,13 +3,11 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
 import { BehaviorSubject, catchError, map, Observable, of, retry, shareReplay, take, tap, throwError, timer } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-
-/** Matches meetups-list.component.ts's transientRetryDelayMs — same retry policy, same delay. */
-const TRANSIENT_RETRY_DELAY_MS = 1000;
 
 @Injectable({
   providedIn: 'root',
