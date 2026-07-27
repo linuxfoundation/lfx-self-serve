@@ -3,11 +3,19 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { FOUNDATION_ID_PATTERN, PD_DEFAULT_TIME_RANGE, PD_VALID_TIME_RANGES } from '@lfx-one/shared/constants';
-import type { OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
+import {
+  FOUNDATION_ID_PATTERN,
+  PD_DEFAULT_METRIC,
+  PD_DEFAULT_TIME_RANGE,
+  PD_MAX_SEARCH_LENGTH,
+  PD_VALID_METRICS,
+  PD_VALID_TIME_RANGES,
+} from '@lfx-one/shared/constants';
+import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensProjectDetailService } from '../services/org-lens-project-detail.service';
 
@@ -60,11 +68,19 @@ export class OrgLensProjectDetailController {
 
   public async getTechnicalBoard(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { orgUid, projectSlug, range } = this.context(req);
-    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_board_technical', { org_uid: orgUid, project_slug: projectSlug, range });
+    const { metric, page, pageSize, search } = this.boardParams(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_board_technical', {
+      org_uid: orgUid,
+      project_slug: projectSlug,
+      range,
+      metric,
+      page,
+      page_size: pageSize,
+    });
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_detail_board_technical');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_technical');
-      const block = await this.service.getTechnicalBoard(orgUid, projectSlug, range);
+      const block = await this.service.getTechnicalBoard(orgUid, projectSlug, range, metric, page, pageSize, search);
       this.sendBlock(req, res, 'get_org_lens_project_detail_board_technical', startTime, orgUid, projectSlug, block);
     } catch (error) {
       next(error);
@@ -73,11 +89,19 @@ export class OrgLensProjectDetailController {
 
   public async getEcosystemBoard(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { orgUid, projectSlug, range } = this.context(req);
-    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_board_ecosystem', { org_uid: orgUid, project_slug: projectSlug, range });
+    const { metric, page, pageSize, search } = this.boardParams(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_board_ecosystem', {
+      org_uid: orgUid,
+      project_slug: projectSlug,
+      range,
+      metric,
+      page,
+      page_size: pageSize,
+    });
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_detail_board_ecosystem');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_ecosystem');
-      const block = await this.service.getEcosystemBoard(orgUid, projectSlug, range);
+      const block = await this.service.getEcosystemBoard(orgUid, projectSlug, range, metric, page, pageSize, search);
       this.sendBlock(req, res, 'get_org_lens_project_detail_board_ecosystem', startTime, orgUid, projectSlug, block);
     } catch (error) {
       next(error);
@@ -161,8 +185,20 @@ export class OrgLensProjectDetailController {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
   }
 
+  /** Parse + validate the paginated leaderboard board query params (metric enum, clamped paging, trimmed search). */
+  private boardParams(req: Request): { metric: OrgLensLeaderboardMetric; page: number; pageSize: number; search: string } {
+    const rawMetric = getStringQueryParam(req, 'metric') ?? '';
+    const metric: OrgLensLeaderboardMetric = PD_VALID_METRICS.has(rawMetric) ? (rawMetric as OrgLensLeaderboardMetric) : PD_DEFAULT_METRIC;
+    const page = this.parseNonNegativeInt(req.query['page'], 0);
+    // pageSize is clamped again in the service; clamp here too so the log/signature stay honest.
+    const pageSize = Math.min(this.parseNonNegativeInt(req.query['pageSize'], 10) || 10, 100);
+    // Cap length before it reaches the Valkey key / leading-wildcard ILIKE term (getStringQueryParam only narrows type).
+    const search = (getStringQueryParam(req, 'search')?.trim() ?? '').slice(0, PD_MAX_SEARCH_LENGTH);
+    return { metric, page, pageSize, search };
+  }
+
   private context(req: Request): { orgUid: string | undefined; projectSlug: string | undefined; range: OrgLensLeaderboardTimeRange } {
-    const rawRange = typeof req.query['range'] === 'string' ? req.query['range'] : '';
+    const rawRange = getStringQueryParam(req, 'range') ?? '';
     return {
       orgUid: req.params['orgUid'],
       projectSlug: req.params['projectSlug'],
