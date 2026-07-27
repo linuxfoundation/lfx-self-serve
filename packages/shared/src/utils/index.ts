@@ -19,6 +19,7 @@ export * from './poll.utils';
 export * from './survey.utils';
 export * from './vote.utils';
 export * from './committee.utils';
+export * from './activity-feed.utils';
 export * from './number.utils';
 export * from './object.utils';
 export * from './platform.utils';

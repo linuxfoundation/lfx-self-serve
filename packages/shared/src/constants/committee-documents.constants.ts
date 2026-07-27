@@ -46,3 +46,15 @@ export const COMMITTEE_DOCUMENT_TYPE_LABELS: Record<CommitteeDocumentType, strin
   link: 'Link',
   folder: 'Folder',
 };
+
+/**
+ * Icon class for each CommitteeDocument.type — sibling of COMMITTEE_DOCUMENT_TYPE_LABELS. The
+ * Angular-side getDocumentTypeIconClass() (apps/lfx-one .../pipes/document-type-icon.pipe.ts)
+ * delegates here so the mapping has one source shared by both the Documents tab and any pure
+ * (non-Angular) consumer in packages/shared.
+ */
+export const COMMITTEE_DOCUMENT_TYPE_ICONS: Record<CommitteeDocumentType, string> = {
+  file: 'fa-light fa-file',
+  link: 'fa-light fa-link',
+  folder: 'fa-light fa-folder',
+};
