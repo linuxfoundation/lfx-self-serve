@@ -95,14 +95,17 @@ test.describe('Group About tab — Robust Structural Tests (LFXV2-1713)', () => 
       await expect(about.getByTestId('committee-about-key-info-card')).toBeAttached();
     });
 
-    test('channels card is nested inside the About root when the committee has channels configured', async ({ page }) => {
-      await expect(page.getByTestId('committee-about').getByTestId('committee-about-channels-card')).toBeAttached();
+    test('channels card is nested inside the About root and lists the configured chat/website rows', async ({ page }) => {
+      const channelsCard = page.getByTestId('committee-about').getByTestId('committee-about-channels-card');
+      await expect(channelsCard).toBeAttached();
+      await expect(channelsCard.getByTestId('committee-about-chat-channel-row')).toBeAttached();
+      await expect(channelsCard.getByTestId('committee-about-website-row')).toBeAttached();
     });
 
     test('cadence card contains the subscribe button and a summary node', async ({ page }) => {
       const cadenceCard = page.getByTestId('committee-about-cadence-card');
       await expect(cadenceCard.getByTestId('committee-about-subscribe-btn')).toBeAttached();
-      await expect(cadenceCard.getByTestId('committee-about-cadence-summary')).toBeAttached();
+      await expect(cadenceCard.getByTestId('committee-about-cadence-summary')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     });
   });
 
