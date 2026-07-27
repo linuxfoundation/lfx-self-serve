@@ -715,34 +715,6 @@ export class CommitteeController {
         return;
       }
 
-      // Determine org-required using the invite's own organization_required field — accessible
-      // to the invitee via the email-scoped query index regardless of committee-viewer status.
-      // This replaces the previous getCommitteeById + getCommitteeSettings fetch which failed
-      // the access check for invitees who are not yet committee viewers (LFXV2-2453).
-      const userEmail = getEffectiveEmail(req);
-      if (!userEmail) {
-        next(
-          ServiceValidationError.forField('email', 'User email not found in authentication context', {
-            operation: 'accept_committee_invite',
-            service: 'committee_controller',
-            path: req.path,
-          })
-        );
-        return;
-      }
-
-      const pendingInvite = await this.committeeService.getPendingInviteForUser(req, userEmail, id, inviteId);
-      if (!pendingInvite) {
-        next(
-          ServiceValidationError.forField('inviteId', 'No matching pending invite found for this user', {
-            operation: 'accept_committee_invite',
-            service: 'committee_controller',
-            path: req.path,
-          })
-        );
-        return;
-      }
-
       // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
       const acceptData: AcceptCommitteeInviteRequest = {};
 
@@ -753,18 +725,50 @@ export class CommitteeController {
       // Upstream accepts "organization id OR (organization name + domain)" — treat either as present.
       const hasOrg = !!(orgName || orgId);
 
-      // Only enforce org as required when organization_required is explicitly true. When it is
-      // null/undefined (invite pre-dates committee-service v1.1), skip the mandatory check and
-      // let the upstream accept endpoint be authoritative.
-      if (pendingInvite.organization_required === true && !hasOrg) {
-        next(
-          ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
-            operation: 'accept_committee_invite',
-            service: 'committee_controller',
-            path: req.path,
-          })
-        );
-        return;
+      // Skip the FGA-gated pending-invite lookup when the accept originates from the LFID invite
+      // flow — the invite UID was already known from the JWT, but the FGA invitee tuple may not
+      // have propagated yet. The committee-service is authoritative for invite existence and org
+      // requirements in all cases (LFXV2-2453).
+      if (!body.from_lfid_invite) {
+        // Determine org-required using the invite's own organization_required field — accessible
+        // to the invitee via the email-scoped query index regardless of committee-viewer status.
+        const userEmail = getEffectiveEmail(req);
+        if (!userEmail) {
+          next(
+            ServiceValidationError.forField('email', 'User email not found in authentication context', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const pendingInvite = await this.committeeService.getPendingInviteForUser(req, userEmail, id, inviteId);
+        if (!pendingInvite) {
+          next(
+            ServiceValidationError.forField('inviteId', 'No matching pending invite found for this user', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // Only enforce org as required when organization_required is explicitly true. When it is
+        // null/undefined (invite pre-dates committee-service v1.1), skip the mandatory check and
+        // let the upstream accept endpoint be authoritative.
+        if (pendingInvite.organization_required === true && !hasOrg) {
+          next(
+            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
       }
 
       // Always forward the organization when the user supplied one — the upstream committee-service
