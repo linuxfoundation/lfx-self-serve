@@ -398,7 +398,6 @@ export class ProjectService {
 
     logger.debug(req, 'get_writer_summary', 'Reduced direct-grant projects to writer summary', {
       direct_grant_count: projects.length,
-      ...summary,
     });
 
     return summary;
