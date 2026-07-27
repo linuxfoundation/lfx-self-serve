@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, retry, shareReplay, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of, retry, shareReplay, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -20,13 +20,16 @@ export class ProjectService {
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
     if (!this.projectsCache.has(cacheKey)) {
-      // One retry before the fail-closed fallback: shareReplay(1) pins whatever value lands here
-      // for the rest of the session (every caller shares this cache key), so a bare transient
-      // blip shouldn't get to permanently poison it to `[]`.
+      // shareReplay(1) pins whatever lands here for the rest of the session — every caller shares
+      // this cache key. One retry, transient errors only (matches meetups-list.component.ts's
+      // isTransientLoadError), so a session-expiry/permission 4xx fails fast instead of doubling
+      // the wait before the fallback. On failure, evict the key rather than caching `[]`: the
+      // retry only lowers how often a stuck cache happens, it can't rule it out.
       const projects$ = this.http.get<Project[]>('/api/projects', { params }).pipe(
-        retry({ count: 1, delay: 1000 }),
+        retry({ count: 1, delay: (error: unknown) => (this.isTransientLoadError(error) ? timer(1000) : throwError(() => error)) }),
         catchError((error) => {
           console.error('Failed to fetch projects:', error);
+          this.projectsCache.delete(cacheKey);
           return of([]);
         }),
         shareReplay(1)
@@ -182,5 +185,10 @@ export class ProjectService {
   public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
+  /** Mirrors meetups-list.component.ts's isTransientLoadError — retry only what a beat of time could fix. */
+  private isTransientLoadError(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
   }
 }
