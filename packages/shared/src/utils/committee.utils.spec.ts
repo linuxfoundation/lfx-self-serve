@@ -12,8 +12,9 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { Committee, CommitteeMember } from '../interfaces';
-import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, resolveCommitteeMemberPermission } from './committee.utils';
+import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, countVotingReps, resolveCommitteeMemberPermission } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
 function committee(overrides: Partial<Committee> = {}): Committee {
@@ -135,5 +136,22 @@ describe('canManageCommitteeMembers', () => {
 
   it('is false for a null committee', () => {
     expect(canManageCommitteeMembers(null)).toBe(false);
+  });
+});
+
+describe('countVotingReps', () => {
+  it('counts only members with voting.status VOTING_REP, excluding Alternate/Observer/no-voting-info', () => {
+    const members = [
+      member({ uid: 'm-1', voting: { status: CommitteeMemberVotingStatus.VOTING_REP } }),
+      member({ uid: 'm-2', voting: { status: CommitteeMemberVotingStatus.VOTING_REP } }),
+      member({ uid: 'm-3', voting: { status: CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP } }),
+      member({ uid: 'm-4', voting: { status: CommitteeMemberVotingStatus.OBSERVER } }),
+      member({ uid: 'm-5' }),
+    ];
+    expect(countVotingReps(members)).toBe(2);
+  });
+
+  it('is 0 for an empty member list', () => {
+    expect(countVotingReps([])).toBe(0);
   });
 });

@@ -554,15 +554,20 @@ export class CommitteeOverviewComponent {
     // cancels a request. distinctUntilChanged on (uid, roleLoading, visitor) skips re-emissions
     // where the committee object identity changed (e.g. a silent refresh) but nothing that
     // actually affects this fetch did, so an in-flight request isn't needlessly cancelled/restarted.
+    // Note: this only holds the documents list steady — pastMeetings/votes/surveys have no
+    // equivalent guard, so activityFeedLoading() can still flip true on a silent refresh via those.
     return toSignal(
       toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
         distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
         switchMap(({ committee, roleLoading, visitor }) => {
           if (roleLoading) {
-            // Role still resolving (e.g. mid silent-refresh) — hold the current documents/loading
-            // state rather than emitting [] and wiping an already-populated feed. The committee
-            // signal re-emits once the role settles, which re-enters this pipeline.
+            // Role still resolving (e.g. mid silent-refresh) — hold the current documents state
+            // rather than emitting [] and wiping an already-populated feed. Re-assert loading=true
+            // explicitly: if a fetch was in flight, switchMap unsubscribing it also runs its
+            // finalize, which would otherwise leave documentsLoading falsely cleared during this
+            // hold window. The committee/role signal re-emits once the role settles.
+            this.documentsLoading.set(true);
             return EMPTY;
           }
           if (visitor) {
