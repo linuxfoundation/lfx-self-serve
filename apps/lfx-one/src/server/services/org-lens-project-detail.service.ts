@@ -587,7 +587,7 @@ export class OrgLensProjectDetailService {
       SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
              LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, DIM_RANK AS RANK
       FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC) AS DIM_RANK
+        SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ACCOUNT_ID ASC) AS DIM_RANK
         FROM ${this.leaderboardTable()}
         WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
       )
@@ -635,7 +635,7 @@ export class OrgLensProjectDetailService {
       SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
       FROM ${this.activityLeaderboardsTable()}
       WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
-      ORDER BY RANK ASC
+      ORDER BY RANK ASC, ORG_ACCOUNT_ID ASC
       LIMIT ? OFFSET ?
     `;
     const countSql = `
