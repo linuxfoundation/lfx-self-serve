@@ -148,7 +148,10 @@ test.describe('Identity dialogs — already-claimed support link', () => {
     });
 
     test('hides the support link for an unrelated error', async ({ page }) => {
-      await mockSendCode(page, 400, UNRELATED_ERROR_MESSAGE);
+      // Same 409 status as the positive case — only the message differs. This isolates the
+      // message as the discriminator: a status-based implementation (show for any 409) would
+      // wrongly pass here, so keeping the status constant proves message-based gating.
+      await mockSendCode(page, 409, UNRELATED_ERROR_MESSAGE);
       await openEmailConnectStep(page);
       await page.getByTestId('add-account-send-code').locator('button').click();
 
@@ -179,7 +182,10 @@ test.describe('Identity dialogs — already-claimed support link', () => {
     });
 
     test('hides the support link for an unrelated error', async ({ page }) => {
-      await mockSendCode(page, 400, UNRELATED_ERROR_MESSAGE);
+      // Same 409 status as the positive case — only the message differs. This isolates the
+      // message as the discriminator: a status-based implementation (show for any 409) would
+      // wrongly pass here, so keeping the status constant proves message-based gating.
+      await mockSendCode(page, 409, UNRELATED_ERROR_MESSAGE);
       await openVerifyEmailDialog(page);
       await page.getByTestId('verify-send-code').locator('button').click();
 
