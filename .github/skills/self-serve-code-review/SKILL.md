@@ -14,8 +14,9 @@ description: >
 
 # Self Serve Code Review
 
-The `/copilot-code-reviewer` skill owns the reviewer's scope and signal
-discipline; this skill owns the line-level method. Read enough surrounding code
+Reviewer scope and the signal bar are owned by the `copilot-code-reviewer`
+skill (`.github/skills/copilot-code-reviewer/SKILL.md`); this skill assumes
+those and covers only the line-level judgment. Read enough surrounding code
 to judge each hunk in its real context — for a server change, the middleware →
 controller → service path it sits on; for an Angular change, the component, its
 template, and the signals and services it consumes.
