@@ -64,7 +64,7 @@ async function mockCommitteeApis(page: Page, opts: { committee: Record<string, u
   });
 }
 
-async function gotoAboutTab(page: Page, query = '?tab=about'): Promise<void> {
+async function gotoCommitteeTab(page: Page, query = '?tab=about'): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.goto(`/groups/${COMMITTEE_UID}${query}`, { waitUntil: 'domcontentloaded' });
@@ -76,7 +76,7 @@ test.setTimeout(120_000);
 test.describe('Group About tab (LFXV2-1713)', () => {
   test('visitor: About tab renders between Overview and Members, edit affordances hidden, join CTA shown', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'open' }) });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     const tabsStrip = page.getByTestId('committee-view-tabs');
     await expect(tabsStrip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -93,7 +93,7 @@ test.describe('Group About tab (LFXV2-1713)', () => {
 
   test('member: no edit affordances, no join CTA', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false }) });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('committee-about-edit-description-btn')).toHaveCount(0);
@@ -102,19 +102,20 @@ test.describe('Group About tab (LFXV2-1713)', () => {
 
   test('About tab: the header description/channels block is hidden (no duplicate content), and stays visible on Overview', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false }) });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('committee-view-description')).toHaveCount(0);
     await expect(page.getByTestId('committee-view-channels-card')).toHaveCount(0);
 
-    await gotoAboutTab(page, '?tab=overview');
+    await gotoCommitteeTab(page, '?tab=overview');
     await expect(page.getByTestId('committee-view-description')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('committee-view-channels-card')).toBeVisible();
   });
 
   test('description empty state: shows "No description yet." when the committee has no description', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false, description: null }) });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about-description-card')).toContainText('No description yet.', { timeout: DATA_LOAD_TIMEOUT });
   });
@@ -123,14 +124,14 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await mockCommitteeApis(page, {
       committee: baseCommittee({ my_role: 'Chair', writer: true, chat_channel: null, website: null, mailing_list: null }),
     });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about-channels-card')).toContainText('No channels configured', { timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('admin (canEdit): edit description button is visible and opens the edit dialog', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true }) });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     const editBtn = page.getByTestId('committee-about-edit-description-btn');
@@ -142,14 +143,14 @@ test.describe('Group About tab (LFXV2-1713)', () => {
 
   test('?tab=about deep-links directly into the About tab', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false }) });
-    await gotoAboutTab(page, '?tab=about');
+    await gotoCommitteeTab(page, '?tab=about');
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('an invalid ?tab= value falls back to the Overview tab', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false }) });
-    await gotoAboutTab(page, '?tab=not-a-real-tab');
+    await gotoCommitteeTab(page, '?tab=not-a-real-tab');
 
     await expect(page.getByTestId('committee-overview-stats')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('committee-about')).toHaveCount(0);
@@ -167,21 +168,21 @@ test.describe('Group About tab (LFXV2-1713)', () => {
         },
       ],
     });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about-cadence-summary')).toHaveText('Weekly on Tuesday · 60 min · Zoom', { timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('Meeting Cadence: falls back to a static message when there are no meetings', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false }), meetings: [] });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about-cadence-summary')).toHaveText('No recurring meetings scheduled', { timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('Subscribe to Calendar opens the iCal dialog, including as a visitor', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'invite_only' }) });
-    await gotoAboutTab(page);
+    await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about-subscribe-btn')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('committee-about-subscribe-btn').click();
