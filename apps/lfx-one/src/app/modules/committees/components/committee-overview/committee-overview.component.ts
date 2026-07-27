@@ -16,7 +16,7 @@ import {
   POLL_STATUS_LABELS,
   SURVEY_STATUS_LABELS,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActivityFeedItem,
   Committee,
@@ -30,7 +30,7 @@ import {
   Survey,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { countVotingReps, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -39,7 +39,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -127,8 +127,10 @@ export class CommitteeOverviewComponent {
   // Computed: voting representative count from members. Not sourced from
   // committee().total_voting_repos — upstream (lfx-v2-committee-service) defines that field as
   // "total repositories with voting permissions" (not people) and no production code path writes
-  // it, so it always reads 0. This derives the actual per-member voting-rep count instead.
-  public votingRepsCount: Signal<number> = computed(() => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length);
+  // it, so it always reads 0. This derives the actual per-member voting-rep count instead, via the
+  // shared countVotingReps() util (committee-members.component.ts's votingRepCount has the same
+  // logic today but isn't migrated to it here — out of scope for this ticket).
+  public votingRepsCount: Signal<number> = computed(() => countVotingReps(this.members()));
 
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
@@ -549,14 +551,19 @@ export class CommitteeOverviewComponent {
     // Derived from one combined computed (not combineLatest over three separate toObservable()
     // sources) so committee/myRoleLoading/isVisitor — all recomputed together in the same signal
     // flush — can't glitch through an inconsistent intermediate tick that fires then immediately
-    // cancels a request. While the role is still resolving, documentsLoading stays true (not
-    // cleared) so the feed keeps its skeleton instead of flashing empty for a soon-to-be member.
+    // cancels a request. distinctUntilChanged on (uid, roleLoading, visitor) skips re-emissions
+    // where the committee object identity changed (e.g. a silent refresh) but nothing that
+    // actually affects this fetch did, so an in-flight request isn't needlessly cancelled/restarted.
     return toSignal(
       toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
+        distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
         switchMap(({ committee, roleLoading, visitor }) => {
           if (roleLoading) {
-            return of<CommitteeDocument[]>([]);
+            // Role still resolving (e.g. mid silent-refresh) — hold the current documents/loading
+            // state rather than emitting [] and wiping an already-populated feed. The committee
+            // signal re-emits once the role settles, which re-enters this pipeline.
+            return EMPTY;
           }
           if (visitor) {
             this.documentsLoading.set(false);

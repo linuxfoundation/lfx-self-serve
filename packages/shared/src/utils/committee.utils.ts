@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { Committee, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
 import { CATEGORY_BEHAVIORAL_CLASS } from '../constants/committees.constants';
@@ -169,4 +170,9 @@ export function resolveCommitteeMemberPermission(committee: Committee | null | u
  */
 export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
   return !!committee?.writer;
+}
+
+/** Count of members with an active "Voting Rep" status (excludes Alternate Voting Rep). */
+export function countVotingReps(members: CommitteeMember[]): number {
+  return members.filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length;
 }
