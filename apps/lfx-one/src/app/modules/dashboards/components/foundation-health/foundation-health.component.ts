@@ -531,7 +531,7 @@ export class FoundationHealthComponent {
     return {
       ...metric,
       loading: this.eventsLoading(),
-      value: data.quarterlyData.length ? data.quarterlyData[data.quarterlyData.length - 1].toLocaleString() : '0',
+      value: data.quarterlyData.length ? data.quarterlyData[data.quarterlyData.length - 1].toLocaleString('en-US') : '0',
       subtitle: 'Total events last quarter',
       trend,
       changePercentage,

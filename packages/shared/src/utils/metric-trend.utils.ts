@@ -13,14 +13,17 @@ export function computePeriodChange(
   let changePercentage: string | undefined;
   if (prior !== null && prior !== 0) {
     const deltaPercent = ((latest - prior) / prior) * 100;
-    const rounded = Number(deltaPercent.toFixed(1));
+    let rounded = Number(deltaPercent.toFixed(1));
+    // Normalize JS -0 to 0 so the label never reads "-0.0%" while trend stays neutral.
+    if (Object.is(rounded, -0)) rounded = 0;
     if (rounded > 0) {
       trend = 'up';
     } else if (rounded < 0) {
       trend = 'down';
     }
     const sign = rounded > 0 ? '+' : '';
-    changePercentage = `${sign}${rounded.toFixed(1)}% ${periodLabel}`;
+    const arrow = rounded > 0 ? '▲ ' : rounded < 0 ? '▼ ' : '';
+    changePercentage = `${arrow}${sign}${rounded.toFixed(1)}% ${periodLabel}`;
   }
   return { trend, changePercentage };
 }

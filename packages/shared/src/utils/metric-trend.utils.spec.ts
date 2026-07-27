@@ -19,11 +19,11 @@ describe('computePeriodChange', () => {
   });
 
   it('classifies a positive delta as up with a signed percentage', () => {
-    expect(computePeriodChange([100, 150])).toEqual({ trend: 'up', changePercentage: '+50.0% vs last month' });
+    expect(computePeriodChange([100, 150])).toEqual({ trend: 'up', changePercentage: '▲ +50.0% vs last month' });
   });
 
   it('classifies a negative delta as down with a signed percentage', () => {
-    expect(computePeriodChange([150, 100])).toEqual({ trend: 'down', changePercentage: '-33.3% vs last month' });
+    expect(computePeriodChange([150, 100])).toEqual({ trend: 'down', changePercentage: '▼ -33.3% vs last month' });
   });
 
   it('classifies an exactly-zero delta as neutral with a 0.0% label', () => {
@@ -43,11 +43,11 @@ describe('computePeriodChange', () => {
   it('passes the custom period label through to the changePercentage string', () => {
     expect(computePeriodChange([100, 150], 'vs last quarter')).toEqual({
       trend: 'up',
-      changePercentage: '+50.0% vs last quarter',
+      changePercentage: '▲ +50.0% vs last quarter',
     });
   });
 
   it('uses only the last two elements of a longer series', () => {
-    expect(computePeriodChange([10, 20, 30, 40, 60])).toEqual({ trend: 'up', changePercentage: '+50.0% vs last month' });
+    expect(computePeriodChange([10, 20, 30, 40, 60])).toEqual({ trend: 'up', changePercentage: '▲ +50.0% vs last month' });
   });
 });

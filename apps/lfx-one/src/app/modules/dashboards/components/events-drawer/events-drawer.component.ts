@@ -194,7 +194,7 @@ export class EventsDrawerComponent {
   private initMetricValue(): Signal<string> {
     return computed(() => {
       const q = this.quarterlyData().quarterlyData;
-      return q.length ? q[q.length - 1].toLocaleString() : '0';
+      return q.length ? q[q.length - 1].toLocaleString('en-US') : '0';
     });
   }
 

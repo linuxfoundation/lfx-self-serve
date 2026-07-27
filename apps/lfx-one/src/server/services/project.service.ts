@@ -1338,16 +1338,22 @@ export class ProjectService {
           MONTH_START,
           SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
         FROM monthly_counts
+      ),
+      spine AS (
+        SELECT DATEADD('month', 1 - ROW_NUMBER() OVER (ORDER BY SEQ4()), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
         NULL AS PROJECT_ID,
         'The Linux Foundation' AS PROJECT_NAME,
         'tlf' AS PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        s.MONTH_START,
+        COALESCE(
+          (SELECT c.MEMBER_COUNT FROM cumulative c WHERE c.MONTH_START <= s.MONTH_START ORDER BY c.MONTH_START DESC LIMIT 1),
+          0
+        ) AS MEMBER_COUNT
+      FROM spine s
+      ORDER BY s.MONTH_START ASC
     `
       : `
       WITH monthly_counts AS (
@@ -1369,16 +1375,27 @@ export class ProjectService {
           MONTH_START,
           SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
         FROM monthly_counts
+      ),
+      proj AS (
+        SELECT MAX(PROJECT_ID) AS PROJECT_ID, MAX(PROJECT_NAME) AS PROJECT_NAME, MAX(PROJECT_SLUG) AS PROJECT_SLUG
+        FROM monthly_counts
+      ),
+      spine AS (
+        SELECT DATEADD('month', 1 - ROW_NUMBER() OVER (ORDER BY SEQ4()), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        p.PROJECT_ID,
+        p.PROJECT_NAME,
+        p.PROJECT_SLUG,
+        s.MONTH_START,
+        COALESCE(
+          (SELECT c.MEMBER_COUNT FROM cumulative c WHERE c.MONTH_START <= s.MONTH_START ORDER BY c.MONTH_START DESC LIMIT 1),
+          0
+        ) AS MEMBER_COUNT
+      FROM spine s
+      CROSS JOIN proj p
+      ORDER BY s.MONTH_START ASC
     `;
 
     const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [...slugParams]);
@@ -1773,7 +1790,8 @@ export class ProjectService {
         EVENT_COUNT
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY
       WHERE FOUNDATION_SLUG = ?
-        AND QUARTER_START_DATE >= DATEADD('quarter', -7, DATE_TRUNC('QUARTER', CURRENT_DATE()))
+        AND QUARTER_START_DATE >= DATEADD('quarter', -8, DATE_TRUNC('QUARTER', CURRENT_DATE()))
+        AND QUARTER_START_DATE < DATE_TRUNC('QUARTER', CURRENT_DATE())
       ORDER BY QUARTER_START_DATE ASC
     `;
 
