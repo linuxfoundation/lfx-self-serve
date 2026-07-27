@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, model, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
@@ -120,12 +120,23 @@ export class EventsDrawerComponent {
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
+  // === Inputs ===
+  // Quarterly events data is already fetched eagerly by the parent for the card's
+  // sparkline; reuse it so the quarterly chart renders instantly on click instead of
+  // re-fetching on visibility.
+  public readonly data = input<FoundationEventsQuarterlyResponse>(DEFAULT_FOUNDATION_EVENTS_QUARTERLY);
+
+  // True while the parent's eager quarterly fetch is in flight, so the quarterly chart
+  // shows a spinner during a foundation switch while the drawer is open rather than
+  // flashing the prior foundation's bars.
+  public readonly dataLoading = input<boolean>(false);
+
   // === WritableSignals ===
   protected readonly drawerLoading = signal(false);
 
   // === Computed Signals ===
   private readonly drawerData = this.initDrawerData();
-  protected readonly quarterlyData: Signal<FoundationEventsQuarterlyResponse> = computed(() => this.drawerData().quarterly);
+  protected readonly quarterlyData: Signal<FoundationEventsQuarterlyResponse> = computed(() => this.data());
   protected readonly attendanceData: Signal<FoundationEventsAttendanceDistributionResponse> = computed(() => this.drawerData().attendance);
   protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.some((v) => v > 0));
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
@@ -140,8 +151,8 @@ export class EventsDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<{ quarterly: FoundationEventsQuarterlyResponse; attendance: FoundationEventsAttendanceDistributionResponse }> {
-    const defaultValue = { quarterly: DEFAULT_FOUNDATION_EVENTS_QUARTERLY, attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
+  private initDrawerData(): Signal<{ attendance: FoundationEventsAttendanceDistributionResponse }> {
+    const defaultValue = { attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
     return toSignal(
       // React to visibility AND the selected foundation so the drawer reloads when
       // an ED/Admin Mode user switches foundations while the drawer stays open.
@@ -159,7 +170,6 @@ export class EventsDrawerComponent {
             return of(defaultValue);
           }
           return forkJoin({
-            quarterly: this.analyticsService.getFoundationEventsQuarterly(slug),
             attendance: this.analyticsService.getFoundationEventsAttendanceDistribution(slug),
           }).pipe(
             tap(() => this.drawerLoading.set(false)),

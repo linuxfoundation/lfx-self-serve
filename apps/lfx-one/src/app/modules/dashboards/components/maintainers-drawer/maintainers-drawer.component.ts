@@ -121,6 +121,15 @@ export class MaintainersDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationMaintainersResponse>({ currentMaintainers: 0, asOfDate: null, trendData: [], trendLabels: [] });
 
+  // Monthly maintainer counts are already fetched eagerly by the parent for the
+  // card's sparkline; reuse them so the trend chart renders instantly on click
+  // instead of re-fetching on visibility.
+  public readonly monthlyData = input<FoundationMaintainersMonthlyResponse>(DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY);
+
+  // True while the parent's eager monthly fetch is in flight, so the trend chart
+  // shows a spinner during a foundation switch while the drawer is open.
+  public readonly monthlyDataLoading = input<boolean>(false);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -139,7 +148,7 @@ export class MaintainersDrawerComponent {
   protected readonly hasData: Signal<boolean> = computed(() => this.data().asOfDate !== null);
 
   private readonly drawerData = this.initDrawerData();
-  protected readonly monthlyTrendData: Signal<FoundationMaintainersMonthlyResponse> = computed(() => this.drawerData().monthly);
+  protected readonly monthlyTrendData: Signal<FoundationMaintainersMonthlyResponse> = computed(() => this.monthlyData());
   protected readonly distributionData: Signal<FoundationMaintainersDistributionResponse> = computed(() => this.drawerData().distribution);
   protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
   protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
@@ -153,8 +162,8 @@ export class MaintainersDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<{ monthly: FoundationMaintainersMonthlyResponse; distribution: FoundationMaintainersDistributionResponse }> {
-    const defaultValue = { monthly: DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY, distribution: DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION };
+  private initDrawerData(): Signal<{ distribution: FoundationMaintainersDistributionResponse }> {
+    const defaultValue = { distribution: DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION };
     return toSignal(
       toObservable(this.visible).pipe(
         skip(1),
@@ -170,7 +179,6 @@ export class MaintainersDrawerComponent {
             return of(defaultValue);
           }
           return forkJoin({
-            monthly: this.analyticsService.getFoundationMaintainersMonthly(slug),
             distribution: this.analyticsService.getFoundationMaintainersDistribution(slug),
           }).pipe(
             tap(() => this.drawerLoading.set(false)),

@@ -117,11 +117,11 @@ export class FoundationHealthComponent {
   private readonly softwareValueLoading = signal(true);
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
-  private readonly maintainersMonthlyLoading = signal(true);
+  protected readonly maintainersMonthlyLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
-  private readonly activeContributorsMonthlyDistinctLoading = signal(true);
+  protected readonly activeContributorsMonthlyDistinctLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
-  private readonly eventsLoading = signal(true);
+  protected readonly eventsLoading = signal(true);
 
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(
     map((foundation) => foundation?.slug || ''),

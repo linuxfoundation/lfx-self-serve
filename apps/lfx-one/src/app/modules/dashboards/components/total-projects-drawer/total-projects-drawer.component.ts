@@ -83,6 +83,12 @@ export class TotalProjectsDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationTotalProjectsResponse>(DEFAULT_FOUNDATION_TOTAL_PROJECTS);
 
+  // True while the parent's foundation total-projects monthly request is in flight.
+  // The parent passes its own eager fetch's loading signal so the primary chart can
+  // render instantly on click (data already resolved) and only show a spinner during
+  // a foundation switch while the drawer is open.
+  public readonly dataLoading = input<boolean>(false);
+
   // === Enum exposure for template ===
   protected readonly LifecycleStage = LifecycleStage;
 

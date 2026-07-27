@@ -164,6 +164,15 @@ export class ActiveContributorsDrawerComponent {
   // === Inputs ===
   public readonly data = input<UniqueContributorsDailyResponse>({ data: [], avgContributors: 0, totalDays: 0 });
 
+  // Monthly-distinct contributor counts are already fetched eagerly by the parent for
+  // the card's sparkline; reuse them so the MoM chart renders instantly on click
+  // instead of re-fetching on visibility.
+  public readonly momData = input<FoundationActiveContributorsMonthlyDistinctResponse>(DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT);
+
+  // True while the parent's eager monthly-distinct fetch is in flight, so the MoM chart
+  // shows a spinner during a foundation switch while the drawer is open.
+  public readonly momDataLoading = input<boolean>(false);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -185,7 +194,7 @@ export class ActiveContributorsDrawerComponent {
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);
   protected readonly distributionData: Signal<FoundationContributorsDistributionResponse> = computed(() => this.drawerData().distribution);
-  protected readonly momData: Signal<FoundationActiveContributorsMonthlyDistinctResponse> = computed(() => this.drawerData().mom);
+  protected readonly momDataSig: Signal<FoundationActiveContributorsMonthlyDistinctResponse> = computed(() => this.momData());
   protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
   protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
   protected readonly hasMomData: Signal<boolean> = computed(() => this.momData().monthlyData.length > 0);
@@ -211,12 +220,10 @@ export class ActiveContributorsDrawerComponent {
   private initDrawerData(): Signal<{
     monthly: FoundationActiveContributorsMonthlyResponse;
     distribution: FoundationContributorsDistributionResponse;
-    mom: FoundationActiveContributorsMonthlyDistinctResponse;
   }> {
     const defaultValue = {
       monthly: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY,
       distribution: DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION,
-      mom: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
     };
     return toSignal(
       toObservable(this.visible).pipe(
@@ -235,7 +242,6 @@ export class ActiveContributorsDrawerComponent {
           return forkJoin({
             monthly: this.analyticsService.getFoundationActiveContributorsMonthly(slug),
             distribution: this.analyticsService.getFoundationContributorsDistribution(slug),
-            mom: this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(slug),
           }).pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
@@ -289,7 +295,7 @@ export class ActiveContributorsDrawerComponent {
 
   private initMomDelta(): Signal<ActiveContributorsMoMDelta> {
     return computed(() => {
-      const mom = this.momData();
+      const mom = this.momDataSig();
       // delta + direction are validated server-side for adjacent, current months.
       return {
         latest: mom.latest,
@@ -303,7 +309,7 @@ export class ActiveContributorsDrawerComponent {
 
   private initMomChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
-      const { monthlyData, monthlyLabels } = this.momData();
+      const { monthlyData, monthlyLabels } = this.momDataSig();
       return {
         labels: monthlyLabels,
         datasets: [
