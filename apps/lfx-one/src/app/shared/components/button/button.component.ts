@@ -48,7 +48,7 @@ export class ButtonComponent {
 
   // Accessibility
   public readonly ariaLabel = input<string | undefined>(undefined);
-  /** Bound to the inner native button's `aria-pressed` — use for toggle/pressed-state buttons. `[attr.aria-pressed]` at the call site would only land on this component's host element, not the real button. */
+  /** Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher). Forwarded to the inner native button via PrimeNG's `pt` passthrough (`ptm('root')`) — a plain `[attr.aria-pressed]` at the call site would only reach this component's host element, not the real button `p-button` renders internally. */
   public readonly ariaPressed = input<boolean | undefined>(undefined);
 
   // Navigation

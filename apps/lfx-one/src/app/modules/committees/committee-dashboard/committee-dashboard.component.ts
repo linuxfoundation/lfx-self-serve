@@ -602,8 +602,11 @@ export class CommitteeDashboardComponent {
   }
 
   /**
-   * Groups the already-filtered All Groups list by `project_uid` (guaranteed unique and stable —
-   * unlike the resolved display label, which two distinct sub-projects can share). Reads
+   * Groups the already-filtered All Groups list by resolved label, keyed by `project_uid` when a
+   * real project/foundation name resolved (so two different sub-projects that happen to share a
+   * display name don't merge), but keyed by the fallback label itself when no name resolved (so
+   * every committee with a degraded/missing project lookup still merges into one shared "Other
+   * Groups"/"Foundation" bucket instead of fragmenting into one bucket per committee). Reads
    * `filteredCommittees()` (not the raw `committees()`) so search/behavioral-class/voting-status
    * filters keep working identically whether grouping is active or not — a group with zero members
    * after filtering simply has no bucket, so it's never rendered with an empty header.
@@ -616,12 +619,11 @@ export class CommitteeDashboardComponent {
 
       const buckets = new Map<string, CommitteeFoundationGroup>();
       for (const committee of source) {
-        const key = committee.project_uid;
+        const resolvedName = committee.project_name || committee.foundation_name;
+        const label = resolvedName || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
+        const key = resolvedName ? committee.project_uid : label;
         let bucket = buckets.get(key);
         if (!bucket) {
-          const label = committee.is_foundation
-            ? committee.project_name || committee.foundation_name || FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL
-            : committee.project_name || committee.foundation_name || OTHER_GROUPS_LABEL;
           bucket = { key, label, testIdSlug: '', isFoundationLevel: !!committee.is_foundation, committees: [] };
           buckets.set(key, bucket);
         }
@@ -629,6 +631,7 @@ export class CommitteeDashboardComponent {
       }
 
       const groups = [...buckets.values()].sort((a, b) => {
+        if (a.label === b.label) return 0;
         if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
         if (a.label === OTHER_GROUPS_LABEL) return 1;
         if (b.label === OTHER_GROUPS_LABEL) return -1;

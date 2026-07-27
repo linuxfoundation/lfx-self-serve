@@ -3,7 +3,7 @@
 
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, output } from '@angular/core';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -23,7 +23,6 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
   imports: [
     DatePipe,
     DecimalPipe,
-    ReactiveFormsModule,
     RouterLink,
     CardComponent,
     ButtonComponent,

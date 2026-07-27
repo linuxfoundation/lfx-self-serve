@@ -16,7 +16,7 @@
  */
 
 import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { GROUPS_VIEW_MODE_STORAGE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -188,14 +188,17 @@ test.describe('My Groups — card view empty state (no groups at all)', () => {
     await stubPersona(page, ['contributor']);
     await stubPendingInvitations(page);
     await stubMyCommittees(page, []);
+    // The view toggle only renders once there's something to toggle (items or loading) — with a
+    // zero-groups stub it can unmount before a post-navigation click reaches it. Seed the persisted
+    // view mode directly instead of racing the toggle.
+    await page.addInitScript((key) => localStorage.setItem(key, 'card'), GROUPS_VIEW_MODE_STORAGE_KEY);
   });
 
   test('shows the "no groups yet" empty state in card view when the caller has no groups', async ({ page }) => {
     await gotoMyGroups(page);
-    await page.getByTestId('groups-view-card-btn').click();
 
     await expect(page.getByTestId('groups-card-grid-empty'), 'empty state should render for a zero-groups caller').toBeVisible({
-      timeout: ELEMENT_TIMEOUT,
+      timeout: PAGE_LOAD_TIMEOUT,
     });
   });
 });

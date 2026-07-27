@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input, output } from '@angular/core';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
@@ -14,7 +14,7 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
  */
 @Component({
   selector: 'lfx-committee-filter-bar',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent],
+  imports: [InputTextComponent, SelectComponent],
   templateUrl: './committee-filter-bar.component.html',
 })
 export class CommitteeFilterBarComponent {
