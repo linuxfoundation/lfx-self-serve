@@ -23,7 +23,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { Chart } from 'chart.js';
 import type { ChartData, ChartType } from 'chart.js';
-import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 // Draws a 4px gray stub on the baseline for zero-value bars on datasets that
@@ -92,7 +91,6 @@ import type {
     MetricCardComponent,
     DataCopilotComponent,
     ScrollShadowDirective,
-    TooltipModule,
     TotalValueDrawerComponent,
     TotalProjectsDrawerComponent,
     TotalMembersDrawerComponent,
@@ -186,7 +184,6 @@ export class FoundationHealthComponent {
 
   // Filtered cards - materializes card values while benefiting from individual signal memoization
   public readonly metricCards = this.initializeMetricCards();
-  public readonly healthScoreDistribution = this.initializeHealthScoreDistribution();
 
   public readonly activeDrawer = signal<DashboardDrawerType | null>(null);
   protected readonly DashboardDrawerType = DashboardDrawerType;
@@ -254,33 +251,6 @@ export class FoundationHealthComponent {
         return allCards.map((item) => item.card);
       }
       return allCards.filter((item) => item.category === filter).map((item) => item.card);
-    });
-  }
-
-  private initializeHealthScoreDistribution() {
-    return computed(() => {
-      const distribution = this.reconciledHealthScoresData();
-
-      // Mirrors the drawer's chart bars (leading Unscored + 5 scored) so the card's mini
-      // distribution and the drawer's full chart never disagree on which buckets exist.
-      const data = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => ({
-        category: PROJECT_HEALTH_CHART_CATEGORY_LABEL[category],
-        count: distribution[category] ?? 0,
-        color: PROJECT_HEALTH_CHART_CATEGORY_COLOR[category],
-      }));
-
-      const maxCount = Math.max(...data.map((d) => d.count));
-
-      return data.map((item) => {
-        // Zero-count buckets render as a 4px gray stub so the slot stays occupied and
-        // "zero" reads as zero (muted, minimal) rather than as missing/broken data.
-        const isZero = item.count === 0;
-        return {
-          ...item,
-          color: isZero ? lfxColors.gray[200] : item.color,
-          heightPx: isZero ? 4 : Math.round((item.count / maxCount) * 64),
-        };
-      });
     });
   }
 
@@ -627,12 +597,44 @@ export class FoundationHealthComponent {
     const healthyOrBetter = data.excellent + data.healthy;
     const value = scored > 0 ? `${Math.round((healthyOrBetter / scored) * 100)}%` : '';
 
+    // Same 6 bars the drawer draws (leading Unscored + 5 scored) so the card mini-chart
+    // and the drawer's full chart never disagree on which buckets exist.
+    const barColors = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_COLOR[category]);
+
     return {
       ...metric,
       loading: this.healthScoresLoading() || this.totalProjectsLoading(),
       value,
       subtitle: 'Projects rated by their health score',
-      healthScores: data,
+      chartData: {
+        labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
+        datasets: [
+          {
+            data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => data[category] ?? 0),
+            // Opt into the zero-bar stub plugin so empty buckets render as a 4px gray
+            // stub instead of invisible zero-height bars (matches the events card).
+            zeroStub: true,
+            backgroundColor: barColors,
+            // Pin hover color per-bar so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: barColors,
+            borderRadius: 4,
+            borderSkipped: 'start',
+          } as unknown as ChartData<ChartType>['datasets'][number],
+        ],
+      },
+      chartOptions: {
+        ...this.barChartOptions,
+        plugins: {
+          ...this.barChartOptions.plugins,
+          tooltip: {
+            ...(this.barChartOptions.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context) => context[0]?.label ?? '',
+              label: (context) => `${(context.parsed.y ?? 0).toLocaleString()} projects`,
+            },
+          },
+        },
+      },
     };
   }
 

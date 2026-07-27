@@ -132,40 +132,6 @@
               </lfx-metric-card>
             }
 
-            <!-- Project Health Scores - Custom content -->
-            @case ('health-scores') {
-              <lfx-metric-card
-                [title]="card.title"
-                [icon]="card.icon"
-                [testId]="card.testId"
-                [chartType]="card.chartType"
-                [value]="card.value"
-                [subtitle]="card.subtitle"
-                [loading]="card.loading"
-                [clickable]="!!card.drawerType"
-                (cardClick)="handleCardClick(card.drawerType!)">
-                <ng-template #customContent>
-                  @if (card.healthScores) {
-                    <div class="flex-1 flex flex-col justify-end p-0">
-                      <div class="flex items-end justify-between gap-1 h-16">
-                        @for (item of healthScoreDistribution(); track item.category) {
-                          <div
-                            class="flex-1 min-w-0 h-full flex flex-col items-center justify-end"
-                            [pTooltip]="item.category + ': ' + item.count"
-                            tooltipPosition="top">
-                            <div
-                              class="w-full rounded-t transition-all hover:opacity-80"
-                              [style.backgroundColor]="item.color"
-                              [style.height.px]="item.heightPx"></div>
-                          </div>
-                        }
-                      </div>
-                    </div>
-                  }
-                </ng-template>
-              </lfx-metric-card>
-            }
-
             <!-- Default fallback -->
             @default {
               <lfx-metric-card
