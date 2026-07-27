@@ -43,17 +43,19 @@ import { DashboardMeetingCardComponent } from '../../../dashboards/components/da
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
+import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
 
 @Component({
   selector: 'lfx-committee-overview',
   imports: [
-    CardComponent,
     ButtonComponent,
+    CardComponent,
     DashboardMeetingCardComponent,
+    GroupJoinCtaComponent,
     SkeletonModule,
+    SurveyResultsDrawerComponent,
     TagComponent,
     VoteResultsDrawerComponent,
-    SurveyResultsDrawerComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
@@ -189,59 +191,12 @@ export class CommitteeOverviewComponent {
     return 'member';
   });
 
-  public canJoin: Signal<boolean> = computed(() => {
-    const mode = this.committee().join_mode;
-    return this.isVisitor() && mode === 'open' && !this.hasPendingInvite();
-  });
-
-  public showInviteOnlyNotice: Signal<boolean> = computed(() => {
-    const mode = this.committee().join_mode;
-    return this.isVisitor() && (mode === 'invite_only' || !mode) && !this.hasPendingInvite();
-  });
-
-  public joinButtonLabel: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'open') return 'Join Group';
-    if (mode === 'application') return 'Request to Join';
-    return 'Contact Admin';
-  });
-
-  /** Icon for the CTA button — matches the header button icon */
-  public joinButtonIcon: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'open') return 'fa-light fa-user-plus';
-    if (mode === 'application') return 'fa-light fa-paper-plane';
-    return 'fa-light fa-envelope';
-  });
-
-  /** Large illustrative icon above the CTA card title */
-  public joinCtaIcon: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'application') return 'fa-light fa-paper-plane';
-    return 'fa-light fa-users';
-  });
-
   public joinBannerText: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
     const name = this.committee().name;
     if (mode === 'open') return `Interested in ${name}? Click Join Group above to become a member.`;
     if (mode === 'application') return `Interested in ${name}? Click Request to Join above to submit your application for admin review.`;
     return `${name} is closed to new members. Contact a group admin for access.`;
-  });
-
-  public joinCtaTitle: Signal<string> = computed(() => `Interested in ${this.committee().name}?`);
-
-  public joinCtaDescription: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'application') return 'Submit a request and a group admin will review your application.';
-    return 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
-  });
-
-  public inviteOnlyTitle: Signal<string> = computed(() => 'Membership is by invitation only');
-
-  public inviteOnlyDescription: Signal<string> = computed(() => {
-    const name = this.committee().name;
-    return `${name} is invite only. A group admin must send you an invitation before you can join.`;
   });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
@@ -304,10 +259,6 @@ export class CommitteeOverviewComponent {
   }
 
   // Action methods
-  public onJoinClick(): void {
-    this.joinRequested.emit();
-  }
-
   public navigateToTab(tab: string): void {
     this.tabNavigated.emit(tab);
   }

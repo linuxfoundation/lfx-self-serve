@@ -55,6 +55,7 @@ import { syncEntityProjectContext } from '@shared/utils/entity-project-context.u
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
 
+import { CommitteeAboutComponent } from '../components/committee-about/committee-about.component';
 import { CommitteeDocumentsComponent } from '../components/committee-documents/committee-documents.component';
 import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
@@ -88,6 +89,7 @@ const INVITE_TOAST_KEY = 'committee-view-invite';
     JoinModeLabelPipe,
     MailingListEmailPipe,
     SafeUrlPipe,
+    CommitteeAboutComponent,
     CommitteeDocumentsComponent,
     CommitteeMeetingsComponent,
     CommitteeMembersComponent,
@@ -233,6 +235,7 @@ export class CommitteeViewComponent {
 
   public readonly tabConfig: TabConfigEntry[] = [
     { key: 'overview', label: 'Overview', icon: 'fa-gauge', visible: () => true },
+    { key: 'about', label: 'About', icon: 'fa-circle-info', visible: () => true },
     {
       key: 'members',
       label: () => {

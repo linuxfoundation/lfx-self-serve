@@ -181,6 +181,74 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
 }
 
 /**
+ * Convert a raw API `MeetingRecurrence` (numeric `type`, 1-based `weekly_days` string) into the
+ * `CustomRecurrencePattern` shape `buildRecurrenceSummary` expects, for read-only display contexts
+ * (as opposed to the create/edit form, which builds `CustomRecurrencePattern` from form state directly).
+ */
+export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): CustomRecurrencePattern {
+  const type = recurrence.type ?? 2;
+  const monthlyDay = recurrence.monthly_day;
+  const monthlyWeek = recurrence.monthly_week;
+  const monthlyWeekDay = recurrence.monthly_week_day;
+  const endTimes = recurrence.end_times;
+  const repeatInterval = recurrence.repeat_interval ?? 1;
+
+  let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
+  if (type === 1) patternType = 'daily';
+  else if (type === 2) patternType = 'weekly';
+  else if (type === 3) patternType = 'monthly';
+
+  let monthlyType: 'dayOfMonth' | 'dayOfWeek' = 'dayOfMonth';
+  if (monthlyDay !== undefined) monthlyType = 'dayOfMonth';
+  else if (monthlyWeek !== undefined && monthlyWeekDay !== undefined) monthlyType = 'dayOfWeek';
+
+  let endType: 'never' | 'date' | 'occurrences' = 'never';
+  if (recurrence.end_date_time && !isRecurrenceNeverEndSentinel(recurrence.end_date_time)) endType = 'date';
+  else if ((endTimes ?? 0) > 0) endType = 'occurrences';
+
+  let weeklyDaysArray: number[] = [];
+  if (recurrence.weekly_days) {
+    weeklyDaysArray = recurrence.weekly_days.split(',').map((d) => parseInt(d.trim()) - 1);
+  }
+
+  return {
+    ...recurrence,
+    type,
+    monthly_day: monthlyDay,
+    monthly_week: monthlyWeek,
+    monthly_week_day: monthlyWeekDay,
+    end_times: endTimes,
+    repeat_interval: repeatInterval,
+    patternType,
+    monthlyType,
+    endType,
+    weeklyDaysArray,
+  };
+}
+
+/**
+ * Picks the meeting that represents a committee's "meeting cadence" from its upcoming meetings:
+ * the first meeting with a non-null `recurrence` (an actually-recurring series), falling back to
+ * the first upcoming meeting of any kind (e.g. a genuine one-off), and to `null` when empty.
+ */
+export function selectCommitteeCadenceMeeting(meetings: Meeting[]): Meeting | null {
+  if (meetings.length === 0) return null;
+  return meetings.find((m) => m.recurrence !== null) ?? meetings[0];
+}
+
+/**
+ * Builds the About-tab "Meeting Cadence" display string, e.g. "Bi-weekly on Thursdays · 60 min · Zoom".
+ */
+export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
+  const meeting = selectCommitteeCadenceMeeting(meetings);
+  if (!meeting) {
+    return 'No recurring meetings scheduled';
+  }
+  const recurrenceLabel = meeting.recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(meeting.recurrence)).fullSummary : 'One-time meeting';
+  return [recurrenceLabel, `${meeting.duration} min`, meeting.platform].filter(Boolean).join(' · ');
+}
+
+/**
  * Filter out cancelled occurrences from a list.
  *
  * Cancellation is signalled two different ways depending on the endpoint (LFXV2-2057):

@@ -530,6 +530,15 @@
             (tabNavigated)="handleTabNavigation($event)"
             (committeeUpdated)="refreshMembers()" />
         }
+        @case ('about') {
+          <lfx-committee-about
+            [committee]="committee()!"
+            [canEdit]="canEdit()"
+            [isVisitor]="isVisitor()"
+            [hasPendingInvite]="!!pendingInvitation()"
+            (joinRequested)="handleJoinRequest()"
+            (committeeUpdated)="refreshCommittee()" />
+        }
         @case ('members') {
           @if (isMembersTabVisible()) {
             <lfx-committee-members

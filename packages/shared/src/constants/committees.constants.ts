@@ -21,7 +21,7 @@ export {
 /**
  * Valid tab keys for committee view navigation
  */
-export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
+export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 /**
  * Configurable labels for committees displayed throughout the UI
