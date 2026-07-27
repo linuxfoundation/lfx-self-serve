@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
 import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
@@ -27,6 +27,11 @@ export class ProjectService {
       this.projectsCache.set(cacheKey, projects$);
     }
     return this.projectsCache.get(cacheKey)!;
+  }
+
+  /** Fail-closed on error, mirroring getProjects — a transport failure must not silently widen access. */
+  public getWriterSummary(): Observable<WriterSummary> {
+    return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(catchError(() => of({ hasWriterFoundation: false, hasWriterProject: false })));
   }
 
   public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {

@@ -8,10 +8,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService` — none of the methods
 // under test here touch them, so they're stubbed to trivial classes to keep construction cheap.
-const { proxyRequest, addAccessToResources, checkAccess } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, checkAccess, computeIsFoundation } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
+  computeIsFoundation: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -27,7 +28,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
 }));
 vi.mock('@lfx-one/shared/enums', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({
-  computeIsFoundation: vi.fn(),
+  computeIsFoundation,
   getDefaultMarketingImpactMonth: vi.fn(),
   nullifyEmptyStrings: vi.fn(),
   resolvePeriodRange: vi.fn(),
@@ -72,6 +73,7 @@ describe('ProjectService — create picker methods', () => {
     proxyRequest.mockReset();
     addAccessToResources.mockReset();
     checkAccess.mockReset();
+    computeIsFoundation.mockReset();
     service = new ProjectService();
   });
 
@@ -122,6 +124,59 @@ describe('ProjectService — create picker methods', () => {
       // Only the non-writer ('b') needed the extra round trip.
       expect(checkAccess).toHaveBeenCalledTimes(1);
       expect(checkAccess.mock.calls[0][1]).toEqual([{ resource: 'project', id: 'b', access: 'meeting_coordinator' }]);
+    });
+  });
+
+  describe('getWriterSummary', () => {
+    it('returns {true, false} when the only direct-writer project is a foundation', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'fdn', slug: 'fdn' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      computeIsFoundation.mockReturnValue(true);
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: true, hasWriterProject: false });
+    });
+
+    it('returns {false, true} when the only direct-writer project is non-foundation', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'proj', slug: 'proj' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      computeIsFoundation.mockReturnValue(false);
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: false, hasWriterProject: true });
+    });
+
+    it('returns {true, true} when direct-writer grants span both a foundation and a non-foundation project', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'fdn', slug: 'fdn' },
+          { uid: 'proj', slug: 'proj' },
+        ])
+      );
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      computeIsFoundation.mockImplementation((p: Project) => p.uid === 'fdn');
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: true, hasWriterProject: true });
+    });
+
+    it('returns {false, false} when the caller holds no direct writer grants', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: false, hasWriterProject: false });
+      expect(computeIsFoundation).not.toHaveBeenCalled();
+    });
+
+    it('propagates upstream errors rather than resolving a fail-closed summary', async () => {
+      proxyRequest.mockRejectedValueOnce(new Error('upstream unavailable'));
+
+      await expect(service.getWriterSummary(req)).rejects.toThrow('upstream unavailable');
     });
   });
 
