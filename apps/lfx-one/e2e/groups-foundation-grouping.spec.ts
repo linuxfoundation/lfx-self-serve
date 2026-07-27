@@ -224,7 +224,7 @@ test.describe('All Groups — foundation tree-grouping', () => {
     await gotoFoundationGroups(page);
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_BOARD}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    await page.getByTestId('committee-search-input').locator('input').fill('Alpha');
+    await page.getByTestId('committee-search-input').getByRole('textbox').fill('Alpha');
 
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_SUB_A}`), 'matching committee should remain').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('groups-foundation-group-test-foundation'), 'a group with no matches should be entirely absent').toHaveCount(0);

@@ -97,8 +97,8 @@ test.describe('My Groups view toggle — Structural Tests', () => {
   });
 
   test('toggle buttons expose aria-pressed on the native button element', async ({ page }) => {
-    await expect(page.getByTestId('groups-view-list-btn').getByRole('button')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByTestId('groups-view-card-btn').getByRole('button')).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('groups-view-list-btn').getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('groups-view-card-btn').getByRole('button', { name: 'Card view' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('switching to card view attaches the card-grid root and one card per committee', async ({ page }) => {

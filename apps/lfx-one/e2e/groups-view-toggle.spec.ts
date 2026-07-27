@@ -143,8 +143,8 @@ test.describe('My Groups — list↔card view toggle', () => {
 
     // getByTestId resolves the <lfx-button> host — descend to the native button PrimeNG renders via
     // its accessible role, since that's the element aria-pressed must land on for assistive tech.
-    const listButton = page.getByTestId('groups-view-list-btn').getByRole('button');
-    const cardButton = page.getByTestId('groups-view-card-btn').getByRole('button');
+    const listButton = page.getByTestId('groups-view-list-btn').getByRole('button', { name: 'List view' });
+    const cardButton = page.getByTestId('groups-view-card-btn').getByRole('button', { name: 'Card view' });
 
     await expect(listButton, 'list is the active view by default').toHaveAttribute('aria-pressed', 'true');
     await expect(cardButton, 'card is not active by default').toHaveAttribute('aria-pressed', 'false');
@@ -182,7 +182,7 @@ test.describe('My Groups — list↔card view toggle', () => {
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_B}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
-    await page.getByTestId('committee-search-input').locator('input').fill('Technical');
+    await page.getByTestId('committee-search-input').getByRole('textbox').fill('Technical');
 
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`), 'matching card should remain').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_B}`), 'non-matching card should be filtered out').toHaveCount(0);
@@ -193,7 +193,7 @@ test.describe('My Groups — list↔card view toggle', () => {
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
-    await page.getByTestId('committee-search-input').locator('input').fill('no-such-group-xyz');
+    await page.getByTestId('committee-search-input').getByRole('textbox').fill('no-such-group-xyz');
 
     await expect(page.getByTestId('groups-card-grid-no-results'), 'no-results empty state should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toHaveCount(0);
