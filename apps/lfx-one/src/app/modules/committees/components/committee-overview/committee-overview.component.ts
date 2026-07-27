@@ -43,6 +43,7 @@ import { catchError, combineLatest, filter, finalize, forkJoin, of, switchMap, t
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
+import { getDocumentTypeIconClass } from '../../pipes/document-type-icon.pipe';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 
 @Component({
@@ -616,8 +617,10 @@ export class CommitteeOverviewComponent {
 
       // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a
       // folder or link doesn't misrepresent itself as a file in the feed.
+      // No shared label map exists for CommitteeDocumentType (DOCUMENT_SOURCE_TAGS is keyed by the
+      // unrelated CommitteeDocumentSource enum), but the icon is reused from the Documents tab's
+      // own helper so the two surfaces can't drift.
       const documentTypeLabel: Record<CommitteeDocumentType, string> = { file: 'Document', link: 'Link', folder: 'Folder' };
-      const documentTypeIcon: Record<CommitteeDocumentType, string> = { file: 'fa-light fa-file', link: 'fa-light fa-link', folder: 'fa-light fa-folder' };
       const documentItems: ActivityFeedItem[] = [...this.documents()]
         .sort((a, b) => (b.updated_at ?? b.created_at ?? '').localeCompare(a.updated_at ?? a.created_at ?? ''))
         .slice(0, perSourceLimit)
@@ -626,7 +629,7 @@ export class CommitteeOverviewComponent {
           key: `document-${d.uid}`,
           label: `${documentTypeLabel[d.type]}: ${d.name}`,
           timestamp: d.updated_at ?? d.created_at ?? '',
-          icon: documentTypeIcon[d.type],
+          icon: getDocumentTypeIconClass(d.type),
           tab: 'documents',
         }));
 
