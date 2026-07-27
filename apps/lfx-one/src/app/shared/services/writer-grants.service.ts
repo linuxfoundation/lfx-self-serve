@@ -60,9 +60,10 @@ export class WriterGrantsService {
       this.projectService
         .getWriterSummary()
         .pipe(
-          // Schedule the deferred sweep only once the fast path has actually resolved (success or
-          // fail-closed) — scheduling it eagerly in this same tick would race the HTTP round trip,
-          // so runDeferredSweep's "skip if both already true" check would almost never see a `true`.
+          // Schedule the deferred sweep once the fast path settles — resolved, failed closed, or
+          // torn down early by destroy. Scheduling it eagerly in this same tick would instead race
+          // the HTTP round trip, so runDeferredSweep's "skip if both already true" check would
+          // almost never see a `true`. runWhenIdle itself no-ops the destroy case (see below).
           finalize(() => this.runWhenIdle(() => this.runDeferredSweep())),
           takeUntilDestroyed(this.destroyRef)
         )
@@ -89,6 +90,13 @@ export class WriterGrantsService {
   }
 
   private runWhenIdle(cb: () => void): void {
+    // Reachable from `finalize`, which also fires when destroy triggers takeUntilDestroyed's
+    // early unsubscribe — by then this.destroyRef is already destroyed (R3Injector.destroy() sets
+    // its destroyed flag before running teardown hooks), so onDestroy(...) below would throw.
+    if (this.destroyRef.destroyed) {
+      return;
+    }
+
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
       this.destroyRef.onDestroy(() => cancelIdleCallback(id));
