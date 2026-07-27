@@ -561,6 +561,32 @@ export class OrgLensProjectDetailService {
   }
 
   /**
+   * The leaderboard tables store one ranked cohort per viewing organization (keyed by
+   * MY_ORGANIZATION_ID) plus a generic MY_ORGANIZATION_ID IS NULL cohort. Ranking or counting across
+   * all cohorts would duplicate organizations and inflate ranks/totals, so every board page must scope
+   * to a single cohort: resolve the viewer's ORG_ORGANIZATION_ID and use their cohort when it has rows,
+   * else the NULL cohort (mirrors the pre-pagination loader). Returns the WHERE fragment plus its bind
+   * params to apply identically to the ranked/page source and the count query.
+   */
+  private async resolveViewerCohort(table: string, slug: string, timeRangeType: string, orgUid: string): Promise<{ clause: string; params: string[] }> {
+    const orgIdResult = await this.snowflakeService.execute<{ ORG_ORGANIZATION_ID: string }>(
+      `SELECT ORG_ORGANIZATION_ID FROM ${this.leaderboardTable()} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ? LIMIT 1`,
+      [slug, timeRangeType, orgUid]
+    );
+    const viewerOrgId = orgIdResult.rows[0]?.ORG_ORGANIZATION_ID;
+    if (viewerOrgId) {
+      const viewerCount = await this.snowflakeService.execute<{ N: number }>(
+        `SELECT COUNT(*) AS N FROM ${table} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND MY_ORGANIZATION_ID = ?`,
+        [slug, timeRangeType, viewerOrgId]
+      );
+      if (this.num(viewerCount.rows[0]?.N ?? 0) > 0) {
+        return { clause: 'MY_ORGANIZATION_ID = ?', params: [viewerOrgId] };
+      }
+    }
+    return { clause: 'MY_ORGANIZATION_ID IS NULL', params: [] };
+  }
+
+  /**
    * A page of the Calculated Influence board for one dimension. There is no stored per-dimension
    * rank (the warehouse combined RANK is the combined-influence order), so rank is derived here via
    * ROW_NUMBER() over the FULL set ordered by that dimension's score. Search filters rows AFTER
@@ -577,13 +603,14 @@ export class OrgLensProjectDetailService {
     search: string
   ): Promise<{ rows: OrgLensProjectLeaderboardRow[]; total: number }> {
     const scoreColumn = dimension === 'technical' ? 'SCORE_TECHNICAL' : 'SCORE_ECOSYSTEM';
+    const cohort = await this.resolveViewerCohort(this.leaderboardTable(), slug, timeRangeType, orgUid);
     const hasSearch = search.length > 0;
-    // Bound ILIKE parameter — never string-interpolated. Numeric LIMIT/OFFSET are clamped ints.
+    // Rank + count are scoped to the resolved viewer cohort; ORG_NAME ILIKE is a bound param. Snowflake
+    // rejects binds in LIMIT/OFFSET, so the already-clamped integers are interpolated as literals.
     const searchClause = hasSearch ? 'WHERE ORG_NAME ILIKE ?' : '';
-    const countParams = hasSearch ? [slug, timeRangeType, `%${search}%`] : [slug, timeRangeType];
-    // Snowflake rejects bind placeholders in LIMIT/OFFSET, so the already-clamped integers are
-    // interpolated as literals (matching every other paginated Snowflake query in this service).
-    const pageParams = countParams;
+    const baseParams = [slug, timeRangeType, ...cohort.params];
+    const pageParams = hasSearch ? [...baseParams, `%${search}%`] : baseParams;
+    const countParams = pageParams;
 
     const pageSql = `
       SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
@@ -591,7 +618,7 @@ export class OrgLensProjectDetailService {
       FROM (
         SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ACCOUNT_ID ASC) AS DIM_RANK
         FROM ${this.leaderboardTable()}
-        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}
       )
       ${searchClause}
       ORDER BY DIM_RANK
@@ -600,7 +627,7 @@ export class OrgLensProjectDetailService {
     const countSql = `
       SELECT COUNT(*) AS N
       FROM ${this.leaderboardTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?${hasSearch ? ' AND ORG_NAME ILIKE ?' : ''}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}${hasSearch ? ' AND ORG_NAME ILIKE ?' : ''}
     `;
 
     const [pageResult, countResult] = await Promise.all([
@@ -628,23 +655,25 @@ export class OrgLensProjectDetailService {
     search: string
   ): Promise<{ rows: OrgLensProjectLeaderboardRow[]; total: number }> {
     const boardType = dimension === 'technical' ? 'contributions' : 'collaborations';
+    const cohort = await this.resolveViewerCohort(this.activityLeaderboardsTable(), slug, timeRangeType, orgUid);
     const hasSearch = search.length > 0;
+    // Scope to the viewer cohort; ORG_NAME ILIKE is bound. Snowflake rejects binds in LIMIT/OFFSET,
+    // so the clamped integers are interpolated as literals (see fetchInfluenceBoardPage).
     const searchClause = hasSearch ? ' AND ORG_NAME ILIKE ?' : '';
-    const params = hasSearch ? [slug, timeRangeType, boardType, `%${search}%`] : [slug, timeRangeType, boardType];
-    // Snowflake rejects binds in LIMIT/OFFSET; interpolate the clamped integers (see fetchInfluenceBoardPage).
+    const params = hasSearch ? [slug, timeRangeType, boardType, ...cohort.params, `%${search}%`] : [slug, timeRangeType, boardType, ...cohort.params];
     const pageParams = params;
 
     const pageSql = `
       SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
       FROM ${this.activityLeaderboardsTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
       ORDER BY RANK ASC NULLS LAST, ORG_ACCOUNT_ID ASC
       LIMIT ${limit} OFFSET ${offset}
     `;
     const countSql = `
       SELECT COUNT(*) AS N
       FROM ${this.activityLeaderboardsTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
     `;
 
     const [pageResult, countResult] = await Promise.all([
