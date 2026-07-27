@@ -8,7 +8,7 @@
  * - data-testid resolution smoke test (breadcrumb, hero, tabs, card groups, trend)
  * - tab strip switching (click + keyboard) with ?tab= URL persistence
  * - leaderboard ranking, score/metric toggles with ?metric= persistence,
- *   Activity Count hiding the band tags, and Show more pagination
+ *   Activity Count hiding the band tags, and server-side pagination + search over the full ranked set
  * - not-found (404) panel for an unknown slug
  *
  * Prerequisites:
@@ -110,11 +110,10 @@ test.describe('Org Project Detail — leaderboards', () => {
     // page-independent (it keys off the first rendered rank, not a hardcoded 1), so a genuine ordering
     // regression surfaces on the rank assertion rather than being masked by a viewing-row precondition.
     //
-    // Precondition for the viewing-row checks below: the test project returns a single page of orgs
-    // (<= the paginator page size), so the viewing org always renders on this page. If a future fixture
-    // pushed the viewing org past page 1 the viewing-row checks would need to step the paginator first;
-    // the rank-order guard above would still hold unchanged. The custom message keeps that failure mode
-    // legible instead of opaque.
+    // The viewing org is no longer pinned and the list is the full multi-page ranked set, so the
+    // viewing row may land on a later page. The viewing-row rank check below is therefore conditional:
+    // asserted only when that row happens to render on this first page; otherwise the page-independent
+    // rank-order guard above is the coverage.
     for (const board of ['technical', 'ecosystem'] as const) {
       const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
       const count = await rows.count();
@@ -134,38 +133,66 @@ test.describe('Org Project Detail — leaderboards', () => {
         expect(ranks[i]).toBe(ranks[0] + i);
       }
 
-      expect(viewingIndex, `viewing-org row expected on the first ${board} page for this fixture (rank <= page size)`).toBeGreaterThanOrEqual(0);
-      expect(ranks[viewingIndex]).toBe(ranks[0] + viewingIndex);
+      if (viewingIndex >= 0) {
+        expect(ranks[viewingIndex]).toBe(ranks[0] + viewingIndex);
+      }
     }
   });
 
   test('activity count mode also renders boards in rank order with the viewing org not pinned', async ({ page }) => {
-    // buildBoard() drops the pin in the Activity Count branch too, sorting by warehouse rank ascending
-    // (rows with no warehouse rank sort last and render a positional `i + 1` fallback). So each row's
-    // rank is non-decreasing versus the previous row EXCEPT for a trailing fallback row, whose rank
-    // equals its 1-based position. A viewing row pinned out of order would satisfy neither condition.
-    // We assert only the rendered rank order — not the viewing row's presence — because unpinning
-    // explicitly allows the viewing org to fall onto a later paginator page. Both boards load
-    // independently, so await each table before reading its rows to avoid a race.
+    // The Activity Count branch drops the pin too, ordering by warehouse rank ascending with
+    // unknown-rank rows sorting last and rendering an explicit '—' (never a positional fallback). We
+    // assert only the rendered rank order — not the viewing row's presence — because unpinning
+    // explicitly allows the viewing org to fall onto a later paginator page.
+    //
+    // Switching metric triggers a fresh server reload that swaps in skeleton rows, so wait for the
+    // activity page-0 response of BOTH boards (not just the tables, which are already on screen from
+    // the influence load) and for the skeletons to clear — otherwise the assertion could run against
+    // empty skeleton text or stale influence ranks and still pass.
+    const activityLoaded = (['technical', 'ecosystem'] as const).map((board) =>
+      page.waitForResponse(
+        (response) => {
+          const url = new URL(response.url());
+          return (
+            url.pathname.endsWith(`/leaderboard/${board}`) &&
+            url.searchParams.get('metric') === 'activity' &&
+            url.searchParams.get('page') === '0' &&
+            response.status() === 200
+          );
+        },
+        { timeout: DATA_LOAD_TIMEOUT }
+      )
+    );
     await page.getByTestId('project-detail-metric-activity').click();
     await expect(page).toHaveURL(/metric=activity/);
-    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await Promise.all(activityLoaded);
 
     for (const board of ['technical', 'ecosystem'] as const) {
       const rows = page.locator(`[data-testid="project-detail-leaderboard-${board}"] tbody tr`);
+      // Wait past the skeleton reload: the first row's rank cell resolves to a real value (a number or '—').
+      await expect.poll(async () => (await rows.first().locator('td').first().innerText()).trim()).not.toBe('');
       const count = await rows.count();
       expect(count).toBeGreaterThan(0);
 
-      const ranks: number[] = [];
+      const rankTexts: string[] = [];
       for (let i = 0; i < count; i++) {
-        ranks.push(Number((await rows.nth(i).locator('td').first().innerText()).trim()));
+        rankTexts.push((await rows.nth(i).locator('td').first().innerText()).trim());
       }
 
-      for (let i = 1; i < ranks.length; i++) {
-        const nonDecreasing = ranks[i] >= ranks[i - 1];
-        const positionalFallback = ranks[i] === i + 1;
-        expect(nonDecreasing || positionalFallback).toBe(true);
+      // Numeric warehouse ranks come first and must be non-decreasing; unknown-rank rows render '—' and
+      // sort last, so once one appears every later row is '—' too. No positional fallback is allowed.
+      let seenUnknown = false;
+      let prev = -Infinity;
+      for (const text of rankTexts) {
+        if (text === '—') {
+          seenUnknown = true;
+          continue;
+        }
+        expect(seenUnknown, `numeric rank "${text}" must not appear after an unknown '—' row`).toBe(false);
+        const rank = Number(text);
+        expect(Number.isFinite(rank)).toBe(true);
+        expect(rank).toBeGreaterThanOrEqual(prev);
+        prev = rank;
       }
     }
   });
@@ -188,11 +215,99 @@ test.describe('Org Project Detail — leaderboards', () => {
     await expect(page.getByRole('columnheader', { name: 'Total contributions' }).first()).toBeVisible();
   });
 
-  test('search filters a board to matching organizations', async ({ page }) => {
-    await page.locator('[data-test="project-detail-search-technical"]').fill('Google');
-    const rows = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('Google');
+  // The leaderboard boards are now server-paginated + server-searched over the FULL ranked org set
+  // (no top-10 cap). These specs exercise that contract against live data: `k8s` has hundreds of
+  // ranked orgs, so the technical board spans many pages. Assertions key off the OUTGOING request
+  // params (page / pageSize / search) rather than exact row contents, so they stay stable as the
+  // underlying warehouse data shifts. Requires the uncapped platinum leaderboard model in the target
+  // environment (shipped by the lf-dbt side of LFXV2-2815).
+  const TECH_BOARD = '[data-testid="project-detail-leaderboard-technical"]';
+
+  /** Parse the "Showing X to Y of Z" paginator report into its total (Z). */
+  async function boardTotal(page: import('@playwright/test').Page): Promise<number> {
+    const report = await page.locator(`${TECH_BOARD} .p-paginator-current`).innerText();
+    return Number(report.replace(/,/g, '').match(/of\s+(\d+)/)?.[1] ?? '0');
+  }
+
+  test('paginates to organizations ranked beyond the first page (full list, not top-10)', async ({ page }) => {
+    const rows = page.locator(`${TECH_BOARD} tbody tr`);
+
+    // Full list — the paginator total exceeds ten (the legacy cap), and the first page starts at rank 1.
+    expect(await boardTotal(page), 'k8s technical board should expose more than ten ranked orgs').toBeGreaterThan(10);
+    expect(Number((await rows.first().locator('td').first().innerText()).trim())).toBe(1);
+
+    // Advancing the paginator asks the server for page index 1 (a real lazy load, not a client slice).
+    const pageRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('page') === '1';
+    });
+    await page.locator(`${TECH_BOARD} button[aria-label="Next Page"]`).first().click();
+    await pageRequest;
+
+    // The first row on page 2 continues the ascending rank sequence past position ten.
+    await expect.poll(async () => Number((await rows.first().locator('td').first().innerText()).trim())).toBeGreaterThan(10);
+  });
+
+  test('changing the page size re-pages the full ranked set from the server', async ({ page }) => {
+    const rows = page.locator(`${TECH_BOARD} tbody tr`);
+    await expect(rows).toHaveCount(10); // default page size
+    const totalBefore = await boardTotal(page);
+
+    // Selecting a larger page size issues a fresh server request at pageSize=25 (total is unchanged).
+    // Wait for the RESPONSE (not just the request) so we assert against rendered data, not the loading skeletons.
+    const sizeResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('pageSize') === '25' && response.ok();
+    });
+    await page.locator(`${TECH_BOARD} .p-paginator-rpp-dropdown`).click();
+    await page.getByRole('option', { name: '25', exact: true }).click();
+    await sizeResponse;
+
+    // Poll on a real rendered rank first (skeleton rows carry no rank text → NaN), so the row count
+    // below is asserted against the resolved page rather than the 25 loading skeletons.
+    await expect.poll(async () => Number((await rows.first().locator('td').first().innerText()).trim())).toBeGreaterThanOrEqual(1);
+    await expect.poll(async () => rows.count()).toBeGreaterThan(10);
+    expect(await boardTotal(page), 'total row count is unchanged by page size').toBe(totalBefore);
+  });
+
+  test('server-side search finds an organization ranked beyond the first page at its true rank', async ({ page }) => {
+    const rows = page.locator(`${TECH_BOARD} tbody tr`);
+    expect(await boardTotal(page), 'this spec needs a project whose full list spans multiple pages').toBeGreaterThan(10);
+
+    // Step to page 2 and capture an org that ranks past position ten.
+    const pageRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/leaderboard/technical') && url.searchParams.get('page') === '1';
+    });
+    await page.locator(`${TECH_BOARD} button[aria-label="Next Page"]`).first().click();
+    await pageRequest;
+    await expect.poll(async () => Number((await rows.first().locator('td').first().innerText()).trim())).toBeGreaterThan(10);
+
+    const targetRank = Number((await rows.first().locator('td').first().innerText()).trim());
+    const targetName = (await rows.first().locator('td').nth(1).locator('span.text-gray-900').innerText()).trim();
+
+    // Searching for that org (paginator resets to page 0 on a new query) must still find it — proving
+    // the search spans the whole ranked set, not just the current page — and its true rank is preserved.
+    // Wait for the OK page-0 search RESPONSE (not just the outgoing request): the board swaps in
+    // skeleton rows while the debounced reload is in flight, so a request-only wait can assert before
+    // the result is applied.
+    const searchResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname.endsWith('/leaderboard/technical') &&
+        (url.searchParams.get('search') ?? '').length > 0 &&
+        url.searchParams.get('page') === '0' &&
+        response.status() === 200
+      );
+    });
+    await page.locator('[data-test="project-detail-search-technical"]').fill(targetName);
+    await searchResponse;
+
+    // The row carrying the target name only renders once the skeletons clear and the real result is
+    // applied, so this locator implicitly waits past the loading state before we assert the rank.
+    const match = page.locator(`${TECH_BOARD} tbody tr`, { hasText: targetName }).first();
+    await expect(match).toBeVisible();
+    await expect.poll(async () => (await match.locator('td').first().innerText()).trim()).toBe(String(targetRank));
   });
 });
 

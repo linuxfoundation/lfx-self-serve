@@ -128,13 +128,14 @@ export class OrgProjectsComponent {
   protected readonly workspaceForm = new FormGroup({
     name: new FormControl<string>('', { nonNullable: true }),
   });
-  /** Selected project slugs and search query for the "Add project(s)" dialog. */
+  /** Selected project slugs for the "Add project(s)" dialog. */
   protected readonly addProjectsForm = new FormGroup({
     projects: new FormControl<string[]>([], { nonNullable: true }),
-    search: new FormControl<string>('', { nonNullable: true }),
   });
   protected readonly addableProjectOptions = signal<AddableProjectOption[]>([]);
   private readonly selectedAddableProjectOptions = signal<AddableProjectOption[]>([]);
+  /** Current text in the "Add project(s)" multi-select filter box; drives the debounced server-side search. */
+  private readonly addProjectsSearchQuery = signal<string>('');
 
   // Writable Signals
   private readonly workspaceLoading = signal(false);
@@ -243,10 +244,6 @@ export class OrgProjectsComponent {
       this.syncSelectedAddableProjectOptions();
     });
 
-    this.addProjectsForm.controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe((query) => {
-      this.searchAddableProjects(query);
-    });
-
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
       this.workspaceDialogOpen.set(false);
       this.addProjectsDialogOpen.set(false);
@@ -311,7 +308,16 @@ export class OrgProjectsComponent {
     if (!this.canAddProjects()) {
       return;
     }
-    this.addProjectsForm.setValue({ projects: [], search: '' }, { emitEvent: false });
+    // Cancel any debounced search still pending from a previous session so it can't land
+    // after — and overwrite — this fresh empty search when the dialog is quickly reopened.
+    if (this.addableProjectsSearchDebounceTimer) {
+      clearTimeout(this.addableProjectsSearchDebounceTimer);
+      this.addableProjectsSearchDebounceTimer = null;
+    }
+    // Emit the reset (no emitEvent:false) so the derived form-value signal — and the
+    // selected count / confirm button / empty state that read it — clear immediately.
+    this.addProjectsForm.setValue({ projects: [] });
+    this.addProjectsSearchQuery.set('');
     this.addableProjectOptions.set([]);
     this.selectedAddableProjectOptions.set([]);
     this.addProjectsSearchError.set(false);
@@ -331,7 +337,7 @@ export class OrgProjectsComponent {
   }
 
   protected retryAddableProjectsSearch(): void {
-    void this.runAddableProjectsSearch(this.addProjectsForm.controls.search.value);
+    void this.runAddableProjectsSearch(this.addProjectsSearchQuery());
   }
 
   protected async confirmAddProjects(): Promise<void> {
@@ -561,6 +567,12 @@ export class OrgProjectsComponent {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
     return `Health: ${HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)]}. ${metrics}.`;
   }
+  /** The "Add project(s)" multi-select filter box drives the debounced server-side project search. */
+  protected onAddProjectsFilter(query: string): void {
+    this.addProjectsSearchQuery.set(query);
+    this.searchAddableProjects(query);
+  }
+
   protected searchAddableProjects(query: string): void {
     if (this.addableProjectsSearchDebounceTimer) {
       clearTimeout(this.addableProjectsSearchDebounceTimer);
@@ -602,7 +614,12 @@ export class OrgProjectsComponent {
     this.addProjectsSearchError.set(false);
     try {
       const excludeSlugs = [...new Set(this.selectedWorkspace()?.projectSlugs ?? [])];
-      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, trimmed, excludeSlugs));
+      // Send the raw (un-trimmed) filter text so the server's substring match stays identical to the
+      // PrimeNG multi-select's client-side filter (which matches the raw box text). If the server
+      // trimmed but the client did not, a stray leading/trailing space would let the client hide rows
+      // the API already returned, leaving the panel misleadingly empty. `trimmed` is used only for the
+      // min-length gate above.
+      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, query, excludeSlugs));
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }
@@ -820,7 +837,7 @@ export class OrgProjectsComponent {
   }
 
   private initAddProjectsSearchEmptyTitle(): string {
-    const query = this.addProjectsForm.controls.search.value.trim();
+    const query = this.addProjectsSearchQuery().trim();
     if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
       return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
     }
