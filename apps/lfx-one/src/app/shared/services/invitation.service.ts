@@ -69,7 +69,11 @@ export class InvitationService {
   }
 
   /** Accepts an invitation. Upstream is invitee-authenticated; returns 204. */
-  public acceptInvitation(committeeUid: string, inviteUid: string, options?: { organization?: CommitteeOrganizationReference; fromLfidInvite?: boolean }): Observable<void> {
+  public acceptInvitation(
+    committeeUid: string,
+    inviteUid: string,
+    options?: { organization?: CommitteeOrganizationReference; fromLfidInvite?: boolean }
+  ): Observable<void> {
     const body: AcceptCommitteeInviteRequest = options?.organization ? { organization: options.organization } : {};
     if (options?.fromLfidInvite) {
       body.from_lfid_invite = true;

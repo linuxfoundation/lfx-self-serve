@@ -57,7 +57,10 @@ export class InvitationAcceptFlowService {
         if (!result?.organization) {
           return EMPTY;
         }
-        return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, { organization: result.organization, fromLfidInvite: context.fromLfidInvite });
+        return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, {
+          organization: result.organization,
+          fromLfidInvite: context.fromLfidInvite,
+        });
       })
     );
   }
