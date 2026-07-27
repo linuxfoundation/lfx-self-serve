@@ -95,12 +95,14 @@ Three sources, each authoritative for its own domain:
 
 1. **Understand the intent.** From the PR title, body, commits, and the diff:
    what is this change trying to accomplish, and why? Work that out first, then
-   test the claim against the code. A diff that does more than its
-   description (an extra endpoint, a widened route, a loosened auth class, a
-   dependency added in passing) deserves a finding even when each piece is
-   individually fine, because unreviewed intent is how scope creeps. If the
-   stated intent and the diff disagree, or you cannot work out what the change
-   is for, that is a finding.
+   read the code against it. Undeclared new surface — an extra endpoint, a
+   widened route, a loosened auth class, a dependency added in passing — is a
+   finding on its own terms, because unreviewed surface is how scope creeps. A
+   mere omission is not: descriptions are routinely shorter than their diffs,
+   and one that does not spell out an implementation detail is not a defect.
+   Reserve the finding for a description that materially contradicts the code,
+   for scope unrelated to the stated change, or for a change whose purpose you
+   cannot work out at all.
 2. **Place the change.** In this application's architecture and in the platform:
    - Does it belong here, or does it push domain logic into the BFF that should
      live in a microservice? LFX One orchestrates and presents; it does not own
