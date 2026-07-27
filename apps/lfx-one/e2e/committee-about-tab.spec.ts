@@ -100,6 +100,18 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('committee-about-join-cta')).toHaveCount(0);
   });
 
+  test('About tab: the header description/channels block is hidden (no duplicate content), and stays visible on Overview', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false }) });
+    await gotoAboutTab(page);
+
+    await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('committee-view-description')).toHaveCount(0);
+    await expect(page.getByTestId('committee-view-channels-card')).toHaveCount(0);
+
+    await gotoAboutTab(page, '?tab=overview');
+    await expect(page.getByTestId('committee-view-description')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
   test('description empty state: shows "No description yet." when the committee has no description', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false, description: null }) });
     await gotoAboutTab(page);

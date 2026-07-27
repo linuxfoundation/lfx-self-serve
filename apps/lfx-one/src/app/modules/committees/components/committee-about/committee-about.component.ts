@@ -71,21 +71,21 @@ export class CommitteeAboutComponent {
   private readonly lensService = inject(LensService);
 
   // Inputs
-  public committee = input.required<Committee>();
-  public canEdit = input<boolean>(false);
-  public isVisitor = input<boolean>(false);
-  public hasPendingInvite = input<boolean>(false);
+  public readonly committee = input.required<Committee>();
+  public readonly canEdit = input<boolean>(false);
+  public readonly isVisitor = input<boolean>(false);
+  public readonly hasPendingInvite = input<boolean>(false);
   // Passed down from committee-view, which already computes/fetches these for the header —
   // avoids a second, redundant round-trip for data the page has already loaded.
-  public associatedMailingLists = input<GroupsIOMailingList[]>([]);
-  public chatPlatformLabel = input<string>('');
-  public chatPlatformIcon = input<string>('');
-  public repoPlatformLabel = input<string>('');
-  public repoPlatformIcon = input<string>('');
-  public subGroups = input<Committee[]>([]);
-  public subGroupsLoading = input<boolean>(true);
-  public parentGroup = input<Committee | null>(null);
-  public hasChannels = input<boolean>(false);
+  public readonly associatedMailingLists = input<GroupsIOMailingList[]>([]);
+  public readonly chatPlatformLabel = input<string>('');
+  public readonly chatPlatformIcon = input<string>('');
+  public readonly repoPlatformLabel = input<string>('');
+  public readonly repoPlatformIcon = input<string>('');
+  public readonly subGroups = input<Committee[]>([]);
+  public readonly subGroupsLoading = input<boolean>(false);
+  public readonly parentGroup = input<Committee | null>(null);
+  public readonly hasChannels = input<boolean>(false);
 
   // Outputs
   public readonly joinRequested = output<void>();
@@ -199,7 +199,10 @@ export class CommitteeAboutComponent {
         switchMap((c) => {
           this.meetingsLoading.set(true);
           return this.meetingService.getUpcomingMeetingsByCommittee(c.uid).pipe(
-            catchError(() => of([])),
+            catchError((err) => {
+              console.error('Failed to load committee meetings:', err);
+              return of([]);
+            }),
             finalize(() => this.meetingsLoading.set(false))
           );
         })

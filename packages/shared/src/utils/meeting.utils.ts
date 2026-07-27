@@ -229,7 +229,7 @@ export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): Custo
 
 /**
  * Picks the meeting that represents a committee's "meeting cadence" from its upcoming meetings:
- * the first meeting with a non-null `recurrence` (an actually-recurring series), falling back to
+ * the first meeting with a truthy `recurrence` (an actually-recurring series), falling back to
  * the first upcoming meeting of any kind (e.g. a genuine one-off), and to `null` when empty.
  */
 export function selectCommitteeCadenceMeeting(meetings: Meeting[]): Meeting | null {

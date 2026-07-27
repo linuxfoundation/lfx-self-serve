@@ -435,7 +435,7 @@
                       @if (committee()?.chat_channel; as chatChannel) {
                         <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-chat-channel-row">
                           <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                            <i [class]="chatPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
+                            <i [class]="chatPlatformIcon() + ' text-gray-600 text-xs'" aria-hidden="true"></i>
                           </div>
                           <div class="flex-1 min-w-0">
                             <div class="text-[11px] font-medium text-gray-500">{{ chatPlatformLabel() }}</div>
@@ -457,7 +457,7 @@
                       @if (committee()?.website; as website) {
                         <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-website-row">
                           <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                            <i [class]="repoPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
+                            <i [class]="repoPlatformIcon() + ' text-gray-600 text-xs'" aria-hidden="true"></i>
                           </div>
                           <div class="flex-1 min-w-0">
                             <div class="text-[11px] font-medium text-gray-500">{{ repoPlatformLabel() }}</div>

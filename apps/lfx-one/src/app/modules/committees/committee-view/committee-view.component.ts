@@ -321,17 +321,6 @@ export class CommitteeViewComponent {
     }
   }
 
-  public openDescriptionView(): void {
-    this.dialogService.open(DescriptionDialogComponent, {
-      header: 'Description',
-      width: '560px',
-      modal: true,
-      closable: true,
-      draggable: false,
-      data: { mode: 'view', description: this.committee()?.description || '' },
-    });
-  }
-
   public openEditDescription(): void {
     const ref = this.dialogService.open(DescriptionDialogComponent, {
       header: 'Edit Description',
