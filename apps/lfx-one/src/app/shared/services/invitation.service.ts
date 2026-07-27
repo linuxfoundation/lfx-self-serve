@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { PendingInvitation, AcceptCommitteeInviteRequest, CommitteeOrganizationReference } from '@lfx-one/shared/interfaces';
+import { PendingInvitation, AcceptCommitteeInviteRequest, AcceptInvitationOptions } from '@lfx-one/shared/interfaces';
 import { catchError, finalize, Observable, of, shareReplay, tap } from 'rxjs';
 
 /**
@@ -69,13 +69,9 @@ export class InvitationService {
   }
 
   /** Accepts an invitation. Upstream is invitee-authenticated; returns 204. */
-  public acceptInvitation(
-    committeeUid: string,
-    inviteUid: string,
-    options?: { organization?: CommitteeOrganizationReference; fromLfidInvite?: boolean }
-  ): Observable<void> {
+  public acceptInvitation(committeeUid: string, inviteUid: string, options?: AcceptInvitationOptions): Observable<void> {
     const body: AcceptCommitteeInviteRequest = options?.organization ? { organization: options.organization } : {};
-    if (options?.fromLfidInvite) {
+    if (options?.fromLfidInvite === true) {
       body.from_lfid_invite = true;
     }
     return this.http.post<void>(`/api/committees/${encodeURIComponent(committeeUid)}/invites/${encodeURIComponent(inviteUid)}/accept`, body);

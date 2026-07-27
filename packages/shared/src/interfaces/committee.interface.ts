@@ -227,6 +227,14 @@ export interface AcceptInviteOrganizationDialogResult {
   organization: CommitteeOrganizationReference;
 }
 
+/** Options passed to InvitationService.acceptInvitation on the client side. */
+export interface AcceptInvitationOptions {
+  /** Organization the invitee confirms on acceptance. */
+  organization?: CommitteeOrganizationReference;
+  /** True when the accept originates from the LFID invite flow — see {@link AcceptCommitteeInviteRequest.from_lfid_invite}. */
+  fromLfidInvite?: boolean;
+}
+
 /** Context needed to accept a committee invitation from any surface. */
 export interface InvitationAcceptContext {
   committeeUid: string;
