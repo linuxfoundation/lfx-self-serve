@@ -3,7 +3,7 @@
 
 import { afterNextRender, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_MIN_DELAY_MS, IDLE_SWEEP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
@@ -22,11 +22,14 @@ import { finalize, map } from 'rxjs';
  *    under-reports *inherited* access (e.g. a foundation-level writer's implicit access to a
  *    non-foundation child they hold no direct tuple on).
  *  - **Deferred sweep** — the existing unscoped `ProjectService.getProjects()` (the same call
- *    that used to run here directly and block bootstrap for 11-19s), scheduled via
- *    `requestIdleCallback` *after the fast path settles* (not in the same tick as it — the skip
- *    check below needs the fast path's actual result to have a chance of firing), so it starts
- *    well after first paint and doesn't count toward RUM's `@view.loading_time`. Resolves
- *    inherited access. Server-side cost is unchanged — this only moves it off the
+ *    that used to run here directly and block bootstrap for 11-19s), scheduled *after the fast
+ *    path settles* (not in the same tick as it — the skip check below needs the fast path's
+ *    actual result to have a chance of firing), then floored by `IDLE_SWEEP_MIN_DELAY_MS` before
+ *    `requestIdleCallback` is even attempted — that API has no minimum-delay guarantee of its own
+ *    and can fire on the very next idle frame, which can land inside Datadog RUM's post-request
+ *    activity-settle window and pull the sweep's XHR back into `@view.loading_time` (see that
+ *    constant's docstring). Resolves inherited access. Server-side cost is unchanged — this only
+ *    moves it off the
  *    bootstrap-blocking path, it doesn't make the call itself cheaper. Runs every bootstrap
  *    (deliberately uncached: identity-scoped state here would need to invalidate on
  *    impersonation start/stop, both of which reload in-tab — see
@@ -98,8 +101,14 @@ export class WriterGrantsService {
     }
 
     if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
-      this.destroyRef.onDestroy(() => cancelIdleCallback(id));
+      // requestIdleCallback has no minimum-delay guarantee of its own — floor it first so RUM's
+      // post-request activity-settle window has a chance to close before we even try scheduling
+      // (see IDLE_SWEEP_MIN_DELAY_MS's docstring). The idle-callback ceiling still applies on top.
+      const floorId = setTimeout(() => {
+        const idleId = requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
+        this.destroyRef.onDestroy(() => cancelIdleCallback(idleId));
+      }, IDLE_SWEEP_MIN_DELAY_MS);
+      this.destroyRef.onDestroy(() => clearTimeout(floorId));
     } else {
       const id = setTimeout(cb, IDLE_SWEEP_FALLBACK_DELAY_MS);
       this.destroyRef.onDestroy(() => clearTimeout(id));

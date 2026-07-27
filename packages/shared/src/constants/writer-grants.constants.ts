@@ -2,10 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 /**
+ * Floor (ms) `WriterGrantsService` waits before even attempting `requestIdleCallback` for its
+ * deferred full sweep (LFXV2-2857). `requestIdleCallback` has no minimum-delay guarantee of its
+ * own — it can fire on the very next idle frame, which can be essentially immediately after the
+ * fast path's XHR completes (processing a response typically leaves the main thread idle right
+ * away). Datadog RUM's view-activity tracking only considers a view "done loading" after a settle
+ * window with no new requests, and restarts that window when another request starts — so an
+ * unfloored `requestIdleCallback` can fire inside that window and pull the deferred sweep's XHR
+ * back into `@view.loading_time`, reproducing the exact regression this ticket fixes. This floor
+ * exists to give that window a chance to close first; `IDLE_SWEEP_TIMEOUT_MS` below is a ceiling
+ * on top of it, not a substitute for it.
+ */
+export const IDLE_SWEEP_MIN_DELAY_MS = 2000;
+
+/**
  * `requestIdleCallback`'s `timeout` for `WriterGrantsService`'s deferred full sweep
- * (LFXV2-2857) — a ceiling, not a schedule. On a genuinely idle page the sweep fires via normal
- * idle detection well before this is reached; it only bounds the worst case (a chronically
- * busy/backgrounded tab that never goes idle).
+ * (LFXV2-2857) — a ceiling, not a schedule, applied *after* {@link IDLE_SWEEP_MIN_DELAY_MS} has
+ * already elapsed. On a genuinely idle page the sweep fires via normal idle detection well before
+ * this is reached; it only bounds the worst case (a chronically busy/backgrounded tab that never
+ * goes idle).
  *
  * Deliberately generous rather than short: on a busy foreground page, "busy main thread" tends
  * to correlate with "the view is still loading" (Datadog RUM's `@view.loading_time` window is
