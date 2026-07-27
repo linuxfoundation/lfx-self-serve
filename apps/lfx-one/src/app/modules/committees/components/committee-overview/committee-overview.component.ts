@@ -13,9 +13,22 @@ import {
   PENDING_ACTION_FADE_OUT_MS,
   PENDING_ACTION_LABEL,
   PENDING_ACTION_SEVERITY,
+  POLL_STATUS_LABELS,
+  SURVEY_STATUS_LABELS,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
+import {
+  ActivityFeedItem,
+  Committee,
+  CommitteeDocument,
+  CommitteeMember,
+  CommitteePendingActionRow,
+  Meeting,
+  PastMeeting,
+  PendingActionItem,
+  Survey,
+  Vote,
+} from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -76,6 +89,7 @@ export class CommitteeOverviewComponent {
   public meetingsLoading = signal(true);
   public votesLoading = signal(true);
   public surveysLoading = signal(true);
+  public documentsLoading = signal(true);
 
   // Loading states for meeting sections
   public upcomingMeetingsLoading = signal(true);
@@ -114,11 +128,23 @@ export class CommitteeOverviewComponent {
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
+  // Documents aren't otherwise loaded on Overview — fetched here solely to seed the activity feed.
+  // CommitteeService.getCommitteeDocuments has no shared cache, so the Documents tab still issues
+  // its own request; accepted as a cheap duplicate GET rather than lifting the fetch up to committee-view.
+  public documents: Signal<CommitteeDocument[]> = this.initDocuments();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
 
   public openSurveysCount: Signal<number> = computed(() => this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN).length);
+
+  // Activity feed stop-gap: merges the latest items across past meetings, votes, surveys, and
+  // documents into one time-ordered list. Replaced by the real activity stream in LFXV2-1707.
+  public activityFeedLoading: Signal<boolean> = computed(
+    () => this.pastMeetingsLoading() || this.votesLoading() || this.surveysLoading() || this.documentsLoading()
+  );
+
+  public activityItems: Signal<ActivityFeedItem[]> = this.initActivityItems();
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
@@ -507,5 +533,89 @@ export class CommitteeOverviewComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initDocuments(): Signal<CommitteeDocument[]> {
+    return toSignal(
+      toObservable(this.committee).pipe(
+        // Documents only seed the activity feed, which the template never renders for a visitor
+        // (behind !isVisitor()) — skip the fetch rather than issue a GET nothing will display.
+        filter((c) => !!c?.uid && !this.isVisitor()),
+        switchMap((c) => {
+          this.documentsLoading.set(true);
+          // No catchError here: CommitteeService.getCommitteeDocuments already falls back to
+          // of([]) on failure, so a component-level handler would never fire.
+          return this.committeeService.getCommitteeDocuments(c.uid).pipe(finalize(() => this.documentsLoading.set(false)));
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  private initActivityItems(): Signal<ActivityFeedItem[]> {
+    return computed(() => {
+      // Per-source cap before merging, so one noisy source can't crowd out the rest.
+      const perSourceLimit = 5;
+
+      // Upcoming meetings are intentionally excluded — they're future-dated, already covered by the
+      // "Next Meeting" card, and would otherwise dominate a feed labelled "Recent Activity".
+      const pastMeetingItems: ActivityFeedItem[] = [...this.pastMeetings()]
+        .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
+        .slice(0, perSourceLimit)
+        .map((m) => ({
+          type: 'past_meeting',
+          key: `past_meeting-${m.meeting_and_occurrence_id ?? m.id}`,
+          label: `Meeting held: ${m.title}`,
+          timestamp: m.start_time ?? '',
+          icon: 'fa-light fa-clock-rotate-left',
+          tab: 'meetings:past',
+        }));
+
+      // Upstream Vote schema (lfx-v2-voting-service openapi3.yaml) marks `status` required with a
+      // fixed lowercase enum (disabled/active/ended) — no case normalization needed here.
+      const voteItems: ActivityFeedItem[] = [...this.votes()]
+        .sort((a, b) => (b.last_modified_time ?? b.creation_time ?? '').localeCompare(a.last_modified_time ?? a.creation_time ?? ''))
+        .slice(0, perSourceLimit)
+        .map((v) => ({
+          type: 'vote' as const,
+          key: `vote-${v.uid}`,
+          label: `Vote ${POLL_STATUS_LABELS[v.status]}: ${v.name}`,
+          timestamp: v.last_modified_time ?? v.creation_time ?? '',
+          icon: 'fa-light fa-check-to-slot',
+          tab: 'votes',
+        }));
+
+      const surveyItems: ActivityFeedItem[] = [...this.surveys()]
+        .sort((a, b) => (b.last_modified_at ?? b.created_at ?? '').localeCompare(a.last_modified_at ?? a.created_at ?? ''))
+        .slice(0, perSourceLimit)
+        .map((s) => {
+          const displayStatus = getSurveyDisplayStatus(s);
+          return {
+            type: 'survey' as const,
+            key: `survey-${s.uid}`,
+            label: `Survey ${SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus}: ${s.survey_title}`,
+            timestamp: s.last_modified_at ?? s.created_at ?? '',
+            icon: 'fa-light fa-chart-simple',
+            tab: 'surveys',
+          };
+        });
+
+      const documentItems: ActivityFeedItem[] = [...this.documents()]
+        .sort((a, b) => (b.updated_at ?? b.created_at ?? '').localeCompare(a.updated_at ?? a.created_at ?? ''))
+        .slice(0, perSourceLimit)
+        .map((d) => ({
+          type: 'document',
+          key: `document-${d.uid}`,
+          label: `Document: ${d.name}`,
+          timestamp: d.updated_at ?? d.created_at ?? '',
+          icon: 'fa-light fa-file',
+          tab: 'documents',
+        }));
+
+      // Final row count shown in the feed after merge-sort.
+      const feedLimit = 8;
+
+      return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, feedLimit);
+    });
   }
 }
