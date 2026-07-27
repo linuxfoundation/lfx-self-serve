@@ -54,7 +54,7 @@
     @if (!codeSent()) {
       @if (verificationError()) {
         <p class="text-sm text-red-600" data-testid="verify-email-error">
-          {{ verificationError() }}{{ showSupportLink() ? '.' : '' }}
+          {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
           @if (showSupportLink()) {
             If you believe this is an error,
             <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
@@ -91,7 +91,7 @@
           data-testid="verify-otp" />
         @if (verificationError()) {
           <p class="text-center text-sm text-red-600" data-testid="verify-email-error">
-            {{ verificationError() }}{{ showSupportLink() ? '.' : '' }}
+            {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
             @if (showSupportLink()) {
               If you believe this is an error,
               <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.

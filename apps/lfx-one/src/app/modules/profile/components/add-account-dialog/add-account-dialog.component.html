@@ -87,7 +87,7 @@
             data-testid="add-account-otp" />
           @if (verificationError()) {
             <p class="text-center text-sm text-red-600" role="alert" data-testid="add-account-otp-error">
-              {{ verificationError() }}{{ showSupportLink() ? '.' : '' }}
+              {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
               @if (showSupportLink()) {
                 If you believe this is an error,
                 <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
@@ -100,7 +100,7 @@
 
     @if (!codeSent() && verificationError()) {
       <p class="text-sm text-red-600" role="alert" data-testid="add-account-send-error">
-        {{ verificationError() }}{{ showSupportLink() ? '.' : '' }}
+        {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
         @if (showSupportLink()) {
           If you believe this is an error,
           <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.

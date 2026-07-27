@@ -40,9 +40,8 @@ export class AddAccountDialogComponent {
   public codeSent = signal(false);
   public verificationCode = signal('');
   public verificationError = signal('');
-  // Shows the "contact support" link whenever the visible error is an already-linked
-  // conflict — detected from the message text via the same shared util the backend uses,
-  // so it works regardless of which subscribe callback set the error.
+  // Shows "contact support" for already-linked conflicts — detected via the shared util the
+  // backend uses, so it works regardless of which subscribe callback set the error.
   public readonly showSupportLink = computed(() => isIdentityAlreadyLinkedError(this.verificationError()));
   public isVerifying = signal(false);
 
