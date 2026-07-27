@@ -40,3 +40,13 @@ export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): s
 export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
   return Boolean(vote.early_end_time);
 }
+
+/**
+ * Lowercase a poll status before comparing or looking it up.
+ * @description `Vote.status` has shipped with inconsistent casing before (fixed in
+ * PollStatusLabelPipe / PollStatusSeverityPipe) — normalize once, here, rather than
+ * re-deriving the same double-cast at every call site.
+ */
+export function normalizePollStatus(status: PollStatus): PollStatus {
+  return (status as string).toLowerCase() as PollStatus;
+}
