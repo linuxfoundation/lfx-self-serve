@@ -24,3 +24,16 @@ export const IDLE_SWEEP_TIMEOUT_MS = 15000;
  * trade-off. Revisit if that browser share stops being negligible.
  */
 export const IDLE_SWEEP_FALLBACK_DELAY_MS = 2000;
+
+/**
+ * Hard ceiling (ms) on `ProjectService.getWriterSummary()` — `WriterGrantsService`'s bootstrap
+ * fast path (LFXV2-2857). Bounds the whole retried call, not a single attempt: it must wrap
+ * `retryTransientHttpError()` in the pipe (not sit upstream of it), otherwise each retry
+ * resubscribes through a fresh timeout window instead of sharing this one. Without this bound, a
+ * hung request never settles, which means the `finalize` that schedules the deferred sweep never
+ * fires either — an indefinitely-stalled fast path would silently starve the *only* other path
+ * that resolves inherited writer access for the rest of the session. Generous relative to the
+ * endpoint's typical latency (sub-second), and this budget and {@link IDLE_SWEEP_TIMEOUT_MS} are
+ * sequential, not shared — the sweep's own ceiling only starts once this one has already ended.
+ */
+export const WRITER_SUMMARY_TIMEOUT_MS = 10000;

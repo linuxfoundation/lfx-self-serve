@@ -45,14 +45,20 @@ export class ProjectService {
   /**
    * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
    * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
-   * set narrowed until the (much slower) deferred sweep eventually resolves it instead. Bounded by
-   * `WRITER_SUMMARY_TIMEOUT_MS`: `WriterGrantsService` only schedules its deferred sweep once this
-   * call settles, so an unbounded hang here would silently starve the sweep for the whole session.
+   * set narrowed until the (much slower) deferred sweep eventually resolves it instead. A timeout
+   * doesn't retry — `TimeoutError` isn't an `HttpErrorResponse`, so `isTransientHttpError` rejects
+   * it — a stalled connection fails closed immediately rather than doubling the wait; the deferred
+   * sweep is the recovery path for that case, not a second attempt here.
+   *
+   * `timeout()` sits below `retryTransientHttpError()` so it bounds the whole call (retries
+   * included) to `WRITER_SUMMARY_TIMEOUT_MS`, not just one attempt — `WriterGrantsService` only
+   * schedules its deferred sweep once this call settles, so an unbounded hang here would silently
+   * starve the sweep for the whole session.
    */
   public getWriterSummary(): Observable<WriterSummary> {
     return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
-      timeout(WRITER_SUMMARY_TIMEOUT_MS),
       retryTransientHttpError(),
+      timeout(WRITER_SUMMARY_TIMEOUT_MS),
       catchError((error) => {
         console.error('Failed to fetch writer summary:', error);
         return of({ hasWriterFoundation: false, hasWriterProject: false });
