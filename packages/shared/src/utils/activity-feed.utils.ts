@@ -3,34 +3,22 @@
 
 // Specific-file imports (not the '../constants' barrel): that barrel re-exports
 // dashboard-metrics.constants.ts, which imports '../utils' (the utils barrel, this file's own
-// barrel) — a real runtime import cycle that also drags in meeting.utils.ts's
-// `HttpParams` from '@angular/common/http', which Vitest can't resolve outside an Angular
-// context. Importing the two constant files directly avoids the cycle.
+// barrel) — a real runtime import cycle that transitively pulls in Angular-only runtime code
+// (e.g. meeting.utils.ts's `@angular/common/http` import), which Vitest can't resolve outside an
+// Angular context. Importing the two constant files directly avoids the cycle. The '../interfaces'
+// import below is `import type` for the same reason: it's erased entirely, so it can't reintroduce
+// this cycle even if a future interface file adds a runtime import that reaches '../constants' or
+// '../utils'.
 import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
-import { ActivityFeedItem, CommitteeDocument, PastMeeting, Survey, Vote } from '../interfaces';
+import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
 import { getSurveyDisplayStatus } from './survey.utils';
 
 /** Per-source cap before merging, so one noisy source can't crowd out the rest. */
 const PER_SOURCE_LIMIT = 5;
 /** Final row count returned after the merge-sort. */
 const FEED_LIMIT = 8;
-
-export interface BuildActivityFeedInput {
-  pastMeetings: PastMeeting[];
-  votes: Vote[];
-  surveys: Survey[];
-  documents: CommitteeDocument[];
-  /**
-   * Vote items are excluded entirely when false. The Votes tab is only shown/reachable when the
-   * committee has voting enabled (committee-view.component.ts isVotesTabVisible), but
-   * handleTabNavigation doesn't check tab visibility — only the static valid-tabs list — so an
-   * activity row for a vote from before voting was disabled would otherwise navigate to a hidden,
-   * blank tab.
-   */
-  votingEnabled: boolean;
-}
 
 /**
  * Group Overview "Recent Activity" stop-gap: merges the latest items across past meetings, votes,

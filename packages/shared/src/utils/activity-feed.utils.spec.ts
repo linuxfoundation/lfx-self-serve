@@ -7,8 +7,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { PollStatus, SurveyStatus } from '../enums';
-import { CommitteeDocument, PastMeeting, Survey, Vote } from '../interfaces';
-import { BuildActivityFeedInput, buildActivityFeed } from './activity-feed.utils';
+import { BuildActivityFeedInput, CommitteeDocument, PastMeeting, Survey, Vote } from '../interfaces';
+import { buildActivityFeed } from './activity-feed.utils';
 
 /** Minimal past-meeting builder — only the fields buildActivityFeed reads. */
 function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
