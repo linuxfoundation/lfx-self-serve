@@ -7,7 +7,7 @@ import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_TIMEOUT_MS } from '@lfx-one/sh
 import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
-import { map } from 'rxjs';
+import { finalize, map } from 'rxjs';
 
 /**
  * Whether the user holds a `writer` grant on a foundation-level and/or non-foundation project —
@@ -15,22 +15,24 @@ import { map } from 'rxjs';
  * OR's these into its allowed-lens set (LFXV2-2754): a `writer` grant is authority over that
  * project, so the lens that reaches it must be available regardless of which persona was detected.
  *
- * Two-phase, both kicked off post-hydration in `afterNextRender` (LFXV2-2857):
+ * Two-phase, kicked off post-hydration in `afterNextRender` (LFXV2-2857):
  *  - **Fast path** — `ProjectService.getWriterSummary()` hits a `filter_grants=direct`-scoped
  *    endpoint (typically sub-second for a normal direct-grant count, though it still paginates
  *    and access-checks server-side, so it isn't a hard bound). Direct grants only, so it
  *    under-reports *inherited* access (e.g. a foundation-level writer's implicit access to a
  *    non-foundation child they hold no direct tuple on).
  *  - **Deferred sweep** — the existing unscoped `ProjectService.getProjects()` (the same call
- *    that used to run here directly and block bootstrap for 11-19s), rescheduled via
- *    `requestIdleCallback` so it starts well after first paint and doesn't count toward RUM's
- *    `@view.loading_time`. Resolves inherited access. Server-side cost is unchanged — this only
- *    moves it off the bootstrap-blocking path, it doesn't make the call itself cheaper. Runs
- *    every bootstrap (deliberately uncached: identity-scoped state here would need to invalidate
- *    on impersonation start/stop, both of which reload in-tab — see
+ *    that used to run here directly and block bootstrap for 11-19s), scheduled via
+ *    `requestIdleCallback` *after the fast path settles* (not in the same tick as it — the skip
+ *    check below needs the fast path's actual result to have a chance of firing), so it starts
+ *    well after first paint and doesn't count toward RUM's `@view.loading_time`. Resolves
+ *    inherited access. Server-side cost is unchanged — this only moves it off the
+ *    bootstrap-blocking path, it doesn't make the call itself cheaper. Runs every bootstrap
+ *    (deliberately uncached: identity-scoped state here would need to invalidate on
+ *    impersonation start/stop, both of which reload in-tab — see
  *    `docs/architecture/backend/impersonation.md` — and re-running an idle-deferred call beats
- *    that invalidation risk). Skipped entirely once both signals are already `true`, since an
- *    OR-merge can no longer change the outcome.
+ *    that invalidation risk). Skipped entirely if the fast path already resolved both signals
+ *    `true`, since an OR-merge can no longer change the outcome.
  *
  * Both signals start `false` and only ever OR-merge to `true` as either call resolves — never
  * back — so the fast path, deferred sweep, and their arrival order don't matter to the consumer.
@@ -57,10 +59,14 @@ export class WriterGrantsService {
     afterNextRender(() => {
       this.projectService
         .getWriterSummary()
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(
+          // Schedule the deferred sweep only once the fast path has actually resolved (success or
+          // fail-closed) — scheduling it eagerly in this same tick would race the HTTP round trip,
+          // so runDeferredSweep's "skip if both already true" check would almost never see a `true`.
+          finalize(() => this.runWhenIdle(() => this.runDeferredSweep())),
+          takeUntilDestroyed(this.destroyRef)
+        )
         .subscribe((summary) => this.widen(summary));
-
-      this.runWhenIdle(() => this.runDeferredSweep());
     });
   }
 

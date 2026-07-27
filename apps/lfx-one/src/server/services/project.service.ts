@@ -390,7 +390,10 @@ export class ProjectService {
    * reducer (also used by `WriterGrantsService`'s deferred sweep, so both runtimes agree on what
    * counts as a writer-held foundation/project — and `summarizeWriterGrants` filters to
    * `writer === true` itself, so this stays correct even if `getDirectGrantProjects`'s
-   * `includeMeetingCoordinator` default ever changes).
+   * `includeMeetingCoordinator` default ever changes). Not short-circuited: `getDirectGrantProjects`
+   * always fully paginates and access-checks every direct grant, even once a foundation and a
+   * non-foundation row have both already been seen — bounded by the caller's own direct-grant
+   * count, which is normally small, but not by anything this method enforces.
    */
   public async getWriterSummary(req: Request): Promise<WriterSummary> {
     const projects = await this.getDirectGrantProjects(req);

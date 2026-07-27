@@ -34,6 +34,12 @@ vi.mock('@lfx-one/shared/enums', () => ({}));
 // getWriterSummary ever calls summarizeWriterGrants); that's covered by
 // packages/shared/src/utils/project.utils.spec.ts. Other `@lfx-one/shared/utils` exports this
 // file doesn't touch stay stubbed.
+//
+// Deep-imports the single pure file rather than `vi.importActual('@lfx-one/shared/utils')`:
+// the barrel re-exports Angular-dependent utils that pull in `@angular/common`'s `PlatformLocation`,
+// which needs the Angular JIT compiler — unavailable under this plain-Node Vitest environment, so
+// importing the barrel here throws at module-load time. `project.utils.ts` itself has no such
+// dependency.
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project.utils')>(
     '../../../../../packages/shared/src/utils/project.utils'
