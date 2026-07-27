@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
 import { ButtonModule } from 'primeng/button';
@@ -48,8 +48,17 @@ export class ButtonComponent {
 
   // Accessibility
   public readonly ariaLabel = input<string | undefined>(undefined);
-  /** Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher). Forwarded to the inner native button via PrimeNG's `pt` passthrough (`ptm('root')`) — a plain `[attr.aria-pressed]` at the call site would only reach this component's host element, not the real button `p-button` renders internally. */
+  /**
+   * Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher).
+   * Reaches the real native button either way, but by two different paths: on the `href()` anchor
+   * branch `pButton` is a directive on the anchor itself, so `[attr.aria-pressed]` lands there
+   * directly; on the default `<p-button>` branch it's forwarded via PrimeNG's `pt` passthrough
+   * (`ptm('root')`) to the button `p-button` renders internally — a plain `[attr.aria-pressed]`
+   * there would only reach the `<p-button>` host element, not the real button.
+   */
   public readonly ariaPressed = input<boolean | undefined>(undefined);
+  /** `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. */
+  protected readonly ariaPressedPt = computed(() => ({ root: { 'aria-pressed': this.ariaPressed() } }));
 
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);

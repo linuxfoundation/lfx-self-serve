@@ -631,8 +631,8 @@ export class CommitteeDashboardComponent {
       }
 
       const groups = [...buckets.values()].sort((a, b) => {
-        if (a.label === b.label) return 0;
         if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
+        if (a.label === b.label) return 0;
         if (a.label === OTHER_GROUPS_LABEL) return 1;
         if (b.label === OTHER_GROUPS_LABEL) return -1;
         return a.label.localeCompare(b.label);
