@@ -29,6 +29,7 @@ import campaignsRouter from './routes/campaigns.route';
 import changelogRouter from './routes/changelog.route';
 import committeesRouter from './routes/committees.route';
 import copilotRouter from './routes/copilot.route';
+import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import eventsRouter from './routes/events.route';
 import impersonationRouter from './routes/impersonation.route';
@@ -305,6 +306,7 @@ app.use('/public/api/projects', publicProjectsRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
+app.use('/api/create-picker', createPickerRouter);
 app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);

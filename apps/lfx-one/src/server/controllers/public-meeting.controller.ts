@@ -100,6 +100,23 @@ export class PublicMeetingController {
 
         try {
           await applyHostKeyVisibility(req, this.accessCheckService, meeting);
+
+          // host_key is no longer on the v2 meeting API response — fetch it from the
+          // separately indexed v1_meeting_host_credentials object (FGA-gated by host relation).
+          // Must run while the user's own token is active, before restoring M2M below.
+          if (meeting.can_view_host_key) {
+            try {
+              const hostKey = await this.meetingService.getMeetingHostKey(req, id);
+              if (hostKey) {
+                meeting.host_key = hostKey;
+              }
+            } catch (error) {
+              logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
+                meeting_id: id,
+                err: error,
+              });
+            }
+          }
         } catch (error) {
           // If the access check fails, log but fail closed (no organizer, no host key)
           logger.warning(req, 'get_public_meeting_by_id', 'Failed to check host key access, continuing with no access', {
@@ -161,11 +178,11 @@ export class PublicMeetingController {
 
       // Authenticated registered participants, organizers, and project/committee writers can
       // access private/restricted meeting details without a password in the URL — their
-      // registrant record or FGA writer/organizer relation is the gate. can_view_host_key is
-      // true only for organizer/project-writer/committee-writer, so it admits the writers who
-      // would otherwise fall through to the password gate despite managing the meeting.
+      // registrant record or FGA writer/organizer relation is the gate. meeting.organizer derives
+      // from v1_meeting#organizer, which the FGA model derives from project writer, committee
+      // writer, and meeting coordinator roles, so all authorized managers have organizer=true.
       // host_key was already stripped above for anyone not authorized to view it.
-      if (meeting.invited || meeting.organizer || meeting.can_view_host_key) {
+      if (meeting.invited || meeting.organizer) {
         res.json({
           meeting,
           project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },

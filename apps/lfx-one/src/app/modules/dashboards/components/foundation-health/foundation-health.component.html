@@ -63,6 +63,8 @@
                 [chartOptions]="barChartOptions"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
+                [trend]="card.trend"
+                [changePercentage]="card.changePercentage"
                 [loading]="card.loading"
                 [clickable]="!!card.drawerType"
                 (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
@@ -228,7 +230,7 @@
   (visibleChange)="handleDrawerClose()"
   [data]="maintainersData()"></lfx-maintainers-drawer>
 
-<lfx-events-drawer [visible]="activeDrawer() === DashboardDrawerType.Events" (visibleChange)="handleDrawerClose()" [data]="eventsData()"></lfx-events-drawer>
+<lfx-events-drawer [visible]="activeDrawer() === DashboardDrawerType.Events" (visibleChange)="handleDrawerClose()"></lfx-events-drawer>
 
 <lfx-project-health-scores-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"

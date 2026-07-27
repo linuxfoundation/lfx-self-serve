@@ -1,5 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
+import { COMMITTEE_WRITE_FEATURES } from '@lfx-one/shared/constants';
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
@@ -63,7 +64,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: writeFeature ?? 'access' } });
   const deny = () => deniedUrl;
-  const supportsCommitteeWriter = writeFeature != null && ['meetings', 'surveys', 'votes'].includes(writeFeature);
+  const supportsCommitteeWriter = writeFeature != null && COMMITTEE_WRITE_FEATURES.includes(writeFeature);
 
   // Committee writers can create meetings, surveys, and votes associated with
   // their committee. Only applicable when committee_uid is in the route query params.

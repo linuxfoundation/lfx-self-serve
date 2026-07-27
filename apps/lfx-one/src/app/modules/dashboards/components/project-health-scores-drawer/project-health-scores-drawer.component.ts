@@ -203,12 +203,15 @@ export class ProjectHealthScoresDrawerComponent {
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const d = this.data();
+      const barColors = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]);
       return {
         labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
         datasets: [
           {
             data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => d[category] ?? 0),
-            backgroundColor: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]),
+            backgroundColor: barColors,
+            // Pin hover color to the bar's own fill so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: barColors,
             borderRadius: 4,
             borderSkipped: 'start',
           },

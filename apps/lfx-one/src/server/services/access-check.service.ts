@@ -21,7 +21,7 @@ export class AccessCheckService {
    * Check access permissions for multiple resources
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
-   * @returns Map of resource IDs to their access status
+   * @returns Map keyed by "id#access" to their access status (e.g. "meeting-1#organizer")
    */
   public async checkAccess(req: Request, resources: AccessCheckRequest[]): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
@@ -54,36 +54,42 @@ export class AccessCheckService {
         requestPayload
       );
 
-      // Create result map
+      // Parse each result string into a lookup keyed by the "resource:id#access" tuple it
+      // reports on, rather than trusting positional (array-index) alignment with `resources`.
+      // The upstream response can reorder or dedupe entries, so index-based pairing can silently
+      // attribute one resource's answer to a different resource.
+      const resultByTuple = new Map<string, { hasAccess: boolean; username?: string }>();
+      for (const resultString of response.results) {
+        if (!resultString || typeof resultString !== 'string') {
+          continue;
+        }
+
+        // Format: "resource:id#access@user:username\ttrue/false"
+        const parts = resultString.split('\t');
+        if (parts.length < 2) {
+          continue;
+        }
+
+        const accessPart = parts[0];
+        const hasAccess = parts[1]?.toLowerCase() === 'true';
+        const userMatch = accessPart?.match(/@user:(.+)$/);
+        const tuple = userMatch ? accessPart.slice(0, userMatch.index) : accessPart;
+        const username = userMatch?.[1];
+
+        resultByTuple.set(tuple, { hasAccess, username });
+      }
+
+      // Map results back to resource IDs by re-deriving the same tuple each request sent
       const resultMap = new Map<string, boolean>();
       const userAccessInfo: { resourceId: string; username?: string; hasAccess: boolean }[] = [];
 
-      // Map results back to resource IDs
-      for (let i = 0; i < resources.length; i++) {
-        const resource = resources[i];
-        const resultString = response.results[i];
+      for (const resource of resources) {
+        const tuple = `${resource.resource}:${resource.id}#${resource.access}`;
+        const result = resultByTuple.get(tuple);
 
-        // Parse the result string format: "resource:id#access@user:username\ttrue/false"
-        let hasAccess = false;
-        let username: string | undefined;
-
-        if (resultString && typeof resultString === 'string') {
-          // Split by tab to get the boolean part
-          const parts = resultString.split('\t');
-          if (parts.length >= 2) {
-            hasAccess = parts[1]?.toLowerCase() === 'true';
-
-            // Extract username from the first part: "resource:id#access@user:username"
-            const accessPart = parts[0];
-            const userMatch = accessPart?.match(/@user:(.+)$/);
-            if (userMatch) {
-              username = userMatch[1];
-            }
-          }
-        }
-
-        resultMap.set(resource.id, hasAccess);
-        userAccessInfo.push({ resourceId: resource.id, username, hasAccess });
+        // Fail closed when the upstream response omits this tuple
+        resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
+        userAccessInfo.push({ resourceId: resource.id, username: result?.username, hasAccess: result?.hasAccess ?? false });
       }
 
       logger.success(req, operationName, startTime, {
@@ -101,7 +107,7 @@ export class AccessCheckService {
       // Return map with all false values as fallback
       const fallbackMap = new Map<string, boolean>();
       for (const resource of resources) {
-        fallbackMap.set(resource.id, false);
+        fallbackMap.set(`${resource.id}#${resource.access}`, false);
       }
       return fallbackMap;
     }
@@ -115,7 +121,7 @@ export class AccessCheckService {
    */
   public async checkSingleAccess(req: Request, resource: AccessCheckRequest): Promise<boolean> {
     const results = await this.checkAccess(req, [resource]);
-    return results.get(resource.id) || false;
+    return results.get(`${resource.id}#${resource.access}`) || false;
   }
 
   /**
@@ -149,7 +155,7 @@ export class AccessCheckService {
     // Add access field to each resource
     return resources.map((resource) => ({
       ...resource,
-      [accessType]: accessResults.get(this.getResourceId(resource)) || false,
+      [accessType]: accessResults.get(`${this.getResourceId(resource)}#${accessType}`) || false,
     }));
   }
 
