@@ -16,11 +16,12 @@ import {
   POLL_STATUS_LABELS,
   SURVEY_STATUS_LABELS,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActivityFeedItem,
   Committee,
   CommitteeDocument,
+  CommitteeDocumentType,
   CommitteeMember,
   CommitteePendingActionRow,
   Meeting,
@@ -38,7 +39,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -121,6 +122,12 @@ export class CommitteeOverviewComponent {
     const orgs = new Set(allMembers.map((m) => m.organization?.name).filter(Boolean));
     return orgs.size;
   });
+
+  // Computed: voting representative count from members. Not sourced from
+  // committee().total_voting_repos — upstream (lfx-v2-committee-service) defines that field as
+  // "total repositories with voting permissions" (not people) and no production code path writes
+  // it, so it always reads 0. This derives the actual per-member voting-rep count instead.
+  public votingRepsCount: Signal<number> = computed(() => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length);
 
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
@@ -536,12 +543,19 @@ export class CommitteeOverviewComponent {
   }
 
   private initDocuments(): Signal<CommitteeDocument[]> {
+    // Documents only seed the activity feed, which the template never renders for a visitor
+    // (behind !isVisitor()) — skip the fetch rather than issue a GET nothing will display.
+    // Reactive over myRoleLoading/isVisitor (not just committee) so the fetch fires once the role
+    // actually resolves, and documentsLoading is explicitly cleared on the skip path so
+    // activityFeedLoading() can't get stuck true for a visitor whose role never triggers a fetch.
     return toSignal(
-      toObservable(this.committee).pipe(
-        // Documents only seed the activity feed, which the template never renders for a visitor
-        // (behind !isVisitor()) — skip the fetch rather than issue a GET nothing will display.
-        filter((c) => !!c?.uid && !this.isVisitor()),
-        switchMap((c) => {
+      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading), toObservable(this.isVisitor)]).pipe(
+        filter(([c]) => !!c?.uid),
+        switchMap(([c, roleLoading, visitor]) => {
+          if (roleLoading || visitor) {
+            this.documentsLoading.set(false);
+            return of<CommitteeDocument[]>([]);
+          }
           this.documentsLoading.set(true);
           // No catchError here: CommitteeService.getCommitteeDocuments already falls back to
           // of([]) on failure, so a component-level handler would never fire.
@@ -600,15 +614,19 @@ export class CommitteeOverviewComponent {
           };
         });
 
+      // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a
+      // folder or link doesn't misrepresent itself as a file in the feed.
+      const documentTypeLabel: Record<CommitteeDocumentType, string> = { file: 'Document', link: 'Link', folder: 'Folder' };
+      const documentTypeIcon: Record<CommitteeDocumentType, string> = { file: 'fa-light fa-file', link: 'fa-light fa-link', folder: 'fa-light fa-folder' };
       const documentItems: ActivityFeedItem[] = [...this.documents()]
         .sort((a, b) => (b.updated_at ?? b.created_at ?? '').localeCompare(a.updated_at ?? a.created_at ?? ''))
         .slice(0, perSourceLimit)
         .map((d) => ({
-          type: 'document',
+          type: 'document' as const,
           key: `document-${d.uid}`,
-          label: `Document: ${d.name}`,
+          label: `${documentTypeLabel[d.type]}: ${d.name}`,
           timestamp: d.updated_at ?? d.created_at ?? '',
-          icon: 'fa-light fa-file',
+          icon: documentTypeIcon[d.type],
           tab: 'documents',
         }));
 

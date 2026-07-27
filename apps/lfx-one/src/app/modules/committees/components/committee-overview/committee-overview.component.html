@@ -42,7 +42,11 @@
         <div class="flex items-center gap-3 px-4 py-3" data-testid="committee-overview-voting-reps">
           <i class="fa-light fa-square-check text-gray-400 w-4 text-center flex-shrink-0"></i>
           <span class="text-sm text-gray-700 flex-1">Voting Reps</span>
-          <span class="text-sm font-semibold text-gray-900">{{ committee().total_voting_repos }}</span>
+          @if (membersLoading()) {
+            <p-skeleton width="24px" height="1rem" />
+          } @else {
+            <span class="text-sm font-semibold text-gray-900">{{ votingRepsCount() }}</span>
+          }
         </div>
         <!-- Active Votes -->
         <div class="flex items-center gap-3 px-4 py-3">
