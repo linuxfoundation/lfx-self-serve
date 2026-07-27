@@ -28,10 +28,12 @@ vi.mock('@lfx-one/shared/constants', () => ({
 }));
 vi.mock('@lfx-one/shared/enums', () => ({}));
 // computeIsFoundation and summarizeWriterGrants are pulled in from the REAL implementation
-// (not hand-copied) so a regression there — e.g. dropping summarizeWriterGrants's `writer ===
-// true` filter, an access-widening bug — fails these tests too, rather than only the dedicated
-// packages/shared/src/utils/project.utils.spec.ts suite. Other `@lfx-one/shared/utils` exports
-// this file doesn't touch stay stubbed.
+// (not hand-copied) so foundation-classification drift — e.g. a change to computeIsFoundation's
+// Membership/stage rules — fails these tests too. summarizeWriterGrants's own `writer === true`
+// filter can't be exercised from here (getDirectGrantProjects has already applied it before
+// getWriterSummary ever calls summarizeWriterGrants); that's covered by
+// packages/shared/src/utils/project.utils.spec.ts. Other `@lfx-one/shared/utils` exports this
+// file doesn't touch stay stubbed.
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project.utils')>(
     '../../../../../packages/shared/src/utils/project.utils'
