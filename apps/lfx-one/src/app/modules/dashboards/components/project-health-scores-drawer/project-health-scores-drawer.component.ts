@@ -226,7 +226,10 @@ export class ProjectHealthScoresDrawerComponent {
             hoverBackgroundColor: barColors,
             borderRadius: 4,
             borderSkipped: 'start',
-          },
+            // Opt into the zero-bar stub plugin (registered by foundation-health) so empty
+            // buckets render as a 4px gray stub instead of invisible zero-height bars.
+            zeroStub: true,
+          } as unknown as ChartData<'bar'>['datasets'][number],
         ],
       };
     });

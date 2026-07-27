@@ -15,6 +15,7 @@ import {
   PROJECT_HEALTH_CHART_CATEGORY_COLOR,
   PROJECT_HEALTH_CHART_CATEGORY_LABEL,
   PRIMARY_FOUNDATION_HEALTH_METRICS,
+  ZERO_BAR_STUB_PLUGIN,
 } from '@lfx-one/shared/constants';
 import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { hexToRgba, computePeriodChange } from '@lfx-one/shared/utils';
@@ -24,46 +25,6 @@ import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directiv
 import { Chart } from 'chart.js';
 import type { ChartData, ChartType } from 'chart.js';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
-
-// Draws a 4px gray stub on the baseline for zero-value bars on datasets that
-// opt in via `zeroStub: true`. Chart.js renders zero-height bars invisibly,
-// which makes sparse quarterly charts read as "broken" rather than "zero".
-const ZERO_BAR_STUB_PLUGIN = {
-  id: 'lfxZeroBarStub',
-  afterDatasetsDraw(chart: Chart) {
-    const ds = chart.data.datasets?.[0] as (typeof chart.data.datasets)[0] & { zeroStub?: boolean };
-    if (!ds?.zeroStub) return;
-    const meta = chart.getDatasetMeta(0);
-    if (meta?.type !== 'bar') return;
-    const vScale = (meta as { vScale?: { getPixelForValue: (v: number) => number } }).vScale;
-    if (!vScale) return;
-    const values = ds.data as number[];
-    const ctx = chart.ctx;
-    ctx.save();
-    ctx.fillStyle = lfxColors.gray[300];
-    values.forEach((value, index) => {
-      if (value !== 0) return;
-      const bar = meta.data[index] as unknown as { x: number; width: number };
-      if (!bar) return;
-      const halfWidth = (bar.width || 4) / 2;
-      const base = vScale.getPixelForValue(0);
-      const stubHeight = 4;
-      ctx.beginPath();
-      ctx.roundRect(bar.x - halfWidth, base - stubHeight, halfWidth * 2, stubHeight, [2, 2, 0, 0]);
-      ctx.fill();
-    });
-    ctx.restore();
-  },
-};
-
-// Registered globally (not per-chart) because the foundation-health cards are
-// the only charts opting in via `zeroStub: true`; the afterDatasetsDraw hook
-// no-ops for every other chart. Pure JS (no canvas access at import), so SSR-safe.
-let zeroBarStubRegistered = false;
-if (!zeroBarStubRegistered) {
-  Chart.register(ZERO_BAR_STUB_PLUGIN);
-  zeroBarStubRegistered = true;
-}
 
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
 import { EventsDrawerComponent } from '../events-drawer/events-drawer.component';
@@ -112,6 +73,13 @@ export class FoundationHealthComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
 
+  // Register the zero-bar stub plugin once globally. The plugin no-ops for any
+  // dataset that doesn't opt in via `zeroStub: true`, so other charts are unaffected.
+  private static readonly zeroBarStubRegistered = (() => {
+    Chart.register(ZERO_BAR_STUB_PLUGIN);
+    return true;
+  })();
+
   public readonly title = input<string>('Foundation Health');
 
   // Loading signals for each data source
@@ -159,6 +127,12 @@ export class FoundationHealthComponent {
   // Surface a zeroed default while loading so the drawer headline never shows the prior foundation's average.
   protected readonly reconciledActiveContributorsData = computed<UniqueContributorsDailyResponse>(() =>
     this.activeContributorsLoading() ? { data: [], avgContributors: 0, totalDays: 0 } : this.activeContributorsData()
+  );
+
+  // Surface a zeroed default while loading so the drawer headline (currentMaintainers/asOfDate)
+  // never renders the previous foundation's value during a switch.
+  protected readonly reconciledMaintainersData = computed<FoundationMaintainersResponse>(() =>
+    this.maintainersLoading() ? { currentMaintainers: 0, asOfDate: null, trendData: [], trendLabels: [] } : this.maintainersData()
   );
 
   public readonly selectedFilter = signal<string>('all');
@@ -635,7 +609,7 @@ export class FoundationHealthComponent {
             ...(this.barChartOptions.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context) => context[0]?.label ?? '',
-              label: (context) => `${(context.parsed.y ?? 0).toLocaleString()} projects`,
+              label: (context) => `${(context.parsed.y ?? 0).toLocaleString('en-US')} projects`,
             },
           },
         },

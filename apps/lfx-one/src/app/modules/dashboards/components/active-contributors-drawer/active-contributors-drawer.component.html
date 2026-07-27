@@ -59,7 +59,7 @@
           </button>
         </div>
 
-        @if (hasMomData()) {
+        @if (hasMomData() && !momDataLoading()) {
           <div class="flex items-baseline gap-2">
             @if (momDelta(); as delta) {
               <span class="text-xl font-semibold text-gray-900" data-testid="active-contributors-drawer-mom-metric">

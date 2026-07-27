@@ -63,7 +63,7 @@
       @if (!distributionLoading() && hasData()) {
         <p class="text-sm text-gray-600" data-testid="project-health-scores-drawer-healthy-summary">
           <span class="font-semibold text-gray-900">{{ healthyOrBetterPct() }}%</span>
-          of scored projects are healthy or better — {{ healthyOrBetterCount().toLocaleString() }} of {{ scoredProjects().toLocaleString() }}
+          of scored projects are healthy or better — {{ healthyOrBetterCount().toLocaleString('en-US') }} of {{ scoredProjects().toLocaleString('en-US') }}
         </p>
       }
 

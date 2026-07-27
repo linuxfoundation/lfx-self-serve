@@ -197,7 +197,10 @@ export class EventsDrawerComponent {
             hoverBackgroundColor: lfxColors.blue[500],
             borderRadius: 3,
             borderSkipped: 'start',
-          },
+            // Opt into the zero-bar stub plugin (registered by foundation-health) so empty
+            // quarters render as a 4px gray stub instead of invisible zero-height bars.
+            zeroStub: true,
+          } as unknown as ChartData<'bar'>['datasets'][number],
         ],
       };
     });

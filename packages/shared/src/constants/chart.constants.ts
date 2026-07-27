@@ -1,8 +1,44 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Chart } from 'chart.js';
 import type { ChartOptions } from 'chart.js';
 import { lfxColors } from './colors.constants';
+
+/**
+ * Chart.js plugin: draws a 4px gray stub on the baseline for zero-value bars on
+ * datasets that opt in via `zeroStub: true`. Chart.js renders zero-height bars
+ * invisibly, which makes sparse quarterly charts read as "broken" rather than "zero".
+ * The `afterDatasetsDraw` hook no-ops for every dataset that doesn't opt in.
+ * Pure JS (no canvas access at import), so SSR-safe.
+ */
+export const ZERO_BAR_STUB_PLUGIN = {
+  id: 'lfxZeroBarStub',
+  afterDatasetsDraw(chart: Chart) {
+    const ds = chart.data.datasets?.[0] as (typeof chart.data.datasets)[0] & { zeroStub?: boolean };
+    if (!ds?.zeroStub) return;
+    const meta = chart.getDatasetMeta(0);
+    if (meta?.type !== 'bar') return;
+    const vScale = (meta as { vScale?: { getPixelForValue: (v: number) => number } }).vScale;
+    if (!vScale) return;
+    const values = ds.data as number[];
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = lfxColors.gray[300];
+    values.forEach((value, index) => {
+      if (value !== 0) return;
+      const bar = meta.data[index] as unknown as { x: number; width: number };
+      if (!bar) return;
+      const halfWidth = (bar.width || 4) / 2;
+      const base = vScale.getPixelForValue(0);
+      const stubHeight = 4;
+      ctx.beginPath();
+      ctx.roundRect(bar.x - halfWidth, base - stubHeight, halfWidth * 2, stubHeight, [2, 2, 0, 0]);
+      ctx.fill();
+    });
+    ctx.restore();
+  },
+};
 
 /** Deep merge two objects, recursively merging nested objects instead of replacing them */
 function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {

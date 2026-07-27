@@ -201,7 +201,7 @@
 <lfx-maintainers-drawer
   [visible]="activeDrawer() === DashboardDrawerType.Maintainers"
   (visibleChange)="handleDrawerClose()"
-  [data]="maintainersData()"
+  [data]="reconciledMaintainersData()"
   [monthlyData]="maintainersMonthlyData()"
   [monthlyDataLoading]="maintainersMonthlyLoading()"></lfx-maintainers-drawer>
 
