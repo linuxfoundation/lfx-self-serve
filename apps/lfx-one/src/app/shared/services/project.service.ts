@@ -47,7 +47,10 @@ export class ProjectService {
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
       const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
-        catchError(() => of(null)),
+        catchError((error) => {
+          console.error('Failed to fetch project:', error);
+          return of(null);
+        }),
         shareReplay(1),
         tap((project) => {
           if (current) {
@@ -125,7 +128,12 @@ export class ProjectService {
   // ── Project Documents ─────────────────────────────────────────────────────
 
   public getProjectDocuments(projectUid: string): Observable<ProjectDocument[]> {
-    return this.http.get<ProjectDocument[]>(`/api/projects/${projectUid}/documents`).pipe(catchError(() => of([])));
+    return this.http.get<ProjectDocument[]>(`/api/projects/${projectUid}/documents`).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch project documents:', error);
+        return of([]);
+      })
+    );
   }
 
   public createProjectDocument(projectUid: string, data: CreateProjectDocumentRequest): Observable<ProjectDocument> {
