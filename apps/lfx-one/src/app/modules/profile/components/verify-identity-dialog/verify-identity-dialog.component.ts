@@ -6,14 +6,16 @@ import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { IDENTITY_PROVIDER_LABELS } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
+import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputOtp } from 'primeng/inputotp';
 
 @Component({
   selector: 'lfx-verify-identity-dialog',
-  imports: [ButtonComponent, FormsModule, InputOtp],
+  imports: [ButtonComponent, FormsModule, InputOtp, OpenIntercomDirective],
   templateUrl: './verify-identity-dialog.component.html',
   styleUrl: './verify-identity-dialog.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -31,6 +33,9 @@ export class VerifyIdentityDialogComponent {
   public codeSent = signal(false);
   public verificationCode = signal('');
   public verificationError = signal('');
+  // Shows "contact support" for already-linked conflicts — detected via the shared util the
+  // backend uses, so it works regardless of which subscribe callback set the error.
+  public readonly showSupportLink = computed(() => isIdentityAlreadyLinkedError(this.verificationError()));
   public isSendingCode = signal(false);
   public isVerifying = signal(false);
 
