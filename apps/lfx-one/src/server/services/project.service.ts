@@ -7164,6 +7164,6 @@ export class ProjectService {
 
     const coordinatorChecks: AccessCheckRequest[] = nonWriters.map((p) => ({ resource: 'project', id: p.uid, access: 'meeting_coordinator' }));
     const coordinatorResults = await this.accessCheckService.checkAccess(req, coordinatorChecks);
-    return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(p.uid) === true);
+    return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(`${p.uid}#meeting_coordinator`) === true);
   }
 }
