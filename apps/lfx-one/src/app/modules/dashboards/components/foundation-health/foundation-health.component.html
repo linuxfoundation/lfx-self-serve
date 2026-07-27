@@ -61,7 +61,8 @@
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
                 [chartOptions]="card.chartOptions || barChartOptions"
-                [chartHeightClass]="'flex-1'"
+                [chartHeightClass]="'flex-1 min-h-16'"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-[16rem]'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
@@ -78,6 +79,7 @@
                 [icon]="card.icon"
                 [testId]="card.testId"
                 [chartType]="card.chartType"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-[16rem]'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [loading]="card.loading"
@@ -106,6 +108,7 @@
                 [icon]="card.icon"
                 [testId]="card.testId"
                 [chartType]="card.chartType"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-[16rem]'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [loading]="card.loading"
@@ -113,7 +116,7 @@
                 (cardClick)="handleCardClick(card.drawerType!)">
                 <ng-template #customContent>
                   @if (card.busFactor) {
-                    <div class="flex-1 flex flex-col justify-end pb-2">
+                    <div class="h-16 flex flex-col justify-end mt-3">
                       <div class="flex gap-0">
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs font-medium text-gray-700">
@@ -141,6 +144,7 @@
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
                 [chartOptions]="card.chartOptions"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-[16rem]'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
