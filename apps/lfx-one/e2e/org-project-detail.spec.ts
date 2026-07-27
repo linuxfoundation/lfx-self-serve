@@ -261,16 +261,26 @@ test.describe('Org Project Detail — leaderboards', () => {
 
     // Searching for that org (paginator resets to page 0 on a new query) must still find it — proving
     // the search spans the whole ranked set, not just the current page — and its true rank is preserved.
-    const searchRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return url.pathname.endsWith('/leaderboard/technical') && (url.searchParams.get('search') ?? '').length > 0;
+    // Wait for the OK page-0 search RESPONSE (not just the outgoing request): the board swaps in
+    // skeleton rows while the debounced reload is in flight, so a request-only wait can assert before
+    // the result is applied.
+    const searchResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname.endsWith('/leaderboard/technical') &&
+        (url.searchParams.get('search') ?? '').length > 0 &&
+        url.searchParams.get('page') === '0' &&
+        response.status() === 200
+      );
     });
     await page.locator('[data-test="project-detail-search-technical"]').fill(targetName);
-    await searchRequest;
+    await searchResponse;
 
+    // The row carrying the target name only renders once the skeletons clear and the real result is
+    // applied, so this locator implicitly waits past the loading state before we assert the rank.
     const match = page.locator(`${TECH_BOARD} tbody tr`, { hasText: targetName }).first();
     await expect(match).toBeVisible();
-    await expect(match.locator('td').first()).toHaveText(String(targetRank));
+    await expect.poll(async () => (await match.locator('td').first().innerText()).trim()).toBe(String(targetRank));
   });
 });
 

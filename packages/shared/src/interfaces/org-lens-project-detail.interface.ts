@@ -236,7 +236,12 @@ export interface OrgLensLeaderboardPage {
 
 /** One rendered leaderboard-board row (already ranked + paged server-side). */
 export interface BoardDisplayRow {
-  rank: number;
+  /**
+   * True board position over the FULL ranked set, read straight from the warehouse. `null` when the
+   * warehouse rank is genuinely absent (nullable activity rank) — the board renders an explicit
+   * unknown marker rather than fabricating a position from the current page offset.
+   */
+  rank: number | null;
   orgName: string;
   orgLogoUrl: string;
   initials: string;

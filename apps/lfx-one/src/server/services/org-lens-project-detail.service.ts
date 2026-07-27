@@ -569,8 +569,14 @@ export class OrgLensProjectDetailService {
    * params to apply identically to the ranked/page source and the count query.
    */
   private async resolveViewerCohort(table: string, slug: string, timeRangeType: string, orgUid: string): Promise<{ clause: string; params: string[] }> {
+    // One Salesforce account can map to several leaderboard rows (multiple crowd.dev orgs), so the pick
+    // must be deterministic — otherwise a per-page cohort lookup could resolve a different
+    // MY_ORGANIZATION_ID (or flip to the null cohort) on each page request and make ranks/totals/row
+    // membership disagree across pages. Order identically to fetchViewingLeaderboardRow (best-ranked
+    // row first) with ORG_ORGANIZATION_ID as a final unique tiebreak.
     const orgIdResult = await this.snowflakeService.execute<{ ORG_ORGANIZATION_ID: string }>(
-      `SELECT ORG_ORGANIZATION_ID FROM ${this.leaderboardTable()} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ? LIMIT 1`,
+      `SELECT ORG_ORGANIZATION_ID FROM ${this.leaderboardTable()} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
+       ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC LIMIT 1`,
       [slug, timeRangeType, orgUid]
     );
     const viewerOrgId = orgIdResult.rows[0]?.ORG_ORGANIZATION_ID;

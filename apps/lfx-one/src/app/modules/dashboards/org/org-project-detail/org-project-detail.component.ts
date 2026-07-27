@@ -603,7 +603,7 @@ export class OrgProjectDetailComponent {
     fetch.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (result) => {
         if (this.isBoardRequestStale(dimension, token)) return;
-        const rows = this.toDisplayRows(result?.rows ?? [], dimension, isActivity, first);
+        const rows = this.toDisplayRows(result?.rows ?? [], dimension, isActivity);
         boardState.set({ status: 'ready', rows, total: result?.total ?? 0, first, rowsPerPage, loading: false });
       },
       error: (err: unknown) => {
@@ -620,12 +620,14 @@ export class OrgProjectDetailComponent {
 
   /**
    * Map a server page of ranked rows to the board's display rows. Rows arrive pre-ranked and
-   * pre-paged, so the rank is read straight from the warehouse (falling back to the page offset only
-   * if a rank is somehow absent) — the client never re-derives rank from row position.
+   * pre-paged, so the rank is read straight from the warehouse; when a warehouse rank is genuinely
+   * absent (nullable activity rank) the row keeps a null rank and the template renders an explicit
+   * unknown marker — the client never re-derives rank from row position (a page offset would show a
+   * misleading "#1" for an unranked org, especially after search resets the paginator to page 0).
    */
-  private toDisplayRows(rows: OrgLensProjectLeaderboardRow[], dimension: LeaderboardDimension, isActivity: boolean, first: number): BoardDisplayRow[] {
-    return rows.map((row, i) => {
-      const rank = row.warehouseRank ?? first + i + 1;
+  private toDisplayRows(rows: OrgLensProjectLeaderboardRow[], dimension: LeaderboardDimension, isActivity: boolean): BoardDisplayRow[] {
+    return rows.map((row) => {
+      const rank = row.warehouseRank ?? null;
       if (isActivity) {
         const activity = dimension === 'technical' ? row.activityCount.contributions : row.activityCount.collaborations;
         const activityPct = dimension === 'technical' ? row.activityCount.contributionsPct : row.activityCount.collaborationsPct;
