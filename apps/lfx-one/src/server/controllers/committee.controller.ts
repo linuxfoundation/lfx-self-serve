@@ -727,8 +727,12 @@ export class CommitteeController {
 
       // Skip the FGA-gated pending-invite lookup when the accept originates from the LFID invite
       // flow — the invite UID was already known from the JWT, but the FGA invitee tuple may not
-      // have propagated yet. The committee-service is authoritative for invite existence and org
-      // requirements in all cases (LFXV2-2453).
+      // have propagated yet. The committee-service is authoritative for invite existence, invitee
+      // identity, and org requirements regardless of this flag: an unauthorized accept (wrong
+      // invitee, nonexistent invite, missing org) is still rejected upstream. The BFF pre-check
+      // below is a defense-in-depth optimization for non-LFID paths, not the primary security
+      // gate. Only the literal boolean true enables this path — truthy strings or objects fall
+      // through to the standard check (LFXV2-2453).
       if (body.from_lfid_invite !== true) {
         // Determine org-required using the invite's own organization_required field — accessible
         // to the invitee via the email-scoped query index regardless of committee-viewer status.
@@ -756,9 +760,9 @@ export class CommitteeController {
           return;
         }
 
-        // Only enforce org as required when organization_required is explicitly true. When it is
-        // null/undefined (invite pre-dates committee-service v1.1), skip the mandatory check and
-        // let the upstream accept endpoint be authoritative.
+        // BFF-side optimization only — committee-service independently enforces org requirements
+        // and is the authoritative security boundary. Only enforce early when organization_required
+        // is explicitly true; null/undefined (pre-v1.1 invites) defers to upstream.
         if (pendingInvite.organization_required === true && !hasOrg) {
           next(
             ServiceValidationError.forField('organization.name', 'Organization is required for this group', {

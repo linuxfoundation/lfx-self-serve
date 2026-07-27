@@ -196,9 +196,15 @@ export interface AcceptCommitteeInviteRequest {
   /** Organization the invitee confirms on acceptance */
   organization?: CommitteeOrganizationReference | null;
   /**
+   * BFF-only signal — consumed by the BFF and never forwarded to the committee-service upstream.
+   *
    * Set to true when the accept originates from the LFID invite flow where the invite UID was
-   * already known from the JWT — signals the BFF to skip the FGA-gated pending-invite pre-check,
-   * which may race against async FGA tuple propagation.
+   * already known from the JWT, signalling the BFF to skip the FGA-gated pending-invite pre-check
+   * (which races against async FGA tuple propagation). Only the literal boolean true enables the
+   * skip; any other truthy value falls through to the standard check.
+   *
+   * The committee-service remains the authoritative security boundary for invite existence,
+   * invitee identity, and org requirements regardless of this flag.
    */
   from_lfid_invite?: boolean;
 }

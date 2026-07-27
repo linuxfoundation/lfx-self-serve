@@ -52,16 +52,19 @@ export class InvitationAcceptFlowService {
 
     return contextReady$.pipe(
       switchMap((ctx) => this.preResolveOrganization(ctx)),
-      switchMap((ctx) => from(this.openOrganizationDialog(ctx))),
-      switchMap((result) => {
-        if (!result?.organization) {
-          return EMPTY;
-        }
-        return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, {
-          organization: result.organization,
-          fromLfidInvite: context.fromLfidInvite,
-        });
-      })
+      switchMap((ctx) =>
+        from(this.openOrganizationDialog(ctx)).pipe(
+          switchMap((result) => {
+            if (!result?.organization) {
+              return EMPTY;
+            }
+            return this.invitationService.acceptInvitation(ctx.committeeUid, ctx.inviteUid, {
+              organization: result.organization,
+              fromLfidInvite: ctx.fromLfidInvite,
+            });
+          })
+        )
+      )
     );
   }
 
