@@ -39,7 +39,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -561,12 +561,11 @@ export class CommitteeOverviewComponent {
         distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
         switchMap(({ committee, roleLoading, visitor }) => {
           if (roleLoading) {
-            // Role still resolving (e.g. mid silent-refresh) — hold the current documents state
-            // rather than emitting [] and wiping an already-populated feed. Re-assert loading=true
-            // explicitly: if a fetch was in flight, switchMap unsubscribing it also runs its
-            // finalize, which would otherwise leave documentsLoading falsely cleared during this
-            // hold window. The committee/role signal re-emits once the role settles.
-            this.documentsLoading.set(true);
+            // Role still resolving (e.g. mid silent-refresh) — hold both the documents list and
+            // documentsLoading exactly as they are (no signal write here). Safe because the fetch
+            // branch below clears documentsLoading with tap (fires only on emission), not finalize
+            // (also fires on switchMap-driven cancellation) — so cancelling an in-flight fetch to
+            // enter this branch can't have already cleared it out from under us.
             return EMPTY;
           }
           if (visitor) {
@@ -576,7 +575,7 @@ export class CommitteeOverviewComponent {
           this.documentsLoading.set(true);
           // No catchError here: CommitteeService.getCommitteeDocuments already falls back to
           // of([]) on failure, so a component-level handler would never fire.
-          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(finalize(() => this.documentsLoading.set(false)));
+          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(tap(() => this.documentsLoading.set(false)));
         })
       ),
       { initialValue: [] }

@@ -172,7 +172,12 @@ export function canManageCommitteeMembers(committee: Committee | null | undefine
   return !!committee?.writer;
 }
 
+/** Whether a member has an active "Voting Rep" status (excludes Alternate Voting Rep). */
+export function isVotingRep(member: CommitteeMember): boolean {
+  return member.voting?.status === CommitteeMemberVotingStatus.VOTING_REP;
+}
+
 /** Count of members with an active "Voting Rep" status (excludes Alternate Voting Rep). */
 export function countVotingReps(members: CommitteeMember[]): number {
-  return members.filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length;
+  return members.filter(isVotingRep).length;
 }
