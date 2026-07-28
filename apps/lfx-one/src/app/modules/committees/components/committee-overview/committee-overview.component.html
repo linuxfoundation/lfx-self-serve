@@ -275,7 +275,7 @@
                   (click)="handleActivityItemClick(item)"
                   [attr.data-testid]="'committee-overview-activity-item-' + item.key">
                   <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <i [class]="item.icon" class="text-gray-500 text-xs"></i>
+                    <i [class]="item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
                   </div>
                   <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ item.label }}</span>
                 </button>
