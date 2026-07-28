@@ -43,3 +43,4 @@ export * from './crowdfunding.utils';
 export * from './persona.utils';
 export * from './metric-trend.utils';
 export * from './org-meetings-insights.utils';
+export * from './cla-view.utils';

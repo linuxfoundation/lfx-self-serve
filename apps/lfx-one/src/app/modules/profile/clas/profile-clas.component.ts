@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
+import { isMyClasEmpty, shouldShowGithubCta, splitAgreementsByKind } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -64,17 +65,10 @@ export class ProfileClasComponent {
   protected readonly identity = computed(() => this.state().data?.identity);
 
   private readonly agreements = computed<MyClaAgreement[]>(() => this.state().data?.agreements ?? []);
-  protected readonly iclas = computed(() => this.agreements().filter((a) => a.kind === 'ICLA'));
-  protected readonly eclas = computed(() => this.agreements().filter((a) => a.kind === 'ECLA'));
-  protected readonly isEmpty = computed(() => this.state().loaded && !this.state().error && this.agreements().length === 0);
-
-  // Show the GitHub-link CTA when the identity has no linked GitHub account (its CLA history
-  // keyed on GitHub can't be matched) or when nothing was found at all.
-  protected readonly showGithubCta = computed(() => {
-    const identity = this.identity();
-    if (!identity) return false;
-    return identity.githubLinked === false || identity.unmatched;
-  });
+  protected readonly iclas = computed(() => splitAgreementsByKind(this.agreements()).iclas);
+  protected readonly eclas = computed(() => splitAgreementsByKind(this.agreements()).eclas);
+  protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
+  protected readonly showGithubCta = computed(() => shouldShowGithubCta(this.identity()));
 
   protected retry(): void {
     this.refresh$.next();
