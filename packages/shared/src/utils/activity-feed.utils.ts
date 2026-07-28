@@ -13,8 +13,10 @@ import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '.
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
 import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
+import { getPastMeetingResourceId } from './past-meeting.utils';
 import { normalizePollStatus } from './poll.utils';
 import { getSurveyDisplayStatus } from './survey.utils';
+import { isValidUrl } from './url.utils';
 
 /** Per-source cap before merging, so one noisy source can't crowd out the rest. */
 const PER_SOURCE_LIMIT = 5;
@@ -34,21 +36,6 @@ function timestampValue(timestamp: string): number {
 }
 
 /**
- * True for a URL safe to open directly in a new tab — http(s) only, matching the same guard
- * `DocumentsTableComponent.openDocument` applies before its own `window.open` call.
- */
-function isSafeExternalUrl(url: string | undefined): url is string {
-  if (!url) {
-    return false;
-  }
-  try {
-    return ['http:', 'https:'].includes(new URL(url).protocol);
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Group Overview "Recent Activity" stop-gap: merges the latest items across past meetings, votes,
  * surveys, and documents into one time-ordered list. Upcoming meetings are intentionally excluded
  * — they're future-dated, already covered by the "Next Meeting" card, and would otherwise dominate
@@ -64,10 +51,12 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       label: `Meeting held: ${m.title}`,
       timestamp: m.start_time ?? '',
       icon: 'fa-light fa-clock-rotate-left',
-      // Route param is the ITX-native PastMeeting.id, not meeting_and_occurrence_id — the detail
-      // page fetches via /itx/past_meetings/{id}, which doesn't understand the composite
-      // occurrence id used elsewhere for query-service-indexed sub-resource fetches.
-      action: { kind: 'route', path: `/meetings/${m.id}/details` },
+      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) — the same identifier every
+      // other past-meeting surface uses (meeting-card, meeting-organizer, attachments). The
+      // detail page's own recording/transcript/summary sub-fetches key off
+      // meeting_and_occurrence_id specifically; passing the bare id would silently return those
+      // empty for any occurrence where the two values diverge.
+      action: { kind: 'route', path: `/meetings/${getPastMeetingResourceId(m)}/details` },
     }));
 
   const voteItems: ActivityFeedItem[] = input.votingEnabled
@@ -115,8 +104,9 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
       // Only 'link' documents open directly — the Documents tab treats 'file' as a download
       // (via a committee-scoped proxy URL, not doc.url) rather than an "open", and 'folder' has
-      // no standalone target outside the Documents tab's own drill-down state.
-      action: d.type === 'link' && isSafeExternalUrl(d.url) ? { kind: 'external-url', url: d.url } : { kind: 'tab', tab: 'documents' },
+      // no standalone target outside the Documents tab's own drill-down state. isValidUrl is the
+      // same shared validator used across the app for untrusted-URL sinks.
+      action: d.type === 'link' && d.url && isValidUrl(d.url) ? { kind: 'external-url', url: d.url } : { kind: 'tab', tab: 'documents' },
     }));
 
   return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems]

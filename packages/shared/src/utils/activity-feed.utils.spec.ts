@@ -198,8 +198,13 @@ describe('buildActivityFeed', () => {
   });
 
   describe('action', () => {
-    it('routes a past-meeting item to the ITX-native id, not the composite occurrence id', () => {
+    it('routes a past-meeting item to the composite occurrence id when present, not the bare id', () => {
       const items = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
+      expect(items[0].action).toEqual({ kind: 'route', path: '/meetings/pm-42-occ-9/details' });
+    });
+
+    it('falls back to the bare id when meeting_and_occurrence_id is absent', () => {
+      const items = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: undefined })] }));
       expect(items[0].action).toEqual({ kind: 'route', path: '/meetings/pm-42/details' });
     });
 

@@ -329,7 +329,7 @@ export class CommitteeOverviewComponent {
     const { action } = item;
     switch (action.kind) {
       case 'route':
-        void this.router.navigateByUrl(action.path);
+        void this.router.navigate([action.path], { queryParamsHandling: 'preserve' });
         break;
       case 'vote-drawer': {
         const vote = this.votes().find((v) => v.uid === action.voteUid);
