@@ -5,8 +5,24 @@
 // branching logic (ICLA/ECLA split, empty/CTA rules, status labels) is unit-testable without
 // an Angular component-test harness.
 
+import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity } from '../interfaces/components.interface';
+import { ProfileTab } from '../interfaces';
 import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+
+/**
+ * Profile subtab list, with the read-only "My CLAs" tab appended (before Transactions)
+ * when `my-clas-enabled` is on. Shared by both profile-hub nav entry points — the layout
+ * subtab strip and the sidebar me-lens ⋯ menu — so they never disagree on whether the tab
+ * is present. Returns the static PROFILE_TABS reference unchanged when the flag is off.
+ */
+export function buildProfileTabs(myClasEnabled: boolean): ProfileTab[] {
+  if (!myClasEnabled) return PROFILE_TABS;
+  const clasTab: ProfileTab = { id: 'clas', label: 'My CLAs', route: 'clas' };
+  const insertAt = PROFILE_TABS.findIndex((t) => t.id === 'transactions');
+  if (insertAt === -1) return [...PROFILE_TABS, clasTab];
+  return [...PROFILE_TABS.slice(0, insertAt), clasTab, ...PROFILE_TABS.slice(insertAt)];
+}
 
 /** Partitions agreements into ICLA and ECLA groups, preserving order. */
 export function splitAgreementsByKind(agreements: MyClaAgreement[]): { iclas: MyClaAgreement[]; eclas: MyClaAgreement[] } {
