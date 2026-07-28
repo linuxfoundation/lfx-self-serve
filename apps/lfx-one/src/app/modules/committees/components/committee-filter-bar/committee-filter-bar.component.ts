@@ -6,6 +6,7 @@ import { FormGroup } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { FilterOption } from '@lfx-one/shared/interfaces';
 
 /**
  * Search + foundation/project/voting-status filter bar shared by the committee table and the
@@ -21,11 +22,11 @@ export class CommitteeFilterBarComponent {
   public readonly committeeLabel = COMMITTEE_LABEL;
 
   public readonly searchForm = input.required<FormGroup>();
-  public readonly votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
+  public readonly votingStatusOptions = input.required<FilterOption[]>();
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
-  public readonly foundationOptions = input<{ label: string; value: string | null }[]>([]);
-  public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
+  public readonly foundationOptions = input<FilterOption[]>([]);
+  public readonly projectOptions = input<FilterOption[]>([]);
 
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();

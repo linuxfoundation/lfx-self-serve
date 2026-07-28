@@ -227,6 +227,22 @@ describe('groupCommitteesByFoundation', () => {
     expect(groups.find((g) => g.key === 'proj-z')?.testIdSlug).toBe('foo-bar-2');
   });
 
+  it("keeps testid slugs unique when a disambiguated suffix collides with another bucket's base slug", () => {
+    // Two "Alpha Project" buckets claim alpha-project / alpha-project-2; a third bucket whose own
+    // label is literally "Alpha Project 2" bases to alpha-project-2 too. A naive per-base-slug
+    // counter would emit alpha-project-2 twice; walking candidates until one is free must not.
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: 'Alpha Project' }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: 'Alpha Project' }),
+      committee({ uid: 'c3', project_uid: 'proj-c', project_name: 'Alpha Project 2' }),
+    ]);
+    const slugs = groups.map((g) => g.testIdSlug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    expect(groups.find((g) => g.key === 'proj-a')?.testIdSlug).toBe('alpha-project');
+    expect(groups.find((g) => g.key === 'proj-b')?.testIdSlug).toBe('alpha-project-2');
+    expect(groups.find((g) => g.key === 'proj-c')?.testIdSlug).toBe('alpha-project-2-2');
+  });
+
   it('merges a degraded committee into an existing named bucket that already carries the identical label', () => {
     const groups = groupCommitteesByFoundation([
       committee({ uid: 'c1', project_uid: 'proj-cncf', project_name: 'CNCF' }),

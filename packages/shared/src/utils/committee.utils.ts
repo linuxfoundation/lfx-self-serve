@@ -231,14 +231,24 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
   // server/client ICU collation difference could then flip which bucket gets which testid between the
   // SSR HTML and the hydrated DOM. Keys are already unique, and this ordering depends only on them —
   // never on the labels or the display sort below.
+  // Track slugs actually emitted (not per-base-slug occurrence counts) — a naive counter can still
+  // collide when one bucket's base slug matches another's already-disambiguated suffix, e.g. labels
+  // "Alpha Project", "Alpha Project", "Alpha Project 2" would otherwise emit alpha-project,
+  // alpha-project-2, alpha-project-2 (duplicate). Walking candidates until one is free is unique by
+  // construction regardless of input.
   const slugByKey = new Map<string, string>();
-  const slugCounts = new Map<string, number>();
+  const usedSlugs = new Set<string>();
   for (const key of [...buckets.keys()].sort(compareCodeUnits)) {
     const bucket = buckets.get(key)!;
     const baseSlug = slugify(bucket.label) || 'group';
-    const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
-    slugCounts.set(baseSlug, occurrence);
-    slugByKey.set(key, occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}`);
+    let candidate = baseSlug;
+    let suffix = 1;
+    while (usedSlugs.has(candidate)) {
+      suffix += 1;
+      candidate = `${baseSlug}-${suffix}`;
+    }
+    usedSlugs.add(candidate);
+    slugByKey.set(key, candidate);
   }
 
   const groups = [...buckets.values()].sort((a, b) => {

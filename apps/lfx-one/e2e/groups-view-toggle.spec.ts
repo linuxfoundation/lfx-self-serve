@@ -188,7 +188,7 @@ test.describe('My Groups — list↔card view toggle', () => {
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_B}`), 'non-matching card should be filtered out').toHaveCount(0);
   });
 
-  test('a search matching nothing shows the "no results" empty state with a reset CTA', async ({ page }) => {
+  test('a search matching nothing shows the "no results" empty state, and its reset CTA actually clears the search', async ({ page }) => {
     await gotoMyGroups(page);
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -197,6 +197,16 @@ test.describe('My Groups — list↔card view toggle', () => {
 
     await expect(page.getByTestId('groups-card-grid-no-results'), 'no-results empty state should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toHaveCount(0);
+
+    await page.getByTestId('groups-card-grid-no-results').getByRole('button', { name: 'Reset filters' }).click();
+
+    // The reset CTA must clear the search text (not just the behavioral-class chip) — both cards
+    // should return once the filter that actually caused the empty state is cleared.
+    await expect(page.getByTestId('committee-search-input').getByRole('textbox')).toHaveValue('');
+    await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`), 'cards should return after reset').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_B}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });
 

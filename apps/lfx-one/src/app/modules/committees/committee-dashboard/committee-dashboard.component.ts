@@ -298,6 +298,20 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(cls);
   }
 
+  /**
+   * Full filter reset for the My Groups card view. Unlike `<lfx-committee-table>`, which owns
+   * `searchForm` and clears it internally in its own `resetFilters()` before emitting
+   * `resetRequested`, the card grid has no filter bar of its own — its "Reset filters" CTA only
+   * emits `resetRequested`, which previously cleared just the behavioral-class chip and left a
+   * non-matching search term or foundation/project filter in place (a dead reset button).
+   */
+  public resetAllFilters(): void {
+    this.searchForm.patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    this.foundationFilter.set(null);
+    this.projectFilter.set(null);
+    this.behavioralClassFilter.set(null);
+  }
+
   public setViewMode(mode: GroupsViewMode): void {
     this.viewMode.set(mode);
     this.persistViewMode(mode);
@@ -618,6 +632,10 @@ export class CommitteeDashboardComponent {
   }
 
   private restoreViewMode(): void {
+    // The only call site is inside afterNextRender(), which never runs server-side, so this guard
+    // is redundant in practice — kept anyway so the browser-API access is locally guarded rather
+    // than relying on the caller, matching persistViewMode() below.
+    if (!isPlatformBrowser(this.platformId)) return;
     try {
       const stored = localStorage.getItem(GROUPS_VIEW_MODE_STORAGE_KEY);
       if (stored === 'list' || stored === 'card') {
