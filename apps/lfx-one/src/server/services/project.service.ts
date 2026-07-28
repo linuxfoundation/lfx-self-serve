@@ -7029,17 +7029,15 @@ export class ProjectService {
 
     const [totalProjectsResult, totalMembersResult, valueConcentrationResult, healthScoreResult] = await Promise.all([
       this.snowflakeService.execute<TotalProjectsRow>(totalProjectsQuery, filteredSlugs),
-      this.snowflakeService
-        .execute<TotalMembersRow>(totalMembersQuery, filteredSlugs)
-        .catch((error) => {
-          // Pre-dbt-deploy the monthly table is absent; degrade this one query to
-          // empty rows so projects, value, and health scores still resolve.
-          if (!SnowflakeService.isMissingObjectError(error)) throw error;
-          logger.warning(req, 'get_multi_foundation_summary_batch', 'Total members monthly table not deployed yet; returning empty', {
-            slug_count: filteredSlugs.length,
-          });
-          return { rows: [], metadata: [] } as SnowflakeQueryResult<TotalMembersRow>;
-        }),
+      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs).catch((error) => {
+        // Pre-dbt-deploy the monthly table is absent; degrade this one query to
+        // empty rows so projects, value, and health scores still resolve.
+        if (!SnowflakeService.isMissingObjectError(error)) throw error;
+        logger.warning(req, 'get_multi_foundation_summary_batch', 'Total members monthly table not deployed yet; returning empty', {
+          slug_count: filteredSlugs.length,
+        });
+        return { rows: [], metadata: [] } as SnowflakeQueryResult<TotalMembersRow>;
+      }),
       this.snowflakeService.execute<ValueConcentrationRow>(valueConcentrationQuery, filteredSlugs),
       this.snowflakeService.execute<HealthScoreRow>(healthScoreQuery, filteredSlugs),
     ]);
