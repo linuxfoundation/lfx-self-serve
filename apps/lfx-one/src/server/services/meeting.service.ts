@@ -41,6 +41,7 @@ import {
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
+  selectApplicableRsvp,
   selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -1193,20 +1194,13 @@ export class MeetingService {
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
       const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
 
-      if (occurrenceId) {
-        // First try to find an occurrence-specific RSVP (takes precedence)
-        const occurrenceRsvp = userRsvps.find((rsvp) => rsvp.occurrence_id === occurrenceId);
-        if (occurrenceRsvp) {
-          return occurrenceRsvp;
-        }
-
-        // Fall back to meeting-level RSVP (no occurrence_id means RSVP for all occurrences)
-        const meetingRsvp = userRsvps.find((rsvp) => !rsvp.occurrence_id);
-        return meetingRsvp || null;
-      }
-
-      // No occurrence specified - return any RSVP for this user
-      return userRsvps[0] || null;
+      // Delegate to the shared scope resolver so this endpoint and
+      // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
+      // occurrence_id (LFXV2-2864) and honours single > this_and_following > all
+      // in newest-first order — replacing the previous strict-equality match
+      // which never fired for occurrence-scoped rows and the arbitrary
+      // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
+      return selectApplicableRsvp(occurrenceId, userRsvps);
     } catch (error) {
       logger.warning(req, 'get_meeting_rsvp_for_current_user', 'Failed to fetch user RSVP, returning null', {
         meeting_id: meetingUid,
