@@ -319,16 +319,17 @@
 <!-- Default audience 'creator' renders an inline "Cast Vote" CTA for the viewer's own awaiting-response
      active votes. Reuse the same dashboard-cast-drawer-host + vote-cast-drawer pair every other
      dashboard wires this CTA to (user/board-member/executive-director/multi-persona/project), rather
-     than a tab hop — the committee Votes tab mounts this identical drawer with the same CTA and no
-     cast flow of its own (committee-votes.component.html), so a tab redirect would just relocate the
-     dead end. committeeUpdated on voteSubmitted reuses the existing refreshMembers() → refreshCommittee()
-     path so the re-fetched committee() also re-triggers initVotes()'s toObservable(this.committee). -->
+     than a tab hop — the committee Votes tab mounts this identical drawer with the same CTA and its
+     own matching fix (committee-votes.component.html), so a tab redirect would just relocate the dead
+     end rather than resolve it. voteSubmitted goes to a dedicated votesRefresh$ (not committeeUpdated,
+     which the parent wires to the much heavier refreshMembers() → refreshCommittee() — see
+     castVoteUids/votesRefresh$ above). -->
 <lfx-vote-results-drawer
   [(visible)]="voteDrawerVisible"
   [voteId]="selectedVoteId()"
   [listVote]="selectedVote()"
   (castVoteRequested)="castDrawerHost.open($event)"></lfx-vote-results-drawer>
-<lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="committeeUpdated.emit()" />
+<lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="onVoteSubmitted($event)" />
 
 <!-- Survey Results Drawer -->
 <!-- hasPMOAccess also gates the per-recipient Responses tab (not just the admin menu), so it's

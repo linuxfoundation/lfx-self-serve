@@ -45,5 +45,14 @@
     </lfx-card>
   }
 
-  <lfx-vote-results-drawer [(visible)]="resultsDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()"> </lfx-vote-results-drawer>
+  <!-- Default audience 'creator' renders an inline "Cast Vote" CTA for the viewer's own awaiting-response
+       active votes — reuse the same dashboard-cast-drawer-host + vote-cast-drawer pair every dashboard
+       wires this CTA to (see committee-overview.component.html for the same pairing). -->
+  <lfx-vote-results-drawer
+    [(visible)]="resultsDrawerVisible"
+    [voteId]="selectedVoteId()"
+    [listVote]="selectedVote()"
+    (castVoteRequested)="castDrawerHost.open($event)">
+  </lfx-vote-results-drawer>
+  <lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="onVoteSubmitted()" />
 </div>

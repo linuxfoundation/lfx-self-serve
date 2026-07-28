@@ -8,17 +8,18 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
+import { DashboardCastDrawerHostComponent } from '@app/modules/dashboards/components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap } from 'rxjs';
+import { catchError, filter, finalize, map, merge, of, Subject, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent],
+  imports: [ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent, DashboardCastDrawerHostComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -40,6 +41,9 @@ export class CommitteeVotesComponent {
   public resultsDrawerVisible = model<boolean>(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
+  // Refresh trigger for initVotes(), separate from the committee-change source it merges with below
+  // so a post-cast refresh can't double-emit against it (no startWith).
+  private readonly votesRefresh$ = new Subject<void>();
 
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
@@ -51,6 +55,12 @@ export class CommitteeVotesComponent {
     this.selectedVoteId.set(voteUid);
     this.selectedVote.set(vote);
     this.resultsDrawerVisible.set(true);
+  }
+
+  /** DashboardCastDrawerHost's voteSubmitted — refreshes the table so a since-closed poll (auto-ends
+   *  once every eligible voter has responded) reflects its new status without a manual reload. */
+  public onVoteSubmitted(): void {
+    this.votesRefresh$.next();
   }
 
   protected onCreateVote(): void {
@@ -83,7 +93,7 @@ export class CommitteeVotesComponent {
 
   private initVotes(): Signal<Vote[]> {
     return toSignal(
-      toObservable(this.committee).pipe(
+      merge(toObservable(this.committee), this.votesRefresh$.pipe(map(() => this.committee()))).pipe(
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.loading.set(true);
