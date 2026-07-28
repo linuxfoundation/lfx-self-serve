@@ -3,20 +3,19 @@
 
 // Unit tests for the shared RSVP scope resolver (LFXV2-2864).
 //
-// These tests pin the exact production state of meeting `92442170146` at the time
-// LFXV2-2864 was reported: Connie Krueger held a base `all` accept, a
+// These tests pin the exact shape of the production state observed at the time
+// LFXV2-2864 was reported: the affected user held a base `all` accept, a
 // `this_and_following` accept anchored at Jul 21 UTC, and a single-occurrence
-// decline for Aug 11 UTC (= Aug 12 in her local tz). Under the pre-fix strict
-// equality on `occurrence_id`, the ITX endpoint's seconds-encoded ids never matched
-// the RSVP records' millisecond-encoded ids, so the single decline was invisible
-// and the "Your RSVP" chip fell through to whichever RSVP happened to come first
-// in the query-service response.
+// decline for Aug 11 UTC (= Aug 12 in their local tz). Under the pre-fix strict
+// equality on `occurrence_id`, the ITX endpoint's seconds-encoded ids never
+// matched the RSVP records' millisecond-encoded ids, so the single decline was
+// invisible and the "Your RSVP" chip fell through to whichever RSVP happened to
+// come first in the query-service response.
 //
-// Data source: LFXV2-2864 Jira comment (Investigation notes — meeting 92442170146).
-// All identifiers below are the ACTUAL production ids Connie owns; they are already
-// posted publicly on the Jira ticket, so echoing them here keeps the fixture
-// verifiable against real state rather than a synthetic reduction that could
-// silently drift from the bug's real shape.
+// Identifiers below are synthetic (`series-1`, `reg-1`, `rsvp-N`,
+// `user@example.com`); the value comes from the response-type + scope +
+// occurrence_id + timestamp arrangement, not from any specific meeting or user.
+// See LFXV2-2864 for the original data breakdown.
 
 import { describe, expect, it } from 'vitest';
 
@@ -30,10 +29,10 @@ import { isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rs
 function rsvp(overrides: Partial<MeetingRsvp>): MeetingRsvp {
   return {
     id: overrides.id || 'rsvp-1',
-    meeting_id: overrides.meeting_id || '92442170146',
-    registrant_id: overrides.registrant_id || '1e1322f3-d21e-42b9-8c9d-80cc7aa9f5f9',
+    meeting_id: overrides.meeting_id || 'series-1',
+    registrant_id: overrides.registrant_id || 'reg-1',
     username: '',
-    email: 'ckrueger@linuxfoundation.org',
+    email: 'user@example.com',
     response_type: overrides.response_type || 'accepted',
     scope: overrides.scope || 'all',
     occurrence_id: overrides.occurrence_id,
@@ -46,40 +45,40 @@ function rsvp(overrides: Partial<MeetingRsvp>): MeetingRsvp {
 }
 
 /**
- * Connie's real 3 RSVPs on meeting `92442170146`, as fetched from OpenSearch.
- * The full data breakdown lives on LFXV2-2864.
+ * Synthetic reproduction of the 3-RSVP prod fingerprint from LFXV2-2864:
+ * base `all` accept + Jul-21 T&F accept + Aug-11 `single` decline.
  */
-const CONNIE_BASE_ALL_ACCEPT = rsvp({
-  id: 'b7d3a81d-0c52-481f-8274-29099773ea2f',
+const BASE_ALL_ACCEPT = rsvp({
+  id: 'rsvp-1',
   response_type: 'accepted',
   scope: 'all',
   occurrence_id: undefined,
-  meeting_and_occurrence_id: '92442170146',
+  meeting_and_occurrence_id: 'series-1',
   created_at: '2026-07-10T20:40:37Z',
   modified_at: '2026-07-10T20:40:37Z',
 });
 
-const CONNIE_TAF_JUL_21_ACCEPT = rsvp({
-  id: '67d85cd7-bba2-4880-9307-2b873a648de9',
+const TAF_JUL_21_ACCEPT = rsvp({
+  id: 'rsvp-2',
   response_type: 'accepted',
   scope: 'this_and_following',
   occurrence_id: '1784642400000', // Jul 21 14:00 UTC (ms)
-  meeting_and_occurrence_id: '92442170146-1784642400000',
+  meeting_and_occurrence_id: 'series-1-1784642400000',
   created_at: '2026-07-21T02:17:23Z',
   modified_at: '2026-07-21T02:17:23Z',
 });
 
-const CONNIE_SINGLE_AUG_11_DECLINE = rsvp({
-  id: 'ea7dc865-f5ba-4ff3-8957-ec9b36109cbc',
+const SINGLE_AUG_11_DECLINE = rsvp({
+  id: 'rsvp-3',
   response_type: 'declined',
   scope: 'single',
   occurrence_id: '1786456800000', // Aug 11 14:00 UTC (ms)
-  meeting_and_occurrence_id: '92442170146-1786456800000',
+  meeting_and_occurrence_id: 'series-1-1786456800000',
   created_at: '2026-07-27T21:43:07Z',
   modified_at: '2026-07-27T21:43:07Z',
 });
 
-const CONNIES_RSVPS = [CONNIE_BASE_ALL_ACCEPT, CONNIE_TAF_JUL_21_ACCEPT, CONNIE_SINGLE_AUG_11_DECLINE];
+const PROD_FINGERPRINT_RSVPS = [BASE_ALL_ACCEPT, TAF_JUL_21_ACCEPT, SINGLE_AUG_11_DECLINE];
 
 // The meeting-service occurrence calculator emits occurrence_id in Unix SECONDS
 // (10 digits), matching what /itx/meetings/{id} returns to the frontend. These
@@ -136,15 +135,24 @@ describe('isSameOccurrenceId', () => {
     expect(isSameOccurrenceId(undefined, undefined)).toBe(false);
     expect(isSameOccurrenceId('', '1786456800000')).toBe(false);
   });
+
+  it('returns false for equal-but-malformed strings (no string fast-path)', () => {
+    // Both sides go through occurrenceIdToMs — malformed equal strings must not
+    // shortcut to `true` via reference equality; that would let a malformed
+    // single-occurrence RSVP falsely match its own bogus occurrence_id.
+    expect(isSameOccurrenceId('0', '0')).toBe(false);
+    expect(isSameOccurrenceId('not-a-number', 'not-a-number')).toBe(false);
+    expect(isSameOccurrenceId('-1', '-1')).toBe(false);
+  });
 });
 
-describe('selectApplicableRsvp — Connie Krueger (LFXV2-2864)', () => {
-  it('returns declined for the Aug 11 occurrence (her single decline in ms) when the caller passes seconds', () => {
+describe('selectApplicableRsvp — LFXV2-2864 prod fingerprint', () => {
+  it('returns declined for the Aug 11 occurrence (single decline in ms) when the caller passes seconds', () => {
     // Pre-fix: strict equality failed ("1786456800000" !== "1786456800"),
     // resolver walked past the single decline, returned the older T&F accept.
     // Post-fix: the resolver normalises both sides to ms and matches.
-    const result = selectApplicableRsvp(OCC_AUG_11_SECONDS, CONNIES_RSVPS);
-    expect(result?.id).toBe(CONNIE_SINGLE_AUG_11_DECLINE.id);
+    const result = selectApplicableRsvp(OCC_AUG_11_SECONDS, PROD_FINGERPRINT_RSVPS);
+    expect(result?.id).toBe(SINGLE_AUG_11_DECLINE.id);
     expect(result?.response_type).toBe('declined');
   });
 
@@ -152,20 +160,20 @@ describe('selectApplicableRsvp — Connie Krueger (LFXV2-2864)', () => {
     // Sanity check on the shape of the bug the ticket describes: a single-occurrence
     // decline must not bleed onto other occurrences. Jul 28 is after the T&F anchor
     // (Jul 21) so the T&F accept wins over the base `all`.
-    const result = selectApplicableRsvp(OCC_JUL_28_SECONDS, CONNIES_RSVPS);
-    expect(result?.id).toBe(CONNIE_TAF_JUL_21_ACCEPT.id);
+    const result = selectApplicableRsvp(OCC_JUL_28_SECONDS, PROD_FINGERPRINT_RSVPS);
+    expect(result?.id).toBe(TAF_JUL_21_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
 
   it('returns accepted for Aug 4 (T&F applies, single decline for Aug 11 does not)', () => {
-    const result = selectApplicableRsvp(OCC_AUG_04_SECONDS, CONNIES_RSVPS);
-    expect(result?.id).toBe(CONNIE_TAF_JUL_21_ACCEPT.id);
+    const result = selectApplicableRsvp(OCC_AUG_04_SECONDS, PROD_FINGERPRINT_RSVPS);
+    expect(result?.id).toBe(TAF_JUL_21_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
 
   it('returns accepted for Aug 18 (post-decline occurrence — T&F still applies)', () => {
-    const result = selectApplicableRsvp(OCC_AUG_18_SECONDS, CONNIES_RSVPS);
-    expect(result?.id).toBe(CONNIE_TAF_JUL_21_ACCEPT.id);
+    const result = selectApplicableRsvp(OCC_AUG_18_SECONDS, PROD_FINGERPRINT_RSVPS);
+    expect(result?.id).toBe(TAF_JUL_21_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
 
@@ -174,8 +182,8 @@ describe('selectApplicableRsvp — Connie Krueger (LFXV2-2864)', () => {
     // is for Aug 11 only. Only the base `all` remains — this is the historical
     // "declined by association" trap the old T&F comparison-against-created_at
     // could fall into, since created_at (Jul 21T02:17) is also after Jul 14.
-    const result = selectApplicableRsvp(OCC_JUL_14_SECONDS, CONNIES_RSVPS);
-    expect(result?.id).toBe(CONNIE_BASE_ALL_ACCEPT.id);
+    const result = selectApplicableRsvp(OCC_JUL_14_SECONDS, PROD_FINGERPRINT_RSVPS);
+    expect(result?.id).toBe(BASE_ALL_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
 });
@@ -210,6 +218,35 @@ describe('selectApplicableRsvp — scope precedence and edges', () => {
 
     const result = selectApplicableRsvp(undefined, [older, newer]);
     expect(result?.id).toBe('newer');
+  });
+
+  it('picks a fresher `all` over an older matching `single` for the same occurrence', () => {
+    // Regression guard for the "newest applicable wins" semantic: if a user
+    // previously declined a specific occurrence via `single` and then re-accepted
+    // the entire series via `all`, the newer series-wide answer must win — the
+    // resolver is not a strict single > all hierarchy.
+    const olderSingleDecline = rsvp({
+      id: 'older-single',
+      meeting_id: meetingId,
+      registrant_id: registrantId,
+      scope: 'single',
+      response_type: 'declined',
+      occurrence_id: OCC_JUL_28_SECONDS,
+      modified_at: '2026-06-01T00:00:00Z',
+    });
+    const newerAllAccept = rsvp({
+      id: 'newer-all',
+      meeting_id: meetingId,
+      registrant_id: registrantId,
+      scope: 'all',
+      response_type: 'accepted',
+      occurrence_id: undefined,
+      modified_at: '2026-07-01T00:00:00Z',
+    });
+
+    const result = selectApplicableRsvp(OCC_JUL_28_SECONDS, [olderSingleDecline, newerAllAccept]);
+    expect(result?.id).toBe('newer-all');
+    expect(result?.response_type).toBe('accepted');
   });
 
   it('picks a fresher this_and_following over an older `all` for a covered occurrence', () => {

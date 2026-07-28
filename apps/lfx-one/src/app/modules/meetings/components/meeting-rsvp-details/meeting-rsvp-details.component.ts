@@ -153,8 +153,7 @@ export class MeetingRsvpDetailsComponent {
     return computed(() => {
       const rsvps = this.rsvps();
       const occurrence = this.currentOccurrence();
-      const meeting = this.meeting();
-      return calculateRsvpCounts(occurrence, rsvps, meeting.start_time);
+      return calculateRsvpCounts(occurrence, rsvps);
     });
   }
 

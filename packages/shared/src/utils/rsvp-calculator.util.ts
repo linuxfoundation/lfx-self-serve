@@ -21,20 +21,26 @@ import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } 
  * as "cannot compare" and skip the RSVP rather than pretend equality.
  */
 export function occurrenceIdToMs(occurrenceId: string | null | undefined): number | null {
-  if (!occurrenceId) return null;
+  if (typeof occurrenceId !== 'string' || occurrenceId.length === 0) return null;
   const n = Number(occurrenceId);
   if (!Number.isFinite(n) || n <= 0) return null;
-  return occurrenceId.length <= 10 ? n * 1000 : n;
+  // Values below 1e12 ms (~Sep 2001) are Unix seconds; at/above are already ms.
+  // Magnitude cutoff is unit-correct regardless of string formatting (padded zeros,
+  // scientific notation) and avoids reading .length on a potentially-tainted value.
+  return n < 1e12 ? n * 1000 : n;
 }
 
 /**
  * Compare two `occurrence_id` strings while treating seconds and milliseconds as
  * the same instant. Prefer this over `===` anywhere an occurrence-side id may be
  * compared against an rsvp-side id (LFXV2-2864).
+ *
+ * Both sides go through `occurrenceIdToMs`, so malformed inputs (empty strings,
+ * `"0"`, non-numeric) resolve to `null` and the comparison returns `false` —
+ * callers must treat a malformed RSVP as unmatched rather than accidentally
+ * equal via a string fast-path.
  */
 export function isSameOccurrenceId(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
   const am = occurrenceIdToMs(a);
   const bm = occurrenceIdToMs(b);
   return am !== null && bm !== null && am === bm;
@@ -49,15 +55,19 @@ export function isSameOccurrenceId(a: string | null | undefined, b: string | nul
  * both were silently wrong for the same unit-mismatch reason — consolidating
  * here keeps them from drifting apart again.
  *
- * Precedence (newest RSVP wins within each scope):
- * 1. `single` scope whose `occurrence_id` matches this occurrence (unit-normalised).
- * 2. `this_and_following` scope whose anchor (`rsvp.occurrence_id`) is at or
- *    before this occurrence's start.
- * 3. `all` scope (series-wide).
+ * Algorithm: walk the user's RSVPs newest-first (by `modified_at` → `updated_at`
+ * → `created_at`) and return the first one that is applicable to `occurrenceId`.
+ * Applicability by scope:
+ * - `all`: always applicable (series-wide).
+ * - `single`: applicable iff `rsvp.occurrence_id` matches (unit-normalised).
+ * - `this_and_following`: applicable iff the anchor occurrence (encoded in
+ *   `rsvp.occurrence_id`) is at or before `occurrenceId`'s start.
  *
- * The scopes are interleaved in a single "most recent applicable" walk rather
- * than checked in strict tiers so a fresh `this_and_following` correctly
- * overrides an older `all` for future occurrences.
+ * This is a "newest applicable wins" resolver, **not** a strict scope hierarchy —
+ * a newer `all` will beat an older matching `single`, and a newer `single`
+ * beats an older `this_and_following` on that specific occurrence. That mirrors
+ * how Google Calendar / Zoom themselves resolve overlapping responses: the most
+ * recent action the user took is the one that stands.
  *
  * @param occurrenceId Occurrence id in either seconds or milliseconds; nullish
  *   means the caller has no per-occurrence context (non-recurring meeting or
@@ -111,15 +121,17 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
 }
 
 /**
- * Calculate RSVP counts for a specific occurrence
- * Takes into account RSVP scope (single, all, this_and_following) and uses the most recent RSVP per user
+ * Calculate RSVP counts for a specific occurrence.
+ *
+ * Groups RSVPs by registrant, resolves each user's applicable RSVP for the
+ * occurrence via {@link selectApplicableRsvp} (scope-aware, unit-normalised),
+ * and tallies the resulting `response_type` values.
  *
  * @param occurrence - The meeting occurrence to calculate for (or null for non-recurring meetings)
  * @param allRsvps - All RSVPs for the meeting
- * @param _meetingStartTime - Reserved for future use (kept for API compatibility)
  * @returns Object with accepted, declined, maybe, and total counts
  */
-export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsvps: MeetingRsvp[], _meetingStartTime?: string): RsvpCounts {
+export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsvps: MeetingRsvp[]): RsvpCounts {
   if (allRsvps.length === 0) {
     return { accepted: 0, declined: 0, maybe: 0, total: 0 };
   }

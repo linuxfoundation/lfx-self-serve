@@ -1196,9 +1196,10 @@ export class MeetingService {
 
       // Delegate to the shared scope resolver so this endpoint and
       // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
-      // occurrence_id (LFXV2-2864) and honours single > this_and_following > all
-      // in newest-first order — replacing the previous strict-equality match
-      // which never fired for occurrence-scoped rows and the arbitrary
+      // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
+      // returning the first one applicable to the target occurrence (see
+      // resolver docs) — replacing the previous strict-equality match which
+      // never fired for occurrence-scoped rows and the arbitrary
       // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
       return selectApplicableRsvp(occurrenceId, userRsvps);
     } catch (error) {
