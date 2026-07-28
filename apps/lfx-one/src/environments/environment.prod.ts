@@ -12,7 +12,6 @@ export const environment = {
     crowdfunding: 'https://crowdfunding.linuxfoundation.org/',
     enrollment: 'https://enrollment.lfx.linuxfoundation.org/',
     // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).
-    // TODO(M1): confirm the exact prod host with the EasyCLA team before enabling the flag.
     contributorConsole: 'https://contributor.easycla.lfx.linuxfoundation.org/',
   },
   segment: {
