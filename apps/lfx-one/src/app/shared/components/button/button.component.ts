@@ -75,7 +75,17 @@ export class ButtonComponent {
   public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
 
-  /** `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. See {@link resolveAriaPressedPt} for why an unset input resolves to `undefined` rather than a pt object. */
+  /**
+   * `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so
+   * the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. See
+   * {@link resolveAriaPressedPt} for why an unset input resolves to `undefined` rather than a pt
+   * object. Deliberately NOT annotated against PrimeNG's own `ButtonPassThrough` type: the same
+   * `<p-button>` host also carries `[pTooltip]`, and the Tooltip directive declares its own `pt`
+   * input of a different (non-nullable) passthrough type — Angular's template checker resolves the
+   * single `[pt]="ariaPressedPt()"` binding against both directives, so `ButtonPassThrough`'s `null`
+   * member fails to type-check against Tooltip's `pt`. The shared package's narrower
+   * `ButtonRootPassThrough` is structurally compatible with both and is what's actually verified here.
+   */
   protected readonly ariaPressedPt = computed(() => resolveAriaPressedPt(this.ariaPressed()));
 
   protected handleClick(event: MouseEvent): void {

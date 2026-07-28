@@ -133,18 +133,20 @@
             </div>
           </lfx-card>
         } @else if (isCardView()) {
-          <div class="mb-3">
-            <lfx-committee-filter-bar
-              [searchForm]="searchForm"
-              [votingStatusOptions]="votingStatusOptions()"
-              [showFoundationFilter]="showFoundationFilter()"
-              [showProjectFilter]="showProjectFilter()"
-              [foundationOptions]="foundationOptions()"
-              [projectOptions]="projectOptions()"
-              (foundationFilterChange)="onFoundationFilterChange($event)"
-              (projectFilterChange)="onProjectFilterChange($event)">
-            </lfx-committee-filter-bar>
-          </div>
+          @if (myCommittees().length > 0) {
+            <div class="mb-3">
+              <lfx-committee-filter-bar
+                [searchForm]="searchForm"
+                [votingStatusOptions]="votingStatusOptions()"
+                [showFoundationFilter]="showFoundationFilter()"
+                [showProjectFilter]="showProjectFilter()"
+                [foundationOptions]="foundationOptions()"
+                [projectOptions]="projectOptions()"
+                (foundationFilterChange)="onFoundationFilterChange($event)"
+                (projectFilterChange)="onProjectFilterChange($event)">
+              </lfx-committee-filter-bar>
+            </div>
+          }
 
           <lfx-my-groups-card-grid [committees]="filteredMyCommittees()" [hasItems]="myCommittees().length > 0" (resetRequested)="resetAllFilters()">
           </lfx-my-groups-card-grid>
@@ -222,7 +224,6 @@
                       type="button"
                       class="flex items-center gap-2 w-full text-left py-2"
                       [attr.aria-expanded]="!!groupExpansionMap()[group.key]"
-                      [attr.aria-label]="(groupExpansionMap()[group.key] ? 'Collapse ' : 'Expand ') + group.label"
                       (click)="toggleGroupExpansion(group.key)"
                       [attr.data-testid]="'groups-foundation-group-' + group.testIdSlug + '-caret'">
                       <i

@@ -175,15 +175,18 @@ export function canManageCommitteeMembers(committee: Committee | null | undefine
 // ── All Groups foundation-grouping (LFXV2-1715) ─────────────────────────────
 
 /**
- * Groups an already-filtered All Groups list by resolved label, keyed by `project_uid` when a real
- * `project_name` resolved — so two genuinely distinct sub-projects that happen to share a display
- * name still render as two buckets (disambiguated by testid slug), never silently merged — but keyed
- * by the resolved label text itself when `project_name` is missing, whether that label falls back to
- * `foundation_name` or all the way to the fallback constants. A degraded committee merges into an
- * existing named bucket only when the label unambiguously belongs to exactly one named project (e.g.
- * a project literally named "CNCF" and a committee that degrades to `foundation_name: 'CNCF'`); if
- * two distinct named projects share that label, which one the committee "really" belongs to can't be
- * determined, so it falls back to its own label-keyed bucket instead of merging into an arbitrary one.
+ * Groups an already-filtered All Groups list by resolved label, keyed by `project_uid` when a
+ * committee is "named" — both `project_name` **and** `project_uid` resolved (a falsy `project_uid`
+ * alongside a populated `project_name` is treated as degraded, not named, so it can't silently key on
+ * an empty string and collapse into whichever other committee got there first) — so two genuinely
+ * distinct sub-projects that happen to share a display name still render as two buckets (disambiguated
+ * by testid slug), never silently merged. A degraded committee (no usable `project_name`/`project_uid`
+ * pair) is keyed by its resolved label text instead, whether that label is its own `project_name`,
+ * `foundation_name`, or a fallback constant. It merges into an existing named bucket only when the
+ * label unambiguously belongs to exactly one named project (e.g. a project literally named "CNCF" and
+ * a committee that degrades to `foundation_name: 'CNCF'`); if two distinct named projects share that
+ * label, which one the committee "really" belongs to can't be determined, so it falls back to its own
+ * label-keyed bucket instead of merging into an arbitrary one.
  *
  * Pure and side-effect-free: callers gate whether grouping applies at all (e.g. only in foundation
  * scope) and decide the input list (e.g. already search/filter-narrowed).
@@ -202,23 +205,30 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     bucket.committees.push(committee);
   };
 
+  // A committee only counts as "named" when both project_name and project_uid resolved — a falsy
+  // project_uid (upstream enrichment can leave it '' alongside a populated passthrough project_name,
+  // per the same defensive `.filter(Boolean)` pattern used elsewhere against this field) would
+  // otherwise key on the empty string, silently collapsing unrelated committees into one bucket.
+  const isNamed = (committee: Committee): boolean => !!committee.project_name && !!committee.project_uid;
+
   // First pass: named projects get their own project_uid-keyed bucket. Track every distinct named
   // key seen under each label, so a degraded committee (second pass) only merges into a named bucket
   // when the label unambiguously identifies exactly one of them.
   for (const committee of committees) {
-    if (!committee.project_name) continue;
-    addTo(committee.project_uid, committee.project_name, committee);
-    const keys = namedKeysByLabel.get(committee.project_name) ?? new Set<string>();
+    if (!isNamed(committee)) continue;
+    addTo(committee.project_uid, committee.project_name!, committee);
+    const keys = namedKeysByLabel.get(committee.project_name!) ?? new Set<string>();
     keys.add(committee.project_uid);
-    namedKeysByLabel.set(committee.project_name, keys);
+    namedKeysByLabel.set(committee.project_name!, keys);
   }
 
-  // Second pass: degraded committees (no project_name) resolve to foundation_name or a fallback
-  // constant, merging into the unique named bucket sharing that label when there is exactly one;
-  // otherwise every committee that degrades to the same text shares one label-keyed bucket.
+  // Second pass: degraded committees (no project_name, or a project_name with no usable project_uid)
+  // resolve to foundation_name or a fallback constant, merging into the unique named bucket sharing
+  // that label when there is exactly one; otherwise every committee that degrades to the same text
+  // shares one label-keyed bucket.
   for (const committee of committees) {
-    if (committee.project_name) continue;
-    const label = committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
+    if (isNamed(committee)) continue;
+    const label = committee.project_name || committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
     const namedKeys = namedKeysByLabel.get(label);
     const key = namedKeys?.size === 1 ? [...namedKeys][0] : label;
     addTo(key, label, committee);

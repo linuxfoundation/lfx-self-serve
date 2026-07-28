@@ -294,6 +294,28 @@ describe('groupCommitteesByFoundation', () => {
     expect(foundationFirst[0].isFoundationLevel).toBe(true);
   });
 
+  it('treats a committee with a populated project_name but a falsy project_uid as degraded, not named', () => {
+    // Upstream enrichment can leave project_uid '' alongside a populated passthrough project_name.
+    // Two such committees must not collapse into a single ''-keyed bucket labeled with whichever
+    // arrived first — they should merge only via the normal label-based degraded path.
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: '', project_name: 'Alpha Project' }),
+      committee({ uid: 'c2', project_uid: '', project_name: 'Beta Project' }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.key).sort()).toEqual(['Alpha Project', 'Beta Project']);
+  });
+
+  it('merges a degraded (falsy project_uid) committee into a named bucket sharing its label', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-cncf', project_name: 'CNCF' }),
+      committee({ uid: 'c2', project_uid: '', project_name: 'CNCF' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: 'proj-cncf', label: 'CNCF' });
+    expect(groups[0].committees.map((c) => c.uid).sort()).toEqual(['c1', 'c2']);
+  });
+
   it('falls back to a "group" testid slug (disambiguated) for labels with no ASCII alphanumerics', () => {
     const groups = groupCommitteesByFoundation([
       committee({ uid: 'c1', project_uid: 'proj-a', project_name: '日本語プロジェクト' }),
