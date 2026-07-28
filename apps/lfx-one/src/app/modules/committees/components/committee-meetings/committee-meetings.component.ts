@@ -11,7 +11,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, PAST_MEETING_SORT, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
 import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
@@ -25,7 +24,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
-import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
+import { openIcalSubscribeDialog } from '../../utils/ical-subscribe.util';
 
 @Component({
   selector: 'lfx-committee-meetings',
@@ -153,21 +152,7 @@ export class CommitteeMeetingsComponent {
       console.warn('Subscribe clicked with no committee uid; aborting dialog open');
       return;
     }
-
-    const feedUrl = `${environment.urls.home}/public/api/committees/${encodeURIComponent(committee.uid)}/calendar.ics`;
-    const committeeName = committee.name ?? 'Committee';
-
-    this.dialogService.open(IcalSubscribeDialogComponent, {
-      header: `Subscribe — ${committeeName}`,
-      width: '480px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        feedUrl,
-        name: committeeName,
-      },
-    });
+    openIcalSubscribeDialog(this.dialogService, committee);
   }
 
   /** Handles FullCalendar event click — navigates to meeting detail. Cancelled occurrences are inert. */

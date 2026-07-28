@@ -1,18 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { Committee } from '@lfx-one/shared/interfaces';
 
 /**
  * Visitor join CTA shared between the Overview and About tabs — a single "Interested in
  * joining?" card (or an invite-only notice) driven by the committee's `join_mode`.
+ *
+ * `canJoin()` only fires for `open` mode and `showInviteOnlyNotice()` only for `invite_only`/unset,
+ * so an `application`-mode visitor sees neither — application-based joining is product-disabled
+ * for now (no ticket yet), so the label/icon/description computeds below only handle the two
+ * modes that actually render.
  */
 @Component({
   selector: 'lfx-group-join-cta',
   imports: [ButtonComponent],
   templateUrl: './group-join-cta.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GroupJoinCtaComponent {
   // Inputs
@@ -53,31 +59,17 @@ export class GroupJoinCtaComponent {
   }
 
   private initJoinButtonLabel(): Signal<string> {
-    return computed(() => {
-      const mode = this.committee().join_mode;
-      if (mode === 'open') return 'Join Group';
-      if (mode === 'application') return 'Request to Join';
-      return 'Contact Admin';
-    });
+    return computed(() => (this.committee().join_mode === 'open' ? 'Join Group' : 'Contact Admin'));
   }
 
   /** Icon for the CTA button — matches the header button icon */
   private initJoinButtonIcon(): Signal<string> {
-    return computed(() => {
-      const mode = this.committee().join_mode;
-      if (mode === 'open') return 'fa-light fa-user-plus';
-      if (mode === 'application') return 'fa-light fa-paper-plane';
-      return 'fa-light fa-envelope';
-    });
+    return computed(() => (this.committee().join_mode === 'open' ? 'fa-light fa-user-plus' : 'fa-light fa-envelope'));
   }
 
   /** Large illustrative icon above the CTA card title */
   private initJoinCtaIcon(): Signal<string> {
-    return computed(() => {
-      const mode = this.committee().join_mode;
-      if (mode === 'application') return 'fa-light fa-paper-plane';
-      return 'fa-light fa-users';
-    });
+    return computed(() => 'fa-light fa-users');
   }
 
   private initJoinCtaTitle(): Signal<string> {
@@ -85,11 +77,7 @@ export class GroupJoinCtaComponent {
   }
 
   private initJoinCtaDescription(): Signal<string> {
-    return computed(() => {
-      const mode = this.committee().join_mode;
-      if (mode === 'application') return 'Submit a request and a group admin will review your application.';
-      return 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
-    });
+    return computed(() => 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.');
   }
 
   private initInviteOnlyTitle(): Signal<string> {
