@@ -47,6 +47,30 @@ export function isSameOccurrenceId(a: string | null | undefined, b: string | nul
 }
 
 /**
+ * Return the effective occurrence id for a per-occurrence RSVP row, preferring
+ * `rsvp.occurrence_id` and falling back to the suffix of the
+ * `meeting_and_occurrence_id` composite (`${meeting_id}-${occurrence_id_ms}`)
+ * when the direct field is empty.
+ *
+ * Every known write path (`mapITXResponseToMeetingRsvp` and the meeting-service
+ * registrant handler) populates `occurrence_id` directly, but the query-service
+ * `v1_meeting_rsvp` shape isn't provable from code — this defensive fallback
+ * prevents a `single`/`this_and_following` row with only the composite from
+ * silently dropping and degrading the chip to the `invite_accepted` fallback
+ * (LFXV2-2864).
+ */
+function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_and_occurrence_id'>): string | null {
+  const direct = rsvp.occurrence_id;
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+  const composite = rsvp.meeting_and_occurrence_id;
+  if (typeof composite !== 'string' || composite.length === 0) return null;
+  const idx = composite.lastIndexOf('-');
+  if (idx < 0 || idx === composite.length - 1) return null;
+  const suffix = composite.slice(idx + 1);
+  return suffix.length > 0 ? suffix : null;
+}
+
+/**
  * Pick the single RSVP that applies to a given occurrence for one user.
  *
  * Shared between the frontend counts calculator (`calculateRsvpCounts` → per-user
@@ -96,7 +120,7 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
     }
 
     if (rsvp.scope === 'single') {
-      if (isSameOccurrenceId(rsvp.occurrence_id, occurrenceId)) {
+      if (isSameOccurrenceId(getRsvpOccurrenceId(rsvp), occurrenceId)) {
         return rsvp;
       }
       continue;
@@ -104,11 +128,13 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
 
     if (rsvp.scope === 'this_and_following') {
       // The anchor is the specific occurrence at which the T&F starts applying,
-      // encoded in `rsvp.occurrence_id`. Comparing against `rsvp.created_at` (the
-      // previous behaviour) drifts whenever the row was written before or after
-      // the anchor date — e.g. a retroactive T&F or a delayed sync. The anchor
-      // itself is the correct semantic gate.
-      const anchorMs = occurrenceIdToMs(rsvp.occurrence_id);
+      // encoded in `rsvp.occurrence_id` (falling back to the composite suffix
+      // when the direct field is empty — see `getRsvpOccurrenceId`).
+      // Comparing against `rsvp.created_at` (the previous behaviour) drifts
+      // whenever the row was written before or after the anchor date — e.g.
+      // a retroactive T&F or a delayed sync. The anchor itself is the correct
+      // semantic gate.
+      const anchorMs = occurrenceIdToMs(getRsvpOccurrenceId(rsvp));
       if (anchorMs === null || occurrenceMs === null) continue;
       if (anchorMs <= occurrenceMs) {
         return rsvp;

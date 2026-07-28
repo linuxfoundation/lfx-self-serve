@@ -78,13 +78,13 @@ const SINGLE_AUG_11_DECLINE = rsvp({
   modified_at: '2026-07-27T21:43:07Z',
 });
 
-const PROD_FINGERPRINT_RSVPS = [BASE_ALL_ACCEPT, TAF_JUL_21_ACCEPT, SINGLE_AUG_11_DECLINE];
+const MIXED_UNIT_RSVPS = [BASE_ALL_ACCEPT, TAF_JUL_21_ACCEPT, SINGLE_AUG_11_DECLINE];
 
 // The meeting-service occurrence calculator emits occurrence_id in Unix SECONDS
 // (10 digits), matching what /itx/meetings/{id} returns to the frontend. These
-// are the ids the resolver will actually receive from the caller — Connie's
-// RSVPs store their occurrence_id as MILLISECONDS (13 digits) so we intentionally
-// mix units to reproduce the wire reality.
+// are the ids the resolver will actually receive from the caller — the affected
+// user's RSVPs store their occurrence_id as MILLISECONDS (13 digits) so we
+// intentionally mix units to reproduce the wire reality.
 const OCC_JUL_28_SECONDS = '1785247200';
 const OCC_AUG_04_SECONDS = '1785852000';
 const OCC_AUG_11_SECONDS = '1786456800';
@@ -151,7 +151,7 @@ describe('selectApplicableRsvp — LFXV2-2864 prod fingerprint', () => {
     // Pre-fix: strict equality failed ("1786456800000" !== "1786456800"),
     // resolver walked past the single decline, returned the older T&F accept.
     // Post-fix: the resolver normalises both sides to ms and matches.
-    const result = selectApplicableRsvp(OCC_AUG_11_SECONDS, PROD_FINGERPRINT_RSVPS);
+    const result = selectApplicableRsvp(OCC_AUG_11_SECONDS, MIXED_UNIT_RSVPS);
     expect(result?.id).toBe(SINGLE_AUG_11_DECLINE.id);
     expect(result?.response_type).toBe('declined');
   });
@@ -160,19 +160,19 @@ describe('selectApplicableRsvp — LFXV2-2864 prod fingerprint', () => {
     // Sanity check on the shape of the bug the ticket describes: a single-occurrence
     // decline must not bleed onto other occurrences. Jul 28 is after the T&F anchor
     // (Jul 21) so the T&F accept wins over the base `all`.
-    const result = selectApplicableRsvp(OCC_JUL_28_SECONDS, PROD_FINGERPRINT_RSVPS);
+    const result = selectApplicableRsvp(OCC_JUL_28_SECONDS, MIXED_UNIT_RSVPS);
     expect(result?.id).toBe(TAF_JUL_21_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
 
   it('returns accepted for Aug 4 (T&F applies, single decline for Aug 11 does not)', () => {
-    const result = selectApplicableRsvp(OCC_AUG_04_SECONDS, PROD_FINGERPRINT_RSVPS);
+    const result = selectApplicableRsvp(OCC_AUG_04_SECONDS, MIXED_UNIT_RSVPS);
     expect(result?.id).toBe(TAF_JUL_21_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
 
   it('returns accepted for Aug 18 (post-decline occurrence — T&F still applies)', () => {
-    const result = selectApplicableRsvp(OCC_AUG_18_SECONDS, PROD_FINGERPRINT_RSVPS);
+    const result = selectApplicableRsvp(OCC_AUG_18_SECONDS, MIXED_UNIT_RSVPS);
     expect(result?.id).toBe(TAF_JUL_21_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
@@ -182,7 +182,7 @@ describe('selectApplicableRsvp — LFXV2-2864 prod fingerprint', () => {
     // is for Aug 11 only. Only the base `all` remains — this is the historical
     // "declined by association" trap the old T&F comparison-against-created_at
     // could fall into, since created_at (Jul 21T02:17) is also after Jul 14.
-    const result = selectApplicableRsvp(OCC_JUL_14_SECONDS, PROD_FINGERPRINT_RSVPS);
+    const result = selectApplicableRsvp(OCC_JUL_14_SECONDS, MIXED_UNIT_RSVPS);
     expect(result?.id).toBe(BASE_ALL_ACCEPT.id);
     expect(result?.response_type).toBe('accepted');
   });
@@ -358,6 +358,64 @@ describe('selectApplicableRsvp — scope precedence and edges', () => {
       occurrence_id: undefined,
     });
     expect(selectApplicableRsvp(OCC_JUL_28_SECONDS, [malformed])).toBeNull();
+  });
+
+  it('matches a single-scope RSVP that carries only the composite key (empty occurrence_id)', () => {
+    // Defensive fallback for a query-service shape we can't fully prove from
+    // code: every known write path sets `occurrence_id` directly, but if a
+    // `single`-scope row ever arrives with only the `meeting_and_occurrence_id`
+    // composite populated, the resolver must still match on the composite's
+    // suffix — otherwise the chip silently degrades to the invite_accepted
+    // fallback and we reintroduce LFXV2-2864.
+    const compositeOnly = rsvp({
+      id: 'composite-only',
+      meeting_id: meetingId,
+      registrant_id: registrantId,
+      scope: 'single',
+      response_type: 'declined',
+      occurrence_id: '',
+      meeting_and_occurrence_id: `${meetingId}-1786456800000`,
+      modified_at: '2026-07-27T21:43:07Z',
+    });
+    // Caller supplies seconds; composite suffix is ms. Fallback + unit
+    // normalisation must both fire to match.
+    const result = selectApplicableRsvp(OCC_AUG_11_SECONDS, [compositeOnly]);
+    expect(result?.id).toBe('composite-only');
+    expect(result?.response_type).toBe('declined');
+  });
+
+  it('gates a this_and_following anchor from the composite suffix when occurrence_id is empty', () => {
+    // Same fallback for T&F: the anchor lives in the composite suffix. Rows
+    // anchored after the target must still be excluded, and rows anchored
+    // at/before the target must apply.
+    const compositeTafPostAnchor = rsvp({
+      id: 'composite-taf-post',
+      meeting_id: meetingId,
+      registrant_id: registrantId,
+      scope: 'this_and_following',
+      response_type: 'declined',
+      occurrence_id: '',
+      meeting_and_occurrence_id: `${meetingId}-1786456800000`, // anchor Aug 11 ms
+      modified_at: '2026-08-11T00:00:00Z',
+    });
+    // Jul 28 target is before the Aug 11 anchor → does not apply.
+    expect(selectApplicableRsvp(OCC_JUL_28_SECONDS, [compositeTafPostAnchor])).toBeNull();
+    // Aug 18 target is after the anchor → applies.
+    expect(selectApplicableRsvp(OCC_AUG_18_SECONDS, [compositeTafPostAnchor])?.id).toBe('composite-taf-post');
+  });
+
+  it('does not match when neither occurrence_id nor composite carry a usable id', () => {
+    const noOccurrenceIdentifiers = rsvp({
+      id: 'no-ids',
+      meeting_id: meetingId,
+      registrant_id: registrantId,
+      scope: 'single',
+      response_type: 'declined',
+      occurrence_id: '',
+      meeting_and_occurrence_id: `${meetingId}-`, // trailing dash, no suffix
+      modified_at: '2026-07-27T21:43:07Z',
+    });
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, [noOccurrenceIdentifiers])).toBeNull();
   });
 });
 

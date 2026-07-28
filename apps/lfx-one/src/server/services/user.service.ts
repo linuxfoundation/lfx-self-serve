@@ -523,6 +523,13 @@ export class UserService {
           // resolver — same scope/precedence rules and seconds↔ms `occurrence_id` normalization
           // used on the detail page. Non-recurring meetings resolve identically to before (no
           // occurrence_id → single `all`-scoped row wins).
+          //
+          // Fall back to the newest RSVP for the series when the per-occurrence resolver returns
+          // null (e.g. the user's only RSVP is a `single`-scope row for a non-current/next
+          // occurrence). Keeps `!m.my_rsvp` a reliable "no RSVP recorded for the series at all"
+          // signal for the dashboard's Pending RSVP filter (meetings-dashboard.component.ts) and
+          // aligns it with `transformMissingRsvpsToActions`, which suppresses the Set RSVP action
+          // whenever *any* active-registrant RSVP exists.
           for (const meeting of normalizedMeetings) {
             if (!meeting.id) continue;
             const meetingRsvps = rsvpsByMeeting.get(meeting.id);
@@ -531,7 +538,8 @@ export class UserService {
               continue;
             }
             const occurrence = getCurrentOrNextOccurrence(meeting);
-            meeting.my_rsvp = selectApplicableRsvp(occurrence?.occurrence_id, meetingRsvps);
+            const applicable = selectApplicableRsvp(occurrence?.occurrence_id, meetingRsvps);
+            meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
           }
         } catch (error) {
           logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
