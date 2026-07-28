@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Committee, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
-import { CATEGORY_BEHAVIORAL_CLASS } from '../constants/committees.constants';
+import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
+import { slugify } from './string.utils';
 
 /**
  * Determine the behavioral class for a given committee category.
@@ -169,4 +170,49 @@ export function resolveCommitteeMemberPermission(committee: Committee | null | u
  */
 export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
   return !!committee?.writer;
+}
+
+// ── All Groups foundation-grouping (LFXV2-1715) ─────────────────────────────
+
+/**
+ * Groups an already-filtered All Groups list by resolved label, keyed by `project_uid` when a real
+ * `project_name` resolved (so two different sub-projects that happen to share a display name don't
+ * merge), but keyed by the resolved label itself when `project_name` is missing — whether that label
+ * falls back to `foundation_name` or all the way to the fallback constants — so every committee that
+ * degrades to the same displayed text still merges into one shared bucket instead of fragmenting into
+ * one bucket per committee/project with an identical, confusing header.
+ *
+ * Pure and side-effect-free: callers gate whether grouping applies at all (e.g. only in foundation
+ * scope) and decide the input list (e.g. already search/filter-narrowed).
+ */
+export function groupCommitteesByFoundation(committees: Committee[]): CommitteeFoundationGroup[] {
+  const buckets = new Map<string, CommitteeFoundationGroup>();
+  for (const committee of committees) {
+    const label = committee.project_name || committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
+    const key = committee.project_name ? committee.project_uid : label;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, label, testIdSlug: '', isFoundationLevel: !!committee.is_foundation, committees: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.committees.push(committee);
+  }
+
+  const groups = [...buckets.values()].sort((a, b) => {
+    if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
+    if (a.label === b.label) return 0;
+    if (a.label === OTHER_GROUPS_LABEL) return 1;
+    if (b.label === OTHER_GROUPS_LABEL) return -1;
+    return a.label.localeCompare(b.label);
+  });
+
+  // Disambiguate testid slugs only when two groups genuinely share a label (rare) — keeps the
+  // common case's testid a clean, human-readable slug instead of always suffixing a raw uid.
+  const slugCounts = new Map<string, number>();
+  return groups.map((group) => {
+    const baseSlug = slugify(group.label);
+    const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
+    slugCounts.set(baseSlug, occurrence);
+    return { ...group, testIdSlug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}` };
+  });
 }

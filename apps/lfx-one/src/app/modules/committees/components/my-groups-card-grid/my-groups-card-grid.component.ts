@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
@@ -11,7 +12,7 @@ import { formatRelativeTime } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, EmptyStateComponent],
+  imports: [BadgeComponent, EmptyStateComponent, RouterLink],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
@@ -20,7 +21,6 @@ export class MyGroupsCardGridComponent {
   public readonly hasItems = input<boolean>(true);
 
   // Outputs
-  public readonly rowClick = output<MyCommittee>();
   public readonly resetRequested = output<void>();
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
@@ -32,13 +32,6 @@ export class MyGroupsCardGridComponent {
       lastActivityLabel: formatRelativeTime(new Date(committee.updated_at)),
     }))
   );
-
-  protected onCardKeydown(event: KeyboardEvent, committee: MyCommittee): void {
-    if (event.target !== event.currentTarget) return;
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    this.rowClick.emit(committee);
-  }
 
   private resolveRoleSeverity(role: CommitteeMemberRole | 'Member' | undefined): BadgeSeverity {
     switch (role) {

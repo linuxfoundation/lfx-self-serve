@@ -146,11 +146,7 @@
             </lfx-committee-filter-bar>
           </div>
 
-          <lfx-my-groups-card-grid
-            [committees]="filteredMyCommittees()"
-            [hasItems]="myCommittees().length > 0"
-            (rowClick)="onCommitteeClick($event)"
-            (resetRequested)="selectBehavioralClass(null)">
+          <lfx-my-groups-card-grid [committees]="filteredMyCommittees()" [hasItems]="myCommittees().length > 0" (resetRequested)="selectBehavioralClass(null)">
           </lfx-my-groups-card-grid>
         } @else {
           <lfx-committee-table

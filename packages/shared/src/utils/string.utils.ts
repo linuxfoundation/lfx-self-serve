@@ -89,20 +89,6 @@ export function stableKeyParity(key: string): 0 | 1 {
   return (sum & 1) as 0 | 1;
 }
 
-/**
- * Converts an arbitrary label into a kebab-case, testid-safe slug: lowercases, replaces runs of
- * non-alphanumeric characters with a single hyphen, and trims leading/trailing hyphens. Used to
- * interpolate arbitrary foundation/project names into `data-testid` attributes
- * (e.g. `groups-foundation-group-{{slug}}`).
- */
-export function slugify(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'group';
-}
-
 /** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
 export function splitDisplayName(name: string | null): [string | null, string | null] {
   const trimmed = (name ?? '').trim();

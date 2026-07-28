@@ -25,6 +25,7 @@ export * from './platform.utils';
 export * from './project.utils';
 export * from './project-health.utils';
 export * from './badge.utils';
+export * from './button.utils';
 export * from './marketing.utils';
 export * from './marketing-impact.utils';
 export * from './flywheel.utils';

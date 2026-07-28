@@ -23,14 +23,12 @@
 } @else {
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="groups-card-grid">
     @for (item of cards(); track item.committee.uid) {
-      <div
-        class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 h-full flex flex-col gap-3 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-        role="button"
-        tabindex="0"
+      <a
+        [routerLink]="['/groups', item.committee.uid]"
+        [state]="{ backLabel: 'My Groups' }"
+        class="no-underline bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 h-full flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         [attr.aria-label]="'Open ' + (item.committee.name || 'group')"
-        [attr.data-testid]="'groups-card-grid-item-' + item.committee.uid"
-        (click)="rowClick.emit(item.committee)"
-        (keydown)="onCardKeydown($event, item.committee)">
+        [attr.data-testid]="'groups-card-grid-item-' + item.committee.uid">
         <div class="flex items-start justify-between gap-2">
           <h3 class="text-base font-semibold text-gray-900">{{ item.committee.name || '-' }}</h3>
           @if (!item.committee.public) {
@@ -66,7 +64,7 @@
             {{ item.lastActivityLabel }}
           </span>
         </div>
-      </div>
+      </a>
     }
   </div>
 }

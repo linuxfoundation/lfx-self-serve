@@ -472,7 +472,7 @@ export type GroupsViewMode = 'list' | 'card';
  * Built entirely client-side from the already-filtered committees list — no new upstream shape.
  */
 export interface CommitteeFoundationGroup {
-  /** Stable key for the expansion-state map: the group's `project_uid` when a real project/foundation name resolved, otherwise the shared fallback label (so committees with a degraded project lookup merge into one bucket instead of fragmenting). */
+  /** Stable key for the expansion-state map: the group's `project_uid` when a real `project_name` resolved, otherwise the resolved label itself — `foundation_name` or a fallback constant — so committees whose `project_name` is missing/degraded merge into one shared bucket by display text instead of fragmenting per `project_uid`. See {@link groupCommitteesByFoundation}. */
   key: string;
   /** Human-readable header text. */
   label: string;

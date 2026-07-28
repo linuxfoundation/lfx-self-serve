@@ -1,19 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Unit tests for the committee member permission resolver (LFXV2-2059).
-//
-// NOTE: this repo has no unit-test runner wired yet (`ng test` has no target; testing is
-// Playwright E2E only). These specs are written against the pure resolver so they execute as-is
-// once a runner (e.g. Vitest via `@angular/build:unit-test`) is added — that wiring is a tracked
-// follow-up. They use the Vitest/Jest-compatible `describe`/`it`/`expect` globals.
+// Unit tests for the committee member permission resolver (LFXV2-2059) and the All Groups
+// foundation-grouping helper (LFXV2-1715). `apps/lfx-one` has no Angular component-test runner
+// (no `ng test` target), so component-level logic that needs coverage lives here as a pure,
+// dependency-free function and is tested by this package's own Vitest runner instead.
 //
 // All fixtures use synthetic placeholder identities — never real user data.
 
 import { describe, expect, it } from 'vitest';
 
 import { Committee, CommitteeMember } from '../interfaces';
-import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, resolveCommitteeMemberPermission } from './committee.utils';
+import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, groupCommitteesByFoundation, resolveCommitteeMemberPermission } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
 function committee(overrides: Partial<Committee> = {}): Committee {
@@ -135,5 +133,79 @@ describe('canManageCommitteeMembers', () => {
 
   it('is false for a null committee', () => {
     expect(canManageCommitteeMembers(null)).toBe(false);
+  });
+});
+
+describe('groupCommitteesByFoundation', () => {
+  it('returns an empty array for an empty input', () => {
+    expect(groupCommitteesByFoundation([])).toEqual([]);
+  });
+
+  it('groups committees under the same project_uid into one bucket, keyed by project_uid', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-alpha', project_name: 'Alpha Project' }),
+      committee({ uid: 'c2', project_uid: 'proj-alpha', project_name: 'Alpha Project' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: 'proj-alpha', label: 'Alpha Project', testIdSlug: 'alpha-project' });
+    expect(groups[0].committees.map((c) => c.uid)).toEqual(['c1', 'c2']);
+  });
+
+  it('keeps two distinct sub-projects separate even when they share a display label', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: 'Working Group' }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: 'Working Group' }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.key).sort()).toEqual(['proj-a', 'proj-b']);
+    // Same label, different project_uid: testid slugs must still be unique.
+    expect(new Set(groups.map((g) => g.testIdSlug)).size).toBe(2);
+  });
+
+  it('merges committees with no project_name but a shared foundation_name into one bucket (the fixed collision)', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: undefined, foundation_name: 'CNCF' }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: undefined, foundation_name: 'CNCF' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: 'CNCF', label: 'CNCF' });
+    expect(groups[0].committees.map((c) => c.uid).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('merges fully degraded (no project_name, no foundation_name) committees into one fallback bucket', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: undefined, foundation_name: undefined, is_foundation: false }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: undefined, foundation_name: undefined, is_foundation: false }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe('Other Groups');
+    expect(groups[0].committees).toHaveLength(2);
+  });
+
+  it('sorts the foundation-level bucket first regardless of alphabetical order', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-zeta', project_name: 'Zeta Project' }),
+      committee({ uid: 'c2', project_uid: 'proj-root', project_name: 'Root Foundation', is_foundation: true }),
+      committee({ uid: 'c3', project_uid: 'proj-alpha', project_name: 'Alpha Project' }),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(['Root Foundation', 'Alpha Project', 'Zeta Project']);
+  });
+
+  it('sorts the "Other Groups" fallback bucket last', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-zeta', project_name: 'Zeta Project' }),
+      committee({ uid: 'c2', project_uid: 'proj-degraded', project_name: undefined, foundation_name: undefined, is_foundation: false }),
+      committee({ uid: 'c3', project_uid: 'proj-alpha', project_name: 'Alpha Project' }),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(['Alpha Project', 'Zeta Project', 'Other Groups']);
+  });
+
+  it('disambiguates testid slugs that collide even though the labels differ', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: 'Alpha Project' }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: 'Alpha-Project' }),
+    ]);
+    const slugs = groups.map((g) => g.testIdSlug).sort();
+    expect(slugs).toEqual(['alpha-project', 'alpha-project-2']);
   });
 });

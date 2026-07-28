@@ -107,6 +107,16 @@ test.describe('My Groups view toggle — Structural Tests', () => {
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID}`)).toBeAttached();
   });
 
+  test('cards are real anchors with a working href, not simulated buttons', async ({ page }) => {
+    await page.getByTestId('groups-view-card-btn').click();
+    const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID}`);
+    await expect(card).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    expect(await card.evaluate((el) => el.tagName)).toBe('A');
+    await expect(card).toHaveAttribute('href', `/groups/${MOCK_COMMITTEE_UID}`);
+    await expect(card).not.toHaveAttribute('role', 'button');
+  });
+
   test('list view stays the default structural root', async ({ page }) => {
     await expect(page.getByTestId('committees-me-table')).toBeAttached();
     await expect(page.getByTestId('groups-card-grid')).toHaveCount(0);

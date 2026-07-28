@@ -5,6 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
+import { resolveAriaPressedPt } from '@lfx-one/shared/utils';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -74,8 +75,8 @@ export class ButtonComponent {
   public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
 
-  /** `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. */
-  protected readonly ariaPressedPt = computed(() => ({ root: { 'aria-pressed': this.ariaPressed() } }));
+  /** `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. See {@link resolveAriaPressedPt} for why an unset input resolves to `undefined` rather than a pt object. */
+  protected readonly ariaPressedPt = computed(() => resolveAriaPressedPt(this.ariaPressed()));
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

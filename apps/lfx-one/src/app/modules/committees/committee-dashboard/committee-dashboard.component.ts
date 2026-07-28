@@ -9,14 +9,7 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import {
-  BEHAVIORAL_CLASS_CONFIG,
-  COMMITTEE_LABEL,
-  FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
-  getGroupBehavioralClass,
-  GROUPS_VIEW_MODE_STORAGE_KEY,
-  OTHER_GROUPS_LABEL,
-} from '@lfx-one/shared/constants';
+import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeFoundationGroup,
@@ -26,7 +19,7 @@ import {
   ProjectContext,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { slugify } from '@lfx-one/shared/utils';
+import { getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
@@ -602,52 +595,14 @@ export class CommitteeDashboardComponent {
   }
 
   /**
-   * Groups the already-filtered All Groups list by resolved label, keyed by `project_uid` when a
-   * real project/foundation name resolved (so two different sub-projects that happen to share a
-   * display name don't merge), but keyed by the fallback label itself when no name resolved (so
-   * every committee with a degraded/missing project lookup still merges into one shared "Other
-   * Groups"/"Foundation" bucket instead of fragmenting into one bucket per committee). Reads
+   * Groups the already-filtered All Groups list by foundation/project via the pure
+   * `groupCommitteesByFoundation` (unit-tested directly in `@lfx-one/shared`). Reads
    * `filteredCommittees()` (not the raw `committees()`) so search/behavioral-class/voting-status
    * filters keep working identically whether grouping is active or not — a group with zero members
    * after filtering simply has no bucket, so it's never rendered with an empty header.
    */
   private initializeFoundationGroups(): Signal<CommitteeFoundationGroup[]> {
-    return computed(() => {
-      if (!this.showFoundationGrouping()) return [];
-      const source = this.filteredCommittees();
-      if (source.length === 0) return [];
-
-      const buckets = new Map<string, CommitteeFoundationGroup>();
-      for (const committee of source) {
-        const resolvedName = committee.project_name || committee.foundation_name;
-        const label = resolvedName || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
-        const key = resolvedName ? committee.project_uid : label;
-        let bucket = buckets.get(key);
-        if (!bucket) {
-          bucket = { key, label, testIdSlug: '', isFoundationLevel: !!committee.is_foundation, committees: [] };
-          buckets.set(key, bucket);
-        }
-        bucket.committees.push(committee);
-      }
-
-      const groups = [...buckets.values()].sort((a, b) => {
-        if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
-        if (a.label === b.label) return 0;
-        if (a.label === OTHER_GROUPS_LABEL) return 1;
-        if (b.label === OTHER_GROUPS_LABEL) return -1;
-        return a.label.localeCompare(b.label);
-      });
-
-      // Disambiguate testid slugs only when two groups genuinely share a label (rare) — keeps the
-      // common case's testid a clean, human-readable slug instead of always suffixing a raw uid.
-      const slugCounts = new Map<string, number>();
-      return groups.map((group) => {
-        const baseSlug = slugify(group.label);
-        const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
-        slugCounts.set(baseSlug, occurrence);
-        return { ...group, testIdSlug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}` };
-      });
-    });
+    return computed(() => (this.showFoundationGrouping() ? groupCommitteesByFoundation(this.filteredCommittees()) : []));
   }
 
   /** Effective expansion state per visible group: expanded unless explicitly overridden in `groupExpansion`. */
