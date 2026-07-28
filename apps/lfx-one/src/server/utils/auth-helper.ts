@@ -56,24 +56,30 @@ export function usernameMatches(authUsername: string, storedUsername: string): b
 
 /**
  * Gets the effective email for the current request context.
- * During impersonation, returns the target user's email from the impersonation session.
- * Otherwise returns the OIDC session user's email.
+ * During impersonation, returns the target user's email from the impersonation session,
+ * or null when the target has no stored email — it never falls back to the impersonator's
+ * own OIDC email. Otherwise returns the OIDC session user's email.
  */
 export function getEffectiveEmail(req: Request): string | null {
-  if (isImpersonating(req) && req.appSession?.['impersonationUser']?.email) {
-    return (req.appSession['impersonationUser'].email as string).toLowerCase();
+  // Never fall back to the impersonator's OIDC email: the stored target email can be
+  // empty, so return null in that gap and let callers handle "no primary email".
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.email as string)?.toLowerCase() || null;
   }
   return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
 }
 
 /**
  * Gets the effective username for the current request context.
- * During impersonation, returns the target user's username from the impersonation session.
- * Otherwise returns the OIDC session user's username/nickname.
+ * During impersonation, returns the target user's username from the impersonation session,
+ * or null when the target has no stored username — it never falls back to the impersonator's
+ * own OIDC username. Otherwise returns the OIDC session user's username/nickname.
  */
 export function getEffectiveUsername(req: Request): string | null {
-  if (isImpersonating(req) && req.appSession?.['impersonationUser']?.username) {
-    return req.appSession['impersonationUser'].username as string;
+  // Never fall back to the impersonator's OIDC username: the stored target username can
+  // be empty, so return null in that gap and let callers handle the missing identity.
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.username as string) || null;
   }
   // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
   // (nickname/username) precedence is unchanged. Mirrors `getUsernameFromAuth`.
@@ -82,7 +88,8 @@ export function getEffectiveUsername(req: Request): string | null {
 
 /**
  * Gets the effective sub (user ID) for the current request context.
- * During impersonation, returns the target user's sub from the impersonation session.
+ * During impersonation, returns the target user's sub from the impersonation session,
+ * or null when unset — it never falls back to the impersonator's own OIDC sub.
  * Otherwise returns the OIDC session user's sub.
  *
  * @deprecated Prefer getEffectiveUsername for APIs that accept the LFID username.
@@ -91,8 +98,9 @@ export function getEffectiveUsername(req: Request): string | null {
  * been migrated to accept a username.
  */
 export function getEffectiveSub(req: Request): string | null {
-  if (isImpersonating(req) && req.appSession?.['impersonationUser']?.sub) {
-    return req.appSession['impersonationUser'].sub as string;
+  // Never fall back to the impersonator's OIDC sub: return the target's sub or null.
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.sub as string) || null;
   }
   return (req.oidc?.user?.['sub'] as string) || null;
 }
