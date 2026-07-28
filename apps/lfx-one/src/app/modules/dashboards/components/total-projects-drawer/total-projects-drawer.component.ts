@@ -23,7 +23,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { LifecycleStage } from '@lfx-one/shared/interfaces';
@@ -82,6 +82,12 @@ export class TotalProjectsDrawerComponent {
 
   // === Inputs ===
   public readonly data = input<FoundationTotalProjectsResponse>(DEFAULT_FOUNDATION_TOTAL_PROJECTS);
+
+  // True while the parent's foundation total-projects monthly request is in flight.
+  // The parent passes its own eager fetch's loading signal so the primary chart can
+  // render instantly on click (data already resolved) and only show a spinner during
+  // a foundation switch while the drawer is open.
+  public readonly dataLoading = input<boolean>(false);
 
   // === Enum exposure for template ===
   protected readonly LifecycleStage = LifecycleStage;
@@ -207,19 +213,25 @@ export class TotalProjectsDrawerComponent {
   private initDrawerData(): Signal<{ projects: FoundationProjectsDetailResponse; lifecycle: FoundationProjectsLifecycleDistributionResponse }> {
     const defaultValue = { projects: DEFAULT_FOUNDATION_PROJECTS_DETAIL, lifecycle: DEFAULT_FOUNDATION_PROJECTS_LIFECYCLE };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
+          // Reset pagination + search so a stale query/page from the previous
+          // foundation can't hide or off-range the freshly loaded list.
+          this.primaryPage.set(1);
+          this.searchForm.get('query')!.setValue('');
           return forkJoin({
             projects: this.analyticsService.getFoundationProjectsDetail(slug),
             lifecycle: this.analyticsService.getFoundationProjectsLifecycleDistribution(slug),

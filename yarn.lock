@@ -13538,6 +13538,7 @@ __metadata:
     ajv-formats: "npm:^3.0.1"
     angular-eslint: "npm:21.0.1"
     autoprefixer: "npm:^10.4.21"
+    chart.js: "npm:^4.5.1"
     compression: "npm:^1.8.1"
     eslint: "npm:^9.39.1"
     express: "npm:^4.18.2"

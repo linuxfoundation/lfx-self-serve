@@ -75,7 +75,7 @@
 
       <!-- Chart View -->
       @if (primaryView() === 'chart') {
-        @if (drawerLoading()) {
+        @if (dataLoading()) {
           <div class="flex items-center justify-center py-12" data-testid="total-projects-drawer-chart-loading">
             <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
           </div>

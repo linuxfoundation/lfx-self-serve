@@ -23,6 +23,7 @@ export * from './number.utils';
 export * from './object.utils';
 export * from './platform.utils';
 export * from './project.utils';
+export * from './project-health.utils';
 export * from './badge.utils';
 export * from './marketing.utils';
 export * from './marketing-impact.utils';
