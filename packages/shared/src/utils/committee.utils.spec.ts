@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Committee, CommitteeMember } from '../interfaces';
+import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
 import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, groupCommitteesByFoundation, resolveCommitteeMemberPermission } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -314,6 +315,21 @@ describe('groupCommitteesByFoundation', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ key: 'proj-cncf', label: 'CNCF' });
     expect(groups[0].committees.map((c) => c.uid).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('keeps a named foundation bucket and the fallback foundation bucket separate, both sorted first', () => {
+    // Two isFoundationLevel buckets can coexist: a named foundation project, and a separate committee
+    // that IS the foundation but degrades all the way to the fallback label (no project_name, no
+    // foundation_name). Neither should be dropped or merged, and both must sort ahead of every
+    // non-foundation bucket.
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-alpha', project_name: 'Alpha Project' }),
+      committee({ uid: 'c2', project_uid: 'proj-root', project_name: 'Root Foundation', is_foundation: true }),
+      committee({ uid: 'c3', project_uid: 'proj-x', project_name: undefined, foundation_name: undefined, is_foundation: true }),
+    ]);
+    expect(groups.filter((g) => g.isFoundationLevel)).toHaveLength(2);
+    expect(groups.slice(0, 2).every((g) => g.isFoundationLevel)).toBe(true);
+    expect(groups.map((g) => g.label)).toEqual([FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, 'Root Foundation', 'Alpha Project']);
   });
 
   it('falls back to a "group" testid slug (disambiguated) for labels with no ASCII alphanumerics', () => {
