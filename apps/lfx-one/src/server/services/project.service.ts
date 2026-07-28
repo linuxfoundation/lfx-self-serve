@@ -1352,7 +1352,7 @@ export class ProjectService {
     // sibling getFoundationMaintainersMonthly read.
     const query = `
       WITH spine AS (
-        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('month', -1, DATE_TRUNC('MONTH', CURRENT_DATE()))) AS MONTH_START_DATE
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
@@ -6991,6 +6991,8 @@ export class ProjectService {
         MONTHLY_TOTAL_MEMBERS AS TOTAL_MEMBERS
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
       WHERE FOUNDATION_SLUG IN (${placeholders})
+        AND MONTH_START_DATE >= DATEADD('month', -11, DATE_TRUNC('month', CURRENT_DATE()))
+        AND MONTH_START_DATE <= DATE_TRUNC('month', CURRENT_DATE())
       QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY MONTH_START_DATE DESC) = 1
     `;
 
@@ -7027,7 +7029,17 @@ export class ProjectService {
 
     const [totalProjectsResult, totalMembersResult, valueConcentrationResult, healthScoreResult] = await Promise.all([
       this.snowflakeService.execute<TotalProjectsRow>(totalProjectsQuery, filteredSlugs),
-      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs),
+      this.snowflakeService
+        .execute<TotalMembersRow>(totalMembersQuery, filteredSlugs)
+        .catch((error) => {
+          // Pre-dbt-deploy the monthly table is absent; degrade this one query to
+          // empty rows so projects, value, and health scores still resolve.
+          if (!SnowflakeService.isMissingObjectError(error)) throw error;
+          logger.warning(req, 'get_multi_foundation_summary_batch', 'Total members monthly table not deployed yet; returning empty', {
+            slug_count: filteredSlugs.length,
+          });
+          return { rows: [], metadata: [] } as SnowflakeQueryResult<TotalMembersRow>;
+        }),
       this.snowflakeService.execute<ValueConcentrationRow>(valueConcentrationQuery, filteredSlugs),
       this.snowflakeService.execute<HealthScoreRow>(healthScoreQuery, filteredSlugs),
     ]);
