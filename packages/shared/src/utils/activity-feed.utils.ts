@@ -13,7 +13,8 @@ import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '.
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
 import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
-import { getPastMeetingResourceId } from './past-meeting.utils';
+import { firstValidTimestamp } from './iso-timestamp.utils';
+import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 import { normalizePollStatus } from './poll.utils';
 import { getSurveyDisplayStatus } from './survey.utils';
 import { isValidUrl } from './url.utils';
@@ -22,26 +23,6 @@ import { isValidUrl } from './url.utils';
 const PER_SOURCE_LIMIT = 5;
 /** Final row count returned after the merge-sort. */
 const FEED_LIMIT = 8;
-
-/** Go zero-value sentinel ("0001-01-01T00:00:00Z") that Go-backed upstream services sometimes emit
- * on an unset timestamp field, instead of omitting it. */
-const GO_ZERO_DATE_PREFIX = '0001-01-01';
-
-/**
- * First candidate ISO timestamp that's genuinely present and parseable, treating a Go zero-date
- * sentinel the same as absent/missing. All four activity sources route their fallback chain
- * (e.g. `last_modified_time ?? creation_time`) through this — a plain `??` only falls back on
- * `null`/`undefined`, so a zero-date string (truthy, syntactically valid) would otherwise win over
- * a real value in a later field and sort that item out as the oldest via the per-source cap below.
- */
-export function firstValidTimestamp(...candidates: (string | undefined)[]): string {
-  for (const candidate of candidates) {
-    if (candidate && !candidate.startsWith(GO_ZERO_DATE_PREFIX) && !Number.isNaN(Date.parse(candidate))) {
-      return candidate;
-    }
-  }
-  return '';
-}
 
 /**
  * Parse an ISO timestamp to epoch ms for sorting, treating an absent/unparseable value as the
@@ -63,7 +44,16 @@ function timestampValue(timestamp: string): number {
  */
 export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedItem[] {
   const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
-    .map((m) => ({ meeting: m, timestamp: firstValidTimestamp(m.scheduled_start_time, m.start_time) }))
+    .map((m) => {
+      // getPastMeetingStartTimeMs — the same helper meetings-dashboard.component.ts and
+      // meeting-organizer.component.ts already go through, so this feed can't quietly diverge if
+      // that helper's field-preference or zero-date handling ever changes. committee-overview's own
+      // lastMeeting computed does not go through it (pre-existing, raw start_time.localeCompare) —
+      // a Go zero-date start_time can therefore make the "Past Meeting" card and this feed's top
+      // row name different meetings, out of this fix's scope.
+      const startMs = getPastMeetingStartTimeMs(m);
+      return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
+    })
     .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
     .slice(0, PER_SOURCE_LIMIT)
     .map(({ meeting: m, timestamp }) => ({

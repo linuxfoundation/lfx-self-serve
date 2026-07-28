@@ -8,6 +8,7 @@ export * from './docs.utils';
 export * from './file.utils';
 export * from './form.utils';
 export * from './html-utils';
+export * from './iso-timestamp.utils';
 export * from './meeting.utils';
 export * from './meeting-privacy.utils';
 export * from './past-meeting-summary.utils';

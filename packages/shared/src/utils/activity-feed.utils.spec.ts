@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PollStatus, SurveyStatus } from '../enums';
 import { BuildActivityFeedInput, CommitteeDocument, PastMeeting, Survey, Vote } from '../interfaces';
-import { buildActivityFeed, firstValidTimestamp } from './activity-feed.utils';
+import { buildActivityFeed } from './activity-feed.utils';
 
 /** Minimal past-meeting builder — only the fields buildActivityFeed reads. */
 function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
@@ -58,28 +58,6 @@ function document(overrides: Partial<CommitteeDocument> = {}): CommitteeDocument
 function emptyInput(overrides: Partial<BuildActivityFeedInput> = {}): BuildActivityFeedInput {
   return { pastMeetings: [], votes: [], surveys: [], documents: [], votingEnabled: true, ...overrides };
 }
-
-describe('firstValidTimestamp', () => {
-  it('returns the first candidate that is present and parseable', () => {
-    expect(firstValidTimestamp('2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z');
-  });
-
-  it('falls back past an absent candidate', () => {
-    expect(firstValidTimestamp(undefined, '2026-02-01T00:00:00Z')).toBe('2026-02-01T00:00:00Z');
-  });
-
-  it('falls back past a Go zero-date sentinel', () => {
-    expect(firstValidTimestamp('0001-01-01T00:00:00Z', '2026-02-01T00:00:00Z')).toBe('2026-02-01T00:00:00Z');
-  });
-
-  it('falls back past an unparseable candidate', () => {
-    expect(firstValidTimestamp('not-a-date', '2026-02-01T00:00:00Z')).toBe('2026-02-01T00:00:00Z');
-  });
-
-  it('returns an empty string when every candidate is invalid or absent', () => {
-    expect(firstValidTimestamp(undefined, '0001-01-01T00:00:00Z', 'not-a-date')).toBe('');
-  });
-});
 
 describe('buildActivityFeed', () => {
   it('returns an empty array when every source is empty', () => {
