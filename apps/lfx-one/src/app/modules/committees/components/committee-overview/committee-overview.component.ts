@@ -563,7 +563,10 @@ export class CommitteeOverviewComponent {
       // on that branch skips the votesLoading flip — castVoteUids has already resolved the row this
       // refresh is meant to catch (an early poll close), so re-skeletoning "My Pending Actions" (and,
       // via activityFeedLoading, Recent Activity) for the remaining rows on every cast would be a
-      // regression the row-level fix was supposed to avoid.
+      // regression the row-level fix was supposed to avoid. Cleared via tap (fires only on emission),
+      // not finalize (also fires on switchMap-driven cancellation) — same reasoning as initDocuments()
+      // below: a silent refresh cancelling an in-flight loud fetch must not clear votesLoading out
+      // from under it before the silent replacement has actually resolved.
       merge(
         toObservable(this.committee).pipe(map((c) => ({ c, silent: false }))),
         this.votesRefresh$.pipe(map(() => ({ c: this.committee(), silent: true })))
@@ -573,7 +576,7 @@ export class CommitteeOverviewComponent {
           if (!silent) this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
             catchError(() => of([])),
-            finalize(() => this.votesLoading.set(false))
+            tap(() => this.votesLoading.set(false))
           );
         })
       ),
