@@ -32,6 +32,7 @@ export class PublicGroupsController {
       }
 
       const originalToken = req.bearerToken;
+      // M2M token required: public endpoint has no user session; app credentials needed for upstream calls
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
