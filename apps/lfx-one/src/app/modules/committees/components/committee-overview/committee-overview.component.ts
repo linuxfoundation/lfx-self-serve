@@ -122,9 +122,10 @@ export class CommitteeOverviewComponent {
 
   // Computed: voting representative count from members. Not sourced from
   // committee().total_voting_repos — upstream (lfx-v2-committee-service) defines that field as
-  // "total repositories with voting permissions" (not people) and no production code path writes
-  // it, so it always reads 0. This derives the actual per-member voting-rep count instead, via the
-  // shared countVotingReps() util (also used by committee-members.component.ts's votingRepCount).
+  // "total repositories with voting permissions" (not people), is optional (upstream only sets it
+  // when > 0), and no production code path currently writes it, so it reads undefined in practice.
+  // This derives the actual per-member voting-rep count instead, via the shared countVotingReps()
+  // util (also used by committee-members.component.ts's votingRepCount).
   public votingRepsCount: Signal<number> = computed(() => countVotingReps(this.members()));
 
   // Committee-scoped data fetches
