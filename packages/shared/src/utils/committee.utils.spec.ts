@@ -208,4 +208,39 @@ describe('groupCommitteesByFoundation', () => {
     const slugs = groups.map((g) => g.testIdSlug).sort();
     expect(slugs).toEqual(['alpha-project', 'alpha-project-2']);
   });
+
+  it('merges a degraded committee into an existing named bucket that already carries the identical label', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-cncf', project_name: 'CNCF' }),
+      committee({ uid: 'c2', project_uid: 'proj-degraded', project_name: undefined, foundation_name: 'CNCF' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: 'proj-cncf', label: 'CNCF' });
+    expect(groups[0].committees.map((c) => c.uid).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('a merged bucket is foundation-level if any of its committees is, regardless of arrival order', () => {
+    const nonFoundationFirst = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: undefined, foundation_name: 'CNCF', is_foundation: false }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: undefined, foundation_name: 'CNCF', is_foundation: true }),
+    ]);
+    expect(nonFoundationFirst).toHaveLength(1);
+    expect(nonFoundationFirst[0].isFoundationLevel).toBe(true);
+
+    const foundationFirst = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-b', project_name: undefined, foundation_name: 'CNCF', is_foundation: true }),
+      committee({ uid: 'c2', project_uid: 'proj-a', project_name: undefined, foundation_name: 'CNCF', is_foundation: false }),
+    ]);
+    expect(foundationFirst).toHaveLength(1);
+    expect(foundationFirst[0].isFoundationLevel).toBe(true);
+  });
+
+  it('falls back to a "group" testid slug (disambiguated) for labels with no ASCII alphanumerics', () => {
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: '日本語プロジェクト' }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: '开放原子' }),
+    ]);
+    const slugs = groups.map((g) => g.testIdSlug).sort();
+    expect(slugs).toEqual(['group', 'group-2']);
+  });
 });

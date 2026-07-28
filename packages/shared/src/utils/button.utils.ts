@@ -1,10 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
-export interface ButtonRootPassThrough {
-  root: { 'aria-pressed': boolean };
-}
+import { ButtonRootPassThrough } from '../interfaces/components.interface';
 
 /**
  * Resolves the `pt` passthrough object that forwards `aria-pressed` to the native `<button>`

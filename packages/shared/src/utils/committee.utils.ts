@@ -177,25 +177,44 @@ export function canManageCommitteeMembers(committee: Committee | null | undefine
 /**
  * Groups an already-filtered All Groups list by resolved label, keyed by `project_uid` when a real
  * `project_name` resolved (so two different sub-projects that happen to share a display name don't
- * merge), but keyed by the resolved label itself when `project_name` is missing — whether that label
- * falls back to `foundation_name` or all the way to the fallback constants — so every committee that
- * degrades to the same displayed text still merges into one shared bucket instead of fragmenting into
- * one bucket per committee/project with an identical, confusing header.
+ * merge), but keyed by the resolved label text itself when `project_name` is missing — whether that
+ * label falls back to `foundation_name` or all the way to the fallback constants. A degraded
+ * committee merges into an existing named bucket that already carries the identical label (e.g. a
+ * project literally named "CNCF" and a committee that degrades to `foundation_name: 'CNCF'`), so no
+ * two buckets ever render the same visible header.
  *
  * Pure and side-effect-free: callers gate whether grouping applies at all (e.g. only in foundation
  * scope) and decide the input list (e.g. already search/filter-narrowed).
  */
 export function groupCommitteesByFoundation(committees: Committee[]): CommitteeFoundationGroup[] {
   const buckets = new Map<string, CommitteeFoundationGroup>();
-  for (const committee of committees) {
-    const label = committee.project_name || committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
-    const key = committee.project_name ? committee.project_uid : label;
+  const keyByLabel = new Map<string, string>();
+
+  const addTo = (key: string, label: string, committee: Committee): void => {
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { key, label, testIdSlug: '', isFoundationLevel: !!committee.is_foundation, committees: [] };
+      bucket = { key, label, testIdSlug: '', isFoundationLevel: false, committees: [] };
       buckets.set(key, bucket);
+      keyByLabel.set(label, key);
     }
+    bucket.isFoundationLevel = bucket.isFoundationLevel || !!committee.is_foundation;
     bucket.committees.push(committee);
+  };
+
+  // First pass: named projects get their own project_uid-keyed bucket and register their label, so
+  // a same-labeled degraded committee (second pass) merges into it instead of opening a second,
+  // identically-headed bucket.
+  for (const committee of committees) {
+    if (committee.project_name) addTo(committee.project_uid, committee.project_name, committee);
+  }
+
+  // Second pass: degraded committees (no project_name) resolve to foundation_name or a fallback
+  // constant, merging into a same-labeled named bucket when one exists; otherwise every committee
+  // that degrades to the same text shares one label-keyed bucket.
+  for (const committee of committees) {
+    if (committee.project_name) continue;
+    const label = committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
+    addTo(keyByLabel.get(label) ?? label, label, committee);
   }
 
   const groups = [...buckets.values()].sort((a, b) => {
@@ -206,11 +225,13 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     return a.label.localeCompare(b.label);
   });
 
-  // Disambiguate testid slugs only when two groups genuinely share a label (rare) — keeps the
-  // common case's testid a clean, human-readable slug instead of always suffixing a raw uid.
+  // Disambiguate testid slugs only when two groups genuinely share a slug (rare) — keeps the common
+  // case's testid a clean, human-readable slug instead of always suffixing a raw uid. Falls back to
+  // 'group' for a label with no ASCII alphanumerics (e.g. a non-Latin project/foundation name), so
+  // the testid is never a bare, colliding "groups-foundation-group-".
   const slugCounts = new Map<string, number>();
   return groups.map((group) => {
-    const baseSlug = slugify(group.label);
+    const baseSlug = slugify(group.label) || 'group';
     const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
     slugCounts.set(baseSlug, occurrence);
     return { ...group, testIdSlug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}` };
