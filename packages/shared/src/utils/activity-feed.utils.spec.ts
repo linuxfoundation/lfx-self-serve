@@ -196,4 +196,44 @@ describe('buildActivityFeed', () => {
     expect(items[0].label).toBe('Document: Charter.pdf');
     expect(items[0].icon).toContain('file');
   });
+
+  describe('action', () => {
+    it('routes a past-meeting item to the ITX-native id, not the composite occurrence id', () => {
+      const items = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
+      expect(items[0].action).toEqual({ kind: 'route', path: '/meetings/pm-42/details' });
+    });
+
+    it('opens the vote drawer for a vote item', () => {
+      const items = buildActivityFeed(emptyInput({ votes: [vote({ uid: 'vote-42' })] }));
+      expect(items[0].action).toEqual({ kind: 'vote-drawer', voteUid: 'vote-42' });
+    });
+
+    it('opens the survey drawer for a survey item', () => {
+      const items = buildActivityFeed(emptyInput({ surveys: [survey({ uid: 'survey-42' })] }));
+      expect(items[0].action).toEqual({ kind: 'survey-drawer', surveyUid: 'survey-42' });
+    });
+
+    it('opens a link document directly when it has a valid http(s) url', () => {
+      const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'link', url: 'https://example.com/notes' })] }));
+      expect(items[0].action).toEqual({ kind: 'external-url', url: 'https://example.com/notes' });
+    });
+
+    it('falls back to the documents tab for a link document with a missing or unsafe url', () => {
+      const missingUrl = buildActivityFeed(emptyInput({ documents: [document({ type: 'link', url: undefined })] }));
+      expect(missingUrl[0].action).toEqual({ kind: 'tab', tab: 'documents' });
+
+      const unsafeUrl = buildActivityFeed(emptyInput({ documents: [document({ type: 'link', url: 'javascript:alert(1)' })] }));
+      expect(unsafeUrl[0].action).toEqual({ kind: 'tab', tab: 'documents' });
+    });
+
+    it('falls back to the documents tab for a file document even when a url is present', () => {
+      const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'file', url: 'https://example.com/storage/charter.pdf' })] }));
+      expect(items[0].action).toEqual({ kind: 'tab', tab: 'documents' });
+    });
+
+    it('falls back to the documents tab for a folder document', () => {
+      const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'folder' })] }));
+      expect(items[0].action).toEqual({ kind: 'tab', tab: 'documents' });
+    });
+  });
 });

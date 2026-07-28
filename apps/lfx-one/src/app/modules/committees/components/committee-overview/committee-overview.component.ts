@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -39,12 +40,21 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
+import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 
 @Component({
   selector: 'lfx-committee-overview',
-  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, SkeletonModule, TagComponent, VoteResultsDrawerComponent],
+  imports: [
+    CardComponent,
+    ButtonComponent,
+    DashboardMeetingCardComponent,
+    SkeletonModule,
+    TagComponent,
+    VoteResultsDrawerComponent,
+    SurveyResultsDrawerComponent,
+  ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
   styleUrl: './committee-overview.component.scss',
@@ -60,6 +70,7 @@ export class CommitteeOverviewComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -82,6 +93,11 @@ export class CommitteeOverviewComponent {
   public voteDrawerVisible = signal(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
+
+  // Survey drawer state
+  public surveyDrawerVisible = signal(false);
+  public selectedSurveyId = signal<string | null>(null);
+  public selectedSurvey = signal<Survey | null>(null);
 
   // Loading states for stats
   public meetingsLoading = signal(true);
@@ -306,6 +322,41 @@ export class CommitteeOverviewComponent {
       }
     } else {
       this.tabNavigated.emit('surveys');
+    }
+  }
+
+  public handleActivityItemClick(item: ActivityFeedItem): void {
+    const { action } = item;
+    switch (action.kind) {
+      case 'route':
+        void this.router.navigateByUrl(action.path);
+        break;
+      case 'vote-drawer': {
+        const vote = this.votes().find((v) => v.uid === action.voteUid);
+        if (vote) {
+          this.selectedVoteId.set(vote.uid);
+          this.selectedVote.set(vote);
+          this.voteDrawerVisible.set(true);
+        }
+        break;
+      }
+      case 'survey-drawer': {
+        const survey = this.surveys().find((s) => s.uid === action.surveyUid);
+        if (survey) {
+          this.selectedSurveyId.set(survey.uid);
+          this.selectedSurvey.set(survey);
+          this.surveyDrawerVisible.set(true);
+        }
+        break;
+      }
+      case 'external-url':
+        // buildActivityFeed only produces this action after validating the url is http(s) —
+        // see isSafeExternalUrl — matching DocumentsTableComponent.openDocument's own guard.
+        window.open(action.url, '_blank', 'noopener,noreferrer');
+        break;
+      case 'tab':
+        this.navigateToTab(action.tab);
+        break;
     }
   }
 

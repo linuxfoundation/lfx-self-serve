@@ -34,6 +34,21 @@ function timestampValue(timestamp: string): number {
 }
 
 /**
+ * True for a URL safe to open directly in a new tab — http(s) only, matching the same guard
+ * `DocumentsTableComponent.openDocument` applies before its own `window.open` call.
+ */
+function isSafeExternalUrl(url: string | undefined): url is string {
+  if (!url) {
+    return false;
+  }
+  try {
+    return ['http:', 'https:'].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Group Overview "Recent Activity" stop-gap: merges the latest items across past meetings, votes,
  * surveys, and documents into one time-ordered list. Upcoming meetings are intentionally excluded
  * — they're future-dated, already covered by the "Next Meeting" card, and would otherwise dominate
@@ -49,7 +64,10 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       label: `Meeting held: ${m.title}`,
       timestamp: m.start_time ?? '',
       icon: 'fa-light fa-clock-rotate-left',
-      tab: 'meetings:past',
+      // Route param is the ITX-native PastMeeting.id, not meeting_and_occurrence_id — the detail
+      // page fetches via /itx/past_meetings/{id}, which doesn't understand the composite
+      // occurrence id used elsewhere for query-service-indexed sub-resource fetches.
+      action: { kind: 'route', path: `/meetings/${m.id}/details` },
     }));
 
   const voteItems: ActivityFeedItem[] = input.votingEnabled
@@ -64,7 +82,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
             label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status || 'Updated'}: ${v.name}`,
             timestamp: v.last_modified_time ?? v.creation_time ?? '',
             icon: 'fa-light fa-check-to-slot',
-            tab: 'votes',
+            action: { kind: 'vote-drawer', voteUid: v.uid },
           };
         })
     : [];
@@ -80,7 +98,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
         label: `Survey ${SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus}: ${s.survey_title}`,
         timestamp: s.last_modified_at ?? s.created_at ?? '',
         icon: 'fa-light fa-chart-simple',
-        tab: 'surveys',
+        action: { kind: 'survey-drawer', surveyUid: s.uid },
       };
     });
 
@@ -95,7 +113,10 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${d.name}`,
       timestamp: d.updated_at ?? d.created_at ?? '',
       icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
-      tab: 'documents',
+      // Only 'link' documents open directly — the Documents tab treats 'file' as a download
+      // (via a committee-scoped proxy URL, not doc.url) rather than an "open", and 'folder' has
+      // no standalone target outside the Documents tab's own drill-down state.
+      action: d.type === 'link' && isSafeExternalUrl(d.url) ? { kind: 'external-url', url: d.url } : { kind: 'tab', tab: 'documents' },
     }));
 
   return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems]

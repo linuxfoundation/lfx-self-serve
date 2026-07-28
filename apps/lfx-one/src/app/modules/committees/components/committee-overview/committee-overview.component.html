@@ -272,7 +272,7 @@
                   type="button"
                   class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
                   [title]="item.label"
-                  (click)="navigateToTab(item.tab)"
+                  (click)="handleActivityItemClick(item)"
                   [attr.data-testid]="'committee-overview-activity-item-' + item.key">
                   <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
                     <i [class]="item.icon" class="text-gray-500 text-xs"></i>
@@ -321,3 +321,11 @@
   (visibleChange)="voteDrawerVisible.set($event)"
   [voteId]="selectedVoteId()"
   [listVote]="selectedVote()"></lfx-vote-results-drawer>
+
+<!-- Survey Results Drawer -->
+<lfx-survey-results-drawer
+  [visible]="surveyDrawerVisible()"
+  (visibleChange)="surveyDrawerVisible.set($event)"
+  [surveyId]="selectedSurveyId()"
+  [listSurvey]="selectedSurvey()"
+  [hasPMOAccess]="canEdit()"></lfx-survey-results-drawer>

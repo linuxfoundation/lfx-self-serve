@@ -13,6 +13,18 @@ import type { Survey } from './survey.interface';
 export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey' | 'document';
 
 /**
+ * What clicking an `ActivityFeedItem` does — a discriminated union so each source's action is
+ * explicit and type-checked, rather than overloading a single field to mean different things
+ * (navigate a tab, open a drawer, open an external link) depending on `type`.
+ */
+export type ActivityFeedAction =
+  | { kind: 'route'; path: string }
+  | { kind: 'vote-drawer'; voteUid: string }
+  | { kind: 'survey-drawer'; surveyUid: string }
+  | { kind: 'external-url'; url: string }
+  | { kind: 'tab'; tab: string };
+
+/**
  * A single row in the group Overview activity feed stop-gap.
  * @description Normalized shape merged from past meetings, votes, surveys, and documents — sorted by
  * `timestamp` desc. Upcoming meetings ('meeting') are a reserved variant, not currently emitted: they're
@@ -30,8 +42,8 @@ export interface ActivityFeedItem {
   timestamp: string;
   /** Font Awesome icon class */
   icon: string;
-  /** Tab-navigation context string passed to the existing `tab:context` handler, e.g. "meetings:upcoming" */
-  tab: string;
+  /** What clicking this row does — see `ActivityFeedAction` */
+  action: ActivityFeedAction;
 }
 
 export interface BuildActivityFeedInput {
@@ -40,13 +52,12 @@ export interface BuildActivityFeedInput {
   surveys: Survey[];
   documents: CommitteeDocument[];
   /**
-   * Vote items are excluded entirely when false. The Overview activity feed navigates a clicked vote
-   * row to the Votes tab, but that tab is hidden when the committee has voting disabled, and
-   * tab-navigation only validates against the static valid-tabs list — not tab visibility — so an
-   * activity row for a vote from before voting was disabled would otherwise navigate to a hidden,
-   * blank tab. This only closes that gap for the activity feed itself; the committee-overview
-   * "My Pending Actions" / "Active Votes" surfaces read `votes()` independently and are unaffected by
-   * this flag — see committee-overview.component.ts.
+   * Vote items are excluded entirely when false, so the feed doesn't surface vote activity for a
+   * committee that has voting disabled — matching the Votes tab itself being hidden in that state.
+   * (A clicked vote row opens VoteResultsDrawer in place, not the Votes tab, so this is a content
+   * decision rather than a dead-end-navigation guard.) This only affects the activity feed itself;
+   * the committee-overview "My Pending Actions" / "Active Votes" surfaces read `votes()` independently
+   * and are unaffected by this flag — see committee-overview.component.ts.
    */
   votingEnabled: boolean;
 }
