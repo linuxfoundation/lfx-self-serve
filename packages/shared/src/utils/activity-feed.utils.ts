@@ -48,8 +48,9 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       // ("0001-01-01...") that Zoom/ITX past-meeting rows sometimes carry on start_time — a raw
       // `m.start_time` read would parse a zero-date as a real (~year 1) timestamp and silently
       // sort that meeting out via the PER_SOURCE_LIMIT slice below, even with a valid
-      // scheduled_start_time. Every other past-meeting surface (meetings-dashboard,
-      // meeting-organizer) already goes through this helper.
+      // scheduled_start_time. meetings-dashboard.component.ts and meeting-organizer.component.ts
+      // already go through this helper for the same reason; committee-overview.component.ts's own
+      // lastMeeting/nextMeeting computeds do not (pre-existing, out of this fix's scope).
       const startMs = getPastMeetingStartTimeMs(m);
       return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
     })
