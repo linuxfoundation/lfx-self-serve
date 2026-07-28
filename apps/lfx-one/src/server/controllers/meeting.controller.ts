@@ -371,12 +371,14 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp } = req.query;
+    const { include_rsvp, occurrence_id } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
+      occurrence_id: occurrenceId,
     });
 
     try {
@@ -391,7 +393,7 @@ export class MeetingController {
       }
 
       // Get the meeting registrants
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp);
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
 
       logger.success(req, 'get_meeting_registrants', startTime, {
         meeting_id: uid,
@@ -414,12 +416,14 @@ export class MeetingController {
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp } = req.query;
+    const { include_rsvp, occurrence_id } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_my_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
+      occurrence_id: occurrenceId,
     });
 
     try {
@@ -535,7 +539,7 @@ export class MeetingController {
         has_m2m_token: !!m2mToken,
       });
 
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp);
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,
