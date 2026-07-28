@@ -55,7 +55,10 @@ export class ButtonComponent {
    * `role="button"`, and the `href()` anchor branch renders as a link (implicit `role="link"`), where
    * it would be invalid ARIA. Forwarded to the `<p-button>` branch's internal `<button>` via PrimeNG's
    * `pt` passthrough (`ptm('root')`) — a plain `[attr.aria-pressed]` at the call site would only reach
-   * the `<p-button>` host, not the real button.
+   * the `<p-button>` host, not the real button. Do not combine with `tooltip` on the same instance:
+   * the Tooltip directive on the same host also consumes the `pt` binding for its own `role="tooltip"`
+   * container, so {@link ariaPressedPt} suppresses itself whenever `tooltip` is set rather than leak
+   * `aria-pressed` onto that element.
    */
   public readonly ariaPressed = input<boolean | undefined>(undefined);
 
@@ -85,8 +88,13 @@ export class ButtonComponent {
    * single `[pt]="ariaPressedPt()"` binding against both directives, so `ButtonPassThrough`'s `null`
    * member fails to type-check against Tooltip's `pt`. The shared package's narrower
    * `ButtonRootPassThrough` is structurally compatible with both and is what's actually verified here.
+   *
+   * That same dual-consumption means the `pt` value reaches the Tooltip directive's own root element
+   * (its `role="tooltip"` container) too, not just `<p-button>`'s. Resolving to `undefined` whenever
+   * `tooltip` is set prevents `aria-pressed` from ever landing on that tooltip container — no current
+   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA.
    */
-  protected readonly ariaPressedPt = computed(() => resolveAriaPressedPt(this.ariaPressed()));
+  protected readonly ariaPressedPt = computed(() => (this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed())));
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

@@ -21,6 +21,9 @@
     data-testid="groups-card-grid-no-results">
   </lfx-empty-state>
 } @else {
+  <p class="text-sm text-gray-500 mb-3" data-testid="groups-card-grid-count">
+    Showing {{ cards().length }} {{ cards().length === 1 ? committeeLabel.singular.toLowerCase() : committeeLabel.plural.toLowerCase() }}
+  </p>
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="groups-card-grid">
     @for (item of cards(); track item.committee.uid) {
       <a

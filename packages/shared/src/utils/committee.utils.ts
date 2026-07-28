@@ -249,8 +249,7 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
   // construction regardless of input.
   const slugByKey = new Map<string, string>();
   const usedSlugs = new Set<string>();
-  for (const key of [...buckets.keys()].sort(compareCodeUnits)) {
-    const bucket = buckets.get(key)!;
+  for (const bucket of [...buckets.values()].sort((a, b) => compareCodeUnits(a.key, b.key))) {
     const baseSlug = slugify(bucket.label) || 'group';
     let candidate = baseSlug;
     let suffix = 1;
@@ -259,7 +258,7 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
       candidate = `${baseSlug}-${suffix}`;
     }
     usedSlugs.add(candidate);
-    slugByKey.set(key, candidate);
+    slugByKey.set(bucket.key, candidate);
   }
 
   const groups = [...buckets.values()].sort((a, b) => {
@@ -278,7 +277,10 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     return a.label.localeCompare(b.label);
   });
 
-  return groups.map((group) => ({ ...group, testIdSlug: slugByKey.get(group.key)! }));
+  // Every bucket key was assigned a slug in the pass above (same `buckets` map, no filtering between
+  // the two), so this fallback is unreachable in practice — kept explicit rather than a `!` assertion
+  // so a future refactor that breaks the invariant degrades to the raw key instead of throwing.
+  return groups.map((group) => ({ ...group, testIdSlug: slugByKey.get(group.key) ?? group.key }));
 }
 
 /**
