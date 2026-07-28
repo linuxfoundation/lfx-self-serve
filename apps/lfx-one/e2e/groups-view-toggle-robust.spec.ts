@@ -9,7 +9,7 @@
  */
 
 import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { GROUPS_CARD_GRID_PAGE_SIZE, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -143,8 +143,7 @@ test.describe('My Groups view toggle — Structural Tests', () => {
 });
 
 test.describe('My Groups card grid — pagination structural tests', () => {
-  const TOTAL_COMMITTEES = 15;
-  const PAGE_SIZE = 12;
+  const TOTAL_COMMITTEES = GROUPS_CARD_GRID_PAGE_SIZE + 3;
 
   test.beforeEach(async ({ page }) => {
     await setPersonaCookie(page, ['contributor']);
@@ -156,14 +155,15 @@ test.describe('My Groups card grid — pagination structural tests', () => {
 
   test('caps the initial render at the page size and reveals the rest via Show more', async ({ page }) => {
     const grid = page.getByTestId('groups-card-grid');
-    await expect(grid.locator('a')).toHaveCount(PAGE_SIZE);
+    const cards = grid.locator('[data-testid^="groups-card-grid-item-"]');
+    await expect(cards).toHaveCount(GROUPS_CARD_GRID_PAGE_SIZE);
 
     const showMore = page.getByTestId('groups-card-grid-show-more');
     await expect(showMore).toBeVisible();
 
     await showMore.click();
 
-    await expect(grid.locator('a')).toHaveCount(TOTAL_COMMITTEES);
+    await expect(cards).toHaveCount(TOTAL_COMMITTEES);
     await expect(showMore).toHaveCount(0);
   });
 });

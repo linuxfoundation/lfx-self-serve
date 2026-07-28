@@ -34,36 +34,44 @@ export class MyGroupsCardGridComponent {
    */
   private readonly expandedPages = signal(1);
 
-  /**
-   * `ariaLabel` folds every piece of metadata the card shows (role, member count, last-updated,
-   * privacy) into the link's accessible name. `[attr.aria-label]` on the card `<a>` replaces its
-   * computed accessible name outright, so `sr-only` spans nested inside it are never reached by
-   * assistive tech — this is the single source of truth for what gets announced, not the visible
-   * card content.
-   */
-  protected readonly cards = computed(() =>
-    this.committees().map((committee) => {
-      const memberCount = committee.total_members ?? 0;
-      const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
-      const parts = [
-        `Open ${committee.name || 'group'}`,
-        committee.my_role || 'Member',
-        `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
-        `updated ${lastActivityLabel}`,
-      ];
-      if (!committee.public) parts.push('private');
-      return {
-        committee,
-        roleBadgeSeverity: resolveGroupsCardRoleSeverity(committee.my_role),
-        lastActivityLabel,
-        ariaLabel: parts.join(', '),
-      };
-    })
-  );
+  protected readonly cards = this.initCards();
   protected readonly visibleCards = computed(() => this.cards().slice(0, this.expandedPages() * GROUPS_CARD_GRID_PAGE_SIZE));
   protected readonly hasMore = computed(() => this.visibleCards().length < this.cards().length);
 
   protected showMore(): void {
     this.expandedPages.update((pages) => pages + 1);
+  }
+
+  /**
+   * `ariaLabel` folds every piece of metadata the card visually shows (behavioral-class label,
+   * project/foundation name, role, member count, last-updated, privacy) into the link's accessible
+   * name. `[attr.aria-label]` on the card `<a>` replaces its computed accessible name outright, so
+   * none of that visible content is otherwise reachable by assistive tech — this is the single
+   * source of truth for what gets announced, not the DOM content underneath it. Keep this in sync
+   * with the template whenever a new field is added to the card.
+   */
+  private initCards() {
+    return computed(() =>
+      this.committees().map((committee) => {
+        const memberCount = committee.total_members ?? 0;
+        const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
+        const scopeLabel = committee.project_name || committee.foundation_name;
+        const parts = [
+          `Open ${committee.name || 'group'}`,
+          ...(committee.classDisplay ? [committee.classDisplay.label] : []),
+          ...(scopeLabel ? [scopeLabel] : []),
+          committee.my_role || 'Member',
+          `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
+          `updated ${lastActivityLabel}`,
+        ];
+        if (!committee.public) parts.push('private');
+        return {
+          committee,
+          roleBadgeSeverity: resolveGroupsCardRoleSeverity(committee.my_role),
+          lastActivityLabel,
+          ariaLabel: parts.join(', '),
+        };
+      })
+    );
   }
 }
