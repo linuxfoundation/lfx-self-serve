@@ -76,6 +76,30 @@ describe('buildActivityFeed', () => {
     expect(items.map((i) => i.type)).toEqual(['document', 'vote', 'survey', 'past_meeting']);
   });
 
+  it('sorts correctly across sources when timestamps use different UTC offset formats', () => {
+    // 2026-01-01T09:00:00+05:30 == 2026-01-01T03:30:00Z, so it should sort between the survey and
+    // the vote below despite being lexicographically smaller than both (localeCompare would get
+    // this wrong — it'd sort by the raw string, putting the offset form last).
+    const items = buildActivityFeed(
+      emptyInput({
+        votes: [vote({ last_modified_time: '2026-01-01T04:00:00Z' })],
+        surveys: [survey({ last_modified_at: '2026-01-01T03:00:00Z' })],
+        documents: [document({ updated_at: '2026-01-01T09:00:00+05:30' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['vote', 'document', 'survey']);
+  });
+
+  it('sorts an unparseable timestamp as the oldest item instead of throwing', () => {
+    const items = buildActivityFeed(
+      emptyInput({
+        votes: [vote({ last_modified_time: 'not-a-timestamp', creation_time: undefined })],
+        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['survey', 'vote']);
+  });
+
   it('caps each source at 5 items before merging, keeping the most recent per source', () => {
     const pastMeetings = Array.from({ length: 7 }, (_, i) =>
       pastMeeting({ id: `pm-${i}`, meeting_and_occurrence_id: `pm-${i}-occ`, start_time: `2026-01-0${i + 1}T00:00:00Z` })

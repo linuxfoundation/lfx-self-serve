@@ -22,6 +22,18 @@ const PER_SOURCE_LIMIT = 5;
 const FEED_LIMIT = 8;
 
 /**
+ * Parse an ISO timestamp to epoch ms for sorting, treating an absent/unparseable value as the
+ * oldest possible. A plain `localeCompare` on the raw strings only sorts correctly when every
+ * source emits the identical format/offset — this feed merges four different upstream services
+ * (query-service, committee-service), so a `+05:30`-offset or non-`Z` variant from any one of them
+ * would otherwise sort into the wrong position relative to the others.
+ */
+function timestampValue(timestamp: string): number {
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? -Infinity : parsed;
+}
+
+/**
  * Group Overview "Recent Activity" stop-gap: merges the latest items across past meetings, votes,
  * surveys, and documents into one time-ordered list. Upcoming meetings are intentionally excluded
  * — they're future-dated, already covered by the "Next Meeting" card, and would otherwise dominate
@@ -29,7 +41,7 @@ const FEED_LIMIT = 8;
  */
 export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedItem[] {
   const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
-    .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
+    .sort((a, b) => timestampValue(b.start_time ?? '') - timestampValue(a.start_time ?? ''))
     .slice(0, PER_SOURCE_LIMIT)
     .map((m) => ({
       type: 'past_meeting',
@@ -42,7 +54,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
 
   const voteItems: ActivityFeedItem[] = input.votingEnabled
     ? [...input.votes]
-        .sort((a, b) => (b.last_modified_time ?? b.creation_time ?? '').localeCompare(a.last_modified_time ?? a.creation_time ?? ''))
+        .sort((a, b) => timestampValue(b.last_modified_time ?? b.creation_time ?? '') - timestampValue(a.last_modified_time ?? a.creation_time ?? ''))
         .slice(0, PER_SOURCE_LIMIT)
         .map((v) => {
           const statusKey = normalizePollStatus(v.status);
@@ -58,7 +70,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
     : [];
 
   const surveyItems: ActivityFeedItem[] = [...input.surveys]
-    .sort((a, b) => (b.last_modified_at ?? b.created_at ?? '').localeCompare(a.last_modified_at ?? a.created_at ?? ''))
+    .sort((a, b) => timestampValue(b.last_modified_at ?? b.created_at ?? '') - timestampValue(a.last_modified_at ?? a.created_at ?? ''))
     .slice(0, PER_SOURCE_LIMIT)
     .map((s) => {
       const displayStatus = getSurveyDisplayStatus(s);
@@ -75,7 +87,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
   // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a folder
   // or link doesn't misrepresent itself as a file in the feed.
   const documentItems: ActivityFeedItem[] = [...input.documents]
-    .sort((a, b) => (b.updated_at ?? b.created_at ?? '').localeCompare(a.updated_at ?? a.created_at ?? ''))
+    .sort((a, b) => timestampValue(b.updated_at ?? b.created_at ?? '') - timestampValue(a.updated_at ?? a.created_at ?? ''))
     .slice(0, PER_SOURCE_LIMIT)
     .map((d) => ({
       type: 'document' as const,
@@ -86,5 +98,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       tab: 'documents',
     }));
 
-  return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, FEED_LIMIT);
+  return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems]
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, FEED_LIMIT);
 }

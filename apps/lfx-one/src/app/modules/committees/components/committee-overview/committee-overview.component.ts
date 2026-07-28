@@ -547,11 +547,13 @@ export class CommitteeOverviewComponent {
     // Derived from one combined computed (not combineLatest over three separate toObservable()
     // sources) so committee/myRoleLoading/isVisitor — all recomputed together in the same signal
     // flush — can't glitch through an inconsistent intermediate tick that fires then immediately
-    // cancels a request. distinctUntilChanged on (uid, roleLoading, visitor) skips re-emissions
-    // where the committee object identity changed (e.g. a silent refresh) but nothing that
-    // actually affects this fetch did, so an in-flight request isn't needlessly cancelled/restarted.
-    // Note: this only holds the documents list steady — pastMeetings/votes/surveys have no
-    // equivalent guard, so activityFeedLoading() can still flip true on a silent refresh via those.
+    // cancels a request. distinctUntilChanged on (uid, roleLoading, visitor) only dedupes a
+    // same-tuple re-emission (e.g. an unrelated field on committee() changing identity without
+    // affecting uid/roleLoading/visitor) — it does NOT suppress a silent refresh: myRoleLoading is
+    // `loading() || committeeRefreshing()` (committee-view.component.ts), so a refresh flips
+    // roleLoading true then false, which — like pastMeetings/votes/surveys, none of which have any
+    // guard here — legitimately cancels and re-issues the documents fetch and flips
+    // activityFeedLoading() back to true for the duration.
     return toSignal(
       toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
