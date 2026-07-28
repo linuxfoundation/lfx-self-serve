@@ -264,8 +264,10 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('org-projects-add-project').click();
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    // Single search affordance: no standalone search input in the dialog — search lives inside the multi-select's own filter.
+    await expect(page.getByRole('dialog', { name: 'Add project(s)' }).getByRole('searchbox')).toHaveCount(0);
     await page.getByTestId('org-projects-add-projects-select').click();
-    await page.getByRole('searchbox', { name: 'Search and select projects' }).fill('ku');
+    await page.getByPlaceholder('Search and select projects').fill('ku');
 
     await expect(page.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.waitForTimeout(500);

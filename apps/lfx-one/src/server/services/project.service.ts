@@ -31,6 +31,8 @@ import {
   EventGrowthTopEvent,
   EventsSummaryResponse,
   FlywheelConversionResponse,
+  FoundationActiveContributorsMonthlyDistinctResponse,
+  FoundationActiveContributorsMonthlyDistinctRow,
   FoundationActiveContributorsMonthlyResponse,
   FoundationActiveContributorsMonthlyRow,
   FoundationCodeCommitsDailyRow,
@@ -108,6 +110,7 @@ import {
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
   RevenueImpactResponse,
+  SnowflakeQueryResult,
   SocialMediaMonthlyResponse,
   SocialMediaPlatformMonthly,
   SocialMediaPlatformMonthlyRow,
@@ -121,8 +124,8 @@ import {
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
-import type { PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
+import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
+import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange, summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -360,6 +363,124 @@ export class ProjectService {
 
     // ROOT is an administrative pseudo-project — exclude from search results.
     return resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
+  /**
+   * Direct-FGA-grant projects for the create picker's default tree — NOT a full enumeration.
+   * `filter_grants=direct` narrows the query-service result set to resources the caller holds a
+   * direct OpenFGA tuple on, before any of our own access-check runs. Small by construction (a
+   * user's own direct grants), unlike `getProjects`'s unscoped pull.
+   */
+  public async getDirectGrantProjects(req: Request, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        filter_grants: 'direct',
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+  }
+
+  /**
+   * Boolean writer-grant summary for `WriterGrantsService`'s bootstrap fast path (LFXV2-2857).
+   * Reduces `getDirectGrantProjects` (direct-tuple-only, cheap — see its docstring) instead of
+   * `getProjects`'s unscoped sweep + batch access-check, via the shared `summarizeWriterGrants`
+   * reducer (also used by `WriterGrantsService`'s deferred sweep, so both runtimes agree on what
+   * counts as a writer-held foundation/project — and `summarizeWriterGrants` filters to
+   * `writer === true` itself, so this stays correct even if `getDirectGrantProjects`'s
+   * `includeMeetingCoordinator` default ever changes). Not short-circuited: `getDirectGrantProjects`
+   * always fully paginates and access-checks every direct grant, even once a foundation and a
+   * non-foundation row have both already been seen — bounded by the caller's own direct-grant
+   * count, which is normally small, but not by anything this method enforces.
+   */
+  public async getWriterSummary(req: Request): Promise<WriterSummary> {
+    const projects = await this.getDirectGrantProjects(req);
+    const summary = summarizeWriterGrants(projects);
+
+    logger.debug(req, 'get_writer_summary', 'Reduced direct-grant projects to writer summary', {
+      direct_grant_count: projects.length,
+    });
+
+    return summary;
+  }
+
+  /**
+   * Child projects of a parent (foundation or project), for the create picker's lazy tree
+   * fan-out. Reuses the same `parent=project:<uid>` query-service filter as
+   * `getFoundationProjectUids`, but returns full access-checked `Project` rows instead of bare UIDs.
+   */
+  public async getChildProjects(req: Request, parentUid: string, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        parent: `project:${parentUid}`,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+  }
+
+  /**
+   * Type-ahead project search for the create picker. Batch-access-checked to the relevant
+   * relation per page — inherited access is evaluated here (unlike `filter_grants=direct`), so a
+   * writer via inheritance is found through search even when the direct-grant tree under-shows
+   * them. Distinct from `searchProjects` (unpaginated, unchecked, used by the header's public
+   * project search) — different consumer, different contract, kept separate rather than
+   * overloading that method's semantics.
+   *
+   * Keeps paging through raw name matches — not just the first page — until either `pageSize`
+   * permitted results have been collected or upstream pages run out, bounded by a small page
+   * cap. A single unchecked page would silently miss an inherited-writer match that happens to
+   * land on page 2+ behind a run of visible-but-non-writable matches on page 1 — exactly the
+   * scenario this method exists to reach.
+   */
+  public async searchCreatableProjects(
+    req: Request,
+    searchQuery: string,
+    includeMeetingCoordinator: boolean = false,
+    pageSize: number = 20
+  ): Promise<Project[]> {
+    // Bounds the raw-match scan (5 pages × page_size) so a generic search term can't turn this
+    // into an unbounded crawl — still vastly better than the single-page cutoff this replaces.
+    const SEARCH_PAGE_LIMIT = 5;
+    const permitted: Project[] = [];
+    let pageToken: string | undefined;
+    let pagesFetched = 0;
+
+    logger.debug(req, 'search_creatable_projects', 'Scanning name matches for creatable projects', { page_size: pageSize, page_limit: SEARCH_PAGE_LIMIT });
+
+    do {
+      const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'project',
+          name: searchQuery,
+          page_size: pageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }
+      );
+      pagesFetched++;
+
+      const filtered = resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+      const page = await this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+      permitted.push(...page);
+      pageToken = page_token;
+    } while (pageToken && permitted.length < pageSize && pagesFetched < SEARCH_PAGE_LIMIT);
+
+    if (pageToken && pagesFetched >= SEARCH_PAGE_LIMIT) {
+      logger.warning(req, 'search_creatable_projects', 'Hit the search page cap with more pages remaining', {
+        pages_fetched: pagesFetched,
+        permitted_count: permitted.length,
+      });
+    }
+
+    return permitted.slice(0, pageSize);
   }
 
   /**
@@ -1240,16 +1361,21 @@ export class ProjectService {
           MONTH_START,
           SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
         FROM monthly_counts
+      ),
+      spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
         NULL AS PROJECT_ID,
         'The Linux Foundation' AS PROJECT_NAME,
         'tlf' AS PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        s.MONTH_START,
+        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
+      FROM spine s
+      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
+      GROUP BY s.MONTH_START
+      ORDER BY s.MONTH_START ASC
     `
       : `
       WITH monthly_counts AS (
@@ -1271,16 +1397,26 @@ export class ProjectService {
           MONTH_START,
           SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
         FROM monthly_counts
+      ),
+      proj AS (
+        SELECT MAX(PROJECT_ID) AS PROJECT_ID, MAX(PROJECT_NAME) AS PROJECT_NAME, MAX(PROJECT_SLUG) AS PROJECT_SLUG
+        FROM monthly_counts
+      ),
+      spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        p.PROJECT_ID,
+        p.PROJECT_NAME,
+        p.PROJECT_SLUG,
+        s.MONTH_START,
+        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
+      FROM spine s
+      CROSS JOIN proj p
+      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
+      GROUP BY s.MONTH_START, p.PROJECT_ID, p.PROJECT_NAME, p.PROJECT_SLUG
+      ORDER BY s.MONTH_START ASC
     `;
 
     const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [...slugParams]);
@@ -1333,6 +1469,94 @@ export class ProjectService {
     });
 
     return { monthlyData, monthlyLabels };
+  }
+
+  /**
+   * Get monthly DISTINCT active contributors for a foundation (last 12 months)
+   * Queries FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY (COUNT DISTINCT member_id per month)
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Monthly distinct contributor counts with short month labels
+   */
+  public async getFoundationActiveContributorsMonthlyDistinct(foundationSlug: string): Promise<FoundationActiveContributorsMonthlyDistinctResponse> {
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetching monthly distinct active contributors', {
+      foundation_slug: foundationSlug,
+    });
+
+    const query = `
+      SELECT
+        MONTH_START_DATE,
+        MONTHLY_ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
+        AND MONTH_START_DATE >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
+      ORDER BY MONTH_START_DATE ASC
+    `;
+
+    let result: SnowflakeQueryResult<FoundationActiveContributorsMonthlyDistinctRow>;
+    try {
+      result = await this.snowflakeService.execute<FoundationActiveContributorsMonthlyDistinctRow>(query, [foundationSlug], {
+        expectMissingObject: true,
+      });
+    } catch (error) {
+      // Pre-dbt deploy the monthly table is absent; degrade to the empty
+      // response the PR description promises instead of 5xx per dashboard load.
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Monthly distinct table not deployed yet; returning empty response', {
+        foundation_slug: foundationSlug,
+      });
+      return { monthlyData: [], monthlyLabels: [], latest: 0, momDeltaPercent: null, momDirection: 'flat' };
+    }
+
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly_distinct', 'Fetched monthly distinct active contributors', {
+      row_count: result.rows.length,
+    });
+
+    // Drop future-materialized rows so a row dated past the current month can't
+    // become the displayed headline or skew the MoM pair; mirrors the date-only
+    // UTC handling used elsewhere in this service.
+    const now = new Date();
+    const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
+    const rows = result.rows.filter((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.getUTCFullYear() * 12 + date.getUTCMonth() <= currentMonthOrdinal;
+    });
+
+    const monthlyData = rows.map((row) => row.MONTHLY_ACTIVE_CONTRIBUTORS);
+    const monthlyLabels = rows.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    });
+
+    // MoM requires the two newest rows to be adjacent calendar months and the newest
+    // to be current (or one stale); otherwise a missing month would mislabel the delta.
+    let latest = 0;
+    let momDeltaPercent: number | null = null;
+    let momDirection: MoMDirection = 'flat';
+    if (rows.length > 0) {
+      const newest = rows[rows.length - 1];
+      latest = newest.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
+      if (rows.length >= 2) {
+        const prior = rows[rows.length - 2];
+        const rowOrdinal = (value: string | Date): number => {
+          const date = new Date(value);
+          return date.getUTCFullYear() * 12 + date.getUTCMonth();
+        };
+        const newestOrdinal = rowOrdinal(newest.MONTH_START_DATE);
+        const priorOrdinal = rowOrdinal(prior.MONTH_START_DATE);
+        const validPair = newestOrdinal - priorOrdinal === 1 && newestOrdinal >= currentMonthOrdinal - 1 && newestOrdinal <= currentMonthOrdinal;
+        const previous = prior.MONTHLY_ACTIVE_CONTRIBUTORS ?? 0;
+        if (validPair && previous > 0) {
+          momDeltaPercent = Number((((latest - previous) / previous) * 100).toFixed(1));
+          if (momDeltaPercent > 0) {
+            momDirection = 'up';
+          } else if (momDeltaPercent < 0) {
+            momDirection = 'down';
+          }
+        }
+      }
+    }
+
+    return { monthlyData, monthlyLabels, latest, momDeltaPercent, momDirection };
   }
 
   /**
@@ -1515,14 +1739,19 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_maintainers_monthly', 'Fetching monthly maintainers', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('month', -1, DATE_TRUNC('MONTH', CURRENT_DATE()))) AS METRIC_MONTH
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      )
       SELECT
-        METRIC_MONTH,
-        ACTIVE_MAINTAINERS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY
-      WHERE FOUNDATION_SLUG = ?
-        AND REPOSITORY_SCOPE = 'all_repos'
-        AND METRIC_MONTH >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY METRIC_MONTH ASC
+        s.METRIC_MONTH,
+        COALESCE(m.ACTIVE_MAINTAINERS, 0) AS ACTIVE_MAINTAINERS
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY m
+        ON m.METRIC_MONTH = s.METRIC_MONTH
+        AND m.FOUNDATION_SLUG = ?
+        AND m.REPOSITORY_SCOPE = 'all_repos'
+      ORDER BY s.METRIC_MONTH ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationMaintainersMonthlyRow>(query, [foundationSlug]);
@@ -1582,13 +1811,18 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_events_quarterly', 'Fetching quarterly events', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('quarter', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('quarter', -1, DATE_TRUNC('QUARTER', CURRENT_DATE()))) AS QUARTER_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 8))
+      )
       SELECT
-        QUARTER_START_DATE,
-        EVENT_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY
-      WHERE FOUNDATION_SLUG = ?
-        AND QUARTER_START_DATE >= DATEADD('quarter', -7, DATE_TRUNC('QUARTER', CURRENT_DATE()))
-      ORDER BY QUARTER_START_DATE ASC
+        s.QUARTER_START_DATE,
+        COALESCE(e.EVENT_COUNT, 0) AS EVENT_COUNT
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY e
+        ON e.QUARTER_START_DATE = s.QUARTER_START_DATE
+        AND e.FOUNDATION_SLUG = ?
+      ORDER BY s.QUARTER_START_DATE ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationEventsQuarterlyRow>(query, [foundationSlug]);
@@ -6928,5 +7162,31 @@ export class ProjectService {
     const prev = all.find((m) => m.month === prevStr);
     if (!prev || prev.followers === 0) return null;
     return Math.round(((current.followers - prev.followers) / prev.followers) * 1000) / 10;
+  }
+
+  /**
+   * Shared writer/`meeting_coordinator` filtering for `getDirectGrantProjects`,
+   * `getChildProjects`, and `searchCreatableProjects`. Mirrors `getProjectById`'s "skip
+   * meeting_coordinator check for writers" shortcut, batched: only non-writers get the extra
+   * `meeting_coordinator` check when it's requested at all.
+   */
+  private async filterToCreatableProjects(req: Request, projects: Project[], includeMeetingCoordinator: boolean): Promise<Project[]> {
+    if (projects.length === 0) {
+      return projects;
+    }
+
+    const writerChecked = await this.accessCheckService.addAccessToResources(req, projects, 'project');
+    if (!includeMeetingCoordinator) {
+      return writerChecked.filter((p) => p.writer === true);
+    }
+
+    const nonWriters = writerChecked.filter((p) => p.writer !== true);
+    if (nonWriters.length === 0) {
+      return writerChecked.filter((p) => p.writer === true);
+    }
+
+    const coordinatorChecks: AccessCheckRequest[] = nonWriters.map((p) => ({ resource: 'project', id: p.uid, access: 'meeting_coordinator' }));
+    const coordinatorResults = await this.accessCheckService.checkAccess(req, coordinatorChecks);
+    return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(`${p.uid}#meeting_coordinator`) === true);
   }
 }

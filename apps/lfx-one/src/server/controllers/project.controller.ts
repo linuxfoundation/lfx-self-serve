@@ -52,6 +52,26 @@ export class ProjectController {
   }
 
   /**
+   * GET /projects/writer-summary
+   */
+  public async getWriterSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_writer_summary');
+
+    try {
+      const summary = await this.projectService.getWriterSummary(req);
+
+      logger.success(req, 'get_writer_summary', startTime, {
+        has_writer_foundation: summary.hasWriterFoundation,
+        has_writer_project: summary.hasWriterProject,
+      });
+
+      res.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /projects/search
    */
   public async searchProjects(req: Request, res: Response, next: NextFunction): Promise<void> {

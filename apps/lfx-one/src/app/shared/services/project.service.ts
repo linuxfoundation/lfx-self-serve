@@ -3,8 +3,11 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { WRITER_SUMMARY_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, timeout } from 'rxjs';
+
+import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -20,8 +23,18 @@ export class ProjectService {
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
     if (!this.projectsCache.has(cacheKey)) {
+      // shareReplay(1) pins whatever lands here for the rest of the session — every caller shares
+      // this cache key. One retry, transient errors only (isTransientHttpError), so a
+      // session-expiry/permission 4xx fails fast instead of doubling the wait before the
+      // fallback. On failure, evict the key rather than caching `[]`: the retry only lowers how
+      // often a stuck cache happens, it can't rule it out.
       const projects$ = this.http.get<Project[]>('/api/projects', { params }).pipe(
-        catchError(() => of([])),
+        retryTransientHttpError(),
+        catchError((error) => {
+          console.error('Failed to fetch projects:', error);
+          this.projectsCache.delete(cacheKey);
+          return of([]);
+        }),
         shareReplay(1)
       );
       this.projectsCache.set(cacheKey, projects$);
@@ -29,12 +42,39 @@ export class ProjectService {
     return this.projectsCache.get(cacheKey)!;
   }
 
+  /**
+   * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
+   * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
+   * set narrowed until the (much slower) deferred sweep eventually resolves it instead.
+   *
+   * `timeout()` sits downstream of `retryTransientHttpError()` in the pipe, so the attempt, the
+   * retry delay, and the retried attempt all share one `WRITER_SUMMARY_TIMEOUT_MS` budget rather
+   * than each attempt getting its own — a transient failure followed by a stalled retry still
+   * fails closed at that one bound, instead of running up to roughly twice it. `WriterGrantsService`
+   * only schedules its deferred sweep once this call settles, so that bound matters: an unbounded
+   * hang here would silently starve the sweep — the recovery path for a stalled fast path — for
+   * the whole session.
+   */
+  public getWriterSummary(): Observable<WriterSummary> {
+    return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
+      retryTransientHttpError(),
+      timeout(WRITER_SUMMARY_TIMEOUT_MS),
+      catchError((error) => {
+        console.error('Failed to fetch writer summary:', error);
+        return of({ hasWriterFoundation: false, hasWriterProject: false });
+      })
+    );
+  }
+
   public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
     const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
       const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
-        catchError(() => of(null)),
+        catchError((error) => {
+          console.error('Failed to fetch project:', error);
+          return of(null);
+        }),
         shareReplay(1),
         tap((project) => {
           if (current) {
@@ -112,7 +152,12 @@ export class ProjectService {
   // ── Project Documents ─────────────────────────────────────────────────────
 
   public getProjectDocuments(projectUid: string): Observable<ProjectDocument[]> {
-    return this.http.get<ProjectDocument[]>(`/api/projects/${projectUid}/documents`).pipe(catchError(() => of([])));
+    return this.http.get<ProjectDocument[]>(`/api/projects/${projectUid}/documents`).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch project documents:', error);
+        return of([]);
+      })
+    );
   }
 
   public createProjectDocument(projectUid: string, data: CreateProjectDocumentRequest): Observable<ProjectDocument> {

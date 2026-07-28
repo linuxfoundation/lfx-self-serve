@@ -4,12 +4,12 @@
 <div class="flex flex-col gap-4" data-testid="newsletter-audience-step">
   <div>
     <h2 class="text-base font-semibold text-gray-900">Who's this for?</h2>
-    <p class="text-sm text-gray-500 mt-1">Pick the groups that should receive this newsletter. Members in multiple groups only get one email.</p>
+    <p class="text-sm text-gray-500 mt-1">Pick the group that should receive this newsletter.</p>
   </div>
 
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
-      <label class="text-sm font-medium text-gray-700">Groups</label>
+      <label class="text-sm font-medium text-gray-700" for="newsletter-audience-committee">Group</label>
       @if (selectedCount() > 0 && recipientCount() !== null) {
         @if (recipientCountLoading()) {
           <span class="text-xs text-gray-500" data-testid="newsletter-audience-recipient-pill">Calculating recipients…</span>
@@ -48,19 +48,83 @@
         No newsletter groups available. Create a group with the Newsletter category first.
       </div>
     } @else {
-      <lfx-multi-select
-        [form]="form()"
-        control="committeeUids"
+      <lfx-select
+        [form]="audienceForm"
+        control="committeeUid"
         [options]="committeeOptions()"
         optionLabel="label"
         optionValue="value"
-        optionSubLabel="category"
-        placeholder="Pick the groups that should receive this newsletter"
+        placeholder="Pick a group"
         [filter]="true"
-        filterPlaceHolder="Search groups"
+        filterPlaceholder="Search groups"
+        [showClear]="true"
+        inputId="newsletter-audience-committee"
         styleClass="w-full"
         data-testid="newsletter-audience-committees">
-      </lfx-multi-select>
+      </lfx-select>
+
+      @if (selectedCommitteeUid()) {
+        <!-- Nested sub-panel: tinted + indented so it reads as an optional
+             action on the selected group, not a sibling of the Group picker. -->
+        <div class="mt-2 ml-3 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="newsletter-audience-email-add-section">
+          <div class="flex items-center gap-2">
+            <i class="fa-light fa-user-plus text-gray-400" aria-hidden="true"></i>
+            <label class="text-sm font-medium text-gray-800" for="newsletter-audience-email-add">Someone missing? Add them to this group</label>
+          </div>
+          <p class="text-xs text-gray-500" data-testid="newsletter-audience-email-add-banner">
+            New emails are added to the <span class="font-medium text-gray-700">{{ selectedCommitteeName() }}</span> group automatically — a one-time step,
+            remembered for future newsletters.
+          </p>
+
+          <form [formGroup]="emailAddForm" (ngSubmit)="onAddEmail()" class="flex items-center gap-2">
+            <div class="w-full max-w-md">
+              <lfx-input-text
+                [form]="emailAddForm"
+                control="email"
+                type="email"
+                [id]="'newsletter-audience-email-add'"
+                size="small"
+                placeholder="name@example.com"
+                dataTest="newsletter-audience-email-add-input">
+              </lfx-input-text>
+            </div>
+            <lfx-button label="Add" type="submit" size="small" severity="secondary" [outlined]="true" data-testid="newsletter-audience-email-add-btn">
+            </lfx-button>
+          </form>
+
+          <!-- Rendered (and registered as a live region) as soon as a group is
+               selected, before any entry exists — a live region only announces
+               mutations after it registers, so the first entry announces too.
+               The banner sits outside the region to avoid group-switch chatter. -->
+          <ul class="flex flex-col gap-1" aria-live="polite" data-testid="newsletter-audience-email-add-list">
+            @for (entry of visibleEmailAdds(); track entry.email) {
+              <li class="flex items-center gap-2 px-1 py-0.5 text-sm text-gray-700" data-testid="newsletter-audience-email-add-item">
+                <span class="break-all">{{ entry.email }}</span>
+                @switch (entry.status) {
+                  @case ('pending') {
+                    <p-progressSpinner styleClass="!w-3.5 !h-3.5" strokeWidth="4" ariaLabel="Adding to group"></p-progressSpinner>
+                  }
+                  @case ('added') {
+                    <i class="fa-light fa-check text-emerald-600" aria-hidden="true"></i>
+                    <span class="sr-only">Added to group</span>
+                  }
+                  @case ('already') {
+                    <span class="text-xs text-gray-500">Already exists in this group</span>
+                  }
+                  @case ('invalid') {
+                    <i class="fa-light fa-circle-exclamation text-amber-600" aria-hidden="true"></i>
+                    <span class="text-xs text-amber-700">{{ entry.reason }}</span>
+                  }
+                  @case ('failed') {
+                    <i class="fa-light fa-circle-exclamation text-red-600" aria-hidden="true"></i>
+                    <span class="text-xs text-red-700">{{ entry.reason }}</span>
+                  }
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      }
     }
   </div>
 

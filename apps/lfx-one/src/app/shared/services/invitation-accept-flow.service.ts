@@ -37,7 +37,7 @@ export class InvitationAcceptFlowService {
     const requiresOrganization = invitationRequiresOrganization(context);
 
     if (!requiresOrganization) {
-      return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid);
+      return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, { fromLfidInvite: context.fromLfidInvite });
     }
 
     // Resolve the pre-fill org: use the invite's org when present, otherwise fall back to
@@ -52,13 +52,19 @@ export class InvitationAcceptFlowService {
 
     return contextReady$.pipe(
       switchMap((ctx) => this.preResolveOrganization(ctx)),
-      switchMap((ctx) => from(this.openOrganizationDialog(ctx))),
-      switchMap((result) => {
-        if (!result?.organization) {
-          return EMPTY;
-        }
-        return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, result.organization);
-      })
+      switchMap((ctx) =>
+        from(this.openOrganizationDialog(ctx)).pipe(
+          switchMap((result) => {
+            if (!result?.organization) {
+              return EMPTY;
+            }
+            return this.invitationService.acceptInvitation(ctx.committeeUid, ctx.inviteUid, {
+              organization: result.organization,
+              fromLfidInvite: ctx.fromLfidInvite,
+            });
+          })
+        )
+      )
     );
   }
 

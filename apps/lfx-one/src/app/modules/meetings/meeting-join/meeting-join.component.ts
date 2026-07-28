@@ -50,7 +50,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisibleForJoinWindow } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -187,9 +187,9 @@ export class MeetingJoinComponent implements OnInit {
   private readonly revealedHostKeyMeetingId: WritableSignal<string | null> = signal<string | null>(null);
   protected readonly showHostKey: Signal<boolean> = computed(() => !!this.meeting()?.id && this.revealedHostKeyMeetingId() === this.meeting().id);
   // Single gate for the host-key chip: the BFF authorized this viewer (and sent a key) AND the
-  // meeting is inside its join window (early-join → end) — the same window as the Join button.
-  // Host keys can rotate per occurrence, so we don't surface them before the meeting is joinable.
-  protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisibleForJoinWindow(this.meeting(), this.currentOccurrence()));
+  // meeting is inside the 70-min pre / 40-min post window applied server-side to can_view_host_key.
+  // The frontend does not re-derive the window — it trusts the BFF's flag directly.
+  protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisible(this.meeting()));
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —
@@ -1300,25 +1300,32 @@ export class MeetingJoinComponent implements OnInit {
     // doesn't block the pageview forever. Sub-projects whose parent doesn't land in time record
     // project_* correctly and leave foundation_* empty (see buildPageviewContext callsite below).
     const PARENT_FETCH_TIMEOUT_MS = 2000;
-    toObservable(this.project)
-      .pipe(
-        filter((p): p is Partial<Project> => !!p?.slug),
-        switchMap((project) => {
-          if (!project.parent_uid) {
-            return of({ project, parent: null as Project | null });
-          }
-          return merge(
-            toObservable(this.parentProject).pipe(
-              filter((parent): parent is Project => !!parent),
-              map((parent) => ({ project, parent: parent as Project | null }))
-            ),
-            timer(PARENT_FETCH_TIMEOUT_MS).pipe(map(() => ({ project, parent: null as Project | null })))
-          );
-        }),
-        take(1),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(({ project, parent }) => {
+    // Created here (injection context) rather than inside the switchMap below — toObservable()
+    // calls inject() internally and throws NG0203 when invoked from an async stream callback.
+    const parentProject$ = toObservable(this.parentProject);
+    const pageviewContext$ = toObservable(this.project).pipe(
+      filter((p): p is Partial<Project> => !!p?.slug),
+      switchMap((project) => {
+        if (!project.parent_uid) {
+          return of({ project, parent: null as Project | null });
+        }
+        return merge(
+          parentProject$.pipe(
+            filter((parent): parent is Project => !!parent),
+            map((parent) => ({ project, parent: parent as Project | null }))
+          ),
+          timer(PARENT_FETCH_TIMEOUT_MS).pipe(map(() => ({ project, parent: null as Project | null })))
+        );
+      }),
+      take(1)
+    );
+    // trackPage() silently drops calls made before the Plausible script executes, and this route's
+    // pageview is deferred to this component — hold the single emission until the script is ready
+    // instead of losing the pageview when project context resolves faster than the script loads.
+    const analyticsReady$ = toObservable(this.plausibleService.ready).pipe(filter(Boolean));
+    combineLatest([pageviewContext$, analyticsReady$])
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([{ project, parent }]) => {
         const isTopLevel = !project.parent_uid;
         this.plausibleService.trackPage(
           PlausibleService.buildPageviewContext({

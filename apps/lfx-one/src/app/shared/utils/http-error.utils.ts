@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
+import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
 
 /**
  * Extracts a user-friendly error message from an HttpErrorResponse.
@@ -46,4 +48,27 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 
   if (error instanceof Error && error.message) return error.message;
   return fallback;
+}
+
+/**
+ * Whether an error is worth retrying — a beat of time could plausibly fix a network drop (0),
+ * rate limit (429), or upstream 5xx, but not a client error like an expired session (401) or a
+ * permission/not-found response (403/404).
+ */
+export function isTransientHttpError(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
+}
+
+/**
+ * RxJS `retry` config shared by every transient-error retry in the app — one retry policy,
+ * defined once, so `count`/delay can't drift between call sites the way a copy-pasted
+ * `retry({...})` block can. `count` defaults to 1; pass a different value for a call site that
+ * deliberately retries more (e.g. a user-triggered list load can afford to try harder than a
+ * bootstrap-critical fetch).
+ */
+export function retryTransientHttpError<T>(count: number = 1): MonoTypeOperatorFunction<T> {
+  return retry({
+    count,
+    delay: (error: unknown) => (isTransientHttpError(error) ? timer(TRANSIENT_RETRY_DELAY_MS) : throwError(() => error)),
+  });
 }

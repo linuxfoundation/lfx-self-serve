@@ -135,3 +135,52 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     expect(result.has('m50')).toBe(false);
   });
 });
+
+describe('MeetingService.getMeetingHostKey', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('queries v1_meeting_host_credentials with the correct type and meeting_id tag', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getMeetingHostKey(req, 'meeting-abc');
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const params = proxyRequest.mock.calls[0][4];
+    expect(params.type).toBe('v1_meeting_host_credentials');
+    expect(params.tags).toBe('meeting_id:meeting-abc');
+    expect(params).not.toHaveProperty('limit');
+  });
+
+  it('returns the host_key from the first resource', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ id: 'v1_meeting_host_credentials:meeting-abc', data: { host_key: '654321' } }],
+    });
+
+    const result = await service.getMeetingHostKey(req, 'meeting-abc');
+
+    expect(result).toBe('654321');
+  });
+
+  it('returns null when the resources array is empty (user has no access or doc not yet indexed)', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    const result = await service.getMeetingHostKey(req, 'meeting-abc');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when host_key is absent from the data payload', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ id: 'v1_meeting_host_credentials:meeting-abc', data: {} }],
+    });
+
+    const result = await service.getMeetingHostKey(req, 'meeting-abc');
+
+    expect(result).toBeNull();
+  });
+});

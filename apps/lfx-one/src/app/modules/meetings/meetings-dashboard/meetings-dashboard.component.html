@@ -181,13 +181,16 @@
             [timeFilter]="timeFilter()"
             [pendingRsvpOnly]="pendingRsvpOnly()"
             [showPendingRsvpFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
+            [organizerOnly]="organizerOnly()"
+            [showOrganizerFilter]="activeLens() === 'me'"
             (meetingTypeChange)="onMeetingTypeChange($event)"
             (foundationFilterChange)="onFoundationFilterChange($event)"
             (projectFilterChange)="onProjectFilterChange($event)"
             [searchQuery]="searchQuery()"
             (searchQueryChange)="searchQuery.set($event)"
             (timeFilterChange)="onTimeFilterChange($event)"
-            (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)" />
+            (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)"
+            (organizerOnlyChange)="organizerOnly.set($event)" />
         }
       </div>
     </div>

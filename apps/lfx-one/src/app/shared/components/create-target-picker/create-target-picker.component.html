@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" data-testid="create-target-picker">
+  <div class="relative">
+    <!-- Not the lfx-input-text wrapper: it renders `data-test` (via `dataTest()`), not
+         `data-testid` — this repo's e2e suite selects exclusively via `data-testid`
+         (getByTestId), and the wrapper's `<ng-container>` root has nowhere for a raw
+         `data-testid` attribute placed on the host tag to fall through to. Converting would
+         silently break every `getByTestId('create-target-search-input')` selector in
+         create-quick-link.spec.ts (S4, S7, S8, S9). -->
+    <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true"></i>
+    <input
+      [formControl]="searchControl"
+      type="text"
+      [placeholder]="searchPlaceholder()"
+      [attr.aria-label]="searchPlaceholder()"
+      class="pl-10 h-9 w-full text-sm rounded-lg border border-gray-200 focus:!ring-1 focus:!ring-blue-500 focus:!outline-none"
+      data-testid="create-target-search-input" />
+  </div>
+
+  <div class="max-h-[320px] overflow-y-auto flex flex-col" data-testid="create-target-results">
+    <!-- Only render rows once the active view has actually loaded — otherwise the previous
+         result set stays visible (and clickable) through the search debounce + in-flight
+         request, letting a user pick a stale row that no longer matches what they typed. -->
+    @if (loaded()) {
+      @if (isSearching()) {
+        <!-- Search results — flat, no expand affordance (independent matches, not a tree). -->
+        @for (project of activeResult().projects; track project.uid) {
+          <button
+            type="button"
+            class="flex items-center gap-2 p-2 w-full text-left rounded-lg transition-colors"
+            [class.bg-blue-50]="selectedKey() === 'project:' + project.uid"
+            [class.hover:bg-gray-100]="selectedKey() !== 'project:' + project.uid"
+            [attr.aria-pressed]="selectedKey() === 'project:' + project.uid"
+            (click)="onNodeSelected(project)"
+            [attr.data-testid]="'create-target-search-result-' + project.uid">
+            <i class="fa-light fa-diagram-project text-gray-400 shrink-0" aria-hidden="true"></i>
+            <span class="flex-1 min-w-0 truncate text-sm text-gray-900">{{ project.name }}</span>
+          </button>
+        }
+        @for (committee of activeResult().committees; track committee.uid) {
+          <button
+            type="button"
+            class="flex items-center gap-2 p-2 w-full text-left rounded-lg transition-colors"
+            [class.bg-blue-50]="selectedKey() === 'committee:' + committee.uid"
+            [class.hover:bg-gray-100]="selectedKey() !== 'committee:' + committee.uid"
+            [attr.aria-pressed]="selectedKey() === 'committee:' + committee.uid"
+            (click)="onNodeSelected(committee)"
+            [attr.data-testid]="'create-target-search-result-' + committee.uid">
+            <i class="fa-light fa-people-group text-gray-400 shrink-0" aria-hidden="true"></i>
+            <span class="flex-1 min-w-0 truncate text-sm text-gray-900">
+              {{ committee.name }}
+              <span class="text-xs text-gray-400">— {{ committee.projectName }}</span>
+            </span>
+          </button>
+        }
+      } @else {
+        <!-- Default view: the user's direct-grant tree, lazy fan-out on expand. -->
+        @for (project of activeResult().projects; track project.uid) {
+          <lfx-create-target-tree-node [node]="project" [artifactType]="artifactType()" [selectedKey]="selectedKey()" (nodeSelected)="onNodeSelected($event)" />
+        }
+        @for (committee of activeResult().committees; track committee.uid) {
+          <lfx-create-target-tree-node
+            [node]="committee"
+            [artifactType]="artifactType()"
+            [selectedKey]="selectedKey()"
+            (nodeSelected)="onNodeSelected($event)" />
+        }
+      }
+    }
+
+    @if (isEmpty()) {
+      <div class="text-center py-8 text-gray-500 text-sm" data-testid="create-target-empty-state">
+        @if (isSearching()) {
+          @if (supportsCommitteeTarget()) {
+            No projects or groups you can create in match "{{ searchTerm() }}".
+          } @else {
+            No projects you can create in match "{{ searchTerm() }}".
+          }
+        } @else {
+          @if (supportsCommitteeTarget()) {
+            Nothing here yet — try searching for a project or group.
+          } @else {
+            Nothing here yet — try searching for a project.
+          }
+        }
+      </div>
+    }
+
+    @if (!loaded()) {
+      <div class="flex items-center justify-center py-3 text-gray-500 text-sm gap-2">
+        <i class="fa-light fa-spinner fa-spin"></i>
+        <span>Loading...</span>
+      </div>
+    }
+  </div>
+</div>

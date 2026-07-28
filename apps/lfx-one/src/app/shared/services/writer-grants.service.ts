@@ -1,31 +1,44 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, computed, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
+import { afterNextRender, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CreatableProject, Project } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_MIN_DELAY_MS, IDLE_SWEEP_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { WriterSummary } from '@lfx-one/shared/interfaces';
+import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
-import { map } from 'rxjs';
+import { finalize, map } from 'rxjs';
 
 /**
- * The user's per-project `writer` grants — the same signal `writerGuard` enforces.
+ * Whether the user holds a `writer` grant on a foundation-level and/or non-foundation project —
+ * the same authorization `writerGuard` enforces. The only consumer is {@link LensService}, which
+ * OR's these into its allowed-lens set (LFXV2-2754): a `writer` grant is authority over that
+ * project, so the lens that reaches it must be available regardless of which persona was detected.
  *
- * `GET /api/projects` batch access-checks every visible project and returns `writer` per
- * project, so this reflects real authorization rather than inferring it from a persona.
- * Owned here rather than in a consumer because two independent consumers need it and must
- * not depend on each other:
- *  - {@link LensService} widens the allowed lens set to cover projects the user can write
- *    to (LFXV2-2754) — a `writer` grant is authority over that project, so the lens that
- *    reaches it must be available regardless of which persona was detected.
- *  - {@link CreatePermissionService} scopes the create quick-link to the same grants.
+ * Two-phase, kicked off post-hydration in `afterNextRender` (LFXV2-2857):
+ *  - **Fast path** — `ProjectService.getWriterSummary()` hits a `filter_grants=direct`-scoped
+ *    endpoint (typically sub-second for a normal direct-grant count, though it still paginates
+ *    and access-checks server-side, so it isn't a hard bound). Direct grants only, so it
+ *    under-reports *inherited* access (e.g. a foundation-level writer's implicit access to a
+ *    non-foundation child they hold no direct tuple on).
+ *  - **Deferred sweep** — the existing unscoped `ProjectService.getProjects()` (the same call
+ *    that used to run here directly and block bootstrap for 11-19s), scheduled *after the fast
+ *    path settles* (not in the same tick as it — the skip check below needs the fast path's
+ *    actual result to have a chance of firing), then floored by `IDLE_SWEEP_MIN_DELAY_MS` before
+ *    `requestIdleCallback` is even attempted — that API has no minimum-delay guarantee of its own
+ *    and can fire on the very next idle frame, which can land inside Datadog RUM's post-request
+ *    activity-settle window and pull the sweep's XHR back into `@view.loading_time` (see that
+ *    constant's docstring). Resolves inherited access. Server-side cost is unchanged — this only
+ *    moves it off the
+ *    bootstrap-blocking path, it doesn't make the call itself cheaper. Runs every bootstrap
+ *    (deliberately uncached: identity-scoped state here would need to invalidate on
+ *    impersonation start/stop, both of which reload in-tab — see
+ *    `docs/architecture/backend/impersonation.md` — and re-running an idle-deferred call beats
+ *    that invalidation risk). Skipped entirely if the fast path already resolved both signals
+ *    `true`, since an OR-merge can no longer change the outcome.
  *
- * Dependency direction matters: this service injects only `ProjectService` (which injects
- * only `HttpClient`), so `LensService` can consume it without a cycle.
- *
- * Resolves to `[]` while loading and on error — callers fail closed. The error half relies
- * on `ProjectService.getProjects()` catching internally and emitting `[]`; a local
- * `catchError` here would be unreachable.
+ * Both signals start `false` and only ever OR-merge to `true` as either call resolves — never
+ * back — so the fast path, deferred sweep, and their arrival order don't matter to the consumer.
  */
 @Injectable({
   providedIn: 'root',
@@ -34,51 +47,71 @@ export class WriterGrantsService {
   private readonly projectService = inject(ProjectService);
   private readonly destroyRef = inject(DestroyRef);
 
-  private readonly grants = signal<CreatableProject[]>([]);
+  private readonly hasWriterFoundationInternal: WritableSignal<boolean> = signal(false);
+  private readonly hasWriterProjectInternal: WritableSignal<boolean> = signal(false);
 
-  /** Projects the user holds `writer` on. Empty until the post-hydration fetch resolves. */
-  public readonly writerProjects: Signal<CreatableProject[]> = this.grants.asReadonly();
+  /** True once a writer-held project satisfying `computeIsFoundation` is known — fast path first, deferred sweep may widen later. */
+  public readonly hasWriterFoundation: Signal<boolean> = this.hasWriterFoundationInternal.asReadonly();
 
-  /** True once at least one writer-held project satisfies `computeIsFoundation`. */
-  public readonly hasWriterFoundation: Signal<boolean> = computed(() => this.grants().some((project) => project.isFoundation));
-
-  /** True once at least one writer-held project is a non-foundation project. */
-  public readonly hasWriterProject: Signal<boolean> = computed(() => this.grants().some((project) => !project.isFoundation));
+  /** True once a writer-held non-foundation project is known — fast path first, deferred sweep may widen later. */
+  public readonly hasWriterProject: Signal<boolean> = this.hasWriterProjectInternal.asReadonly();
 
   public constructor() {
-    // Fetch after hydration, not at construction. The endpoint paginates every visible project
-    // and batch access-checks them, so a pending task would block SSR serialization on TTFB for
-    // every page. `afterNextRender` runs browser-only, once the first render is committed, so the
-    // server and the client's first pass agree and the widened lens set lands as a normal state
-    // update rather than a hydration mismatch.
+    // Runs browser-only, once the first render is committed — see the class doc for why both
+    // calls live here rather than at construction.
     afterNextRender(() => {
       this.projectService
-        .getProjects()
+        .getWriterSummary()
         .pipe(
-          map((projects) => projects.filter((project) => project.writer === true).map(toCreatableProject)),
+          // Schedule the deferred sweep once the fast path settles — resolved, failed closed, or
+          // torn down early by destroy. Scheduling it eagerly in this same tick would instead race
+          // the HTTP round trip, so runDeferredSweep's "skip if both already true" check would
+          // almost never see a `true`. runWhenIdle itself no-ops the destroy case (see below).
+          finalize(() => this.runWhenIdle(() => this.runDeferredSweep())),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe((projects) => this.grants.set(projects));
+        .subscribe((summary) => this.widen(summary));
     });
   }
-}
 
-/**
- * Project a raw `Project` down to the fields the create picker and lens derivation need.
- *
- * `isFoundation` is computed from the project's own attributes rather than read from any
- * viewer-scoped field, so it stays correct regardless of the caller's persona — it decides both
- * which lens the project requires and which slot a selection is dispatched to.
- */
-function toCreatableProject(project: Project): CreatableProject {
-  return {
-    uid: project.uid,
-    slug: project.slug,
-    name: project.name,
-    // Derived from the project's own attributes, so it stays correct regardless of the
-    // viewer's persona — it dispatches the selection to the foundation vs project slot.
-    isFoundation: computeIsFoundation(project),
-    parent_uid: project.parent_uid,
-    logoUrl: project.logo_url,
-  };
+  /** OR-merge — only ever widens, never narrows, so the fast path and deferred sweep can land in any order. */
+  private widen(summary: WriterSummary): void {
+    if (summary.hasWriterFoundation) this.hasWriterFoundationInternal.set(true);
+    if (summary.hasWriterProject) this.hasWriterProjectInternal.set(true);
+  }
+
+  private runDeferredSweep(): void {
+    // Signals only ever widen — with both already true, the sweep's result can't change anything.
+    if (this.hasWriterFoundationInternal() && this.hasWriterProjectInternal()) {
+      return;
+    }
+
+    this.projectService
+      .getProjects()
+      .pipe(map(summarizeWriterGrants), takeUntilDestroyed(this.destroyRef))
+      .subscribe((summary) => this.widen(summary));
+  }
+
+  private runWhenIdle(cb: () => void): void {
+    // Reachable from `finalize`, which also fires when destroy triggers takeUntilDestroyed's
+    // early unsubscribe — by then this.destroyRef is already destroyed (R3Injector.destroy() sets
+    // its destroyed flag before running teardown hooks), so onDestroy(...) below would throw.
+    if (this.destroyRef.destroyed) {
+      return;
+    }
+
+    if (typeof requestIdleCallback === 'function') {
+      // requestIdleCallback has no minimum-delay guarantee of its own — floor it first so RUM's
+      // post-request activity-settle window has a chance to close before we even try scheduling
+      // (see IDLE_SWEEP_MIN_DELAY_MS's docstring). The idle-callback ceiling still applies on top.
+      const floorId = setTimeout(() => {
+        const idleId = requestIdleCallback(cb, { timeout: IDLE_SWEEP_TIMEOUT_MS });
+        this.destroyRef.onDestroy(() => cancelIdleCallback(idleId));
+      }, IDLE_SWEEP_MIN_DELAY_MS);
+      this.destroyRef.onDestroy(() => clearTimeout(floorId));
+    } else {
+      const id = setTimeout(cb, IDLE_SWEEP_FALLBACK_DELAY_MS);
+      this.destroyRef.onDestroy(() => clearTimeout(id));
+    }
+  }
 }

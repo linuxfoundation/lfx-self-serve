@@ -23,6 +23,8 @@ export class MultiSelectComponent {
   public readonly showToggleAll = input<boolean>(true);
   public readonly appendTo = input<any>('body');
   public readonly filter = input<boolean>(true);
+  /** Clear the filter box when the overlay hides so a reopened panel never shows stale filter text. */
+  public readonly resetFilterOnHide = input<boolean>(false);
   public readonly filterBy = input<string | undefined>(undefined);
   public readonly filterPlaceHolder = input<string>('Search');
   public readonly size = input<'small' | 'large'>('small');

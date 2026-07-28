@@ -293,7 +293,7 @@
                     dataTest="project-detail-search-technical" />
                 </div>
               </div>
-              @switch (techBoardState().status) {
+              @switch (techBoard().status) {
                 @case ('loading') {
                   <div class="flex flex-col gap-2" data-testid="project-detail-leaderboard-technical-loading">
                     @for (slot of [1, 2, 3, 4, 5, 6]; track slot) {
@@ -313,20 +313,28 @@
                   </lfx-empty-state>
                 }
                 @default {
-                  @if (technicalBoard().length === 0) {
+                  @if (techBoard().total === 0 && !techBoard().loading) {
                     <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-technical-empty">
                       {{ techSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
                     </p>
                   } @else {
                     <lfx-table
-                      [value]="technicalBoard()"
+                      [value]="techBoard().rows"
+                      [lazy]="true"
+                      [lazyLoadOnInit]="false"
                       [paginator]="true"
-                      [rows]="10"
+                      [rows]="techBoard().rowsPerPage"
+                      [first]="techBoard().first"
+                      [totalRecords]="techBoard().total"
+                      [loading]="techBoard().loading"
+                      [skeletonRows]="techBoard().rowsPerPage"
                       [rowsPerPageOptions]="[10, 25, 50]"
+                      [pageLinks]="3"
                       [showCurrentPageReport]="true"
                       [showFirstLastIcon]="false"
                       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
                       paginatorPosition="bottom"
+                      (onLazyLoad)="onTechnicalBoardLazyLoad($event)"
                       data-testid="project-detail-leaderboard-technical-table">
                       <ng-template #header>
                         <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
@@ -335,12 +343,29 @@
                           <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ technicalColumnLabel() }}</th>
                         </tr>
                       </ng-template>
+                      <!-- Skeleton row mirrors the real row's structure + px-3 py-3.5 padding so each -->
+                      <!-- placeholder equals a loaded row's height; with skeletonRows=rowsPerPage the -->
+                      <!-- shimmer fills the card at any page size, so height stays fixed across pages. -->
+                      <ng-template #loadingbody>
+                        <tr class="border-b border-gray-100">
+                          <td class="px-3 py-3.5"><p-skeleton width="1rem" height="1rem" /></td>
+                          <td class="px-3 py-3.5">
+                            <div class="flex items-center gap-2.5">
+                              <p-skeleton shape="circle" size="1.75rem" />
+                              <p-skeleton width="8rem" height="0.875rem" />
+                            </div>
+                          </td>
+                          <td class="px-3 py-3.5">
+                            <div class="flex justify-end"><p-skeleton width="4.5rem" height="1.5rem" /></div>
+                          </td>
+                        </tr>
+                      </ng-template>
                       <ng-template #body let-row>
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null">
-                          <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
+                          <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
                               @if (row.orgLogoUrl) {
@@ -397,7 +422,7 @@
                     dataTest="project-detail-search-ecosystem" />
                 </div>
               </div>
-              @switch (ecoBoardState().status) {
+              @switch (ecoBoard().status) {
                 @case ('loading') {
                   <div class="flex flex-col gap-2" data-testid="project-detail-leaderboard-ecosystem-loading">
                     @for (slot of [1, 2, 3, 4, 5, 6]; track slot) {
@@ -417,20 +442,28 @@
                   </lfx-empty-state>
                 }
                 @default {
-                  @if (ecosystemBoard().length === 0) {
+                  @if (ecoBoard().total === 0 && !ecoBoard().loading) {
                     <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-ecosystem-empty">
                       {{ ecoSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
                     </p>
                   } @else {
                     <lfx-table
-                      [value]="ecosystemBoard()"
+                      [value]="ecoBoard().rows"
+                      [lazy]="true"
+                      [lazyLoadOnInit]="false"
                       [paginator]="true"
-                      [rows]="10"
+                      [rows]="ecoBoard().rowsPerPage"
+                      [first]="ecoBoard().first"
+                      [totalRecords]="ecoBoard().total"
+                      [loading]="ecoBoard().loading"
+                      [skeletonRows]="ecoBoard().rowsPerPage"
                       [rowsPerPageOptions]="[10, 25, 50]"
+                      [pageLinks]="3"
                       [showCurrentPageReport]="true"
                       [showFirstLastIcon]="false"
                       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
                       paginatorPosition="bottom"
+                      (onLazyLoad)="onEcosystemBoardLazyLoad($event)"
                       data-testid="project-detail-leaderboard-ecosystem-table">
                       <ng-template #header>
                         <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
@@ -439,12 +472,29 @@
                           <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ ecosystemColumnLabel() }}</th>
                         </tr>
                       </ng-template>
+                      <!-- Skeleton row mirrors the real row's structure + px-3 py-3.5 padding so each -->
+                      <!-- placeholder equals a loaded row's height; with skeletonRows=rowsPerPage the -->
+                      <!-- shimmer fills the card at any page size, so height stays fixed across pages. -->
+                      <ng-template #loadingbody>
+                        <tr class="border-b border-gray-100">
+                          <td class="px-3 py-3.5"><p-skeleton width="1rem" height="1rem" /></td>
+                          <td class="px-3 py-3.5">
+                            <div class="flex items-center gap-2.5">
+                              <p-skeleton shape="circle" size="1.75rem" />
+                              <p-skeleton width="8rem" height="0.875rem" />
+                            </div>
+                          </td>
+                          <td class="px-3 py-3.5">
+                            <div class="flex justify-end"><p-skeleton width="4.5rem" height="1.5rem" /></div>
+                          </td>
+                        </tr>
+                      </ng-template>
                       <ng-template #body let-row>
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null">
-                          <td class="px-3 py-3.5 text-gray-500">{{ row.rank }}</td>
+                          <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
                               @if (row.orgLogoUrl) {
