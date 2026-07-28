@@ -3,6 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { BadgeSeverity } from './components.interface';
 import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
 import { UserSearchResult } from './search.interface';
@@ -481,6 +482,23 @@ export interface CommitteeFoundationGroup {
   /** True for a bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. Usually one bucket, but a foundation-owned committee that resolves to a *different* label than another (e.g. a named foundation project plus a separate `FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL` fallback bucket) can produce more than one; the sort tolerates any count. */
   isFoundationLevel: boolean;
   committees: Committee[];
+}
+
+/**
+ * One card's display data on the My Groups card grid. Built entirely client-side from a
+ * `MyCommittee` — no new upstream shape.
+ */
+export interface MyGroupsCardVm {
+  committee: MyCommittee;
+  roleBadgeSeverity: BadgeSeverity;
+  lastActivityLabel: string;
+  /**
+   * Full accessible name for the card `<a>`. `[attr.aria-label]` replaces the link's computed
+   * accessible name outright, so every visible field (class label, project/foundation name, role,
+   * member count, last-updated, privacy) must be folded in here — none of it is otherwise reachable
+   * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
+   */
+  ariaLabel: string;
 }
 
 /**

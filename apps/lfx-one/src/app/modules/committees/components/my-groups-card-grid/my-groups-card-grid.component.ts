@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, computed, input, output, signal, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { MyCommittee } from '@lfx-one/shared/interfaces';
+import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
 
 @Component({
@@ -34,7 +34,7 @@ export class MyGroupsCardGridComponent {
    */
   private readonly expandedPages = signal(1);
 
-  protected readonly cards = this.initCards();
+  protected readonly cards: Signal<MyGroupsCardVm[]> = this.initCards();
   protected readonly visibleCards = computed(() => this.cards().slice(0, this.expandedPages() * GROUPS_CARD_GRID_PAGE_SIZE));
   protected readonly hasMore = computed(() => this.visibleCards().length < this.cards().length);
 
@@ -50,7 +50,7 @@ export class MyGroupsCardGridComponent {
    * source of truth for what gets announced, not the DOM content underneath it. Keep this in sync
    * with the template whenever a new field is added to the card.
    */
-  private initCards() {
+  private initCards(): Signal<MyGroupsCardVm[]> {
     return computed(() =>
       this.committees().map((committee) => {
         const memberCount = committee.total_members ?? 0;

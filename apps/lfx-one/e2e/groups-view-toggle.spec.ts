@@ -16,7 +16,7 @@
  */
 
 import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { GROUPS_VIEW_MODE_STORAGE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { GROUPS_CARD_GRID_PAGE_SIZE, GROUPS_VIEW_MODE_STORAGE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -60,6 +60,25 @@ function buildMyCommittees(): MyCommittee[] {
       my_role: 'Member',
     } as MyCommittee,
   ];
+}
+
+function buildManyMyCommittees(count: number): MyCommittee[] {
+  const now = new Date().toISOString();
+  return Array.from({ length: count }, (_, i) => ({
+    uid: `c0000000-0000-0000-0000-0000000f${String(i).padStart(3, '0')}`,
+    name: `Committee ${i}`,
+    category: 'Working Group',
+    enable_voting: false,
+    public: true,
+    sso_group_enabled: false,
+    created_at: now,
+    updated_at: now,
+    total_members: i,
+    total_voting_repos: 0,
+    project_uid: 'p0000000-0000-0000-0000-00000000f001',
+    project_name: 'Test Project',
+    my_role: 'Member',
+  })) as MyCommittee[];
 }
 
 async function stubPersona(page: Page, personas: string[]): Promise<void> {
@@ -163,6 +182,18 @@ test.describe('My Groups — list↔card view toggle', () => {
     await expect(card, 'card should show a relative last-updated label').toContainText(/hr ago|min ago|just now/);
   });
 
+  test("a card's aria-label carries every field the aria-label override on the link would otherwise hide", async ({ page }) => {
+    await page.getByTestId('groups-view-card-btn').click();
+
+    const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`);
+    await expect(card, 'card for the seeded committee should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    // The behavioral-class label ("Oversight") is decorated client-side from the seeded category
+    // ("Technical Steering Committee"), same as the project name, role, and member count — none of
+    // this visible content reaches assistive tech once aria-label replaces the accessible name, so
+    // it must all be present in the label itself.
+    await expect(card).toHaveAttribute('aria-label', /Open Technical Steering Committee.*Oversight.*Test Project.*Chair.*12 members/);
+  });
+
   test('the selected view persists across a page reload', async ({ page }) => {
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId('groups-card-grid')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -222,5 +253,34 @@ test.describe('My Groups — card view empty state (no groups at all)', () => {
       timeout: PAGE_LOAD_TIMEOUT,
     });
     await expect(page.getByTestId('committee-search-input'), 'filter bar should not render with zero groups').toHaveCount(0);
+  });
+});
+
+test.describe('My Groups — card view "Show more" pagination', () => {
+  const TOTAL_COMMITTEES = GROUPS_CARD_GRID_PAGE_SIZE + 3;
+
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['contributor']);
+    await stubPersona(page, ['contributor']);
+    await stubPendingInvitations(page);
+    await stubMyCommittees(page, buildManyMyCommittees(TOTAL_COMMITTEES));
+    await gotoMyGroups(page);
+    await page.getByTestId('groups-view-card-btn').click();
+    await expect(page.getByTestId('groups-card-grid')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+
+  test('caps the initial page and reveals the rest via Show more, updating the count copy', async ({ page }) => {
+    await expect(page.getByTestId('groups-card-grid-count'), 'count line should reflect the first page').toHaveText(
+      `Showing ${GROUPS_CARD_GRID_PAGE_SIZE} of ${TOTAL_COMMITTEES} groups`
+    );
+
+    const showMore = page.getByTestId('groups-card-grid-show-more');
+    await expect(showMore).toBeVisible();
+    await showMore.click();
+
+    await expect(page.getByTestId('groups-card-grid-count'), 'count line should reflect every group after revealing').toHaveText(
+      `Showing ${TOTAL_COMMITTEES} of ${TOTAL_COMMITTEES} groups`
+    );
+    await expect(showMore, 'Show more should disappear once every group is revealed').toHaveCount(0);
   });
 });
