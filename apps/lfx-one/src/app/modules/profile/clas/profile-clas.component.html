@@ -12,8 +12,16 @@ SPDX-License-Identifier: MIT
       <h2 class="text-lg font-semibold text-slate-800">My CLAs</h2>
       <p class="mt-0.5 text-sm text-slate-500">Your signed Individual (ICLA) and Employee (ECLA) Contributor License Agreements.</p>
     </div>
-    <lfx-button label="Sign a new CLA" icon="fa-light fa-arrow-up-right-from-square" iconPos="right" size="small" [outlined]="true"
-      [href]="contributorConsoleUrl" target="_blank" rel="noopener noreferrer" [attr.data-testid]="'sign-new-cla'" />
+    <lfx-button
+      label="Sign a new CLA"
+      icon="fa-light fa-arrow-up-right-from-square"
+      iconPos="right"
+      size="small"
+      [outlined]="true"
+      [href]="contributorConsoleUrl"
+      target="_blank"
+      rel="noopener noreferrer"
+      [attr.data-testid]="'sign-new-cla'" />
   </div>
 
   @if (loading()) {
