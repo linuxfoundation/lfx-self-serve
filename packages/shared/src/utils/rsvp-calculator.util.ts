@@ -4,20 +4,126 @@
 import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
 
 /**
+ * Convert an `occurrence_id` string into a millisecond epoch, regardless of the
+ * unit the caller happens to hold.
+ *
+ * Two units live in the LFX system for the same instant (see LFXV2-2864):
+ * - Zoom / ITX `/itx/meetings/{id}` occurrences and the meeting-service
+ *   `occurrence_calculator.go` output emit **Unix seconds** (10 digits).
+ * - `v1_meeting_rsvp` and `v1_past_meeting` records (and every
+ *   `meeting_and_occurrence_id` composite) store **Unix milliseconds** (13 digits).
+ *
+ * Any string equality between an occurrence-side id and an rsvp-side id will fail
+ * unless one is normalised first. Normalisation policy: always widen to ms so the
+ * result is directly comparable to `Date.getTime()`.
+ *
+ * Returns `null` when the input is empty or unparseable; callers must treat that
+ * as "cannot compare" and skip the RSVP rather than pretend equality.
+ */
+export function occurrenceIdToMs(occurrenceId: string | null | undefined): number | null {
+  if (!occurrenceId) return null;
+  const n = Number(occurrenceId);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return occurrenceId.length <= 10 ? n * 1000 : n;
+}
+
+/**
+ * Compare two `occurrence_id` strings while treating seconds and milliseconds as
+ * the same instant. Prefer this over `===` anywhere an occurrence-side id may be
+ * compared against an rsvp-side id (LFXV2-2864).
+ */
+export function isSameOccurrenceId(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const am = occurrenceIdToMs(a);
+  const bm = occurrenceIdToMs(b);
+  return am !== null && bm !== null && am === bm;
+}
+
+/**
+ * Pick the single RSVP that applies to a given occurrence for one user.
+ *
+ * Shared between the frontend counts calculator (`calculateRsvpCounts` → per-user
+ * grouping) and the BFF single-user lookup (`getMeetingRsvpForCurrentUser`). Both
+ * paths were previously doing their own string-equality on `occurrence_id` and
+ * both were silently wrong for the same unit-mismatch reason — consolidating
+ * here keeps them from drifting apart again.
+ *
+ * Precedence (newest RSVP wins within each scope):
+ * 1. `single` scope whose `occurrence_id` matches this occurrence (unit-normalised).
+ * 2. `this_and_following` scope whose anchor (`rsvp.occurrence_id`) is at or
+ *    before this occurrence's start.
+ * 3. `all` scope (series-wide).
+ *
+ * The scopes are interleaved in a single "most recent applicable" walk rather
+ * than checked in strict tiers so a fresh `this_and_following` correctly
+ * overrides an older `all` for future occurrences.
+ *
+ * @param occurrenceId Occurrence id in either seconds or milliseconds; nullish
+ *   means the caller has no per-occurrence context (non-recurring meeting or
+ *   aggregate view) — most recent RSVP wins.
+ * @param userRsvps All RSVPs from a single user for this meeting.
+ */
+export function selectApplicableRsvp(occurrenceId: string | null | undefined, userRsvps: MeetingRsvp[]): MeetingRsvp | null {
+  if (userRsvps.length === 0) return null;
+
+  // API sends `modified_at`; older payloads fall back through `updated_at` then `created_at`.
+  const sortedRsvps = [...userRsvps].sort((a, b) => {
+    const dateA = new Date(a.modified_at || a.updated_at || a.created_at).getTime();
+    const dateB = new Date(b.modified_at || b.updated_at || b.created_at).getTime();
+    return dateB - dateA;
+  });
+
+  if (!occurrenceId) {
+    return sortedRsvps[0] || null;
+  }
+
+  const occurrenceMs = occurrenceIdToMs(occurrenceId);
+
+  for (const rsvp of sortedRsvps) {
+    if (rsvp.scope === 'all') {
+      return rsvp;
+    }
+
+    if (rsvp.scope === 'single') {
+      if (isSameOccurrenceId(rsvp.occurrence_id, occurrenceId)) {
+        return rsvp;
+      }
+      continue;
+    }
+
+    if (rsvp.scope === 'this_and_following') {
+      // The anchor is the specific occurrence at which the T&F starts applying,
+      // encoded in `rsvp.occurrence_id`. Comparing against `rsvp.created_at` (the
+      // previous behaviour) drifts whenever the row was written before or after
+      // the anchor date — e.g. a retroactive T&F or a delayed sync. The anchor
+      // itself is the correct semantic gate.
+      const anchorMs = occurrenceIdToMs(rsvp.occurrence_id);
+      if (anchorMs === null || occurrenceMs === null) continue;
+      if (anchorMs <= occurrenceMs) {
+        return rsvp;
+      }
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Calculate RSVP counts for a specific occurrence
  * Takes into account RSVP scope (single, all, this_and_following) and uses the most recent RSVP per user
  *
  * @param occurrence - The meeting occurrence to calculate for (or null for non-recurring meetings)
  * @param allRsvps - All RSVPs for the meeting
- * @param meetingStartTime - The meeting start time (for non-recurring meetings)
+ * @param _meetingStartTime - Reserved for future use (kept for API compatibility)
  * @returns Object with accepted, declined, maybe, and total counts
  */
-export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsvps: MeetingRsvp[], meetingStartTime?: string): RsvpCounts {
+export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsvps: MeetingRsvp[], _meetingStartTime?: string): RsvpCounts {
   if (allRsvps.length === 0) {
     return { accepted: 0, declined: 0, maybe: 0, total: 0 };
   }
 
-  // Group RSVPs by registrant_id to handle multiple RSVPs from the same user
   const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
 
   for (const rsvp of allRsvps) {
@@ -28,17 +134,15 @@ export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsv
     rsvpsByRegistrant.get(key)!.push(rsvp);
   }
 
-  // For each user, determine which RSVP applies to this occurrence
   const applicableRsvps: MeetingRsvp[] = [];
 
   for (const userRsvps of rsvpsByRegistrant.values()) {
-    const applicableRsvp = getApplicableRsvp(occurrence, userRsvps, meetingStartTime);
+    const applicableRsvp = selectApplicableRsvp(occurrence?.occurrence_id, userRsvps);
     if (applicableRsvp) {
       applicableRsvps.push(applicableRsvp);
     }
   }
 
-  // Count responses
   const counts: RsvpCounts = {
     accepted: 0,
     declined: 0,
@@ -57,71 +161,6 @@ export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsv
   }
 
   return counts;
-}
-
-/**
- * Get the applicable RSVP for a user given an occurrence
- * Uses the most recent RSVP that applies to the occurrence
- *
- * @param occurrence - The occurrence to check (or null for non-recurring meetings)
- * @param userRsvps - All RSVPs from a single user for this meeting
- * @param meetingStartTime - The meeting start time (for non-recurring meetings)
- * @returns The most recent applicable RSVP, or null if none apply
- */
-function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: MeetingRsvp[], meetingStartTime?: string): MeetingRsvp | null {
-  // Sort RSVPs by most recent modification (API sends modified_at, fallback to updated_at then created_at)
-  const sortedRsvps = [...userRsvps].sort((a, b) => {
-    const dateA = new Date(a.modified_at || a.updated_at || a.created_at).getTime();
-    const dateB = new Date(b.modified_at || b.updated_at || b.created_at).getTime();
-    return dateB - dateA; // Descending order (newest first)
-  });
-
-  // For non-recurring meetings, return the most recent RSVP
-  if (!occurrence) {
-    return sortedRsvps[0] || null;
-  }
-
-  const occurrenceId = occurrence.occurrence_id;
-  const occurrenceDate = new Date(occurrence.start_time);
-  // Build the expected meeting_and_occurrence_id for this occurrence (e.g., "95156357074_1707321600000")
-  const meetingAndOccurrenceId = occurrenceId ? `${sortedRsvps[0]?.meeting_id}_${occurrenceId}` : null;
-
-  // Check each RSVP from newest to oldest (most recent wins)
-  // Return the first RSVP that applies to this occurrence
-  for (const rsvp of sortedRsvps) {
-    // Check if this RSVP applies to the current occurrence
-    if (rsvp.scope === 'all') {
-      // 'all' scope applies to all occurrences
-      return rsvp;
-    }
-
-    // Check for 'single' scope — match by occurrence_id or meeting_and_occurrence_id
-    if (rsvp.scope === 'single' && occurrenceId) {
-      const rsvpOccurrenceId = rsvp.occurrence_id || '';
-      const matchesOccurrenceId = rsvpOccurrenceId === occurrenceId || rsvpOccurrenceId === String(occurrenceId);
-      const matchesMeetingAndOccurrenceId = meetingAndOccurrenceId && rsvp.meeting_and_occurrence_id === meetingAndOccurrenceId;
-
-      if (matchesOccurrenceId || matchesMeetingAndOccurrenceId) {
-        return rsvp;
-      }
-      // If neither matches, this RSVP doesn't apply to this occurrence
-      continue;
-    }
-
-    if (rsvp.scope === 'this_and_following') {
-      // 'this_and_following' scope applies to this occurrence and all future ones
-      // Check if this RSVP was created before or at the time of this occurrence
-      const rsvpDate = new Date(rsvp.created_at);
-      if (rsvpDate <= occurrenceDate) {
-        return rsvp;
-      }
-      // If created after this occurrence, it doesn't apply
-      continue;
-    }
-  }
-
-  // No applicable RSVP found
-  return null;
 }
 
 /**
