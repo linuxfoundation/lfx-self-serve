@@ -92,7 +92,11 @@ export class MeetingRsvpDetailsComponent {
           }
           // Me lens (backend counts not populated) — one call for both registrants + RSVPs inline.
           if (!this.hasBackendRegistrantCounts(meeting)) {
-            return this.meetingService.getMeetingRegistrants(meeting.id, true).pipe(
+            // Resolve RSVPs against the target occurrence so a `single` decline for a
+            // future date doesn't overwrite the current occurrence's per-registrant
+            // chip (LFXV2-2864).
+            const occurrenceId = this.currentOccurrence()?.occurrence_id;
+            return this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
               map((registrants) => ({
                 registrants,
                 rsvps: registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null),
