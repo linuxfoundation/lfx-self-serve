@@ -37,9 +37,8 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, merge, of, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take, tap } from 'rxjs';
 
-import { DashboardCastDrawerHostComponent } from '../../../dashboards/components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -55,7 +54,6 @@ import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dia
     TagComponent,
     VoteResultsDrawerComponent,
     SurveyResultsDrawerComponent,
-    DashboardCastDrawerHostComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
@@ -95,16 +93,6 @@ export class CommitteeOverviewComponent {
   public voteDrawerVisible = signal(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
-  // uids cast this session — getVotesByCommittee hits raw /api/votes, which never carries
-  // response_status (Me-lens-only, per poll.interface.ts), so a just-cast vote still comes back
-  // status: ACTIVE from the refetch below; this locally excludes it from "My Pending Actions"
-  // immediately instead of waiting on the vote to close.
-  public castVoteUids = signal<Set<string>>(new Set());
-  // Vote-only refresh trigger for initVotes(), separate from committeeUpdated (which the parent wires
-  // to refreshMembers() — a much heavier members+committee refetch that would also re-fire this
-  // component's other four toObservable(this.committee) pipelines, including the expensive
-  // getCommitteeDocuments fan-out documented on initDocuments() below).
-  private readonly votesRefresh$ = new Subject<void>();
 
   // Survey drawer state
   public surveyDrawerVisible = signal(false);
@@ -256,7 +244,7 @@ export class CommitteeOverviewComponent {
     return `${name} is invite only. A group admin must send you an invitation before you can join.`;
   });
 
-  public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE && !this.castVoteUids().has(v.uid)));
+  public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>
     this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN && s.response_status?.toLowerCase() !== 'responded')
   );
@@ -335,14 +323,6 @@ export class CommitteeOverviewComponent {
     } else {
       this.tabNavigated.emit('surveys');
     }
-  }
-
-  /** DashboardCastDrawerHost's voteSubmitted — resolves the pending-actions row immediately (see
-   *  castVoteUids) and refreshes the votes list as a correctness backstop for early-close (a poll
-   *  can auto-end once every eligible voter has responded). */
-  public onVoteSubmitted(voteUid: string): void {
-    this.castVoteUids.update((uids) => new Set(uids).add(voteUid));
-    this.votesRefresh$.next();
   }
 
   public handleActivityItemClick(item: ActivityFeedItem): void {
@@ -558,25 +538,13 @@ export class CommitteeOverviewComponent {
 
   private initVotes(): Signal<Vote[]> {
     return toSignal(
-      // votesRefresh$ re-reads this.committee() rather than using startWith, so a post-cast refresh
-      // can't double-emit against the toObservable(this.committee) source alongside it. silent: true
-      // on that branch skips the votesLoading flip — castVoteUids has already resolved the row this
-      // refresh is meant to catch (an early poll close), so re-skeletoning "My Pending Actions" (and,
-      // via activityFeedLoading, Recent Activity) for the remaining rows on every cast would be a
-      // regression the row-level fix was supposed to avoid. Cleared via tap (fires only on emission),
-      // not finalize (also fires on switchMap-driven cancellation) — same reasoning as initDocuments()
-      // below: a silent refresh cancelling an in-flight loud fetch must not clear votesLoading out
-      // from under it before the silent replacement has actually resolved.
-      merge(
-        toObservable(this.committee).pipe(map((c) => ({ c, silent: false }))),
-        this.votesRefresh$.pipe(map(() => ({ c: this.committee(), silent: true })))
-      ).pipe(
-        filter(({ c }) => !!c?.uid),
-        switchMap(({ c, silent }) => {
-          if (!silent) this.votesLoading.set(true);
+      toObservable(this.committee).pipe(
+        filter((c) => !!c?.uid),
+        switchMap((c) => {
+          this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
             catchError(() => of([])),
-            tap(() => this.votesLoading.set(false))
+            finalize(() => this.votesLoading.set(false))
           );
         })
       ),

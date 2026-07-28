@@ -8,18 +8,17 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
-import { DashboardCastDrawerHostComponent } from '@app/modules/dashboards/components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, map, merge, of, Subject, switchMap, tap } from 'rxjs';
+import { catchError, filter, finalize, map, merge, of, Subject, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent, DashboardCastDrawerHostComponent],
+  imports: [ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,13 +40,10 @@ export class CommitteeVotesComponent {
   public resultsDrawerVisible = model<boolean>(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
-  // Refresh trigger for initVotes(), separate from the committee-change source it merges with below
-  // so a post-cast refresh can't double-emit against it (no startWith). The payload marks a cast-drawer
-  // refresh silent (no row-level resolution exists on this tab like committee-overview's castVoteUids,
-  // but the row's CTA doesn't change either — response_status never comes back from this raw endpoint
-  // — so a full table skeleton for that fetch isn't earning its keep) vs. loud for a real delete, which
-  // does need to visibly remove a row.
-  private readonly votesRefresh$ = new Subject<boolean>();
+  // Refresh trigger for initVotes(), fired by votes-table's own refresh output (after a delete) —
+  // separate from the committee-change source it merges with below so a refresh can't double-emit
+  // against it (no startWith).
+  private readonly votesRefresh$ = new Subject<void>();
 
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
@@ -61,11 +57,9 @@ export class CommitteeVotesComponent {
     this.resultsDrawerVisible.set(true);
   }
 
-  /** Shared refresh source: DashboardCastDrawerHost's voteSubmitted (silent — a since-closed poll
-   *  auto-ends once every eligible voter has responded) and votes-table's own refresh (loud — fired
-   *  after a delete, which does need the table to visibly drop the row). */
-  public refreshVotes(silent = false): void {
-    this.votesRefresh$.next(silent);
+  /** votes-table's refresh output, fired after a successful delete. */
+  public refreshVotes(): void {
+    this.votesRefresh$.next();
   }
 
   protected onCreateVote(): void {
@@ -98,22 +92,18 @@ export class CommitteeVotesComponent {
 
   private initVotes(): Signal<Vote[]> {
     return toSignal(
-      // Cleared via tap (fires only on emission), not finalize (also fires on switchMap-driven
-      // cancellation) — a silent refresh cancelling an in-flight loud fetch must not clear `loading`
-      // out from under it before the silent replacement has actually resolved.
-      merge(
-        toObservable(this.committee).pipe(map((c) => ({ c, silent: false }))),
-        this.votesRefresh$.pipe(map((silent) => ({ c: this.committee(), silent })))
-      ).pipe(
-        filter(({ c }) => !!c?.uid),
-        switchMap(({ c, silent }) => {
-          if (!silent) this.loading.set(true);
+      // votesRefresh$ re-reads this.committee() rather than using startWith, so a refresh can't
+      // double-emit against the toObservable(this.committee) source alongside it.
+      merge(toObservable(this.committee), this.votesRefresh$.pipe(map(() => this.committee()))).pipe(
+        filter((c) => !!c?.uid),
+        switchMap((c) => {
+          this.loading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
             catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);
             }),
-            tap(() => this.loading.set(false))
+            finalize(() => this.loading.set(false))
           );
         })
       ),

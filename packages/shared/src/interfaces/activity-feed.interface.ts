@@ -20,12 +20,37 @@ export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey
  * app route strings — the component maps each kind to wherever that surface actually lives, which
  * survives route refactors and LFXV2-1707's server-fed activity items.
  */
+export interface PastMeetingActivityFeedAction {
+  kind: 'past-meeting';
+  meetingId: string;
+}
+
+export interface VoteDrawerActivityFeedAction {
+  kind: 'vote-drawer';
+  voteUid: string;
+}
+
+export interface SurveyDrawerActivityFeedAction {
+  kind: 'survey-drawer';
+  surveyUid: string;
+}
+
+export interface ExternalUrlActivityFeedAction {
+  kind: 'external-url';
+  url: string;
+}
+
+export interface TabActivityFeedAction {
+  kind: 'tab';
+  tab: string;
+}
+
 export type ActivityFeedAction =
-  | { kind: 'past-meeting'; meetingId: string }
-  | { kind: 'vote-drawer'; voteUid: string }
-  | { kind: 'survey-drawer'; surveyUid: string }
-  | { kind: 'external-url'; url: string }
-  | { kind: 'tab'; tab: string };
+  | PastMeetingActivityFeedAction
+  | VoteDrawerActivityFeedAction
+  | SurveyDrawerActivityFeedAction
+  | ExternalUrlActivityFeedAction
+  | TabActivityFeedAction;
 
 /**
  * A single row in the group Overview activity feed stop-gap.

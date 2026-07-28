@@ -41,6 +41,13 @@ export class VoteResultsDrawerComponent {
   public readonly listVote = input<Vote | null>(null);
   /** Selects the voter-blind panel (B/C/D states, no live tallies, no creator note) when 'voter'; defaults to the unchanged creator UI. The /me/votes dashboard passes 'voter'. */
   public readonly audience = input<'voter' | 'creator'>('creator');
+  /** Creator-scope inline "Cast Vote" CTA opt-out. Its gate (canCastVoteFromDrawer) reads
+   *  vote.response_status, which only getMyVotes() (Me-lens) decorates — committee contexts feed this
+   *  drawer from getVotesByCommittee/getVote, so response_status is always undefined there and the CTA
+   *  can never legitimately render. Defaults true (unchanged for /me/votes, the one caller that can
+   *  supply response_status) so committee callers can pass false explicitly rather than relying on
+   *  that data gap to keep the CTA hidden. */
+  public readonly allowCastFromDrawer = input<boolean>(true);
 
   // === Outputs ===
   public readonly castVoteRequested = output<string>();

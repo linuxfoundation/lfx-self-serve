@@ -316,20 +316,15 @@
 </div>
 
 <!-- Vote Results Drawer -->
-<!-- Default audience 'creator' renders an inline "Cast Vote" CTA for the viewer's own awaiting-response
-     active votes. Reuse the same dashboard-cast-drawer-host + vote-cast-drawer pair every other
-     dashboard wires this CTA to (user/board-member/executive-director/multi-persona/project), rather
-     than a tab hop — the committee Votes tab mounts this identical drawer with the same CTA and its
-     own matching fix (committee-votes.component.html), so a tab redirect would just relocate the dead
-     end rather than resolve it. voteSubmitted goes to a dedicated votesRefresh$ (not committeeUpdated,
-     which the parent wires to the much heavier refreshMembers() → refreshCommittee() — see
-     castVoteUids/votesRefresh$ above). -->
+<!-- allowCastFromDrawer=false: the default-'creator'-audience inline "Cast Vote" CTA gates on
+     vote.response_status, which only getMyVotes() (Me-lens) decorates — this screen feeds the drawer
+     from getVotesByCommittee/getVote, so response_status is always undefined and the CTA could never
+     legitimately render here anyway. Explicit rather than relying on that data gap to keep it hidden. -->
 <lfx-vote-results-drawer
   [(visible)]="voteDrawerVisible"
   [voteId]="selectedVoteId()"
   [listVote]="selectedVote()"
-  (castVoteRequested)="castDrawerHost.open($event)"></lfx-vote-results-drawer>
-<lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="onVoteSubmitted($event)" />
+  [allowCastFromDrawer]="false"></lfx-vote-results-drawer>
 
 <!-- Survey Results Drawer -->
 <!-- hasPMOAccess also gates the per-recipient Responses tab (not just the admin menu), so it's
