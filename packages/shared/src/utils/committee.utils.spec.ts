@@ -190,7 +190,7 @@ describe('groupCommitteesByFoundation', () => {
     expect(new Set(groups.map((g) => g.testIdSlug)).size).toBe(2);
   });
 
-  it('merges committees with no project_name but a shared foundation_name into one bucket (the fixed collision)', () => {
+  it('merges committees with no project_name but a shared foundation_name into one bucket', () => {
     const groups = groupCommitteesByFoundation([
       committee({ uid: 'c1', project_uid: 'proj-a', project_name: undefined, foundation_name: 'CNCF' }),
       committee({ uid: 'c2', project_uid: 'proj-b', project_name: undefined, foundation_name: 'CNCF' }),

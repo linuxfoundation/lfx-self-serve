@@ -92,9 +92,16 @@ export class ButtonComponent {
    * That same dual-consumption means the `pt` value reaches the Tooltip directive's own root element
    * (its `role="tooltip"` container) too, not just `<p-button>`'s. Resolving to `undefined` whenever
    * `tooltip` is set prevents `aria-pressed` from ever landing on that tooltip container — no current
-   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA.
+   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA. That
+   * combination also silently drops `aria-pressed` entirely rather than raising a build error, so a
+   * dev-mode console warning below flags it at runtime instead.
    */
-  protected readonly ariaPressedPt = computed(() => (this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed())));
+  protected readonly ariaPressedPt = computed(() => {
+    if (this.tooltip() && this.ariaPressed() !== undefined && typeof ngDevMode !== 'undefined' && ngDevMode) {
+      console.warn('<lfx-button>: `ariaPressed` is ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
+    }
+    return this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed());
+  });
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

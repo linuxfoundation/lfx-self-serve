@@ -123,11 +123,10 @@ test.describe('My Groups — list↔card view toggle', () => {
     await stubPersona(page, ['contributor']);
     await stubPendingInvitations(page);
     await stubMyCommittees(page, buildMyCommittees());
+    await gotoMyGroups(page);
   });
 
   test('defaults to list view, and Card switches to the card grid', async ({ page }) => {
-    await gotoMyGroups(page);
-
     await expect(page.getByTestId('groups-view-toggle'), 'view toggle should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('committees-me-table'), 'list view renders by default').toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
@@ -138,7 +137,6 @@ test.describe('My Groups — list↔card view toggle', () => {
   });
 
   test('aria-pressed on the toggle buttons reflects the active view on the real native button', async ({ page }) => {
-    await gotoMyGroups(page);
     await expect(page.getByTestId('groups-view-toggle')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     // getByTestId resolves the <lfx-button> host — descend to the native button PrimeNG renders via
@@ -156,7 +154,6 @@ test.describe('My Groups — list↔card view toggle', () => {
   });
 
   test('card grid shows role badge, member count, and relative last-updated text per card', async ({ page }) => {
-    await gotoMyGroups(page);
     await page.getByTestId('groups-view-card-btn').click();
 
     const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`);
@@ -167,7 +164,6 @@ test.describe('My Groups — list↔card view toggle', () => {
   });
 
   test('the selected view persists across a page reload', async ({ page }) => {
-    await gotoMyGroups(page);
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId('groups-card-grid')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
@@ -178,7 +174,6 @@ test.describe('My Groups — list↔card view toggle', () => {
   });
 
   test('search narrows results in card view', async ({ page }) => {
-    await gotoMyGroups(page);
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_B}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
@@ -189,7 +184,6 @@ test.describe('My Groups — list↔card view toggle', () => {
   });
 
   test('a search matching nothing shows the "no results" empty state, and its reset CTA actually clears the search', async ({ page }) => {
-    await gotoMyGroups(page);
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
@@ -220,11 +214,10 @@ test.describe('My Groups — card view empty state (no groups at all)', () => {
     // zero-groups stub it can unmount before a post-navigation click reaches it. Seed the persisted
     // view mode directly instead of racing the toggle.
     await page.addInitScript((key) => localStorage.setItem(key, 'card'), GROUPS_VIEW_MODE_STORAGE_KEY);
+    await gotoMyGroups(page);
   });
 
   test('shows the "no groups yet" empty state in card view when the caller has no groups', async ({ page }) => {
-    await gotoMyGroups(page);
-
     await expect(page.getByTestId('groups-card-grid-empty'), 'empty state should render for a zero-groups caller').toBeVisible({
       timeout: PAGE_LOAD_TIMEOUT,
     });

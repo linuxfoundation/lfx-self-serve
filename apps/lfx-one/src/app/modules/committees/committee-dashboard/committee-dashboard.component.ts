@@ -302,8 +302,8 @@ export class CommitteeDashboardComponent {
    * Full filter reset for the My Groups card view. Unlike `<lfx-committee-table>`, which owns
    * `searchForm` and clears it internally in its own `resetFilters()` before emitting
    * `resetRequested`, the card grid has no filter bar of its own — its "Reset filters" CTA only
-   * emits `resetRequested`, which previously cleared just the behavioral-class chip and left a
-   * non-matching search term or foundation/project filter in place (a dead reset button).
+   * emits `resetRequested`, so this clears every filter that could have produced the empty state:
+   * the search term, voting status, foundation/project filters, and the behavioral-class chip.
    */
   public resetAllFilters(): void {
     this.searchForm.patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });

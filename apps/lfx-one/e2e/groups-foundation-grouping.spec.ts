@@ -185,11 +185,10 @@ test.describe('All Groups — foundation tree-grouping', () => {
     await stubPersona(page, ['executive-director']);
     await stubProjectApi(page);
     await stubCommittees(page, buildCommittees());
+    await gotoFoundationGroups(page);
   });
 
   test('groups render expanded by default, one per resolved foundation/project label', async ({ page }) => {
-    await gotoFoundationGroups(page);
-
     const boardGroup = page.getByTestId('groups-foundation-group-test-foundation');
     const alphaGroup = page.getByTestId('groups-foundation-group-alpha-project');
     const betaGroup = page.getByTestId('groups-foundation-group-beta-project');
@@ -207,7 +206,6 @@ test.describe('All Groups — foundation tree-grouping', () => {
   });
 
   test('collapsing a group hides its rows; expanding again restores them', async ({ page }) => {
-    await gotoFoundationGroups(page);
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_SUB_A}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     const caret = page.getByTestId('groups-foundation-group-alpha-project-caret');
@@ -221,7 +219,6 @@ test.describe('All Groups — foundation tree-grouping', () => {
   });
 
   test('search narrows results, and a fully-filtered-out group is entirely absent', async ({ page }) => {
-    await gotoFoundationGroups(page);
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_BOARD}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     await page.getByTestId('committee-search-input').getByRole('textbox').fill('Alpha');
