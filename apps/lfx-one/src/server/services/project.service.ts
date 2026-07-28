@@ -1347,19 +1347,28 @@ export class ProjectService {
    * @returns Foundation total members response with monthly trend and headline count
    */
   public async getFoundationTotalMembers(foundationSlug: string): Promise<FoundationTotalMembersResponse> {
+    // Densify to a 12-month spine so a missing month in the dbt model can't
+    // make computePeriodChange compare non-adjacent periods; mirrors the
+    // sibling getFoundationMaintainersMonthly read.
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      )
       SELECT
-        MONTH_START_DATE,
-        MONTHLY_TOTAL_MEMBERS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
-      WHERE FOUNDATION_SLUG = ?
-        AND MONTH_START_DATE >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START_DATE ASC
+        COALESCE(m.FOUNDATION_SLUG, ?) AS FOUNDATION_SLUG,
+        s.MONTH_START_DATE,
+        COALESCE(m.MONTHLY_TOTAL_MEMBERS, 0) AS MONTHLY_TOTAL_MEMBERS
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY m
+        ON m.MONTH_START_DATE = s.MONTH_START_DATE
+        AND m.FOUNDATION_SLUG = ?
+      ORDER BY s.MONTH_START_DATE ASC
     `;
 
     let result: SnowflakeQueryResult<FoundationTotalMembersMonthlyRow>;
     try {
-      result = await this.snowflakeService.execute<FoundationTotalMembersMonthlyRow>(query, [foundationSlug], {
+      result = await this.snowflakeService.execute<FoundationTotalMembersMonthlyRow>(query, [foundationSlug, foundationSlug], {
         expectMissingObject: true,
       });
     } catch (error) {
@@ -6977,18 +6986,12 @@ export class ProjectService {
     `;
 
     const totalMembersQuery = `
-      WITH monthly_counts AS (
-        SELECT
-          PROJECT_SLUG AS FOUNDATION_SLUG,
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE PROJECT_SLUG IN (${placeholders})
-        GROUP BY PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
-      )
-      SELECT FOUNDATION_SLUG, SUM(MONTHLY_COUNT) AS TOTAL_MEMBERS
-      FROM monthly_counts
-      GROUP BY FOUNDATION_SLUG
+      SELECT
+        FOUNDATION_SLUG,
+        MONTHLY_TOTAL_MEMBERS AS TOTAL_MEMBERS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
+      WHERE FOUNDATION_SLUG IN (${placeholders})
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY MONTH_START_DATE DESC) = 1
     `;
 
     const valueConcentrationQuery = `
