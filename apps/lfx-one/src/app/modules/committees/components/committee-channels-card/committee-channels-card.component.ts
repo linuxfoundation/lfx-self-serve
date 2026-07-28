@@ -15,8 +15,10 @@ import { MailingListEmailPipe } from '../committee-settings-tab/pipes/mailing-li
  * committee-view header and the About tab. Purely presentational — committee and mailing-list
  * data are passed down by the caller (both of which already fetch it) rather than fetched here.
  * `testIdPrefix` lets each call site keep its own existing data-testid namespace. Does not render
- * its own outer card chrome or heading — the caller supplies that, since the two call sites use
- * different wrappers.
+ * its own outer card chrome — the caller supplies that, since the two call sites use different
+ * wrappers. The optional `heading` renders inside this component (rather than in the caller's own
+ * wrapper) so it sits inside the same inert/blur-masked subtree as the rest of the card content —
+ * the About tab passes "Channels"; the header passes nothing, matching its no-heading design.
  */
 @Component({
   selector: 'lfx-committee-channels-card',
@@ -31,6 +33,7 @@ export class CommitteeChannelsCardComponent {
   public readonly associatedMailingLists = input<GroupsIOMailingList[]>([]);
   public readonly isVisitor = input<boolean>(false);
   public readonly testIdPrefix = input<string>('committee-channels-card');
+  public readonly heading = input<string | null>(null);
 
   public mlExpanded = signal(false);
 

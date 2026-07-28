@@ -2,6 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="text-[12.5px] text-gray-600" [attr.inert]="isVisitor() || null">
+  @if (heading(); as headingText) {
+    <div class="px-3.5 pt-3.5 pb-1 border-b border-gray-200">
+      <h3 class="text-sm font-semibold text-gray-900">{{ headingText }}</h3>
+    </div>
+  }
   <!-- Associated Mailing Lists -->
   @if (associatedMailingLists().length > 0) {
     @let firstMl = associatedMailingLists()[0];

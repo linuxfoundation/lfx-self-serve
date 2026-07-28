@@ -31,13 +31,11 @@
   <!-- Channels -->
   @if (hasChannels()) {
     <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-about-channels-card">
-      <div class="px-3.5 pt-3.5 pb-1 border-b border-gray-200">
-        <h3 class="text-sm font-semibold text-gray-900">Channels</h3>
-      </div>
       <lfx-committee-channels-card
         [committee]="committee()"
         [associatedMailingLists]="associatedMailingLists()"
         [isVisitor]="isVisitor()"
+        heading="Channels"
         testIdPrefix="committee-about" />
     </lfx-card>
   }
@@ -96,7 +94,7 @@
           <button
             type="button"
             class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer w-fit"
-            (click)="navigateToParentGroup()"
+            (click)="parentGroupNavigationRequested.emit()"
             data-testid="committee-about-parent-group-link">
             <i class="fa-light fa-sitemap text-[11px]"></i>
             <span>Parent Group:</span>
@@ -110,7 +108,7 @@
           <button
             type="button"
             class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer w-fit"
-            (click)="navigateToSubGroup(subGroups()[0])"
+            (click)="subGroupNavigationRequested.emit(subGroups()[0])"
             data-testid="committee-about-sub-group-link">
             <i class="fa-light fa-sitemap text-[11px]"></i>
             <span>Sub-Group:</span>
@@ -136,7 +134,7 @@
                   <button
                     type="button"
                     class="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer w-full text-left"
-                    (click)="navigateToSubGroup(sg); subGroupsPopover.hide()"
+                    (click)="subGroupNavigationRequested.emit(sg); subGroupsPopover.hide()"
                     data-testid="committee-about-sub-group-item">
                     <div
                       class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
@@ -144,7 +142,7 @@
                       {{ sg.name | initials }}
                     </div>
                     <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-                      <span class="text-sm font-medium text-gray-900 truncate">{{ sg.name }}</span>
+                      <span class="text-sm font-medium text-gray-900 truncate" [title]="sg.name">{{ sg.name }}</span>
                       <span class="text-sm text-gray-500">{{ sg.category }} &middot; {{ sg.total_members }} members</span>
                     </div>
                     <i class="fa-light fa-chevron-right text-xs text-gray-400 shrink-0"></i>

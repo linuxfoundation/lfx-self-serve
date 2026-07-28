@@ -3,7 +3,6 @@
 
 import { DatePipe, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
-import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -22,11 +21,13 @@ import { openIcalSubscribeDialog } from '../../utils/ical-subscribe.util';
 
 /**
  * Group "About" tab — visitor-safe summary (description, channels, meeting cadence, parent
- * project/group, key information, join CTA). Purely presentational: committee data, channels,
- * parent-group/sub-groups, and upcoming meetings are all passed down from committee-view (which
- * already fetches/owns each of them for the header and description/parent-project actions) rather
- * than re-fetched or re-implemented here — description editing and parent-project navigation are
- * requested via outputs and handled by committee-view, the existing owner of both flows.
+ * project/group, key information, join CTA). Committee data, channels, parent-group/sub-groups,
+ * and upcoming meetings are all passed down from committee-view (which already fetches/owns each
+ * of them for the header) rather than re-fetched here. Description editing and all parent/group
+ * navigation are requested via outputs and handled by committee-view, the existing owner of those
+ * flows for the header — the only action this component performs itself is opening the iCal
+ * subscribe dialog, which isn't duplicated elsewhere in this component (committee-meetings owns
+ * its own copy of that dialog-open call via the same shared helper).
  */
 @Component({
   selector: 'lfx-committee-about',
@@ -51,7 +52,6 @@ import { openIcalSubscribeDialog } from '../../utils/ical-subscribe.util';
 export class CommitteeAboutComponent {
   // Injections
   private readonly dialogService = inject(DialogService);
-  private readonly router = inject(Router);
 
   // Inputs
   public readonly committee = input.required<Committee>();
@@ -72,6 +72,8 @@ export class CommitteeAboutComponent {
   public readonly joinRequested = output<void>();
   public readonly editDescriptionRequested = output<void>();
   public readonly parentProjectNavigationRequested = output<void>();
+  public readonly parentGroupNavigationRequested = output<void>();
+  public readonly subGroupNavigationRequested = output<Committee>();
 
   // Complex computed
   public cadenceSummary: Signal<string> = computed(() => buildCommitteeCadenceSummary(this.upcomingMeetings()));
@@ -83,16 +85,5 @@ export class CommitteeAboutComponent {
       return;
     }
     openIcalSubscribeDialog(this.dialogService, committee);
-  }
-
-  public navigateToParentGroup(): void {
-    const parent = this.parentGroup();
-    if (parent?.uid) {
-      this.router.navigate(['/', 'groups', parent.uid]);
-    }
-  }
-
-  public navigateToSubGroup(subGroup: Committee): void {
-    this.router.navigate(['/', 'groups', subGroup.uid]);
   }
 }

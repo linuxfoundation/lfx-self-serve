@@ -85,6 +85,10 @@ export class CommitteeOverviewComponent {
   // True when the viewer has a pending invitation to this group — suppresses the visitor join CTA
   // (the Accept/Decline banner on the group page is the action; a "Request Access" CTA would be redundant).
   public hasPendingInvite = input<boolean>(false);
+  // Passed down from committee-view, which already fetches this once for the page (both this tab
+  // and About need it, and About's cadence card would otherwise cause a second, redundant fetch).
+  public meetings = input<Meeting[]>([]);
+  public upcomingMeetingsLoading = input<boolean>(true);
 
   // Outputs
   public readonly committeeUpdated = output<void>();
@@ -107,8 +111,7 @@ export class CommitteeOverviewComponent {
   public surveysLoading = signal(true);
   public documentsLoading = signal(true);
 
-  // Loading states for meeting sections
-  public upcomingMeetingsLoading = signal(true);
+  // Loading state for past meetings (upcoming meetings loading comes in as the input above)
   public pastMeetingsLoading = signal(true);
 
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
@@ -148,7 +151,6 @@ export class CommitteeOverviewComponent {
 
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
-  public meetings: Signal<Meeting[]> = this.initMeetings();
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
@@ -430,22 +432,6 @@ export class CommitteeOverviewComponent {
         })
       ),
       { initialValue: 0 }
-    );
-  }
-
-  private initMeetings(): Signal<Meeting[]> {
-    return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        switchMap((c) => {
-          this.upcomingMeetingsLoading.set(true);
-          return this.meetingService.getUpcomingMeetingsByCommittee(c.uid).pipe(
-            catchError(() => of([])),
-            finalize(() => this.upcomingMeetingsLoading.set(false))
-          );
-        })
-      ),
-      { initialValue: [] }
     );
   }
 

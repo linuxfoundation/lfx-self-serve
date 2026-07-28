@@ -74,16 +74,18 @@ async function gotoCommitteeTab(page: Page, query = '?tab=about'): Promise<void>
 test.setTimeout(120_000);
 
 test.describe('Group About tab (LFXV2-1713)', () => {
-  test('visitor: About tab renders between Overview and Members, edit affordances hidden, join CTA shown', async ({ page }) => {
+  test('visitor: About tab renders right after Overview (the only two tabs a visitor sees), edit affordances hidden, join CTA shown', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'open' }) });
     await gotoCommitteeTab(page);
 
     const tabsStrip = page.getByTestId('committee-view-tabs');
     await expect(tabsStrip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     const tabButtons = tabsStrip.locator('button');
+    // Members/Votes/Meetings/Surveys/Documents/Settings are all isMemberOrAdmin()-gated, so a
+    // visitor sees exactly these two tabs — pin the count, not just what isn't at some index.
+    await expect(tabButtons).toHaveCount(2);
     await expect(tabButtons.nth(0)).toContainText('Overview');
     await expect(tabButtons.nth(1)).toContainText('About');
-    await expect(tabButtons.nth(2)).not.toContainText('About');
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('committee-about-edit-description-btn')).toHaveCount(0);

@@ -9,10 +9,10 @@ import { Committee } from '@lfx-one/shared/interfaces';
  * Visitor join CTA shared between the Overview and About tabs — a single "Interested in
  * joining?" card (or an invite-only notice) driven by the committee's `join_mode`.
  *
- * `canJoin()` only fires for `open` mode and `showInviteOnlyNotice()` only for `invite_only`/unset,
- * so an `application`-mode visitor sees neither — application-based joining is product-disabled
- * for now (no ticket yet), so the label/icon/description computeds below only handle the two
- * modes that actually render.
+ * `canJoin()` only fires for `open` mode, so the CTA card's label/icon/description never actually
+ * branch on mode — they're plain constants, not computeds. `showInviteOnlyNotice()` only fires for
+ * `invite_only`/unset. Neither ever resolves for `application` mode (product-disabled for now, no
+ * ticket yet), so an application-mode visitor sees neither card.
  */
 @Component({
   selector: 'lfx-group-join-cta',
@@ -29,15 +29,18 @@ export class GroupJoinCtaComponent {
   // Outputs
   public readonly joinRequested = output<void>();
 
+  // Constants — the only two modes that ever reach the template (see class doc) share one label/
+  // icon/description each, so there's nothing left to branch on.
+  public readonly joinButtonLabel = 'Join Group';
+  public readonly joinButtonIcon = 'fa-light fa-user-plus';
+  public readonly joinCtaIcon = 'fa-light fa-users';
+  public readonly joinCtaDescription = 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
+  public readonly inviteOnlyTitle = 'Membership is by invitation only';
+
   // Complex computed via private init functions
   public canJoin: Signal<boolean> = this.initCanJoin();
   public showInviteOnlyNotice: Signal<boolean> = this.initShowInviteOnlyNotice();
-  public joinButtonLabel: Signal<string> = this.initJoinButtonLabel();
-  public joinButtonIcon: Signal<string> = this.initJoinButtonIcon();
-  public joinCtaIcon: Signal<string> = this.initJoinCtaIcon();
   public joinCtaTitle: Signal<string> = this.initJoinCtaTitle();
-  public joinCtaDescription: Signal<string> = this.initJoinCtaDescription();
-  public inviteOnlyTitle: Signal<string> = this.initInviteOnlyTitle();
   public inviteOnlyDescription: Signal<string> = this.initInviteOnlyDescription();
 
   public onJoinClick(): void {
@@ -58,30 +61,8 @@ export class GroupJoinCtaComponent {
     });
   }
 
-  private initJoinButtonLabel(): Signal<string> {
-    return computed(() => (this.committee().join_mode === 'open' ? 'Join Group' : 'Contact Admin'));
-  }
-
-  /** Icon for the CTA button — matches the header button icon */
-  private initJoinButtonIcon(): Signal<string> {
-    return computed(() => (this.committee().join_mode === 'open' ? 'fa-light fa-user-plus' : 'fa-light fa-envelope'));
-  }
-
-  /** Large illustrative icon above the CTA card title */
-  private initJoinCtaIcon(): Signal<string> {
-    return computed(() => 'fa-light fa-users');
-  }
-
   private initJoinCtaTitle(): Signal<string> {
     return computed(() => `Interested in ${this.committee().name}?`);
-  }
-
-  private initJoinCtaDescription(): Signal<string> {
-    return computed(() => 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.');
-  }
-
-  private initInviteOnlyTitle(): Signal<string> {
-    return computed(() => 'Membership is by invitation only');
   }
 
   private initInviteOnlyDescription(): Signal<string> {
