@@ -364,14 +364,15 @@ export class CommitteeOverviewComponent {
         this.navigateToTab(action.tab);
         break;
       default:
-        // assertNeverSilent, not assertNever: this runs inside a DOM click handler, and LFXV2-1707
-        // will feed server-constructed actions into this same union, so an unrecognized future
-        // `kind` (e.g. a version-skewed client) should no-op rather than throw uncaught from a
-        // click. The compile-time guarantee is unchanged — a new unhandled kind still fails to
-        // compile, since the call below only type-checks if `action` has narrowed to `never` — but
-        // that's the one scenario where losing telemetry silently would be worse than a dead click,
-        // so log it first.
-        console.warn('Unhandled activity action kind:', (action as { kind: string }).kind);
+        // assertNeverSilent: this runs inside a DOM click handler, and LFXV2-1707 will feed
+        // server-constructed actions into this same union, so an unrecognized future `kind` (e.g. a
+        // version-skewed client) should no-op rather than throw uncaught from a click. The
+        // compile-time guarantee is unchanged — a new unhandled kind still fails to compile, since
+        // the call below only type-checks if `action` has narrowed to `never`. console.error (not
+        // .warn) matches the level this app already uses elsewhere for genuinely-unexpected state
+        // (e.g. datadog-rum.provider.ts) — not a confirmed guarantee this specific call reaches
+        // Datadog RUM, since RUM here isn't configured to forward console output.
+        console.error('Unhandled activity action kind:', (action as { kind: string }).kind);
         assertNeverSilent(action);
     }
   }

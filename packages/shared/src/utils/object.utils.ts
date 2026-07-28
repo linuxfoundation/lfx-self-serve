@@ -52,21 +52,9 @@ export function isObjectRow(el: unknown): el is Record<string, unknown> {
  * Compile-time exhaustiveness check for a `switch`/`if`-chain over a discriminated union: pass the
  * variable in a `default` branch and TypeScript flags any unhandled union member as a type error
  * at the call site, rather than letting a new variant compile and silently fall through to a no-op.
- * Throws at runtime as a backstop — use this where the input can only be in-app-constructed data,
- * so the throw genuinely can't be reached outside a bug. For a `default` branch that could see
- * externally-sourced data (e.g. a server-fed union member a client hasn't been updated to handle
- * yet), use `assertNeverSilent` instead so an unrecognized value degrades to a no-op rather than an
- * uncaught exception.
- */
-export function assertNever(value: never): never {
-  throw new Error(`Unhandled case: ${JSON.stringify(value)}`);
-}
-
-/**
- * Same compile-time exhaustiveness guarantee as `assertNever` — a new union member still fails to
- * compile — but never throws at runtime. For a `default` branch where the input can be
- * externally-sourced (e.g. a server-fed action a client hasn't been updated to handle yet) and an
- * uncaught exception would be worse than a silent no-op, such as inside a DOM event handler.
+ * Never throws at runtime — for a `default` branch where the input can be externally-sourced (e.g.
+ * a server-fed action a client hasn't been updated to handle yet) and an uncaught exception would
+ * be worse than a silent no-op, such as inside a DOM event handler.
  */
 export function assertNeverSilent(_value: never): void {
   // Intentionally empty — the compile-time check is the entire point.
