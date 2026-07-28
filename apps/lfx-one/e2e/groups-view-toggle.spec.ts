@@ -228,5 +228,6 @@ test.describe('My Groups — card view empty state (no groups at all)', () => {
     await expect(page.getByTestId('groups-card-grid-empty'), 'empty state should render for a zero-groups caller').toBeVisible({
       timeout: PAGE_LOAD_TIMEOUT,
     });
+    await expect(page.getByTestId('committee-search-input'), 'filter bar should not render with zero groups').toHaveCount(0);
   });
 });

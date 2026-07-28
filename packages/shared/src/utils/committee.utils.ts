@@ -209,17 +209,18 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
   // project_uid (upstream enrichment can leave it '' alongside a populated passthrough project_name,
   // per the same defensive `.filter(Boolean)` pattern used elsewhere against this field) would
   // otherwise key on the empty string, silently collapsing unrelated committees into one bucket.
-  const isNamed = (committee: Committee): boolean => !!committee.project_name && !!committee.project_uid;
+  const isNamed = (committee: Committee): committee is Committee & { project_name: string; project_uid: string } =>
+    !!committee.project_name && !!committee.project_uid;
 
   // First pass: named projects get their own project_uid-keyed bucket. Track every distinct named
   // key seen under each label, so a degraded committee (second pass) only merges into a named bucket
   // when the label unambiguously identifies exactly one of them.
   for (const committee of committees) {
     if (!isNamed(committee)) continue;
-    addTo(committee.project_uid, committee.project_name!, committee);
-    const keys = namedKeysByLabel.get(committee.project_name!) ?? new Set<string>();
+    addTo(committee.project_uid, committee.project_name, committee);
+    const keys = namedKeysByLabel.get(committee.project_name) ?? new Set<string>();
     keys.add(committee.project_uid);
-    namedKeysByLabel.set(committee.project_name!, keys);
+    namedKeysByLabel.set(committee.project_name, keys);
   }
 
   // Second pass: degraded committees (no project_name, or a project_name with no usable project_uid)

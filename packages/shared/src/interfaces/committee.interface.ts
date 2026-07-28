@@ -472,7 +472,7 @@ export type GroupsViewMode = 'list' | 'card';
  * Built entirely client-side from the already-filtered committees list — no new upstream shape.
  */
 export interface CommitteeFoundationGroup {
-  /** Stable key for the expansion-state map: the group's `project_uid` when a real `project_name` resolved (two distinct sub-projects sharing a display name still render as two buckets, disambiguated by `testIdSlug`), otherwise the resolved label itself — `foundation_name` or a fallback constant. A degraded committee (missing `project_name`) merges into an existing named bucket only when exactly one named project carries that label; if the label is ambiguous (two named projects share it), it keeps its own label-keyed bucket instead of merging into an arbitrary one. See {@link groupCommitteesByFoundation}. */
+  /** Stable key for the expansion-state map: the group's `project_uid` when the committee is "named" — both `project_name` **and** `project_uid` resolved (two distinct sub-projects sharing a display name still render as two buckets, disambiguated by `testIdSlug`) — otherwise the resolved label itself — `foundation_name` or a fallback constant. A degraded committee (no usable `project_name`/`project_uid` pair, including a populated `project_name` with a falsy `project_uid`) merges into an existing named bucket only when exactly one named project carries that label; if the label is ambiguous (two named projects share it), it keeps its own label-keyed bucket instead of merging into an arbitrary one. See {@link groupCommitteesByFoundation}. */
   key: string;
   /** Human-readable header text. */
   label: string;
