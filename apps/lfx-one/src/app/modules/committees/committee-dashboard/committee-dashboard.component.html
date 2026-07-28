@@ -238,6 +238,7 @@
                     @if (groupExpansionMap()[group.key]) {
                       <lfx-committee-table
                         [attr.data-testid]="'committees-project-table-' + group.testIdSlug"
+                        [tableTestId]="'committee-dashboard-table-' + group.testIdSlug"
                         [committees]="group.committees"
                         [hasItems]="true"
                         [showFilterBar]="false"

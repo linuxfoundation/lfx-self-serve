@@ -612,7 +612,7 @@ export const COMMITTEE_INVITE_CONCURRENCY = 5;
 /** localStorage key persisting the My Groups list↔card view toggle. Browser-only: written behind isPlatformBrowser (persistViewMode), read from afterNextRender post-hydration (restoreViewMode) — both in committee-dashboard.component.ts. */
 export const GROUPS_VIEW_MODE_STORAGE_KEY = 'lfx:groups-view-mode';
 
-/** Fallback label for the (at most one) foundation-level bucket in All Groups foundation-grouping, used only if a foundation-owned committee has neither project_name nor foundation_name populated. */
+/** Fallback label for a foundation-level bucket in All Groups foundation-grouping, used only if a foundation-owned committee has neither project_name nor foundation_name populated. */
 export const FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL = 'Foundation';
 
 /** Catch-all bucket label for committees that resolve to no usable project/foundation label at all. Always sorts last. */

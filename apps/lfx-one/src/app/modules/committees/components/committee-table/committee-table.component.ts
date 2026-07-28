@@ -55,6 +55,8 @@ export class CommitteeTableComponent {
   public projectOptions = input<{ label: string; value: string | null }[]>([]);
   /** When false, suppresses the built-in search/voting-status filter bar. Used by the All Groups foundation-grouped view, which renders one shared filter bar above N per-group `<lfx-committee-table>` instances instead of duplicating it per group. Defaults to true — every existing caller is unaffected. */
   public showFilterBar = input<boolean>(true);
+  /** `data-testid` for the internal `<lfx-table>`. Defaults to the pre-existing fixed id — every caller that renders a single instance is unaffected. The foundation-grouped view renders one `<lfx-committee-table>` per group, so it must pass a per-group value to keep each table's testid unique (a fixed id would repeat once per group and turn `getByTestId` into a Playwright strict-mode violation). */
+  public tableTestId = input<string>('committee-dashboard-table');
 
   // Outputs
   public readonly refresh = output<void>();

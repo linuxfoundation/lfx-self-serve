@@ -478,7 +478,7 @@ export interface CommitteeFoundationGroup {
   label: string;
   /** Kebab-case, testid-safe slug derived from `label`, disambiguated against sibling groups sharing the same label. */
   testIdSlug: string;
-  /** True for the (at most one) bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. */
+  /** True for a bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. Usually one bucket, but a foundation-owned committee that resolves to a *different* label than another (e.g. a named foundation project plus a separate `FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL` fallback bucket) can produce more than one; the sort tolerates any count. */
   isFoundationLevel: boolean;
   committees: Committee[];
 }

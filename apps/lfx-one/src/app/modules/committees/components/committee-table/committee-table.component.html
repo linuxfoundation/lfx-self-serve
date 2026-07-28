@@ -43,7 +43,7 @@
           [sortOrder]="1"
           selectionMode="single"
           (onRowSelect)="onRowSelect($event)"
-          data-testid="committee-dashboard-table">
+          [attr.data-testid]="tableTestId()">
           <ng-template #header>
             <tr>
               <th>Name</th>
