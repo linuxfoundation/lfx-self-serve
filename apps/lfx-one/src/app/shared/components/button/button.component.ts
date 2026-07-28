@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, effect, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
 import { resolveAriaPressedPt } from '@lfx-one/shared/utils';
@@ -92,16 +92,21 @@ export class ButtonComponent {
    * That same dual-consumption means the `pt` value reaches the Tooltip directive's own root element
    * (its `role="tooltip"` container) too, not just `<p-button>`'s. Resolving to `undefined` whenever
    * `tooltip` is set prevents `aria-pressed` from ever landing on that tooltip container — no current
-   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA. That
-   * combination also silently drops `aria-pressed` entirely rather than raising a build error, so a
-   * dev-mode console warning below flags it at runtime instead.
+   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA. The
+   * constructor below carries the dev-mode warning for this combination — kept out of this computed
+   * since `computed()` callbacks must stay pure (no side effects, may not run at all if never read).
    */
-  protected readonly ariaPressedPt = computed(() => {
-    if (this.tooltip() && this.ariaPressed() !== undefined && typeof ngDevMode !== 'undefined' && ngDevMode) {
-      console.warn('<lfx-button>: `ariaPressed` is ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
+  protected readonly ariaPressedPt = computed(() => (this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed())));
+
+  public constructor() {
+    if (typeof ngDevMode !== 'undefined' && ngDevMode) {
+      effect(() => {
+        if (this.tooltip() && this.ariaPressed() !== undefined) {
+          console.warn('<lfx-button>: `ariaPressed` is ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
+        }
+      });
     }
-    return this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed());
-  });
+  }
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

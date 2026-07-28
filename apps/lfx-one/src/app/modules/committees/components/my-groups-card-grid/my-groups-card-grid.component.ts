@@ -1,17 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
+import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { MyCommittee } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
 
+/** Cards revealed per "Show more" click — a grid-friendly count (divisible by 1/2/3/4 columns). */
+const PAGE_SIZE = 12;
+
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, EmptyStateComponent, RouterLink],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
@@ -24,6 +28,14 @@ export class MyGroupsCardGridComponent {
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
 
+  /**
+   * How many pages of `PAGE_SIZE` the caller has revealed via "Show more". Deliberately not reset
+   * when `committees()` narrows (e.g. a search) — `visibleCards` naturally caps at the shorter list
+   * via `slice`, and widening the list back out (clearing the search) restores the same page count
+   * rather than collapsing back to one page, which would be a jarring UX for no correctness benefit.
+   */
+  private readonly expandedPages = signal(1);
+
   protected readonly cards = computed(() =>
     this.committees().map((committee) => ({
       committee,
@@ -31,4 +43,10 @@ export class MyGroupsCardGridComponent {
       lastActivityLabel: formatRelativeTime(new Date(committee.updated_at)),
     }))
   );
+  protected readonly visibleCards = computed(() => this.cards().slice(0, this.expandedPages() * PAGE_SIZE));
+  protected readonly hasMore = computed(() => this.visibleCards().length < this.cards().length);
+
+  protected showMore(): void {
+    this.expandedPages.update((pages) => pages + 1);
+  }
 }
