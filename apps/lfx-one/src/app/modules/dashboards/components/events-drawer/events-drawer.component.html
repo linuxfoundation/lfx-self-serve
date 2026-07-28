@@ -62,13 +62,13 @@
         </div>
 
         <!-- Metric Value -->
-        @if (!drawerLoading() && hasQuarterlyData()) {
+        @if (!dataLoading() && hasQuarterlyData()) {
           <span class="text-xl font-semibold text-gray-900" data-testid="events-drawer-metric">{{ metricValue() }}</span>
         }
       </div>
 
       <!-- Chart -->
-      @if (drawerLoading()) {
+      @if (dataLoading()) {
         <div class="flex items-center justify-center py-12" data-testid="events-drawer-quarterly-loading">
           <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
         </div>
