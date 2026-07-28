@@ -627,35 +627,18 @@ export interface MonthlyProjectCountWithFoundation {
 }
 
 /**
- * Monthly member count with foundation metadata
- * Combined result from cumulative aggregation query for member organizations
- * Uses actual MEMBER_DASHBOARD_MEMBERSHIP_TIER column names
+ * Row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY.
+ * Point-in-time active-during-month member count per foundation; the 'tlf'
+ * umbrella row is emitted by the dbt model so per-foundation and umbrella
+ * reads share one query path.
  */
-export interface MonthlyMemberCountWithFoundation {
-  /**
-   * Project/Foundation ID
-   */
-  PROJECT_ID: string;
-
-  /**
-   * Project/Foundation name
-   */
-  PROJECT_NAME: string;
-
-  /**
-   * Project/Foundation URL slug
-   */
-  PROJECT_SLUG: string;
-
-  /**
-   * Month start date (first day of month)
-   */
-  MONTH_START: string;
-
-  /**
-   * Cumulative count of member organizations up to this month
-   */
-  MEMBER_COUNT: number;
+export interface FoundationTotalMembersMonthlyRow {
+  /** Foundation URL slug (e.g. 'ccc', 'tlf'). */
+  FOUNDATION_SLUG: string;
+  /** First day of the month (ISO date string). */
+  MONTH_START_DATE: string;
+  /** Distinct member organizations active during this month. */
+  MONTHLY_TOTAL_MEMBERS: number;
 }
 
 /**
