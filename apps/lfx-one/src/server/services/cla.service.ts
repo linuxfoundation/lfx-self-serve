@@ -109,7 +109,7 @@ export function toMyClaAgreement(sig: EasyClaSignature): MyClaAgreement | null {
     // Prefer the upstream-resolved CLA Group display name; fall back to the CLA Group ID
     // (projectID) for records where the name could not be resolved.
     projectName: sig.projectName || sig.projectID || '',
-    companyName: ecla ? (sig.signingEntityName || sig.companyName || undefined) : undefined,
+    companyName: ecla ? sig.signingEntityName || sig.companyName || undefined : undefined,
     signedOn: sig.signedOn ?? '',
     status: deriveStatus(sig),
     documentVersion,
@@ -226,16 +226,12 @@ export class ClaService {
 
     let result: EasyClaSignedDocument | null;
     try {
-      result = await gatewayFetch<EasyClaSignedDocument>(
-        req,
-        `${claServiceBaseUrl()}/v4/signatures/${encodeURIComponent(signatureId)}/signed-document`,
-        {
-          operation: 'cla_get_signed_document_url',
-          service: SERVICE,
-          errorMessage: 'Failed to fetch signed document URL',
-          errorCode: 'UPSTREAM_ERROR',
-        }
-      );
+      result = await gatewayFetch<EasyClaSignedDocument>(req, `${claServiceBaseUrl()}/v4/signatures/${encodeURIComponent(signatureId)}/signed-document`, {
+        operation: 'cla_get_signed_document_url',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch signed document URL',
+        errorCode: 'UPSTREAM_ERROR',
+      });
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) return null;
       throw error;

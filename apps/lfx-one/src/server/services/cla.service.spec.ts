@@ -28,15 +28,7 @@ import type { Request } from 'express';
 
 import type { EasyClaSignature } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
-import {
-  buildAgreements,
-  ClaService,
-  deriveStatus,
-  isEcla,
-  isIcla,
-  normalizeGithubId,
-  toMyClaAgreement,
-} from './cla.service';
+import { buildAgreements, ClaService, deriveStatus, isEcla, isIcla, normalizeGithubId, toMyClaAgreement } from './cla.service';
 
 const req = {} as unknown as Request;
 
@@ -238,7 +230,7 @@ describe('ClaService.resolveIdentity', () => {
     const identity = await new ClaService().resolveIdentity(req);
 
     expect(identity.easyclaUserIds).toEqual(['u-legacy']);
-    expect((gatewayFetch.mock.calls[1][1] as string)).toContain('/v3/users/username/alice');
+    expect(gatewayFetch.mock.calls[1][1] as string).toContain('/v3/users/username/alice');
   });
 
   it('detects a linked GitHub identity and normalizes the numeric id', async () => {

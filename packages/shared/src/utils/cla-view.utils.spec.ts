@@ -16,11 +16,7 @@ function identity(overrides: Partial<MyClasIdentitySummary> = {}): MyClasIdentit
 
 describe('splitAgreementsByKind', () => {
   it('partitions ICLAs and ECLAs preserving order', () => {
-    const list = [
-      agreement({ id: 'i1', kind: 'ICLA' }),
-      agreement({ id: 'e1', kind: 'ECLA', pdfAvailable: false }),
-      agreement({ id: 'i2', kind: 'ICLA' }),
-    ];
+    const list = [agreement({ id: 'i1', kind: 'ICLA' }), agreement({ id: 'e1', kind: 'ECLA', pdfAvailable: false }), agreement({ id: 'i2', kind: 'ICLA' })];
     const { iclas, eclas } = splitAgreementsByKind(list);
     expect(iclas.map((a) => a.id)).toEqual(['i1', 'i2']);
     expect(eclas.map((a) => a.id)).toEqual(['e1']);
