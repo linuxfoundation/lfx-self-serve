@@ -236,9 +236,10 @@ export class ProfileLinuxEmailComponent {
           // getUserEmails() round-trip for the same data. If it fails, the emails read
           // failed too, so service_unavailable (whole-tab retry) is the right state.
           return this.userService.getLinuxAlias().pipe(
-            catchError(() =>
-              of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null, primaryEmail: null })
-            ),
+            catchError((error) => {
+              console.error('Failed to load Linux.com alias state:', error);
+              return of<LinuxAliasData | null>({ state: 'service_unavailable', domain: '', alias: null, email: null, forwardTo: null, primaryEmail: null });
+            }),
             tap((alias) => {
               this.applyFormDefaults(alias);
               this.maybeReauthForForward(alias);
