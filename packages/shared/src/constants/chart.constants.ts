@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Chart } from 'chart.js';
-import type { ChartOptions } from 'chart.js';
+import type { Chart, ChartOptions, Plugin } from 'chart.js';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -12,7 +11,7 @@ import { lfxColors } from './colors.constants';
  * The `afterDatasetsDraw` hook no-ops for every dataset that doesn't opt in.
  * Pure JS (no canvas access at import), so SSR-safe.
  */
-export const ZERO_BAR_STUB_PLUGIN = {
+export const ZERO_BAR_STUB_PLUGIN: Plugin<'bar'> = {
   id: 'lfxZeroBarStub',
   afterDatasetsDraw(chart: Chart) {
     const ctx = chart.ctx;

@@ -54,7 +54,8 @@
           pTooltip="Number of foundation projects in each health score category"
           tooltipPosition="top"
           tooltipEvent="both"
-          aria-label="Number of foundation projects in each health score category">
+          aria-label="Number of foundation projects in each health score category"
+          data-testid="project-health-scores-drawer-distribution-info">
           <i class="fa-light fa-circle-info"></i>
         </button>
       </div>
@@ -63,7 +64,7 @@
       @if (!healthScoresLoading() && hasData()) {
         <p class="text-sm text-gray-600" data-testid="project-health-scores-drawer-healthy-summary">
           <span class="font-semibold text-gray-900">{{ healthyOrBetterPct() }}%</span>
-          of scored projects are healthy or better — {{ healthyOrBetterCount().toLocaleString('en-US') }} of {{ scoredProjects().toLocaleString('en-US') }}
+          of scored projects are healthy or better — {{ healthyOrBetterCountLabel() }} of {{ scoredProjectsLabel() }}
         </p>
       }
 
@@ -105,7 +106,8 @@
           pTooltip="Search and filter individual foundation projects by health status"
           tooltipPosition="top"
           tooltipEvent="both"
-          aria-label="Search and filter individual foundation projects by health status">
+          aria-label="Search and filter individual foundation projects by health status"
+          data-testid="project-health-scores-drawer-table-info">
           <i class="fa-light fa-circle-info"></i>
         </button>
       </div>

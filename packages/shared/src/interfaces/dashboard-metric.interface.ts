@@ -1,9 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ChartData, ChartOptions, ChartType } from 'chart.js';
+import type { ChartData, ChartDataset, ChartOptions, ChartType } from 'chart.js';
 
 import { PRESENCE_PILL_IDS } from '../constants/foundation-projects.constants';
+
+/**
+ * Chart.js bar dataset that opts into the zero-bar stub plugin (`ZERO_BAR_STUB_PLUGIN`).
+ * chart.js exports `ChartDataset` as a type alias (not an interface), so module
+ * augmentation isn't possible — this interface extends the alias to surface the
+ * custom `zeroStub` flag to TypeScript without resorting to `as unknown as` casts.
+ */
+export interface ZeroStubBarDataset extends ChartDataset<'bar'> {
+  zeroStub?: boolean;
+}
 
 /**
  * Health score type for foundations
@@ -33,7 +43,7 @@ export type MetricCategory =
  * Custom content type for specialized metric cards
  * @description Determines what type of custom content to render in the metric card
  */
-export type CustomContentType = 'bar-chart' | 'top-projects' | 'bus-factor' | 'health-scores' | 'dual-signal' | 'funnel';
+export type CustomContentType = 'bar-chart' | 'top-projects' | 'bus-factor' | 'dual-signal' | 'funnel';
 
 /**
  * Unified dashboard metric card interface
@@ -135,9 +145,6 @@ export interface DashboardMetricCard {
   /** Data for company bus factor (foundation health) */
   busFactor?: CompanyBusFactor;
 
-  /** Data for project health scores distribution (foundation health) */
-  healthScores?: ProjectHealthDistribution;
-
   // ============================================
   // Organization Involvement Specific (Membership)
   // ============================================
@@ -153,25 +160,6 @@ export interface DashboardMetricCard {
 
   /** Flag indicating this is a membership tier metric */
   isMembershipTier?: boolean;
-}
-
-/**
- * Project health score distribution
- * @description Breakdown of projects by health score category
- */
-export interface ProjectHealthDistribution {
-  /** Number of projects with excellent health */
-  excellent: number;
-  /** Number of projects with healthy status */
-  healthy: number;
-  /** Number of projects with stable status */
-  stable: number;
-  /** Number of projects with unsteady status */
-  unsteady: number;
-  /** Number of projects with critical status */
-  critical: number;
-  /** Number of projects with no health score (dbt's Unscored bucket) */
-  unscored: number;
 }
 
 /**

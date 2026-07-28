@@ -10,20 +10,18 @@ import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
   DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION,
+  DEFAULT_FOUNDATION_MAINTAINERS,
   lfxColors,
   PROJECT_HEALTH_CHART_CATEGORIES,
   PROJECT_HEALTH_CHART_CATEGORY_COLOR,
   PROJECT_HEALTH_CHART_CATEGORY_LABEL,
   PRIMARY_FOUNDATION_HEALTH_METRICS,
-  ZERO_BAR_STUB_PLUGIN,
 } from '@lfx-one/shared/constants';
-import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
-import { hexToRgba, computePeriodChange } from '@lfx-one/shared/utils';
+import { DashboardDrawerType, FilterPillOption, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
+import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScoredCount } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { Chart } from 'chart.js';
-import type { ChartData, ChartType } from 'chart.js';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
@@ -72,13 +70,6 @@ export class FoundationHealthComponent {
 
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
-
-  // Register the zero-bar stub plugin once globally. The plugin no-ops for any
-  // dataset that doesn't opt in via `zeroStub: true`, so other charts are unaffected.
-  private static readonly zeroBarStubRegistered = (() => {
-    Chart.register(ZERO_BAR_STUB_PLUGIN);
-    return true;
-  })();
 
   public readonly title = input<string>('Foundation Health');
 
@@ -132,7 +123,7 @@ export class FoundationHealthComponent {
   // Surface a zeroed default while loading so the drawer headline (currentMaintainers/asOfDate)
   // never renders the previous foundation's value during a switch.
   protected readonly reconciledMaintainersData = computed<FoundationMaintainersResponse>(() =>
-    this.maintainersLoading() ? { currentMaintainers: 0, asOfDate: null, trendData: [], trendLabels: [] } : this.maintainersData()
+    this.maintainersLoading() ? DEFAULT_FOUNDATION_MAINTAINERS : this.maintainersData()
   );
 
   public readonly selectedFilter = signal<string>('all');
@@ -537,15 +528,13 @@ export class FoundationHealthComponent {
             data: data.quarterlyData,
             // Opt this dataset into the zero-bar stub plugin so empty quarters
             // render as a 4px gray stub instead of invisible zero-height bars.
-            // chart.js exports ChartDataset as a type alias (not an interface),
-            // so module augmentation isn't possible — cast to attach zeroStub.
             zeroStub: true,
             backgroundColor: eventColor,
             // Pin hover color to the bar fill so the active bar doesn't darken (matches the events drawer).
             hoverBackgroundColor: eventColor,
             borderColor: eventColor,
             borderWidth: 0,
-          } as unknown as ChartData<ChartType>['datasets'][number],
+          } as ZeroStubBarDataset,
         ],
       },
       chartOptions: {
@@ -569,12 +558,11 @@ export class FoundationHealthComponent {
 
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
-    const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
+    const scored = computeScoredCount(data);
 
     // "Healthy or better" is the card's health KPI; the distribution chart is the visualization,
     // parallel to the sparkline/bar chart on the other foundation-health cards.
-    const healthyOrBetter = data.excellent + data.healthy;
-    const value = scored > 0 ? `${Math.round((healthyOrBetter / scored) * 100)}%` : '';
+    const value = scored > 0 ? `${computeHealthyOrBetterPct(data)}%` : '';
 
     // Same 6 bars the drawer draws (leading Unscored + 5 scored) so the card mini-chart
     // and the drawer's full chart never disagree on which buckets exist.
@@ -598,7 +586,7 @@ export class FoundationHealthComponent {
             hoverBackgroundColor: barColors,
             borderRadius: 4,
             borderSkipped: 'start',
-          } as unknown as ChartData<ChartType>['datasets'][number],
+          } as ZeroStubBarDataset,
         ],
       },
       chartOptions: {
@@ -722,12 +710,7 @@ export class FoundationHealthComponent {
   }
 
   private initializeMaintainersData() {
-    const defaultValue: FoundationMaintainersResponse = {
-      currentMaintainers: 0,
-      asOfDate: null,
-      trendData: [],
-      trendLabels: [],
-    };
+    const defaultValue = DEFAULT_FOUNDATION_MAINTAINERS;
 
     return toSignal(
       this.selectedFoundationSlug$.pipe(

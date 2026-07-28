@@ -11,10 +11,10 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, map, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { FoundationEventsAttendanceDistributionResponse, FoundationEventsQuarterlyResponse } from '@lfx-one/shared/interfaces';
+import type { FoundationEventsAttendanceDistributionResponse, FoundationEventsQuarterlyResponse, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-events-drawer',
@@ -136,9 +136,8 @@ export class EventsDrawerComponent {
 
   // === Computed Signals ===
   private readonly drawerData = this.initDrawerData();
-  protected readonly quarterlyData: Signal<FoundationEventsQuarterlyResponse> = computed(() => this.data());
   protected readonly attendanceData: Signal<FoundationEventsAttendanceDistributionResponse> = computed(() => this.drawerData().attendance);
-  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.some((v) => v > 0));
+  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.data().quarterlyData.some((v) => v > 0));
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
   protected readonly metricValue: Signal<string> = this.initMetricValue();
 
@@ -169,9 +168,8 @@ export class EventsDrawerComponent {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
-          return forkJoin({
-            attendance: this.analyticsService.getFoundationEventsAttendanceDistribution(slug),
-          }).pipe(
+          return this.analyticsService.getFoundationEventsAttendanceDistribution(slug).pipe(
+            map((attendance) => ({ attendance })),
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -186,7 +184,7 @@ export class EventsDrawerComponent {
 
   private initQuarterlyChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { quarterlyData, quarterlyLabels } = this.quarterlyData();
+      const { quarterlyData, quarterlyLabels } = this.data();
       return {
         labels: quarterlyLabels,
         datasets: [
@@ -197,10 +195,10 @@ export class EventsDrawerComponent {
             hoverBackgroundColor: lfxColors.blue[500],
             borderRadius: 3,
             borderSkipped: 'start',
-            // Opt into the zero-bar stub plugin (registered by foundation-health) so empty
+            // Opt into the zero-bar stub plugin (registered by ChartComponent) so empty
             // quarters render as a 4px gray stub instead of invisible zero-height bars.
             zeroStub: true,
-          } as unknown as ChartData<'bar'>['datasets'][number],
+          } as ZeroStubBarDataset,
         ],
       };
     });
@@ -208,7 +206,7 @@ export class EventsDrawerComponent {
 
   private initMetricValue(): Signal<string> {
     return computed(() => {
-      const q = this.quarterlyData().quarterlyData;
+      const q = this.data().quarterlyData;
       return q.length ? q[q.length - 1].toLocaleString('en-US') : '0';
     });
   }

@@ -228,6 +228,10 @@ export class TotalProjectsDrawerComponent {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
+          // Reset pagination + search so a stale query/page from the previous
+          // foundation can't hide or off-range the freshly loaded list.
+          this.primaryPage.set(1);
+          this.searchForm.get('query')!.setValue('');
           return forkJoin({
             projects: this.analyticsService.getFoundationProjectsDetail(slug),
             lifecycle: this.analyticsService.getFoundationProjectsLifecycleDistribution(slug),

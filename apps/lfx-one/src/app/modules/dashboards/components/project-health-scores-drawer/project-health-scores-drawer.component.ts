@@ -23,7 +23,13 @@ import {
   PROJECT_HEALTH_STATUS_FILTER_OPTIONS,
   PROJECT_HEALTH_UNSCORED_BADGE,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, buildVisiblePages } from '@lfx-one/shared/utils';
+import {
+  buildLensAwareInsightsUrl,
+  buildVisiblePages,
+  computeHealthyOrBetterCount,
+  computeHealthyOrBetterPct,
+  computeScoredCount,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -37,6 +43,7 @@ import type {
   FoundationProjectsDetailResponse,
   HealthStatusFilterValue,
   ProjectTableRow,
+  ZeroStubBarDataset,
 } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -159,15 +166,13 @@ export class ProjectHealthScoresDrawerComponent {
 
   // Mirrors the foundation-health card's focal KPI so the card's `%` and the drawer's
   // summary can never drift apart.
-  protected readonly healthyOrBetterCount: Signal<number> = computed(() => {
-    const d = this.data();
-    return d.excellent + d.healthy;
-  });
+  protected readonly healthyOrBetterCount: Signal<number> = computed(() => computeHealthyOrBetterCount(this.data()));
 
-  protected readonly healthyOrBetterPct: Signal<number> = computed(() => {
-    const scored = this.scoredProjects();
-    return scored > 0 ? Math.round((this.healthyOrBetterCount() / scored) * 100) : 0;
-  });
+  protected readonly healthyOrBetterPct: Signal<number> = computed(() => computeHealthyOrBetterPct(this.data()));
+
+  // Pre-formatted labels so the template stays a pure binding (no toLocaleString in markup).
+  protected readonly healthyOrBetterCountLabel: Signal<string> = computed(() => this.healthyOrBetterCount().toLocaleString('en-US'));
+  protected readonly scoredProjectsLabel: Signal<string> = computed(() => this.scoredProjects().toLocaleString('en-US'));
 
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
@@ -210,8 +215,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   // === Private Initializers ===
   private initScoredProjects(): number {
-    const d = this.data();
-    return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;
+    return computeScoredCount(this.data());
   }
 
   private initScoredLabel(): string {
@@ -234,10 +238,10 @@ export class ProjectHealthScoresDrawerComponent {
             hoverBackgroundColor: barColors,
             borderRadius: 4,
             borderSkipped: 'start',
-            // Opt into the zero-bar stub plugin (registered by foundation-health) so empty
+            // Opt into the zero-bar stub plugin (registered by ChartComponent) so empty
             // buckets render as a 4px gray stub instead of invisible zero-height bars.
             zeroStub: true,
-          } as unknown as ChartData<'bar'>['datasets'][number],
+          } as ZeroStubBarDataset,
         ],
       };
     });
