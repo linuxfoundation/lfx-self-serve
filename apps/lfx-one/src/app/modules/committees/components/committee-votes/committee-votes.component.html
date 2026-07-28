@@ -10,7 +10,8 @@
       [totalRecords]="votes().length"
       [editQueryParams]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
-      (viewVote)="viewVoteResults($event)">
+      (viewVote)="viewVoteResults($event)"
+      (refresh)="refreshVotes()">
       @if (canEdit()) {
         <lfx-button
           tableActions
@@ -54,5 +55,5 @@
     [listVote]="selectedVote()"
     (castVoteRequested)="castDrawerHost.open($event)">
   </lfx-vote-results-drawer>
-  <lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="onVoteSubmitted()" />
+  <lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="refreshVotes()" />
 </div>

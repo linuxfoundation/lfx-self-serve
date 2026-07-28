@@ -57,9 +57,10 @@ export class CommitteeVotesComponent {
     this.resultsDrawerVisible.set(true);
   }
 
-  /** DashboardCastDrawerHost's voteSubmitted — refreshes the table so a since-closed poll (auto-ends
-   *  once every eligible voter has responded) reflects its new status without a manual reload. */
-  public onVoteSubmitted(): void {
+  /** Shared refresh source: DashboardCastDrawerHost's voteSubmitted (a since-closed poll auto-ends
+   *  once every eligible voter has responded) and votes-table's own refresh (fired after a delete) —
+   *  both need the same re-fetch, so one source-neutral handler covers either trigger. */
+  public refreshVotes(): void {
     this.votesRefresh$.next();
   }
 

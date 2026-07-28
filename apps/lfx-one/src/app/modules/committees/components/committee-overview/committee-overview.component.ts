@@ -559,11 +559,18 @@ export class CommitteeOverviewComponent {
   private initVotes(): Signal<Vote[]> {
     return toSignal(
       // votesRefresh$ re-reads this.committee() rather than using startWith, so a post-cast refresh
-      // can't double-emit against the toObservable(this.committee) source alongside it.
-      merge(toObservable(this.committee), this.votesRefresh$.pipe(map(() => this.committee()))).pipe(
-        filter((c) => !!c?.uid),
-        switchMap((c) => {
-          this.votesLoading.set(true);
+      // can't double-emit against the toObservable(this.committee) source alongside it. silent: true
+      // on that branch skips the votesLoading flip — castVoteUids has already resolved the row this
+      // refresh is meant to catch (an early poll close), so re-skeletoning "My Pending Actions" (and,
+      // via activityFeedLoading, Recent Activity) for the remaining rows on every cast would be a
+      // regression the row-level fix was supposed to avoid.
+      merge(
+        toObservable(this.committee).pipe(map((c) => ({ c, silent: false }))),
+        this.votesRefresh$.pipe(map(() => ({ c: this.committee(), silent: true })))
+      ).pipe(
+        filter(({ c }) => !!c?.uid),
+        switchMap(({ c, silent }) => {
+          if (!silent) this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
             catchError(() => of([])),
             finalize(() => this.votesLoading.set(false))
