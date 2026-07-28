@@ -48,6 +48,15 @@ export function isObjectRow(el: unknown): el is Record<string, unknown> {
   return el !== null && typeof el === 'object' && !Array.isArray(el);
 }
 
+/**
+ * Compile-time exhaustiveness check for a `switch`/`if`-chain over a discriminated union: pass the
+ * variable in a `default` branch and TypeScript flags any unhandled union member as a type error
+ * at the call site, rather than letting a new variant compile and silently fall through to a no-op.
+ */
+export function assertNever(value: never): never {
+  throw new Error(`Unhandled case: ${JSON.stringify(value)}`);
+}
+
 /** Shallow accept-guard for a read-through cache of object rows; a corrupt/foreign entry degrades to a miss, so callers reading a required contract key must validate it on top of this shape check. */
 export function isObjectRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every(isObjectRow);

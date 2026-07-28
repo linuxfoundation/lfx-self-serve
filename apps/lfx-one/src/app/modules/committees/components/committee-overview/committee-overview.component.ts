@@ -28,7 +28,7 @@ import {
   Survey,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { buildActivityFeed, countVotingReps, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { assertNever, buildActivityFeed, countVotingReps, getSurveyDisplayStatus, isValidUrl } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -328,8 +328,11 @@ export class CommitteeOverviewComponent {
   public handleActivityItemClick(item: ActivityFeedItem): void {
     const { action } = item;
     switch (action.kind) {
-      case 'route':
-        void this.router.navigate([action.path], { queryParamsHandling: 'preserve' });
+      case 'past-meeting':
+        // Matches the "Past Meeting" card's own link two sections up
+        // (`[detailUrl]="'/meetings/' + meeting.id"`) exactly, so the two rows describing the same
+        // meeting on this screen always resolve to the same URL.
+        void this.router.navigate(['/meetings', action.meetingId], { queryParamsHandling: 'preserve' });
         break;
       case 'vote-drawer': {
         const vote = this.votes().find((v) => v.uid === action.voteUid);
@@ -350,13 +353,18 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'external-url':
-        // buildActivityFeed only emits this action for urls that pass isValidUrl
-        // (@lfx-one/shared/utils) — http(s) only, no private/local hosts.
-        window.open(action.url, '_blank', 'noopener,noreferrer');
+        // buildActivityFeed only emits this action for urls that pass isValidUrl, but re-check at
+        // this sink rather than trusting that comment-enforced invariant — the union is shared
+        // shape LFXV2-1707's server-fed activity items will also construct.
+        if (isValidUrl(action.url)) {
+          window.open(action.url, '_blank', 'noopener,noreferrer');
+        }
         break;
       case 'tab':
         this.navigateToTab(action.tab);
         break;
+      default:
+        assertNever(action);
     }
   }
 

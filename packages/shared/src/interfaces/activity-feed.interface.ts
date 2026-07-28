@@ -15,10 +15,13 @@ export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey
 /**
  * What clicking an `ActivityFeedItem` does — a discriminated union so each source's action is
  * explicit and type-checked, rather than overloading a single field to mean different things
- * (navigate a tab, open a drawer, open an external link) depending on `type`.
+ * (navigate a route, open a drawer, open an external link) depending on `type`. Semantic variants
+ * (`past-meeting`, not a baked `{ kind: 'route'; path: string }`) so `packages/shared` doesn't carry
+ * app route strings — the component maps each kind to wherever that surface actually lives, which
+ * survives route refactors and LFXV2-1707's server-fed activity items.
  */
 export type ActivityFeedAction =
-  | { kind: 'route'; path: string }
+  | { kind: 'past-meeting'; meetingId: string }
   | { kind: 'vote-drawer'; voteUid: string }
   | { kind: 'survey-drawer'; surveyUid: string }
   | { kind: 'external-url'; url: string }

@@ -13,7 +13,7 @@ import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '.
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
 import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
-import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
+import { getPastMeetingResourceId } from './past-meeting.utils';
 import { normalizePollStatus } from './poll.utils';
 import { getSurveyDisplayStatus } from './survey.utils';
 import { isValidUrl } from './url.utils';
@@ -22,6 +22,26 @@ import { isValidUrl } from './url.utils';
 const PER_SOURCE_LIMIT = 5;
 /** Final row count returned after the merge-sort. */
 const FEED_LIMIT = 8;
+
+/** Go zero-value sentinel ("0001-01-01T00:00:00Z") that Go-backed upstream services sometimes emit
+ * on an unset timestamp field, instead of omitting it. */
+const GO_ZERO_DATE_PREFIX = '0001-01-01';
+
+/**
+ * First candidate ISO timestamp that's genuinely present and parseable, treating a Go zero-date
+ * sentinel the same as absent/missing. All four activity sources route their fallback chain
+ * (e.g. `last_modified_time ?? creation_time`) through this — a plain `??` only falls back on
+ * `null`/`undefined`, so a zero-date string (truthy, syntactically valid) would otherwise win over
+ * a real value in a later field and sort that item out as the oldest via the per-source cap below.
+ */
+export function firstValidTimestamp(...candidates: (string | undefined)[]): string {
+  for (const candidate of candidates) {
+    if (candidate && !candidate.startsWith(GO_ZERO_DATE_PREFIX) && !Number.isNaN(Date.parse(candidate))) {
+      return candidate;
+    }
+  }
+  return '';
+}
 
 /**
  * Parse an ISO timestamp to epoch ms for sorting, treating an absent/unparseable value as the
@@ -43,89 +63,77 @@ function timestampValue(timestamp: string): number {
  */
 export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedItem[] {
   const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
-    .map((m) => {
-      // getPastMeetingStartTimeMs prefers scheduled_start_time and rejects Go zero-dates
-      // ("0001-01-01...") that Zoom/ITX past-meeting rows sometimes carry on start_time — a raw
-      // `m.start_time` read would parse a zero-date as a real (~year 1) timestamp and silently
-      // sort that meeting out via the PER_SOURCE_LIMIT slice below, even with a valid
-      // scheduled_start_time. meetings-dashboard.component.ts and meeting-organizer.component.ts
-      // already go through this helper for the same reason; committee-overview.component.ts's own
-      // lastMeeting computed does not (pre-existing, out of this fix's scope). nextMeeting in that
-      // same file sorts upcoming Meeting[], not PastMeeting[], so this helper doesn't apply there.
-      const startMs = getPastMeetingStartTimeMs(m);
-      return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
-    })
+    .map((m) => ({ meeting: m, timestamp: firstValidTimestamp(m.scheduled_start_time, m.start_time) }))
     .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
     .slice(0, PER_SOURCE_LIMIT)
-    .map(({ meeting: m, timestamp }) => {
-      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) — the same helper every other
-      // past-meeting surface uses (meeting-card, meeting-organizer, attachments). The detail page
-      // itself is inconsistent about which identifier it reads: recording/transcript/summary map
-      // the fetched meeting's plain `id` (which the BFF pins to whatever route segment it
-      // received), while attachments call this same getPastMeetingResourceId helper on the
-      // fetched object. Using it here too is the safer of two imperfect choices — it matches the
-      // documented "canonical id downstream" (meeting.interface.ts) and every other entry point,
-      // rather than adding a fifth place that could disagree with all of them. Shared with `key`
-      // below so the two can't silently desync if the helper's fallback logic ever changes.
-      const resourceId = getPastMeetingResourceId(m);
-      return {
-        type: 'past_meeting' as const,
-        key: `past_meeting-${resourceId}`,
-        label: `Meeting held: ${m.title}`,
-        timestamp,
-        icon: 'fa-light fa-clock-rotate-left',
-        action: { kind: 'route' as const, path: `/meetings/${resourceId}/details` },
-      };
-    });
+    .map(({ meeting: m, timestamp }) => ({
+      type: 'past_meeting' as const,
+      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) for tracking — the same helper
+      // every other past-meeting surface uses (meeting-card, meeting-organizer, attachments) —
+      // deliberately independent of the navigation id below, which has a different job (matching
+      // an existing link) rather than uniquely identifying the occurrence.
+      key: `past_meeting-${getPastMeetingResourceId(m)}`,
+      label: `Meeting held: ${m.title}`,
+      timestamp,
+      icon: 'fa-light fa-clock-rotate-left',
+      // meeting.id, not getPastMeetingResourceId — matches the "Past Meeting" card's own link
+      // (committee-overview.component.html: `'/meetings/' + meeting.id`) exactly, so the two rows
+      // describing the same meeting on this screen always resolve to the same URL. The component
+      // maps this semantic action to that route; packages/shared doesn't carry the path string.
+      action: { kind: 'past-meeting' as const, meetingId: m.id },
+    }));
 
   const voteItems: ActivityFeedItem[] = input.votingEnabled
     ? [...input.votes]
-        .sort((a, b) => timestampValue(b.last_modified_time ?? b.creation_time ?? '') - timestampValue(a.last_modified_time ?? a.creation_time ?? ''))
+        .map((v) => ({ vote: v, timestamp: firstValidTimestamp(v.last_modified_time, v.creation_time) }))
+        .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
         .slice(0, PER_SOURCE_LIMIT)
-        .map((v) => {
+        .map(({ vote: v, timestamp }) => {
           const statusKey = normalizePollStatus(v.status);
           return {
             type: 'vote' as const,
             key: `vote-${v.uid}`,
             label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status || 'Updated'}: ${v.name}`,
-            timestamp: v.last_modified_time ?? v.creation_time ?? '',
+            timestamp,
             icon: 'fa-light fa-check-to-slot',
-            action: { kind: 'vote-drawer', voteUid: v.uid },
+            action: { kind: 'vote-drawer' as const, voteUid: v.uid },
           };
         })
     : [];
 
   const surveyItems: ActivityFeedItem[] = [...input.surveys]
-    .sort((a, b) => timestampValue(b.last_modified_at ?? b.created_at ?? '') - timestampValue(a.last_modified_at ?? a.created_at ?? ''))
+    .map((s) => ({ survey: s, timestamp: firstValidTimestamp(s.last_modified_at, s.created_at) }))
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
     .slice(0, PER_SOURCE_LIMIT)
-    .map((s) => {
+    .map(({ survey: s, timestamp }) => {
       const displayStatus = getSurveyDisplayStatus(s);
       return {
         type: 'survey' as const,
         key: `survey-${s.uid}`,
         label: `Survey ${SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus}: ${s.survey_title}`,
-        timestamp: s.last_modified_at ?? s.created_at ?? '',
+        timestamp,
         icon: 'fa-light fa-chart-simple',
-        action: { kind: 'survey-drawer', surveyUid: s.uid },
+        action: { kind: 'survey-drawer' as const, surveyUid: s.uid },
       };
     });
 
   // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a folder
   // or link doesn't misrepresent itself as a file in the feed.
   const documentItems: ActivityFeedItem[] = [...input.documents]
-    .sort((a, b) => timestampValue(b.updated_at ?? b.created_at ?? '') - timestampValue(a.updated_at ?? a.created_at ?? ''))
+    .map((d) => ({ document: d, timestamp: firstValidTimestamp(d.updated_at, d.created_at) }))
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
     .slice(0, PER_SOURCE_LIMIT)
-    .map((d) => ({
+    .map(({ document: d, timestamp }) => ({
       type: 'document' as const,
       key: `document-${d.uid}`,
       label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${d.name}`,
-      timestamp: d.updated_at ?? d.created_at ?? '',
+      timestamp,
       icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
       // Only 'link' documents open directly — the Documents tab treats 'file' as a download
       // (via a committee-scoped proxy URL, not doc.url) rather than an "open", and 'folder' has
       // no standalone target outside the Documents tab's own drill-down state. isValidUrl is the
       // same shared validator used across the app for untrusted-URL sinks.
-      action: d.type === 'link' && d.url && isValidUrl(d.url) ? { kind: 'external-url', url: d.url } : { kind: 'tab', tab: 'documents' },
+      action: d.type === 'link' && d.url && isValidUrl(d.url) ? { kind: 'external-url' as const, url: d.url } : { kind: 'tab' as const, tab: 'documents' },
     }));
 
   return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems]

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PollStatus, SurveyStatus } from '../enums';
 import { BuildActivityFeedInput, CommitteeDocument, PastMeeting, Survey, Vote } from '../interfaces';
-import { buildActivityFeed } from './activity-feed.utils';
+import { buildActivityFeed, firstValidTimestamp } from './activity-feed.utils';
 
 /** Minimal past-meeting builder — only the fields buildActivityFeed reads. */
 function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
@@ -58,6 +58,28 @@ function document(overrides: Partial<CommitteeDocument> = {}): CommitteeDocument
 function emptyInput(overrides: Partial<BuildActivityFeedInput> = {}): BuildActivityFeedInput {
   return { pastMeetings: [], votes: [], surveys: [], documents: [], votingEnabled: true, ...overrides };
 }
+
+describe('firstValidTimestamp', () => {
+  it('returns the first candidate that is present and parseable', () => {
+    expect(firstValidTimestamp('2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('falls back past an absent candidate', () => {
+    expect(firstValidTimestamp(undefined, '2026-02-01T00:00:00Z')).toBe('2026-02-01T00:00:00Z');
+  });
+
+  it('falls back past a Go zero-date sentinel', () => {
+    expect(firstValidTimestamp('0001-01-01T00:00:00Z', '2026-02-01T00:00:00Z')).toBe('2026-02-01T00:00:00Z');
+  });
+
+  it('falls back past an unparseable candidate', () => {
+    expect(firstValidTimestamp('not-a-date', '2026-02-01T00:00:00Z')).toBe('2026-02-01T00:00:00Z');
+  });
+
+  it('returns an empty string when every candidate is invalid or absent', () => {
+    expect(firstValidTimestamp(undefined, '0001-01-01T00:00:00Z', 'not-a-date')).toBe('');
+  });
+});
 
 describe('buildActivityFeed', () => {
   it('returns an empty array when every source is empty', () => {
@@ -121,6 +143,36 @@ describe('buildActivityFeed', () => {
       })
     );
     expect(items.map((i) => i.type)).toEqual(['survey', 'past_meeting']);
+  });
+
+  it('does not sort a vote as ancient when last_modified_time is a Go zero-date', () => {
+    const items = buildActivityFeed(
+      emptyInput({
+        votes: [vote({ last_modified_time: '0001-01-01T00:00:00Z', creation_time: '2026-01-05T00:00:00Z' })],
+        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['vote', 'survey']);
+  });
+
+  it('does not sort a survey as ancient when last_modified_at is a Go zero-date', () => {
+    const items = buildActivityFeed(
+      emptyInput({
+        surveys: [survey({ last_modified_at: '0001-01-01T00:00:00Z', created_at: '2026-01-05T00:00:00Z' })],
+        votes: [vote({ last_modified_time: '2026-01-01T00:00:00Z' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['survey', 'vote']);
+  });
+
+  it('does not sort a document as ancient when updated_at is a Go zero-date', () => {
+    const items = buildActivityFeed(
+      emptyInput({
+        documents: [document({ updated_at: '0001-01-01T00:00:00Z', created_at: '2026-01-05T00:00:00Z' })],
+        votes: [vote({ last_modified_time: '2026-01-01T00:00:00Z' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['document', 'vote']);
   });
 
   it('caps each source at 5 items before merging, keeping the most recent per source', () => {
@@ -221,18 +273,20 @@ describe('buildActivityFeed', () => {
   });
 
   describe('action', () => {
-    it('routes a past-meeting item to the composite occurrence id when present, not the bare id', () => {
-      const items = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
-      expect(items[0].action).toEqual({ kind: 'route', path: '/meetings/pm-42-occ-9/details' });
-      // key and action.path must derive from the same resource id — this is the exact invariant
-      // the shared `resourceId` local exists to guarantee.
-      expect(items[0].key).toBe('past_meeting-pm-42-occ-9');
+    it("routes a past-meeting item to meeting.id — matching the Past Meeting card's own link — regardless of meeting_and_occurrence_id", () => {
+      const withComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
+      expect(withComposite[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42' });
+
+      const withoutComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: undefined })] }));
+      expect(withoutComposite[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42' });
     });
 
-    it('falls back to the bare id when meeting_and_occurrence_id is absent', () => {
-      const items = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: undefined })] }));
-      expect(items[0].action).toEqual({ kind: 'route', path: '/meetings/pm-42/details' });
-      expect(items[0].key).toBe('past_meeting-pm-42');
+    it('still prefers the composite occurrence id for the @for tracking key, independent of the navigation id', () => {
+      const withComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
+      expect(withComposite[0].key).toBe('past_meeting-pm-42-occ-9');
+
+      const withoutComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: undefined })] }));
+      expect(withoutComposite[0].key).toBe('past_meeting-pm-42');
     });
 
     it('opens the vote drawer for a vote item', () => {
