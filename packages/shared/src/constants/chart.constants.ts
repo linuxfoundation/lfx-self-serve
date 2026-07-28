@@ -1,8 +1,46 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ChartOptions } from 'chart.js';
+import type { Chart, ChartOptions, Plugin } from 'chart.js';
 import { lfxColors } from './colors.constants';
+
+/**
+ * Chart.js plugin: draws a 4px gray stub on the baseline for zero-value bars on
+ * datasets that opt in via `zeroStub: true`. Chart.js renders zero-height bars
+ * invisibly, which makes sparse quarterly charts read as "broken" rather than "zero".
+ * The `afterDatasetsDraw` hook no-ops for every dataset that doesn't opt in.
+ * Pure JS (no canvas access at import), so SSR-safe.
+ */
+export const ZERO_BAR_STUB_PLUGIN: Plugin<'bar'> = {
+  id: 'lfxZeroBarStub',
+  afterDatasetsDraw(chart: Chart<'bar'>) {
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = lfxColors.gray[300];
+    const datasets = chart.data.datasets ?? [];
+    datasets.forEach((ds, datasetIndex) => {
+      const flagged = ds as typeof ds & { zeroStub?: boolean };
+      if (!flagged?.zeroStub) return;
+      const meta = chart.getDatasetMeta(datasetIndex);
+      if (meta?.type !== 'bar') return;
+      const vScale = (meta as { vScale?: { getPixelForValue: (v: number) => number } }).vScale;
+      if (!vScale) return;
+      const values = (ds.data ?? []) as number[];
+      values.forEach((value, valueIndex) => {
+        if (value !== 0) return;
+        const bar = meta.data[valueIndex] as unknown as { x: number; width: number };
+        if (!bar) return;
+        const halfWidth = (bar.width || 4) / 2;
+        const base = vScale.getPixelForValue(0);
+        const stubHeight = 4;
+        ctx.beginPath();
+        ctx.roundRect(bar.x - halfWidth, base - stubHeight, halfWidth * 2, stubHeight, [2, 2, 0, 0]);
+        ctx.fill();
+      });
+    });
+    ctx.restore();
+  },
+};
 
 /** Deep merge two objects, recursively merging nested objects instead of replacing them */
 function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {

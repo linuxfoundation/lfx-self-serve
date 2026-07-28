@@ -18,7 +18,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -164,6 +164,15 @@ export class ActiveContributorsDrawerComponent {
   // === Inputs ===
   public readonly data = input<UniqueContributorsDailyResponse>({ data: [], avgContributors: 0, totalDays: 0 });
 
+  // Monthly-distinct contributor counts are already fetched eagerly by the parent for
+  // the card's sparkline; reuse them so the MoM chart renders instantly on click
+  // instead of re-fetching on visibility.
+  public readonly momData = input<FoundationActiveContributorsMonthlyDistinctResponse>(DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT);
+
+  // True while the parent's eager monthly-distinct fetch is in flight, so the MoM chart
+  // shows a spinner during a foundation switch while the drawer is open.
+  public readonly momDataLoading = input<boolean>(false);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -185,7 +194,6 @@ export class ActiveContributorsDrawerComponent {
   private readonly drawerData = this.initDrawerData();
   protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);
   protected readonly distributionData: Signal<FoundationContributorsDistributionResponse> = computed(() => this.drawerData().distribution);
-  protected readonly momData: Signal<FoundationActiveContributorsMonthlyDistinctResponse> = computed(() => this.drawerData().mom);
   protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
   protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
   protected readonly hasMomData: Signal<boolean> = computed(() => this.momData().monthlyData.length > 0);
@@ -211,23 +219,23 @@ export class ActiveContributorsDrawerComponent {
   private initDrawerData(): Signal<{
     monthly: FoundationActiveContributorsMonthlyResponse;
     distribution: FoundationContributorsDistributionResponse;
-    mom: FoundationActiveContributorsMonthlyDistinctResponse;
   }> {
     const defaultValue = {
       monthly: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY,
       distribution: DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION,
-      mom: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
     };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
@@ -235,7 +243,6 @@ export class ActiveContributorsDrawerComponent {
           return forkJoin({
             monthly: this.analyticsService.getFoundationActiveContributorsMonthly(slug),
             distribution: this.analyticsService.getFoundationContributorsDistribution(slug),
-            mom: this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(slug),
           }).pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {

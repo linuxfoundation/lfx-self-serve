@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetupsService } from '@app/shared/services/meetups.service';
@@ -17,7 +16,9 @@ import {
   PageChangeEvent,
 } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, retry, skip, switchMap, throwError, timer } from 'rxjs';
+import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, skip, switchMap } from 'rxjs';
+
+import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 
 import { MeetupsTableComponent } from '../meetups-table/meetups-table.component';
 
@@ -31,7 +32,6 @@ export class MeetupsListComponent {
   private readonly meetupsService = inject(MeetupsService);
   private readonly messageService = inject(MessageService);
   private readonly transientRetryCount = 2;
-  private readonly transientRetryDelayMs = 1000;
 
   public readonly activeTab = input<MeetupTabId>('upcoming');
   public readonly community = input<string | null>(null);
@@ -135,11 +135,9 @@ export class MeetupsListComponent {
 
           loadingSignal.set(true);
           return this.meetupsService.getMyMeetups({ isPast, offset, pageSize, community, searchQuery, role, status, sortField, sortOrder }).pipe(
-            retry({
-              count: this.transientRetryCount,
-              delay: (error: unknown) => (this.isTransientLoadError(error) ? timer(this.transientRetryDelayMs) : throwError(() => error)),
-            }),
-            catchError(() => {
+            retryTransientHttpError(this.transientRetryCount),
+            catchError((error) => {
+              console.error('Failed to load meetups:', error);
               if (this.activeTab() === tabId) {
                 this.showLoadError();
               }
@@ -174,9 +172,5 @@ export class MeetupsListComponent {
       summary: 'Error',
       detail: 'Failed to load meetups. Please try again.',
     });
-  }
-
-  private isTransientLoadError(error: unknown): boolean {
-    return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
   }
 }

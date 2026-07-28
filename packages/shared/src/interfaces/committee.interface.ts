@@ -195,6 +195,18 @@ export interface CreateCommitteeInviteRequest {
 export interface AcceptCommitteeInviteRequest {
   /** Organization the invitee confirms on acceptance */
   organization?: CommitteeOrganizationReference | null;
+  /**
+   * BFF-only signal — consumed by the BFF and never forwarded to the committee-service upstream.
+   *
+   * Set to true when the accept originates from the LFID invite flow where the invite UID was
+   * already known from the JWT, signalling the BFF to skip the FGA-gated pending-invite pre-check
+   * (which races against async FGA tuple propagation). Only the literal boolean true enables the
+   * skip; any other truthy value falls through to the standard check.
+   *
+   * The committee-service remains the authoritative security boundary for invite existence,
+   * invitee identity, and org requirements regardless of this flag.
+   */
+  from_lfid_invite?: boolean;
 }
 
 /** Raw organization form values shared by invite-create and invite-accept dialogs. */
@@ -215,6 +227,14 @@ export interface AcceptInviteOrganizationDialogResult {
   organization: CommitteeOrganizationReference;
 }
 
+/** Options passed to InvitationService.acceptInvitation on the client side. */
+export interface AcceptInvitationOptions {
+  /** Organization the invitee confirms on acceptance. */
+  organization?: CommitteeOrganizationReference;
+  /** True when the accept originates from the LFID invite flow — see {@link AcceptCommitteeInviteRequest.from_lfid_invite}. */
+  fromLfidInvite?: boolean;
+}
+
 /** Context needed to accept a committee invitation from any surface. */
 export interface InvitationAcceptContext {
   committeeUid: string;
@@ -225,6 +245,8 @@ export interface InvitationAcceptContext {
   enable_voting?: boolean;
   business_email_required?: boolean;
   inviteRequiresOrganization?: boolean;
+  /** True when the context was constructed from an LFID invite JWT — skips the FGA-gated BFF pre-check. */
+  fromLfidInvite?: boolean;
 }
 
 /**
