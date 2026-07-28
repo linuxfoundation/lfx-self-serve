@@ -219,27 +219,29 @@ describe('groupCommitteesByFoundation', () => {
     expect(groups[0].committees.map((c) => c.uid).sort()).toEqual(['c1', 'c2']);
   });
 
-  it('does not merge a degraded committee into either bucket when two distinct named projects share the label, regardless of input order', () => {
-    const committees = [
-      committee({ uid: 'c1', project_uid: 'proj-a', project_name: 'CNCF' }),
-      committee({ uid: 'c2', project_uid: 'proj-b', project_name: 'CNCF' }),
-      committee({ uid: 'c3', project_uid: 'proj-degraded', project_name: undefined, foundation_name: 'CNCF' }),
-    ];
+  const ambiguousLabelFixture = [
+    committee({ uid: 'c1', project_uid: 'proj-a', project_name: 'CNCF' }),
+    committee({ uid: 'c2', project_uid: 'proj-b', project_name: 'CNCF' }),
+    committee({ uid: 'c3', project_uid: 'proj-degraded', project_name: undefined, foundation_name: 'CNCF' }),
+  ];
 
-    for (const input of [committees, [...committees].reverse(), [committees[2], committees[0], committees[1]]]) {
-      const groups = groupCommitteesByFoundation(input);
-      // Which of the two ambiguous "CNCF" projects the degraded committee belongs to can't be
-      // determined, so it gets its own label-keyed bucket rather than merging into an arbitrary one.
-      expect(groups).toHaveLength(3);
-      expect(groups.filter((g) => g.label === 'CNCF')).toHaveLength(3);
-      const degradedGroup = groups.find((g) => g.committees.some((c) => c.uid === 'c3'));
-      expect(degradedGroup?.key).toBe('CNCF');
-      expect(degradedGroup?.committees.map((c) => c.uid)).toEqual(['c3']);
-      // Render order and testid-slug suffixes among same-labelled buckets must be stable — keyed by
-      // bucket key, not input/insertion order — so they don't flip across refreshes.
-      expect(groups.map((g) => g.key)).toEqual(['CNCF', 'proj-a', 'proj-b']);
-      expect(groups.map((g) => g.testIdSlug)).toEqual(['cncf', 'cncf-2', 'cncf-3']);
-    }
+  it.each([
+    ['as listed (named, named, degraded)', ambiguousLabelFixture],
+    ['reversed (degraded, named, named)', [...ambiguousLabelFixture].reverse()],
+    ['degraded first, named projects swapped', [ambiguousLabelFixture[2], ambiguousLabelFixture[0], ambiguousLabelFixture[1]]],
+  ])('does not merge a degraded committee into either bucket when two distinct named projects share the label — input order: %s', (_description, input) => {
+    const groups = groupCommitteesByFoundation(input);
+    // Which of the two ambiguous "CNCF" projects the degraded committee belongs to can't be
+    // determined, so it gets its own label-keyed bucket rather than merging into an arbitrary one.
+    expect(groups).toHaveLength(3);
+    expect(groups.filter((g) => g.label === 'CNCF')).toHaveLength(3);
+    const degradedGroup = groups.find((g) => g.committees.some((c) => c.uid === 'c3'));
+    expect(degradedGroup?.key).toBe('CNCF');
+    expect(degradedGroup?.committees.map((c) => c.uid)).toEqual(['c3']);
+    // Render order and testid-slug suffixes among same-labelled buckets must be stable — keyed by
+    // bucket key, not input/insertion order — so they don't flip across refreshes.
+    expect(groups.map((g) => g.key)).toEqual(['CNCF', 'proj-a', 'proj-b']);
+    expect(groups.map((g) => g.testIdSlug)).toEqual(['cncf', 'cncf-2', 'cncf-3']);
   });
 
   it('a merged bucket is foundation-level if any of its committees is, regardless of arrival order', () => {

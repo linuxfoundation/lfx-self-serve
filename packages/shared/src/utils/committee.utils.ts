@@ -226,11 +226,14 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
 
   const groups = [...buckets.values()].sort((a, b) => {
     if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
-    // Equal labels are only possible for two distinct named buckets sharing a display name (the
-    // deliberate non-merge case) — break the tie by key (stable, input-order-independent) rather
-    // than falling through to Map insertion order, which would make render order and the testid
-    // slug suffix assigned below flip depending on API response order across refreshes.
-    if (a.label === b.label) return a.key.localeCompare(b.key);
+    // Equal labels happen between distinct named buckets sharing a display name (the deliberate
+    // non-merge case), and between those and the label-keyed bucket an ambiguous degraded lookup
+    // produces. Break the tie by key — a plain code-point comparison, not localeCompare, since keys
+    // are opaque identifiers (a project_uid or raw label text) rather than human-readable text, and
+    // this runs on both sides of SSR: any server/client ICU collation difference in a locale-aware
+    // compare would flip the testid slug suffix assigned below between the SSR HTML and the
+    // hydrated DOM — the exact instability this tiebreak exists to close.
+    if (a.label === b.label) return compareCodePoints(a.key, b.key);
     if (a.label === OTHER_GROUPS_LABEL) return 1;
     if (b.label === OTHER_GROUPS_LABEL) return -1;
     return a.label.localeCompare(b.label);
@@ -247,4 +250,11 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     slugCounts.set(baseSlug, occurrence);
     return { ...group, testIdSlug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}` };
   });
+}
+
+/** Deterministic, locale-independent ordering for opaque identifier strings (not human-readable text — use `localeCompare` for that). */
+function compareCodePoints(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }
