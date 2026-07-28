@@ -40,6 +40,25 @@ function buildMyCommittees(): MyCommittee[] {
   ];
 }
 
+function buildManyMyCommittees(count: number): MyCommittee[] {
+  const now = new Date().toISOString();
+  return Array.from({ length: count }, (_, i) => ({
+    uid: `c0000000-0000-0000-0000-0000000e${String(i).padStart(3, '0')}`,
+    name: `Committee ${i}`,
+    category: 'Working Group',
+    enable_voting: false,
+    public: true,
+    sso_group_enabled: false,
+    created_at: now,
+    updated_at: now,
+    total_members: i,
+    total_voting_repos: 0,
+    project_uid: 'p0000000-0000-0000-0000-00000000e001',
+    project_name: 'Test Project',
+    my_role: 'Member',
+  })) as MyCommittee[];
+}
+
 async function stubBackend(page: Page, committees: MyCommittee[]): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
@@ -120,5 +139,31 @@ test.describe('My Groups view toggle — Structural Tests', () => {
   test('list view stays the default structural root', async ({ page }) => {
     await expect(page.getByTestId('committees-me-table')).toBeAttached();
     await expect(page.getByTestId('groups-card-grid')).toHaveCount(0);
+  });
+});
+
+test.describe('My Groups card grid — pagination structural tests', () => {
+  const TOTAL_COMMITTEES = 15;
+  const PAGE_SIZE = 12;
+
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['contributor']);
+    await stubBackend(page, buildManyMyCommittees(TOTAL_COMMITTEES));
+    await gotoMyGroups(page);
+    await page.getByTestId('groups-view-card-btn').click();
+    await expect(page.getByTestId('groups-card-grid')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+
+  test('caps the initial render at the page size and reveals the rest via Show more', async ({ page }) => {
+    const grid = page.getByTestId('groups-card-grid');
+    await expect(grid.locator('a')).toHaveCount(PAGE_SIZE);
+
+    const showMore = page.getByTestId('groups-card-grid-show-more');
+    await expect(showMore).toBeVisible();
+
+    await showMore.click();
+
+    await expect(grid.locator('a')).toHaveCount(TOTAL_COMMITTEES);
+    await expect(showMore).toHaveCount(0);
   });
 });

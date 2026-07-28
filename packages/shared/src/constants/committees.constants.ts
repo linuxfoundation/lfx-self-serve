@@ -617,3 +617,6 @@ export const FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL = 'Foundation';
 
 /** Catch-all bucket label for committees that resolve to no usable project/foundation label at all. Always sorts last. */
 export const OTHER_GROUPS_LABEL = 'Other Groups';
+
+/** Cards revealed per "Show more" click on the My Groups card grid — a grid-friendly count (divisible by 1/2/3/4 columns). */
+export const GROUPS_CARD_GRID_PAGE_SIZE = 12;
