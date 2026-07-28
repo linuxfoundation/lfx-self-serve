@@ -28,7 +28,7 @@ import {
   Survey,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { buildActivityFeed, countVotingReps, getSurveyDisplayStatus, isValidUrl } from '@lfx-one/shared/utils';
+import { assertNeverSilent, buildActivityFeed, countVotingReps, getSurveyDisplayStatus, isValidUrl } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -364,12 +364,15 @@ export class CommitteeOverviewComponent {
         this.navigateToTab(action.tab);
         break;
       default:
-        // Compile-time exhaustiveness only — deliberately not assertNever(action) here. This runs
-        // inside a DOM click handler, and LFXV2-1707 will feed server-constructed actions into this
-        // same union, so an unrecognized future `kind` (e.g. a version-skewed client) should no-op
-        // rather than throw uncaught from a click. A new unhandled case still fails to compile: the
-        // assignment below only type-checks if `action` has narrowed to `never`.
-        ((_exhaustive: never) => void _exhaustive)(action);
+        // assertNeverSilent, not assertNever: this runs inside a DOM click handler, and LFXV2-1707
+        // will feed server-constructed actions into this same union, so an unrecognized future
+        // `kind` (e.g. a version-skewed client) should no-op rather than throw uncaught from a
+        // click. The compile-time guarantee is unchanged — a new unhandled kind still fails to
+        // compile, since the call below only type-checks if `action` has narrowed to `never` — but
+        // that's the one scenario where losing telemetry silently would be worse than a dead click,
+        // so log it first.
+        console.warn('Unhandled activity action kind:', (action as { kind: string }).kind);
+        assertNeverSilent(action);
     }
   }
 
