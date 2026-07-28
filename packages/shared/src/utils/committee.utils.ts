@@ -229,8 +229,9 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
 
   // A committee only counts as "named" when both project_name and project_uid resolved — a falsy
   // project_uid (upstream enrichment can leave it '' alongside a populated passthrough project_name,
-  // per the same defensive `.filter(Boolean)` pattern used elsewhere against this field) would
-  // otherwise key on the empty string, silently collapsing unrelated committees into one bucket.
+  // the same failure mode the truthiness guards in committee-dashboard.component.ts already defend
+  // against for this field) would otherwise key on the empty string, silently collapsing unrelated
+  // committees into one bucket.
   const isNamed = (committee: Committee): committee is Committee & { project_name: string; project_uid: string } =>
     !!committee.project_name && !!committee.project_uid;
 

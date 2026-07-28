@@ -104,6 +104,9 @@ export class ButtonComponent {
         if (this.tooltip() && this.ariaPressed() !== undefined) {
           console.warn('<lfx-button>: `ariaPressed` is ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
         }
+        if (this.href() && this.ariaPressed() !== undefined) {
+          console.warn('<lfx-button>: `ariaPressed` is ignored on the `href` (anchor) variant — aria-pressed is invalid on role="link".');
+        }
       });
     }
   }

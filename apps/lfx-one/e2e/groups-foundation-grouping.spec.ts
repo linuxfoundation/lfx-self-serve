@@ -169,6 +169,8 @@ async function gotoFoundationGroups(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.goto(`/foundation/groups?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
+  // Ready-state wait: the seeded board committee always renders once loaded, expanded or not.
+  await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID_BOARD}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
 async function gotoProjectGroups(page: Page): Promise<void> {
@@ -177,6 +179,8 @@ async function gotoProjectGroups(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.goto(`/project/groups?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
+  // Ready-state wait: the ungrouped flat table is the only render target for this scope.
+  await expect(page.getByTestId('committees-project-table')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
 test.describe('All Groups — foundation tree-grouping', () => {

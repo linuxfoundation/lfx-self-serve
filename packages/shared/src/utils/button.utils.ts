@@ -12,7 +12,9 @@ import { ButtonRootPassThrough } from '../interfaces/components.interface';
  * `ariaPressed`) doesn't get handed a `pt` object at all. `undefined` is the "no pt config" value
  * PrimeNG expects; an object carrying an `undefined` value is a different (and version-sensitive)
  * thing — some PrimeNG versions stringify it to the literal attribute `aria-pressed="undefined"`,
- * and a stray `pt` object also pre-empts any global `pt` config for that button.
+ * and PrimeNG merges a component-level `pt.root` shallowly over any global `pt` config's `root`, so
+ * an unnecessary object here would still shadow individual global root attributes even though it
+ * doesn't replace the config outright.
  */
 export function resolveAriaPressedPt(pressed: boolean | undefined): ButtonRootPassThrough | undefined {
   return pressed === undefined ? undefined : { root: { 'aria-pressed': pressed } };

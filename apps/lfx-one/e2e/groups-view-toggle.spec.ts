@@ -134,6 +134,9 @@ async function gotoMyGroups(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.goto('/groups', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
+  // Ready-state wait: either the toggle (has items) or the zero-groups empty state renders once
+  // the page is interactive — asserting this here, once, means individual tests don't need to.
+  await expect(page.getByTestId('groups-view-toggle').or(page.getByTestId('groups-card-grid-empty'))).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
 test.describe('My Groups — list↔card view toggle', () => {
