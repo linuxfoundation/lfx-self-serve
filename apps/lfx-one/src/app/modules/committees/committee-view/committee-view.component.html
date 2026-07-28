@@ -299,6 +299,7 @@
                         type="button"
                         class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
                         (click)="subGroupsPopover.toggle($event)"
+                        [attr.aria-expanded]="subGroupsPopover.overlayVisible"
                         data-testid="committee-view-sub-groups-trigger">
                         <i class="fa-light fa-sitemap text-[11px]"></i>
                         <span>Sub-Groups</span>
