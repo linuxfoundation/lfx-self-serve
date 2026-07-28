@@ -50,7 +50,8 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       // sort that meeting out via the PER_SOURCE_LIMIT slice below, even with a valid
       // scheduled_start_time. meetings-dashboard.component.ts and meeting-organizer.component.ts
       // already go through this helper for the same reason; committee-overview.component.ts's own
-      // lastMeeting/nextMeeting computeds do not (pre-existing, out of this fix's scope).
+      // lastMeeting computed does not (pre-existing, out of this fix's scope). nextMeeting in that
+      // same file sorts upcoming Meeting[], not PastMeeting[], so this helper doesn't apply there.
       const startMs = getPastMeetingStartTimeMs(m);
       return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
     })
