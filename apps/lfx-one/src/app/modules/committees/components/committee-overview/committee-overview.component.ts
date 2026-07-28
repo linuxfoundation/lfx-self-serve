@@ -134,9 +134,13 @@ export class CommitteeOverviewComponent {
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
-  // Documents aren't otherwise loaded on Overview — fetched here solely to seed the activity feed.
-  // CommitteeService.getCommitteeDocuments has no shared cache, so the Documents tab still issues
-  // its own request; accepted as a cheap duplicate GET rather than lifting the fetch up to committee-view.
+  // Documents aren't otherwise loaded on Overview — fetched here solely to seed the activity feed
+  // (which shows at most 5 document rows). Not cheap: getCommitteeDocuments fans out server-side to
+  // /folders, /links, and an unbounded fetchAllQueryResources page-token loop over every
+  // committee_document (committee.service.ts), repeated on every silent refresh and again when the
+  // user opens the Documents tab (no shared cache). Accepted as a stop-gap for this ticket's scope —
+  // lifting the fetch to committee-view.component.ts to share across tabs, or bounding it with a
+  // page_size/order param, is real follow-up work, not a change this branch makes.
   public documents: Signal<CommitteeDocument[]> = this.initDocuments();
 
   // Computed stats from fetched data
