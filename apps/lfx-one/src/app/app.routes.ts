@@ -436,6 +436,14 @@ export const routes: Routes = [
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
+  {
+    path: 'groups/not-found',
+    loadComponent: () => import('./modules/groups/group-not-found/group-not-found.component').then((m) => m.GroupNotFoundComponent),
+  },
+  {
+    path: 'groups/:id',
+    loadComponent: () => import('./modules/groups/group-detail/group-detail.component').then((m) => m.GroupDetailComponent),
+  },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',

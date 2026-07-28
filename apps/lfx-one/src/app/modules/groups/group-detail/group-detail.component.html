@@ -1,0 +1,185 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-header></lfx-header>
+
+<div class="bg-gray-50 min-h-screen">
+  <div class="container mx-auto py-6 px-8">
+    <div class="max-w-[960px] mx-auto flex flex-col">
+      @if (loading()) {
+        <!-- Skeleton loading state -->
+        <div class="flex flex-col gap-4">
+          <p-skeleton width="200px" height="16px" />
+          <p-skeleton width="300px" height="28px" />
+          <div class="flex gap-2">
+            <p-skeleton width="100px" height="24px" borderRadius="6px" />
+            <p-skeleton width="120px" height="24px" borderRadius="6px" />
+          </div>
+          <p-skeleton width="100%" height="200px" borderRadius="12px" />
+        </div>
+      } @else if (group(); as group) {
+        <!-- Breadcrumb -->
+        <nav class="flex items-center gap-1.5 text-sm text-gray-500 mb-4" data-testid="group-breadcrumb">
+          @if (parentProject(); as parent) {
+            <a [routerLink]="['/']" class="text-blue-500 hover:underline">{{ parent.name }}</a>
+            <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
+          }
+          @if (group.context.project_name) {
+            <span class="text-gray-500">{{ group.context.project_name }}</span>
+            <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
+          }
+          <span class="text-gray-700 font-medium">{{ group.name }}</span>
+        </nav>
+
+        <!-- Page Header -->
+        <div class="flex flex-col gap-2 mb-5" data-testid="group-header">
+          <h1 class="text-xl font-semibold text-gray-900">{{ group.name }}</h1>
+          <div class="flex items-center gap-2 flex-wrap">
+            <lfx-tag [value]="group.category" severity="secondary" styleClass="tag-category" data-testid="group-badge-category"></lfx-tag>
+            @if (joinModeLabel(); as label) {
+              <lfx-tag [value]="label" severity="secondary" [icon]="joinModeIcon()!" data-testid="group-badge-join-mode"></lfx-tag>
+            }
+            @if (group.total_members > 0) {
+              <span class="text-sm text-gray-500">{{ group.total_members }} {{ group.total_members === 1 ? 'member' : 'members' }}</span>
+            }
+          </div>
+        </div>
+
+        <!-- Member status banner (authenticated members) -->
+        @if (group.is_member) {
+          <div
+            class="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 mb-4 flex items-center gap-2.5 text-sm text-emerald-800"
+            data-testid="member-status-banner">
+            <i class="fa-light fa-circle-check"></i>
+            <span>You are {{ memberRoleLabel() }} of this group.</span>
+          </div>
+        }
+
+        <!-- Visitor hero banner (unauthenticated) -->
+        @if (!authenticated()) {
+          <div class="bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-200 rounded-xl py-7 px-6 mb-5 text-center" data-testid="visitor-hero-banner">
+            <h2 class="text-lg font-semibold text-gray-900 mb-2">Join {{ group.name }}</h2>
+            <p class="text-sm text-gray-600 mb-4 max-w-lg mx-auto">
+              Sign in with your LFX account to join this group, subscribe to updates, and participate in meetings.
+            </p>
+            <lfx-button label="Sign In to Join" icon="fa-light fa-right-to-bracket" (onClick)="navigateToLogin()" data-testid="visitor-join-cta"></lfx-button>
+          </div>
+        }
+
+        <!-- Two-column layout -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <!-- Main column -->
+          <div class="md:col-span-2 flex flex-col gap-5">
+            <!-- About / Description -->
+            @if (group.description) {
+              <lfx-card data-testid="group-about-card">
+                <h3 class="text-sm font-semibold text-gray-900 mb-3">About</h3>
+                <lfx-expandable-text [maxHeight]="200">{{ group.description }}</lfx-expandable-text>
+              </lfx-card>
+            }
+
+            <!-- Upcoming Meetings -->
+            @if (hasUpcomingMeetings()) {
+              <lfx-card data-testid="group-meetings-card">
+                <h3 class="text-sm font-semibold text-gray-900 mb-3">Upcoming Meetings</h3>
+                <div class="flex flex-col gap-3">
+                  @for (meeting of group.upcoming_meetings; track meeting.uid) {
+                    <a
+                      [routerLink]="[meeting.url]"
+                      class="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group/meeting"
+                      [attr.data-testid]="'meeting-' + meeting.uid">
+                      <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <i class="fa-light fa-video text-blue-500 text-sm"></i>
+                      </div>
+                      <div class="flex flex-col gap-0.5 min-w-0">
+                        <span class="text-sm font-medium text-gray-900 group-hover/meeting:text-blue-600 truncate">{{ meeting.title }}</span>
+                        <span class="text-xs text-gray-500">{{ meeting.starts_at | date: 'MMM d, y · h:mm a' : meeting.timezone }}</span>
+                      </div>
+                    </a>
+                  }
+                </div>
+              </lfx-card>
+            }
+          </div>
+
+          <!-- Sidebar -->
+          <div class="flex flex-col gap-5">
+            <!-- Chairs card -->
+            @if (group.chairs.length > 0) {
+              <lfx-card data-testid="group-chairs-card">
+                <h3 class="text-sm font-semibold text-gray-900 mb-3">Leadership</h3>
+                <div class="flex flex-col gap-3">
+                  @for (chair of group.chairs; track chair.name) {
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <span class="text-xs font-medium text-gray-600">{{ chair.name | slice: 0 : 2 | uppercase }}</span>
+                      </div>
+                      <div class="flex flex-col min-w-0">
+                        <span class="text-sm font-medium text-gray-900 truncate">{{ chair.name }}</span>
+                        <span class="text-xs text-gray-500 truncate">
+                          {{ chair.role }}
+                          @if (chair.organization) {
+                            <span> · {{ chair.organization }}</span>
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </lfx-card>
+            }
+
+            <!-- Links card -->
+            @if (hasLinks()) {
+              <lfx-card data-testid="group-links-card">
+                <h3 class="text-sm font-semibold text-gray-900 mb-3">Links</h3>
+                <div class="flex flex-col gap-2">
+                  @if (group.links.website) {
+                    <a
+                      [href]="group.links.website"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                      <i class="fa-light fa-globe w-4 text-center text-gray-400"></i>
+                      <span>Website</span>
+                    </a>
+                  }
+                  @if (group.links.mailing_list) {
+                    <a
+                      [href]="group.links.mailing_list"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                      <i class="fa-light fa-envelope w-4 text-center text-gray-400"></i>
+                      <span>Mailing List</span>
+                    </a>
+                  }
+                  @if (group.links.chat_channel) {
+                    <a
+                      [href]="group.links.chat_channel"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                      <i class="fa-light fa-message w-4 text-center text-gray-400"></i>
+                      <span>Chat Channel</span>
+                    </a>
+                  }
+                  @if (group.links.calendar) {
+                    <a
+                      [href]="group.links.calendar"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                      <i class="fa-light fa-calendar w-4 text-center text-gray-400"></i>
+                      <span>Subscribe to Calendar</span>
+                    </a>
+                  }
+                </div>
+              </lfx-card>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</div>
