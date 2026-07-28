@@ -30,7 +30,12 @@
             <tr class="hover:bg-gray-50 transition-colors" [attr.data-testid]="'donation-row-' + item.id">
               <!-- Initiative -->
               <td class="px-4 py-3">
-                <span class="font-medium text-gray-900">{{ item.initiativeName }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-gray-900">{{ item.initiativeName }}</span>
+                  @if (item.recurring) {
+                    <lfx-tag value="Recurring" severity="info" [rounded]="true" data-testid="donation-recurring-tag" />
+                  }
+                </div>
               </td>
 
               <!-- Date -->

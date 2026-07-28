@@ -12,7 +12,6 @@ import {
   SponsorEntry,
   CrowdfundingInitiativeStatus,
   MyDonation,
-  DonationHistoryItem,
   PaymentMethod,
   RecurringDonation,
   RecurringDonationStatus,
@@ -25,9 +24,9 @@ import { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_D
 import {
   BackendAnnouncement,
   BackendBeneficiary,
-  BackendDonation,
   BackendGoal,
   BackendInitiative,
+  BackendMyTransaction,
   BackendSponsor,
   BackendSponsorshipTier,
   BackendSubscription,
@@ -145,19 +144,6 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
   };
 }
 
-// Maps a DonationHistoryItem to the MyDonation wire shape; initiativeId is a best-effort lookup.
-export function mapDonationHistoryToMyDonation(item: DonationHistoryItem, initiativeId?: string): MyDonation {
-  return {
-    id: item.id,
-    // donorName / donorLogoUrl omitted — require user-profile enrichment.
-    donorType: 'member',
-    amountCents: Math.round(item.amount * 100),
-    date: new Date(item.date).getTime(),
-    initiativeId,
-    initiativeName: item.initiativeName,
-  };
-}
-
 /** Maps a CF API CardDetails response (from GET /v1/me/payment-account) to the PaymentMethod shape. */
 export function mapPaymentMethodWire(w: PaymentMethodWire): PaymentMethod {
   return {
@@ -169,15 +155,17 @@ export function mapPaymentMethodWire(w: PaymentMethodWire): PaymentMethod {
   };
 }
 
-/** Maps a CF API Donation (from GET /v1/me/donations) to the MyDonation wire shape. */
-export function mapCfDonationToMyDonation(d: BackendDonation): MyDonation {
+/** Maps a CF API transaction (from GET /v1/me/transactions) to the MyDonation wire shape. */
+export function mapMyTransactionToMyDonation(t: BackendMyTransaction): MyDonation {
   return {
-    id: d.id,
-    donorType: 'member',
-    amountCents: d.amount_cents,
-    date: new Date(d.created_on).getTime(),
-    initiativeId: d.initiative_id || undefined,
-    initiativeName: d.initiative_name || undefined,
+    id: t.id,
+    donorName: t.donor_name || undefined,
+    donorLogoUrl: t.donor_logo_url || undefined,
+    donorType: t.donor_type === 'organization' ? 'organization' : 'member',
+    amountCents: t.amount_cents,
+    date: new Date(t.date).getTime(),
+    initiativeName: t.initiative_name || undefined,
+    recurring: t.recurring,
   };
 }
 
