@@ -137,7 +137,9 @@ export class EventsDrawerComponent {
   // === Computed Signals ===
   private readonly drawerData = this.initDrawerData();
   protected readonly attendanceData: Signal<FoundationEventsAttendanceDistributionResponse> = computed(() => this.drawerData().attendance);
-  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.data().quarterlyData.some((v) => v > 0));
+  // Gate on presence, not positivity: an all-zero quarter series still renders gray
+  // zero-stub bars to match the foundation-health card (which always builds the chart).
+  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.data().quarterlyData.length > 0);
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
   protected readonly metricValue: Signal<string> = this.initMetricValue();
 
