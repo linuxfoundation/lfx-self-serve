@@ -601,6 +601,14 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  /**
+   * When `zoom_redirect=false` is present on the meeting URL, skip opening the join link
+   * automatically so the viewer can stay on the meeting detail page.
+   */
+  private isZoomRedirectDisabled(): boolean {
+    return this.activatedRoute.snapshot.queryParamMap.get('zoom_redirect')?.toLowerCase() === 'false';
+  }
+
   private initializeAutoJoin(): void {
     // Use toObservable to create an Observable from the signals, then subscribe once
     // This executes only when all conditions are met
@@ -615,7 +623,16 @@ export class MeetingJoinComponent implements OnInit {
           const alreadyJoined = this.hasAutoJoined();
           const usingGuestForm = this.showGuestForm();
 
-          return !!url && authenticated && !!user && !!user.email && canJoin && !alreadyJoined && !usingGuestForm;
+          return (
+            !!url &&
+            authenticated &&
+            !!user &&
+            !!user.email &&
+            canJoin &&
+            !alreadyJoined &&
+            !usingGuestForm &&
+            !this.isZoomRedirectDisabled()
+          );
         }),
         // Take only the first valid URL
         take(1)
