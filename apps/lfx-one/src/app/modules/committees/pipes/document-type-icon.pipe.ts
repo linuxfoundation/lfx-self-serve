@@ -7,7 +7,7 @@ import { CommitteeDocumentType, DocumentDisplayItem } from '@lfx-one/shared/inte
 
 /** Maps a document type to its icon class (without color). Shared by DocumentIconPipe. */
 export function getDocumentTypeIconClass(type: CommitteeDocumentType): string {
-  return COMMITTEE_DOCUMENT_TYPE_ICONS[type];
+  return COMMITTEE_DOCUMENT_TYPE_ICONS[type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file;
 }
 
 @Pipe({

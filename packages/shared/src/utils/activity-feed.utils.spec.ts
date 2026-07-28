@@ -156,4 +156,15 @@ describe('buildActivityFeed', () => {
     const items = buildActivityFeed(emptyInput({ votes: [vote({ status: 'archived' as PollStatus })] }));
     expect(items[0].label).toBe('Vote archived: Q1 Budget');
   });
+
+  it('falls back to a generic label instead of "Vote undefined" when status is missing', () => {
+    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: undefined as unknown as PollStatus })] }));
+    expect(items[0].label).toBe('Vote Updated: Q1 Budget');
+  });
+
+  it('falls back to a generic label instead of "undefined:" when a document type is unrecognized', () => {
+    const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'unexpected' as CommitteeDocument['type'] })] }));
+    expect(items[0].label).toBe('Document: Charter.pdf');
+    expect(items[0].icon).toContain('file');
+  });
 });

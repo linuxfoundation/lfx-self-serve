@@ -49,7 +49,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
           return {
             type: 'vote' as const,
             key: `vote-${v.uid}`,
-            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status}: ${v.name}`,
+            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : (v.status ?? 'Updated')}: ${v.name}`,
             timestamp: v.last_modified_time ?? v.creation_time ?? '',
             icon: 'fa-light fa-check-to-slot',
             tab: 'votes',
@@ -80,9 +80,9 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
     .map((d) => ({
       type: 'document' as const,
       key: `document-${d.uid}`,
-      label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type]}: ${d.name}`,
+      label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${d.name}`,
       timestamp: d.updated_at ?? d.created_at ?? '',
-      icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type],
+      icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
       tab: 'documents',
     }));
 
