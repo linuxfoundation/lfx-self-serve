@@ -45,12 +45,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
   const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
     .sort((a, b) => timestampValue(b.start_time ?? '') - timestampValue(a.start_time ?? ''))
     .slice(0, PER_SOURCE_LIMIT)
-    .map((m) => ({
-      type: 'past_meeting',
-      key: `past_meeting-${m.meeting_and_occurrence_id ?? m.id}`,
-      label: `Meeting held: ${m.title}`,
-      timestamp: m.start_time ?? '',
-      icon: 'fa-light fa-clock-rotate-left',
+    .map((m) => {
       // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) — the same helper every other
       // past-meeting surface uses (meeting-card, meeting-organizer, attachments). The detail page
       // itself is inconsistent about which identifier it reads: recording/transcript/summary map
@@ -58,9 +53,18 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       // received), while attachments call this same getPastMeetingResourceId helper on the
       // fetched object. Using it here too is the safer of two imperfect choices — it matches the
       // documented "canonical id downstream" (meeting.interface.ts) and every other entry point,
-      // rather than adding a fifth place that could disagree with all of them.
-      action: { kind: 'route', path: `/meetings/${getPastMeetingResourceId(m)}/details` },
-    }));
+      // rather than adding a fifth place that could disagree with all of them. Shared with `key`
+      // below so the two can't silently desync if the helper's fallback logic ever changes.
+      const resourceId = getPastMeetingResourceId(m);
+      return {
+        type: 'past_meeting' as const,
+        key: `past_meeting-${resourceId}`,
+        label: `Meeting held: ${m.title}`,
+        timestamp: m.start_time ?? '',
+        icon: 'fa-light fa-clock-rotate-left',
+        action: { kind: 'route' as const, path: `/meetings/${resourceId}/details` },
+      };
+    });
 
   const voteItems: ActivityFeedItem[] = input.votingEnabled
     ? [...input.votes]
