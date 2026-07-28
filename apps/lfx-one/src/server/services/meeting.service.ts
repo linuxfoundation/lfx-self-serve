@@ -501,12 +501,7 @@ export class MeetingService {
    *   returned regardless of scope — correct only for non-recurring meetings or
    *   aggregate views. See LFXV2-2864 for the seconds↔ms unit mismatch.
    */
-  public async getMeetingRegistrants(
-    req: Request,
-    meetingUid: string,
-    includeRsvp: boolean = false,
-    occurrenceId?: string
-  ): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
