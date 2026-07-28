@@ -60,7 +60,9 @@
                 [testId]="card.testId"
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
-                [chartOptions]="barChartOptions"
+                [chartOptions]="card.chartOptions || barChartOptions"
+                [chartHeightClass]="'flex-1 min-h-16'"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
@@ -77,6 +79,7 @@
                 [icon]="card.icon"
                 [testId]="card.testId"
                 [chartType]="card.chartType"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [loading]="card.loading"
@@ -105,6 +108,7 @@
                 [icon]="card.icon"
                 [testId]="card.testId"
                 [chartType]="card.chartType"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [loading]="card.loading"
@@ -112,7 +116,7 @@
                 (cardClick)="handleCardClick(card.drawerType!)">
                 <ng-template #customContent>
                   @if (card.busFactor) {
-                    <div class="flex-1 flex flex-col justify-end pb-2">
+                    <div class="h-16 flex flex-col justify-end mt-3">
                       <div class="flex gap-0">
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs font-medium text-gray-700">
@@ -131,41 +135,6 @@
               </lfx-metric-card>
             }
 
-            <!-- Project Health Scores - Custom content -->
-            @case ('health-scores') {
-              <lfx-metric-card
-                [title]="card.title"
-                [icon]="card.icon"
-                [testId]="card.testId"
-                [chartType]="card.chartType"
-                [value]="card.value"
-                [subtitle]="card.subtitle"
-                [loading]="card.loading"
-                [clickable]="!!card.drawerType"
-                (cardClick)="handleCardClick(card.drawerType!)">
-                <ng-template #customContent>
-                  @if (card.healthScores) {
-                    <div class="flex-1 flex flex-col justify-end p-0">
-                      <div class="flex items-end justify-between gap-1 h-16">
-                        @for (item of healthScoreDistribution(); track item.category) {
-                          <div class="flex-1 min-w-0 flex flex-col items-center gap-1">
-                            <div
-                              class="w-full rounded-t transition-all hover:opacity-80"
-                              [style.backgroundColor]="item.color"
-                              [style.height.px]="item.heightPx"></div>
-                            <div class="text-[10px] text-center leading-tight break-words">
-                              <div class="font-medium">{{ item.category }}</div>
-                              <div class="text-gray-500">{{ item.count }}</div>
-                            </div>
-                          </div>
-                        }
-                      </div>
-                    </div>
-                  }
-                </ng-template>
-              </lfx-metric-card>
-            }
-
             <!-- Default fallback -->
             @default {
               <lfx-metric-card
@@ -175,6 +144,7 @@
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
                 [chartOptions]="card.chartOptions"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
@@ -213,7 +183,8 @@
 <lfx-total-projects-drawer
   [visible]="activeDrawer() === DashboardDrawerType.TotalProjects"
   (visibleChange)="handleDrawerClose()"
-  [data]="totalProjectsData()"></lfx-total-projects-drawer>
+  [data]="totalProjectsData()"
+  [dataLoading]="totalProjectsLoading()"></lfx-total-projects-drawer>
 
 <lfx-total-members-drawer
   [visible]="activeDrawer() === DashboardDrawerType.TotalMembers"
@@ -223,19 +194,28 @@
 <lfx-active-contributors-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ActiveContributors"
   (visibleChange)="handleDrawerClose()"
-  [data]="reconciledActiveContributorsData()"></lfx-active-contributors-drawer>
+  [data]="reconciledActiveContributorsData()"
+  [momData]="activeContributorsMonthlyDistinctData()"
+  [momDataLoading]="activeContributorsMonthlyDistinctLoading()"></lfx-active-contributors-drawer>
 
 <lfx-maintainers-drawer
   [visible]="activeDrawer() === DashboardDrawerType.Maintainers"
   (visibleChange)="handleDrawerClose()"
-  [data]="maintainersData()"></lfx-maintainers-drawer>
+  [data]="reconciledMaintainersData()"
+  [monthlyData]="maintainersMonthlyData()"
+  [monthlyDataLoading]="maintainersMonthlyLoading()"></lfx-maintainers-drawer>
 
-<lfx-events-drawer [visible]="activeDrawer() === DashboardDrawerType.Events" (visibleChange)="handleDrawerClose()"></lfx-events-drawer>
+<lfx-events-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.Events"
+  (visibleChange)="handleDrawerClose()"
+  [data]="eventsQuarterlyData()"
+  [dataLoading]="eventsLoading()"></lfx-events-drawer>
 
 <lfx-project-health-scores-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
   (visibleChange)="handleDrawerClose()"
   [data]="reconciledHealthScoresData()"
+  [healthScoresLoading]="healthScoresLoading()"
   [distributionLoading]="healthScoresLoading() || totalProjectsLoading()"
   [total]="reconciledTotalProjects()"></lfx-project-health-scores-drawer>
 

@@ -10,14 +10,15 @@ import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
   DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION,
+  DEFAULT_FOUNDATION_MAINTAINERS,
   lfxColors,
   PROJECT_HEALTH_CHART_CATEGORIES,
   PROJECT_HEALTH_CHART_CATEGORY_COLOR,
   PROJECT_HEALTH_CHART_CATEGORY_LABEL,
   PRIMARY_FOUNDATION_HEALTH_METRICS,
 } from '@lfx-one/shared/constants';
-import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
-import { hexToRgba, computePeriodChange } from '@lfx-one/shared/utils';
+import { DashboardDrawerType, FilterPillOption, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
+import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScoredCount } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -78,11 +79,11 @@ export class FoundationHealthComponent {
   private readonly softwareValueLoading = signal(true);
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
-  private readonly maintainersMonthlyLoading = signal(true);
+  protected readonly maintainersMonthlyLoading = signal(true);
   protected readonly healthScoresLoading = signal(true);
-  private readonly activeContributorsMonthlyDistinctLoading = signal(true);
+  protected readonly activeContributorsMonthlyDistinctLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
-  private readonly eventsLoading = signal(true);
+  protected readonly eventsLoading = signal(true);
 
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(
     map((foundation) => foundation?.slug || ''),
@@ -119,6 +120,12 @@ export class FoundationHealthComponent {
     this.activeContributorsLoading() ? { data: [], avgContributors: 0, totalDays: 0 } : this.activeContributorsData()
   );
 
+  // Surface a zeroed default while loading so the drawer headline (currentMaintainers/asOfDate)
+  // never renders the previous foundation's value during a switch.
+  protected readonly reconciledMaintainersData = computed<FoundationMaintainersResponse>(() =>
+    this.maintainersLoading() ? DEFAULT_FOUNDATION_MAINTAINERS : this.maintainersData()
+  );
+
   public readonly selectedFilter = signal<string>('all');
 
   public readonly filterOptions: FilterPillOption[] = [
@@ -145,7 +152,6 @@ export class FoundationHealthComponent {
 
   // Filtered cards - materializes card values while benefiting from individual signal memoization
   public readonly metricCards = this.initializeMetricCards();
-  public readonly healthScoreDistribution = this.initializeHealthScoreDistribution();
 
   public readonly activeDrawer = signal<DashboardDrawerType | null>(null);
   protected readonly DashboardDrawerType = DashboardDrawerType;
@@ -213,27 +219,6 @@ export class FoundationHealthComponent {
         return allCards.map((item) => item.card);
       }
       return allCards.filter((item) => item.category === filter).map((item) => item.card);
-    });
-  }
-
-  private initializeHealthScoreDistribution() {
-    return computed(() => {
-      const distribution = this.reconciledHealthScoresData();
-
-      // Mirrors the drawer's chart bars (leading Unscored + 5 scored) so the card's mini
-      // distribution and the drawer's full chart never disagree on which buckets exist.
-      const data = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => ({
-        category: PROJECT_HEALTH_CHART_CATEGORY_LABEL[category],
-        count: distribution[category] ?? 0,
-        color: PROJECT_HEALTH_CHART_CATEGORY_COLOR[category],
-      }));
-
-      const maxCount = Math.max(...data.map((d) => d.count));
-
-      return data.map((item) => ({
-        ...item,
-        heightPx: maxCount > 0 ? Math.round((item.count / maxCount) * 64) : 0,
-      }));
     });
   }
 
@@ -527,6 +512,7 @@ export class FoundationHealthComponent {
   private transformEvents(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.eventsQuarterlyData();
     const { trend, changePercentage } = computePeriodChange(data.quarterlyData, 'vs last quarter');
+    const eventColor = metric.chartColor || lfxColors.blue[500];
 
     return {
       ...metric,
@@ -540,12 +526,15 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.quarterlyData,
-            backgroundColor: metric.chartColor || lfxColors.blue[500],
+            // Opt this dataset into the zero-bar stub plugin so empty quarters
+            // render as a 4px gray stub instead of invisible zero-height bars.
+            zeroStub: true,
+            backgroundColor: eventColor,
             // Pin hover color to the bar fill so the active bar doesn't darken (matches the events drawer).
-            hoverBackgroundColor: metric.chartColor || lfxColors.blue[500],
-            borderColor: metric.chartColor || lfxColors.blue[500],
+            hoverBackgroundColor: eventColor,
+            borderColor: eventColor,
             borderWidth: 0,
-          },
+          } as ZeroStubBarDataset,
         ],
       },
       chartOptions: {
@@ -569,22 +558,50 @@ export class FoundationHealthComponent {
 
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
-    const scored = data.excellent + data.healthy + data.stable + data.unsteady + data.critical;
-    const total = this.reconciledTotalProjects();
+    const scored = computeScoredCount(data);
 
-    let subtitle = '';
-    if (scored > 0 || total > 0) {
-      // The two counts come from independent Snowflake tables; only reconcile
-      // against the total when it is loaded and not smaller than the scored count.
-      subtitle = total > scored ? `${scored.toLocaleString()} of ${total.toLocaleString()} projects scored` : `${scored.toLocaleString()} projects scored`;
-    }
+    // "Healthy or better" is the card's health KPI; the distribution chart is the visualization,
+    // parallel to the sparkline/bar chart on the other foundation-health cards.
+    const value = scored > 0 ? `${computeHealthyOrBetterPct(data)}%` : '';
+
+    // Same 6 bars the drawer draws (leading Unscored + 5 scored) so the card mini-chart
+    // and the drawer's full chart never disagree on which buckets exist.
+    const barColors = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_COLOR[category]);
 
     return {
       ...metric,
-      loading: this.healthScoresLoading() || this.totalProjectsLoading(),
-      value: '',
-      subtitle,
-      healthScores: data,
+      loading: this.healthScoresLoading(),
+      value,
+      subtitle: 'Projects rated by their health score',
+      chartData: {
+        labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
+        datasets: [
+          {
+            data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => data[category] ?? 0),
+            // Opt into the zero-bar stub plugin so empty buckets render as a 4px gray
+            // stub instead of invisible zero-height bars (matches the events card).
+            zeroStub: true,
+            backgroundColor: barColors,
+            // Pin hover color per-bar so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: barColors,
+            borderRadius: 4,
+            borderSkipped: 'start',
+          } as ZeroStubBarDataset,
+        ],
+      },
+      chartOptions: {
+        ...this.barChartOptions,
+        plugins: {
+          ...this.barChartOptions.plugins,
+          tooltip: {
+            ...(this.barChartOptions.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context) => context[0]?.label ?? '',
+              label: (context) => `${(context.parsed.y ?? 0).toLocaleString('en-US')} projects`,
+            },
+          },
+        },
+      },
     };
   }
 
@@ -693,12 +710,7 @@ export class FoundationHealthComponent {
   }
 
   private initializeMaintainersData() {
-    const defaultValue: FoundationMaintainersResponse = {
-      currentMaintainers: 0,
-      asOfDate: null,
-      trendData: [],
-      trendLabels: [],
-    };
+    const defaultValue = DEFAULT_FOUNDATION_MAINTAINERS;
 
     return toSignal(
       this.selectedFoundationSlug$.pipe(

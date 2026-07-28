@@ -562,38 +562,6 @@ export class OrgLensProjectDetailService {
   }
 
   /**
-   * The leaderboard tables store one ranked cohort per viewing organization (keyed by
-   * MY_ORGANIZATION_ID) plus a generic MY_ORGANIZATION_ID IS NULL cohort. Ranking or counting across
-   * all cohorts would duplicate organizations and inflate ranks/totals, so every board page must scope
-   * to a single cohort: resolve the viewer's ORG_ORGANIZATION_ID and use their cohort when it has rows,
-   * else the NULL cohort (mirrors the pre-pagination loader). Returns the WHERE fragment plus its bind
-   * params to apply identically to the ranked/page source and the count query.
-   */
-  private async resolveViewerCohort(table: string, slug: string, timeRangeType: string, orgUid: string): Promise<{ clause: string; params: string[] }> {
-    // One Salesforce account can map to several leaderboard rows (multiple crowd.dev orgs), so the pick
-    // must be deterministic — otherwise a per-page cohort lookup could resolve a different
-    // MY_ORGANIZATION_ID (or flip to the null cohort) on each page request and make ranks/totals/row
-    // membership disagree across pages. Order identically to fetchViewingLeaderboardRow (best-ranked
-    // row first) with ORG_ORGANIZATION_ID as a final unique tiebreak.
-    const orgIdResult = await this.snowflakeService.execute<{ ORG_ORGANIZATION_ID: string }>(
-      `SELECT ORG_ORGANIZATION_ID FROM ${this.leaderboardTable()} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
-       ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC LIMIT 1`,
-      [slug, timeRangeType, orgUid]
-    );
-    const viewerOrgId = orgIdResult.rows[0]?.ORG_ORGANIZATION_ID;
-    if (viewerOrgId) {
-      const viewerCount = await this.snowflakeService.execute<{ N: number }>(
-        `SELECT COUNT(*) AS N FROM ${table} WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND MY_ORGANIZATION_ID = ?`,
-        [slug, timeRangeType, viewerOrgId]
-      );
-      if (this.num(viewerCount.rows[0]?.N ?? 0) > 0) {
-        return { clause: 'MY_ORGANIZATION_ID = ?', params: [viewerOrgId] };
-      }
-    }
-    return { clause: 'MY_ORGANIZATION_ID IS NULL', params: [] };
-  }
-
-  /**
    * A page of the Calculated Influence board for one dimension. There is no stored per-dimension
    * rank (the warehouse combined RANK is the combined-influence order), so rank is derived here via
    * ROW_NUMBER() over the FULL set ordered by that dimension's score. Search filters rows AFTER
@@ -610,14 +578,15 @@ export class OrgLensProjectDetailService {
     search: string
   ): Promise<{ rows: OrgLensProjectLeaderboardRow[]; total: number }> {
     const scoreColumn = dimension === 'technical' ? 'SCORE_TECHNICAL' : 'SCORE_ECOSYSTEM';
-    const cohort = await this.resolveViewerCohort(this.leaderboardTable(), slug, timeRangeType, orgUid);
     const hasSearch = search.length > 0;
-    // Rank + count are scoped to the resolved viewer cohort; ORG_NAME ILIKE is a bound param. Snowflake
-    // rejects binds in LIMIT/OFFSET, so the already-clamped integers are interpolated as literals.
-    // ESCAPE '!' + escaped term so a user-typed % or _ matches literally (never a wildcard), keeping the
-    // page and count predicates consistent with the old client-side literal-substring search.
+    // Rank + count run over the full ranked org set for this project/time range. The platinum model
+    // emits one row per organization (no per-viewer cohort column), so no cohort scoping is applied.
+    // ORG_NAME ILIKE is a bound param. Snowflake rejects binds in LIMIT/OFFSET, so the already-clamped
+    // integers are interpolated as literals. ESCAPE '!' + escaped term so a user-typed % or _ matches
+    // literally (never a wildcard), keeping the page and count predicates consistent with the old
+    // client-side literal-substring search.
     const searchClause = hasSearch ? "WHERE ORG_NAME ILIKE ? ESCAPE '!'" : '';
-    const baseParams = [slug, timeRangeType, ...cohort.params];
+    const baseParams = [slug, timeRangeType];
     const pageParams = hasSearch ? [...baseParams, `%${escapeSqlLikePattern(search)}%`] : baseParams;
     const countParams = pageParams;
 
@@ -627,7 +596,7 @@ export class OrgLensProjectDetailService {
       FROM (
         SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC) AS DIM_RANK
         FROM ${this.leaderboardTable()}
-        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
       )
       ${searchClause}
       ORDER BY DIM_RANK
@@ -636,7 +605,7 @@ export class OrgLensProjectDetailService {
     const countSql = `
       SELECT COUNT(*) AS N
       FROM ${this.leaderboardTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${cohort.clause}${hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : ''}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?${hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : ''}
     `;
 
     const [pageResult, countResult] = await Promise.all([
@@ -664,22 +633,21 @@ export class OrgLensProjectDetailService {
     search: string
   ): Promise<{ rows: OrgLensProjectLeaderboardRow[]; total: number }> {
     const boardType = dimension === 'technical' ? 'contributions' : 'collaborations';
-    const cohort = await this.resolveViewerCohort(this.activityLeaderboardsTable(), slug, timeRangeType, orgUid);
     const hasSearch = search.length > 0;
-    // Scope to the viewer cohort; ORG_NAME ILIKE is bound. Snowflake rejects binds in LIMIT/OFFSET,
-    // so the clamped integers are interpolated as literals (see fetchInfluenceBoardPage).
-    // ESCAPE '!' + escaped term so a user-typed % or _ matches literally; shared by the page and count
-    // predicates so the paginated total can't be inflated by wildcard interpretation.
+    // Runs over the full ranked org set — the activity model emits one row per organization (no
+    // per-viewer cohort column), so no cohort scoping is applied. ORG_NAME ILIKE is bound. Snowflake
+    // rejects binds in LIMIT/OFFSET, so the clamped integers are interpolated as literals (see
+    // fetchInfluenceBoardPage). ESCAPE '!' + escaped term so a user-typed % or _ matches literally;
+    // shared by the page and count predicates so the paginated total can't be inflated by wildcard
+    // interpretation.
     const searchClause = hasSearch ? " AND ORG_NAME ILIKE ? ESCAPE '!'" : '';
-    const params = hasSearch
-      ? [slug, timeRangeType, boardType, ...cohort.params, `%${escapeSqlLikePattern(search)}%`]
-      : [slug, timeRangeType, boardType, ...cohort.params];
+    const params = hasSearch ? [slug, timeRangeType, boardType, `%${escapeSqlLikePattern(search)}%`] : [slug, timeRangeType, boardType];
     const pageParams = params;
 
     const pageSql = `
       SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
       FROM ${this.activityLeaderboardsTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
       -- RANK and ORG_ACCOUNT_ID are both nullable, so they are not a total order for OFFSET paging.
       -- ORG_ORGANIZATION_ID is the activity model's unique per-row grain key (its own rank tie-break),
       -- so it guarantees a stable order — page boundaries can't skip or duplicate rows.
@@ -689,7 +657,7 @@ export class OrgLensProjectDetailService {
     const countSql = `
       SELECT COUNT(*) AS N
       FROM ${this.activityLeaderboardsTable()}
-      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ${cohort.clause}${searchClause}
+      WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
     `;
 
     const [pageResult, countResult] = await Promise.all([
@@ -1209,7 +1177,7 @@ export class OrgLensProjectDetailService {
         WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
         -- One Salesforce account can span multiple leaderboard rows (one per crowd.dev org); pick its
         -- best-ranked row deterministically so the Our-Influence band chips never flip between requests.
-        -- ORG_ORGANIZATION_ID is the unique per-row key (matches resolveViewerCohort) and breaks any
+        -- ORG_ORGANIZATION_ID is the model's unique per-row grain key and breaks any
         -- rank/score/name tie that would otherwise let the LIMIT 1 pick flip.
         ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC
         LIMIT 1
