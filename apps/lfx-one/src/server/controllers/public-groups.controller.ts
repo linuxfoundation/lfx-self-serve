@@ -12,6 +12,7 @@ import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 const CHAIR_ROLES = new Set<string>([CommitteeMemberRole.CHAIR, CommitteeMemberRole.VICE_CHAIR]);
@@ -62,8 +63,10 @@ export class PublicGroupsController {
           })
         );
 
+      const now = new Date().toISOString();
       const upcomingMeetings = meetingsResponse.data
-        .filter((m) => m.visibility === MeetingVisibility.PUBLIC)
+        .filter((m) => m.visibility === MeetingVisibility.PUBLIC && m.start_time >= now)
+        .sort((a, b) => a.start_time.localeCompare(b.start_time))
         .slice(0, 5)
         .map(
           (m): PublicGroupMeeting => ({
@@ -92,9 +95,12 @@ export class PublicGroupsController {
         }),
       };
 
+      const mailingList = committee.mailing_list;
+      const normalizedMailingList = mailingList && !mailingList.startsWith('http') && mailingList.includes('@') ? `mailto:${mailingList}` : mailingList;
+
       const links: PublicGroupLinks = {
         website: committee.website,
-        mailing_list: committee.mailing_list,
+        mailing_list: normalizedMailingList,
         chat_channel: committee.chat_channel,
         calendar: committee.calendar?.public ? `/public/api/committees/${id}/calendar.ics` : undefined,
       };
@@ -118,8 +124,10 @@ export class PublicGroupsController {
       if (isAuthenticated && originalToken !== undefined) {
         req.bearerToken = originalToken;
         try {
+          const callerEmail = getEffectiveEmail(req);
+          const callerUsername = getEffectiveUsername(req);
           const callerMembership = members.find(
-            (m: CommitteeMember) => m.email === req.oidc?.user?.['email'] || m.username === req.oidc?.user?.['preferred_username']
+            (m: CommitteeMember) => (callerEmail && m.email?.toLowerCase() === callerEmail) || (callerUsername && m.username && m.username === callerUsername)
           );
           if (callerMembership) {
             detail.is_member = true;

@@ -17,13 +17,24 @@
           </div>
           <p-skeleton width="100%" height="200px" borderRadius="12px" />
         </div>
+      } @else if (error()) {
+        <!-- Error state for unexpected failures -->
+        <lfx-card data-testid="group-error-card">
+          <div class="text-center py-12">
+            <div class="flex justify-center mb-6">
+              <div class="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center">
+                <i class="fa-light fa-triangle-exclamation text-4xl text-red-400"></i>
+              </div>
+            </div>
+            <h2 class="text-lg font-semibold text-gray-900 mb-2">Something went wrong</h2>
+            <p class="text-sm text-gray-600 mb-4">We couldn't load this group. Please try again later.</p>
+          </div>
+        </lfx-card>
       } @else if (group(); as group) {
         <!-- Breadcrumb -->
         <nav class="flex items-center gap-1.5 text-sm text-gray-500 mb-4" data-testid="group-breadcrumb">
-          @if (parentProject(); as parent) {
-            <a [routerLink]="['/']" class="text-blue-500 hover:underline">{{ parent.name }}</a>
-            <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
-          }
+          <span class="text-gray-500">{{ group.context.foundation_name }}</span>
+          <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
           @if (group.context.project_name) {
             <span class="text-gray-500">{{ group.context.project_name }}</span>
             <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
@@ -93,7 +104,7 @@
                       </div>
                       <div class="flex flex-col gap-0.5 min-w-0">
                         <span class="text-sm font-medium text-gray-900 group-hover/meeting:text-blue-600 truncate">{{ meeting.title }}</span>
-                        <span class="text-xs text-gray-500">{{ meeting.starts_at | date: 'MMM d, y · h:mm a' : meeting.timezone }}</span>
+                        <span class="text-xs text-gray-500">{{ meeting.starts_at | meetingTime: 0 : 'compact' : meeting.timezone }}</span>
                       </div>
                     </a>
                   }
