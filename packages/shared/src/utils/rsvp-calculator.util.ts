@@ -175,6 +175,63 @@ export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsv
   return counts;
 }
 
+export type RegistrantAttendanceStatus = 'accepted' | 'declined' | 'maybe' | 'pending';
+
+/**
+ * Combined attendance status for a single registrant, mirroring the meeting-card
+ * / guest-drawer chip logic and the meetings-dashboard RSVP filter:
+ *
+ * - An explicit RSVP `response_type` (accepted / declined / maybe) is authoritative.
+ * - When there is no RSVP response — either the registrant has no RSVP at all,
+ *   or none of their RSVPs are applicable to the target occurrence — fall back
+ *   to `invite_accepted` (the series-level Google Calendar / Zoom invite state).
+ * - Otherwise pending.
+ *
+ * The caller is responsible for pre-resolving the passed-in `rsvp` (typically
+ * via {@link selectApplicableRsvp} against the target occurrence) — this helper
+ * doesn't know about scopes.
+ */
+export function getRegistrantAttendanceStatus(registrant: {
+  rsvp?: { response_type?: string | null } | null;
+  invite_accepted?: boolean | null;
+}): RegistrantAttendanceStatus {
+  const rsvpResponse = registrant.rsvp?.response_type;
+  if (rsvpResponse === 'accepted' || rsvpResponse === 'declined' || rsvpResponse === 'maybe') {
+    return rsvpResponse;
+  }
+  if (registrant.invite_accepted === true) return 'accepted';
+  if (registrant.invite_accepted === false) return 'declined';
+  return 'pending';
+}
+
+/**
+ * Tally attendance across a list of registrants using the same combined
+ * semantics as {@link getRegistrantAttendanceStatus} (RSVP + `invite_accepted`
+ * fallback). Use this instead of {@link calculateRsvpCounts} when the caller
+ * has registrants in hand — otherwise a registrant with no applicable RSVP
+ * but `invite_accepted === false` is invisible to the count even though their
+ * chip renders as "declined" (LFXV2-2864).
+ *
+ * The caller must pre-resolve each registrant's `.rsvp` to the one applicable
+ * to the target occurrence — the BFF's occurrence-aware
+ * `getMeetingRegistrants(uid, includeRsvp, occurrenceId)` does that server-side.
+ *
+ * `total` counts every registrant (accepted + declined + maybe + pending), so
+ * the denominator matches the meeting's invited count.
+ */
+export function countRegistrantAttendance(
+  registrants: ReadonlyArray<{ rsvp?: { response_type?: string | null } | null; invite_accepted?: boolean | null }>
+): RsvpCounts {
+  const counts: RsvpCounts = { accepted: 0, declined: 0, maybe: 0, total: registrants.length };
+  for (const r of registrants) {
+    const status = getRegistrantAttendanceStatus(r);
+    if (status === 'accepted') counts.accepted++;
+    else if (status === 'declined') counts.declined++;
+    else if (status === 'maybe') counts.maybe++;
+  }
+  return counts;
+}
+
 /**
  * Map an ITX meeting response result to the MeetingRsvp shape used throughout the UI
  *

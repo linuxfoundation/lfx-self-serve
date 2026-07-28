@@ -20,7 +20,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MeetingRsvp } from '../interfaces';
-import { isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
+import { countRegistrantAttendance, getRegistrantAttendanceStatus, isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
 
 /**
  * Build a MeetingRsvp with just the fields the resolver reads. Any other required
@@ -358,5 +358,74 @@ describe('selectApplicableRsvp — scope precedence and edges', () => {
       occurrence_id: undefined,
     });
     expect(selectApplicableRsvp(OCC_JUL_28_SECONDS, [malformed])).toBeNull();
+  });
+});
+
+describe('getRegistrantAttendanceStatus', () => {
+  it('returns accepted when the RSVP is accepted', () => {
+    expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'accepted' }, invite_accepted: null })).toBe('accepted');
+  });
+
+  it('returns declined when the RSVP is declined', () => {
+    expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'declined' }, invite_accepted: null })).toBe('declined');
+  });
+
+  it('returns maybe when the RSVP is maybe', () => {
+    expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'maybe' }, invite_accepted: null })).toBe('maybe');
+  });
+
+  it('falls back to invite_accepted=true when there is no applicable RSVP', () => {
+    // The exact LFXV2-2864 shape: single-scope decline for a future occurrence
+    // resolves to `rsvp: null` on today's occurrence, but the calendar invite
+    // itself was accepted. The chip renders "accepted"; counts must agree.
+    expect(getRegistrantAttendanceStatus({ rsvp: null, invite_accepted: true })).toBe('accepted');
+    expect(getRegistrantAttendanceStatus({ rsvp: undefined, invite_accepted: true })).toBe('accepted');
+  });
+
+  it('falls back to invite_accepted=false when there is no applicable RSVP', () => {
+    // Inverse of the case above: Google Calendar decline sets invite_accepted=false
+    // on the registrant, and the resulting single-scope decline may not apply to
+    // the currently-rendered occurrence. Chip shows declined; counts must too.
+    expect(getRegistrantAttendanceStatus({ rsvp: null, invite_accepted: false })).toBe('declined');
+    expect(getRegistrantAttendanceStatus({ rsvp: undefined, invite_accepted: false })).toBe('declined');
+  });
+
+  it('returns pending when both RSVP and invite_accepted are absent', () => {
+    expect(getRegistrantAttendanceStatus({ rsvp: null, invite_accepted: null })).toBe('pending');
+    expect(getRegistrantAttendanceStatus({})).toBe('pending');
+  });
+
+  it('prefers RSVP response over invite_accepted (deliberate action wins)', () => {
+    // Declining series-wide via calendar then explicitly accepting a single
+    // occurrence via LFX RSVP: the deliberate per-occurrence action wins.
+    expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'accepted' }, invite_accepted: false })).toBe('accepted');
+    expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'declined' }, invite_accepted: true })).toBe('declined');
+  });
+});
+
+describe('countRegistrantAttendance', () => {
+  it('returns zeros for an empty registrant list', () => {
+    expect(countRegistrantAttendance([])).toEqual({ accepted: 0, declined: 0, maybe: 0, total: 0 });
+  });
+
+  it('counts each registrant into exactly one bucket, including pending in total', () => {
+    const registrants = [
+      { rsvp: { response_type: 'accepted' }, invite_accepted: null },
+      { rsvp: { response_type: 'declined' }, invite_accepted: null },
+      { rsvp: { response_type: 'maybe' }, invite_accepted: null },
+      { rsvp: null, invite_accepted: null }, // pending — no info at all
+    ];
+    expect(countRegistrantAttendance(registrants)).toEqual({ accepted: 1, declined: 1, maybe: 1, total: 4 });
+  });
+
+  it('honours invite_accepted fallback for registrants with no applicable RSVP', () => {
+    // Reproduces the meeting-card list-view bug (LFXV2-2864): guest chip shows 1
+    // declined because invite_accepted=false, but pre-fix counts stayed at 0/0/0.
+    const registrants = [
+      { rsvp: null, invite_accepted: false }, // Google Calendar decline, no matching RSVP
+      { rsvp: null, invite_accepted: true }, // Google Calendar accept, no matching RSVP
+      { rsvp: { response_type: 'declined' }, invite_accepted: null }, // Explicit LFX decline
+    ];
+    expect(countRegistrantAttendance(registrants)).toEqual({ accepted: 1, declined: 2, maybe: 0, total: 3 });
   });
 });

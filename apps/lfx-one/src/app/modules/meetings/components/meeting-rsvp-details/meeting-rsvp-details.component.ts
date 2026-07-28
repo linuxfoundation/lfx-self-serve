@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ButtonComponent } from '@components/button/button.component';
 import {
   calculateRsvpCounts,
+  countRegistrantAttendance,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -155,6 +156,19 @@ export class MeetingRsvpDetailsComponent {
 
   private initializeRsvpCounts(): Signal<RsvpCounts> {
     return computed(() => {
+      // Me lens: registrants are already hydrated with their occurrence-applicable
+      // RSVP by the BFF. Tally via the registrant-aware counter so
+      // `invite_accepted` (series-level Google Calendar invite state) falls back
+      // in the same cases the guest chip does — keeps "N of M attending" in sync
+      // with the drawer's per-registrant chips (LFXV2-2864).
+      const registrants = this.registrants();
+      if (registrants.length > 0) {
+        return countRegistrantAttendance(registrants);
+      }
+      // Non-Me lens: no registrant array available (detail page — counts come off
+      // meeting.individual_registrants_count). Fall back to RSVP-only tallying;
+      // `invite_accepted` fallback is unreachable without registrants but the
+      // typical detail-page case has explicit RSVPs anyway.
       const rsvps = this.rsvps();
       const occurrence = this.currentOccurrence();
       return calculateRsvpCounts(occurrence, rsvps);
