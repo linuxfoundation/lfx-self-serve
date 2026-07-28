@@ -350,8 +350,8 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'external-url':
-        // buildActivityFeed only produces this action after validating the url is http(s) —
-        // see isSafeExternalUrl — matching DocumentsTableComponent.openDocument's own guard.
+        // buildActivityFeed only emits this action for urls that pass isValidUrl
+        // (@lfx-one/shared/utils) — http(s) only, no private/local hosts.
         window.open(action.url, '_blank', 'noopener,noreferrer');
         break;
       case 'tab':
