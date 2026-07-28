@@ -5,8 +5,9 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
+import { buildProfileTabs } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -73,13 +74,7 @@ export class ProfileLayoutComponent {
   // Tab configuration. The read-only "My CLAs" tab is appended (before Transactions/Settings)
   // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
   private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
-  public readonly tabs: Signal<ProfileTab[]> = computed(() => {
-    if (!this.myClasEnabled()) return PROFILE_TABS;
-    const clasTab: ProfileTab = { id: 'clas', label: 'My CLAs', route: 'clas' };
-    const insertAt = PROFILE_TABS.findIndex((t) => t.id === 'transactions');
-    if (insertAt === -1) return [...PROFILE_TABS, clasTab];
-    return [...PROFILE_TABS.slice(0, insertAt), clasTab, ...PROFILE_TABS.slice(insertAt)];
-  });
+  public readonly tabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override

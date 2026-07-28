@@ -113,7 +113,7 @@
           <p-popover #profileMenu appendTo="body" styleClass="w-60 profile-tabs-popover">
             <ng-template #content>
               <nav aria-label="Profile sections" class="py-1">
-                @for (tab of profileTabs; track tab.id) {
+                @for (tab of profileTabs(); track tab.id) {
                   <a
                     [routerLink]="['/profile', tab.route]"
                     (click)="closeProfileMenu()"

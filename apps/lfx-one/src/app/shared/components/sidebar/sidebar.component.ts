@@ -10,9 +10,9 @@ import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY, PROFILE_TABS } from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
+import { buildProfileTabs, lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -95,8 +95,11 @@ export class SidebarComponent {
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
 
-  // Profile & Account tabs for the me-lens card overflow (⋯) dropdown → /profile/<route>
-  protected readonly profileTabs: ProfileTab[] = PROFILE_TABS;
+  // Profile & Account tabs for the me-lens card overflow (⋯) dropdown → /profile/<route>.
+  // Computed (not static) so the read-only "My CLAs" tab appears here whenever `my-clas-enabled`
+  // is on, keeping this menu in sync with the profile-layout subtab strip (both use buildProfileTabs).
+  private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
+  protected readonly profileTabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
   protected readonly profileMenu = viewChild<Popover>('profileMenu');
 
   protected readonly itemsWithTestIds = computed(() =>
