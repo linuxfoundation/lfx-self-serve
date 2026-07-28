@@ -360,6 +360,18 @@ export class CommitteeOverviewComponent {
     }
   }
 
+  // Not implemented anywhere in the app yet (also TODO stubs in surveys-dashboard.component.ts) —
+  // mirrors that same stub behavior rather than silently swallowing the event.
+  public onSurveyDuplicate(surveyId: string): void {
+    console.warn('Survey duplication not yet implemented for:', surveyId);
+    this.surveyDrawerVisible.set(false);
+  }
+
+  public onSurveyClose(surveyId: string): void {
+    console.warn('Survey close not yet implemented for:', surveyId);
+    this.surveyDrawerVisible.set(false);
+  }
+
   // Chairs edit methods
   public startEditChairs(): void {
     const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);

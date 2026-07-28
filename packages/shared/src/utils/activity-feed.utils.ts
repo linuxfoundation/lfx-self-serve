@@ -51,11 +51,14 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       label: `Meeting held: ${m.title}`,
       timestamp: m.start_time ?? '',
       icon: 'fa-light fa-clock-rotate-left',
-      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) — the same identifier every
-      // other past-meeting surface uses (meeting-card, meeting-organizer, attachments). The
-      // detail page's own recording/transcript/summary sub-fetches key off
-      // meeting_and_occurrence_id specifically; passing the bare id would silently return those
-      // empty for any occurrence where the two values diverge.
+      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) — the same helper every other
+      // past-meeting surface uses (meeting-card, meeting-organizer, attachments). The detail page
+      // itself is inconsistent about which identifier it reads: recording/transcript/summary map
+      // the fetched meeting's plain `id` (which the BFF pins to whatever route segment it
+      // received), while attachments call this same getPastMeetingResourceId helper on the
+      // fetched object. Using it here too is the safer of two imperfect choices — it matches the
+      // documented "canonical id downstream" (meeting.interface.ts) and every other entry point,
+      // rather than adding a fifth place that could disagree with all of them.
       action: { kind: 'route', path: `/meetings/${getPastMeetingResourceId(m)}/details` },
     }));
 
