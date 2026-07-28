@@ -158,7 +158,12 @@ describe('buildActivityFeed', () => {
   });
 
   it('falls back to a generic label instead of "Vote undefined" when status is missing', () => {
-    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: undefined as unknown as PollStatus })] }));
+    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: undefined })] }));
+    expect(items[0].label).toBe('Vote Updated: Q1 Budget');
+  });
+
+  it('falls back to a generic label instead of "Vote :" when status is an empty string', () => {
+    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: '' as PollStatus })] }));
     expect(items[0].label).toBe('Vote Updated: Q1 Budget');
   });
 

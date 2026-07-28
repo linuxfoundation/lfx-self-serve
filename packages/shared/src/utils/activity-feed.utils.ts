@@ -49,7 +49,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
           return {
             type: 'vote' as const,
             key: `vote-${v.uid}`,
-            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : (v.status ?? 'Updated')}: ${v.name}`,
+            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status || 'Updated'}: ${v.name}`,
             timestamp: v.last_modified_time ?? v.creation_time ?? '',
             icon: 'fa-light fa-check-to-slot',
             tab: 'votes',
