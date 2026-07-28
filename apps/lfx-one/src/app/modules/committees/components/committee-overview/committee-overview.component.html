@@ -316,7 +316,14 @@
 </div>
 
 <!-- Vote Results Drawer -->
-<lfx-vote-results-drawer [(visible)]="voteDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()"></lfx-vote-results-drawer>
+<!-- Default audience 'creator' renders an inline "Cast Vote" CTA for the viewer's own awaiting-response
+     active votes; this Overview screen has no cast flow of its own, so route it to the Votes tab (same
+     tab-fallback pattern handleActivityItemClick uses for surveys/documents with no richer target). -->
+<lfx-vote-results-drawer
+  [(visible)]="voteDrawerVisible"
+  [voteId]="selectedVoteId()"
+  [listVote]="selectedVote()"
+  (castVoteRequested)="onCastVoteRequested()"></lfx-vote-results-drawer>
 
 <!-- Survey Results Drawer -->
 <!-- hasPMOAccess also gates the per-recipient Responses tab (not just the admin menu), so it's

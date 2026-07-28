@@ -67,9 +67,9 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
       timestamp,
       icon: 'fa-light fa-clock-rotate-left',
       // meeting.id, not getPastMeetingResourceId — matches the "Past Meeting" card's own link
-      // (committee-overview.component.html: `'/meetings/' + meeting.id`) exactly, so the two rows
-      // describing the same meeting on this screen always resolve to the same URL. The component
-      // maps this semantic action to that route; packages/shared doesn't carry the path string.
+      // (committee-overview.component.html: `'/meetings/' + meeting.id`). The component maps this
+      // semantic action to that route (also carrying the meeting's password query param, matching
+      // the card); packages/shared doesn't carry the path string.
       action: { kind: 'past-meeting' as const, meetingId: m.id },
     }));
 

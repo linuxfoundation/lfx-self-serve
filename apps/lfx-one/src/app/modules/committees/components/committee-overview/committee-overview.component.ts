@@ -325,15 +325,25 @@ export class CommitteeOverviewComponent {
     }
   }
 
+  /** Vote Results Drawer's inline "Cast Vote" CTA (creator audience, awaiting-response active vote) — this
+   *  screen has no cast flow, so send the viewer to the Votes tab where one exists. */
+  public onCastVoteRequested(): void {
+    this.navigateToTab('votes');
+  }
+
   public handleActivityItemClick(item: ActivityFeedItem): void {
     const { action } = item;
     switch (action.kind) {
-      case 'past-meeting':
+      case 'past-meeting': {
         // Matches the "Past Meeting" card's own link two sections up
-        // (`[detailUrl]="'/meetings/' + meeting.id"`) exactly, so the two rows describing the same
-        // meeting on this screen always resolve to the same URL.
-        void this.router.navigate(['/meetings', action.meetingId], { queryParamsHandling: 'preserve' });
+        // (`[detailUrl]="'/meetings/' + meeting.id"`) and its password query param
+        // (`dashboard-meeting-card.component.ts`'s `initMeetingDetailQueryParams`) — a password-gated
+        // committee meeting needs that param carried through, matching the established convention at
+        // `meetings-dashboard.component.ts`'s `onCalendarEventClick`.
+        const meeting = this.pastMeetings().find((m) => m.id === action.meetingId);
+        void this.router.navigate(['/meetings', action.meetingId], meeting?.password ? { queryParams: { password: meeting.password } } : {});
         break;
+      }
       case 'vote-drawer': {
         const vote = this.votes().find((v) => v.uid === action.voteUid);
         if (vote) {
@@ -658,9 +668,18 @@ export class CommitteeOverviewComponent {
             return of<CommitteeDocument[]>([]);
           }
           this.documentsLoading.set(true);
-          // No catchError here: CommitteeService.getCommitteeDocuments already falls back to
-          // of([]) on failure, so a component-level handler would never fire.
-          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(tap(() => this.documentsLoading.set(false)));
+          // CommitteeService.getCommitteeDocuments already falls back to of([]) on failure today, so
+          // this catchError is a belt-and-suspenders guard against that coupling changing underneath
+          // this component (e.g. a future interceptor rethrow) — without it, an error here would
+          // propagate past a next-only tap, kill this toSignal source permanently, and pin
+          // activityFeedLoading() on its skeleton for the rest of the session.
+          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(
+            tap(() => this.documentsLoading.set(false)),
+            catchError(() => {
+              this.documentsLoading.set(false);
+              return of<CommitteeDocument[]>([]);
+            })
+          );
         })
       ),
       { initialValue: [] }
