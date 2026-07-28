@@ -34,7 +34,14 @@ import {
   UserPullRequestsRow,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { buildInvitationActions, getCurrentOrNextOccurrence, hasMeetingEnded, normalizeIndexedMeetingAiSummary, parseToInt } from '@lfx-one/shared/utils';
+import {
+  buildInvitationActions,
+  getCurrentOrNextOccurrence,
+  hasMeetingEnded,
+  normalizeIndexedMeetingAiSummary,
+  parseToInt,
+  selectApplicableRsvp,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
@@ -499,24 +506,32 @@ export class UserService {
             this.fetchUserActiveRegistrantIdentities(req, email, username),
           ]);
 
-          // Strongest-response-wins (accepted/declined beats maybe beats nothing) — same logic as
-          // `transformMissingRsvpsToActions`. Drop RSVPs whose `registrant_id` isn't in the active
-          // set; otherwise stale RSVPs from removed registrations would falsely mark meetings as
-          // "responded".
-          const rsvpByMeeting = new Map<string, MeetingRsvp>();
+          // Group all RSVPs per meeting so recurring series can be resolved against the
+          // occurrence the card is actually representing. Drop RSVPs whose `registrant_id` isn't
+          // in the active set; otherwise stale RSVPs from removed registrations would falsely
+          // mark meetings as "responded".
+          const rsvpsByMeeting = new Map<string, MeetingRsvp[]>();
           for (const rsvp of userRsvps) {
             if (!rsvp.meeting_id) continue;
             if (!rsvp.registrant_id || !activeRegistrants.uids.has(rsvp.registrant_id)) continue;
-            const existing = rsvpByMeeting.get(rsvp.meeting_id);
-            if (!existing || (existing.response_type === 'maybe' && rsvp.response_type !== 'maybe')) {
-              rsvpByMeeting.set(rsvp.meeting_id, rsvp);
-            }
+            const list = rsvpsByMeeting.get(rsvp.meeting_id);
+            if (list) list.push(rsvp);
+            else rsvpsByMeeting.set(rsvp.meeting_id, [rsvp]);
           }
 
+          // Resolve each meeting's `my_rsvp` against its current/next occurrence via the shared
+          // resolver — same scope/precedence rules and seconds↔ms `occurrence_id` normalization
+          // used on the detail page. Non-recurring meetings resolve identically to before (no
+          // occurrence_id → single `all`-scoped row wins).
           for (const meeting of normalizedMeetings) {
-            if (meeting.id) {
-              meeting.my_rsvp = rsvpByMeeting.get(meeting.id) ?? null;
+            if (!meeting.id) continue;
+            const meetingRsvps = rsvpsByMeeting.get(meeting.id);
+            if (!meetingRsvps || meetingRsvps.length === 0) {
+              meeting.my_rsvp = null;
+              continue;
             }
+            const occurrence = getCurrentOrNextOccurrence(meeting);
+            meeting.my_rsvp = selectApplicableRsvp(occurrence?.occurrence_id, meetingRsvps);
           }
         } catch (error) {
           logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
