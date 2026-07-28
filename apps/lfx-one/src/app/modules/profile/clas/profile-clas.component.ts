@@ -82,7 +82,11 @@ export class ProfileClasComponent {
   protected onDownload(signatureId: string): void {
     if (this.downloadingId()) return;
 
-    const tab = window.open('', '_blank', 'noopener,noreferrer');
+    // Open the blank tab WITHOUT `noopener` so we retain the window handle to redirect once the
+    // URL resolves (`noopener` makes window.open return null). Sever the opener link manually for
+    // the same reverse-tabnabbing protection `noopener` would provide.
+    const tab = window.open('', '_blank');
+    if (tab) tab.opener = null;
     this.downloadingId.set(signatureId);
 
     this.myClasService.getPdfUrl(signatureId).subscribe({
