@@ -3,6 +3,8 @@
 
 import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
+import { BadgeSeverity } from '../interfaces/components.interface';
+import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
 import { slugify } from './string.utils';
 
@@ -170,6 +172,26 @@ export function resolveCommitteeMemberPermission(committee: Committee | null | u
  */
 export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
   return !!committee?.writer;
+}
+
+// ── My Groups card grid (LFXV2-1715) ────────────────────────────────────────
+
+/**
+ * Maps a caller's committee role to the badge severity used on the My Groups card grid. Extracted
+ * from `MyGroupsCardGridComponent` (no Angular component-test runner exists in this repo — see
+ * `apps/lfx-one/vitest.config.ts`) so the 4-branch mapping is unit-tested here instead.
+ */
+export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Member' | undefined): BadgeSeverity {
+  switch (role) {
+    case CommitteeMemberRole.CHAIR:
+      return 'info';
+    case CommitteeMemberRole.VICE_CHAIR:
+      return 'success';
+    case CommitteeMemberRole.LF_STAFF:
+      return 'contrast';
+    default:
+      return 'secondary';
+  }
 }
 
 // ── All Groups foundation-grouping (LFXV2-1715) ─────────────────────────────

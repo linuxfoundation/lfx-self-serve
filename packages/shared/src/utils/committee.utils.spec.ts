@@ -12,7 +12,14 @@ import { describe, expect, it } from 'vitest';
 
 import { Committee, CommitteeMember } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
-import { buildCommitteeCreateQueryParams, canManageCommitteeMembers, groupCommitteesByFoundation, resolveCommitteeMemberPermission } from './committee.utils';
+import { CommitteeMemberRole } from '../enums/committee-member.enum';
+import {
+  buildCommitteeCreateQueryParams,
+  canManageCommitteeMembers,
+  groupCommitteesByFoundation,
+  resolveCommitteeMemberPermission,
+  resolveGroupsCardRoleSeverity,
+} from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
 function committee(overrides: Partial<Committee> = {}): Committee {
@@ -134,6 +141,26 @@ describe('canManageCommitteeMembers', () => {
 
   it('is false for a null committee', () => {
     expect(canManageCommitteeMembers(null)).toBe(false);
+  });
+});
+
+describe('resolveGroupsCardRoleSeverity', () => {
+  it('maps Chair to info', () => {
+    expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.CHAIR)).toBe('info');
+  });
+
+  it('maps Vice Chair to success', () => {
+    expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.VICE_CHAIR)).toBe('success');
+  });
+
+  it('maps LF Staff to contrast', () => {
+    expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.LF_STAFF)).toBe('contrast');
+  });
+
+  it('maps every other role, "Member", and undefined to secondary', () => {
+    expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.SECRETARY)).toBe('secondary');
+    expect(resolveGroupsCardRoleSeverity('Member')).toBe('secondary');
+    expect(resolveGroupsCardRoleSeverity(undefined)).toBe('secondary');
   });
 });
 
