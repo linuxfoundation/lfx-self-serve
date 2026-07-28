@@ -24,9 +24,9 @@ const FEED_LIMIT = 8;
 /**
  * Parse an ISO timestamp to epoch ms for sorting, treating an absent/unparseable value as the
  * oldest possible. A plain `localeCompare` on the raw strings only sorts correctly when every
- * source emits the identical format/offset — this feed merges four different upstream services
- * (query-service, committee-service), so a `+05:30`-offset or non-`Z` variant from any one of them
- * would otherwise sort into the wrong position relative to the others.
+ * source emits the identical format/offset — this feed merges four sources across two upstream
+ * services (query-service, committee-service), so a `+05:30`-offset or non-`Z` variant from any
+ * one of them would otherwise sort into the wrong position relative to the others.
  */
 function timestampValue(timestamp: string): number {
   const parsed = Date.parse(timestamp);
