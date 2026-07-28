@@ -23,6 +23,8 @@ export interface EasyClaSignature {
   signedOn?: string;
   /** CLA Group ID (not a display name). */
   projectID?: string;
+  /** CLA Group display name, when resolvable upstream (GET /v4/signatures/user). */
+  projectName?: string;
   /** Company name — populated on ECLA/CCLA records. */
   companyName?: string;
   signingEntityName?: string;

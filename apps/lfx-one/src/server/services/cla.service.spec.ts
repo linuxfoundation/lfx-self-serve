@@ -61,6 +61,12 @@ function ecla(overrides: Partial<EasyClaSignature> = {}): EasyClaSignature {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks resets call history but not return-value overrides — restore identity
+  // helper defaults so a value set in one test does not leak into the next.
+  getEffectiveUsername.mockReturnValue(null);
+  getEffectiveEmail.mockReturnValue(null);
+  getEffectiveSub.mockReturnValue(null);
+  getUserIdentities.mockResolvedValue([]);
   process.env['API_GW_AUDIENCE'] = 'https://api-gw.dev.example.org/';
 });
 
@@ -122,6 +128,11 @@ describe('toMyClaAgreement', () => {
     expect(a).toMatchObject({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false });
   });
 
+  it('prefers the resolved projectName, falling back to projectID', () => {
+    expect(toMyClaAgreement(icla({ projectName: 'My Project', projectID: 'pid-1' }))?.projectName).toBe('My Project');
+    expect(toMyClaAgreement(icla({ projectName: undefined, projectID: 'pid-1' }))?.projectName).toBe('pid-1');
+  });
+
   it('drops unsigned records', () => {
     expect(toMyClaAgreement(icla({ signatureSigned: false }))).toBeNull();
   });
@@ -181,31 +192,60 @@ describe('normalizeGithubId (T003 — prefixed vs bare)', () => {
 });
 
 describe('ClaService.resolveIdentity', () => {
-  it('resolves a matched user id from the LF username', async () => {
+  it('unions all user ids returned by the by-identity endpoint', async () => {
     getEffectiveUsername.mockReturnValue('alice');
-    gatewayFetch.mockResolvedValueOnce({ userID: 'u-1', lfUsername: 'alice' });
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    // by-identity returns the union of records across keys.
+    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1', lfUsername: 'alice' }, { userID: 'u-2' }]);
 
     const identity = await new ClaService().resolveIdentity(req);
 
-    expect(identity.easyclaUserIds).toEqual(['u-1']);
+    expect(identity.easyclaUserIds.sort()).toEqual(['u-1', 'u-2']);
     expect(identity.lfUsername).toBe('alice');
   });
 
-  it('flags no-match when the username lookup 404s (empty user id set)', async () => {
+  it('passes lfUsername, emails and githubIds to the by-identity query', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github' }]);
+    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1' }]);
+
+    await new ClaService().resolveIdentity(req);
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    expect(calledUrl).toContain('/v4/users/by-identity');
+    expect(calledUrl).toContain('lfUsername=alice');
+    expect(calledUrl).toContain('email=alice%40x.org');
+    expect(calledUrl).toContain('githubId=13434323');
+  });
+
+  it('resolves to no user ids when by-identity returns an empty array', async () => {
     getEffectiveUsername.mockReturnValue('ghost');
-    // gatewayFetch throws a 404 MicroserviceError → resolveIdentity treats it as no match.
-    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+    gatewayFetch.mockResolvedValueOnce([]);
 
     const identity = await new ClaService().resolveIdentity(req);
 
     expect(identity.easyclaUserIds).toEqual([]);
   });
 
+  it('falls back to username-only resolution when by-identity 404s', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    gatewayFetch
+      .mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' })) // by-identity absent
+      .mockResolvedValueOnce({ userID: 'u-legacy', lfUsername: 'alice' }); // username fallback
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.easyclaUserIds).toEqual(['u-legacy']);
+    expect((gatewayFetch.mock.calls[1][1] as string)).toContain('/v3/users/username/alice');
+  });
+
   it('detects a linked GitHub identity and normalizes the numeric id', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     getEffectiveSub.mockReturnValue('auth0|abc');
     getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github' }]);
-    gatewayFetch.mockResolvedValueOnce({ userID: 'u-1' });
+    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1' }]);
 
     const identity = await new ClaService().resolveIdentity(req);
 
@@ -217,7 +257,7 @@ describe('ClaService.resolveIdentity', () => {
     getEffectiveUsername.mockReturnValue('alice');
     getEffectiveSub.mockReturnValue('auth0|abc');
     getUserIdentities.mockResolvedValueOnce([{ provider: 'google-oauth2', user_id: 'x', connection: 'google' }]);
-    gatewayFetch.mockResolvedValueOnce({ userID: 'u-1' });
+    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1' }]);
 
     const identity = await new ClaService().resolveIdentity(req);
 
@@ -241,7 +281,7 @@ describe('ClaService.getMyClas', () => {
   it('aggregates signatures for the resolved user id', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     gatewayFetch
-      .mockResolvedValueOnce({ userID: 'u-1' }) // username lookup
+      .mockResolvedValueOnce([{ userID: 'u-1' }]) // by-identity union
       .mockResolvedValueOnce({ signatures: [icla({ signatureID: 's1' }), ecla({ signatureID: 's2' })], lastKeyScanned: '' }); // signatures page
 
     const result = await new ClaService().getMyClas(req);

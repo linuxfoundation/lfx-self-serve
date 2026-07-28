@@ -106,9 +106,9 @@ export function toMyClaAgreement(sig: EasyClaSignature): MyClaAgreement | null {
   return {
     id: sig.signatureID,
     kind: icla ? 'ICLA' : 'ECLA',
-    // projectID is the CLA Group ID; the user-signatures payload does not carry a
-    // project display name. Fall back to the ID until R5's name lookup lands (T004).
-    projectName: sig.projectID ?? '',
+    // Prefer the upstream-resolved CLA Group display name; fall back to the CLA Group ID
+    // (projectID) for records where the name could not be resolved.
+    projectName: sig.projectName || sig.projectID || '',
     companyName: ecla ? (sig.signingEntityName || sig.companyName || undefined) : undefined,
     signedOn: sig.signedOn ?? '',
     status: deriveStatus(sig),
@@ -142,13 +142,12 @@ export class ClaService {
   private readonly auth0Service = new Auth0Service();
 
   /**
-   * Resolves the session identity to EasyCLA user record(s).
+   * Resolves the session identity to EasyCLA user record(s) using the three-key union
+   * (LF username + verified emails + linked GitHub numeric IDs) via `GET /v4/users/by-identity`.
    *
-   * M1 interim scope: username-only resolution via `/v3/users/username/{userName}`
-   * (works for post-LF-login users). The three-key union (verified emails + linked
-   * GitHub IDs via `GET /v4/users/by-identity`) is layered in once that endpoint
-   * lands on dev (T007–T010). GitHub-link presence is already computed here so the
-   * UI CTA (T023) works before full union resolution.
+   * If that endpoint is unavailable (e.g. not yet deployed in an environment), it degrades
+   * gracefully to username-only resolution via `/v3/users/username/{userName}` so the page
+   * still works for post-LF-login users.
    */
   public async resolveIdentity(req: Request): Promise<ResolvedClaIdentity> {
     const startTime = logger.startOperation(req, 'cla_resolve_identity');
@@ -167,11 +166,12 @@ export class ClaService {
     const githubLinked = identities.some((i) => i.provider === 'github');
 
     const easyclaUserIds = new Set<string>();
-    if (lfUsername) {
-      const user = await this.getUserByUsername(req, lfUsername);
-      if (user?.userID) easyclaUserIds.add(user.userID);
+    if (lfUsername || emails.length || githubIds.length) {
+      const users = await this.getUsersByIdentity(req, lfUsername, emails, githubIds);
+      for (const user of users) {
+        if (user.userID) easyclaUserIds.add(user.userID);
+      }
     }
-    // TODO(T016 full): union verified emails + githubIds via GET /v4/users/by-identity once live.
 
     const resolved: ResolvedClaIdentity = {
       lfUsername,
@@ -245,6 +245,37 @@ export class ClaService {
 
     logger.success(req, 'cla_get_signed_document_url', startTime);
     return { url: result.signed_cla_url, expiresInSeconds: PDF_URL_TTL_SECONDS };
+  }
+
+  /**
+   * Resolves the union of EasyCLA users matching any identity key via
+   * `GET /v4/users/by-identity`. Falls back to username-only resolution
+   * (`/v3/users/username/{userName}`) if that endpoint is unavailable, so the
+   * feature still works in environments where it has not yet been deployed.
+   */
+  private async getUsersByIdentity(req: Request, lfUsername: string | null, emails: string[], githubIds: string[]): Promise<EasyClaUser[]> {
+    const params = new URLSearchParams();
+    if (lfUsername) params.set('lfUsername', lfUsername);
+    for (const email of emails) params.append('email', email);
+    for (const githubId of githubIds) params.append('githubId', githubId);
+
+    try {
+      const users = await gatewayFetch<EasyClaUser[]>(req, `${claServiceBaseUrl()}/v4/users/by-identity?${params.toString()}`, {
+        operation: 'cla_get_users_by_identity',
+        service: SERVICE,
+        errorMessage: 'Failed to resolve EasyCLA users by identity',
+        errorCode: 'UPSTREAM_ERROR',
+      });
+      return users ?? [];
+    } catch (error) {
+      // 404 ⇒ endpoint not present in this environment: degrade to username-only.
+      if (error instanceof MicroserviceError && error.statusCode === 404 && lfUsername) {
+        logger.warning(req, 'cla_get_users_by_identity', 'by-identity endpoint unavailable; falling back to username-only resolution', {});
+        const user = await this.getUserByUsername(req, lfUsername);
+        return user ? [user] : [];
+      }
+      throw error;
+    }
   }
 
   /** Looks up a single EasyCLA user by LF username. Returns null on 404. */
