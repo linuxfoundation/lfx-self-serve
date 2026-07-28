@@ -218,6 +218,11 @@ describe('groupCommitteesByFoundation', () => {
       committee({ uid: 'c1', project_uid: 'proj-z', project_name: 'Foo Bar' }),
       committee({ uid: 'c2', project_uid: 'proj-a', project_name: 'Foo-Bar' }),
     ]);
+    // Guards this test's discriminating power: display order puts 'Foo Bar' (proj-z) before
+    // 'Foo-Bar' (proj-a) under the current ICU collation. If a future runtime's collation ever
+    // flips that, this assertion goes red instead of the test silently stopping to prove anything —
+    // a key-ordered slug pass is only provably correct when display order disagrees with key order.
+    expect(groups.map((g) => g.key)).toEqual(['proj-z', 'proj-a']);
     expect(groups.find((g) => g.key === 'proj-a')?.testIdSlug).toBe('foo-bar');
     expect(groups.find((g) => g.key === 'proj-z')?.testIdSlug).toBe('foo-bar-2');
   });

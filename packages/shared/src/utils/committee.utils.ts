@@ -229,7 +229,8 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
   // collide on the same base slug (e.g. "CNCF" and "CNCF®" both slugify to "cncf"), so numbering by
   // display-sort position would route the '-2' suffix through a locale-aware label comparison; a
   // server/client ICU collation difference could then flip which bucket gets which testid between the
-  // SSR HTML and the hydrated DOM. Keys are already unique and this ordering is independent of them.
+  // SSR HTML and the hydrated DOM. Keys are already unique, and this ordering depends only on them —
+  // never on the labels or the display sort below.
   const slugByKey = new Map<string, string>();
   const slugCounts = new Map<string, number>();
   for (const key of [...buckets.keys()].sort(compareCodeUnits)) {
@@ -249,8 +250,10 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     if (a.label === b.label) return compareCodeUnits(a.key, b.key);
     if (a.label === OTHER_GROUPS_LABEL) return 1;
     if (b.label === OTHER_GROUPS_LABEL) return -1;
-    // Display order is intentionally locale-aware — this only affects reading order, never which
-    // testid a group gets (that's assigned above, independent of this sort).
+    // Display order is intentionally locale-aware, for correct human reading order; the testid a
+    // group gets is assigned above and never depends on this sort. A server/client collation
+    // divergence here would only cost the client re-rendering this list on hydration (Angular
+    // detects and recovers from the DOM order mismatch) — it can't desync a testid from its group.
     return a.label.localeCompare(b.label);
   });
 
