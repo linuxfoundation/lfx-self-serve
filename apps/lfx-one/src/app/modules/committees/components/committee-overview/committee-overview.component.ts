@@ -39,6 +39,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take, tap } from 'rxjs';
 
+import { DashboardCastDrawerHostComponent } from '../../../dashboards/components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -54,6 +55,7 @@ import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dia
     TagComponent,
     VoteResultsDrawerComponent,
     SurveyResultsDrawerComponent,
+    DashboardCastDrawerHostComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
@@ -323,12 +325,6 @@ export class CommitteeOverviewComponent {
     } else {
       this.tabNavigated.emit('surveys');
     }
-  }
-
-  /** Vote Results Drawer's inline "Cast Vote" CTA (creator audience, awaiting-response active vote) — this
-   *  screen has no cast flow, so send the viewer to the Votes tab where one exists. */
-  public onCastVoteRequested(): void {
-    this.navigateToTab('votes');
   }
 
   public handleActivityItemClick(item: ActivityFeedItem): void {
