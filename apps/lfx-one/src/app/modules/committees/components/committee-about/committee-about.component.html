@@ -20,7 +20,7 @@
             size="small"
             severity="secondary"
             [ariaLabel]="committee().description ? 'Edit description' : 'Add description'"
-            tooltip="Edit description"
+            [tooltip]="committee().description ? 'Edit description' : 'Add description'"
             (onClick)="editDescriptionRequested.emit()"
             data-testid="committee-about-edit-description-btn"></lfx-button>
         }

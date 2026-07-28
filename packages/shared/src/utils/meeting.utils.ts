@@ -158,7 +158,7 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     case 'date': {
       if (pattern.end_date_time) {
         const endDate = new Date(pattern.end_date_time);
-        endDescription = `until ${endDate.toLocaleDateString()}`;
+        endDescription = `until ${endDate.toLocaleDateString('en-US')}`;
       }
       break;
     }
