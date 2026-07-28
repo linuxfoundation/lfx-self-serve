@@ -100,6 +100,29 @@ describe('buildActivityFeed', () => {
     expect(items.map((i) => i.type)).toEqual(['survey', 'vote']);
   });
 
+  it('does not sort a past meeting as ancient when start_time is a Go zero-date', () => {
+    // Zoom/ITX past-meeting rows sometimes carry "0001-01-01T00:00:00Z" on start_time — a raw
+    // Date.parse would treat that as a real (~year 1) timestamp and sort it as the oldest item,
+    // even when scheduled_start_time has a real, recent value.
+    const items = buildActivityFeed(
+      emptyInput({
+        pastMeetings: [pastMeeting({ start_time: '0001-01-01T00:00:00Z', scheduled_start_time: '2026-01-05T00:00:00Z' })],
+        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['past_meeting', 'survey']);
+  });
+
+  it('sorts a past meeting as oldest when both start_time and scheduled_start_time are zero-dates', () => {
+    const items = buildActivityFeed(
+      emptyInput({
+        pastMeetings: [pastMeeting({ start_time: '0001-01-01T00:00:00Z', scheduled_start_time: '0001-01-01T00:00:00Z' })],
+        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
+      })
+    );
+    expect(items.map((i) => i.type)).toEqual(['survey', 'past_meeting']);
+  });
+
   it('caps each source at 5 items before merging, keeping the most recent per source', () => {
     const pastMeetings = Array.from({ length: 7 }, (_, i) =>
       pastMeeting({ id: `pm-${i}`, meeting_and_occurrence_id: `pm-${i}-occ`, start_time: `2026-01-0${i + 1}T00:00:00Z` })

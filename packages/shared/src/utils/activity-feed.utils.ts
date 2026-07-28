@@ -13,7 +13,7 @@ import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '.
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
 import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
-import { getPastMeetingResourceId } from './past-meeting.utils';
+import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 import { normalizePollStatus } from './poll.utils';
 import { getSurveyDisplayStatus } from './survey.utils';
 import { isValidUrl } from './url.utils';
@@ -43,9 +43,19 @@ function timestampValue(timestamp: string): number {
  */
 export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedItem[] {
   const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
-    .sort((a, b) => timestampValue(b.start_time ?? '') - timestampValue(a.start_time ?? ''))
-    .slice(0, PER_SOURCE_LIMIT)
     .map((m) => {
+      // getPastMeetingStartTimeMs prefers scheduled_start_time and rejects Go zero-dates
+      // ("0001-01-01...") that Zoom/ITX past-meeting rows sometimes carry on start_time — a raw
+      // `m.start_time` read would parse a zero-date as a real (~year 1) timestamp and silently
+      // sort that meeting out via the PER_SOURCE_LIMIT slice below, even with a valid
+      // scheduled_start_time. Every other past-meeting surface (meetings-dashboard,
+      // meeting-organizer) already goes through this helper.
+      const startMs = getPastMeetingStartTimeMs(m);
+      return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
+    })
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, PER_SOURCE_LIMIT)
+    .map(({ meeting: m, timestamp }) => {
       // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) — the same helper every other
       // past-meeting surface uses (meeting-card, meeting-organizer, attachments). The detail page
       // itself is inconsistent about which identifier it reads: recording/transcript/summary map
@@ -60,7 +70,7 @@ export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedIt
         type: 'past_meeting' as const,
         key: `past_meeting-${resourceId}`,
         label: `Meeting held: ${m.title}`,
-        timestamp: m.start_time ?? '',
+        timestamp,
         icon: 'fa-light fa-clock-rotate-left',
         action: { kind: 'route' as const, path: `/meetings/${resourceId}/details` },
       };
