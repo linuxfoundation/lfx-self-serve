@@ -173,6 +173,8 @@ export class MeetingJoinComponent implements OnInit {
   public messageIcon: Signal<string>;
   public alertMessage: Signal<string>;
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
+  /** True when `zoom_redirect=false` is on the URL — suppresses automatic Zoom open. */
+  private readonly zoomRedirectDisabled: Signal<boolean>;
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
   // Bumped immediately when a guest is added so the count in the RSVP card doesn't lag the
@@ -356,6 +358,9 @@ export class MeetingJoinComponent implements OnInit {
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.fetchedJoinUrl = this.initializeFetchedJoinUrl();
+    this.zoomRedirectDisabled = toSignal(this.activatedRoute.queryParamMap.pipe(map((params) => params.get('zoom_redirect')?.toLowerCase() === 'false')), {
+      initialValue: this.activatedRoute.snapshot.queryParamMap.get('zoom_redirect')?.toLowerCase() === 'false',
+    });
     this.attachments = this.initializeAttachments();
     this.messageSeverity = this.initializeMessageSeverity();
     this.messageIcon = this.initializeMessageIcon();
@@ -601,43 +606,26 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  /**
-   * When `zoom_redirect=false` is present on the meeting URL, skip opening the join link
-   * automatically so the viewer can stay on the meeting detail page.
-   */
-  private isZoomRedirectDisabled(): boolean {
-    return this.activatedRoute.snapshot.queryParamMap.get('zoom_redirect')?.toLowerCase() === 'false';
-  }
-
   private initializeAutoJoin(): void {
     // Use toObservable to create an Observable from the signals, then subscribe once
     // This executes only when all conditions are met
-    toObservable(this.fetchedJoinUrl)
+    combineLatest([toObservable(this.fetchedJoinUrl), toObservable(this.zoomRedirectDisabled)])
       .pipe(
         // Take only the first emission where we have a valid URL and haven't auto-joined yet
         // Only auto-join for authenticated users using their own email (not guest form)
-        filter((url) => {
+        filter(([url, zoomRedirectDisabled]) => {
           const authenticated = this.authenticated();
           const user = this.user();
           const canJoin = this.canJoinMeeting();
           const alreadyJoined = this.hasAutoJoined();
           const usingGuestForm = this.showGuestForm();
 
-          return (
-            !!url &&
-            authenticated &&
-            !!user &&
-            !!user.email &&
-            canJoin &&
-            !alreadyJoined &&
-            !usingGuestForm &&
-            !this.isZoomRedirectDisabled()
-          );
+          return !!url && authenticated && !!user && !!user.email && canJoin && !alreadyJoined && !usingGuestForm && !zoomRedirectDisabled;
         }),
         // Take only the first valid URL
         take(1)
       )
-      .subscribe((url) => {
+      .subscribe(([url]) => {
         // Mark as auto-joined to prevent multiple attempts
         this.hasAutoJoined.set(true);
 
