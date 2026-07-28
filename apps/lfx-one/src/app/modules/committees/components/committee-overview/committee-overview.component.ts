@@ -360,14 +360,16 @@ export class CommitteeOverviewComponent {
     }
   }
 
-  // Not implemented anywhere in the app yet (also TODO stubs in surveys-dashboard.component.ts) —
-  // mirrors that same stub behavior rather than silently swallowing the event.
+  // Mirrors surveys-dashboard.component.ts's own stub handling (also TODOs there) rather than
+  // silently swallowing the event.
   public onSurveyDuplicate(surveyId: string): void {
+    // TODO: Implement survey duplication when API is available
     console.warn('Survey duplication not yet implemented for:', surveyId);
     this.surveyDrawerVisible.set(false);
   }
 
   public onSurveyClose(surveyId: string): void {
+    // TODO: Implement survey close when API is available
     console.warn('Survey close not yet implemented for:', surveyId);
     this.surveyDrawerVisible.set(false);
   }
