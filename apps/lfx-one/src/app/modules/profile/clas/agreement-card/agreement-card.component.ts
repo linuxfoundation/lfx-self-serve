@@ -4,6 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MyClaAgreement } from '@lfx-one/shared/interfaces';
+import { claKindSeverity, claStatusLabel, claStatusSeverity } from '@lfx-one/shared/utils';
 
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -27,29 +28,9 @@ export class AgreementCardComponent {
   /** Emitted when the user clicks Download PDF; payload is the signatureID. */
   public readonly download = output<string>();
 
-  protected readonly kindSeverity = computed(() => (this.agreement().kind === 'ICLA' ? 'info' : 'secondary'));
-
-  protected readonly statusLabel = computed(() => {
-    switch (this.agreement().status) {
-      case 'valid':
-        return 'Valid';
-      case 'superseded':
-        return 'Superseded';
-      default:
-        return 'No longer valid';
-    }
-  });
-
-  protected readonly statusSeverity = computed(() => {
-    switch (this.agreement().status) {
-      case 'valid':
-        return 'success';
-      case 'superseded':
-        return 'warn';
-      default:
-        return 'secondary';
-    }
-  });
+  protected readonly kindSeverity = computed(() => claKindSeverity(this.agreement().kind));
+  protected readonly statusLabel = computed(() => claStatusLabel(this.agreement().status));
+  protected readonly statusSeverity = computed(() => claStatusSeverity(this.agreement().status));
 
   protected onDownload(): void {
     this.download.emit(this.agreement().id);
