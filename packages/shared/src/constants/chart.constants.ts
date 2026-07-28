@@ -13,7 +13,7 @@ import { lfxColors } from './colors.constants';
  */
 export const ZERO_BAR_STUB_PLUGIN: Plugin<'bar'> = {
   id: 'lfxZeroBarStub',
-  afterDatasetsDraw(chart: Chart) {
+  afterDatasetsDraw(chart: Chart<'bar'>) {
     const ctx = chart.ctx;
     ctx.save();
     ctx.fillStyle = lfxColors.gray[300];

@@ -80,8 +80,14 @@ export interface DashboardMetricCard {
   /** Chart type - line or bar */
   chartType: ChartType;
 
-  /** Chart.js data configuration */
-  chartData?: ChartData<ChartType>;
+  /**
+   * Chart.js data configuration.
+   * Typed `ChartData<any>` rather than `ChartData<ChartType>` because `ChartDataset<TType>`
+   * is invariant in `TType` — a narrow dataset (e.g. `ChartDataset<'bar'>` surfaced via
+   * `ZeroStubBarDataset`) is not assignable to the wide union. The `chartType` field above
+   * remains the type discriminator; the `lfx-chart` consumer reads data as `any`.
+   */
+  chartData?: ChartData<any>;
 
   /** Chart.js options configuration */
   chartOptions?: ChartOptions<ChartType>;
@@ -399,7 +405,7 @@ export interface DualSignalRow {
   /** Trend direction */
   trend?: 'up' | 'down' | 'neutral';
   /** Sparkline chart data for this signal */
-  chartData?: ChartData<ChartType>;
+  chartData?: ChartData<any>;
   /** Sparkline color — rendered as a legend dot beside the label */
   color?: string;
 }
