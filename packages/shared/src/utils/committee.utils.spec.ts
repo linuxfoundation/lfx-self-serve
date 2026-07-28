@@ -209,6 +209,19 @@ describe('groupCommitteesByFoundation', () => {
     expect(slugs).toEqual(['alpha-project', 'alpha-project-2']);
   });
 
+  it('assigns colliding testid slugs by key order, independent of the (locale-aware) label display order', () => {
+    // "Foo Bar" and "Foo-Bar" both slugify to "foo-bar" but are genuinely distinct labels/projects.
+    // Slug numbering must follow key order (proj-a < proj-z), not whichever label sorts first for
+    // display — otherwise the '-2' suffix would route through localeCompare and could flip between
+    // server and client under differing ICU collation.
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-z', project_name: 'Foo Bar' }),
+      committee({ uid: 'c2', project_uid: 'proj-a', project_name: 'Foo-Bar' }),
+    ]);
+    expect(groups.find((g) => g.key === 'proj-a')?.testIdSlug).toBe('foo-bar');
+    expect(groups.find((g) => g.key === 'proj-z')?.testIdSlug).toBe('foo-bar-2');
+  });
+
   it('merges a degraded committee into an existing named bucket that already carries the identical label', () => {
     const groups = groupCommitteesByFoundation([
       committee({ uid: 'c1', project_uid: 'proj-cncf', project_name: 'CNCF' }),

@@ -224,36 +224,46 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     addTo(key, label, committee);
   }
 
+  // Assign testid slugs in a key-ordered pass — deterministic and locale-independent (`compareCodeUnits`,
+  // not `localeCompare`) — decoupled entirely from display order below. Two *different* labels can
+  // collide on the same base slug (e.g. "CNCF" and "CNCF®" both slugify to "cncf"), so numbering by
+  // display-sort position would route the '-2' suffix through a locale-aware label comparison; a
+  // server/client ICU collation difference could then flip which bucket gets which testid between the
+  // SSR HTML and the hydrated DOM. Keys are already unique and this ordering is independent of them.
+  const slugByKey = new Map<string, string>();
+  const slugCounts = new Map<string, number>();
+  for (const key of [...buckets.keys()].sort(compareCodeUnits)) {
+    const bucket = buckets.get(key)!;
+    const baseSlug = slugify(bucket.label) || 'group';
+    const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
+    slugCounts.set(baseSlug, occurrence);
+    slugByKey.set(key, occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}`);
+  }
+
   const groups = [...buckets.values()].sort((a, b) => {
     if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
     // Equal labels happen between distinct named buckets sharing a display name (the deliberate
     // non-merge case), and between those and the label-keyed bucket an ambiguous degraded lookup
-    // produces. Break the tie by key — a plain code-point comparison, not localeCompare, since keys
-    // are opaque identifiers (a project_uid or raw label text) rather than human-readable text, and
-    // this runs on both sides of SSR: any server/client ICU collation difference in a locale-aware
-    // compare would flip the testid slug suffix assigned below between the SSR HTML and the
-    // hydrated DOM — the exact instability this tiebreak exists to close.
-    if (a.label === b.label) return compareCodePoints(a.key, b.key);
+    // produces. Break the tie by key — a code-unit comparison, not localeCompare, since keys are
+    // opaque identifiers (a project_uid or raw label text) rather than human-readable text.
+    if (a.label === b.label) return compareCodeUnits(a.key, b.key);
     if (a.label === OTHER_GROUPS_LABEL) return 1;
     if (b.label === OTHER_GROUPS_LABEL) return -1;
+    // Display order is intentionally locale-aware — this only affects reading order, never which
+    // testid a group gets (that's assigned above, independent of this sort).
     return a.label.localeCompare(b.label);
   });
 
-  // Disambiguate testid slugs only when two groups genuinely share a slug (rare) — keeps the common
-  // case's testid a clean, human-readable slug instead of always suffixing a raw uid. Falls back to
-  // 'group' for a label with no ASCII alphanumerics (e.g. a non-Latin project/foundation name), so
-  // the testid is never a bare, colliding "groups-foundation-group-".
-  const slugCounts = new Map<string, number>();
-  return groups.map((group) => {
-    const baseSlug = slugify(group.label) || 'group';
-    const occurrence = (slugCounts.get(baseSlug) ?? 0) + 1;
-    slugCounts.set(baseSlug, occurrence);
-    return { ...group, testIdSlug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}` };
-  });
+  return groups.map((group) => ({ ...group, testIdSlug: slugByKey.get(group.key)! }));
 }
 
-/** Deterministic, locale-independent ordering for opaque identifier strings (not human-readable text — use `localeCompare` for that). */
-function compareCodePoints(a: string, b: string): number {
+/**
+ * Deterministic, locale-independent ordering for opaque identifier strings (not human-readable
+ * text — use `localeCompare` for that). Compares UTF-16 code units, not Unicode code points, so
+ * astral-plane characters don't sort in true code-point order — irrelevant here since the only
+ * requirement is a stable, environment-independent order, not a "correct" one.
+ */
+function compareCodeUnits(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;
   return 0;
