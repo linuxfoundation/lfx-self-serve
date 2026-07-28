@@ -226,7 +226,11 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
 
   const groups = [...buckets.values()].sort((a, b) => {
     if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
-    if (a.label === b.label) return 0;
+    // Equal labels are only possible for two distinct named buckets sharing a display name (the
+    // deliberate non-merge case) — break the tie by key (stable, input-order-independent) rather
+    // than falling through to Map insertion order, which would make render order and the testid
+    // slug suffix assigned below flip depending on API response order across refreshes.
+    if (a.label === b.label) return a.key.localeCompare(b.key);
     if (a.label === OTHER_GROUPS_LABEL) return 1;
     if (b.label === OTHER_GROUPS_LABEL) return -1;
     return a.label.localeCompare(b.label);
