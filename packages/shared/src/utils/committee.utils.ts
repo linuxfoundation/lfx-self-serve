@@ -176,45 +176,52 @@ export function canManageCommitteeMembers(committee: Committee | null | undefine
 
 /**
  * Groups an already-filtered All Groups list by resolved label, keyed by `project_uid` when a real
- * `project_name` resolved (so two different sub-projects that happen to share a display name don't
- * merge), but keyed by the resolved label text itself when `project_name` is missing — whether that
- * label falls back to `foundation_name` or all the way to the fallback constants. A degraded
- * committee merges into an existing named bucket that already carries the identical label (e.g. a
- * project literally named "CNCF" and a committee that degrades to `foundation_name: 'CNCF'`), so no
- * two buckets ever render the same visible header.
+ * `project_name` resolved — so two genuinely distinct sub-projects that happen to share a display
+ * name still render as two buckets (disambiguated by testid slug), never silently merged — but keyed
+ * by the resolved label text itself when `project_name` is missing, whether that label falls back to
+ * `foundation_name` or all the way to the fallback constants. A degraded committee merges into an
+ * existing named bucket only when the label unambiguously belongs to exactly one named project (e.g.
+ * a project literally named "CNCF" and a committee that degrades to `foundation_name: 'CNCF'`); if
+ * two distinct named projects share that label, which one the committee "really" belongs to can't be
+ * determined, so it falls back to its own label-keyed bucket instead of merging into an arbitrary one.
  *
  * Pure and side-effect-free: callers gate whether grouping applies at all (e.g. only in foundation
  * scope) and decide the input list (e.g. already search/filter-narrowed).
  */
 export function groupCommitteesByFoundation(committees: Committee[]): CommitteeFoundationGroup[] {
   const buckets = new Map<string, CommitteeFoundationGroup>();
-  const keyByLabel = new Map<string, string>();
+  const namedKeysByLabel = new Map<string, Set<string>>();
 
   const addTo = (key: string, label: string, committee: Committee): void => {
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = { key, label, testIdSlug: '', isFoundationLevel: false, committees: [] };
       buckets.set(key, bucket);
-      keyByLabel.set(label, key);
     }
     bucket.isFoundationLevel = bucket.isFoundationLevel || !!committee.is_foundation;
     bucket.committees.push(committee);
   };
 
-  // First pass: named projects get their own project_uid-keyed bucket and register their label, so
-  // a same-labeled degraded committee (second pass) merges into it instead of opening a second,
-  // identically-headed bucket.
+  // First pass: named projects get their own project_uid-keyed bucket. Track every distinct named
+  // key seen under each label, so a degraded committee (second pass) only merges into a named bucket
+  // when the label unambiguously identifies exactly one of them.
   for (const committee of committees) {
-    if (committee.project_name) addTo(committee.project_uid, committee.project_name, committee);
+    if (!committee.project_name) continue;
+    addTo(committee.project_uid, committee.project_name, committee);
+    const keys = namedKeysByLabel.get(committee.project_name) ?? new Set<string>();
+    keys.add(committee.project_uid);
+    namedKeysByLabel.set(committee.project_name, keys);
   }
 
   // Second pass: degraded committees (no project_name) resolve to foundation_name or a fallback
-  // constant, merging into a same-labeled named bucket when one exists; otherwise every committee
-  // that degrades to the same text shares one label-keyed bucket.
+  // constant, merging into the unique named bucket sharing that label when there is exactly one;
+  // otherwise every committee that degrades to the same text shares one label-keyed bucket.
   for (const committee of committees) {
     if (committee.project_name) continue;
     const label = committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
-    addTo(keyByLabel.get(label) ?? label, label, committee);
+    const namedKeys = namedKeysByLabel.get(label);
+    const key = namedKeys?.size === 1 ? [...namedKeys][0] : label;
+    addTo(key, label, committee);
   }
 
   const groups = [...buckets.values()].sort((a, b) => {
