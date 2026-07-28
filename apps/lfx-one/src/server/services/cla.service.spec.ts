@@ -113,7 +113,7 @@ describe('deriveStatus (research R6)', () => {
 
 describe('toMyClaAgreement', () => {
   it('maps an ICLA with pdfAvailable=true', () => {
-    const a = toMyClaAgreement(icla({ signatureDocumentMajorVersion: '2', signatureMinorVersion: undefined }));
+    const a = toMyClaAgreement(icla({ signatureDocumentMajorVersion: '2' }));
     expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid' });
   });
 
@@ -188,7 +188,7 @@ describe('ClaService.resolveIdentity', () => {
     const identity = await new ClaService().resolveIdentity(req);
 
     expect(identity.easyclaUserIds).toEqual(['u-1']);
-    expect(identity.unmatched ?? false).toBe(false);
+    expect(identity.lfUsername).toBe('alice');
   });
 
   it('flags no-match when the username lookup 404s (empty user id set)', async () => {

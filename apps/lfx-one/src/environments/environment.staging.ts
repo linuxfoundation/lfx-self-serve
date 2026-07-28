@@ -11,6 +11,9 @@ export const environment = {
     mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
     crowdfunding: 'https://crowdfunding.staging.lfx.dev/',
     enrollment: 'https://joinnow.staging.platform.linuxfoundation.org/',
+    // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).
+    // TODO(M1): confirm the exact staging host with the EasyCLA team before enabling the flag.
+    contributorConsole: 'https://contributor.staging.lfx.linuxfoundation.org/',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.dev.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',

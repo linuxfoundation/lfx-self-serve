@@ -1,0 +1,76 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<p-toast></p-toast>
+
+<section class="flex flex-col gap-4" data-testid="my-clas">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-lg font-semibold text-slate-800">My CLAs</h2>
+      <p class="mt-0.5 text-sm text-slate-500">Your signed Individual (ICLA) and Employee (ECLA) Contributor License Agreements.</p>
+    </div>
+    <lfx-button label="Sign a new CLA" icon="fa-light fa-arrow-up-right-from-square" iconPos="right" size="small" [outlined]="true"
+      [href]="contributorConsoleUrl" target="_blank" rel="noopener noreferrer" [attr.data-testid]="'sign-new-cla'" />
+  </div>
+
+  @if (loading()) {
+    <lfx-route-loading />
+  } @else if (error()) {
+    <lfx-message
+      severity="error"
+      title="Couldn't load your CLAs"
+      text="Something went wrong loading your agreements. Please try again."
+      [attr.data-testid]="'my-clas-error'" />
+    <div>
+      <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" [outlined]="true" (click)="retry()" />
+    </div>
+  } @else {
+    <!-- Identity hint: history may be incomplete when nothing matched -->
+    @if (identity()?.unmatched) {
+      <lfx-message
+        severity="info"
+        text="We couldn't match any agreements to your account yet. Your CLA history may be incomplete — try linking the accounts you contributed with."
+        [attr.data-testid]="'my-clas-unmatched-hint'" />
+    }
+
+    <!-- GitHub-link CTA -->
+    @if (showGithubCta()) {
+      <lfx-message severity="info" [attr.data-testid]="'my-clas-github-cta'">
+        <span>
+          Don't see your CLAs? Many contributions are matched by your GitHub account.
+          <a class="font-semibold text-blue-600 hover:underline" routerLink="/profile/identities">Link your GitHub account →</a>
+        </span>
+      </lfx-message>
+    }
+
+    @if (isEmpty()) {
+      <lfx-empty-state
+        icon="fa-light fa-file-signature"
+        title="No CLAs on file yet"
+        subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities." />
+    } @else {
+      <!-- ICLAs -->
+      @if (iclas().length) {
+        <lfx-card>
+          <div class="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Individual CLAs (ICLA)</div>
+          @for (agreement of iclas(); track agreement.id) {
+            <lfx-agreement-card [agreement]="agreement" [downloading]="downloadingId() === agreement.id" (download)="onDownload($event)" />
+          }
+        </lfx-card>
+      }
+
+      <!-- ECLAs -->
+      @if (eclas().length) {
+        <lfx-card>
+          <div class="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Employee CLAs (ECLA)</div>
+          @for (agreement of eclas(); track agreement.id) {
+            <lfx-agreement-card [agreement]="agreement" />
+          }
+        </lfx-card>
+      }
+    }
+  }
+</section>
