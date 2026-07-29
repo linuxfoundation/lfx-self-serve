@@ -46,8 +46,10 @@ export class CommitteeEngagementService {
       WHERE COMMITTEE_UID = ? AND TIME_RANGE_TYPE = ?
       ORDER BY MEMBER_EMAIL
     `;
+    logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid, window });
     try {
       const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [committeeUid, window], { expectMissingObject: true });
+      logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, window, row_count: result.rows.length });
       return { rows: result.rows, dataAvailable: true };
     } catch (error) {
       // Pre-dbt-deploy the engagement table is absent; degrade to the empty response the
@@ -153,6 +155,13 @@ export class CommitteeEngagementService {
       );
     }
 
+    logger.debug(req, 'get_committee_engagement', 'Joined engagement rows to the roster', {
+      committee_uid: committeeUid,
+      roster_size: members.length,
+      matched_count: matchedCount,
+      data_available: dataAvailable,
+    });
+
     return {
       members: memberEngagements,
       summary: {
@@ -175,10 +184,17 @@ export class CommitteeEngagementService {
     return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
   }
 
+  /**
+   * `Date` instances convert via `toISOString()`; strings pass through unchanged rather than being
+   * re-parsed with `new Date(value)`. A TIMESTAMP_NTZ string with no zone designator would parse as
+   * *local* time in V8, silently shifting the value by the server's UTC offset — the same trap
+   * `OrgLensProjectsService.latestTimestamp` avoids by never re-parsing string warehouse values.
+   */
   private toIsoTimestamp(value: string | Date | null | undefined): string | null {
-    if (value === null || value === undefined) return null;
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value.toISOString();
+    }
+    return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
   /** Placeholder table/column names — real names TBD once the dbt model (owned separately) lands. */

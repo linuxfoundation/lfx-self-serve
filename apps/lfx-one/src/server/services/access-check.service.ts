@@ -61,7 +61,15 @@ export class AccessCheckService {
     }
 
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
-    return this.performCheck(req, resources, operationName, startTime);
+    try {
+      return await this.performCheck(req, resources, operationName, startTime);
+    } catch (error) {
+      // Unlike checkAccess, this rethrows rather than degrading — but still logs, so a failed
+      // strict check leaves the same terminal error record as any other failed operation instead
+      // of a started-but-never-finished one.
+      logger.error(req, operationName, startTime, error, { request_count: resources.length });
+      throw error;
+    }
   }
 
   /**

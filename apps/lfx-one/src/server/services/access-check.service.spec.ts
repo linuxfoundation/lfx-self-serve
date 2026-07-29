@@ -21,6 +21,7 @@ vi.mock('./logger.service', () => ({
 import type { Request } from 'express';
 
 import { AccessCheckService } from './access-check.service';
+import { logger } from './logger.service';
 
 const req = {} as unknown as Request;
 
@@ -130,10 +131,15 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
     expect(result).toBe(true);
   });
 
-  it('propagates the upstream error instead of degrading to false', async () => {
-    proxyRequest.mockRejectedValueOnce(new Error('boom'));
+  it('propagates the upstream error instead of degrading to false, and still logs it', async () => {
+    const upstreamError = new Error('boom');
+    proxyRequest.mockRejectedValueOnce(upstreamError);
 
     await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('boom');
+    // checkAccess degrades and never throws, so its failure path always has a terminal log; a
+    // rethrow path needs its own logger.error call or a failed strict check leaves a
+    // started-but-never-finished operation with no error record.
+    expect(logger.error).toHaveBeenCalledWith(req, expect.any(String), expect.any(Number), upstreamError, expect.objectContaining({ request_count: 1 }));
   });
 
   it('returns an empty map without calling upstream for an empty input', async () => {

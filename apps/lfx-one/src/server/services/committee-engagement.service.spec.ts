@@ -9,10 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // from their real implementation (not hand-copied) so a threshold change there fails this suite
 // too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.util.spec.ts.
-const { execute, getCommitteeMembers, warning } = vi.hoisted(() => ({
+const { execute, getCommitteeMembers, warning, debug } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
   warning: vi.fn(),
+  debug: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({ DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE' }));
@@ -34,11 +35,15 @@ vi.mock('./committee.service', () => ({
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: {
     getInstance: () => ({ execute }),
-    isMissingObjectError: (error: unknown) => (error as { missingObject?: boolean })?.missingObject === true,
+    // Delegates to the real regex (not a hand-rolled `missingObject` flag) so this suite would
+    // catch a change to SnowflakeService's wrapped error message breaking the match — the actual
+    // failure mode is the message produced by `execute`'s catch block ("Snowflake query execution
+    // failed: <sdk message>"), which the regex must still match after the wrapping prefix.
+    isMissingObjectError: (error: unknown) => /does not exist or not authorized/i.test(error instanceof Error ? error.message : String(error)),
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { warning },
+  logger: { warning, debug },
 }));
 
 import { CommitteeEngagementService } from './committee-engagement.service';
@@ -77,9 +82,31 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.data_available).toBe(true);
   });
 
+  it('queries the engagement table with the committee uid and window bound in order, against the resolved schema', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([]);
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '90d');
+
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEMBER_MEETING_ATTENDANCE'), ['committee-1', '90d'], {
+      expectMissingObject: true,
+    });
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringMatching(/WHERE\s+COMMITTEE_UID\s*=\s*\?\s+AND\s+TIME_RANGE_TYPE\s*=\s*\?/),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
   it('degrades to a zeroed, data_available:false response when the engagement table does not exist yet', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'alice@example.com')]);
-    execute.mockRejectedValueOnce({ missingObject: true });
+    // Realistic wrapped form SnowflakeService.execute() actually throws (see snowflake.service.ts's
+    // catch block), not a hand-rolled flag — pins the regex against the wrapping prefix surviving.
+    execute.mockRejectedValueOnce(
+      new Error(
+        "Snowflake query execution failed: SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEMBER_MEETING_ATTENDANCE' does not exist or not authorized."
+      )
+    );
 
     const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
