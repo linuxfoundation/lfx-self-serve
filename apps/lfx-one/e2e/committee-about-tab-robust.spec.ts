@@ -5,70 +5,33 @@
 
 import { expect, Page, test } from '@playwright/test';
 
-const DATA_LOAD_TIMEOUT = 30_000;
+import {
+  buildBaseCommittee,
+  DATA_LOAD_TIMEOUT,
+  gotoCommitteeTab as gotoCommitteeTabHelper,
+  mockCommitteeApis as mockCommitteeApisHelper,
+} from './helpers/committee-about.helper';
+
 const COMMITTEE_UID = 'e2e-about-robust-committee';
 
-function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test run and surface a useful failure.
-  }
-}
-
 function baseCommittee(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    uid: COMMITTEE_UID,
+  return buildBaseCommittee(COMMITTEE_UID, {
     name: 'E2E About Tab Robust Working Group',
     description: 'A working group used to exercise the About tab structural contract in e2e tests.',
-    category: 'Working Group',
-    public: true,
-    enable_voting: false,
-    join_mode: 'open',
     website: 'https://example.org/e2e-about-robust',
     mailing_list: 'e2e-about-robust@example.org',
     chat_channel: 'https://slack.example.org/e2e-about-robust',
-    foundation_name: 'E2E Foundation',
-    project_name: 'E2E Project',
-    project_uid: 'e2e-project-uid',
-    project_slug: 'e2e-project',
-    is_foundation: false,
-    parent_uid: null,
-    parent_project_uid: 'e2e-project-uid',
-    total_members: 12,
-    created_at: '2025-01-15T00:00:00Z',
-    updated_at: '2025-06-01T00:00:00Z',
-    member_visibility: 'basic_profile',
-    writer: false,
     my_role: 'Member',
-    auditors: [],
     ...overrides,
-  };
-}
-
-async function mockCommitteeApis(page: Page, opts: { committee: Record<string, unknown>; meetings?: unknown[] }): Promise<void> {
-  await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.committee) });
-  });
-  await page.route(`**/api/committees/${COMMITTEE_UID}/children`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  await page.route(`**/api/committees/${COMMITTEE_UID}/members`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  await page.route(`**/api/committees/${COMMITTEE_UID}/invites*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  await page.route('**/api/mailing-lists*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  await page.route('**/api/meetings*', (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: opts.meetings ?? [] }) });
   });
 }
 
-async function gotoCommitteeTab(page: Page, query = '?tab=about'): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.goto(`/groups/${COMMITTEE_UID}${query}`, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+function mockCommitteeApis(page: Page, opts: { committee: Record<string, unknown>; meetings?: unknown[] }): Promise<void> {
+  return mockCommitteeApisHelper(page, COMMITTEE_UID, opts);
+}
+
+function gotoCommitteeTab(page: Page, query = '?tab=about'): Promise<void> {
+  return gotoCommitteeTabHelper(page, COMMITTEE_UID, query);
 }
 
 test.setTimeout(120_000);

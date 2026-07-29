@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { buildRecurrenceSummary, convertRecurrenceToPattern, MeetingRecurrence } from '@lfx-one/shared';
+import { MeetingRecurrence } from '@lfx-one/shared/interfaces';
+import { buildRecurrenceSummary, convertRecurrenceToPattern } from '@lfx-one/shared/utils';
 
 @Pipe({
   name: 'recurrenceSummary',

@@ -8,7 +8,7 @@ import { Committee, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 
-import { MailingListEmailPipe } from '../committee-settings-tab/pipes/mailing-list-email.pipe';
+import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
 
 /**
  * Shared Channels card content (mailing lists, chat channel, website) used by both the
