@@ -182,7 +182,14 @@ export class AccessCheckService {
     };
 
     // Make the API request
-    const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(req, 'LFX_V2_SERVICE', '/access-check', 'POST', undefined, requestPayload);
+    const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      '/access-check',
+      'POST',
+      undefined,
+      requestPayload
+    );
 
     // Parse each result string into a lookup keyed by the "resource:id#access" tuple it
     // reports on, rather than trusting positional (array-index) alignment with `resources`.

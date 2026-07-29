@@ -68,7 +68,12 @@ export class CommitteeEngagementService {
    * once the real dbt model's schema is known. Every roster member appears in the response even
    * without a matching warehouse row, so `total_count` always reflects the full committee.
    */
-  private buildResponse(req: Request, committeeUid: string, members: CommitteeMember[], queryResult: CommitteeEngagementQueryResult): CommitteeEngagementResponse {
+  private buildResponse(
+    req: Request,
+    committeeUid: string,
+    members: CommitteeMember[],
+    queryResult: CommitteeEngagementQueryResult
+  ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
     const rowsByEmail = new Map<string, CommitteeEngagementWarehouseRow>();
