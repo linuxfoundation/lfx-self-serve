@@ -48,17 +48,12 @@ export class ClasController {
 
       const signatureId = (req.params['signatureId'] ?? '').trim();
 
-      // Re-resolve the session's own agreements and confirm the requested signature is an
-      // ICLA the caller owns before asking EasyCLA for the presigned URL. Unknown, not-owned,
-      // and ECLA IDs all return 404 (never 403) so this never leaks whether an ID exists.
-      const { agreements } = await this.claService.getMyClas(req);
-      const owned = agreements.find((a) => a.id === signatureId && a.pdfAvailable);
-      if (!owned) {
-        res.status(404).json({ message: 'Signed document not found' });
-        return;
-      }
-
-      const pdf = await this.claService.getSignedDocumentUrl(req, signatureId);
+      // EasyCLA's /v4/my-clas/{id}/pdf enforces ownership + ICLA eligibility against the
+      // session's identity and returns 404 for unknown, not-owned and ECLA IDs (never 403),
+      // so it never leaks whether an ID exists. SS just resolves the session identity and
+      // passes it through — no separate ownership pre-check needed.
+      const identity = await this.claService.resolveIdentity(req);
+      const pdf = await this.claService.getPdfUrl(req, signatureId, identity);
       if (!pdf) {
         res.status(404).json({ message: 'Signed document not found' });
         return;

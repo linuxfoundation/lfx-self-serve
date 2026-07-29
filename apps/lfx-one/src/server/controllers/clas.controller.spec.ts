@@ -4,13 +4,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { getMyClas, getSignedDocumentUrl } = vi.hoisted(() => ({ getMyClas: vi.fn(), getSignedDocumentUrl: vi.fn() }));
+const { getMyClas, resolveIdentity, getPdfUrl } = vi.hoisted(() => ({ getMyClas: vi.fn(), resolveIdentity: vi.fn(), getPdfUrl: vi.fn() }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
 vi.mock('../services/cla.service', () => ({
   ClaService: class {
     public getMyClas = getMyClas;
-    public getSignedDocumentUrl = getSignedDocumentUrl;
+    public resolveIdentity = resolveIdentity;
+    public getPdfUrl = getPdfUrl;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -25,11 +26,12 @@ function buildRes() {
 }
 
 const iclaAgreement = { id: 'sig-icla', kind: 'ICLA', projectName: 'p', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true };
-const eclaAgreement = { id: 'sig-ecla', kind: 'ECLA', projectName: 'p', companyName: 'Acme', signedOn: '2022-02-02', status: 'valid', pdfAvailable: false };
+const resolvedIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
 
 beforeEach(() => {
   vi.clearAllMocks();
   getUsernameFromAuth.mockResolvedValue('alice');
+  resolveIdentity.mockResolvedValue(resolvedIdentity);
 });
 
 describe('ClasController.getMyClas', () => {
@@ -71,58 +73,36 @@ describe('ClasController.getMyClas', () => {
   });
 });
 
-describe('ClasController.getPdfUrl — authorization boundary', () => {
+describe('ClasController.getPdfUrl', () => {
   it('returns the presigned URL for an owned ICLA', async () => {
-    getMyClas.mockResolvedValue({ agreements: [iclaAgreement], identity: {} });
-    getSignedDocumentUrl.mockResolvedValue({ url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
+    getPdfUrl.mockResolvedValue({ url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
     const res = buildRes();
 
     await new ClasController().getPdfUrl({ params: { signatureId: 'sig-icla' } } as any, res, vi.fn());
 
+    expect(getPdfUrl).toHaveBeenCalledWith(expect.anything(), 'sig-icla', resolvedIdentity);
     expect(res.json).toHaveBeenCalledWith({ url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 
-  it('returns 404 (never 403) for an unknown signature id', async () => {
-    getMyClas.mockResolvedValue({ agreements: [iclaAgreement], identity: {} });
+  it('returns 404 (never 403) when the endpoint reports no owned PDF (unknown / not-owned / ECLA)', async () => {
+    // Ownership + ICLA-eligibility is enforced upstream; the service returns null on the endpoint's 404.
+    getPdfUrl.mockResolvedValue(null);
     const res = buildRes();
 
-    await new ClasController().getPdfUrl({ params: { signatureId: 'does-not-exist' } } as any, res, vi.fn());
+    await new ClasController().getPdfUrl({ params: { signatureId: 'sig-x' } } as any, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.status).not.toHaveBeenCalledWith(403);
-    expect(getSignedDocumentUrl).not.toHaveBeenCalled();
   });
 
-  it('returns 404 for an ECLA signature (no PDF, never offered)', async () => {
-    getMyClas.mockResolvedValue({ agreements: [eclaAgreement], identity: {} });
-    const res = buildRes();
+  it('forwards non-404 upstream failures to the error handler', async () => {
+    getPdfUrl.mockRejectedValue(new MicroserviceError('boom', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+    const next = vi.fn();
 
-    await new ClasController().getPdfUrl({ params: { signatureId: 'sig-ecla' } } as any, res, vi.fn());
+    await new ClasController().getPdfUrl({ params: { signatureId: 'sig-icla' } } as any, buildRes(), next);
 
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(getSignedDocumentUrl).not.toHaveBeenCalled();
-  });
-
-  it('returns 404 for a signature not in the caller’s own resolved set (not-owned)', async () => {
-    // The caller's set contains only sig-icla; requesting a different, valid-looking id must 404.
-    getMyClas.mockResolvedValue({ agreements: [iclaAgreement], identity: {} });
-    const res = buildRes();
-
-    await new ClasController().getPdfUrl({ params: { signatureId: 'sig-someone-else' } } as any, res, vi.fn());
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(getSignedDocumentUrl).not.toHaveBeenCalled();
-  });
-
-  it('returns 404 when the signature is owned but upstream yields no document URL', async () => {
-    getMyClas.mockResolvedValue({ agreements: [iclaAgreement], identity: {} });
-    getSignedDocumentUrl.mockResolvedValue(null);
-    const res = buildRes();
-
-    await new ClasController().getPdfUrl({ params: { signatureId: 'sig-icla' } } as any, res, vi.fn());
-
-    expect(res.status).toHaveBeenCalledWith(404);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(MicroserviceError);
   });
 
   it('returns 401 (via next) when unauthenticated', async () => {
@@ -132,6 +112,6 @@ describe('ClasController.getPdfUrl — authorization boundary', () => {
     await new ClasController().getPdfUrl({ params: { signatureId: 'sig-icla' } } as any, buildRes(), next);
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
-    expect(getMyClas).not.toHaveBeenCalled();
+    expect(resolveIdentity).not.toHaveBeenCalled();
   });
 });

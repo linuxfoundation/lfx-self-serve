@@ -26,29 +26,20 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import type { EasyClaSignature } from '../types/cla.types';
+import type { EasyClaMyCla, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
-import { buildAgreements, ClaService, deriveStatus, isEcla, isIcla, normalizeGithubId, toMyClaAgreement } from './cla.service';
+import { ClaService, claServiceBaseUrl, normalizeGithubId, toMyClaAgreement } from './cla.service';
 
 const req = {} as unknown as Request;
 
-/** Minimal signed ICLA record. */
-function icla(overrides: Partial<EasyClaSignature> = {}): EasyClaSignature {
-  return { signatureID: 's-icla', claType: 'icla', signatureSigned: true, signatureApproved: true, projectID: 'proj-1', signedOn: '2022-01-01', ...overrides };
+/** Minimal ICLA record from `/v4/my-clas`. */
+function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
+  return { signatureID: 's-icla', claType: 'icla', valid: true, pdfAvailable: true, claGroupID: 'cg-1', signedOn: '2022-01-01', ...overrides };
 }
 
-/** Minimal signed, valid ECLA record. */
-function ecla(overrides: Partial<EasyClaSignature> = {}): EasyClaSignature {
-  return {
-    signatureID: 's-ecla',
-    claType: 'ecla',
-    signatureSigned: true,
-    signatureApproved: true,
-    projectID: 'proj-2',
-    companyName: 'Acme',
-    signedOn: '2022-02-02',
-    ...overrides,
-  };
+/** Minimal valid ECLA record from `/v4/my-clas`. */
+function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
+  return { signatureID: 's-ecla', claType: 'ecla', valid: true, companyName: 'Acme', claGroupID: 'cg-2', signedOn: '2022-02-02', ...overrides };
 }
 
 beforeEach(() => {
@@ -63,112 +54,21 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// T013 — pure classification / status / merge
+// Pure helpers
 // ---------------------------------------------------------------------------
 
-describe('classification (isIcla / isEcla)', () => {
-  it('uses claType as the authoritative discriminator', () => {
-    expect(isIcla(icla())).toBe(true);
-    expect(isEcla(icla())).toBe(false);
-    expect(isEcla(ecla())).toBe(true);
-    expect(isIcla(ecla())).toBe(false);
+describe('claServiceBaseUrl', () => {
+  it('derives the cla-service base url from API_GW_AUDIENCE, trimming trailing slashes', () => {
+    expect(claServiceBaseUrl()).toBe('https://api-gw.dev.example.org/cla-service');
   });
 
-  it('excludes corporate CCLA records', () => {
-    const ccla = icla({ claType: 'ccla' });
-    expect(isIcla(ccla)).toBe(false);
-    expect(isEcla(ccla)).toBe(false);
-  });
-
-  it('falls back to type+referenceType+companyName when claType is absent', () => {
-    const iclaLike: EasyClaSignature = { signatureID: 'x', signatureType: 'cla', signatureReferenceType: 'user', signatureSigned: true };
-    const eclaLike: EasyClaSignature = { signatureID: 'y', signatureType: 'cla', signatureReferenceType: 'user', companyName: 'Acme', signatureSigned: true };
-    expect(isIcla(iclaLike)).toBe(true);
-    expect(isEcla(eclaLike)).toBe(true);
+  it('throws when API_GW_AUDIENCE is not configured', () => {
+    delete process.env['API_GW_AUDIENCE'];
+    expect(() => claServiceBaseUrl()).toThrow(MicroserviceError);
   });
 });
 
-describe('deriveStatus (research R6)', () => {
-  it('signed + approved ⇒ valid', () => {
-    expect(deriveStatus(icla({ signatureApproved: true }))).toBe('valid');
-  });
-
-  it('signed + not approved ⇒ inactive', () => {
-    expect(deriveStatus(icla({ signatureApproved: false }))).toBe('inactive');
-  });
-
-  it('older document major version ⇒ superseded (only when current version known)', () => {
-    const sig = icla({ signatureDocumentMajorVersion: '1' });
-    expect(deriveStatus(sig, 2)).toBe('superseded');
-    // Without a known current version the superseded check is skipped.
-    expect(deriveStatus(sig)).toBe('valid');
-  });
-
-  it('does not mark superseded when signed version is current or newer', () => {
-    expect(deriveStatus(icla({ signatureDocumentMajorVersion: '2' }), 2)).toBe('valid');
-  });
-});
-
-describe('toMyClaAgreement', () => {
-  it('maps an ICLA with pdfAvailable=true', () => {
-    const a = toMyClaAgreement(icla({ signatureDocumentMajorVersion: '2' }));
-    expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid' });
-  });
-
-  it('maps an ECLA with company name and pdfAvailable=false', () => {
-    const a = toMyClaAgreement(ecla());
-    expect(a).toMatchObject({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false });
-  });
-
-  it('prefers the resolved projectName, falling back to projectID', () => {
-    expect(toMyClaAgreement(icla({ projectName: 'My Project', projectID: 'pid-1' }))?.projectName).toBe('My Project');
-    expect(toMyClaAgreement(icla({ projectName: undefined, projectID: 'pid-1' }))?.projectName).toBe('pid-1');
-  });
-
-  it('drops unsigned records', () => {
-    expect(toMyClaAgreement(icla({ signatureSigned: false }))).toBeNull();
-  });
-
-  it('drops corporate CCLA records', () => {
-    expect(toMyClaAgreement(icla({ claType: 'ccla' }))).toBeNull();
-  });
-});
-
-describe('buildAgreements (merge / filter / dedupe / sort)', () => {
-  it('keeps ICLAs regardless of status but filters invalid ECLAs (FR-001/FR-002)', () => {
-    const result = buildAgreements([
-      icla({ signatureID: 'i-valid', signatureApproved: true }),
-      icla({ signatureID: 'i-inactive', signatureApproved: false }),
-      ecla({ signatureID: 'e-valid', signatureApproved: true }),
-      ecla({ signatureID: 'e-inactive', signatureApproved: false }),
-    ]);
-    const ids = result.map((a) => a.id);
-    expect(ids).toContain('i-valid');
-    expect(ids).toContain('i-inactive'); // ICLA kept with its status label
-    expect(ids).toContain('e-valid');
-    expect(ids).not.toContain('e-inactive'); // invalid ECLA filtered out
-  });
-
-  it('dedupes by signatureID', () => {
-    const result = buildAgreements([icla({ signatureID: 'dup' }), icla({ signatureID: 'dup' })]);
-    expect(result).toHaveLength(1);
-  });
-
-  it('sorts by signedOn descending', () => {
-    const result = buildAgreements([
-      icla({ signatureID: 'old', signedOn: '2020-01-01' }),
-      icla({ signatureID: 'new', signedOn: '2024-01-01' }),
-      icla({ signatureID: 'mid', signedOn: '2022-01-01' }),
-    ]);
-    expect(result.map((a) => a.id)).toEqual(['new', 'mid', 'old']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// T014 — identity resolution
-// ---------------------------------------------------------------------------
-
-describe('normalizeGithubId (T003 — prefixed vs bare)', () => {
+describe('normalizeGithubId', () => {
   it('accepts a bare numeric id', () => {
     expect(normalizeGithubId('13434323')).toBe('13434323');
   });
@@ -183,102 +83,178 @@ describe('normalizeGithubId (T003 — prefixed vs bare)', () => {
   });
 });
 
+describe('toMyClaAgreement', () => {
+  it('maps an ICLA, trusting upstream valid=true ⇒ status valid, pdfAvailable', () => {
+    const a = toMyClaAgreement(icla({ documentMajorVersion: 2, documentMinorVersion: 1 }));
+    expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1' });
+  });
+
+  it('maps an invalidated record to status inactive', () => {
+    expect(toMyClaAgreement(icla({ valid: false })).status).toBe('inactive');
+  });
+
+  it('maps an ECLA with company name and no pdf', () => {
+    const a = toMyClaAgreement(ecla({ signingEntityName: 'Acme Inc' }));
+    expect(a).toMatchObject({ kind: 'ECLA', companyName: 'Acme Inc', pdfAvailable: false });
+  });
+
+  it('prefers claGroupName, falling back to claGroupID', () => {
+    expect(toMyClaAgreement(icla({ claGroupName: 'My Project', claGroupID: 'cg-1' })).projectName).toBe('My Project');
+    expect(toMyClaAgreement(icla({ claGroupName: undefined, claGroupID: 'cg-1' })).projectName).toBe('cg-1');
+  });
+
+  it('never offers a PDF for an ICLA upstream marked pdfAvailable=false', () => {
+    expect(toMyClaAgreement(icla({ pdfAvailable: false })).pdfAvailable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Identity resolution
+// ---------------------------------------------------------------------------
+
 describe('ClaService.resolveIdentity', () => {
-  it('unions all user ids returned by the by-identity endpoint', async () => {
-    getEffectiveUsername.mockReturnValue('alice');
-    getEffectiveEmail.mockReturnValue('alice@x.org');
-    // by-identity returns the union of records across keys.
-    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1', lfUsername: 'alice' }, { userID: 'u-2' }]);
-
-    const identity = await new ClaService().resolveIdentity(req);
-
-    expect(identity.easyclaUserIds.sort()).toEqual(['u-1', 'u-2']);
-    expect(identity.lfUsername).toBe('alice');
-  });
-
-  it('passes lfUsername, emails and githubIds to the by-identity query', async () => {
+  it('resolves lfUsername, email and both GitHub id and username from the session', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     getEffectiveEmail.mockReturnValue('alice@x.org');
     getEffectiveSub.mockReturnValue('auth0|abc');
-    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github' }]);
-    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1' }]);
-
-    await new ClaService().resolveIdentity(req);
-
-    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
-    expect(calledUrl).toContain('/v4/users/by-identity');
-    expect(calledUrl).toContain('lfUsername=alice');
-    expect(calledUrl).toContain('email=alice%40x.org');
-    expect(calledUrl).toContain('githubId=13434323');
-  });
-
-  it('resolves to no user ids when by-identity returns an empty array', async () => {
-    getEffectiveUsername.mockReturnValue('ghost');
-    gatewayFetch.mockResolvedValueOnce([]);
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
 
     const identity = await new ClaService().resolveIdentity(req);
 
-    expect(identity.easyclaUserIds).toEqual([]);
+    expect(identity).toMatchObject({
+      lfUsername: 'alice',
+      emails: ['alice@x.org'],
+      githubIds: ['13434323'],
+      githubUsernames: ['octocat'],
+      githubLinked: true,
+    });
+    // resolveIdentity does no upstream call of its own.
+    expect(gatewayFetch).not.toHaveBeenCalled();
   });
 
-  it('falls back to username-only resolution when by-identity 404s', async () => {
-    getEffectiveUsername.mockReturnValue('alice');
-    gatewayFetch
-      .mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' })) // by-identity absent
-      .mockResolvedValueOnce({ userID: 'u-legacy', lfUsername: 'alice' }); // username fallback
-
-    const identity = await new ClaService().resolveIdentity(req);
-
-    expect(identity.easyclaUserIds).toEqual(['u-legacy']);
-    expect(gatewayFetch.mock.calls[1][1] as string).toContain('/v3/users/username/alice');
-  });
-
-  it('detects a linked GitHub identity and normalizes the numeric id', async () => {
-    getEffectiveUsername.mockReturnValue('alice');
-    getEffectiveSub.mockReturnValue('auth0|abc');
-    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github' }]);
-    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1' }]);
-
-    const identity = await new ClaService().resolveIdentity(req);
-
-    expect(identity.githubLinked).toBe(true);
-    expect(identity.githubIds).toEqual(['13434323']);
-  });
-
-  it('reports githubLinked=false when no GitHub identity is linked', async () => {
+  it('reports githubLinked=false and empty github keys when no GitHub identity is linked', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     getEffectiveSub.mockReturnValue('auth0|abc');
     getUserIdentities.mockResolvedValueOnce([{ provider: 'google-oauth2', user_id: 'x', connection: 'google' }]);
-    gatewayFetch.mockResolvedValueOnce([{ userID: 'u-1' }]);
 
     const identity = await new ClaService().resolveIdentity(req);
 
     expect(identity.githubLinked).toBe(false);
     expect(identity.githubIds).toEqual([]);
+    expect(identity.githubUsernames).toEqual([]);
+  });
+
+  it('drops a GitHub identity with a non-numeric id but keeps its username', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|nope', connection: 'github', profileData: { nickname: 'octocat' } }]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.githubIds).toEqual([]);
+    expect(identity.githubUsernames).toEqual(['octocat']);
+    expect(identity.githubLinked).toBe(true);
+  });
+
+  it('degrades to username+email when the linked-identity lookup fails (e.g. NATS down)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockRejectedValueOnce(new Error('NATS TIMEOUT'));
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity).toMatchObject({ lfUsername: 'alice', emails: ['alice@x.org'], githubIds: [], githubUsernames: [], githubLinked: false });
   });
 });
 
+// ---------------------------------------------------------------------------
+// getMyClas — /v4/my-clas passthrough
+// ---------------------------------------------------------------------------
+
 describe('ClaService.getMyClas', () => {
-  it('returns unmatched=true and no agreements when the identity resolves to no user ids', async () => {
-    getEffectiveUsername.mockReturnValue(null);
+  it('passes the resolved identity keys to the /v4/my-clas query', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(req);
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    expect(calledUrl).toContain('/v4/my-clas?');
+    expect(calledUrl).toContain('lfUsername=alice');
+    expect(calledUrl).toContain('email=alice%40x.org');
+    expect(calledUrl).toContain('githubId=13434323');
+    expect(calledUrl).toContain('githubUsername=octocat');
+  });
+
+  it('maps the upstream clas list and reports matched user ids', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1', 'u-2'], clas: [icla({ signatureID: 's1' }), ecla({ signatureID: 's2' })] });
+
+    const result = await new ClaService().getMyClas(req);
+
+    expect(result.agreements.map((a) => a.id)).toEqual(['s1', 's2']);
+    expect(result.identity).toMatchObject({ matchedUserIds: 2, unmatched: false });
+  });
+
+  it('reports unmatched=true when upstream matches no user records', async () => {
+    getEffectiveUsername.mockReturnValue('ghost');
+    gatewayFetch.mockResolvedValueOnce({ userIds: [], clas: [] });
 
     const result = await new ClaService().getMyClas(req);
 
     expect(result.agreements).toEqual([]);
-    expect(result.identity).toMatchObject({ matchedUserIds: 0, unmatched: true, githubLinked: false });
-    // No signatures call when there are no user ids.
-    expect(gatewayFetch).not.toHaveBeenCalled();
+    expect(result.identity).toMatchObject({ matchedUserIds: 0, unmatched: true });
   });
 
-  it('aggregates signatures for the resolved user id', async () => {
+  it('does not recompute filtering/dedup — surfaces exactly what upstream returns', async () => {
     getEffectiveUsername.mockReturnValue('alice');
-    gatewayFetch
-      .mockResolvedValueOnce([{ userID: 'u-1' }]) // by-identity union
-      .mockResolvedValueOnce({ signatures: [icla({ signatureID: 's1' }), ecla({ signatureID: 's2' })], lastKeyScanned: '' }); // signatures page
+    // Upstream owns filtering (invalid ECLAs) and dedup; SS maps 1:1.
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [icla({ signatureID: 'i', valid: false })] });
 
     const result = await new ClaService().getMyClas(req);
 
-    expect(result.identity.matchedUserIds).toBe(1);
-    expect(result.agreements.map((a) => a.id).sort()).toEqual(['s1', 's2']);
+    expect(result.agreements).toHaveLength(1);
+    expect(result.agreements[0]).toMatchObject({ id: 'i', status: 'inactive' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPdfUrl — /v4/my-clas/{id}/pdf passthrough
+// ---------------------------------------------------------------------------
+
+describe('ClaService.getPdfUrl', () => {
+  const identity: ResolvedClaIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
+
+  it('returns the presigned url and TTL from upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
+
+    const pdf = await new ClaService().getPdfUrl(req, 'sig-1', identity);
+
+    expect(pdf).toEqual({ url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    expect(calledUrl).toContain('/v4/my-clas/sig-1/pdf?');
+    expect(calledUrl).toContain('lfUsername=alice');
+  });
+
+  it('returns null on a 404 (unknown, not-owned or ECLA signature id)', async () => {
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    expect(await new ClaService().getPdfUrl(req, 'sig-x', identity)).toBeNull();
+  });
+
+  it('returns null when upstream responds without a url', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1' });
+
+    expect(await new ClaService().getPdfUrl(req, 'sig-1', identity)).toBeNull();
+  });
+
+  it('propagates non-404 upstream errors', async () => {
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('boom', 500, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+
+    await expect(new ClaService().getPdfUrl(req, 'sig-1', identity)).rejects.toThrow(MicroserviceError);
   });
 });

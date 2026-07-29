@@ -8,11 +8,13 @@
 export type ClaKind = 'ICLA' | 'ECLA';
 
 /**
- * Derived agreement status (research R6):
- * - `valid`      — signed and approved, not invalidated/revoked.
- * - `superseded` — an ICLA whose signed document version is older than the CLA
- *                  group's current major version (only when the version is exposed upstream).
- * - `inactive`   — signed but no longer approved (invalidated / criteria removed).
+ * Agreement status shown in the UI:
+ * - `valid`      — currently valid per EasyCLA's computed `valid` flag (evaluated
+ *                  against the current CCLA approval lists).
+ * - `inactive`   — signed but no longer valid (invalidated / criteria removed).
+ * - `superseded` — reserved: an older document version than the CLA group's current.
+ *                  Not produced in M1 (the my-clas endpoint does not expose the
+ *                  current version); kept for forward compatibility.
  */
 export type ClaStatus = 'valid' | 'superseded' | 'inactive';
 
