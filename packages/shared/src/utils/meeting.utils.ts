@@ -341,7 +341,7 @@ export function resolveRsvpOccurrenceId(
   options?: { occurrence?: MeetingOccurrence | null; occurrenceId?: string | null }
 ): string | undefined {
   if (!meeting.recurrence) return undefined;
-  const explicitId = options?.occurrenceId ?? options?.occurrence?.occurrence_id;
+  const explicitId = options?.occurrenceId || options?.occurrence?.occurrence_id;
   if (explicitId) return explicitId;
   return getCurrentOrNextOccurrence(meeting)?.occurrence_id;
 }

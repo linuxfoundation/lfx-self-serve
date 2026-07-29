@@ -134,6 +134,15 @@ describe('resolveRsvpOccurrenceId', () => {
     ).toBe('1785852000');
   });
 
+  it('falls through empty occurrenceId to occurrence object id', () => {
+    expect(
+      resolveRsvpOccurrenceId(recurringMeeting, {
+        occurrenceId: '',
+        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+      })
+    ).toBe('1785852000');
+  });
+
   it('falls back to getCurrentOrNextOccurrence when no occurrence context is supplied', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
