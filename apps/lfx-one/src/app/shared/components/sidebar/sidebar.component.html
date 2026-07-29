@@ -263,6 +263,7 @@
   @if (item.routerLink) {
     <a
       [routerLink]="item.routerLink"
+      [queryParams]="projectQueryParams()"
       routerLinkActive="bg-blue-100 font-medium text-gray-950"
       [routerLinkActiveOptions]="{ exact: true }"
       class="flex items-center gap-2 px-2 h-[32px] rounded-lg transition-colors cursor-pointer w-full text-[13px] text-gray-600 font-normal hover:bg-gray-50"
