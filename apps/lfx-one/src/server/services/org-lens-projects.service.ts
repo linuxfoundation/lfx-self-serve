@@ -381,7 +381,7 @@ export class OrgLensProjectsService {
         FOUNDATION_NAME,
         FOUNDATION_LOGO_URL
       FROM ${this.onboardedProjectsTable()}
-      WHERE PROJECT_SLUG IN (${missing.map(() => '?').join(', ')})
+      WHERE LOWER(PROJECT_SLUG) IN (${missing.map(() => '?').join(', ')})
     `;
     const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
     // mapProject fills every metric field the identity query does not select with its missing-data
