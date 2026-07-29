@@ -798,7 +798,7 @@ describe('selectPrimaryPastMeetingSummary', () => {
 
 describe('resolveMeetingCalendarColors', () => {
   it('returns default blue for active meetings', () => {
-    expect(resolveMeetingCalendarColors(false)).toEqual(MEETING_TYPE_COLORS['default']);
+    expect(resolveMeetingCalendarColors(false)).toEqual({ ...MEETING_TYPE_COLORS['default'], text: '#ffffff' });
   });
 
   it('returns lighter blue for past meetings', () => {

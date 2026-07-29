@@ -13,10 +13,10 @@ export const MEETING_TYPE_COLORS: Record<string, { bg: string; border: string }>
 };
 
 /** Calendar color for cancelled meeting occurrences. */
-export const CANCELLED_COLOR = { bg: '#9ca3af', border: '#6b7280' };
+export const CANCELLED_COLOR = { bg: '#9ca3af', border: '#6b7280', text: '#ffffff' };
 
-/** Calendar color for past (ended) meeting occurrences — lighter blue, white text stays readable. */
-export const PAST_MEETING_CALENDAR_COLOR = { bg: '#60a5fa', border: '#3b82f6' };
+/** Calendar color for past (ended) meeting occurrences — light fill with dark text for WCAG contrast. */
+export const PAST_MEETING_CALENDAR_COLOR = { bg: '#dbeafe', border: '#60a5fa', text: '#1d4ed8' };
 
 /** Calendar color for vote deadline events. */
 export const VOTE_COLOR = { bg: '#f59e0b', border: '#d97706' };

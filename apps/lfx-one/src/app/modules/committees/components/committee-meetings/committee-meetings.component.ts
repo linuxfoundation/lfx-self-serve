@@ -333,7 +333,7 @@ export class CommitteeMeetingsComponent {
           end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
           backgroundColor: colors.bg,
           borderColor: colors.border,
-          textColor: '#ffffff',
+          textColor: colors.text,
           display: 'block',
           classNames,
           extendedProps: {
@@ -364,7 +364,7 @@ export class CommitteeMeetingsComponent {
         end: addMinutesToDate(startTime, meeting.duration).toISOString(),
         backgroundColor: colors.bg,
         borderColor: colors.border,
-        textColor: '#ffffff',
+        textColor: colors.text,
         display: 'block',
         classNames: ['meeting-event'],
         extendedProps: {

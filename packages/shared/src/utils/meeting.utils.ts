@@ -487,14 +487,14 @@ export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, canc
  * Resolves FullCalendar hex colors for a meeting occurrence.
  * Active meetings use the default blue; past use a lighter blue; cancelled use cancelled grey.
  */
-export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): { bg: string; border: string } {
+export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): { bg: string; border: string; text: string } {
   if (isCancelled) {
     return CANCELLED_COLOR;
   }
   if (isPast) {
     return PAST_MEETING_CALENDAR_COLOR;
   }
-  return MEETING_TYPE_COLORS['default'];
+  return { ...MEETING_TYPE_COLORS['default'], text: '#ffffff' };
 }
 
 /** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */
