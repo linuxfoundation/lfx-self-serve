@@ -201,6 +201,28 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     );
   });
 
+  it('still detects and warns about a clamped row that matches no current roster member', async () => {
+    // The clamp-detection count is scoped to warehouse rows, not roster members, precisely so a
+    // grain mismatch affecting rows for members no longer on the roster isn't invisible — unmatched
+    // rows are the expected case (see the empty-roster join-mismatch test above), not an edge case.
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'current-member@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [
+        { MEMBER_EMAIL: 'current-member@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null },
+        { MEMBER_EMAIL: 'former-member@x.com', ATTENDED_COUNT: 12, INVITED_COUNT: 10, COMPUTED_AT: null },
+      ],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('clamped to invited'),
+      expect.objectContaining({ committee_uid: 'committee-1', clamped_count: 1, row_count: 2 })
+    );
+  });
+
   it('does not warn about clamping when every row is within bounds', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
@@ -209,6 +231,6 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
     await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-    expect(warning).not.toHaveBeenCalled();
+    expect(warning).not.toHaveBeenCalledWith(req, 'get_committee_engagement', expect.stringContaining('clamped to invited'), expect.anything());
   });
 });

@@ -88,6 +88,12 @@ export class CommitteeEngagementService {
       if (email) rowsByEmail.set(email, row);
     }
 
+    // Counted over deduped rows, not roster members: a grain mismatch in the warehouse model would
+    // show up across every row it emits, including rows for members no longer on the roster — a
+    // member-scoped count would miss exactly that case, which is the normal one (see the
+    // join-mismatch warning below; unmatched rows are an expected, not exceptional, state).
+    const clampedRowCount = [...rowsByEmail.values()].filter((row) => this.toCount(row.ATTENDED_COUNT) > this.toCount(row.INVITED_COUNT)).length;
+
     // Computed independently of the roster join below (a warehouse row with no roster match, or
     // an empty roster, must still surface the model's freshness timestamp) and as the latest of
     // all parseable values, not the first in `ORDER BY MEMBER_EMAIL` order — a partial refresh
@@ -102,19 +108,16 @@ export class CommitteeEngagementService {
     let activeCount = 0;
     let atRiskCount = 0;
     let matchedCount = 0;
-    let clampedCount = 0;
 
     const memberEngagements = members.map((member) => {
       const row = rowsByEmail.get(this.normalizeEmail(member.email));
       if (row) matchedCount++;
       const invited = this.toCount(row?.INVITED_COUNT);
-      const rawAttended = this.toCount(row?.ATTENDED_COUNT);
       // Clamped to `invited`: nothing upstream guarantees ATTENDED_COUNT <= INVITED_COUNT, and an
       // unclamped value here would produce a >100% rate and a response where `attended` exceeds
-      // `invited` for the same member. Counted below and logged once per request (not per member)
-      // since this signals a data-quality problem worth surfacing, not a one-off.
-      const attended = Math.min(rawAttended, invited);
-      if (attended < rawAttended) clampedCount++;
+      // `invited` for the same member. The clamp itself is logged once per request via
+      // `clampedRowCount` above, not per member.
+      const attended = Math.min(this.toCount(row?.ATTENDED_COUNT), invited);
       totalAttended += attended;
       totalInvited += invited;
 
@@ -133,11 +136,11 @@ export class CommitteeEngagementService {
       });
     }
 
-    if (clampedCount > 0) {
+    if (clampedRowCount > 0) {
       logger.warning(req, 'get_committee_engagement', 'Warehouse rows had ATTENDED_COUNT greater than INVITED_COUNT; clamped to invited', {
         committee_uid: committeeUid,
-        clamped_count: clampedCount,
-        row_count: rows.length,
+        clamped_count: clampedRowCount,
+        row_count: rowsByEmail.size,
       });
     }
 
