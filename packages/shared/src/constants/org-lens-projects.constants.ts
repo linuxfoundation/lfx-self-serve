@@ -33,6 +33,9 @@ export const INFLUENCE_BAND_LABELS: Record<InfluenceBand, string> = {
   'non-lf': 'Non-LF Project',
 };
 
+/** Metric label for a "no activity yet" row, whose influence bands are not computed (no org-scoped data). */
+export const ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL = 'Unavailable';
+
 /** Sparkline / delta color per trend direction (brand scale values; never hard-coded hex). */
 export const INFLUENCE_TREND_COLOR: Record<InfluenceTrendDirection, string> = {
   up: lfxColors.emerald[500],

@@ -20,8 +20,8 @@
     [panelStyleClass]="panelStyleClass()"
     [scrollHeight]="scrollHeight()"
     [loading]="loading()"
-    [emptyMessage]="emptyMessage() ?? ''"
-    [emptyFilterMessage]="emptyFilterMessage() ?? ''"
+    [emptyMessage]="emptyMessage()"
+    [emptyFilterMessage]="emptyFilterMessage()"
     (onFilter)="filterChange.emit($event.filter ?? '')"
     (onPanelShow)="onPanelShow()"
     class="w-full">

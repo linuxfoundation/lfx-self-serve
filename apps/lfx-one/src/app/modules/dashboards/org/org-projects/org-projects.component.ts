@@ -23,6 +23,7 @@ import {
   INFLUENCE_TREND_COLOR,
   INFLUENCE_TREND_TEXT_CLASS,
   ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
+  ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   PD_CONTRIBUTORS_CARD_KEY,
@@ -507,8 +508,8 @@ export class OrgProjectsComponent {
     const body = rows.map((p) => [
       p.name,
       HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
-      INFLUENCE_BAND_LABELS[p.technicalInfluence],
-      INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
+      p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
+      p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
       p.trend.deltaPct,
       p.contributors.length,
       p.participants.length,
@@ -584,6 +585,12 @@ export class OrgProjectsComponent {
   /** The "Add project(s)" multi-select filter box drives the debounced server-side project search. */
   protected onAddProjectsFilter(query: string): void {
     this.addProjectsSearchQuery.set(query);
+    // Flip loading synchronously (ahead of the 300ms debounce) when a search will actually run, so the panel
+    // shows "Searching…" rather than PrimeNG's instantly-emptied list flashing a false "No projects match".
+    const trimmed = query.trim();
+    if (this.accountContext.selectedAccount()?.uid && !(trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH)) {
+      this.addProjectsSearchLoading.set(true);
+    }
     this.searchAddableProjects(query);
   }
 
@@ -753,10 +760,12 @@ export class OrgProjectsComponent {
       this.sortedProjects().map((project) => ({
         ...project,
         insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
-        technicalBars: this.bandBars(project.technicalInfluence),
-        ecosystemBars: this.bandBars(project.ecosystemInfluence),
-        technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
-        ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
+        // No-activity rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather
+        // than mapProject's active-row fallbacks, which would misreport "Silent" / "Non-LF Project".
+        technicalBars: project.noActivityYet ? [] : this.bandBars(project.technicalInfluence),
+        ecosystemBars: project.noActivityYet ? [] : this.bandBars(project.ecosystemInfluence),
+        technicalBandLabel: project.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.technicalInfluence],
+        ecosystemBandLabel: project.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
         healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
         healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
         sparklineDataset: {

@@ -258,13 +258,21 @@
               <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
                 <td>
                   <div class="flex items-center gap-2">
-                    <a
-                      [routerLink]="['/org/projects', project.slug]"
-                      class="flex items-center gap-2 text-left"
-                      [attr.aria-label]="'View ' + project.name + ' project detail'">
-                      <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
-                      <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
-                    </a>
+                    @if (project.noActivityYet) {
+                      <!-- No org-scoped row exists yet, so the project-detail page would 404 — render the name as plain text. -->
+                      <div class="flex items-center gap-2 text-left">
+                        <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
+                        <span class="text-sm font-medium text-gray-900">{{ project.name }}</span>
+                      </div>
+                    } @else {
+                      <a
+                        [routerLink]="['/org/projects', project.slug]"
+                        class="flex items-center gap-2 text-left"
+                        [attr.aria-label]="'View ' + project.name + ' project detail'">
+                        <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
+                        <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
+                      </a>
+                    }
                     @if (project.noActivityYet) {
                       <span
                         class="inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
@@ -297,7 +305,7 @@
                       @for (bar of project.technicalBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
-                      @if (project.technicalInfluence === 'non-lf') {
+                      @if (project.technicalInfluence === 'non-lf' && !project.noActivityYet) {
                         <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
                         <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                       }
@@ -311,7 +319,7 @@
                       @for (bar of project.ecosystemBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
-                      @if (project.ecosystemInfluence === 'non-lf') {
+                      @if (project.ecosystemInfluence === 'non-lf' && !project.noActivityYet) {
                         <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
                         <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                       }
@@ -348,23 +356,35 @@
                   </div>
                 </td>
                 <td>
-                  <a
-                    [routerLink]="['/org/projects', project.slug]"
-                    [queryParams]="contributorsDrawerQueryParams"
-                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    [attr.aria-label]="project.contributorsAriaLabel"
-                    [attr.data-testid]="'org-projects-contributors-' + project.slug"
-                    >{{ project.contributors.length }}</a
-                  >
+                  @if (project.noActivityYet) {
+                    <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-projects-contributors-' + project.slug">{{
+                      project.contributors.length
+                    }}</span>
+                  } @else {
+                    <a
+                      [routerLink]="['/org/projects', project.slug]"
+                      [queryParams]="contributorsDrawerQueryParams"
+                      class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="project.contributorsAriaLabel"
+                      [attr.data-testid]="'org-projects-contributors-' + project.slug"
+                      >{{ project.contributors.length }}</a
+                    >
+                  }
                 </td>
                 <td>
-                  <a
-                    [routerLink]="['/org/projects', project.slug]"
-                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    [attr.aria-label]="project.participantsAriaLabel"
-                    [attr.data-testid]="'org-projects-participants-' + project.slug"
-                    >{{ project.participants.length }}</a
-                  >
+                  @if (project.noActivityYet) {
+                    <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-projects-participants-' + project.slug">{{
+                      project.participants.length
+                    }}</span>
+                  } @else {
+                    <a
+                      [routerLink]="['/org/projects', project.slug]"
+                      class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="project.participantsAriaLabel"
+                      [attr.data-testid]="'org-projects-participants-' + project.slug"
+                      >{{ project.participants.length }}</a
+                    >
+                  }
                 </td>
                 <td class="text-right">
                   <lfx-button
