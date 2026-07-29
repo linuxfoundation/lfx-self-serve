@@ -102,15 +102,19 @@ export class CommitteeEngagementService {
     let activeCount = 0;
     let atRiskCount = 0;
     let matchedCount = 0;
+    let clampedCount = 0;
 
     const memberEngagements = members.map((member) => {
       const row = rowsByEmail.get(this.normalizeEmail(member.email));
       if (row) matchedCount++;
       const invited = this.toCount(row?.INVITED_COUNT);
+      const rawAttended = this.toCount(row?.ATTENDED_COUNT);
       // Clamped to `invited`: nothing upstream guarantees ATTENDED_COUNT <= INVITED_COUNT, and an
       // unclamped value here would produce a >100% rate and a response where `attended` exceeds
-      // `invited` for the same member.
-      const attended = Math.min(this.toCount(row?.ATTENDED_COUNT), invited);
+      // `invited` for the same member. Counted below and logged once per request (not per member)
+      // since this signals a data-quality problem worth surfacing, not a one-off.
+      const attended = Math.min(rawAttended, invited);
+      if (attended < rawAttended) clampedCount++;
       totalAttended += attended;
       totalInvited += invited;
 
@@ -126,6 +130,14 @@ export class CommitteeEngagementService {
         committee_uid: committeeUid,
         row_count: rows.length,
         roster_size: members.length,
+      });
+    }
+
+    if (clampedCount > 0) {
+      logger.warning(req, 'get_committee_engagement', 'Warehouse rows had ATTENDED_COUNT greater than INVITED_COUNT; clamped to invited', {
+        committee_uid: committeeUid,
+        clamped_count: clampedCount,
+        row_count: rows.length,
       });
     }
 

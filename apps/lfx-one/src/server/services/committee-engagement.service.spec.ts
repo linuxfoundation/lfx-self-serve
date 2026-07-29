@@ -179,4 +179,36 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
     expect(warning).not.toHaveBeenCalled();
   });
+
+  it('clamps attended to invited when a warehouse row reports ATTENDED_COUNT greater than INVITED_COUNT, and warns once', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'over-attended@x.com'), member('m2', 'normal@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [
+        { MEMBER_EMAIL: 'over-attended@x.com', ATTENDED_COUNT: 12, INVITED_COUNT: 10, COMPUTED_AT: null },
+        { MEMBER_EMAIL: 'normal@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null },
+      ],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.members[0]).toEqual({ uid: 'm1', attended: 10, invited: 10, rate: 1, classification: 'High' });
+    expect(result.summary.attendance_rate).toBe(0.75); // (10 + 5) / (10 + 10), not (12 + 5) / (10 + 10)
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('clamped to invited'),
+      expect.objectContaining({ committee_uid: 'committee-1', clamped_count: 1, row_count: 2 })
+    );
+  });
+
+  it('does not warn about clamping when every row is within bounds', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalled();
+  });
 });

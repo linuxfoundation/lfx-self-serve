@@ -195,7 +195,7 @@ export class AccessCheckService {
     // reports on, rather than trusting positional (array-index) alignment with `resources`.
     // The upstream response can reorder or dedupe entries, so index-based pairing can silently
     // attribute one resource's answer to a different resource.
-    const resultByTuple = new Map<string, { hasAccess: boolean; username?: string }>();
+    const resultByTuple = new Map<string, { hasAccess: boolean }>();
     for (const resultString of response.results) {
       if (!resultString || typeof resultString !== 'string') {
         continue;
@@ -209,11 +209,12 @@ export class AccessCheckService {
 
       const accessPart = parts[0];
       const hasAccess = parts[1]?.toLowerCase() === 'true';
+      // The tuple this line reports on excludes the "@user:username" suffix; only its position
+      // (via userMatch.index) is needed to strip it — the username itself has no reader.
       const userMatch = accessPart?.match(/@user:(.+)$/);
       const tuple = userMatch ? accessPart.slice(0, userMatch.index) : accessPart;
-      const username = userMatch?.[1];
 
-      resultByTuple.set(tuple, { hasAccess, username });
+      resultByTuple.set(tuple, { hasAccess });
     }
 
     // Map results back to resource IDs by re-deriving the same tuple each request sent
