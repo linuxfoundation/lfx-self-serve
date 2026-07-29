@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /** Tailwind grid-column classes for `lfx-stat-card-grid`, keyed by its `columns` input. */
-export const GRID_COLS_CLASS: Record<2 | 3 | 4, string> = {
+export const GRID_COLS_CLASS: Record<2 | 3 | 4 | 5, string> = {
   2: 'sm:grid-cols-2',
   3: 'sm:grid-cols-3',
   4: 'sm:grid-cols-2 lg:grid-cols-4',
+  5: 'sm:grid-cols-2 lg:grid-cols-5',
 };
 
 /**
@@ -17,7 +18,7 @@ export const GRID_COLS_CLASS: Record<2 | 3 | 4, string> = {
  * the two cards within each row; both are cleared again at `lg`, where `divide-x` takes over
  * for the single-row 4-column layout.
  */
-export const GRID_DIVIDER_CLASS: Record<2 | 3 | 4, string> = {
+export const GRID_DIVIDER_CLASS: Record<2 | 3 | 4 | 5, string> = {
   2: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   3: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   // The `!` (important) modifiers are required: Tailwind's `divide-y-0` reset compiles to
@@ -26,4 +27,8 @@ export const GRID_DIVIDER_CLASS: Record<2 | 3 | 4, string> = {
   // `sm` left border is left in place (not reset) at `lg`: `lg:divide-x` needs that same left
   // border on cards 2/4 for the single-row layout, and card 3 gets it from `divide-x` itself.
   4: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:divide-x',
+  // Same `nth-child(n+3)`/`nth-child(even)` 2-col-wrap logic as 4 — column-count-agnostic (it only
+  // depends on the wrap pairing, not the final column count), so it generalizes to 5 cards (rows of
+  // 2, 2, 1) unchanged; only `lg:divide-x` differs by relying on GRID_COLS_CLASS[5]'s `lg:grid-cols-5`.
+  5: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:divide-x',
 };

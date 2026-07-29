@@ -3,8 +3,10 @@
 
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
 import { BadgeSeverity } from '../interfaces/components.interface';
+import { StatCardItem } from '../interfaces/stat-card.interface';
 import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
 import { slugify } from './string.utils';
 
@@ -336,4 +338,67 @@ function compareCodeUnits(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;
   return 0;
+}
+
+// ── Groups dashboard engagement stat cards (LFXV2-1711) ─────────────────────
+
+/**
+ * Builds the Active Members / Meetings This Month stat cards from the engagement-stats rollup.
+ * Extracted as a pure function (no Angular component-test runner exists in this repo — see
+ * `resolveGroupsCardRoleSeverity` above) so all three render states are unit-tested directly:
+ * loading (em-dash, no sub-line), populated (value + relative-time freshness label), and
+ * degraded (fetch failed, or the `live` backend hasn't got a dbt read path yet — em-dash +
+ * "Unavailable", never throws, never blocks the rest of the dashboard).
+ */
+export function buildEngagementStatCards(stats: GroupsEngagementStats | null, loading: boolean): StatCardItem[] {
+  const activeMembersCard: StatCardItem = {
+    label: 'Active Members',
+    icon: 'fa-light fa-user-group',
+    iconContainerClass: 'bg-violet-100 text-violet-600',
+    value: '—',
+  };
+  const meetingsThisMonthCard: StatCardItem = {
+    label: 'Meetings This Month',
+    icon: 'fa-light fa-calendar-check',
+    iconContainerClass: 'bg-amber-100 text-amber-600',
+    value: '—',
+  };
+
+  if (loading) {
+    return [activeMembersCard, meetingsThisMonthCard];
+  }
+
+  if (!stats || stats.active_members === null || stats.meetings_this_month === null) {
+    return [
+      { ...activeMembersCard, subLine: 'Unavailable' },
+      { ...meetingsThisMonthCard, subLine: 'Unavailable' },
+    ];
+  }
+
+  const freshness = formatEngagementFreshness(stats.computed_at);
+  return [
+    { ...activeMembersCard, value: stats.active_members, subLine: `Updated ${freshness}` },
+    { ...meetingsThisMonthCard, value: stats.meetings_this_month, subLine: `Updated ${freshness}` },
+  ];
+}
+
+/**
+ * Minimal relative-time label ("just now", "5 min ago", "2 hr ago", "3 days ago") for the
+ * engagement stat cards' freshness sub-line. Deliberately self-contained rather than reusing
+ * `formatRelativeTime` from `date-time.utils.ts`: that file imports the `../constants` barrel,
+ * which transitively pulls in `colors.constants.ts` → `@linuxfoundation/lfx-ui-core`, a package
+ * that needs the Angular JIT compiler — harmless inside the Angular app, but it crashes this
+ * package's plain-Node Vitest run (no `@angular/compiler` loaded) the moment anything in this
+ * file's import graph reaches it.
+ */
+function formatEngagementFreshness(isoTimestamp: string): string {
+  const diffMs = Date.now() - new Date(isoTimestamp).getTime();
+  if (!Number.isFinite(diffMs)) return 'recently';
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMs / 3_600_000);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
 }

@@ -16,6 +16,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberOptions,
   CreateCommitteeMemberRequest,
+  GroupsEngagementStats,
   MyCommittee,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
@@ -31,6 +32,15 @@ export class CommitteeService {
 
   public getCommittees(params?: HttpParams): Observable<Committee[]> {
     return this.http.get<Committee[]>('/api/committees', { params }).pipe(catchError(() => of([])));
+  }
+
+  /**
+   * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's
+   * visible set. Mocked pending the LFXV2-1705 dbt model — callers should degrade gracefully on
+   * error (see `buildEngagementStatCards`) rather than let a failure here block the groups list.
+   */
+  public getGroupsEngagementStats(): Observable<GroupsEngagementStats> {
+    return this.http.get<GroupsEngagementStats>('/api/committees/engagement-stats');
   }
 
   public getCommitteesByProject(uid: string): Observable<Committee[]> {
