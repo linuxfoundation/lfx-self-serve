@@ -3,7 +3,9 @@
 
 // Read-only "My CLAs" controller (Milestone 1, Me lens).
 // The user identity is derived strictly from the session — request input never
-// selects whose CLAs are read (research R3, the SS server is the authz boundary).
+// selects whose CLAs are read (research R3). SS asserts the trusted identity keys;
+// EasyCLA re-verifies each key belongs to the caller and owns the signature, so the
+// upstream endpoint — not this controller — is the ownership authorization boundary.
 
 import { NextFunction, Request, Response } from 'express';
 

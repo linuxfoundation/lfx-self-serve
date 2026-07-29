@@ -16,7 +16,7 @@ import { Request } from 'express';
 import { EasyClaMyCla, EasyClaMyClaList, EasyClaMyClaPdf, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
 import { logger } from './logger.service';
 
@@ -184,6 +184,9 @@ export class ClaService {
         service: SERVICE,
         errorMessage: 'Failed to fetch signed document URL',
         errorCode: 'UPSTREAM_ERROR',
+        // During impersonation the query identity is the target user's, so the upstream ownership
+        // check must run under the target's token — not the impersonator's apiGatewayToken.
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
       });
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) return null;
@@ -205,6 +208,9 @@ export class ClaService {
       service: SERVICE,
       errorMessage: 'Failed to fetch CLAs',
       errorCode: 'UPSTREAM_ERROR',
+      // During impersonation the query identity is the target user's, so the upstream
+      // authorization must run under the target's token — not the impersonator's apiGatewayToken.
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
     });
 
     return list ?? {};

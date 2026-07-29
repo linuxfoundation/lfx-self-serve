@@ -6,15 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Runtime collaborators are mocked (the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config; cla.service imports only type-only symbols from it, which esbuild elides).
 const { gatewayFetch } = vi.hoisted(() => ({ gatewayFetch: vi.fn() }));
-const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } = vi.hoisted(() => ({
+const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn<() => string | null>(() => null),
   getEffectiveSub: vi.fn<() => string | null>(() => null),
   getEffectiveUsername: vi.fn<() => string | null>(() => null),
+  isImpersonating: vi.fn<() => boolean>(() => false),
 }));
 const { getUserIdentities } = vi.hoisted(() => ({ getUserIdentities: vi.fn(async () => [] as unknown[]) }));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, getEffectiveUsername }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating }));
 vi.mock('./auth0.service', () => ({
   Auth0Service: class {
     public getUserIdentities = getUserIdentities;
@@ -49,6 +50,7 @@ beforeEach(() => {
   getEffectiveUsername.mockReturnValue(null);
   getEffectiveEmail.mockReturnValue(null);
   getEffectiveSub.mockReturnValue(null);
+  isImpersonating.mockReturnValue(false);
   getUserIdentities.mockResolvedValue([]);
   process.env['API_GW_AUDIENCE'] = 'https://api-gw.dev.example.org/';
 });
@@ -220,6 +222,26 @@ describe('ClaService.getMyClas', () => {
     expect(result.agreements).toHaveLength(1);
     expect(result.agreements[0]).toMatchObject({ id: 'i', status: 'inactive' });
   });
+
+  it('authorizes with the target token during impersonation (not the impersonator apiGatewayToken)', async () => {
+    getEffectiveUsername.mockReturnValue('target');
+    isImpersonating.mockReturnValue(true);
+    const imperReq = { bearerToken: 'target-token' } as unknown as Request;
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(imperReq);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(imperReq, expect.stringContaining('/v4/my-clas?'), expect.objectContaining({ bearerToken: 'target-token' }));
+  });
+
+  it('leaves the gateway token as default when not impersonating', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(req);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(req, expect.any(String), expect.objectContaining({ bearerToken: undefined }));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -256,5 +278,19 @@ describe('ClaService.getPdfUrl', () => {
     gatewayFetch.mockRejectedValueOnce(new MicroserviceError('boom', 500, 'UPSTREAM_ERROR', { service: 'cla_service' }));
 
     await expect(new ClaService().getPdfUrl(req, 'sig-1', identity)).rejects.toThrow(MicroserviceError);
+  });
+
+  it('authorizes the ownership check with the target token during impersonation', async () => {
+    isImpersonating.mockReturnValue(true);
+    const imperReq = { bearerToken: 'target-token' } as unknown as Request;
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
+
+    await new ClaService().getPdfUrl(imperReq, 'sig-1', identity);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      imperReq,
+      expect.stringContaining('/v4/my-clas/sig-1/pdf?'),
+      expect.objectContaining({ bearerToken: 'target-token' })
+    );
   });
 });
