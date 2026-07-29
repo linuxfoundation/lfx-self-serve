@@ -60,6 +60,7 @@ import {
   FoundationProjectsLifecycleDistributionRow,
   FoundationSoftwareValueResponse,
   FoundationTopProjectBySoftwareValueRow,
+  FoundationTotalMembersMonthlyRow,
   FoundationTotalMembersResponse,
   FoundationTotalProjectsMonthlyRow,
   FoundationTotalProjectsResponse,
@@ -82,7 +83,6 @@ import {
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
   MembershipChurnTierRow,
-  MonthlyMemberCountWithFoundation,
   MultiFoundationSummaryResponse,
   NorthStarMonthlyDataPoint,
   NpsSummaryResponse,
@@ -1337,99 +1337,72 @@ export class ProjectService {
   }
 
   /**
-   * Get total members count for a foundation from Snowflake
-   * Queries MEMBER_DASHBOARD_MEMBERSHIP_TIER table with monthly cumulative aggregation
-   * Counts distinct member organizations over time
-   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
-   * @returns Foundation total members response with cumulative monthly data and metadata
+   * Get total members count for a foundation from Snowflake.
+   * Reads the dbt model ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
+   * (built under LFXV2-2689), which emits point-in-time active-during-month member
+   * counts per foundation; the 'tlf' umbrella row is emitted by the model itself,
+   * so per-foundation and umbrella reads share one query path. Returns the trailing
+   * 12 months for the chart and the latest month's count as the headline total.
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'ccc')
+   * @returns Foundation total members response with monthly trend and headline count
    */
   public async getFoundationTotalMembers(foundationSlug: string): Promise<FoundationTotalMembersResponse> {
-    const isUmbrella = foundationSlug === 'tlf';
-    const slugParams = isUmbrella ? [] : [foundationSlug];
-
-    const query = isUmbrella
-      ? `
-      WITH monthly_counts AS (
-        SELECT
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        GROUP BY DATE_TRUNC('MONTH', START_DATE)
-      ),
-      cumulative AS (
-        SELECT
-          MONTH_START,
-          SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
-        FROM monthly_counts
-      ),
-      spine AS (
-        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
+    // Densify to a 12-month spine so a missing month in the dbt model can't
+    // make computePeriodChange compare non-adjacent periods; mirrors the
+    // sibling getFoundationMaintainersMonthly read.
+    const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
-        NULL AS PROJECT_ID,
-        'The Linux Foundation' AS PROJECT_NAME,
-        'tlf' AS PROJECT_SLUG,
-        s.MONTH_START,
-        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
+        COALESCE(m.FOUNDATION_SLUG, ?) AS FOUNDATION_SLUG,
+        s.MONTH_START_DATE,
+        COALESCE(m.MONTHLY_TOTAL_MEMBERS, 0) AS MONTHLY_TOTAL_MEMBERS
       FROM spine s
-      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
-      GROUP BY s.MONTH_START
-      ORDER BY s.MONTH_START ASC
-    `
-      : `
-      WITH monthly_counts AS (
-        SELECT
-          PROJECT_ID,
-          PROJECT_NAME,
-          PROJECT_SLUG,
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE PROJECT_SLUG = ?
-        GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
-      ),
-      cumulative AS (
-        SELECT
-          PROJECT_ID,
-          PROJECT_NAME,
-          PROJECT_SLUG,
-          MONTH_START,
-          SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
-        FROM monthly_counts
-      ),
-      proj AS (
-        SELECT MAX(PROJECT_ID) AS PROJECT_ID, MAX(PROJECT_NAME) AS PROJECT_NAME, MAX(PROJECT_SLUG) AS PROJECT_SLUG
-        FROM monthly_counts
-      ),
-      spine AS (
-        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START
-        FROM TABLE(GENERATOR(ROWCOUNT => 12))
-      )
-      SELECT
-        p.PROJECT_ID,
-        p.PROJECT_NAME,
-        p.PROJECT_SLUG,
-        s.MONTH_START,
-        COALESCE(MAX(c.MEMBER_COUNT), 0) AS MEMBER_COUNT
-      FROM spine s
-      CROSS JOIN proj p
-      LEFT JOIN cumulative c ON c.MONTH_START <= s.MONTH_START
-      GROUP BY s.MONTH_START, p.PROJECT_ID, p.PROJECT_NAME, p.PROJECT_SLUG
-      ORDER BY s.MONTH_START ASC
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY m
+        ON m.MONTH_START_DATE = s.MONTH_START_DATE
+        AND m.FOUNDATION_SLUG = ?
+      ORDER BY s.MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [...slugParams]);
+    let result: SnowflakeQueryResult<FoundationTotalMembersMonthlyRow>;
+    try {
+      result = await this.snowflakeService.execute<FoundationTotalMembersMonthlyRow>(query, [foundationSlug, foundationSlug], {
+        expectMissingObject: true,
+      });
+    } catch (error) {
+      // Pre-dbt-deploy the monthly table is absent; degrade to the empty
+      // response the drawer expects instead of 5xx per dashboard load.
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(undefined, 'get_foundation_total_members', 'Total members monthly table not deployed yet; returning empty response', {
+        foundation_slug: foundationSlug,
+      });
+      return { totalMembers: 0, monthlyData: [], monthlyLabels: [] };
+    }
 
-    // Convert monthly data to arrays of counts and labels
-    const monthlyData = result.rows.map((row) => row.MEMBER_COUNT);
-    const monthlyLabels = result.rows.map((row) => {
-      const date = new Date(row.MONTH_START);
-      return date.toLocaleDateString('en-US', { month: 'short' });
+    logger.debug(undefined, 'get_foundation_total_members', 'Fetched total members monthly', {
+      foundation_slug: foundationSlug,
+      row_count: result.rows.length,
     });
 
-    // Total members is the last cumulative count
-    const totalMembers = result.rows.length > 0 ? result.rows[result.rows.length - 1].MEMBER_COUNT : 0;
+    // Drop future-materialized rows so a row dated past the current month can't
+    // become the headline or skew the chart; mirrors the UTC handling in the
+    // active-contributors sibling read.
+    const now = new Date();
+    const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
+    const rows = result.rows.filter((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.getUTCFullYear() * 12 + date.getUTCMonth() <= currentMonthOrdinal;
+    });
+
+    const monthlyData = rows.map((row) => row.MONTHLY_TOTAL_MEMBERS ?? 0);
+    const monthlyLabels = rows.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    });
+
+    const totalMembers = rows.length > 0 ? (rows[rows.length - 1].MONTHLY_TOTAL_MEMBERS ?? 0) : 0;
 
     return {
       totalMembers,
@@ -7013,18 +6986,14 @@ export class ProjectService {
     `;
 
     const totalMembersQuery = `
-      WITH monthly_counts AS (
-        SELECT
-          PROJECT_SLUG AS FOUNDATION_SLUG,
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE PROJECT_SLUG IN (${placeholders})
-        GROUP BY PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
-      )
-      SELECT FOUNDATION_SLUG, SUM(MONTHLY_COUNT) AS TOTAL_MEMBERS
-      FROM monthly_counts
-      GROUP BY FOUNDATION_SLUG
+      SELECT
+        FOUNDATION_SLUG,
+        MONTHLY_TOTAL_MEMBERS AS TOTAL_MEMBERS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
+      WHERE FOUNDATION_SLUG IN (${placeholders})
+        AND MONTH_START_DATE >= DATEADD('month', -11, DATE_TRUNC('month', CURRENT_DATE()))
+        AND MONTH_START_DATE <= DATE_TRUNC('month', CURRENT_DATE())
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY MONTH_START_DATE DESC) = 1
     `;
 
     const valueConcentrationQuery = `
@@ -7060,7 +7029,15 @@ export class ProjectService {
 
     const [totalProjectsResult, totalMembersResult, valueConcentrationResult, healthScoreResult] = await Promise.all([
       this.snowflakeService.execute<TotalProjectsRow>(totalProjectsQuery, filteredSlugs),
-      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs),
+      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs).catch((error) => {
+        // Pre-dbt-deploy the monthly table is absent; degrade this one query to
+        // empty rows so projects, value, and health scores still resolve.
+        if (!SnowflakeService.isMissingObjectError(error)) throw error;
+        logger.warning(req, 'get_multi_foundation_summary_batch', 'Total members monthly table not deployed yet; returning empty', {
+          slug_count: filteredSlugs.length,
+        });
+        return { rows: [], metadata: [] } as SnowflakeQueryResult<TotalMembersRow>;
+      }),
       this.snowflakeService.execute<ValueConcentrationRow>(valueConcentrationQuery, filteredSlugs),
       this.snowflakeService.execute<HealthScoreRow>(healthScoreQuery, filteredSlugs),
     ]);

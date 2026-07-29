@@ -985,7 +985,7 @@ export interface EditChairsDialogData {
   currentViceChairUid: string | null;
 }
 
-export type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
+export type CommitteeTab = 'overview' | 'about' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
 
 /** Configuration entry for a committee view tab. Visibility and badge are closures so each consumer can wire its own signals/state. */
 export interface TabConfigEntry {

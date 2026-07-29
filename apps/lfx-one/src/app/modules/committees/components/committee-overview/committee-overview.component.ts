@@ -43,17 +43,19 @@ import { DashboardMeetingCardComponent } from '../../../dashboards/components/da
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
+import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
 
 @Component({
   selector: 'lfx-committee-overview',
   imports: [
-    CardComponent,
     ButtonComponent,
+    CardComponent,
     DashboardMeetingCardComponent,
+    GroupJoinCtaComponent,
     SkeletonModule,
+    SurveyResultsDrawerComponent,
     TagComponent,
     VoteResultsDrawerComponent,
-    SurveyResultsDrawerComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
@@ -83,6 +85,10 @@ export class CommitteeOverviewComponent {
   // True when the viewer has a pending invitation to this group — suppresses the visitor join CTA
   // (the Accept/Decline banner on the group page is the action; a "Request Access" CTA would be redundant).
   public hasPendingInvite = input<boolean>(false);
+  // Passed down from committee-view, which already fetches this once for the page (both this tab
+  // and About need it, and About's cadence card would otherwise cause a second, redundant fetch).
+  public meetings = input<Meeting[]>([]);
+  public upcomingMeetingsLoading = input<boolean>(true);
 
   // Outputs
   public readonly committeeUpdated = output<void>();
@@ -105,8 +111,7 @@ export class CommitteeOverviewComponent {
   public surveysLoading = signal(true);
   public documentsLoading = signal(true);
 
-  // Loading states for meeting sections
-  public upcomingMeetingsLoading = signal(true);
+  // Loading state for past meetings (upcoming meetings loading comes in as the input above)
   public pastMeetingsLoading = signal(true);
 
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
@@ -146,7 +151,6 @@ export class CommitteeOverviewComponent {
 
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
-  public meetings: Signal<Meeting[]> = this.initMeetings();
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
@@ -174,75 +178,6 @@ export class CommitteeOverviewComponent {
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
-  public isChairOrAbove: Signal<boolean> = computed(() => this.myRole() === 'Chair' || this.myRole() === 'Vice Chair');
-
-  public bannerType: Signal<'visitor' | 'member' | 'chair' | null> = computed(() => {
-    if (this.myRoleLoading()) {
-      return null;
-    }
-    if (this.myRole() === null) {
-      return 'visitor';
-    }
-    if (this.isChairOrAbove()) {
-      return 'chair';
-    }
-    return 'member';
-  });
-
-  public canJoin: Signal<boolean> = computed(() => {
-    const mode = this.committee().join_mode;
-    return this.isVisitor() && mode === 'open' && !this.hasPendingInvite();
-  });
-
-  public showInviteOnlyNotice: Signal<boolean> = computed(() => {
-    const mode = this.committee().join_mode;
-    return this.isVisitor() && (mode === 'invite_only' || !mode) && !this.hasPendingInvite();
-  });
-
-  public joinButtonLabel: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'open') return 'Join Group';
-    if (mode === 'application') return 'Request to Join';
-    return 'Contact Admin';
-  });
-
-  /** Icon for the CTA button — matches the header button icon */
-  public joinButtonIcon: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'open') return 'fa-light fa-user-plus';
-    if (mode === 'application') return 'fa-light fa-paper-plane';
-    return 'fa-light fa-envelope';
-  });
-
-  /** Large illustrative icon above the CTA card title */
-  public joinCtaIcon: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'application') return 'fa-light fa-paper-plane';
-    return 'fa-light fa-users';
-  });
-
-  public joinBannerText: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    const name = this.committee().name;
-    if (mode === 'open') return `Interested in ${name}? Click Join Group above to become a member.`;
-    if (mode === 'application') return `Interested in ${name}? Click Request to Join above to submit your application for admin review.`;
-    return `${name} is closed to new members. Contact a group admin for access.`;
-  });
-
-  public joinCtaTitle: Signal<string> = computed(() => `Interested in ${this.committee().name}?`);
-
-  public joinCtaDescription: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    if (mode === 'application') return 'Submit a request and a group admin will review your application.';
-    return 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
-  });
-
-  public inviteOnlyTitle: Signal<string> = computed(() => 'Membership is by invitation only');
-
-  public inviteOnlyDescription: Signal<string> = computed(() => {
-    const name = this.committee().name;
-    return `${name} is invite only. A group admin must send you an invitation before you can join.`;
-  });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>
@@ -304,10 +239,6 @@ export class CommitteeOverviewComponent {
   }
 
   // Action methods
-  public onJoinClick(): void {
-    this.joinRequested.emit();
-  }
-
   public navigateToTab(tab: string): void {
     this.tabNavigated.emit(tab);
   }
@@ -501,22 +432,6 @@ export class CommitteeOverviewComponent {
         })
       ),
       { initialValue: 0 }
-    );
-  }
-
-  private initMeetings(): Signal<Meeting[]> {
-    return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        switchMap((c) => {
-          this.upcomingMeetingsLoading.set(true);
-          return this.meetingService.getUpcomingMeetingsByCommittee(c.uid).pipe(
-            catchError(() => of([])),
-            finalize(() => this.upcomingMeetingsLoading.set(false))
-          );
-        })
-      ),
-      { initialValue: [] }
     );
   }
 

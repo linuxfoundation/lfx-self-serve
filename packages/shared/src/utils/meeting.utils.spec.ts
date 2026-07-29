@@ -11,17 +11,21 @@ import { describe, expect, it } from 'vitest';
 import { RecurrenceType } from '../enums';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
 import {
+  buildCommitteeCadenceSummary,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
+  buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
+  convertRecurrenceToPattern,
   getMeetingOrganizerDisplayName,
   isMeetingOrganizedByViewer,
   isUnresolvableParticipantName,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
   resolveOccurrenceRecurrence,
+  selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
 } from './meeting.utils';
@@ -147,6 +151,124 @@ describe('resolveOccurrenceRecurrence', () => {
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
+  });
+});
+
+describe('convertRecurrenceToPattern', () => {
+  it('maps a daily recurrence', () => {
+    const pattern = convertRecurrenceToPattern({ type: RecurrenceType.DAILY, repeat_interval: 1 });
+    expect(pattern.patternType).toBe('daily');
+    expect(pattern.endType).toBe('never');
+  });
+
+  it('maps a weekly recurrence, converting 1-based weekly_days to a 0-based array', () => {
+    const pattern = convertRecurrenceToPattern({ type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '2,4' });
+    expect(pattern.patternType).toBe('weekly');
+    expect(pattern.weeklyDaysArray).toEqual([1, 3]);
+  });
+
+  it('maps a monthly/dayOfMonth recurrence', () => {
+    const pattern = convertRecurrenceToPattern({ type: RecurrenceType.MONTHLY, repeat_interval: 1, monthly_day: 15 });
+    expect(pattern.patternType).toBe('monthly');
+    expect(pattern.monthlyType).toBe('dayOfMonth');
+  });
+
+  it('maps a monthly/dayOfWeek recurrence', () => {
+    const pattern = convertRecurrenceToPattern({ type: RecurrenceType.MONTHLY, repeat_interval: 1, monthly_week: 1, monthly_week_day: 5 });
+    expect(pattern.monthlyType).toBe('dayOfWeek');
+  });
+
+  it('derives endType "date" from a real end_date_time and "never" from the never-ends sentinel', () => {
+    const dated = convertRecurrenceToPattern({ type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2', end_date_time: '2026-01-01T00:00:00Z' });
+    expect(dated.endType).toBe('date');
+
+    const neverEnds = convertRecurrenceToPattern({
+      type: RecurrenceType.WEEKLY,
+      repeat_interval: 1,
+      weekly_days: '2',
+      end_date_time: buildRecurrenceNeverEndDate(),
+    });
+    expect(neverEnds.endType).toBe('never');
+  });
+
+  it('derives endType "occurrences" from end_times', () => {
+    const pattern = convertRecurrenceToPattern({ type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2', end_times: 5 });
+    expect(pattern.endType).toBe('occurrences');
+  });
+});
+
+describe('selectCommitteeCadenceMeeting', () => {
+  const recurring = { uid: 'm1', recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } } as Meeting;
+  const oneOff = { uid: 'm2', recurrence: null } as Meeting;
+
+  it('returns null for an empty list', () => {
+    expect(selectCommitteeCadenceMeeting([])).toBeNull();
+  });
+
+  it('returns the first meeting when none are recurring', () => {
+    const oneOff2 = { uid: 'm3', recurrence: null } as Meeting;
+    expect(selectCommitteeCadenceMeeting([oneOff, oneOff2])).toBe(oneOff);
+  });
+
+  it('returns the first recurring meeting even when it is not first in the list', () => {
+    expect(selectCommitteeCadenceMeeting([oneOff, recurring])).toBe(recurring);
+  });
+
+  it('returns the single meeting when only one exists', () => {
+    expect(selectCommitteeCadenceMeeting([oneOff])).toBe(oneOff);
+  });
+
+  it('treats a meeting with recurrence entirely absent the same as an explicit null (truthy check, not a strict null check)', () => {
+    const noRecurrenceField = { uid: 'm4' } as Meeting;
+    expect(selectCommitteeCadenceMeeting([noRecurrenceField, recurring])).toBe(recurring);
+  });
+});
+
+describe('buildCommitteeCadenceSummary', () => {
+  it('falls back to a static message when there are no meetings', () => {
+    expect(buildCommitteeCadenceSummary([])).toBe('No recurring meetings scheduled');
+  });
+
+  it('composes a weekly cadence string with duration and platform', () => {
+    const meeting = {
+      recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2,4' },
+      duration: 60,
+      platform: 'Zoom',
+    } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday, Wednesday · 60 min · Zoom');
+  });
+
+  it('composes a bi-weekly cadence string', () => {
+    const meeting = {
+      recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '5' },
+      duration: 30,
+      platform: 'Zoom',
+    } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('Every 2 weeks on Thursday · 30 min · Zoom');
+  });
+
+  it('composes a monthly cadence string', () => {
+    const meeting = {
+      recurrence: { type: RecurrenceType.MONTHLY, repeat_interval: 1, monthly_day: 15 },
+      duration: 45,
+      platform: 'Zoom',
+    } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('Monthly on day 15 · 45 min · Zoom');
+  });
+
+  it('labels a non-recurring meeting as "One-time meeting"', () => {
+    const meeting = { recurrence: null, duration: 30, platform: 'Zoom' } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('One-time meeting · 30 min · Zoom');
+  });
+
+  it('omits the platform segment when platform is absent', () => {
+    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 60 } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday · 60 min');
+  });
+
+  it('omits the duration segment when duration is falsy', () => {
+    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 0, platform: 'Zoom' } as Meeting;
+    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday · Zoom');
   });
 });
 
