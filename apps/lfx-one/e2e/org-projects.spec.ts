@@ -57,6 +57,7 @@ function noActivityProject(slug: string, name: string) {
     trend: { deltaPct: 0, technicalDeltaPct: 0, ecosystemDeltaPct: 0, direction: 'flat', series: [0, 0, 0, 0] },
     contributors: [],
     participants: [],
+    healthMetrics: [],
     noActivityYet: true,
   };
 }

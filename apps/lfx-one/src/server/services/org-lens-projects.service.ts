@@ -50,7 +50,9 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    const cacheKey = `projects:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v2` bump: entries cached before the no-activity hydration landed hold activity-only rows; versioning the
+    // sub-resource key drops them so freshly viewed workspaces don't omit no-activity rows for up to the TTL.
+    const cacheKey = `projects:v2:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
