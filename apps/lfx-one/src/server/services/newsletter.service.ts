@@ -28,6 +28,13 @@ import { ProjectService } from './project.service';
 const MY_NEWSLETTERS_CONCURRENCY = 5;
 
 /**
+ * Hard cap on pages followed per committee (20 pages × 20 rows = 400
+ * newsletters) — guards against an upstream bug returning a never-terminating
+ * next_page_token, which would otherwise hang the request.
+ */
+const MAX_COMMITTEE_NEWSLETTER_PAGES = 20;
+
+/**
  * Thin pass-through layer in front of NewsletterServiceClient.
  *
  * Express no longer owns any newsletter business logic — the Go service
@@ -155,24 +162,36 @@ export class NewsletterService {
 
   /**
    * All pages of the committee-scoped upstream list for one committee.
-   * Failures degrade to an empty list (warning-logged) instead of failing the
-   * whole feed — membership can change mid-flight, in which case the gateway
-   * starts returning 403 for that committee.
+   * All-or-nothing per committee: a failure on ANY page degrades the whole
+   * committee to an empty list (warning-logged) instead of failing the feed —
+   * returning the pages accumulated before the failure would silently present
+   * an incomplete result as complete. Membership can change mid-flight, in
+   * which case the gateway starts returning 403 for that committee.
    */
   private async listAllCommitteeNewsletters(req: Request, committeeUid: string): Promise<CommitteeNewsletter[]> {
     const all: CommitteeNewsletter[] = [];
     try {
       let pageToken: string | undefined;
+      let pages = 0;
       do {
         const page = await this.newsletterClient.listCommitteeNewsletters(req, committeeUid, pageToken);
         all.push(...(page.newsletters ?? []));
         pageToken = page.next_page_token;
-      } while (pageToken);
+        pages += 1;
+      } while (pageToken && pages < MAX_COMMITTEE_NEWSLETTER_PAGES);
+
+      if (pageToken) {
+        logger.warning(req, 'get_my_newsletters', 'Stopped following page tokens at the per-committee cap', {
+          committee_uid: committeeUid,
+          page_cap: MAX_COMMITTEE_NEWSLETTER_PAGES,
+        });
+      }
     } catch (error) {
       logger.warning(req, 'get_my_newsletters', 'Failed to list newsletters for committee, skipping', {
         committee_uid: committeeUid,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      return [];
     }
     return all;
   }

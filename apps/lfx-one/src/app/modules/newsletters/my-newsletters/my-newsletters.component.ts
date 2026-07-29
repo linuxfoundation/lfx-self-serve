@@ -100,7 +100,8 @@ export class MyNewslettersComponent {
       .getNewsletter(newsletter.project_uid, newsletter.id)
       .pipe(
         catchError(() => of(null)),
-        finalize(() => this.openingId.set(null))
+        finalize(() => this.openingId.set(null)),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((full) => {
         if (full?.body_html) {
@@ -116,9 +117,13 @@ export class MyNewslettersComponent {
       });
   }
 
-  /** Keyboard equivalent of the row click; Space needs preventDefault so the page doesn't scroll. */
-  protected onRowKeydown(event: Event, newsletter: MyNewsletter): void {
-    event.preventDefault();
+  /**
+   * Subject-button click handler: the button is the accessible control (real
+   * role, native Enter/Space); stopPropagation keeps the supplementary row
+   * click from firing a second open.
+   */
+  protected onOpenSubject(event: Event, newsletter: MyNewsletter): void {
+    event.stopPropagation();
     this.onOpenNewsletter(newsletter);
   }
 

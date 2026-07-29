@@ -110,4 +110,20 @@ describe('NewsletterService.getMyNewsletters', () => {
 
     expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n1']);
   });
+
+  it('drops all pages for a committee when a later page fails (all-or-nothing)', async () => {
+    getMyCommitteeUids.mockResolvedValue(new Set(['committee-a', 'committee-b']));
+    listCommitteeNewsletters.mockImplementation(async (_req: Request, committeeUid: string, pageToken?: string) => {
+      if (committeeUid === 'committee-a') {
+        if (!pageToken) return pageOf([newsletter('n1', '2026-07-01T12:00:00Z')], 'token-2');
+        throw new Error('upstream 500 on page 2');
+      }
+      return pageOf([newsletter('n2', '2026-06-01T12:00:00Z')]);
+    });
+
+    const result = await service.getMyNewsletters(req);
+
+    // committee-a's page 1 must not leak through as a silently incomplete result.
+    expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n2']);
+  });
 });

@@ -102,9 +102,6 @@ export class NewsletterController {
   }
 
   /**
-   * GET /api/projects/:projectUid/newsletters?status=...&page_token=...
-   */
-  /**
    * GET /api/newsletters/my-newsletters
    *
    * Not project-scoped: the Me-lens feed of sent newsletters reachable via the
@@ -124,6 +121,9 @@ export class NewsletterController {
     }
   }
 
+  /**
+   * GET /api/projects/:projectUid/newsletters?status=...&page_token=...
+   */
   public async listNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = this.requireProjectUid(req);
     const startTime = logger.startOperation(req, 'newsletter_list', {
