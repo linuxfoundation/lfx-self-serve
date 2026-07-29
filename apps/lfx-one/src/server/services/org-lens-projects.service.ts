@@ -10,8 +10,9 @@ import {
   ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE,
   ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG,
   ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG,
-  ORG_PROJECTS_SEARCH_LIMIT,
+  ORG_PROJECTS_SEARCH_MAX_RESULTS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import { classifyHealthScore } from '@lfx-one/shared/utils';
@@ -80,8 +81,35 @@ export class OrgLensProjectsService {
     // predicate identical to the PrimeNG multi-select's client-side filter, which matches % and _
     // literally (plain substring), so the client can't hide a row the server returned.
     const like = `%${escapeSqlLikePattern(query)}%`;
-    const searchFilter = trimmed.length ? "AND (PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!')" : '';
-    const excludeFilter = excluded.length ? `AND PROJECT_SLUG NOT IN (${excluded.map(() => '?').join(', ')})` : '';
+    // Global onboarded catalog (not org-scoped ORG_LENS_PROJECTS) so an admin can add any project. Already-added
+    // rows are marked via ALREADY_ADDED (bound first, positional) and dropped in code — not WHERE — so the UI can tell "already added" from a true no-match.
+    const binds: string[] = [];
+    let alreadyAddedExpr = '0';
+    if (excluded.length) {
+      alreadyAddedExpr = `CASE WHEN LOWER(PROJECT_SLUG) IN (${excluded.map(() => '?').join(', ')}) THEN 1 ELSE 0 END`;
+      binds.push(...excluded);
+    }
+    const conditions: string[] = [];
+    if (trimmed.length) {
+      conditions.push("(PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!')");
+      binds.push(like, like);
+    }
+    const whereClause = conditions.length ? `WHERE ${conditions.join('\n        AND ')}` : '';
+    // Relevance ordering: addable first (ALREADY_ADDED asc), then prefix matches (bound last, after SELECT/WHERE binds)
+    // so an exact target like "Kubernetes" isn't buried behind contains-matches. Empty-query preload falls back to catalog rank.
+    let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC, PROJECT_NAME ASC';
+    if (trimmed.length) {
+      const prefixLike = `${escapeSqlLikePattern(trimmed)}%`;
+      orderByClause = `ORDER BY
+        ALREADY_ADDED ASC,
+        CASE WHEN PROJECT_NAME ILIKE ? ESCAPE '!' THEN 0 ELSE 1 END ASC,
+        ONBOARDED_PROJECT_RANK ASC,
+        PROJECT_NAME ASC`;
+      binds.push(prefixLike);
+    }
+    // Preload keeps the initial panel light; a typed query returns up to the safety cap so the user
+    // can scroll the panel to the true end of the match list rather than hitting a hard 20-row wall.
+    const limit = trimmed.length ? ORG_PROJECTS_SEARCH_MAX_RESULTS : ORG_PROJECTS_SEARCH_PRELOAD_LIMIT;
     const sql = `
       SELECT
         PROJECT_SLUG,
@@ -89,24 +117,25 @@ export class OrgLensProjectsService {
         PROJECT_LOGO_URL,
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
-        FOUNDATION_LOGO_URL
-      FROM ${this.projectsTable()}
-      WHERE ACCOUNT_ID = ?
-        ${searchFilter}
-        ${excludeFilter}
-      ORDER BY ORG_PROJECT_RANK ASC, PROJECT_NAME ASC
-      LIMIT ${ORG_PROJECTS_SEARCH_LIMIT}
+        FOUNDATION_LOGO_URL,
+        ${alreadyAddedExpr} AS ALREADY_ADDED
+      FROM ${this.onboardedProjectsTable()}
+      ${whereClause}
+      ${orderByClause}
+      LIMIT ${limit}
     `;
 
-    const binds = trimmed.length ? [accountId, like, like, ...excluded] : [accountId, ...excluded];
-    const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, binds);
+    const result = await this.snowflakeService.execute<OrgLensProjectRow & { ALREADY_ADDED?: number | string }>(sql, binds);
+    const addable = result.rows.filter((row) => Number(row.ALREADY_ADDED) !== 1);
     return {
-      results: result.rows.map((row) => ({
+      results: addable.map((row) => ({
         slug: row.PROJECT_SLUG,
         name: row.PROJECT_NAME,
         logoUrl: row.PROJECT_LOGO_URL ?? '',
         foundation: this.mapFoundation(row),
       })),
+      // Any returned row we dropped means the query matched a project that's already in the workspace.
+      hasMatchesAlreadyInWorkspace: result.rows.length > addable.length,
     };
   }
 
@@ -318,12 +347,42 @@ export class OrgLensProjectsService {
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
     const peopleRows = projectSlugs.length ? await this.fetchPeopleRows(accountId, projectSlugs) : [];
 
+    // Workspace slugs with no org-scoped row (no activity yet): synthesize an identity-only project from the
+    // onboarded catalog as a "no activity yet" row instead of dropping it. Only for requested slugs, not the preload.
+    const noActivityProjects = await this.fetchNoActivityProjects(slugs, projectSlugs);
+
     return {
       orgSlug: this.slugify(orgName) || accountId,
       orgName: orgName || 'Your organization',
       dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-      projects: projectRows.map((row) => this.mapProject(row, peopleRows)),
+      projects: [...projectRows.map((row) => this.mapProject(row, peopleRows)), ...noActivityProjects],
     };
+  }
+
+  private async fetchNoActivityProjects(requestedSlugs: string[] | null, returnedSlugs: string[]): Promise<OrgLensProject[]> {
+    if (!requestedSlugs?.length) {
+      return [];
+    }
+    const returned = new Set(returnedSlugs.map((slug) => slug.toLowerCase()));
+    const missing = [...new Set(requestedSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))].filter((slug) => !returned.has(slug));
+    if (!missing.length) {
+      return [];
+    }
+    const sql = `
+      SELECT
+        PROJECT_SLUG,
+        PROJECT_NAME,
+        PROJECT_LOGO_URL,
+        FOUNDATION_SLUG,
+        FOUNDATION_NAME,
+        FOUNDATION_LOGO_URL
+      FROM ${this.onboardedProjectsTable()}
+      WHERE PROJECT_SLUG IN (${missing.map(() => '?').join(', ')})
+    `;
+    const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
+    // mapProject fills every metric field the identity query does not select with its missing-data
+    // placeholder (health 'unavailable', influence fallbacks, zeroed trend, empty people arrays).
+    return result.rows.map((row) => ({ ...this.mapProject(row, []), noActivityYet: true }));
   }
 
   private buildProjectsQuery(slugs: string[] | null): string {
@@ -842,6 +901,10 @@ export class OrgLensProjectsService {
 
   private projectsTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECTS`;
+  }
+
+  private onboardedProjectsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ONBOARDED_PROJECTS`;
   }
 
   private projectPeopleTable(): string {

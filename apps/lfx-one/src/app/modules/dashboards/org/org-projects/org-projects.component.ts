@@ -146,6 +146,8 @@ export class OrgProjectsComponent {
   protected readonly error = computed(() => this.workspaceError() || this.projectsError());
   protected readonly addProjectsSearchLoading = signal(false);
   protected readonly addProjectsSearchError = signal(false);
+  /** True when the last search matched only projects already in the workspace (so the empty panel can say so). */
+  protected readonly addProjectsMatchesAlreadyInWorkspace = signal(false);
   protected readonly addProjectsSaving = signal(false);
   protected readonly addProjectsSaveError = signal(false);
   protected readonly workspaceNameError = signal<string | null>(null);
@@ -214,6 +216,21 @@ export class OrgProjectsComponent {
     this.mergeAddableOptions([...this.selectedAddableProjectOptions(), ...this.addableProjectOptions()])
   );
   protected readonly addProjectsSearchEmptyTitle = computed(() => this.initAddProjectsSearchEmptyTitle());
+  /** Search status shown INSIDE the body-appended panel (as its empty message), not below the trigger where the open dropdown would cover it. */
+  protected readonly addProjectsPanelStatusMessage = computed(() => {
+    if (this.addProjectsSearchLoading()) {
+      return 'Searching projects…';
+    }
+    if (this.addProjectsSearchError()) {
+      return 'Couldn’t load matches. Edit your search to try again.';
+    }
+    // The query DID match, but every match is already in this workspace — say so rather than the
+    // misleading "No projects match your search." (only reachable when there are no addable results).
+    if (this.addProjectsMatchesAlreadyInWorkspace() && this.addableProjectOptions().length === 0) {
+      return 'Matching projects are already in this workspace.';
+    }
+    return this.addProjectsSearchEmptyTitle();
+  });
   protected readonly tableEmptyState = computed<OrgProjectsEmptyState>(() => this.initTableEmptyState());
   protected readonly canDeleteEditingWorkspace = computed(() => {
     const editing = this.editingWorkspace();
@@ -321,6 +338,7 @@ export class OrgProjectsComponent {
     this.addableProjectOptions.set([]);
     this.selectedAddableProjectOptions.set([]);
     this.addProjectsSearchError.set(false);
+    this.addProjectsMatchesAlreadyInWorkspace.set(false);
     this.addProjectsSaveError.set(false);
     this.addProjectsDialogOpen.set(true);
     void this.runAddableProjectsSearch('');
@@ -334,10 +352,6 @@ export class OrgProjectsComponent {
     } else if (action === 'retry') {
       this.retry();
     }
-  }
-
-  protected retryAddableProjectsSearch(): void {
-    void this.runAddableProjectsSearch(this.addProjectsSearchQuery());
   }
 
   protected async confirmAddProjects(): Promise<void> {
@@ -606,6 +620,7 @@ export class OrgProjectsComponent {
     if (!account?.uid || (trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH)) {
       this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(false);
+      this.addProjectsMatchesAlreadyInWorkspace.set(false);
       this.addProjectsSearchLoading.set(false);
       return;
     }
@@ -619,17 +634,19 @@ export class OrgProjectsComponent {
       // trimmed but the client did not, a stray leading/trailing space would let the client hide rows
       // the API already returned, leaving the panel misleadingly empty. `trimmed` is used only for the
       // min-length gate above.
-      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, query, excludeSlugs));
+      const { results, hasMatchesAlreadyInWorkspace } = await firstValueFrom(this.projectsService.searchProjects(account.uid, query, excludeSlugs));
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }
       this.addableProjectOptions.set(this.mapAddableOptions(results));
+      this.addProjectsMatchesAlreadyInWorkspace.set(hasMatchesAlreadyInWorkspace ?? false);
     } catch (err) {
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }
       console.error('Failed to search addable org projects', err);
       this.addableProjectOptions.set([]);
+      this.addProjectsMatchesAlreadyInWorkspace.set(false);
       this.addProjectsSearchError.set(true);
     } finally {
       if (requestId === this.addableProjectsSearchRequestId) {

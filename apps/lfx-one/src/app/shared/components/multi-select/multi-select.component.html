@@ -11,6 +11,7 @@
     [showToggleAll]="showToggleAll()"
     [appendTo]="appendTo()"
     [filter]="filter()"
+    [autofocusFilter]="autofocusFilter()"
     [resetFilterOnHide]="resetFilterOnHide()"
     [filterBy]="filterBy()"
     [filterPlaceHolder]="filterPlaceHolder()"
@@ -18,7 +19,11 @@
     [styleClass]="styleClass()"
     [panelStyleClass]="panelStyleClass()"
     [scrollHeight]="scrollHeight()"
+    [loading]="loading()"
+    [emptyMessage]="emptyMessage() ?? ''"
+    [emptyFilterMessage]="emptyFilterMessage() ?? ''"
     (onFilter)="filterChange.emit($event.filter ?? '')"
+    (onPanelShow)="onPanelShow()"
     class="w-full">
     @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">
