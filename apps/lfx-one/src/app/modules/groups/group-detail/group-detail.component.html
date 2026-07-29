@@ -33,10 +33,11 @@
       } @else if (group(); as group) {
         <!-- Breadcrumb -->
         <nav class="flex items-center gap-1.5 text-sm text-gray-500 mb-4" data-testid="group-breadcrumb">
-          <span class="text-gray-500">{{ group.context.foundation_name }}</span>
-          <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
           @if (group.context.project_name) {
             <span class="text-gray-500">{{ group.context.project_name }}</span>
+            <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
+          } @else {
+            <span class="text-gray-500">{{ group.context.foundation_name }}</span>
             <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
           }
           <span class="text-gray-700 font-medium">{{ group.name }}</span>
