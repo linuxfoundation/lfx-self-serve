@@ -283,7 +283,12 @@ export class MeetingsDashboardComponent {
       return;
     }
 
-    const route = buildMeetingOccurrenceRoute(props.meetingId, startTime, props.durationMinutes ?? 60, props.password ? { password: props.password } : undefined);
+    const route = buildMeetingOccurrenceRoute(
+      props.meetingId,
+      startTime,
+      props.durationMinutes ?? 60,
+      props.password ? { password: props.password } : undefined
+    );
     void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : {});
   }
 

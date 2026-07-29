@@ -14,7 +14,15 @@ import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
 import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, buildMeetingOccurrenceRoute, getCurrentOrNextOccurrence, hasMeetingEnded, isMeetingOccurrenceCancelled, resolveMeetingCalendarColors, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import {
+  addMinutesToDate,
+  buildMeetingOccurrenceRoute,
+  getCurrentOrNextOccurrence,
+  hasMeetingEnded,
+  isMeetingOccurrenceCancelled,
+  resolveMeetingCalendarColors,
+  sortPastMeetingsDescending,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -179,7 +187,12 @@ export class CommitteeMeetingsComponent {
       return;
     }
 
-    const route = buildMeetingOccurrenceRoute(props.meetingId, startTime, props.durationMinutes ?? 60, props.password ? { password: props.password } : undefined);
+    const route = buildMeetingOccurrenceRoute(
+      props.meetingId,
+      startTime,
+      props.durationMinutes ?? 60,
+      props.password ? { password: props.password } : undefined
+    );
     void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
