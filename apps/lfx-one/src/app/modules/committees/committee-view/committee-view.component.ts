@@ -206,9 +206,8 @@ export class CommitteeViewComponent {
   // -- Parent group --
   public parentGroup: Signal<Committee | null> = this.initParentGroup();
 
-  // -- Upcoming meetings (About tab's cadence card + Overview's own independent fetch both need
-  // this, but the About tab is destroyed/recreated on every tab switch — fetching here once and
-  // passing down avoids re-issuing the request on every Overview<->About toggle). --
+  // -- Upcoming meetings (About tab's cadence card and Overview's next-meeting display both
+  // consume this; fetched once here and passed down to both to avoid a duplicate round-trip). --
   public meetingsLoading = signal(true);
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
