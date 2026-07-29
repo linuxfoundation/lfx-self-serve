@@ -83,11 +83,11 @@
 
         &.meeting-event {
           .fc-event-title {
-            @apply font-medium leading-tight overflow-hidden line-clamp-2 text-white;
+            @apply font-medium leading-tight overflow-hidden line-clamp-2;
           }
 
           .fc-event-time {
-            @apply font-semibold mr-1 block mb-0.5 text-[11px] text-white;
+            @apply font-semibold mr-1 block mb-0.5 text-[11px];
           }
         }
       }
