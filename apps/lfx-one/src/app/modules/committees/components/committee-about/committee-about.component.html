@@ -1,0 +1,218 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2" data-testid="committee-about">
+  <!-- About (description) -->
+  <lfx-card data-testid="committee-about-description-card">
+    <div class="flex flex-col gap-2">
+      <h3 class="text-sm font-semibold text-gray-900">About</h3>
+      <div class="flex items-start gap-2">
+        @if (committee().description) {
+          <p class="text-gray-500 flex-1 text-sm">{{ committee().description }}</p>
+        } @else {
+          <span class="text-gray-400 text-sm italic flex-1">No description yet.</span>
+        }
+        @if (canEdit()) {
+          <lfx-button
+            icon="fa-light fa-pen-to-square"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            [ariaLabel]="committee().description ? 'Edit description' : 'Add description'"
+            [tooltip]="committee().description ? 'Edit description' : 'Add description'"
+            (onClick)="editDescriptionRequested.emit()"
+            data-testid="committee-about-edit-description-btn"></lfx-button>
+        }
+      </div>
+    </div>
+  </lfx-card>
+
+  <!-- Channels -->
+  @if (hasChannels()) {
+    <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-about-channels-card">
+      <lfx-committee-channels-card
+        [committee]="committee()"
+        [associatedMailingLists]="associatedMailingLists()"
+        [isVisitor]="isVisitor()"
+        heading="Channels"
+        testIdPrefix="committee-about" />
+    </lfx-card>
+  }
+
+  <!-- Meeting Cadence + Subscribe -->
+  <lfx-card data-testid="committee-about-cadence-card">
+    <div class="flex flex-col gap-3">
+      <h3 class="text-sm font-semibold text-gray-900">Meeting Cadence</h3>
+      <div class="flex items-center gap-2">
+        <i class="fa-light fa-repeat text-gray-400 w-4 text-center flex-shrink-0"></i>
+        @if (meetingsLoading()) {
+          <p-skeleton width="60%" height="1rem" />
+        } @else {
+          <span class="text-sm text-gray-700" data-testid="committee-about-cadence-summary">{{ cadenceSummary() }}</span>
+        }
+      </div>
+      <div>
+        <lfx-button
+          label="Subscribe to Calendar"
+          icon="fa-light fa-calendar-arrow-down"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          ariaLabel="Subscribe to calendar"
+          (onClick)="onSubscribe()"
+          data-testid="committee-about-subscribe-btn"></lfx-button>
+      </div>
+    </div>
+  </lfx-card>
+
+  <!-- Part of (parent project / parent group / sub-groups) -->
+  <lfx-card data-testid="committee-about-parent-card">
+    <div class="flex flex-col gap-3">
+      <h3 class="text-sm font-semibold text-gray-900">Part of</h3>
+      <div class="flex flex-col gap-2.5">
+        @if (committee().project_name || committee().foundation_name) {
+          @if (committee().project_uid && committee().project_slug) {
+            <button
+              type="button"
+              class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer w-fit"
+              (click)="parentProjectNavigationRequested.emit()"
+              data-testid="committee-about-parent-project-link">
+              <i class="fa-light fa-diagram-project text-[11px]"></i>
+              <span>Parent Project:</span>
+              <span>{{ committee().project_name || committee().foundation_name }}</span>
+              <i class="fa-light fa-chevron-right text-[10px]"></i>
+            </button>
+          } @else {
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-medium text-gray-500">Parent Project:</span>
+              <span class="text-xs text-gray-700">{{ committee().project_name || committee().foundation_name }}</span>
+            </div>
+          }
+        }
+        @if (parentGroup(); as parent) {
+          <button
+            type="button"
+            class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer w-fit"
+            (click)="parentGroupNavigationRequested.emit()"
+            data-testid="committee-about-parent-group-link">
+            <i class="fa-light fa-sitemap text-[11px]"></i>
+            <span>Parent Group:</span>
+            <span>{{ parent.name }}</span>
+            <i class="fa-light fa-chevron-right text-[10px]"></i>
+          </button>
+        }
+        @if (subGroupsLoading()) {
+          <p-skeleton width="120px" height="16px" borderRadius="4px" />
+        } @else if (subGroups().length === 1) {
+          <button
+            type="button"
+            class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer w-fit"
+            (click)="subGroupNavigationRequested.emit(subGroups()[0])"
+            data-testid="committee-about-sub-group-link">
+            <i class="fa-light fa-sitemap text-[11px]"></i>
+            <span>Sub-Group:</span>
+            <span>{{ subGroups()[0].name }}</span>
+            <i class="fa-light fa-chevron-right text-[10px]"></i>
+          </button>
+        } @else if (subGroups().length > 1) {
+          <div class="relative w-fit">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+              (click)="subGroupsPopover.toggle($event)"
+              [attr.aria-expanded]="subGroupsPopover.overlayVisible"
+              data-testid="committee-about-sub-groups-trigger">
+              <i class="fa-light fa-sitemap text-[11px]"></i>
+              <span>Sub-Groups</span>
+              <lfx-tag [value]="'' + subGroups().length" [rounded]="true" severity="info" styleClass="!text-[10px] !px-1.5 !py-0" />
+              <i class="fa-light fa-chevron-down text-[10px]"></i>
+            </button>
+            <p-popover #subGroupsPopover [style]="{ width: '360px' }" data-testid="committee-about-sub-groups-popover">
+              <div class="flex flex-col">
+                <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2 pb-1.5">Sub-Groups</div>
+                @for (sg of subGroups(); track sg.uid) {
+                  <button
+                    type="button"
+                    class="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer w-full text-left"
+                    (click)="subGroupNavigationRequested.emit(sg); subGroupsPopover.hide()"
+                    data-testid="committee-about-sub-group-item"
+                    [title]="sg.name">
+                    <div
+                      class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
+                      [ngClass]="sg.category | categoryAvatarColor">
+                      {{ sg.name | initials }}
+                    </div>
+                    <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                      <span class="text-sm font-medium text-gray-900 truncate">{{ sg.name }}</span>
+                      <span class="text-sm text-gray-500">{{ sg.category }} &middot; {{ sg.total_members }} members</span>
+                    </div>
+                    <i class="fa-light fa-chevron-right text-xs text-gray-400 shrink-0"></i>
+                  </button>
+                }
+              </div>
+            </p-popover>
+          </div>
+        }
+      </div>
+    </div>
+  </lfx-card>
+
+  <!-- Key Information -->
+  <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-about-key-info-card">
+    <div class="px-4 pt-3.5 pb-1">
+      <h3 class="text-sm font-semibold text-gray-900">Key Information</h3>
+    </div>
+    <div class="flex flex-col divide-y divide-gray-100">
+      @if (committee().category) {
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-tag text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Category</span>
+          <span class="text-sm font-semibold text-gray-900">{{ committee().category }}</span>
+        </div>
+      }
+      @if (committee().join_mode; as joinMode) {
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-door-open text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Join Mode</span>
+          <span class="text-sm font-semibold text-gray-900">{{ joinMode | joinModeLabel }}</span>
+        </div>
+      }
+      <div class="flex items-center gap-3 px-4 py-3">
+        <i class="fa-light fa-users text-gray-400 w-4 text-center flex-shrink-0"></i>
+        <span class="text-sm text-gray-700 flex-1">Total Members</span>
+        <span class="text-sm font-semibold text-gray-900">{{ committee().total_members }}</span>
+      </div>
+      <div class="flex items-center gap-3 px-4 py-3">
+        <i class="fa-light fa-check-to-slot text-gray-400 w-4 text-center flex-shrink-0"></i>
+        <span class="text-sm text-gray-700 flex-1">Voting Enabled</span>
+        <span class="text-sm font-semibold text-gray-900">{{ committee().enable_voting ? 'Yes' : 'No' }}</span>
+      </div>
+      <div class="flex items-center gap-3 px-4 py-3">
+        <i class="fa-light fa-calendar-plus text-gray-400 w-4 text-center flex-shrink-0"></i>
+        <span class="text-sm text-gray-700 flex-1">Created</span>
+        <span class="text-sm font-semibold text-gray-900">{{ committee().created_at | date: 'MMM d, y' }}</span>
+      </div>
+      @if (committee().updated_at) {
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-calendar-check text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Updated</span>
+          <span class="text-sm font-semibold text-gray-900">{{ committee().updated_at | date: 'MMM d, y' }}</span>
+        </div>
+      }
+    </div>
+  </lfx-card>
+
+  <!-- Visitor Join CTA. data-testid sits directly on the component host (no wrapper div) — the
+       host still exists in the DOM even when GroupJoinCtaComponent renders neither of its own
+       branches (e.g. an application-mode visitor), but a toBeVisible() check on it correctly fails
+       for that empty case since it collapses to a zero-size box. -->
+  @if (isVisitor()) {
+    <lfx-group-join-cta
+      [committee]="committee()"
+      [isVisitor]="isVisitor()"
+      [hasPendingInvite]="hasPendingInvite()"
+      (joinRequested)="joinRequested.emit()"
+      data-testid="committee-about-join-cta" />
+  }
+</div>
