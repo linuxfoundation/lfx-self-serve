@@ -201,10 +201,11 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     );
   });
 
-  it('still detects and warns about a clamped row that matches no current roster member', async () => {
-    // The clamp-detection count is scoped to warehouse rows, not roster members, precisely so a
+  it('still detects and warns about an over-attended row that matches no current roster member', async () => {
+    // The over-attended row count is scoped to warehouse rows, not roster members, precisely so a
     // grain mismatch affecting rows for members no longer on the roster isn't invisible — unmatched
     // rows are the expected case (see the empty-roster join-mismatch test above), not an edge case.
+    // (That row is never clamped — it's dropped before Math.min, since it has no roster match.)
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'current-member@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [
