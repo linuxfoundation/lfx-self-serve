@@ -25,6 +25,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
+  resolveRsvpOccurrenceId,
   hasMeetingEnded,
   isPastMeetingSummaryAwaitingApproval,
   Meeting,
@@ -1101,7 +1102,7 @@ export class MeetingJoinComponent implements OnInit {
           if (!authenticated || !canToggle || !meeting?.id) {
             return of(null);
           }
-          const occurrenceId = meeting.recurrence ? occurrence?.occurrence_id : undefined;
+          const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           // Capture the current update revision at fetch dispatch time. If a manual update
           // bumps the counter before the server response arrives (typically because the
           // query-service hasn't indexed the new RSVP yet), the filter drops both the
@@ -1347,16 +1348,18 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       combineLatest([
         toObservable(this.meeting).pipe(distinctUntilChanged((a, b) => a?.id === b?.id)),
+        toObservable(this.currentOccurrence).pipe(distinctUntilChanged((a, b) => a?.occurrence_id === b?.occurrence_id)),
         toObservable(this.authenticated),
         this.registrantsRefresh$,
       ]).pipe(
-        switchMap(([meeting, authenticated]) => {
+        switchMap(([meeting, occurrence, authenticated]) => {
           if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited) || this.isPastMeeting()) {
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
           const baseCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
-          return this.meetingService.getMyMeetingRegistrants(meeting.id, true).pipe(
+          const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
+          return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
             tap((list) => {
               // Once the refetch lands, drop the optimistic pad so it doesn't double-count.
               const fetchedAdditional = Math.max(0, list.length - baseCount);
