@@ -9,6 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
@@ -46,6 +47,7 @@ import type {
     NgClass,
     InsightsHandoffSectionComponent,
     TooltipModule,
+    MetricDeltaComponent,
   ],
   templateUrl: './total-projects-drawer.component.html',
 })

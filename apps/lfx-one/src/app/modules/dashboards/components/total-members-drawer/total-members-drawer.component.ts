@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_TOTAL_MEMBERS, lfxColors } from '@lfx-one/shared/constants';
 import { computePeriodDelta } from '@lfx-one/shared/utils';
@@ -15,7 +16,7 @@ import type { FoundationTotalMembersResponse } from '@lfx-one/shared/interfaces'
 
 @Component({
   selector: 'lfx-total-members-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule, MetricDeltaComponent],
   templateUrl: './total-members-drawer.component.html',
 })
 export class TotalMembersDrawerComponent {
