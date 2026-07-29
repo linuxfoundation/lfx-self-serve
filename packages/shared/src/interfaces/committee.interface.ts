@@ -371,8 +371,12 @@ export interface Committee {
   updated_at: string;
   /** Total number of committee members */
   total_members: number;
-  /** Total number of voting representatives (upstream field name is total_voting_repos) */
-  total_voting_repos: number;
+  /**
+   * Total number of repositories with voting permissions for this committee (per upstream
+   * lfx-v2-committee-service — despite the name, this is a repo count, not a person count).
+   * Optional: upstream only sets this when > 0; no production code path currently writes it.
+   */
+  total_voting_repos?: number;
   /** Associated project UID */
   project_uid: string;
   /** Associated project name (populated from project data) */

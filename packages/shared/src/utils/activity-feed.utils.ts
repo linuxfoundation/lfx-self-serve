@@ -1,0 +1,132 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Specific-file imports (not the '../constants' barrel): that barrel re-exports
+// dashboard-metrics.constants.ts, which imports '../utils' (the utils barrel, this file's own
+// barrel) — a real runtime import cycle that transitively pulls in Angular-only runtime code
+// (e.g. meeting.utils.ts's `@angular/common/http` import), which Vitest can't resolve outside an
+// Angular context. Importing the two constant files directly avoids the cycle. The '../interfaces'
+// import below is `import type` for the same reason: it's erased entirely, so it can't reintroduce
+// this cycle even if a future interface file adds a runtime import that reaches '../constants' or
+// '../utils'.
+import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
+import { POLL_STATUS_LABELS } from '../constants/poll.constants';
+import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
+import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
+import { firstValidTimestamp } from './iso-timestamp.utils';
+import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
+import { normalizePollStatus } from './poll.utils';
+import { getSurveyDisplayStatus } from './survey.utils';
+import { isValidUrl } from './url.utils';
+
+/** Per-source cap before merging, so one noisy source can't crowd out the rest. */
+const PER_SOURCE_LIMIT = 5;
+/** Final row count returned after the merge-sort. */
+const FEED_LIMIT = 8;
+
+/**
+ * Parse an ISO timestamp to epoch ms for sorting, treating an absent/unparseable value as the
+ * oldest possible. A plain `localeCompare` on the raw strings only sorts correctly when every
+ * source emits the identical format/offset — this feed merges four sources across two upstream
+ * services (query-service, committee-service), so a `+05:30`-offset or non-`Z` variant from any
+ * one of them would otherwise sort into the wrong position relative to the others.
+ */
+function timestampValue(timestamp: string): number {
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? -Infinity : parsed;
+}
+
+/**
+ * Group Overview "Recent Activity" stop-gap: merges the latest items across past meetings, votes,
+ * surveys, and documents into one time-ordered list. Upcoming meetings are intentionally excluded
+ * — they're future-dated, already covered by the "Next Meeting" card, and would otherwise dominate
+ * a feed labelled "Recent Activity". Replaced by the real activity stream in LFXV2-1707.
+ */
+export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedItem[] {
+  const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
+    .map((m) => {
+      // getPastMeetingStartTimeMs — the same helper meetings-dashboard.component.ts and
+      // meeting-organizer.component.ts already go through, so this feed can't quietly diverge if
+      // that helper's field-preference or zero-date handling ever changes. committee-overview's own
+      // lastMeeting computed does not go through it (pre-existing, raw start_time.localeCompare) —
+      // a Go zero-date start_time can therefore make the "Past Meeting" card and this feed's top
+      // row name different meetings, out of this fix's scope.
+      const startMs = getPastMeetingStartTimeMs(m);
+      return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
+    })
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, PER_SOURCE_LIMIT)
+    .map(({ meeting: m, timestamp }) => ({
+      type: 'past_meeting' as const,
+      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) for tracking — the same helper
+      // every other past-meeting surface uses (meeting-card, meeting-organizer, attachments) —
+      // deliberately independent of the navigation id below, which has a different job (matching
+      // an existing link) rather than uniquely identifying the occurrence.
+      key: `past_meeting-${getPastMeetingResourceId(m)}`,
+      label: `Meeting held: ${m.title}`,
+      timestamp,
+      icon: 'fa-light fa-clock-rotate-left',
+      // meeting.id, not getPastMeetingResourceId — matches the "Past Meeting" card's own link
+      // (committee-overview.component.html: `'/meetings/' + meeting.id`). The component maps this
+      // semantic action to that route (also carrying the meeting's password query param, matching
+      // the card); packages/shared doesn't carry the path string.
+      action: { kind: 'past-meeting' as const, meetingId: m.id },
+    }));
+
+  const voteItems: ActivityFeedItem[] = input.votingEnabled
+    ? [...input.votes]
+        .map((v) => ({ vote: v, timestamp: firstValidTimestamp(v.last_modified_time, v.creation_time) }))
+        .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+        .slice(0, PER_SOURCE_LIMIT)
+        .map(({ vote: v, timestamp }) => {
+          const statusKey = normalizePollStatus(v.status);
+          return {
+            type: 'vote' as const,
+            key: `vote-${v.uid}`,
+            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status || 'Updated'}: ${v.name}`,
+            timestamp,
+            icon: 'fa-light fa-check-to-slot',
+            action: { kind: 'vote-drawer' as const, voteUid: v.uid },
+          };
+        })
+    : [];
+
+  const surveyItems: ActivityFeedItem[] = [...input.surveys]
+    .map((s) => ({ survey: s, timestamp: firstValidTimestamp(s.last_modified_at, s.created_at) }))
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, PER_SOURCE_LIMIT)
+    .map(({ survey: s, timestamp }) => {
+      const displayStatus = getSurveyDisplayStatus(s);
+      return {
+        type: 'survey' as const,
+        key: `survey-${s.uid}`,
+        label: `Survey ${SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus}: ${s.survey_title}`,
+        timestamp,
+        icon: 'fa-light fa-chart-simple',
+        action: { kind: 'survey-drawer' as const, surveyUid: s.uid },
+      };
+    });
+
+  // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a folder
+  // or link doesn't misrepresent itself as a file in the feed.
+  const documentItems: ActivityFeedItem[] = [...input.documents]
+    .map((d) => ({ document: d, timestamp: firstValidTimestamp(d.updated_at, d.created_at) }))
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, PER_SOURCE_LIMIT)
+    .map(({ document: d, timestamp }) => ({
+      type: 'document' as const,
+      key: `document-${d.uid}`,
+      label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${d.name}`,
+      timestamp,
+      icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
+      // Only 'link' documents open directly — the Documents tab treats 'file' as a download
+      // (via a committee-scoped proxy URL, not doc.url) rather than an "open", and 'folder' has
+      // no standalone target outside the Documents tab's own drill-down state. isValidUrl is the
+      // same shared validator used across the app for untrusted-URL sinks.
+      action: d.type === 'link' && d.url && isValidUrl(d.url) ? { kind: 'external-url' as const, url: d.url } : { kind: 'tab' as const, tab: 'documents' },
+    }));
+
+  return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems]
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, FEED_LIMIT);
+}

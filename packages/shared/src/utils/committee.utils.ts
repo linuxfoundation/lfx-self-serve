@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
 import { BadgeSeverity } from '../interfaces/components.interface';
-import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
 import { slugify } from './string.utils';
 
@@ -172,6 +172,16 @@ export function resolveCommitteeMemberPermission(committee: Committee | null | u
  */
 export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
   return !!committee?.writer;
+}
+
+/** Whether a member has an active "Voting Rep" status (excludes Alternate Voting Rep). */
+export function isVotingRep(member: CommitteeMember): boolean {
+  return member.voting?.status === CommitteeMemberVotingStatus.VOTING_REP;
+}
+
+/** Count of members with an active "Voting Rep" status (excludes Alternate Voting Rep). */
+export function countVotingReps(members: CommitteeMember[]): number {
+  return members.filter(isVotingRep).length;
 }
 
 // ── My Groups card grid (LFXV2-1715) ────────────────────────────────────────
