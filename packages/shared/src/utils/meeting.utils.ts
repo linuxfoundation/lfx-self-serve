@@ -4,6 +4,7 @@
 import { HttpParams } from '@angular/common/http';
 
 import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { RecurrenceType } from '../enums';
 import {
   CustomRecurrencePattern,
   Meeting,
@@ -157,7 +158,7 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     case 'date': {
       if (pattern.end_date_time) {
         const endDate = new Date(pattern.end_date_time);
-        endDescription = `until ${endDate.toLocaleDateString()}`;
+        endDescription = `until ${endDate.toLocaleDateString('en-US')}`;
       }
       break;
     }
@@ -178,6 +179,75 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     endDescription,
     fullSummary,
   };
+}
+
+/**
+ * Convert a raw API `MeetingRecurrence` (numeric `type`, 1-based `weekly_days` string) into the
+ * `CustomRecurrencePattern` shape `buildRecurrenceSummary` expects, for read-only display contexts
+ * (as opposed to the create/edit form, which builds `CustomRecurrencePattern` from form state directly).
+ */
+export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): CustomRecurrencePattern {
+  const type = recurrence.type ?? RecurrenceType.WEEKLY;
+  const monthlyDay = recurrence.monthly_day;
+  const monthlyWeek = recurrence.monthly_week;
+  const monthlyWeekDay = recurrence.monthly_week_day;
+  const endTimes = recurrence.end_times;
+  const repeatInterval = recurrence.repeat_interval ?? 1;
+
+  let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
+  if (type === RecurrenceType.DAILY) patternType = 'daily';
+  else if (type === RecurrenceType.WEEKLY) patternType = 'weekly';
+  else if (type === RecurrenceType.MONTHLY) patternType = 'monthly';
+
+  let monthlyType: 'dayOfMonth' | 'dayOfWeek' = 'dayOfMonth';
+  if (monthlyDay !== undefined) monthlyType = 'dayOfMonth';
+  else if (monthlyWeek !== undefined && monthlyWeekDay !== undefined) monthlyType = 'dayOfWeek';
+
+  let endType: 'never' | 'date' | 'occurrences' = 'never';
+  if (recurrence.end_date_time && !isRecurrenceNeverEndSentinel(recurrence.end_date_time)) endType = 'date';
+  else if ((endTimes ?? 0) > 0) endType = 'occurrences';
+
+  let weeklyDaysArray: number[] = [];
+  if (recurrence.weekly_days) {
+    weeklyDaysArray = recurrence.weekly_days.split(',').map((d) => parseInt(d.trim()) - 1);
+  }
+
+  return {
+    ...recurrence,
+    type,
+    monthly_day: monthlyDay,
+    monthly_week: monthlyWeek,
+    monthly_week_day: monthlyWeekDay,
+    end_times: endTimes,
+    repeat_interval: repeatInterval,
+    patternType,
+    monthlyType,
+    endType,
+    weeklyDaysArray,
+  };
+}
+
+/**
+ * Picks the meeting that represents a committee's "meeting cadence" from its upcoming meetings:
+ * the first meeting with a truthy `recurrence` (an actually-recurring series), falling back to
+ * the first upcoming meeting of any kind (e.g. a genuine one-off), and to `null` when empty.
+ */
+export function selectCommitteeCadenceMeeting(meetings: Meeting[]): Meeting | null {
+  if (meetings.length === 0) return null;
+  return meetings.find((m) => !!m.recurrence) ?? meetings[0];
+}
+
+/**
+ * Builds the About-tab "Meeting Cadence" display string, e.g. "Every 2 weeks on Thursday · 60 min · Zoom".
+ */
+export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
+  const meeting = selectCommitteeCadenceMeeting(meetings);
+  if (!meeting) {
+    return 'No recurring meetings scheduled';
+  }
+  const recurrenceLabel = meeting.recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(meeting.recurrence)).fullSummary : 'One-time meeting';
+  const durationLabel = meeting.duration ? `${meeting.duration} min` : null;
+  return [recurrenceLabel, durationLabel, meeting.platform].filter(Boolean).join(' · ');
 }
 
 /**

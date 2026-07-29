@@ -24,42 +24,35 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList, PendingInvitation, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, Meeting, PendingInvitation, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
-import {
-  canManageCommitteeMembers,
-  findPendingInvitationForCommittee,
-  invitationRequiresOrganization,
-  getChatPlatformIcon,
-  getChatPlatformLabel,
-  getRepoPlatformIcon,
-  getRepoPlatformLabel,
-} from '@lfx-one/shared/utils';
+import { canManageCommitteeMembers, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
-import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
 
+import { CommitteeAboutComponent } from '../components/committee-about/committee-about.component';
+import { CommitteeChannelsCardComponent } from '../components/committee-channels-card/committee-channels-card.component';
 import { CommitteeDocumentsComponent } from '../components/committee-documents/committee-documents.component';
 import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
-import { MailingListEmailPipe } from '../components/committee-settings-tab/pipes/mailing-list-email.pipe';
 import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
@@ -86,8 +79,8 @@ const INVITE_TOAST_KEY = 'committee-view-invite';
     InitialsPipe,
     InvitationSubtextPipe,
     JoinModeLabelPipe,
-    MailingListEmailPipe,
-    SafeUrlPipe,
+    CommitteeAboutComponent,
+    CommitteeChannelsCardComponent,
     CommitteeDocumentsComponent,
     CommitteeMeetingsComponent,
     CommitteeMembersComponent,
@@ -99,7 +92,6 @@ const INVITE_TOAST_KEY = 'committee-view-invite';
   providers: [DialogService],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',
-  host: { '(document:click)': 'onDocumentClick()' },
 })
 export class CommitteeViewComponent {
   // -- Injections --
@@ -107,6 +99,7 @@ export class CommitteeViewComponent {
   private readonly router = inject(Router);
   private readonly committeeService = inject(CommitteeService);
   private readonly mailingListService = inject(MailingListService);
+  private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
@@ -203,17 +196,8 @@ export class CommitteeViewComponent {
     return this.associatedMailingLists().length > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
   });
 
-  public mlExpanded = signal(false);
-
-  public chatPlatformLabel: Signal<string> = this.initChatPlatformLabel();
-  public chatPlatformIcon: Signal<string> = this.initChatPlatformIcon();
-  public repoPlatformLabel: Signal<string> = this.initRepoPlatformLabel();
-  public repoPlatformIcon: Signal<string> = this.initRepoPlatformIcon();
-
   // -- Associated mailing lists (rich objects filtered by ml.committees[]) --
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
-  public extraMailingLists: Signal<GroupsIOMailingList[]> = computed(() => this.associatedMailingLists().slice(1));
-  public extraMailingListCount: Signal<number> = computed(() => this.associatedMailingLists().length - 1);
 
   // -- Sub-groups --
   public subGroupsLoading = signal(true);
@@ -221,6 +205,11 @@ export class CommitteeViewComponent {
 
   // -- Parent group --
   public parentGroup: Signal<Committee | null> = this.initParentGroup();
+
+  // -- Upcoming meetings (About tab's cadence card and Overview's next-meeting display both
+  // consume this; fetched once here and passed down to both to avoid a duplicate round-trip). --
+  public meetingsLoading = signal(true);
+  public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(
@@ -233,6 +222,7 @@ export class CommitteeViewComponent {
 
   public readonly tabConfig: TabConfigEntry[] = [
     { key: 'overview', label: 'Overview', icon: 'fa-gauge', visible: () => true },
+    { key: 'about', label: 'About', icon: 'fa-circle-info', visible: () => true },
     {
       key: 'members',
       label: () => {
@@ -316,17 +306,6 @@ export class CommitteeViewComponent {
     if (tab === 'meetings' && (context === 'past' || context === 'upcoming')) {
       this.meetingsTimeFilter.set(context);
     }
-  }
-
-  public openDescriptionView(): void {
-    this.dialogService.open(DescriptionDialogComponent, {
-      header: 'Description',
-      width: '560px',
-      modal: true,
-      closable: true,
-      draggable: false,
-      data: { mode: 'view', description: this.committee()?.description || '' },
-    });
   }
 
   public openEditDescription(): void {
@@ -518,12 +497,6 @@ export class CommitteeViewComponent {
 
   public navigateToSubGroup(subGroup: Committee): void {
     this.router.navigate(['/', 'groups', subGroup.uid]);
-  }
-
-  public onDocumentClick(): void {
-    if (this.mlExpanded()) {
-      this.mlExpanded.set(false);
-    }
   }
 
   // -- Private methods --
@@ -818,28 +791,37 @@ export class CommitteeViewComponent {
     );
   }
 
-  private initChatPlatformLabel(): Signal<string> {
-    return computed(() => getChatPlatformLabel(this.committee()?.chat_channel));
-  }
-
-  private initChatPlatformIcon(): Signal<string> {
-    return computed(() => getChatPlatformIcon(this.committee()?.chat_channel));
-  }
-
-  private initRepoPlatformLabel(): Signal<string> {
-    return computed(() => getRepoPlatformLabel(this.committee()?.website));
-  }
-
-  private initRepoPlatformIcon(): Signal<string> {
-    return computed(() => getRepoPlatformIcon(this.committee()?.website));
-  }
-
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c): c is Committee => !!c?.uid),
         switchMap((c) => {
           return this.mailingListService.getMailingListsByCommittee(c.uid).pipe(catchError(() => of([])));
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  private initUpcomingMeetings(): Signal<Meeting[]> {
+    return toSignal(
+      toObservable(this.committee).pipe(
+        filter((c): c is Committee => !!c?.uid),
+        map((c) => c.uid),
+        // A refresh (e.g. a description save) re-emits a new Committee object with the same uid —
+        // skip the redundant meetings round-trip when the id itself hasn't changed.
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          this.meetingsLoading.set(true);
+          // Not skip_registrants: this list is now shared with the Meetings tab, which needs
+          // full registrant data on each meeting (see committee-meetings.component.ts).
+          return this.meetingService.getMeetingsByCommittee(uid).pipe(
+            catchError((err) => {
+              console.error('Failed to load committee meetings:', err);
+              return of([]);
+            }),
+            finalize(() => this.meetingsLoading.set(false))
+          );
         })
       ),
       { initialValue: [] }
