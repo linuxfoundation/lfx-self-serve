@@ -13,16 +13,19 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { CANCELLED_COLOR, MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, MeLensMeetingFilters, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   addMinutesToDate,
+  buildMeetingOccurrenceRoute,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
+  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
+  resolveMeetingCalendarColors,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
@@ -262,11 +265,26 @@ export class MeetingsDashboardComponent {
 
   /** FullCalendar event click → navigate to the meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean; password?: string };
-    if (props.cancelled) return;
-    if (props.type === 'meeting' && props.meetingId) {
-      void this.router.navigate(['/meetings', props.meetingId], props.password ? { queryParams: { password: props.password } } : {});
+    const props = arg.event.extendedProps as {
+      type: string;
+      meetingId?: string;
+      cancelled?: boolean;
+      password?: string;
+      startTime?: string;
+      durationMinutes?: number;
+    };
+    if (props.cancelled || props.type !== 'meeting' || !props.meetingId) {
+      return;
     }
+
+    const startTime = props.startTime ?? arg.event.start?.toISOString();
+    if (!startTime) {
+      void this.router.navigate(['/meetings', props.meetingId], props.password ? { queryParams: { password: props.password } } : {});
+      return;
+    }
+
+    const route = buildMeetingOccurrenceRoute(props.meetingId, startTime, props.durationMinutes ?? 60, props.password ? { password: props.password } : undefined);
+    void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : {});
   }
 
   /** Opens iCal Subscribe modal — foundation/project lenses only; me/org lenses tracked separately. */
@@ -1003,27 +1021,45 @@ export class MeetingsDashboardComponent {
   }
 
   private meetingToEvents(meeting: Meeting | PastMeeting): EventInput[] {
-    const typeKey = (meeting.meeting_type ?? 'default').toLowerCase();
-    const colors = MEETING_TYPE_COLORS[typeKey] ?? MEETING_TYPE_COLORS['default'];
-
     if (meeting.occurrences && meeting.occurrences.length > 0) {
       return meeting.occurrences.map((occ) => {
-        const isCancelled = occ.status === 'cancel';
-        const c = isCancelled ? CANCELLED_COLOR : colors;
+        const isCancelled = isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences);
+        const isPast = !isCancelled && hasMeetingEnded(meeting, occ);
+        const colors = resolveMeetingCalendarColors(isCancelled);
+        const classNames = ['meeting-event'];
+        if (isCancelled) {
+          classNames.push('cursor-default');
+        }
+        if (isPast) {
+          classNames.push('meeting-event-past');
+        }
         return {
           id: `${meeting.id}-${occ.occurrence_id}`,
           title: occ.title || meeting.title,
           start: occ.start_time,
           end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
-          backgroundColor: c.bg,
-          borderColor: c.border,
+          backgroundColor: colors.bg,
+          borderColor: colors.border,
           textColor: '#ffffff',
           display: 'block',
-          // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
-          classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
-          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled, password: meeting.password },
+          classNames,
+          extendedProps: {
+            type: 'meeting',
+            meetingId: meeting.id,
+            cancelled: isCancelled,
+            password: meeting.password,
+            startTime: occ.start_time,
+            durationMinutes: occ.duration ?? meeting.duration,
+          },
         };
       });
+    }
+
+    const isPast = hasMeetingEnded(meeting);
+    const colors = resolveMeetingCalendarColors(false);
+    const classNames = ['meeting-event'];
+    if (isPast) {
+      classNames.push('meeting-event-past');
     }
 
     return [
@@ -1036,8 +1072,14 @@ export class MeetingsDashboardComponent {
         borderColor: colors.border,
         textColor: '#ffffff',
         display: 'block',
-        classNames: ['meeting-event'],
-        extendedProps: { type: 'meeting', meetingId: meeting.id, password: meeting.password },
+        classNames,
+        extendedProps: {
+          type: 'meeting',
+          meetingId: meeting.id,
+          password: meeting.password,
+          startTime: meeting.start_time,
+          durationMinutes: meeting.duration,
+        },
       },
     ];
   }

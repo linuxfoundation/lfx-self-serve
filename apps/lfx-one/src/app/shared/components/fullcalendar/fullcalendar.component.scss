@@ -20,39 +20,6 @@
         @apply mr-2;
       }
 
-      .fc-timegrid {
-        // Scope dimming to .meeting-event only — generic events use inline backgroundColor; !important override would hide their text.
-        .fc-timegrid-col-events {
-          .fc-timegrid-event.meeting-event {
-            &:not(.fc-event-future) {
-              @apply bg-gray-100 #{!important};
-
-              // Restore dark text — white-on-gray-100 is unreadable.
-              .fc-event-title {
-                @apply text-gray-500 #{!important};
-              }
-
-              .fc-event-time {
-                @apply text-gray-500 #{!important};
-              }
-            }
-
-            &.fc-event-future {
-              @apply bg-blue-50 #{!important};
-
-              // Restore dark text — white-on-blue-50 is unreadable.
-              .fc-event-title {
-                @apply text-blue-700 #{!important};
-              }
-
-              .fc-event-time {
-                @apply text-blue-900 #{!important};
-              }
-            }
-          }
-        }
-      }
-
       // Header toolbar styling
       .fc-toolbar {
         @apply mb-6;
@@ -123,14 +90,8 @@
             @apply font-semibold mr-1 block mb-0.5 text-[11px] text-white;
           }
 
-          &.fc-event-future {
-            .fc-event-title {
-              @apply font-medium leading-tight overflow-hidden line-clamp-2 text-white;
-            }
-
-            .fc-event-time {
-              @apply font-semibold mr-1 block mb-0.5 text-[11px] text-white;
-            }
+          &.meeting-event-past:not(.cursor-default) {
+            opacity: 0.55;
           }
         }
       }

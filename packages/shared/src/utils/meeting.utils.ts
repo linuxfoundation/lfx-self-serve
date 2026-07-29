@@ -3,7 +3,7 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { CANCELLED_COLOR, MEETING_ORGANIZER_SKIP_IDENTIFIERS, MEETING_TYPE_COLORS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
 import { RecurrenceType } from '../enums';
 import {
   CustomRecurrencePattern,
@@ -460,6 +460,73 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   const startTime = new Date(meeting.start_time);
   const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
   return now > endTime;
+}
+
+/** Angular router target for navigating to a specific meeting occurrence. */
+export interface MeetingOccurrenceRoute {
+  path: string[];
+  queryParams?: Record<string, string>;
+}
+
+/** Options when building a meeting occurrence route. */
+export interface BuildMeetingOccurrenceRouteOptions {
+  password?: string;
+}
+
+/**
+ * Returns true when an occurrence is cancelled, honouring both per-occurrence status and the
+ * list endpoint's `cancelled_occurrences` IDs (see {@link getActiveOccurrences}).
+ */
+export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, cancelledOccurrences?: string[] | null): boolean {
+  if (occurrence.status === 'cancel') {
+    return true;
+  }
+  const cancelledIds = cancelledOccurrences ?? [];
+  return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
+}
+
+/**
+ * Resolves FullCalendar hex colors for a meeting occurrence.
+ * Active meetings use the default blue; cancelled occurrences use cancelled grey.
+ */
+export function resolveMeetingCalendarColors(isCancelled: boolean): { bg: string; border: string } {
+  if (isCancelled) {
+    return CANCELLED_COLOR;
+  }
+  return MEETING_TYPE_COLORS['default'];
+}
+
+/**
+ * Builds an Angular router command for a specific meeting occurrence, mirroring the join page URL
+ * contract (`?occurrence=` for upcoming, `/meetings/{id}-{timestamp}` for past).
+ */
+export function buildMeetingOccurrenceRoute(
+  meetingId: string,
+  startTime: string,
+  durationMinutes: number,
+  options?: BuildMeetingOccurrenceRouteOptions
+): MeetingOccurrenceRoute {
+  const timestamp = new Date(startTime).getTime();
+  const occurrence = { start_time: startTime, duration: durationMinutes } as MeetingOccurrence;
+  const isPast = hasMeetingEnded({ duration: durationMinutes } as Meeting, occurrence);
+  const queryParams: Record<string, string> = {};
+
+  if (options?.password) {
+    queryParams['password'] = options.password;
+  }
+
+  if (isPast) {
+    return {
+      path: ['/meetings', `${meetingId}-${timestamp}`],
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    };
+  }
+
+  queryParams['occurrence'] = timestamp.toString();
+  return {
+    path: ['/meetings', meetingId],
+    queryParams,
+  };
 }
 
 /**
