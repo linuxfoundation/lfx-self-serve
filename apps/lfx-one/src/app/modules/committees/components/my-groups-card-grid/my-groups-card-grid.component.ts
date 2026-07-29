@@ -53,7 +53,7 @@ export class MyGroupsCardGridComponent {
   private initCards(): Signal<MyGroupsCardVm[]> {
     return computed(() =>
       this.committees().map((committee) => {
-        const memberCount = committee.total_members ?? 0;
+        const memberCount = committee.total_members;
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const scopeLabel = committee.project_name || committee.foundation_name;
         const parts = [

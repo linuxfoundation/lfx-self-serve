@@ -210,10 +210,20 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
  * label, which one the committee "really" belongs to can't be determined, so it falls back to its own
  * label-keyed bucket instead of merging into an arbitrary one.
  *
+ * The two source values share one string namespace — a `project_uid` and a resolved label are both
+ * arbitrary strings, so a degraded committee's label could otherwise be byte-identical to some other
+ * committee's `project_uid` and silently merge into that unrelated bucket. `uidKey`/`labelKey` prefix
+ * each domain (`uid:…` / `label:…`) so the two can never collide; `.key` is an internal identifier
+ * (expansion-state map key, `@for` track identity) that no caller parses, so the prefix is invisible
+ * outside this function.
+ *
  * Pure and side-effect-free: callers gate whether grouping applies at all (e.g. only in foundation
  * scope) and decide the input list (e.g. already search/filter-narrowed).
  */
 export function groupCommitteesByFoundation(committees: Committee[]): CommitteeFoundationGroup[] {
+  const uidKey = (uid: string): string => `uid:${uid}`;
+  const labelKey = (label: string): string => `label:${label}`;
+
   const buckets = new Map<string, CommitteeFoundationGroup>();
   const namedKeysByLabel = new Map<string, Set<string>>();
 
@@ -240,7 +250,7 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
   // when the label unambiguously identifies exactly one of them.
   for (const committee of committees) {
     if (!isNamed(committee)) continue;
-    addTo(committee.project_uid, committee.project_name, committee);
+    addTo(uidKey(committee.project_uid), committee.project_name, committee);
     const keys = namedKeysByLabel.get(committee.project_name) ?? new Set<string>();
     keys.add(committee.project_uid);
     namedKeysByLabel.set(committee.project_name, keys);
@@ -254,7 +264,7 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     if (isNamed(committee)) continue;
     const label = committee.project_name || committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
     const namedKeys = namedKeysByLabel.get(label);
-    const key = namedKeys?.size === 1 ? [...namedKeys][0] : label;
+    const key = namedKeys?.size === 1 ? uidKey([...namedKeys][0]) : labelKey(label);
     addTo(key, label, committee);
   }
 
@@ -293,11 +303,11 @@ export function groupCommitteesByFoundation(committees: Committee[]): CommitteeF
     if (a.label === b.label) return compareCodeUnits(a.key, b.key);
     if (a.label === OTHER_GROUPS_LABEL) return 1;
     if (b.label === OTHER_GROUPS_LABEL) return -1;
-    // Display order is intentionally locale-aware, for correct human reading order; the testid a
-    // group gets is assigned above and never depends on this sort. A server/client collation
-    // divergence here would only cost the client re-rendering this list on hydration (Angular
-    // detects and recovers from the DOM order mismatch) — it can't desync a testid from its group.
-    return a.label.localeCompare(b.label);
+    // Display order is intentionally locale-aware, for correct human reading order — but pinned to a
+    // fixed locale ('en') rather than each runtime's default, so this SSR-rendered @for produces the
+    // same DOM order on the server and in the browser instead of depending on Node's vs. the browser's
+    // default ICU collation. The testid a group gets is assigned above and never depends on this sort.
+    return a.label.localeCompare(b.label, 'en');
   });
 
   // Every bucket key was assigned a slug in the pass above (same `buckets` map, no filtering between
