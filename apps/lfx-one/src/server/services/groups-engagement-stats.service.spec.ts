@@ -32,9 +32,14 @@ const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls } 
 
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: getEffectiveUsernameMock }));
 vi.mock('./valkey.service', () => ({ withUserCache: withUserCacheMock }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  VALKEY_CACHE: { GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1', GROUPS_ENGAGEMENT_TTL_SECONDS: 60 },
-}));
+// Source the real VALKEY_CACHE values by importing the underlying file directly (not the
+// `@lfx-one/shared/constants` barrel, which transitively pulls in Angular — see the import-rationale
+// comment in date-time.utils.ts) so a namespace/TTL rename can't silently desync this mock from the
+// value the test asserts against below.
+vi.mock('@lfx-one/shared/constants', async () => {
+  const { VALKEY_CACHE } = await import('../../../../../packages/shared/src/constants/valkey-cache.constants');
+  return { VALKEY_CACHE };
+});
 vi.mock('./logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
@@ -45,6 +50,8 @@ vi.mock('./logger.service', () => ({
     info: vi.fn(),
   },
 }));
+
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
 import { GroupsEngagementStatsService } from './groups-engagement-stats.service';
 
@@ -109,6 +116,11 @@ describe('GroupsEngagementStatsService', () => {
       expect(typeof result.computed_at).toBe('string');
       expect(Number.isNaN(Date.parse(result.computed_at))).toBe(false);
     });
+
+    it('marks the response source as mock', async () => {
+      const result = await service.getEngagementStats(buildReq());
+      expect(result.source).toBe('mock');
+    });
   });
 
   describe('caching', () => {
@@ -133,8 +145,10 @@ describe('GroupsEngagementStatsService', () => {
       expect(fetcherCalls.count).toBe(1);
 
       // Corrupt the stored entry directly, bypassing the service — simulates a stale/incompatible
-      // shape left behind by a prior schema version sharing the same cache key.
-      cacheStore.set('groups-engagement:v1:alice', { active_members: 'not-a-number' });
+      // shape left behind by a prior schema version sharing the same cache key. Derives the key from
+      // the real VALKEY_CACHE namespace (not a hardcoded duplicate) so a `:v1` → `:v2` bump can't
+      // leave this assertion silently checking a key the service no longer writes to.
+      cacheStore.set(`${VALKEY_CACHE.GROUPS_ENGAGEMENT_NAMESPACE}:alice`, { active_members: 'not-a-number' });
 
       await service.getEngagementStats(buildReq());
       expect(fetcherCalls.count).toBe(2);
@@ -151,7 +165,7 @@ describe('GroupsEngagementStatsService', () => {
   });
 
   describe('live mode', () => {
-    it('returns null engagement fields without throwing, plus a computed_at timestamp', async () => {
+    it('returns null engagement fields without throwing, plus a computed_at timestamp and source=live', async () => {
       process.env['ENGAGEMENT_BACKEND'] = 'live';
 
       const result = await service.getEngagementStats(buildReq());
@@ -159,11 +173,12 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
       expect(typeof result.computed_at).toBe('string');
+      expect(result.source).toBe('live');
     });
   });
 
   describe('production hard-block', () => {
-    it('ignores ENGAGEMENT_BACKEND=mock and returns null fields when NODE_ENV=production', async () => {
+    it('ignores ENGAGEMENT_BACKEND=mock and returns null fields (source=live) when NODE_ENV=production', async () => {
       process.env['ENGAGEMENT_BACKEND'] = 'mock';
       process.env['NODE_ENV'] = 'production';
 
@@ -171,6 +186,7 @@ describe('GroupsEngagementStatsService', () => {
 
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
+      expect(result.source).toBe('live');
     });
   });
 });

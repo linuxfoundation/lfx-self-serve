@@ -13,4 +13,10 @@ export interface GroupsEngagementStats {
   meetings_this_month: number | null;
   /** ISO timestamp this rollup was computed — used to render a freshness label client-side. */
   computed_at: string;
+  /**
+   * Which backend produced this response. `'mock'` values are deterministic fixtures, not real
+   * data — the client renders a visible "Sample data" marker when this is `'mock'` so fabricated
+   * numbers can never be mistaken for live ones during local/synced-prod-data validation.
+   */
+  source: 'mock' | 'live';
 }

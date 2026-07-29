@@ -16,9 +16,16 @@ function isGroupsEngagementStats(value: unknown): boolean {
     typeof value === 'object' &&
     (v.active_members === null || typeof v.active_members === 'number') &&
     (v.meetings_this_month === null || typeof v.meetings_this_month === 'number') &&
-    typeof v.computed_at === 'string'
+    typeof v.computed_at === 'string' &&
+    (v.source === 'mock' || v.source === 'live')
   );
 }
+
+// Per-process guard: the `live` no-dbt-path branch is the *expected steady state* in every
+// deployed environment until LFXV2-1705 ships (weeks/months, not an exceptional blip), so logging
+// it at WARN on every cache miss (~1/user/minute at the 60s TTL) would be sustained log noise
+// rather than an actionable signal. One WARN per process is enough to be discoverable on-call.
+let liveModeWarned = false;
 
 /**
  * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's visible
@@ -58,17 +65,22 @@ export class GroupsEngagementStatsService {
     if (backend === 'live') {
       // TODO(LFXV2-1711): read from the dbt engagement model (same source as LFXV2-1705) once its
       // read path exists. Until then, always return null fields rather than fabricating live-looking
-      // data — the client renders an "Unavailable" degraded state for these two cards. WARN (not
-      // DEBUG), matching the LFXV2-2874 precedent (project.service.ts's getFoundationTotalMembers):
-      // graceful degradation to null/empty is operationally significant, not routine tracing.
-      logger.warning(req, 'get_groups_engagement_stats', 'Engagement dbt model has no read path yet — returning null fields');
-      return { active_members: null, meetings_this_month: null, computed_at: computedAt };
+      // data — the client renders an "Unavailable" degraded state for these two cards. WARN once per
+      // process (see `liveModeWarned` above), matching the graceful-degradation intent of the
+      // LFXV2-2874 precedent without turning the permanent pre-dbt-deploy steady state into
+      // sustained per-request log noise.
+      if (!liveModeWarned) {
+        liveModeWarned = true;
+        logger.warning(req, 'get_groups_engagement_stats', 'Engagement dbt model has no read path yet — returning null fields');
+      }
+      return { active_members: null, meetings_this_month: null, computed_at: computedAt, source: 'live' };
     }
 
-    // WARN, not DEBUG: serving a fixture instead of real data is fallback behavior an on-call
-    // engineer needs visible when someone reports the dashboard numbers look wrong.
+    // WARN, not DEBUG, on every call: unlike the live branch above, mock should essentially never
+    // run in a real deployment, so each occurrence is worth surfacing — an on-call engineer needs
+    // this the moment someone reports the dashboard numbers look wrong.
     logger.warning(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=mock — serving fixture engagement stats, not real data');
-    return { ...deterministicMockStats(username), computed_at: computedAt };
+    return { ...deterministicMockStats(username), computed_at: computedAt, source: 'mock' };
   }
 }
 

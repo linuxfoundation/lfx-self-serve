@@ -37,7 +37,7 @@ export class CommitteeService {
   /**
    * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's
    * visible set. Mocked pending the LFXV2-1705 dbt model. Resolves to `null` on error — logged here
-   * (the single error-handling site, matching `getMyCommittees` above) — so the caller can degrade
+   * (the single error-handling site, matching `getMyCommittees` below) — so the caller can degrade
    * gracefully (see `buildEngagementStatCards`) rather than let a failure block the groups list.
    */
   public getGroupsEngagementStats(): Observable<GroupsEngagementStats | null> {

@@ -410,7 +410,7 @@ describe('countVotingReps', () => {
 });
 
 describe('buildEngagementStatCards', () => {
-  const stats: GroupsEngagementStats = { active_members: 12, meetings_this_month: 3, computed_at: new Date().toISOString() };
+  const stats: GroupsEngagementStats = { active_members: 12, meetings_this_month: 3, computed_at: new Date().toISOString(), source: 'live' };
 
   it('renders em-dash placeholders with no sub-line while loading, regardless of stats', () => {
     const cards = buildEngagementStatCards(stats, true);
@@ -422,11 +422,18 @@ describe('buildEngagementStatCards', () => {
     });
   });
 
-  it('renders the real values with a freshness sub-line once stats resolve', () => {
+  it('renders the real values with a freshness sub-line once live stats resolve', () => {
     const cards = buildEngagementStatCards(stats, false);
     expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
     expect(cards[1]).toMatchObject({ label: 'Meetings This Month', value: 3 });
     cards.forEach((card) => expect(card.subLine).toMatch(/^Updated /));
+  });
+
+  it('renders "Sample data" instead of a freshness label for mock-sourced values', () => {
+    const mockStats: GroupsEngagementStats = { ...stats, source: 'mock' };
+    const cards = buildEngagementStatCards(mockStats, false);
+    expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12, subLine: 'Sample data' });
+    expect(cards[1]).toMatchObject({ label: 'Meetings This Month', value: 3, subLine: 'Sample data' });
   });
 
   it('degrades to "Unavailable" em-dash cards when stats is null (fetch failed)', () => {
@@ -438,7 +445,7 @@ describe('buildEngagementStatCards', () => {
   });
 
   it('degrades to "Unavailable" em-dash cards when the live backend returns null engagement fields', () => {
-    const liveStub: GroupsEngagementStats = { active_members: null, meetings_this_month: null, computed_at: new Date().toISOString() };
+    const liveStub: GroupsEngagementStats = { active_members: null, meetings_this_month: null, computed_at: new Date().toISOString(), source: 'live' };
     const cards = buildEngagementStatCards(liveStub, false);
     cards.forEach((card) => {
       expect(card.value).toBe('—');
@@ -447,7 +454,7 @@ describe('buildEngagementStatCards', () => {
   });
 
   it('degrades each card independently — one null field does not blank the other', () => {
-    const partial: GroupsEngagementStats = { active_members: 9, meetings_this_month: null, computed_at: new Date().toISOString() };
+    const partial: GroupsEngagementStats = { active_members: 9, meetings_this_month: null, computed_at: new Date().toISOString(), source: 'live' };
     const cards = buildEngagementStatCards(partial, false);
     expect(cards[0]).toMatchObject({ label: 'Active Members', value: 9 });
     expect(cards[0].subLine).toMatch(/^Updated /);

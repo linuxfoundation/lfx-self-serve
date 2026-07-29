@@ -351,10 +351,11 @@ function compareCodeUnits(a: string, b: string): number {
 /**
  * Builds the Active Members / Meetings This Month stat cards from the engagement-stats rollup.
  * Extracted as a pure function (no Angular component-test runner exists in this repo — see
- * `resolveGroupsCardRoleSeverity` above) so all three render states are unit-tested directly:
- * loading (em-dash, no sub-line), populated (value + relative-time freshness label), and
- * degraded (fetch failed, or the `live` backend hasn't got a dbt read path yet — em-dash +
- * "Unavailable", never throws, never blocks the rest of the dashboard).
+ * `resolveGroupsCardRoleSeverity` above) so all four render states are unit-tested directly:
+ * loading (em-dash, no sub-line), populated (value + relative-time freshness label), mock-sourced
+ * (value + a "Sample data" marker instead of a freshness label, so fabricated fixture numbers can
+ * never be mistaken for live ones), and degraded (fetch failed, or the `live` backend hasn't got a
+ * dbt read path yet — em-dash + "Unavailable", never throws, never blocks the rest of the dashboard).
  */
 export function buildEngagementStatCards(stats: GroupsEngagementStats | null, loading: boolean): StatCardItem[] {
   const activeMembersCard: StatCardItem = {
@@ -374,14 +375,18 @@ export function buildEngagementStatCards(stats: GroupsEngagementStats | null, lo
     return [activeMembersCard, meetingsThisMonthCard];
   }
 
-  const freshness = stats ? `Updated ${formatRelativeTime(new Date(stats.computed_at))}` : undefined;
+  // Mock-sourced values get "Sample data" instead of a freshness label — deliberately more visible
+  // than a subtle provenance flag, since the whole point is that a fabricated fixture number must
+  // never be mistaken for live data during manual validation (including against synced prod data,
+  // where NODE_ENV isn't 'production' but a stray ENGAGEMENT_BACKEND=mock could still be set).
+  const subLineForValue = stats && stats.source === 'mock' ? 'Sample data' : stats ? `Updated ${formatRelativeTime(new Date(stats.computed_at))}` : undefined;
 
   // Each card degrades independently: active_members and meetings_this_month are separate
   // aggregates (trailing-30-day attendance vs. current-month occurrences), so a partially-deployed
   // dbt model could plausibly resolve one without the other — neither field's availability implies
   // the other's.
   const resolveCard = (base: StatCardItem, value: number | null): StatCardItem =>
-    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine: freshness };
+    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine: subLineForValue };
 
   return [resolveCard(activeMembersCard, stats?.active_members ?? null), resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null)];
 }
