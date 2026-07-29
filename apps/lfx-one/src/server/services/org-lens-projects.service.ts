@@ -101,13 +101,15 @@ export class OrgLensProjectsService {
     // SELECT/WHERE binds) so a target like "k8s" isn't buried behind contains-matches. Empty-query preload falls back to catalog rank.
     // PROJECT_SLUG is the unique final tiebreaker so the 50/500 LIMIT cap is deterministic across requests
     // (rows tied on rank/name can't reshuffle in and out of the cap) — required for paginated ORDER BY/LIMIT.
-    let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC, PROJECT_NAME ASC, PROJECT_SLUG ASC';
+    // ONBOARDED_PROJECT_RANK is nullable: pin NULLS LAST so a session-level DEFAULT_NULL_ORDERING can't move
+    // null-rank rows in/out of the cap, and end on PROJECT_SLUG (unique) so the 50/500 LIMIT is deterministic.
+    let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC NULLS LAST, PROJECT_NAME ASC, PROJECT_SLUG ASC';
     if (trimmed.length) {
       const prefixLike = `${escapeSqlLikePattern(trimmed)}%`;
       orderByClause = `ORDER BY
         ALREADY_ADDED ASC,
         CASE WHEN PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 0 ELSE 1 END ASC,
-        ONBOARDED_PROJECT_RANK ASC,
+        ONBOARDED_PROJECT_RANK ASC NULLS LAST,
         PROJECT_NAME ASC,
         PROJECT_SLUG ASC`;
       binds.push(prefixLike, prefixLike);
