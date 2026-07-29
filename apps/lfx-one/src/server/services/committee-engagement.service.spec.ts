@@ -197,7 +197,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       req,
       'get_committee_engagement',
       expect.stringContaining('clamped to invited'),
-      expect.objectContaining({ committee_uid: 'committee-1', clamped_count: 1, row_count: 2 })
+      expect.objectContaining({ committee_uid: 'committee-1', clamped_count: 1, deduped_row_count: 2 })
     );
   });
 
@@ -219,7 +219,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       req,
       'get_committee_engagement',
       expect.stringContaining('clamped to invited'),
-      expect.objectContaining({ committee_uid: 'committee-1', clamped_count: 1, row_count: 2 })
+      expect.objectContaining({ committee_uid: 'committee-1', clamped_count: 1, deduped_row_count: 2 })
     );
   });
 
@@ -231,6 +231,6 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
     await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-    expect(warning).not.toHaveBeenCalledWith(req, 'get_committee_engagement', expect.stringContaining('clamped to invited'), expect.anything());
+    expect(warning).not.toHaveBeenCalled();
   });
 });

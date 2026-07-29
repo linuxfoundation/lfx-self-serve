@@ -137,11 +137,22 @@ export class CommitteeEngagementService {
     }
 
     if (clampedRowCount > 0) {
-      logger.warning(req, 'get_committee_engagement', 'Warehouse rows had ATTENDED_COUNT greater than INVITED_COUNT; clamped to invited', {
-        committee_uid: committeeUid,
-        clamped_count: clampedRowCount,
-        row_count: rowsByEmail.size,
-      });
+      // Worded as detection, not mutation: a clamped row with no roster match is dropped entirely
+      // (it never reaches `members.map`), so "clamped" would overstate what happened to it — only
+      // rows that also joined to a member had their `attended` value actually adjusted.
+      logger.warning(
+        req,
+        'get_committee_engagement',
+        'Warehouse rows had ATTENDED_COUNT greater than INVITED_COUNT; clamped to invited where joined to the roster',
+        {
+          committee_uid: committeeUid,
+          clamped_count: clampedRowCount,
+          // Deduped by email, like clamped_count, so the two counts describe the same population —
+          // the join-mismatch warning above intentionally uses the raw `rows.length` instead, since
+          // it's asking a different question ("did anything match at all").
+          deduped_row_count: rowsByEmail.size,
+        }
+      );
     }
 
     return {
