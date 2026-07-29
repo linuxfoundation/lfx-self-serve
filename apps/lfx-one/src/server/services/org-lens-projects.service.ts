@@ -90,22 +90,24 @@ export class OrgLensProjectsService {
       binds.push(...excluded);
     }
     const conditions: string[] = [];
-    if (trimmed.length) {
+    // Gate on raw query.length (not trimmed) so a whitespace-only filter like " " applies server-side too,
+    // matching the client's raw-text predicate; `trimmed` still drives the min-length rule and typed-result cap.
+    if (query.length) {
       conditions.push("(PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!')");
       binds.push(like, like);
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join('\n        AND ')}` : '';
-    // Relevance ordering: addable first (ALREADY_ADDED asc), then prefix matches (bound last, after SELECT/WHERE binds)
-    // so an exact target like "Kubernetes" isn't buried behind contains-matches. Empty-query preload falls back to catalog rank.
+    // Relevance ordering: addable first (ALREADY_ADDED asc), then prefix matches on name OR slug (bound last, after
+    // SELECT/WHERE binds) so a target like "k8s" isn't buried behind contains-matches. Empty-query preload falls back to catalog rank.
     let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC, PROJECT_NAME ASC';
     if (trimmed.length) {
       const prefixLike = `${escapeSqlLikePattern(trimmed)}%`;
       orderByClause = `ORDER BY
         ALREADY_ADDED ASC,
-        CASE WHEN PROJECT_NAME ILIKE ? ESCAPE '!' THEN 0 ELSE 1 END ASC,
+        CASE WHEN PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 0 ELSE 1 END ASC,
         ONBOARDED_PROJECT_RANK ASC,
         PROJECT_NAME ASC`;
-      binds.push(prefixLike);
+      binds.push(prefixLike, prefixLike);
     }
     // Preload keeps the initial panel light; a typed query returns up to the safety cap so the user
     // can scroll the panel to the true end of the match list rather than hitting a hard 20-row wall.
@@ -345,11 +347,13 @@ export class OrgLensProjectsService {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
-    const peopleRows = projectSlugs.length ? await this.fetchPeopleRows(accountId, projectSlugs) : [];
-
-    // Workspace slugs with no org-scoped row (no activity yet): synthesize an identity-only project from the
-    // onboarded catalog as a "no activity yet" row instead of dropping it. Only for requested slugs, not the preload.
-    const noActivityProjects = await this.fetchNoActivityProjects(slugs, projectSlugs);
+    // Both reads depend only on projectSlugs, so run them concurrently to avoid a second sequential Snowflake round trip.
+    // fetchNoActivityProjects: workspace slugs with no org-scoped row (no activity yet) → synthesize an identity-only
+    // "no activity yet" row from the onboarded catalog instead of dropping it. Only for requested slugs, not the preload.
+    const [peopleRows, noActivityProjects] = await Promise.all([
+      projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs) : Promise.resolve([]),
+      this.fetchNoActivityProjects(slugs, projectSlugs),
+    ]);
 
     return {
       orgSlug: this.slugify(orgName) || accountId,

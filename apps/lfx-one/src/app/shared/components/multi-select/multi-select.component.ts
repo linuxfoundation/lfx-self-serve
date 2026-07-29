@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, ElementRef, inject, input, output } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, ElementRef, inject, input, output, PLATFORM_ID } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectModule } from 'primeng/multiselect';
 
@@ -13,6 +14,7 @@ import { MultiSelectModule } from 'primeng/multiselect';
 })
 export class MultiSelectComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly form = input.required<FormGroup>();
   public readonly control = input.required<string>();
@@ -48,9 +50,9 @@ export class MultiSelectComponent {
   public readonly matchTriggerWidth = input<boolean>(false);
   public readonly filterChange = output<string>();
 
-  /** On panel open, match the body-appended overlay's width to the trigger (opt-in). */
+  /** On panel open, match the body-appended overlay's width to the trigger (opt-in). Browser-only (touches document/rAF). */
   protected onPanelShow(): void {
-    if (!this.matchTriggerWidth()) {
+    if (!this.matchTriggerWidth() || !isPlatformBrowser(this.platformId)) {
       return;
     }
 

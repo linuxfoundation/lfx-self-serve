@@ -288,7 +288,10 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('org-projects-add-project').click();
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
-    await expect(page.getByTestId('org-projects-add-projects-error')).toContainText('Could not load project matches', { timeout: DATA_LOAD_TIMEOUT });
+    // The search error now renders inside the body-appended select panel (as its empty message);
+    // recovery is by editing the search, not a Retry button.
+    await page.getByTestId('org-projects-add-projects-select').click();
+    await expect(page.getByText('Edit your search to try again')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, (route) => {
@@ -297,8 +300,7 @@ test.describe('Org Projects', () => {
         results: [{ slug: 'kubernetes', name: 'Kubernetes', logoUrl: '', foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' } }],
       });
     });
-    await page.getByRole('button', { name: 'Retry' }).click();
-    await page.getByTestId('org-projects-add-projects-select').click();
+    await page.getByPlaceholder('Search and select projects').fill('ku');
     await page.getByLabel('Option List').getByText('Kubernetes').click();
     await page.keyboard.press('Escape');
 
