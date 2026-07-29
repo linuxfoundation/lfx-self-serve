@@ -50,6 +50,17 @@ function project(slug: string, name: string) {
   };
 }
 
+function noActivityProject(slug: string, name: string) {
+  return {
+    ...project(slug, name),
+    health: 'unavailable',
+    trend: { deltaPct: 0, technicalDeltaPct: 0, ecosystemDeltaPct: 0, direction: 'flat', series: [0, 0, 0, 0] },
+    contributors: [],
+    participants: [],
+    noActivityYet: true,
+  };
+}
+
 function projectsResponse(projects = [project('kubernetes', 'Kubernetes')]) {
   return {
     orgSlug: 'red-hat-llc',
@@ -314,6 +325,52 @@ test.describe('Org Projects', () => {
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
     await expect(page.getByTestId('org-projects-add-projects-save-error')).toContainText('Could not add the selected projects', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+  });
+
+  test('renders no-activity rows as non-links with unavailable metrics', async ({ page }) => {
+    await stubOrgContext(page);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, projectsResponse([noActivityProject('kubernetes', 'Kubernetes')]));
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+
+    const row = page.getByTestId('org-projects-row-kubernetes');
+    await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The "No activity yet" pill is shown and the project name is plain text (the detail page would 404).
+    await expect(page.getByTestId('org-projects-no-activity-kubernetes')).toBeVisible();
+    await expect(row.getByRole('link')).toHaveCount(0);
+    // Influence and trend read "Unavailable" instead of the misleading measured-looking fallbacks.
+    await expect(page.getByTestId('org-projects-trend-kubernetes')).toHaveText('Unavailable');
+    await expect(row.getByText('Unavailable').first()).toBeVisible();
+    // Contributor / participant counts are plain text (0), not links to the detail page.
+    await expect(page.getByTestId('org-projects-contributors-kubernetes')).toHaveText('0');
+    await expect(page.getByTestId('org-projects-participants-kubernetes')).toHaveText('0');
+  });
+
+  test('shows the already-in-workspace empty state when a search matches only existing projects', async ({ page }) => {
+    await gotoOrgProjectsPage(page);
+    await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, { results: [], hasMatchesAlreadyInWorkspace: true });
+    });
+
+    await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-projects-add-project').click();
+    await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    await page.getByTestId('org-projects-add-projects-select').click();
+    await page.getByPlaceholder('Search and select projects').fill('ku');
+
+    await expect(page.getByText('Matching projects are already in this workspace.')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('reloads the project table after adding projects to a workspace', async ({ page }) => {

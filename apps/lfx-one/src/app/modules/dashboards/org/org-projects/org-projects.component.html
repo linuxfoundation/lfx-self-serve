@@ -328,32 +328,36 @@
                   </span>
                 </td>
                 <td>
-                  <div class="flex flex-col items-start gap-1.5">
-                    <span
-                      class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                      tabindex="0"
-                      role="img"
-                      [attr.aria-label]="project.trendAriaLabel"
-                      [pTooltip]="project.trendTooltipHtml"
-                      [escape]="false"
-                      tooltipPosition="top"
-                      tooltipStyleClass="lfx-tooltip-trend"
-                      [attr.data-testid]="'org-projects-trend-' + project.slug">
-                      <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
-                    </span>
-                    @if (project.showTrendArrow) {
-                      <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
-                        <span class="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full" [class]="project.trendArrowBadgeClass">
-                          <i [class]="project.trendArrowIcon" aria-hidden="true"></i>
-                        </span>
-                        <span class="font-semibold" [class]="project.trendDeltaTextClass">{{ project.trendDeltaLabel }}</span>
+                  @if (project.noActivityYet) {
+                    <span class="text-sm text-gray-500" [attr.data-testid]="'org-projects-trend-' + project.slug">{{ metricUnavailableLabel }}</span>
+                  } @else {
+                    <div class="flex flex-col items-start gap-1.5">
+                      <span
+                        class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        tabindex="0"
+                        role="img"
+                        [attr.aria-label]="project.trendAriaLabel"
+                        [pTooltip]="project.trendTooltipHtml"
+                        [escape]="false"
+                        tooltipPosition="top"
+                        tooltipStyleClass="lfx-tooltip-trend"
+                        [attr.data-testid]="'org-projects-trend-' + project.slug">
+                        <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
                       </span>
-                    } @else {
-                      <span class="text-xs font-semibold text-gray-500" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">{{
-                        project.trendDeltaLabel
-                      }}</span>
-                    }
-                  </div>
+                      @if (project.showTrendArrow) {
+                        <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
+                          <span class="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full" [class]="project.trendArrowBadgeClass">
+                            <i [class]="project.trendArrowIcon" aria-hidden="true"></i>
+                          </span>
+                          <span class="font-semibold" [class]="project.trendDeltaTextClass">{{ project.trendDeltaLabel }}</span>
+                        </span>
+                      } @else {
+                        <span class="text-xs font-semibold text-gray-500" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">{{
+                          project.trendDeltaLabel
+                        }}</span>
+                      }
+                    </div>
+                  }
                 </td>
                 <td>
                   @if (project.noActivityYet) {

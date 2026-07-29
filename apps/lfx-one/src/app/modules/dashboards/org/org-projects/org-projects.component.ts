@@ -109,6 +109,8 @@ export class OrgProjectsComponent {
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
   protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
+  /** Label for metrics a "no activity yet" row cannot report (influence, trend). */
+  protected readonly metricUnavailableLabel = ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL;
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -510,7 +512,7 @@ export class OrgProjectsComponent {
       HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
       p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
       p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
-      p.trend.deltaPct,
+      p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : p.trend.deltaPct,
       p.contributors.length,
       p.participants.length,
     ]);
