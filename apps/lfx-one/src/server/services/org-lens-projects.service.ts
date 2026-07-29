@@ -358,7 +358,7 @@ export class OrgLensProjectsService {
       // No-activity hydration is a soft enhancement over the onboarded catalog (which may be mid-migration or
       // absent); never let its failure fail the whole response — degrade to activity rows only, as before.
       this.fetchNoActivityProjects(slugs, projectSlugs).catch((err) => {
-        console.error('Failed to hydrate no-activity org projects; returning activity rows only', err);
+        logger.warning(undefined, 'fetch_no_activity_org_projects', 'No-activity org project hydration failed; returning activity rows only', { err });
         return [] as OrgLensProject[];
       }),
     ]);
