@@ -431,7 +431,12 @@
           }
         }
         @case ('meetings') {
-          <lfx-committee-meetings [committee]="committee()!" [canEdit]="canEdit()" [initialTimeFilter]="meetingsTimeFilter()" />
+          <lfx-committee-meetings
+            [committee]="committee()!"
+            [canEdit]="canEdit()"
+            [initialTimeFilter]="meetingsTimeFilter()"
+            [meetings]="upcomingMeetings()"
+            [meetingsLoading]="meetingsLoading()" />
         }
         @case ('surveys') {
           <lfx-committee-surveys [committee]="committee()!" [canEdit]="canEdit()" />

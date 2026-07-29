@@ -57,6 +57,10 @@ export class CommitteeMeetingsComponent {
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
   public initialTimeFilter = input<TimeFilter>('upcoming');
+  // Raw meetings list, fetched once by committee-view and shared with the Overview/About tabs —
+  // avoids this tab firing its own duplicate /api/meetings request.
+  public meetings = input<Meeting[]>([]);
+  public meetingsLoading = input<boolean>(true);
 
   // Filter state — linkedSignal tracks initialTimeFilter but allows local overrides
   public timeFilter = linkedSignal(() => this.initialTimeFilter());
@@ -92,12 +96,12 @@ export class CommitteeMeetingsComponent {
   ];
 
   // Loading state
-  public meetingsLoading = signal(true);
   public pastMeetingsLoading = signal(false);
   public calendarLoading = signal(false);
   public creating = signal(false);
 
-  // Data — upcoming meetings
+  // Data — upcoming meetings: active (non-ended, non-cancelled) meetings from the shared
+  // `meetings` input, sorted by soonest occurrence.
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
   // Data — past meetings, lazy-loaded reactively when filter switches to 'past'
@@ -206,38 +210,22 @@ export class CommitteeMeetingsComponent {
   }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
-    return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        tap(() => this.meetingsLoading.set(true)),
-        switchMap((c) =>
-          // NOTE: The query service does not support `order` — only `sort` with values
-          // name_asc/desc, updated_asc/desc. There is no start_time sort upstream.
-          // The `order=start_time.asc` param passed here is silently ignored;
-          // the client-side sort below (lines 178-185) is the actual sorting mechanism.
-          this.meetingService.getMeetingsByCommittee(c.uid, 'start_time.asc').pipe(
-            map((meetings) => {
-              const active = meetings.filter((m) => {
-                if (m.occurrences?.length) {
-                  return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
-                }
-                return !hasMeetingEnded(m);
-              });
-              return active.sort((a, b) => {
-                const oA = getCurrentOrNextOccurrence(a);
-                const oB = getCurrentOrNextOccurrence(b);
-                return (
-                  (oA ? new Date(oA.start_time).getTime() : new Date(a.start_time).getTime()) -
-                  (oB ? new Date(oB.start_time).getTime() : new Date(b.start_time).getTime())
-                );
-              });
-            }),
-            finalize(() => this.meetingsLoading.set(false))
-          )
-        )
-      ),
-      { initialValue: [] }
-    );
+    return computed(() => {
+      const active = this.meetings().filter((m) => {
+        if (m.occurrences?.length) {
+          return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+        }
+        return !hasMeetingEnded(m);
+      });
+      return active.sort((a, b) => {
+        const oA = getCurrentOrNextOccurrence(a);
+        const oB = getCurrentOrNextOccurrence(b);
+        return (
+          (oA ? new Date(oA.start_time).getTime() : new Date(a.start_time).getTime()) -
+          (oB ? new Date(oB.start_time).getTime() : new Date(b.start_time).getTime())
+        );
+      });
+    });
   }
 
   private initFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {

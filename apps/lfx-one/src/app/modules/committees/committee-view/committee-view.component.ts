@@ -813,7 +813,9 @@ export class CommitteeViewComponent {
         distinctUntilChanged(),
         switchMap((uid) => {
           this.meetingsLoading.set(true);
-          return this.meetingService.getUpcomingMeetingsByCommittee(uid).pipe(
+          // Not skip_registrants: this list is now shared with the Meetings tab, which needs
+          // full registrant data on each meeting (see committee-meetings.component.ts).
+          return this.meetingService.getMeetingsByCommittee(uid).pipe(
             catchError((err) => {
               console.error('Failed to load committee meetings:', err);
               return of([]);
