@@ -12,9 +12,11 @@ import { HeaderComponent } from '@components/header/header.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { JOIN_MODE_LABELS } from '@lfx-one/shared/constants';
 import { PublicGroupDetail } from '@lfx-one/shared/interfaces';
+import { IcalSubscribeDialogComponent } from '@modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { GroupService } from '@services/group.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap } from 'rxjs';
 
@@ -32,12 +34,14 @@ import { catchError, distinctUntilChanged, filter, map, of, switchMap } from 'rx
     MeetingTimePipe,
     SkeletonModule,
   ],
+  providers: [DialogService],
   templateUrl: './group-detail.component.html',
 })
 export class GroupDetailComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly groupService = inject(GroupService);
+  private readonly dialogService = inject(DialogService);
   protected readonly userService = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -70,10 +74,15 @@ export class GroupDetailComponent {
 
   protected readonly hasLinks = computed(() => {
     const links = this.group()?.links;
-    return !!(links?.website || links?.mailing_list || links?.chat_channel || links?.calendar);
+    return !!(links?.website || links?.mailing_list || links?.calendar);
   });
 
   protected readonly hasUpcomingMeetings = computed(() => (this.group()?.upcoming_meetings?.length ?? 0) > 0);
+
+  protected readonly hasInfoContent = computed(() => {
+    const g = this.group();
+    return !!(g?.description || g?.chairs.length || this.hasLinks());
+  });
 
   protected readonly memberRoleLabel = computed(() => {
     const role = this.group()?.my_role;
@@ -87,6 +96,22 @@ export class GroupDetailComponent {
     if (isPlatformBrowser(this.platformId)) {
       window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
     }
+  }
+
+  protected openCalendarSubscribe(): void {
+    const g = this.group();
+    if (!g?.links.calendar) {
+      return;
+    }
+    const feedUrl = isPlatformBrowser(this.platformId) ? `${window.location.origin}${g.links.calendar}` : g.links.calendar;
+    this.dialogService.open(IcalSubscribeDialogComponent, {
+      header: `Subscribe — ${g.name}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { feedUrl, name: g.name },
+    });
   }
 
   private initGroup(): Signal<PublicGroupDetail | null> {

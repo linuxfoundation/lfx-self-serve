@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { CommitteeMember, PublicGroupContext, PublicGroupDetail, PublicGroupLinks, PublicGroupMeeting, PublicGroupMember } from '@lfx-one/shared/interfaces';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
@@ -53,15 +53,18 @@ export class PublicGroupsController {
         this.meetingService.getMeetings(req, { tags: `committee_uid:${id}` }, 'v1_meeting', false),
       ]);
 
-      const chairs = members
-        .filter((m: CommitteeMember) => m.role?.name && CHAIR_ROLES.has(m.role.name))
-        .map(
-          (m: CommitteeMember): PublicGroupMember => ({
-            name: `${m.first_name} ${m.last_name}`.trim(),
-            organization: m.organization?.name,
-            role: m.role?.name,
-          })
-        );
+      const chairs =
+        committee.member_visibility === CommitteeMemberVisibility.HIDDEN
+          ? []
+          : members
+              .filter((m: CommitteeMember) => m.role?.name && CHAIR_ROLES.has(m.role.name))
+              .map(
+                (m: CommitteeMember): PublicGroupMember => ({
+                  name: `${m.first_name} ${m.last_name}`.trim(),
+                  organization: m.organization?.name,
+                  role: m.role?.name,
+                })
+              );
 
       const now = new Date().toISOString();
       const upcomingMeetings = meetingsResponse.data
@@ -101,7 +104,6 @@ export class PublicGroupsController {
       const links: PublicGroupLinks = {
         website: committee.website,
         mailing_list: normalizedMailingList,
-        chat_channel: committee.chat_channel,
         calendar: committee.calendar?.public ? `/public/api/committees/${id}/calendar.ics` : undefined,
       };
 

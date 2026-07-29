@@ -25,7 +25,6 @@ export interface PublicGroupMeeting {
 export interface PublicGroupLinks {
   website?: string | null;
   mailing_list?: string | null;
-  chat_channel?: string | null;
   calendar?: string | null;
 }
 

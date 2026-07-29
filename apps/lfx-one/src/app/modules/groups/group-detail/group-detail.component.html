@@ -78,96 +78,89 @@
           </div>
         }
 
-        <!-- Group info card -->
-        <lfx-card data-testid="group-info-card">
-          <div class="flex flex-col gap-5">
-            <!-- About / Description -->
-            @if (group.description) {
-              <div data-testid="group-about-section">
-                <h3 class="text-sm font-semibold text-gray-900 mb-3">About</h3>
-                <lfx-expandable-text [maxHeight]="200">{{ group.description }}</lfx-expandable-text>
-              </div>
-            }
-
-            <!-- Leadership -->
-            @if (group.chairs.length > 0) {
+        <!-- Group info card (only when at least one section has content) -->
+        @if (hasInfoContent()) {
+          <lfx-card data-testid="group-info-card">
+            <div class="flex flex-col gap-5">
+              <!-- About / Description -->
               @if (group.description) {
-                <hr class="border-gray-200" />
+                <div data-testid="group-about-section">
+                  <h3 class="text-sm font-semibold text-gray-900 mb-3">About</h3>
+                  <lfx-expandable-text [maxHeight]="200">{{ group.description }}</lfx-expandable-text>
+                </div>
               }
-              <div data-testid="group-leadership-section">
-                <h3 class="text-sm font-semibold text-gray-900 mb-3">Leadership</h3>
-                <div class="flex flex-col gap-3">
-                  @for (chair of group.chairs; track chair.name) {
-                    <div class="flex items-center gap-2.5">
-                      <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <span class="text-xs font-medium text-gray-600">{{ chair.name | slice: 0 : 2 | uppercase }}</span>
-                      </div>
-                      <div class="flex flex-col min-w-0">
-                        <span class="text-sm font-medium text-gray-900 truncate">{{ chair.name }}</span>
-                        <span class="text-xs text-gray-500 truncate">
-                          {{ chair.role }}
-                          @if (chair.organization) {
-                            <span> · {{ chair.organization }}</span>
-                          }
-                        </span>
-                      </div>
-                    </div>
-                  }
-                </div>
-              </div>
-            }
 
-            <!-- Links -->
-            @if (hasLinks()) {
-              <hr class="border-gray-200" />
-              <div data-testid="group-links-section">
-                <h3 class="text-sm font-semibold text-gray-900 mb-3">Links</h3>
-                <div class="flex flex-col gap-2">
-                  @if (group.links.website) {
-                    <a
-                      [href]="group.links.website"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                      <i class="fa-light fa-globe w-4 text-center text-gray-400"></i>
-                      <span>Website</span>
-                    </a>
-                  }
-                  @if (group.links.mailing_list) {
-                    <a
-                      [href]="group.links.mailing_list"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                      <i class="fa-light fa-envelope w-4 text-center text-gray-400"></i>
-                      <span>Mailing List</span>
-                    </a>
-                  }
-                  @if (group.links.chat_channel) {
-                    <a
-                      [href]="group.links.chat_channel"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                      <i class="fa-light fa-message w-4 text-center text-gray-400"></i>
-                      <span>Chat Channel</span>
-                    </a>
-                  }
-                  @if (group.links.calendar) {
-                    <a
-                      [href]="group.links.calendar"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                      <i class="fa-light fa-calendar w-4 text-center text-gray-400"></i>
-                      <span>Subscribe to Calendar</span>
-                    </a>
-                  }
+              <!-- Leadership -->
+              @if (group.chairs.length > 0) {
+                @if (group.description) {
+                  <hr class="border-gray-200" />
+                }
+                <div data-testid="group-leadership-section">
+                  <h3 class="text-sm font-semibold text-gray-900 mb-3">Leadership</h3>
+                  <div class="flex flex-col gap-3">
+                    @for (chair of group.chairs; track chair.name) {
+                      <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <span class="text-xs font-medium text-gray-600">{{ chair.name | slice: 0 : 2 | uppercase }}</span>
+                        </div>
+                        <div class="flex flex-col min-w-0">
+                          <span class="text-sm font-medium text-gray-900 truncate">{{ chair.name }}</span>
+                          <span class="text-xs text-gray-500 truncate">
+                            {{ chair.role }}
+                            @if (chair.organization) {
+                              <span> · {{ chair.organization }}</span>
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    }
+                  </div>
                 </div>
-              </div>
-            }
-          </div>
-        </lfx-card>
+              }
+
+              <!-- Links -->
+              @if (hasLinks()) {
+                @if (group.description || group.chairs.length > 0) {
+                  <hr class="border-gray-200" />
+                }
+                <div data-testid="group-links-section">
+                  <h3 class="text-sm font-semibold text-gray-900 mb-3">Links</h3>
+                  <div class="flex flex-col gap-2">
+                    @if (group.links.website) {
+                      <a
+                        [href]="group.links.website"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                        <i class="fa-light fa-globe w-4 text-center text-gray-400"></i>
+                        <span>Website</span>
+                      </a>
+                    }
+                    @if (group.links.mailing_list) {
+                      <a
+                        [href]="group.links.mailing_list"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                        <i class="fa-light fa-envelope w-4 text-center text-gray-400"></i>
+                        <span>Mailing List</span>
+                      </a>
+                    }
+                    @if (group.links.calendar) {
+                      <button
+                        type="button"
+                        (click)="openCalendarSubscribe()"
+                        class="flex items-center gap-2 text-sm text-blue-500 hover:underline cursor-pointer bg-transparent border-none p-0">
+                        <i class="fa-light fa-calendar w-4 text-center text-gray-400"></i>
+                        <span>Subscribe to Calendar</span>
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </lfx-card>
+        }
 
         <!-- Upcoming Meetings -->
         @if (hasUpcomingMeetings()) {
