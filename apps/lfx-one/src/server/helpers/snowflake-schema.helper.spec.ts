@@ -3,18 +3,20 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mirrors committee-engagement.service.spec.ts / committee-engagement-window.helper.spec.ts: the
-// `@lfx-one/shared/*` alias isn't wired into this app's vitest config, and the constants barrel
-// pulls in transitive imports that don't survive outside an Angular build/test context. Deep-import
-// the real constant (not a hand-copied literal) so a change to the default schema fails this suite too.
+// The `@lfx-one/shared/*` alias isn't wired into this app's vitest config (see
+// committee-engagement.service.spec.ts / committee-engagement-window.helper.spec.ts for the same
+// note), and the constants barrel pulls in transitive imports that don't survive outside an
+// Angular build/test context. Deep-import the real constant, by relative path — same idiom
+// project.service.spec.ts uses for a deep shared import — so the helper under test resolves
+// whatever production resolves. The assertions below still pin the literal value, not this
+// import, so a change to the default schema fails this suite instead of both sides silently
+// moving together.
 vi.mock('@lfx-one/shared/constants', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/org-lens-projects.constants')>(
     '../../../../../packages/shared/src/constants/org-lens-projects.constants'
   );
   return { DEFAULT_LFX_ONE_PLATINUM_SCHEMA: actual.DEFAULT_LFX_ONE_PLATINUM_SCHEMA };
 });
-
-import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA } from '@lfx-one/shared/constants';
 
 import { resolveLfxOnePlatinumSchema } from './snowflake-schema.helper';
 
@@ -32,7 +34,7 @@ describe('resolveLfxOnePlatinumSchema', () => {
   });
 
   it('falls back to the default schema when the env var is unset', () => {
-    expect(resolveLfxOnePlatinumSchema()).toBe(DEFAULT_LFX_ONE_PLATINUM_SCHEMA);
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 
   it('accepts a well-formed two-segment override, normalized to uppercase', () => {
@@ -47,26 +49,26 @@ describe('resolveLfxOnePlatinumSchema', () => {
 
   it('rejects a value with a stray quote and falls back to the default', () => {
     process.env[ENV_KEY] = 'ANALYTICS.PLATINUM"; DROP TABLE X; --';
-    expect(resolveLfxOnePlatinumSchema()).toBe(DEFAULT_LFX_ONE_PLATINUM_SCHEMA);
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 
   it('rejects a value with a space and falls back to the default', () => {
     process.env[ENV_KEY] = 'A B.C';
-    expect(resolveLfxOnePlatinumSchema()).toBe(DEFAULT_LFX_ONE_PLATINUM_SCHEMA);
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 
   it('rejects a value with too many segments and falls back to the default', () => {
     process.env[ENV_KEY] = 'A.B.C.D';
-    expect(resolveLfxOnePlatinumSchema()).toBe(DEFAULT_LFX_ONE_PLATINUM_SCHEMA);
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 
   it('rejects a single-segment value (no schema qualifier) and falls back to the default', () => {
     process.env[ENV_KEY] = 'ANALYTICS';
-    expect(resolveLfxOnePlatinumSchema()).toBe(DEFAULT_LFX_ONE_PLATINUM_SCHEMA);
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 
   it('rejects an empty/whitespace-only value and falls back to the default', () => {
     process.env[ENV_KEY] = '   ';
-    expect(resolveLfxOnePlatinumSchema()).toBe(DEFAULT_LFX_ONE_PLATINUM_SCHEMA);
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 });
