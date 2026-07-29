@@ -7,6 +7,7 @@ import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
+  MyNewsletterArchiveResponse,
   Newsletter,
   NewsletterAnalytics,
   NewsletterListParams,
@@ -99,6 +100,27 @@ export class NewsletterService {
     return this.http
       .post<NewsletterSendResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/send`, {}, { headers })
       .pipe(take(1));
+  }
+
+  /**
+   * List recipient-facing newsletter archive: sent newsletters for committees the user belongs to.
+   * Paginated via keyset cursor (page_token).
+   */
+  public listMyNewsletters(pageToken?: string): Observable<MyNewsletterArchiveResponse> {
+    let httpParams = new HttpParams();
+    if (pageToken) {
+      httpParams = httpParams.set('page_token', pageToken);
+    }
+    return this.http.get<MyNewsletterArchiveResponse>('/api/newsletters/my-newsletters', { params: httpParams }).pipe(take(1));
+  }
+
+  /**
+   * Fetch a specific newsletter from the recipient archive with full body_html.
+   * Returns 403 if user is not a member of any of the newsletter's committees.
+   * Returns 404 if newsletter doesn't exist or is not in sent status.
+   */
+  public getMyNewsletterDetail(newsletterUid: string): Observable<Newsletter> {
+    return this.http.get<Newsletter>(`/api/newsletters/my-newsletters/${this.enc(newsletterUid)}`).pipe(take(1));
   }
 
   private enc(value: string): string {
