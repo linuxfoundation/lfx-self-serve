@@ -24,9 +24,11 @@ function isGroupsEngagementStats(value: unknown): boolean {
  * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's visible
  * set only — mine semantics, no scope param (LFXV2-1711). Backed by the same dbt engagement model as
  * LFXV2-1705, which isn't readable yet, so both stats are mocked behind `ENGAGEMENT_BACKEND` until
- * that read path exists. Defaults to `live` (null fields, never fabricated numbers) unless
- * `ENGAGEMENT_BACKEND=mock` is explicitly set — an unconfigured environment (including a production
- * deploy that forgot to set the var) must fail to "no data," never to invented-looking data.
+ * that read path exists — a deliberate interim shim (flag-gated in the UI, TODO-marked here) pending
+ * LFXV2-1705, not a permanent stand-in for the real upstream contract. Defaults to `live` (null
+ * fields, never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is
+ * additionally hard-blocked outside `NODE_ENV=production` — an unconfigured or production environment
+ * must fail to "no data," never to invented-looking data.
  */
 export class GroupsEngagementStatsService {
   /**
@@ -48,18 +50,20 @@ export class GroupsEngagementStatsService {
   }
 
   private async computeEngagementStats(req: Request, username: string): Promise<GroupsEngagementStats> {
-    const backend = process.env['ENGAGEMENT_BACKEND'] === 'mock' ? 'mock' : 'live';
+    // Mock is opt-in and additionally hard-blocked in production, so a stray `ENGAGEMENT_BACKEND=mock`
+    // left in a prod-like environment's config can't silently serve fabricated numbers as real data.
+    const backend = process.env['ENGAGEMENT_BACKEND'] === 'mock' && process.env['NODE_ENV'] !== 'production' ? 'mock' : 'live';
     const computedAt = new Date().toISOString();
 
     if (backend === 'live') {
       // TODO(LFXV2-1711): read from the dbt engagement model (same source as LFXV2-1705) once its
       // read path exists. Until then, always return null fields rather than fabricating live-looking
       // data — the client renders an "Unavailable" degraded state for these two cards.
-      logger.debug(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=live has no dbt read path yet — returning null fields', { username });
+      logger.debug(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=live has no dbt read path yet — returning null fields');
       return { active_members: null, meetings_this_month: null, computed_at: computedAt };
     }
 
-    logger.debug(req, 'get_groups_engagement_stats', 'Serving deterministic mock engagement stats', { username });
+    logger.debug(req, 'get_groups_engagement_stats', 'Serving deterministic mock engagement stats');
     return { ...deterministicMockStats(username), computed_at: computedAt };
   }
 }

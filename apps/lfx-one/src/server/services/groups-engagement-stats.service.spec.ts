@@ -55,6 +55,7 @@ function buildReq(): Request {
 describe('GroupsEngagementStatsService', () => {
   let service: GroupsEngagementStatsService;
   const originalBackend = process.env['ENGAGEMENT_BACKEND'];
+  const originalNodeEnv = process.env['NODE_ENV'];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,15 +66,20 @@ describe('GroupsEngagementStatsService', () => {
     // Fail-safe default: any environment that doesn't explicitly opt in gets 'live' (null fields),
     // never fabricated numbers — so tests must opt into 'mock' explicitly, matching production.
     process.env['ENGAGEMENT_BACKEND'] = 'mock';
+    process.env['NODE_ENV'] = 'test';
   });
 
   afterEach(() => {
-    // Restore the ambient env var so this spec never leaks state to siblings run in the same process.
-    if (originalBackend === undefined) {
-      delete process.env['ENGAGEMENT_BACKEND'];
-    } else {
-      process.env['ENGAGEMENT_BACKEND'] = originalBackend;
-    }
+    // Restore the ambient env vars so this spec never leaks state to siblings run in the same process.
+    const restore = (key: string, original: string | undefined): void => {
+      if (original === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = original;
+      }
+    };
+    restore('ENGAGEMENT_BACKEND', originalBackend);
+    restore('NODE_ENV', originalNodeEnv);
   });
 
   describe('mock mode (default)', () => {
@@ -153,6 +159,18 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
       expect(typeof result.computed_at).toBe('string');
+    });
+  });
+
+  describe('production hard-block', () => {
+    it('ignores ENGAGEMENT_BACKEND=mock and returns null fields when NODE_ENV=production', async () => {
+      process.env['ENGAGEMENT_BACKEND'] = 'mock';
+      process.env['NODE_ENV'] = 'production';
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBeNull();
+      expect(result.meetings_this_month).toBeNull();
     });
   });
 });

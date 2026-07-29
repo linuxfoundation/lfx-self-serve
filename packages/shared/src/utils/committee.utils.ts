@@ -7,7 +7,12 @@ import { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.int
 import { CommitteeMember } from '../interfaces/member.interface';
 import { BadgeSeverity } from '../interfaces/components.interface';
 import { StatCardItem } from '../interfaces/stat-card.interface';
-import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
+import {
+  CATEGORY_BEHAVIORAL_CLASS,
+  FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
+  GROUPS_ENGAGEMENT_ICON_CLASS,
+  OTHER_GROUPS_LABEL,
+} from '../constants/committees.constants';
 import { formatRelativeTime } from './date-time.utils';
 import { slugify } from './string.utils';
 
@@ -355,13 +360,13 @@ export function buildEngagementStatCards(stats: GroupsEngagementStats | null, lo
   const activeMembersCard: StatCardItem = {
     label: 'Active Members',
     icon: 'fa-light fa-user-group',
-    iconContainerClass: 'bg-violet-100 text-violet-600',
+    iconContainerClass: GROUPS_ENGAGEMENT_ICON_CLASS.activeMembers,
     value: '—',
   };
   const meetingsThisMonthCard: StatCardItem = {
     label: 'Meetings This Month',
     icon: 'fa-light fa-calendar-check',
-    iconContainerClass: 'bg-amber-100 text-amber-600',
+    iconContainerClass: GROUPS_ENGAGEMENT_ICON_CLASS.meetingsThisMonth,
     value: '—',
   };
 

@@ -153,6 +153,16 @@ export class CommitteeDashboardComponent {
   public myStatCards: Signal<StatCardItem[]>;
   /** Me-lens stat grid only — the engagement cards (Foundation/Project lens stays a fixed 3). */
   public readonly myStatCardColumns: Signal<StatCardGridColumns> = computed(() => (this.isEngagementMetricsEnabled() ? 5 : 3));
+  /**
+   * Grid-wide loading flag for the Me-lens stat row. `<lfx-stat-card-grid>` only gates its
+   * `card.value` em-dash on this single boolean — `card.subLine` always renders unconditionally
+   * (see `stat-card-grid.component.html`) — so if this were `myCommitteesLoading()` alone, a fast
+   * engagement fetch resolving before `myCommittees` would show a real "Updated Xm ago" sub-line
+   * next to a still-em-dash value. Combining both keeps every card's value/sub-line pair consistent.
+   */
+  public readonly myStatCardsLoading: Signal<boolean> = computed(
+    () => this.myCommitteesLoading() || (this.isEngagementMetricsEnabled() && this.engagementStatsLoading())
+  );
 
   // Engagement rollup (LFXV2-1711) — flag-gated, mocked pending the LFXV2-1705 dbt model
   public engagementStats: Signal<GroupsEngagementStats | null>;
