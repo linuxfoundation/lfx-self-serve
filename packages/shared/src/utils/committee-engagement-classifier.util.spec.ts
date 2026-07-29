@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { classifyCommitteeEngagement, computeCommitteeEngagementRate } from './committee-engagement-classifier.util';
+import { classifyCommitteeEngagement, computeCommitteeEngagementRate, isCommitteeMemberAtRisk } from './committee-engagement-classifier.util';
 
 describe('computeCommitteeEngagementRate', () => {
   it('returns 0 when invited is 0', () => {
@@ -50,5 +50,24 @@ describe('classifyCommitteeEngagement', () => {
 
   it('classifies perfect attendance as High', () => {
     expect(classifyCommitteeEngagement(10, 10)).toBe('High');
+  });
+});
+
+describe('isCommitteeMemberAtRisk', () => {
+  it('is false for a never-invited member (Inactive with no signal)', () => {
+    expect(isCommitteeMemberAtRisk(0, 0)).toBe(false);
+  });
+
+  it('is true for an invited member who attended nothing (Inactive with negative signal)', () => {
+    expect(isCommitteeMemberAtRisk(0, 5)).toBe(true);
+  });
+
+  it('is true for a Low-classified member', () => {
+    expect(isCommitteeMemberAtRisk(10, 100)).toBe(true);
+  });
+
+  it('is false for Medium and High members', () => {
+    expect(isCommitteeMemberAtRisk(40, 100)).toBe(false);
+    expect(isCommitteeMemberAtRisk(100, 100)).toBe(false);
   });
 });

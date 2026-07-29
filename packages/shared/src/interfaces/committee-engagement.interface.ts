@@ -30,7 +30,7 @@ export interface CommitteeEngagementSummary {
   active_count: number;
   /** Full committee roster size (including members with no engagement data). */
   total_count: number;
-  /** Members classified Low. */
+  /** Members classified Low, plus members invited within the window who attended nothing (badge reads Inactive, but there is signal to act on — unlike a member never invited). */
   at_risk_count: number;
 }
 

@@ -20,7 +20,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.util')>(
     '../../../../../packages/shared/src/utils/committee-engagement-classifier.util'
   );
-  return { classifyCommitteeEngagement: actual.classifyCommitteeEngagement, computeCommitteeEngagementRate: actual.computeCommitteeEngagementRate };
+  return {
+    classifyCommitteeEngagement: actual.classifyCommitteeEngagement,
+    computeCommitteeEngagementRate: actual.computeCommitteeEngagementRate,
+    isCommitteeMemberAtRisk: actual.isCommitteeMemberAtRisk,
+  };
 });
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
@@ -119,20 +123,23 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.summary.at_risk_count).toBe(0);
   });
 
-  it('picks the first non-null computed_at among the warehouse rows directly, independent of roster order or match', async () => {
-    // 'a' matches no roster member (roster has only 'b'), and 'b's row has a null COMPUTED_AT —
-    // the timestamp must still surface from the unmatched row, not depend on the join.
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'b@x.com')]);
+  it('picks the latest computed_at among the warehouse rows directly, independent of roster order, match, or row order', async () => {
+    // 'a' matches no roster member (roster has only 'c'), 'b' has a null COMPUTED_AT, and the
+    // latest timestamp ('2026-07-29', row 'c') sorts after an earlier one ('2026-07-28', row
+    // 'a') despite appearing later in the result set — the pick must not be "first" or
+    // "roster-joined", it must be "latest, across every row Snowflake returned".
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'c@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [
         { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28T00:00:00.000Z' },
         { MEMBER_EMAIL: 'b@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null },
+        { MEMBER_EMAIL: 'c@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-29T00:00:00.000Z' },
       ],
     });
 
     const result = await service.getCommitteeEngagement(req, 'committee-1', 'ytd');
 
-    expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
+    expect(result.computed_at).toBe('2026-07-29T00:00:00.000Z');
   });
 
   it('logs a warning when warehouse rows exist but none match the roster by email', async () => {
@@ -149,6 +156,17 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect.stringContaining('join key mismatch'),
       expect.objectContaining({ committee_uid: 'committee-1', row_count: 1, roster_size: 1 })
     );
+  });
+
+  it('does not warn about a join mismatch when the roster is empty (rows may legitimately persist for a since-emptied committee)', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'former-member@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalled();
   });
 
   it('does not warn about a join mismatch when rows and roster both match', async () => {

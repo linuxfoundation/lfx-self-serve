@@ -1,20 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeEngagementResponse, CommitteeEngagementWarehouseRow, CommitteeEngagementWindow, CommitteeMember } from '@lfx-one/shared/interfaces';
-import { classifyCommitteeEngagement, computeCommitteeEngagementRate } from '@lfx-one/shared/utils';
+import type {
+  CommitteeEngagementQueryResult,
+  CommitteeEngagementResponse,
+  CommitteeEngagementWarehouseRow,
+  CommitteeEngagementWindow,
+  CommitteeMember,
+} from '@lfx-one/shared/interfaces';
+import { classifyCommitteeEngagement, computeCommitteeEngagementRate, isCommitteeMemberAtRisk } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
-
-interface EngagementQueryResult {
-  rows: CommitteeEngagementWarehouseRow[];
-  /** `false` when the warehouse table doesn't exist yet — distinct from a real query returning zero rows. */
-  dataAvailable: boolean;
-}
 
 /**
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705) from the (not-yet-deployed)
@@ -39,7 +39,7 @@ export class CommitteeEngagementService {
     return this.buildResponse(req, committeeUid, members, queryResult);
   }
 
-  private async queryEngagementRows(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<EngagementQueryResult> {
+  private async queryEngagementRows(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementQueryResult> {
     const sql = `
       SELECT MEMBER_EMAIL, ATTENDED_COUNT, INVITED_COUNT, COMPUTED_AT
       FROM ${this.engagementTable()}
@@ -68,7 +68,7 @@ export class CommitteeEngagementService {
    * once the real dbt model's schema is known. Every roster member appears in the response even
    * without a matching warehouse row, so `total_count` always reflects the full committee.
    */
-  private buildResponse(req: Request, committeeUid: string, members: CommitteeMember[], queryResult: EngagementQueryResult): CommitteeEngagementResponse {
+  private buildResponse(req: Request, committeeUid: string, members: CommitteeMember[], queryResult: CommitteeEngagementQueryResult): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
     const rowsByEmail = new Map<string, CommitteeEngagementWarehouseRow>();
@@ -77,9 +77,14 @@ export class CommitteeEngagementService {
       if (email) rowsByEmail.set(email, row);
     }
 
-    // Computed independently of the roster join below: a warehouse row with no roster match
-    // (or an empty roster) must still surface the model's freshness timestamp.
-    const computedAt = this.toIsoTimestamp(rows.find((row) => row.COMPUTED_AT)?.COMPUTED_AT ?? null);
+    // Computed independently of the roster join below (a warehouse row with no roster match, or
+    // an empty roster, must still surface the model's freshness timestamp) and as the latest of
+    // all parseable values, not the first in `ORDER BY MEMBER_EMAIL` order — a partial refresh
+    // could otherwise report an arbitrarily stale alphabetically-first row as "as of".
+    const computedAt = rows
+      .map((row) => this.toIsoTimestamp(row.COMPUTED_AT))
+      .filter((iso): iso is string => iso !== null)
+      .reduce((latest: string | null, iso) => (!latest || iso > latest ? iso : latest), null);
 
     let totalAttended = 0;
     let totalInvited = 0;
@@ -97,14 +102,12 @@ export class CommitteeEngagementService {
 
       const classification = classifyCommitteeEngagement(attended, invited);
       if (classification === 'High' || classification === 'Medium') activeCount++;
-      // A member invited but who attended nothing is at risk even though the per-member badge
-      // reads 'Inactive' (same tier as "never invited", which has no signal to act on).
-      if (classification === 'Low' || (classification === 'Inactive' && invited > 0)) atRiskCount++;
+      if (isCommitteeMemberAtRisk(attended, invited)) atRiskCount++;
 
       return { uid: member.uid, attended, invited, rate: computeCommitteeEngagementRate(attended, invited), classification };
     });
 
-    if (rows.length > 0 && matchedCount === 0) {
+    if (rows.length > 0 && members.length > 0 && matchedCount === 0) {
       logger.warning(req, 'get_committee_engagement', 'Engagement rows returned but none matched the committee roster by email — join key mismatch?', {
         committee_uid: committeeUid,
         row_count: rows.length,

@@ -23,6 +23,12 @@ const accessCheckService = new AccessCheckService();
  * auditor from project or meeting_coordinator from project`, JTBD "View committee settings") has
  * no such wildcard.
  *
+ * This also means a rank-and-file `member` (not also a `writer`/project-level `auditor`) cannot
+ * read their own committee's engagement data — deliberate: per-member attendance rollups read as
+ * leadership/oversight data, not general committee-member data, so this defaults to the narrower
+ * grant rather than widening to `member` (or the model's `roster_viewer`) without an explicit
+ * product decision to do so.
+ *
  * Uses `AccessCheckService.checkSingleAccessStrict` (not `checkSingleAccess`) because the latter
  * swallows upstream failures into `false`, making a transient access-check outage indistinguishable
  * from a genuine denial. Strict resolution preserves the 403 (confirmed no grant) vs 503 (couldn't

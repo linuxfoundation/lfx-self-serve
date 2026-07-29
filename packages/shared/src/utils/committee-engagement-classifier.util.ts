@@ -22,3 +22,15 @@ export function classifyCommitteeEngagement(attended: number, invited: number): 
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.medium) return 'Medium';
   return 'Low';
 }
+
+/**
+ * `Low` members are at risk by definition. A member invited within the window who attended
+ * nothing is at risk too, even though `classifyCommitteeEngagement` also calls them `Inactive` —
+ * that tier's other member (never invited at all) has no signal to act on, but this one does.
+ * Lives next to the classifier, not in the caller, so the "which Inactive members count as at
+ * risk" rule can't drift from the tier definitions above it.
+ */
+export function isCommitteeMemberAtRisk(attended: number, invited: number): boolean {
+  const classification = classifyCommitteeEngagement(attended, invited);
+  return classification === 'Low' || (classification === 'Inactive' && invited > 0);
+}

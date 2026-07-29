@@ -15,3 +15,10 @@ export interface CommitteeEngagementWarehouseRow {
   INVITED_COUNT: number;
   COMPUTED_AT: string | Date | null;
 }
+
+/** Result of the engagement-rows query, distinguishing a real (possibly empty) result set from the table-not-deployed-yet degrade. */
+export interface CommitteeEngagementQueryResult {
+  rows: CommitteeEngagementWarehouseRow[];
+  /** `false` when the warehouse table doesn't exist yet — distinct from a real query returning zero rows. */
+  dataAvailable: boolean;
+}
