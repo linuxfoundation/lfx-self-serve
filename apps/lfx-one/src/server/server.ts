@@ -274,8 +274,9 @@ if (sessionStoreEnabled) {
 
 app.use(auth(authConfig));
 
-// Meeting join pages are optional-auth; silent login picks up any existing SSO session.
+// Public pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
+app.use('/groups/', attemptSilentLogin());
 
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
