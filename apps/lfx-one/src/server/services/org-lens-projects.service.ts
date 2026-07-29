@@ -99,14 +99,17 @@ export class OrgLensProjectsService {
     const whereClause = conditions.length ? `WHERE ${conditions.join('\n        AND ')}` : '';
     // Relevance ordering: addable first (ALREADY_ADDED asc), then prefix matches on name OR slug (bound last, after
     // SELECT/WHERE binds) so a target like "k8s" isn't buried behind contains-matches. Empty-query preload falls back to catalog rank.
-    let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC, PROJECT_NAME ASC';
+    // PROJECT_SLUG is the unique final tiebreaker so the 50/500 LIMIT cap is deterministic across requests
+    // (rows tied on rank/name can't reshuffle in and out of the cap) — required for paginated ORDER BY/LIMIT.
+    let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC, PROJECT_NAME ASC, PROJECT_SLUG ASC';
     if (trimmed.length) {
       const prefixLike = `${escapeSqlLikePattern(trimmed)}%`;
       orderByClause = `ORDER BY
         ALREADY_ADDED ASC,
         CASE WHEN PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 0 ELSE 1 END ASC,
         ONBOARDED_PROJECT_RANK ASC,
-        PROJECT_NAME ASC`;
+        PROJECT_NAME ASC,
+        PROJECT_SLUG ASC`;
       binds.push(prefixLike, prefixLike);
     }
     // Preload keeps the initial panel light; a typed query returns up to the safety cap so the user
