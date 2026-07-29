@@ -27,7 +27,7 @@ function isGroupsEngagementStats(value: unknown): boolean {
  * that read path exists — a deliberate interim shim (flag-gated in the UI, TODO-marked here) pending
  * LFXV2-1705, not a permanent stand-in for the real upstream contract. Defaults to `live` (null
  * fields, never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is
- * additionally hard-blocked outside `NODE_ENV=production` — an unconfigured or production environment
+ * additionally hard-blocked when `NODE_ENV=production` — an unconfigured or production environment
  * must fail to "no data," never to invented-looking data.
  */
 export class GroupsEngagementStatsService {
@@ -58,12 +58,16 @@ export class GroupsEngagementStatsService {
     if (backend === 'live') {
       // TODO(LFXV2-1711): read from the dbt engagement model (same source as LFXV2-1705) once its
       // read path exists. Until then, always return null fields rather than fabricating live-looking
-      // data — the client renders an "Unavailable" degraded state for these two cards.
-      logger.debug(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=live has no dbt read path yet — returning null fields');
+      // data — the client renders an "Unavailable" degraded state for these two cards. WARN (not
+      // DEBUG), matching the LFXV2-2874 precedent (project.service.ts's getFoundationTotalMembers):
+      // graceful degradation to null/empty is operationally significant, not routine tracing.
+      logger.warning(req, 'get_groups_engagement_stats', 'Engagement dbt model has no read path yet — returning null fields');
       return { active_members: null, meetings_this_month: null, computed_at: computedAt };
     }
 
-    logger.debug(req, 'get_groups_engagement_stats', 'Serving deterministic mock engagement stats');
+    // WARN, not DEBUG: serving a fixture instead of real data is fallback behavior an on-call
+    // engineer needs visible when someone reports the dashboard numbers look wrong.
+    logger.warning(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=mock — serving fixture engagement stats, not real data');
     return { ...deterministicMockStats(username), computed_at: computedAt };
   }
 }

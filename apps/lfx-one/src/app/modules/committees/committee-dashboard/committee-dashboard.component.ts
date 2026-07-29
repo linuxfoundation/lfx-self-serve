@@ -153,16 +153,6 @@ export class CommitteeDashboardComponent {
   public myStatCards: Signal<StatCardItem[]>;
   /** Me-lens stat grid only — the engagement cards (Foundation/Project lens stays a fixed 3). */
   public readonly myStatCardColumns: Signal<StatCardGridColumns> = computed(() => (this.isEngagementMetricsEnabled() ? 5 : 3));
-  /**
-   * Grid-wide loading flag for the Me-lens stat row. `<lfx-stat-card-grid>` only gates its
-   * `card.value` em-dash on this single boolean — `card.subLine` always renders unconditionally
-   * (see `stat-card-grid.component.html`) — so if this were `myCommitteesLoading()` alone, a fast
-   * engagement fetch resolving before `myCommittees` would show a real "Updated Xm ago" sub-line
-   * next to a still-em-dash value. Combining both keeps every card's value/sub-line pair consistent.
-   */
-  public readonly myStatCardsLoading: Signal<boolean> = computed(
-    () => this.myCommitteesLoading() || (this.isEngagementMetricsEnabled() && this.engagementStatsLoading())
-  );
 
   // Engagement rollup (LFXV2-1711) — flag-gated, mocked pending the LFXV2-1705 dbt model
   public engagementStats: Signal<GroupsEngagementStats | null>;
@@ -443,17 +433,20 @@ export class CommitteeDashboardComponent {
   }
 
   /**
-   * Fetches the engagement rollup once the flag first turns on (browser-only, one-shot — mirrors
-   * the `loadPendingInvitations()` gate above). `CommitteeService.getGroupsEngagementStats()` is the
-   * single error-handling site (logs, resolves to `null`) — `buildEngagementStatCards` renders the
-   * degraded "Unavailable" state on a `null`, and the always-on group-count cards / groups list below
-   * are on entirely separate HTTP calls, so a stats failure here never blocks them.
+   * Fetches the engagement rollup once the flag is on AND the Me lens is active (browser-only,
+   * one-shot — mirrors the `loadPendingInvitations()` gate above). Gating on `isMeLens()` too, not
+   * just the flag, matters because the cards it feeds only render in `myStatCards` — without it,
+   * every Foundation/Project-lens visit would fire a request whose result can never be displayed.
+   * `CommitteeService.getGroupsEngagementStats()` is the single error-handling site (logs, resolves
+   * to `null`) — `buildEngagementStatCards` renders the degraded "Unavailable" state on a `null`, and
+   * the always-on group-count cards / groups list below are on entirely separate HTTP calls, so a
+   * stats failure here never blocks them.
    */
   private initializeEngagementStats(): Signal<GroupsEngagementStats | null> {
     if (isPlatformBrowser(this.platformId)) {
-      toObservable(this.isEngagementMetricsEnabled)
+      toObservable(computed(() => this.isMeLens() && this.isEngagementMetricsEnabled()))
         .pipe(
-          filter((enabled) => enabled),
+          filter((ready) => ready),
           take(1),
           switchMap(() => this.committeeService.getGroupsEngagementStats().pipe(finalize(() => this.engagementStatsLoading.set(false)))),
           takeUntilDestroyed(this.destroyRef)

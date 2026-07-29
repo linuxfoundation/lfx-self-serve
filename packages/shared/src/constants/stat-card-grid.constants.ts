@@ -20,17 +20,20 @@ export const GRID_COLS_CLASS: Record<StatCardGridColumns, string> = {
  * the two cards within each row; both are cleared again at `lg`, where `divide-x` takes over
  * for the single-row 4-column layout.
  */
+// The `!` (important) modifiers are required: Tailwind's `divide-y-0` reset compiles to
+// `:not([hidden]) ~ :not([hidden])`, whose specificity beats a plain `nth-child(...)` selector, so
+// without `!` it silently cancels the row divider below regardless of source order. The `sm` left
+// border is left in place (not reset) at `lg`: `lg:divide-x` needs that same left border on cards
+// 2/4 for the single-row layout, and card 3 gets it from `divide-x` itself. Shared by columns 4 and
+// 5 — the `nth-child(n+3)`/`nth-child(even)` 2-col-wrap logic is column-count-agnostic (it only
+// depends on the wrap pairing, not the final column count); only `lg:grid-cols-4` vs. `-5` in
+// `GRID_COLS_CLASS` differs between them, not this divider string.
+const WRAP_PAIRED_DIVIDER =
+  'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:divide-x';
+
 export const GRID_DIVIDER_CLASS: Record<StatCardGridColumns, string> = {
   2: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   3: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
-  // The `!` (important) modifiers are required: Tailwind's `divide-y-0` reset compiles to
-  // `:not([hidden]) ~ :not([hidden])`, whose specificity beats a plain `nth-child(...)` selector,
-  // so without `!` it silently cancels the row divider below regardless of source order. The
-  // `sm` left border is left in place (not reset) at `lg`: `lg:divide-x` needs that same left
-  // border on cards 2/4 for the single-row layout, and card 3 gets it from `divide-x` itself.
-  4: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:divide-x',
-  // Same `nth-child(n+3)`/`nth-child(even)` 2-col-wrap logic as 4 — column-count-agnostic (it only
-  // depends on the wrap pairing, not the final column count), so it generalizes to 5 cards (rows of
-  // 2, 2, 1) unchanged; only `lg:divide-x` differs by relying on GRID_COLS_CLASS[5]'s `lg:grid-cols-5`.
-  5: 'divide-y divide-gray-200 sm:divide-y-0 sm:[&>*:nth-child(n+3)]:!border-t sm:[&>*:nth-child(n+3)]:!border-gray-200 sm:[&>*:nth-child(even)]:!border-l sm:[&>*:nth-child(even)]:!border-gray-200 lg:[&>*:nth-child(n+3)]:!border-t-0 lg:divide-x',
+  4: WRAP_PAIRED_DIVIDER,
+  5: WRAP_PAIRED_DIVIDER,
 };
