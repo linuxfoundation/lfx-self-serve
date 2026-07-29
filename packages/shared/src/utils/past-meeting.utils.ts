@@ -2,20 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { EnrichedPastMeetingParticipant, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
-
-const ZERO_DATE_PREFIX = '0001-01-01';
-
-function parsePastMeetingStartIso(iso: string | undefined): number | null {
-  if (!iso || iso.startsWith(ZERO_DATE_PREFIX)) {
-    return null;
-  }
-  const ms = new Date(iso).getTime();
-  return Number.isNaN(ms) ? null : ms;
-}
+import { firstValidTimestampMs } from './iso-timestamp.utils';
 
 // Zoom/ITX rows sometimes carry a Go zero-date on scheduled_start_time; fall back to start_time.
 export function getPastMeetingStartTimeMs(meeting: Pick<PastMeeting, 'scheduled_start_time' | 'start_time'>): number | null {
-  return parsePastMeetingStartIso(meeting.scheduled_start_time) ?? parsePastMeetingStartIso(meeting.start_time);
+  return firstValidTimestampMs(meeting.scheduled_start_time, meeting.start_time);
 }
 
 // Largest recording session (by total_size) is canonical; a recording "exists" only if that
