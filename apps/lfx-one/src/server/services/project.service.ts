@@ -1352,7 +1352,7 @@ export class ProjectService {
     // sibling getFoundationMaintainersMonthly read.
     const query = `
       WITH spine AS (
-        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('month', -1, DATE_TRUNC('MONTH', CURRENT_DATE()))) AS MONTH_START_DATE
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
         FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
