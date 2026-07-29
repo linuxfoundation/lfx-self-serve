@@ -23,10 +23,11 @@ import {
 import {
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
-  getCurrentOrNextOccurrence,
+  getRegistrantAttendanceStatus,
   getPastMeetingResourceId,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
+  resolveRsvpOccurrenceId,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -119,6 +120,9 @@ export class MeetingRegistrantsDisplayComponent {
     { label: 'Invited', value: 'invited' },
     { label: 'Not Invited', value: 'uninvited' },
   ];
+
+  /** Shared chip / filter semantics — see {@link getRegistrantAttendanceStatus}. */
+  protected readonly registrantAttendanceStatus = getRegistrantAttendanceStatus;
 
   // Group (Committee) filter options computed from meeting committees
   public readonly groupFilterOptions = this.initGroupFilterOptions();
@@ -301,7 +305,7 @@ export class MeetingRegistrantsDisplayComponent {
               // unrelated occurrences. Falls back to newest RSVP when no occurrence is
               // available (non-recurring meetings). See LFXV2-2864.
               const meeting = this.meeting() as Meeting;
-              const occurrenceId = getCurrentOrNextOccurrence(meeting)?.occurrence_id;
+              const occurrenceId = resolveRsvpOccurrenceId(meeting);
               // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
               const registrantsObservable = useMyEndpoint
                 ? this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId)
@@ -448,20 +452,16 @@ export class MeetingRegistrantsDisplayComponent {
           registrant.email?.toLowerCase().includes(query) ||
           registrant.org_name?.toLowerCase().includes(query);
 
-        // RSVP filter (must match display logic in template)
+        // RSVP filter — must match chip rendering via getRegistrantAttendanceStatus
         let matchesRsvp = true;
         if (rsvp !== 'all') {
+          const status = getRegistrantAttendanceStatus(registrant);
           if (rsvp === 'yes') {
-            // Accepted: rsvp.response_type === 'accepted' OR invite_accepted === true
-            matchesRsvp = registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true;
+            matchesRsvp = status === 'accepted';
           } else if (rsvp === 'no') {
-            // Declined: rsvp.response_type === 'declined' OR invite_accepted === false
-            matchesRsvp = registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false;
+            matchesRsvp = status === 'declined';
           } else if (rsvp === 'pending') {
-            // Pending: NOT accepted AND NOT declined (includes maybe and no response)
-            const isAccepted = registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true;
-            const isDeclined = registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false;
-            matchesRsvp = !isAccepted && !isDeclined;
+            matchesRsvp = status === 'pending' || status === 'maybe';
           }
         }
 
