@@ -9,7 +9,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
@@ -40,7 +39,6 @@ import type {
     DrawerModule,
     ChartComponent,
     SelectComponent,
-    SelectButtonComponent,
     InputTextComponent,
     ButtonComponent,
     ReactiveFormsModule,
@@ -59,18 +57,10 @@ export class TotalProjectsDrawerComponent {
 
   // === Static Options ===
   protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
-  protected readonly viewOptions = [
-    { label: 'Chart', value: 'chart' },
-    { label: 'Table', value: 'table' },
-  ];
 
   // === Forms ===
   protected readonly headerForm: FormGroup = this.fb.group({
     timeRange: [{ value: 'last-12-months', disabled: true }],
-  });
-
-  protected readonly viewForm: FormGroup = this.fb.group({
-    primaryView: ['chart'],
   });
 
   protected readonly searchForm: FormGroup = this.fb.group({
@@ -93,7 +83,6 @@ export class TotalProjectsDrawerComponent {
   protected readonly LifecycleStage = LifecycleStage;
 
   // === WritableSignals ===
-  protected readonly primaryView = signal<'chart' | 'table'>('chart');
   protected readonly primaryPage = signal(1);
   protected readonly drawerLoading = signal(false);
 
@@ -193,12 +182,6 @@ export class TotalProjectsDrawerComponent {
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
-  }
-
-  protected onPrimaryViewChange(event: { value: 'chart' | 'table' }): void {
-    if (event.value) {
-      this.primaryView.set(event.value);
-    }
   }
 
   protected goToPrimaryPage(page: number): void {
