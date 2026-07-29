@@ -592,6 +592,12 @@ export class OrgProjectsComponent {
     const trimmed = query.trim();
     const shouldSearch = !!this.accountContext.selectedAccount()?.uid && !(trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH);
     this.addProjectsSearchLoading.set(shouldSearch);
+    if (!shouldSearch) {
+      // Clear stale error / already-in-workspace flags now (not after the debounce) so the panel falls through
+      // to the "type more characters" guidance instead of showing the previous query's status.
+      this.addProjectsSearchError.set(false);
+      this.addProjectsMatchesAlreadyInWorkspace.set(false);
+    }
     this.searchAddableProjects(query);
   }
 
@@ -964,7 +970,7 @@ export class OrgProjectsComponent {
         return availability;
       }
     }
-    if (field === 'technicalInfluence' || field === 'ecosystemInfluence') {
+    if (field === 'technicalInfluence' || field === 'ecosystemInfluence' || field === 'influenceTrend') {
       const availability = this.compareInfluenceAvailability(a, b);
       if (availability !== 0) {
         return availability;
@@ -1005,8 +1011,8 @@ export class OrgProjectsComponent {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
-  // No-activity rows have no measured influence (bands shown as "Unavailable"); keep them after measured
-  // rows regardless of sort direction, mirroring how health availability sinks unavailable rows.
+  // No-activity rows have no measured influence or trend (both shown as "Unavailable"); keep them after
+  // measured rows regardless of sort direction, mirroring how health availability sinks unavailable rows.
   private compareInfluenceAvailability(a: OrgLensProject, b: OrgLensProject): number {
     const aUnavailable = a.noActivityYet ?? false;
     const bUnavailable = b.noActivityYet ?? false;
