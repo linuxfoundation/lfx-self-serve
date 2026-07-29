@@ -355,7 +355,12 @@ export class OrgLensProjectsService {
     // "no activity yet" row from the onboarded catalog instead of dropping it. Only for requested slugs, not the preload.
     const [peopleRows, noActivityProjects] = await Promise.all([
       projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs) : Promise.resolve([]),
-      this.fetchNoActivityProjects(slugs, projectSlugs),
+      // No-activity hydration is a soft enhancement over the onboarded catalog (which may be mid-migration or
+      // absent); never let its failure fail the whole response — degrade to activity rows only, as before.
+      this.fetchNoActivityProjects(slugs, projectSlugs).catch((err) => {
+        console.error('Failed to hydrate no-activity org projects; returning activity rows only', err);
+        return [] as OrgLensProject[];
+      }),
     ]);
 
     return {
