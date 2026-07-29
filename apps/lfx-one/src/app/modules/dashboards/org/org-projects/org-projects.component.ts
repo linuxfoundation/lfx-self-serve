@@ -593,8 +593,10 @@ export class OrgProjectsComponent {
     const shouldSearch = !!this.accountContext.selectedAccount()?.uid && !(trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH);
     this.addProjectsSearchLoading.set(shouldSearch);
     if (!shouldSearch) {
-      // Clear stale error / already-in-workspace flags now (not after the debounce) so the panel falls through
-      // to the "type more characters" guidance instead of showing the previous query's status.
+      // Clear stale error / already-in-workspace flags AND the previous query's options now (not after the
+      // debounce). The status copy only renders when the option list is empty, so leaving stale options lets
+      // PrimeNG client-filter them and hides the "type at least N characters" guidance below the min length.
+      this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(false);
       this.addProjectsMatchesAlreadyInWorkspace.set(false);
     }
