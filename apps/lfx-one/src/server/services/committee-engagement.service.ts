@@ -53,10 +53,16 @@ export class CommitteeEngagementService {
       // Pre-dbt-deploy the engagement table is absent; degrade to the empty response the
       // members table expects instead of 5xx per committee page load. `dataAvailable: false`
       // lets the response tell the UI this is "no data yet", not "zero engagement".
+      //
+      // isMissingObjectError's regex ("does not exist or not authorized") also matches a missing
+      // GRANT, not just a missing table — once the model is deployed, a role/permissions
+      // misconfiguration will degrade identically to the pre-deploy state. The message and
+      // attached `err` below are worded to not assert which case this is; check `err` first.
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
-      logger.warning(req, 'get_committee_engagement', 'Engagement table not deployed yet; returning empty response', {
+      logger.warning(req, 'get_committee_engagement', 'Engagement query hit a missing-object/not-authorized error; returning empty response', {
         committee_uid: committeeUid,
         window,
+        err: error,
       });
       return { rows: [], dataAvailable: false };
     }
@@ -100,8 +106,11 @@ export class CommitteeEngagementService {
     const memberEngagements = members.map((member) => {
       const row = rowsByEmail.get(this.normalizeEmail(member.email));
       if (row) matchedCount++;
-      const attended = this.toCount(row?.ATTENDED_COUNT);
       const invited = this.toCount(row?.INVITED_COUNT);
+      // Clamped to `invited`: nothing upstream guarantees ATTENDED_COUNT <= INVITED_COUNT, and an
+      // unclamped value here would produce a >100% rate and a response where `attended` exceeds
+      // `invited` for the same member.
+      const attended = Math.min(this.toCount(row?.ATTENDED_COUNT), invited);
       totalAttended += attended;
       totalInvited += invited;
 

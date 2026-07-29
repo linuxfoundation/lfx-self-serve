@@ -218,7 +218,6 @@ export class AccessCheckService {
 
     // Map results back to resource IDs by re-deriving the same tuple each request sent
     const resultMap = new Map<string, boolean>();
-    const userAccessInfo: { resourceId: string; username?: string; hasAccess: boolean }[] = [];
 
     for (const resource of resources) {
       const tuple = `${resource.resource}:${resource.id}#${resource.access}`;
@@ -226,7 +225,6 @@ export class AccessCheckService {
 
       // Fail closed when the upstream response omits this tuple
       resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
-      userAccessInfo.push({ resourceId: resource.id, username: result?.username, hasAccess: result?.hasAccess ?? false });
     }
 
     logger.success(req, operationName, startTime, {

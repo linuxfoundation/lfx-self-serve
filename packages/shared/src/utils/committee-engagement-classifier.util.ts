@@ -4,10 +4,15 @@
 import { COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS } from '../constants/committee-engagement.constants';
 import type { CommitteeEngagementClassification } from '../interfaces/committee-engagement.interface';
 
-/** `attended / invited`, 0 when nobody was invited, rounded to 2 decimal places. */
+/**
+ * `attended / invited`, 0 when nobody was invited, rounded to 2 decimal places. Clamps `attended`
+ * to `invited` so a warehouse data-quality glitch (or a grain mismatch, until the real dbt model's
+ * schema is confirmed) can't produce a rate over 1 — nothing upstream enforces `attended <= invited`.
+ */
 export function computeCommitteeEngagementRate(attended: number, invited: number): number {
   if (invited <= 0) return 0;
-  return Math.round((attended / invited) * 100) / 100;
+  const clampedAttended = Math.min(Math.max(attended, 0), invited);
+  return Math.round((clampedAttended / invited) * 100) / 100;
 }
 
 /**

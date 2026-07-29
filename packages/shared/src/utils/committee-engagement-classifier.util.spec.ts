@@ -21,6 +21,10 @@ describe('computeCommitteeEngagementRate', () => {
   it('returns 1 for a perfect attendance record', () => {
     expect(computeCommitteeEngagementRate(4, 4)).toBe(1);
   });
+
+  it('clamps attended to invited, capping the rate at 1 rather than exceeding it', () => {
+    expect(computeCommitteeEngagementRate(12, 10)).toBe(1);
+  });
 });
 
 describe('classifyCommitteeEngagement', () => {
