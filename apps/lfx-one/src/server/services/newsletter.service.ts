@@ -53,7 +53,7 @@ export class NewsletterService {
    * memberships (Me lens "My Newsletters").
    *
    * Discovery is driven from the membership side: enumerate the user's
-   * committees (the same query-service lookup My Groups uses), then fan out
+   * committee UIDs (the same query-service lookup My Groups uses), then fan out
    * the committee-scoped upstream list per committee with the user's bearer
    * token — the gateway FGA-checks `committee:{uid}#member` on every call, so
    * access tracks live membership and committees never used for a newsletter
@@ -61,12 +61,15 @@ export class NewsletterService {
    * leaving a group hides its newsletters, joining reveals past ones.
    */
   public async getMyNewsletters(req: Request): Promise<MyNewsletter[]> {
-    const committees = await this.committeeService.getMyCommittees(req);
-    if (committees.length === 0) {
+    // getMyCommitteeUids, not getMyCommittees: this feed only needs membership
+    // UIDs, and the lightweight variant skips the committee/mailing-list/project
+    // enrichment fan-out AND never drops a membership whose committee resource
+    // is missing from the index (getMyCommittees does).
+    const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req))];
+    if (committeeUids.length === 0) {
       return [];
     }
 
-    const committeeUids = [...new Set(committees.map((c) => c.uid))];
     logger.debug(req, 'get_my_newsletters', 'Fetching newsletters for user committees', {
       committee_count: committeeUids.length,
     });

@@ -104,7 +104,14 @@
               </ng-template>
 
               <ng-template #body let-newsletter>
-                <tr class="cursor-pointer" (click)="onOpenNewsletter(newsletter)" [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
+                <tr
+                  class="cursor-pointer"
+                  tabindex="0"
+                  [attr.aria-label]="'Open newsletter ' + newsletter.subject"
+                  (click)="onOpenNewsletter(newsletter)"
+                  (keydown.enter)="onRowKeydown($event, newsletter)"
+                  (keydown.space)="onRowKeydown($event, newsletter)"
+                  [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
                   <td>
                     <div class="flex items-center gap-2">
                       <span class="lfx-table-name-link text-sm text-gray-900 font-medium">{{ newsletter.subject }}</span>

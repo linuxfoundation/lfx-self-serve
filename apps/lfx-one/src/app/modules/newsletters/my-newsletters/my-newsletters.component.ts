@@ -13,6 +13,7 @@ import { TableComponent } from '@components/table/table.component';
 import { MyNewsletter } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
+import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, finalize, of } from 'rxjs';
 
@@ -46,6 +47,7 @@ export class MyNewslettersComponent {
   // === Services ===
   private readonly newsletterService = inject(NewsletterService);
   private readonly personaService = inject(PersonaService);
+  private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
   // === Forms ===
@@ -104,8 +106,20 @@ export class MyNewslettersComponent {
         if (full?.body_html) {
           this.previewBody.set(full.body_html);
           this.previewVisible.set(true);
+        } else {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to open newsletter',
+            detail: 'Could not load the newsletter content. Please try again.',
+          });
         }
       });
+  }
+
+  /** Keyboard equivalent of the row click; Space needs preventDefault so the page doesn't scroll. */
+  protected onRowKeydown(event: Event, newsletter: MyNewsletter): void {
+    event.preventDefault();
+    this.onOpenNewsletter(newsletter);
   }
 
   protected onFoundationFilterChange(value: string | null): void {

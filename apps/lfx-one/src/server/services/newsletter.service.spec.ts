@@ -8,9 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so the constructed collaborators must be mocked (mirrors
 // meeting.service.spec.ts). Only the my-newsletters composition is exercised; the client,
 // committee, and project services are stubbed at the module boundary.
-const { listCommitteeNewsletters, getMyCommittees, enrichWithProjectData } = vi.hoisted(() => ({
+const { listCommitteeNewsletters, getMyCommitteeUids, enrichWithProjectData } = vi.hoisted(() => ({
   listCommitteeNewsletters: vi.fn(),
-  getMyCommittees: vi.fn(),
+  getMyCommitteeUids: vi.fn(),
   enrichWithProjectData: vi.fn(),
 }));
 
@@ -21,7 +21,7 @@ vi.mock('./newsletter-service.client', () => ({
 }));
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
-    public getMyCommittees = getMyCommittees;
+    public getMyCommitteeUids = getMyCommitteeUids;
   },
 }));
 vi.mock('./project.service', () => ({
@@ -52,7 +52,7 @@ describe('NewsletterService.getMyNewsletters', () => {
 
   beforeEach(() => {
     listCommitteeNewsletters.mockReset();
-    getMyCommittees.mockReset();
+    getMyCommitteeUids.mockReset();
     enrichWithProjectData.mockReset();
     // Default enrichment: passthrough — assertions on ordering/dedupe read the input.
     enrichWithProjectData.mockImplementation(async (_req: Request, items: CommitteeNewsletter[]) => items);
@@ -60,7 +60,7 @@ describe('NewsletterService.getMyNewsletters', () => {
   });
 
   it('returns an empty list without upstream calls when the user has no committees', async () => {
-    getMyCommittees.mockResolvedValue([]);
+    getMyCommitteeUids.mockResolvedValue(new Set());
 
     const result = await service.getMyNewsletters(req);
 
@@ -70,7 +70,7 @@ describe('NewsletterService.getMyNewsletters', () => {
   });
 
   it('dedupes newsletters reachable via multiple committees and sorts by sent_at descending', async () => {
-    getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }, { uid: 'committee-b' }]);
+    getMyCommitteeUids.mockResolvedValue(new Set(['committee-a', 'committee-b']));
     const shared = newsletter('n1', '2026-07-01T12:00:00Z');
     const older = newsletter('n2', '2026-06-01T12:00:00Z');
     const newest = newsletter('n3', '2026-07-15T12:00:00Z');
@@ -87,7 +87,7 @@ describe('NewsletterService.getMyNewsletters', () => {
   });
 
   it('follows next_page_token until the upstream list is exhausted', async () => {
-    getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }]);
+    getMyCommitteeUids.mockResolvedValue(new Set(['committee-a']));
     listCommitteeNewsletters
       .mockResolvedValueOnce(pageOf([newsletter('n1', '2026-07-01T12:00:00Z')], 'token-2'))
       .mockResolvedValueOnce(pageOf([newsletter('n2', '2026-06-01T12:00:00Z')]));
@@ -100,7 +100,7 @@ describe('NewsletterService.getMyNewsletters', () => {
   });
 
   it('skips a failing committee and still returns the others', async () => {
-    getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }, { uid: 'committee-b' }]);
+    getMyCommitteeUids.mockResolvedValue(new Set(['committee-a', 'committee-b']));
     listCommitteeNewsletters.mockImplementation(async (_req: Request, committeeUid: string) => {
       if (committeeUid === 'committee-a') throw new Error('403 from gateway');
       return pageOf([newsletter('n1', '2026-07-01T12:00:00Z')]);
@@ -109,14 +109,5 @@ describe('NewsletterService.getMyNewsletters', () => {
     const result = await service.getMyNewsletters(req);
 
     expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n1']);
-  });
-
-  it('queries each committee uid only once even with duplicate membership rows', async () => {
-    getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }, { uid: 'committee-a' }]);
-    listCommitteeNewsletters.mockResolvedValue(pageOf([]));
-
-    await service.getMyNewsletters(req);
-
-    expect(listCommitteeNewsletters).toHaveBeenCalledTimes(1);
   });
 });
