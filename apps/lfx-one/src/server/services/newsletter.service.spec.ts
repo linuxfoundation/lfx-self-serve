@@ -39,8 +39,8 @@ import { NewsletterService } from './newsletter.service';
 
 const req = {} as unknown as Request;
 
-function newsletter(id: string, sentAt: string, committeeUids: string[]): CommitteeNewsletter {
-  return { id, project_uid: `project-${id}`, subject: `Subject ${id}`, committee_uids: committeeUids, sent_at: sentAt };
+function newsletter(id: string, sentAt: string): CommitteeNewsletter {
+  return { id, project_uid: `project-${id}`, subject: `Subject ${id}`, sent_at: sentAt };
 }
 
 function pageOf(newsletters: CommitteeNewsletter[], nextPageToken?: string): CommitteeNewsletterListResponse {
@@ -71,9 +71,9 @@ describe('NewsletterService.getMyNewsletters', () => {
 
   it('dedupes newsletters reachable via multiple committees and sorts by sent_at descending', async () => {
     getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }, { uid: 'committee-b' }]);
-    const shared = newsletter('n1', '2026-07-01T12:00:00Z', ['committee-a', 'committee-b']);
-    const older = newsletter('n2', '2026-06-01T12:00:00Z', ['committee-b']);
-    const newest = newsletter('n3', '2026-07-15T12:00:00Z', ['committee-a']);
+    const shared = newsletter('n1', '2026-07-01T12:00:00Z');
+    const older = newsletter('n2', '2026-06-01T12:00:00Z');
+    const newest = newsletter('n3', '2026-07-15T12:00:00Z');
     listCommitteeNewsletters.mockImplementation(async (_req: Request, committeeUid: string) => {
       if (committeeUid === 'committee-a') return pageOf([shared, newest]);
       return pageOf([shared, older]);
@@ -89,8 +89,8 @@ describe('NewsletterService.getMyNewsletters', () => {
   it('follows next_page_token until the upstream list is exhausted', async () => {
     getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }]);
     listCommitteeNewsletters
-      .mockResolvedValueOnce(pageOf([newsletter('n1', '2026-07-01T12:00:00Z', ['committee-a'])], 'token-2'))
-      .mockResolvedValueOnce(pageOf([newsletter('n2', '2026-06-01T12:00:00Z', ['committee-a'])]));
+      .mockResolvedValueOnce(pageOf([newsletter('n1', '2026-07-01T12:00:00Z')], 'token-2'))
+      .mockResolvedValueOnce(pageOf([newsletter('n2', '2026-06-01T12:00:00Z')]));
 
     const result = await service.getMyNewsletters(req);
 
@@ -103,7 +103,7 @@ describe('NewsletterService.getMyNewsletters', () => {
     getMyCommittees.mockResolvedValue([{ uid: 'committee-a' }, { uid: 'committee-b' }]);
     listCommitteeNewsletters.mockImplementation(async (_req: Request, committeeUid: string) => {
       if (committeeUid === 'committee-a') throw new Error('403 from gateway');
-      return pageOf([newsletter('n1', '2026-07-01T12:00:00Z', ['committee-b'])]);
+      return pageOf([newsletter('n1', '2026-07-01T12:00:00Z')]);
     });
 
     const result = await service.getMyNewsletters(req);
