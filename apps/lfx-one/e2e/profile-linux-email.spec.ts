@@ -234,4 +234,22 @@ test.describe('Linux.com email — service unavailable', () => {
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
   });
+
+  test('renders the retry panel when the alias request itself fails (client catchError)', async ({ page }) => {
+    // Distinct from the 200-body service_unavailable case above: the GET itself returns 502,
+    // so the component's own catchError synthesizes the service_unavailable retry state.
+    await stubIdentities(page);
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Bad gateway' }) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
+  });
 });

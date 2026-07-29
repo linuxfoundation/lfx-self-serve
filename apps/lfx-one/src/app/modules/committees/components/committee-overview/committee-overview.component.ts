@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -15,8 +16,19 @@ import {
   PENDING_ACTION_SEVERITY,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import { Committee, CommitteeMember, CommitteePendingActionRow, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import {
+  ActivityFeedItem,
+  Committee,
+  CommitteeDocument,
+  CommitteeMember,
+  CommitteePendingActionRow,
+  Meeting,
+  PastMeeting,
+  PendingActionItem,
+  Survey,
+  Vote,
+} from '@lfx-one/shared/interfaces';
+import { assertNeverSilent, buildActivityFeed, countVotingReps, getSurveyDisplayStatus, isValidUrl } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -25,15 +37,24 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
+import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 
 @Component({
   selector: 'lfx-committee-overview',
-  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, SkeletonModule, TagComponent, VoteResultsDrawerComponent],
+  imports: [
+    CardComponent,
+    ButtonComponent,
+    DashboardMeetingCardComponent,
+    SkeletonModule,
+    TagComponent,
+    VoteResultsDrawerComponent,
+    SurveyResultsDrawerComponent,
+  ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
   styleUrl: './committee-overview.component.scss',
@@ -49,6 +70,7 @@ export class CommitteeOverviewComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -72,10 +94,16 @@ export class CommitteeOverviewComponent {
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
 
+  // Survey drawer state
+  public surveyDrawerVisible = signal(false);
+  public selectedSurveyId = signal<string | null>(null);
+  public selectedSurvey = signal<Survey | null>(null);
+
   // Loading states for stats
   public meetingsLoading = signal(true);
   public votesLoading = signal(true);
   public surveysLoading = signal(true);
+  public documentsLoading = signal(true);
 
   // Loading states for meeting sections
   public upcomingMeetingsLoading = signal(true);
@@ -108,17 +136,41 @@ export class CommitteeOverviewComponent {
     return orgs.size;
   });
 
+  // Computed: voting representative count from members. Not sourced from
+  // committee().total_voting_repos — upstream (lfx-v2-committee-service) defines that field as
+  // "total repositories with voting permissions" (not people), is optional (upstream only sets it
+  // when > 0), and no production code path currently writes it, so it reads undefined in practice.
+  // This derives the actual per-member voting-rep count instead, via the shared countVotingReps()
+  // util (also used by committee-members.component.ts's votingRepCount).
+  public votingRepsCount: Signal<number> = computed(() => countVotingReps(this.members()));
+
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
   public meetings: Signal<Meeting[]> = this.initMeetings();
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
+  // Documents aren't otherwise loaded on Overview — fetched here solely to seed the activity feed
+  // (which shows at most 5 document rows). Not cheap: getCommitteeDocuments fans out server-side to
+  // /folders, /links, and an unbounded fetchAllQueryResources page-token loop over every
+  // committee_document (committee.service.ts), repeated on every silent refresh and again when the
+  // user opens the Documents tab (no shared cache). Accepted as a stop-gap for this ticket's scope —
+  // lifting the fetch to committee-view.component.ts to share across tabs, or bounding it with a
+  // page_size/order param, is real follow-up work, not a change this branch makes.
+  public documents: Signal<CommitteeDocument[]> = this.initDocuments();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
 
   public openSurveysCount: Signal<number> = computed(() => this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN).length);
+
+  // Activity feed stop-gap: merges the latest items across past meetings, votes, surveys, and
+  // documents into one time-ordered list. Replaced by the real activity stream in LFXV2-1707.
+  public activityFeedLoading: Signal<boolean> = computed(
+    () => this.pastMeetingsLoading() || this.votesLoading() || this.surveysLoading() || this.documentsLoading()
+  );
+
+  public activityItems: Signal<ActivityFeedItem[]> = this.initActivityItems();
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
@@ -271,6 +323,76 @@ export class CommitteeOverviewComponent {
     } else {
       this.tabNavigated.emit('surveys');
     }
+  }
+
+  public handleActivityItemClick(item: ActivityFeedItem): void {
+    const { action } = item;
+    switch (action.kind) {
+      case 'past-meeting': {
+        // Matches the "Past Meeting" card's own link two sections up
+        // (`[detailUrl]="'/meetings/' + meeting.id"`) and its password query param
+        // (`dashboard-meeting-card.component.ts`'s `initMeetingDetailQueryParams`) — a password-gated
+        // committee meeting needs that param carried through, matching the established convention at
+        // `meetings-dashboard.component.ts`'s `onCalendarEventClick`.
+        const meeting = this.pastMeetings().find((m) => m.id === action.meetingId);
+        void this.router.navigate(['/meetings', action.meetingId], meeting?.password ? { queryParams: { password: meeting.password } } : {});
+        break;
+      }
+      case 'vote-drawer': {
+        const vote = this.votes().find((v) => v.uid === action.voteUid);
+        if (vote) {
+          this.selectedVoteId.set(vote.uid);
+          this.selectedVote.set(vote);
+          this.voteDrawerVisible.set(true);
+        }
+        break;
+      }
+      case 'survey-drawer': {
+        const survey = this.surveys().find((s) => s.uid === action.surveyUid);
+        if (survey) {
+          this.selectedSurveyId.set(survey.uid);
+          this.selectedSurvey.set(survey);
+          this.surveyDrawerVisible.set(true);
+        }
+        break;
+      }
+      case 'external-url':
+        // buildActivityFeed only emits this action for urls that pass isValidUrl, but re-check at
+        // this sink rather than trusting that comment-enforced invariant — the union is shared
+        // shape LFXV2-1707's server-fed activity items will also construct.
+        if (isValidUrl(action.url)) {
+          window.open(action.url, '_blank', 'noopener,noreferrer');
+        }
+        break;
+      case 'tab':
+        this.navigateToTab(action.tab);
+        break;
+      default:
+        // assertNeverSilent: this runs inside a DOM click handler, and LFXV2-1707 will feed
+        // server-constructed actions into this same union, so an unrecognized future `kind` (e.g. a
+        // version-skewed client) should no-op rather than throw uncaught from a click. The
+        // compile-time guarantee is unchanged — a new unhandled kind still fails to compile, since
+        // the call below only type-checks if `action` has narrowed to `never`. console.error (not
+        // .warn) matches the level this app already uses elsewhere for genuinely-unexpected state
+        // (e.g. datadog-rum.provider.ts) — not a confirmed guarantee this specific call reaches
+        // Datadog RUM, since RUM here isn't configured to forward console output.
+        console.error('Unhandled activity action kind:', (action as { kind: string }).kind);
+        assertNeverSilent(action);
+    }
+  }
+
+  // Mirrors surveys-dashboard.component.ts's own stub handling (also TODOs there) rather than
+  // silently swallowing the event.
+  public onSurveyDuplicate(surveyId: string): void {
+    // TODO: Implement survey duplication when API is available
+    console.warn('Survey duplication not yet implemented for:', surveyId);
+    this.surveyDrawerVisible.set(false);
+  }
+
+  public onSurveyClose(surveyId: string): void {
+    // TODO: Implement survey close when API is available
+    console.warn('Survey close not yet implemented for:', surveyId);
+    this.surveyDrawerVisible.set(false);
   }
 
   // Chairs edit methods
@@ -506,6 +628,67 @@ export class CommitteeOverviewComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  private initDocuments(): Signal<CommitteeDocument[]> {
+    // Documents only seed the activity feed, which the template never renders for a visitor
+    // (behind !isVisitor()) — skip the fetch rather than issue a GET nothing will display.
+    // Derived from one combined computed (not combineLatest over three separate toObservable()
+    // sources) so committee/myRoleLoading/isVisitor — all recomputed together in the same signal
+    // flush — can't glitch through an inconsistent intermediate tick that fires then immediately
+    // cancels a request. distinctUntilChanged on (uid, roleLoading, visitor) only dedupes a
+    // same-tuple re-emission (e.g. an unrelated field on committee() changing identity without
+    // affecting uid/roleLoading/visitor) — it does NOT suppress a silent refresh: myRoleLoading is
+    // `loading() || committeeRefreshing()` (committee-view.component.ts), so a refresh flips
+    // roleLoading true then false, which — like pastMeetings/votes/surveys, none of which have any
+    // guard here — legitimately cancels and re-issues the documents fetch and flips
+    // activityFeedLoading() back to true for the duration.
+    return toSignal(
+      toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
+        filter(({ committee }) => !!committee?.uid),
+        distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
+        switchMap(({ committee, roleLoading, visitor }) => {
+          if (roleLoading) {
+            // Role still resolving (e.g. mid silent-refresh) — hold both the documents list and
+            // documentsLoading exactly as they are (no signal write here). Safe because the fetch
+            // branch below clears documentsLoading with tap (fires only on emission), not finalize
+            // (also fires on switchMap-driven cancellation) — so cancelling an in-flight fetch to
+            // enter this branch can't have already cleared it out from under us.
+            return EMPTY;
+          }
+          if (visitor) {
+            this.documentsLoading.set(false);
+            return of<CommitteeDocument[]>([]);
+          }
+          this.documentsLoading.set(true);
+          // CommitteeService.getCommitteeDocuments already falls back to of([]) on failure today, so
+          // this catchError is a belt-and-suspenders guard against that coupling changing underneath
+          // this component (e.g. a future interceptor rethrow) — without it, an error here would
+          // propagate past a next-only tap, kill this toSignal source permanently, and pin
+          // activityFeedLoading() on its skeleton for the rest of the session.
+          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(
+            tap(() => this.documentsLoading.set(false)),
+            catchError(() => {
+              this.documentsLoading.set(false);
+              return of<CommitteeDocument[]>([]);
+            })
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  private initActivityItems(): Signal<ActivityFeedItem[]> {
+    return computed(() =>
+      buildActivityFeed({
+        pastMeetings: this.pastMeetings(),
+        votes: this.votes(),
+        surveys: this.surveys(),
+        documents: this.documents(),
+        votingEnabled: !!this.committee().enable_voting,
+      })
     );
   }
 }

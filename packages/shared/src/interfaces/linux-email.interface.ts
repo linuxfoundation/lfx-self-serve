@@ -32,11 +32,12 @@ export interface LinuxAliasData {
   /** Current forwarding destination, or null when not yet set / not readable without re-auth. */
   forwardTo: string | null;
   /**
-   * The user's primary verified email, read server-side from the same
-   * `user_emails.read` this endpoint already makes. Lets the tab default the
-   * forward selection and build forward options without a second client fetch.
-   * Null in `service_unavailable` (emails could not be read) or when the account
-   * has no primary email.
+   * The user's primary email as resolved by auth-service, read server-side from
+   * the same `user_emails.read` this endpoint already makes (falling back to the
+   * session OIDC email when auth-service omits a primary, so it is not guaranteed
+   * verified). Lets the tab default the forward selection and build forward options
+   * without a second client fetch. Null in `service_unavailable` (emails could not
+   * be read) or when the account has no primary email.
    */
   primaryEmail: string | null;
   /** membership-ui CTA URL, present only in the `not_purchased` state. */

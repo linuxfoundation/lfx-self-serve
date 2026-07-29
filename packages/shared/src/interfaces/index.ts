@@ -274,3 +274,6 @@ export * from './create-picker.interface';
 // Org Lens Meetings insights (LFXV2-2735) interfaces
 export * from './org-meetings-insights.interface';
 export * from './org-meetings-insights.internal.interface';
+
+// Group Overview activity feed stop-gap (LFXV2-1716)
+export * from './activity-feed.interface';
