@@ -88,6 +88,33 @@
         <!-- Pending invitations — distinct section above the active groups table; renders nothing when empty -->
         <lfx-committee-invitations (accepted)="reloadMyCommitteesAfterAccept($event)" data-testid="committees-me-invitations" />
 
+        @if (myCommittees().length > 0 || myCommitteesLoading()) {
+          <div class="flex items-center justify-end gap-2" role="group" aria-label="Groups view" data-testid="groups-view-toggle">
+            <lfx-button
+              label="List"
+              icon="fa-light fa-list-ul"
+              size="small"
+              [severity]="isListView() ? 'info' : 'secondary'"
+              [outlined]="!isListView()"
+              ariaLabel="List view"
+              [ariaPressed]="isListView()"
+              (onClick)="setViewMode('list')"
+              data-testid="groups-view-list-btn">
+            </lfx-button>
+            <lfx-button
+              label="Card"
+              icon="fa-light fa-grid-2"
+              size="small"
+              [severity]="isCardView() ? 'info' : 'secondary'"
+              [outlined]="!isCardView()"
+              ariaLabel="Card view"
+              [ariaPressed]="isCardView()"
+              (onClick)="setViewMode('card')"
+              data-testid="groups-view-card-btn">
+            </lfx-button>
+          </div>
+        }
+
         @if (myCommitteesLoading()) {
           <lfx-card styleClass="[&_.p-card-body]:!px-5">
             <div class="flex flex-col gap-4 py-2">
@@ -105,6 +132,24 @@
               }
             </div>
           </lfx-card>
+        } @else if (isCardView()) {
+          @if (myCommittees().length > 0) {
+            <div class="mb-3">
+              <lfx-committee-filter-bar
+                [searchForm]="searchForm"
+                [votingStatusOptions]="votingStatusOptions()"
+                [showFoundationFilter]="showFoundationFilter()"
+                [showProjectFilter]="showProjectFilter()"
+                [foundationOptions]="foundationOptions()"
+                [projectOptions]="projectOptions()"
+                (foundationFilterChange)="onFoundationFilterChange($event)"
+                (projectFilterChange)="onProjectFilterChange($event)">
+              </lfx-committee-filter-bar>
+            </div>
+          }
+
+          <lfx-my-groups-card-grid [committees]="filteredMyCommittees()" [hasItems]="myCommittees().length > 0" (resetRequested)="resetAllFilters()">
+          </lfx-my-groups-card-grid>
         } @else {
           <lfx-committee-table
             [committees]="filteredMyCommittees()"
@@ -153,6 +198,62 @@
                 subtitle="This project has no groups set up yet."
                 data-testid="committees-project-empty-state">
               </lfx-empty-state>
+            } @else if (project()?.uid && showFoundationGrouping()) {
+              <div class="mb-3">
+                <lfx-committee-filter-bar [searchForm]="searchForm" [votingStatusOptions]="votingStatusOptions()"> </lfx-committee-filter-bar>
+              </div>
+
+              @if (foundationGroups().length === 0) {
+                <lfx-committee-table
+                  data-testid="committees-project-table"
+                  [committees]="filteredCommittees()"
+                  [hasItems]="true"
+                  [showFilterBar]="false"
+                  [canManageCommittee]="canWrite()"
+                  [myCommitteeUids]="myCommitteeUids()"
+                  [searchForm]="searchForm"
+                  [votingStatusOptions]="votingStatusOptions()"
+                  (resetRequested)="selectBehavioralClass(null)"
+                  (refresh)="refreshCommittees()"
+                  (rowClick)="onCommitteeClick($event)">
+                </lfx-committee-table>
+              } @else {
+                @for (group of foundationGroups(); track group.key) {
+                  <div class="mb-4" [attr.data-testid]="'groups-foundation-group-' + group.testIdSlug">
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 w-full text-left py-2"
+                      [attr.aria-expanded]="!!groupExpansionMap()[group.key]"
+                      (click)="toggleGroupExpansion(group.key)"
+                      [attr.data-testid]="'groups-foundation-group-' + group.testIdSlug + '-caret'">
+                      <i
+                        class="fa-light"
+                        [class.fa-chevron-down]="!groupExpansionMap()[group.key]"
+                        [class.fa-chevron-up]="groupExpansionMap()[group.key]"
+                        aria-hidden="true">
+                      </i>
+                      <span class="text-base font-semibold text-gray-900">{{ group.label }}</span>
+                      <span class="text-sm text-gray-500">({{ group.committees.length }})</span>
+                    </button>
+                    @if (groupExpansionMap()[group.key]) {
+                      <lfx-committee-table
+                        [attr.data-testid]="'committees-project-table-' + group.testIdSlug"
+                        [tableTestId]="'committee-dashboard-table-' + group.testIdSlug"
+                        [committees]="group.committees"
+                        [hasItems]="true"
+                        [showFilterBar]="false"
+                        [canManageCommittee]="canWrite()"
+                        [myCommitteeUids]="myCommitteeUids()"
+                        [searchForm]="searchForm"
+                        [votingStatusOptions]="votingStatusOptions()"
+                        (resetRequested)="selectBehavioralClass(null)"
+                        (refresh)="refreshCommittees()"
+                        (rowClick)="onCommitteeClick($event)">
+                      </lfx-committee-table>
+                    }
+                  </div>
+                }
+              }
             } @else if (project()?.uid) {
               <lfx-committee-table
                 data-testid="committees-project-table"
