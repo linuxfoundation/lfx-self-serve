@@ -3,13 +3,22 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { CANCELLED_COLOR, MEETING_ORGANIZER_SKIP_IDENTIFIERS, MEETING_TYPE_COLORS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import {
+  CANCELLED_COLOR,
+  MEETING_ORGANIZER_SKIP_IDENTIFIERS,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  RECURRENCE_DAYS_OF_WEEK,
+  RECURRENCE_WEEKLY_ORDINALS,
+} from '../constants';
 import { RecurrenceType } from '../enums';
 import {
+  BuildMeetingOccurrenceRouteOptions,
   CustomRecurrencePattern,
   Meeting,
   MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOccurrenceRoute,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
@@ -462,17 +471,6 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   return now > endTime;
 }
 
-/** Angular router target for navigating to a specific meeting occurrence. */
-export interface MeetingOccurrenceRoute {
-  path: string[];
-  queryParams?: Record<string, string>;
-}
-
-/** Options when building a meeting occurrence route. */
-export interface BuildMeetingOccurrenceRouteOptions {
-  password?: string;
-}
-
 /**
  * Returns true when an occurrence is cancelled, honouring both per-occurrence status and the
  * list endpoint's `cancelled_occurrences` IDs (see {@link getActiveOccurrences}).
@@ -487,14 +485,20 @@ export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, canc
 
 /**
  * Resolves FullCalendar hex colors for a meeting occurrence.
- * Active meetings use the default blue; cancelled occurrences use cancelled grey.
+ * Active meetings use the default blue; past use a lighter blue; cancelled use cancelled grey.
  */
-export function resolveMeetingCalendarColors(isCancelled: boolean): { bg: string; border: string } {
+export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): { bg: string; border: string } {
   if (isCancelled) {
     return CANCELLED_COLOR;
   }
+  if (isPast) {
+    return PAST_MEETING_CALENDAR_COLOR;
+  }
   return MEETING_TYPE_COLORS['default'];
 }
+
+/** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */
+const PAST_MEETING_COMPOSITE_ID = /^\d+-\d{13}$/;
 
 /**
  * Builds an Angular router command for a specific meeting occurrence, mirroring the join page URL
@@ -506,14 +510,22 @@ export function buildMeetingOccurrenceRoute(
   durationMinutes: number,
   options?: BuildMeetingOccurrenceRouteOptions
 ): MeetingOccurrenceRoute {
-  const timestamp = new Date(startTime).getTime();
-  const occurrence = { start_time: startTime, duration: durationMinutes } as MeetingOccurrence;
-  const isPast = hasMeetingEnded({ duration: durationMinutes } as Meeting, occurrence);
   const queryParams: Record<string, string> = {};
-
   if (options?.password) {
     queryParams['password'] = options.password;
   }
+
+  const pastResourceId = options?.pastMeetingResourceId ?? (PAST_MEETING_COMPOSITE_ID.test(meetingId) ? meetingId : undefined);
+  if (pastResourceId) {
+    return {
+      path: ['/meetings', pastResourceId],
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    };
+  }
+
+  const timestamp = new Date(startTime).getTime();
+  const occurrence = { start_time: startTime, duration: durationMinutes } as MeetingOccurrence;
+  const isPast = hasMeetingEnded({ duration: durationMinutes } as Meeting, occurrence);
 
   if (isPast) {
     return {

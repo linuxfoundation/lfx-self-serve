@@ -18,8 +18,11 @@ import {
   addMinutesToDate,
   buildMeetingOccurrenceRoute,
   getCurrentOrNextOccurrence,
+  getPastMeetingResourceId,
+  getPastMeetingStartTimeMs,
   hasMeetingEnded,
   isMeetingOccurrenceCancelled,
+  isPastMeetingCalendarRow,
   resolveMeetingCalendarColors,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
@@ -176,6 +179,7 @@ export class CommitteeMeetingsComponent {
       password?: string;
       startTime?: string;
       durationMinutes?: number;
+      pastMeetingResourceId?: string;
     };
     if (props.cancelled || props.type !== 'meeting' || !props.meetingId) {
       return;
@@ -187,12 +191,10 @@ export class CommitteeMeetingsComponent {
       return;
     }
 
-    const route = buildMeetingOccurrenceRoute(
-      props.meetingId,
-      startTime,
-      props.durationMinutes ?? 60,
-      props.password ? { password: props.password } : undefined
-    );
+    const route = buildMeetingOccurrenceRoute(props.meetingId, startTime, props.durationMinutes ?? 60, {
+      password: props.password,
+      pastMeetingResourceId: props.pastMeetingResourceId,
+    });
     void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
@@ -316,15 +318,13 @@ export class CommitteeMeetingsComponent {
     // Recurring meetings — expand each occurrence as a separate calendar event
     if (meeting.occurrences && meeting.occurrences.length > 0) {
       return meeting.occurrences.map((occ) => {
+        const occurrenceDuration = occ.duration ?? meeting.duration;
         const isCancelled = isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences);
-        const isPast = !isCancelled && hasMeetingEnded(meeting, occ);
-        const colors = resolveMeetingCalendarColors(isCancelled);
+        const isPast = !isCancelled && hasMeetingEnded(meeting, { ...occ, duration: occurrenceDuration });
+        const colors = resolveMeetingCalendarColors(isCancelled, isPast);
         const classNames = ['meeting-event'];
         if (isCancelled) {
           classNames.push('cursor-default');
-        }
-        if (isPast) {
-          classNames.push('meeting-event-past');
         }
         return {
           id: `${meeting.id}-${occ.occurrence_id}`,
@@ -348,30 +348,31 @@ export class CommitteeMeetingsComponent {
       });
     }
 
-    const isPast = hasMeetingEnded(meeting);
-    const colors = resolveMeetingCalendarColors(false);
-    const classNames = ['meeting-event'];
-    if (isPast) {
-      classNames.push('meeting-event-past');
-    }
+    const pastRow = isPastMeetingCalendarRow(meeting);
+    const startTimeMs = pastRow ? getPastMeetingStartTimeMs(meeting) : null;
+    const startTime = startTimeMs !== null ? new Date(startTimeMs).toISOString() : meeting.start_time;
+    const isPast = pastRow || hasMeetingEnded(meeting);
+    const colors = resolveMeetingCalendarColors(false, isPast);
+    const pastResourceId = pastRow ? getPastMeetingResourceId(meeting) : undefined;
 
     // Non-recurring — single event
     return [
       {
-        id: meeting.id,
+        id: pastResourceId ?? meeting.id,
         title: meeting.title,
-        start: meeting.start_time,
-        end: addMinutesToDate(meeting.start_time, meeting.duration).toISOString(),
+        start: startTime,
+        end: addMinutesToDate(startTime, meeting.duration).toISOString(),
         backgroundColor: colors.bg,
         borderColor: colors.border,
         textColor: '#ffffff',
         display: 'block',
-        classNames,
+        classNames: ['meeting-event'],
         extendedProps: {
           type: 'meeting',
-          meetingId: meeting.id,
+          meetingId: pastResourceId ?? meeting.id,
+          pastMeetingResourceId: pastResourceId,
           password: meeting.password,
-          startTime: meeting.start_time,
+          startTime,
           durationMinutes: meeting.duration,
         },
       },

@@ -89,10 +89,6 @@
           .fc-event-time {
             @apply font-semibold mr-1 block mb-0.5 text-[11px] text-white;
           }
-
-          &.meeting-event-past:not(.cursor-default) {
-            opacity: 0.55;
-          }
         }
       }
     }

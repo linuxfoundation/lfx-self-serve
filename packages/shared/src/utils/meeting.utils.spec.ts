@@ -6,12 +6,14 @@
 // compiler first provides that facade so the module can be imported.
 import '@angular/compiler';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RecurrenceType } from '../enums';
+import { CANCELLED_COLOR, MEETING_TYPE_COLORS, PAST_MEETING_CALENDAR_COLOR } from '../constants';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildMeetingOccurrenceRoute,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
   buildRecurrenceNeverEndDate,
@@ -24,6 +26,7 @@ import {
   isUnresolvableParticipantName,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
+  resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
   selectCommitteeCadenceMeeting,
@@ -790,5 +793,94 @@ describe('selectPrimaryPastMeetingSummary', () => {
     ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
+});
+
+describe('resolveMeetingCalendarColors', () => {
+  it('returns default blue for active meetings', () => {
+    expect(resolveMeetingCalendarColors(false)).toEqual(MEETING_TYPE_COLORS['default']);
+  });
+
+  it('returns lighter blue for past meetings', () => {
+    expect(resolveMeetingCalendarColors(false, true)).toEqual(PAST_MEETING_CALENDAR_COLOR);
+  });
+
+  it('returns cancelled grey regardless of past flag', () => {
+    expect(resolveMeetingCalendarColors(true, true)).toEqual(CANCELLED_COLOR);
+  });
+});
+
+describe('buildMeetingOccurrenceRoute', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('routes upcoming occurrences with ?occurrence=', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-15T15:00:00Z', 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841'],
+      queryParams: { occurrence: new Date('2026-07-15T15:00:00Z').getTime().toString() },
+    });
+  });
+
+  it('routes ended occurrences to the composite past URL', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-01T12:00:00Z'));
+
+    const start = '2026-07-01T15:00:00Z';
+    const route = buildMeetingOccurrenceRoute('99152950841', start, 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', `99152950841-${new Date(start).getTime()}`],
+      queryParams: undefined,
+    });
+  });
+
+  it('treats the meeting as upcoming inside the 40-minute post-end buffer', () => {
+    vi.useFakeTimers();
+    const start = '2026-07-01T15:00:00Z';
+    vi.setSystemTime(new Date(new Date(start).getTime() + 60 * 60_000 + 30 * 60_000));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', start, 60);
+
+    expect(route.path).toEqual(['/meetings', '99152950841']);
+    expect(route.queryParams?.['occurrence']).toBe(new Date(start).getTime().toString());
+  });
+
+  it('preserves password query params', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-15T15:00:00Z', 60, { password: 'secret' });
+
+    expect(route.queryParams).toEqual({
+      password: 'secret',
+      occurrence: new Date('2026-07-15T15:00:00Z').getTime().toString(),
+    });
+  });
+
+  it('uses the canonical past-meeting resource id without double-encoding', () => {
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-01T15:00:00Z', 60, {
+      pastMeetingResourceId: '99152950841-1630560600000',
+      password: 'secret',
+    });
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841-1630560600000'],
+      queryParams: { password: 'secret' },
+    });
+  });
+
+  it('detects an already-composite meeting id', () => {
+    const route = buildMeetingOccurrenceRoute('99152950841-1630560600000', '2026-07-01T15:00:00Z', 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841-1630560600000'],
+      queryParams: undefined,
+    });
   });
 });

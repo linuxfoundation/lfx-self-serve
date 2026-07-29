@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EnrichedPastMeetingParticipant, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
+import { EnrichedPastMeetingParticipant, Meeting, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
 import { firstValidTimestampMs } from './iso-timestamp.utils';
 
 // Zoom/ITX rows sometimes carry a Go zero-date on scheduled_start_time; fall back to start_time.
@@ -23,6 +23,11 @@ export function getLargestSessionShareUrl(recording: PastMeetingRecording | null
 // still expose a distinct id while Me-lens rows normalize id to the composite value.
 export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meeting_and_occurrence_id'>): string {
   return meeting.meeting_and_occurrence_id ?? meeting.id;
+}
+
+/** Past-meeting list rows carry scheduled_start_time; live Meeting rows do not. */
+export function isPastMeetingCalendarRow(meeting: Meeting | PastMeeting): meeting is PastMeeting {
+  return typeof (meeting as PastMeeting).scheduled_start_time === 'string';
 }
 
 /**
