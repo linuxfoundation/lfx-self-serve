@@ -449,32 +449,32 @@ export class MeetingRegistrantsDisplayComponent {
           attendanceStatus: getRegistrantAttendanceStatus(registrant),
         }))
         .filter((registrant) => {
-        // Search filter
-        const matchesSearch =
-          !query ||
-          registrant.first_name?.toLowerCase().includes(query) ||
-          registrant.last_name?.toLowerCase().includes(query) ||
-          registrant.email?.toLowerCase().includes(query) ||
-          registrant.org_name?.toLowerCase().includes(query);
+          // Search filter
+          const matchesSearch =
+            !query ||
+            registrant.first_name?.toLowerCase().includes(query) ||
+            registrant.last_name?.toLowerCase().includes(query) ||
+            registrant.email?.toLowerCase().includes(query) ||
+            registrant.org_name?.toLowerCase().includes(query);
 
-        // RSVP filter — must match chip rendering via attendanceStatus
-        let matchesRsvp = true;
-        if (rsvp !== 'all') {
-          const status = registrant.attendanceStatus;
-          if (rsvp === 'yes') {
-            matchesRsvp = status === 'accepted';
-          } else if (rsvp === 'no') {
-            matchesRsvp = status === 'declined';
-          } else if (rsvp === 'pending') {
-            matchesRsvp = status === 'pending' || status === 'maybe';
+          // RSVP filter — must match chip rendering via attendanceStatus
+          let matchesRsvp = true;
+          if (rsvp !== 'all') {
+            const status = registrant.attendanceStatus;
+            if (rsvp === 'yes') {
+              matchesRsvp = status === 'accepted';
+            } else if (rsvp === 'no') {
+              matchesRsvp = status === 'declined';
+            } else if (rsvp === 'pending') {
+              matchesRsvp = status === 'pending' || status === 'maybe';
+            }
           }
-        }
 
-        // Group (Committee) filter
-        const matchesGroup = group === 'all' || registrant.committee_uid === group;
+          // Group (Committee) filter
+          const matchesGroup = group === 'all' || registrant.committee_uid === group;
 
-        return matchesSearch && matchesRsvp && matchesGroup;
-      });
+          return matchesSearch && matchesRsvp && matchesGroup;
+        });
     });
   }
 
