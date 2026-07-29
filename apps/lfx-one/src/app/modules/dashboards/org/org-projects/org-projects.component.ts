@@ -588,18 +588,20 @@ export class OrgProjectsComponent {
     // Flip loading synchronously (ahead of the 300ms debounce) when a search will actually run, so the panel
     // shows "Searching…" rather than PrimeNG's instantly-emptied list flashing a false "No projects match".
     const trimmed = query.trim();
-    if (this.accountContext.selectedAccount()?.uid && !(trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH)) {
-      this.addProjectsSearchLoading.set(true);
-    }
+    const shouldSearch = !!this.accountContext.selectedAccount()?.uid && !(trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH);
+    this.addProjectsSearchLoading.set(shouldSearch);
     this.searchAddableProjects(query);
   }
 
   protected searchAddableProjects(query: string): void {
+    // Advance the request token now (not after the debounce) so any in-flight response is immediately stale
+    // and cannot repopulate options or clear the loading flag late, re-flashing the false empty state.
+    const requestId = ++this.addableProjectsSearchRequestId;
     if (this.addableProjectsSearchDebounceTimer) {
       clearTimeout(this.addableProjectsSearchDebounceTimer);
     }
     this.addableProjectsSearchDebounceTimer = setTimeout(() => {
-      void this.runAddableProjectsSearch(query);
+      void this.runAddableProjectsSearch(query, requestId);
     }, 300);
   }
 
@@ -620,10 +622,9 @@ export class OrgProjectsComponent {
     return `${sign}${body}%`;
   }
 
-  private async runAddableProjectsSearch(query: string): Promise<void> {
+  private async runAddableProjectsSearch(query: string, requestId = ++this.addableProjectsSearchRequestId): Promise<void> {
     const account = this.accountContext.selectedAccount();
     const trimmed = query.trim();
-    const requestId = ++this.addableProjectsSearchRequestId;
     if (!account?.uid || (trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH)) {
       this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(false);
@@ -961,6 +962,12 @@ export class OrgProjectsComponent {
         return availability;
       }
     }
+    if (field === 'technicalInfluence' || field === 'ecosystemInfluence') {
+      const availability = this.compareInfluenceAvailability(a, b);
+      if (availability !== 0) {
+        return availability;
+      }
+    }
     const primary = this.compareByField(a, b, field);
     const directed = dir === 'asc' ? primary : -primary;
     if (directed !== 0) {
@@ -994,6 +1001,17 @@ export class OrgProjectsComponent {
 
   private normalizeHealth(health: HealthScore): HealthScore {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
+  }
+
+  // No-activity rows have no measured influence (bands shown as "Unavailable"); keep them after measured
+  // rows regardless of sort direction, mirroring how health availability sinks unavailable rows.
+  private compareInfluenceAvailability(a: OrgLensProject, b: OrgLensProject): number {
+    const aUnavailable = a.noActivityYet ?? false;
+    const bUnavailable = b.noActivityYet ?? false;
+    if (aUnavailable === bUnavailable) {
+      return 0;
+    }
+    return aUnavailable ? 1 : -1;
   }
 
   private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
