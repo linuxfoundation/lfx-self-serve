@@ -28,3 +28,30 @@ export function computePeriodChange(
   }
   return { trend, changePercentage };
 }
+
+/**
+ * Structured period-over-period delta for drawer header rendering — returns the
+ * direction plus an absolute-value percentage label so the template can render
+ * the ▲/▼ arrow and sr-only text separately (matching the Active Contributors
+ * drawer). Returns null when there is no prior period or the prior value is 0.
+ */
+export function computePeriodDelta(
+  values: number[],
+  periodLabel = 'vs last month'
+): { direction: 'up' | 'down' | 'neutral'; deltaLabel: string; periodLabel: string } | null {
+  if (values.length < 2) return null;
+  const latest = values[values.length - 1];
+  const prior = values[values.length - 2];
+  if (prior === 0) return null;
+  const deltaPercent = ((latest - prior) / prior) * 100;
+  let rounded = Number(deltaPercent.toFixed(1));
+  if (Object.is(rounded, -0)) rounded = 0;
+  let direction: 'up' | 'down' | 'neutral' = 'neutral';
+  if (rounded > 0) direction = 'up';
+  else if (rounded < 0) direction = 'down';
+  return {
+    direction,
+    deltaLabel: Math.abs(rounded).toFixed(1),
+    periodLabel,
+  };
+}

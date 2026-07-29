@@ -6,6 +6,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_TOTAL_MEMBERS, lfxColors } from '@lfx-one/shared/constants';
+import { computePeriodDelta } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -37,6 +38,8 @@ export class TotalMembersDrawerComponent {
 
   // === Computed Signals ===
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
+  protected readonly metricValue: Signal<string> = computed(() => this.data().totalMembers.toLocaleString());
+  protected readonly delta = computed(() => computePeriodDelta(this.data().monthlyData));
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
   protected readonly chartOptions: ChartOptions<'bar'> = {

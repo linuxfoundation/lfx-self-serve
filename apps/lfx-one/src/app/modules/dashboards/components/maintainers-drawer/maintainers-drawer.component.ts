@@ -13,7 +13,7 @@ import {
   DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY,
   lfxColors,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, hexToRgba } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl, computePeriodDelta, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -150,6 +150,7 @@ export class MaintainersDrawerComponent {
   );
 
   protected readonly metricValue: Signal<string> = computed(() => this.data().currentMaintainers.toLocaleString());
+  protected readonly delta = computed(() => computePeriodDelta(this.monthlyData().monthlyData));
   protected readonly hasData: Signal<boolean> = computed(() => this.data().asOfDate !== null);
 
   private readonly drawerData = this.initDrawerData();

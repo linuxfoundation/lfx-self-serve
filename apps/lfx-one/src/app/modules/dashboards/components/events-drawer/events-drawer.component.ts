@@ -7,6 +7,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION, DEFAULT_FOUNDATION_EVENTS_QUARTERLY, lfxColors } from '@lfx-one/shared/constants';
+import { computePeriodDelta } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -142,6 +143,7 @@ export class EventsDrawerComponent {
   protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.data().quarterlyData.length > 0);
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
   protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.data().quarterlyData, 'vs last quarter'));
 
   protected readonly quarterlyChartData: Signal<ChartData<'bar'>> = this.initQuarterlyChartData();
   protected readonly attendanceChartData: Signal<ChartData<'bar'>> = this.initAttendanceChartData();
