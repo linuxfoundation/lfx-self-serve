@@ -88,11 +88,12 @@ export class CommitteeEngagementService {
       if (email) rowsByEmail.set(email, row);
     }
 
-    // Counted over deduped rows, not roster members: a grain mismatch in the warehouse model would
-    // show up across every row it emits, including rows for members no longer on the roster — a
-    // member-scoped count would miss exactly that case, which is the normal one (see the
-    // join-mismatch warning below; unmatched rows are an expected, not exceptional, state).
-    const clampedRowCount = [...rowsByEmail.values()].filter((row) => this.toCount(row.ATTENDED_COUNT) > this.toCount(row.INVITED_COUNT)).length;
+    // Named "over-attended", not "clamped": this counts every deduped row where ATTENDED_COUNT
+    // exceeds INVITED_COUNT, including rows with no roster match — those are dropped entirely in
+    // the map below, never actually clamped. Counted over rows, not roster members, so a grain
+    // mismatch affecting only former-member rows (the normal case, not an edge case — see the
+    // join-mismatch warning below) isn't invisible.
+    const overAttendedRowCount = [...rowsByEmail.values()].filter((row) => this.toCount(row.ATTENDED_COUNT) > this.toCount(row.INVITED_COUNT)).length;
 
     // Computed independently of the roster join below (a warehouse row with no roster match, or
     // an empty roster, must still surface the model's freshness timestamp) and as the latest of
@@ -115,8 +116,8 @@ export class CommitteeEngagementService {
       const invited = this.toCount(row?.INVITED_COUNT);
       // Clamped to `invited`: nothing upstream guarantees ATTENDED_COUNT <= INVITED_COUNT, and an
       // unclamped value here would produce a >100% rate and a response where `attended` exceeds
-      // `invited` for the same member. The clamp itself is logged once per request via
-      // `clampedRowCount` above, not per member.
+      // `invited` for the same member. Detection is logged once per request via
+      // `overAttendedRowCount` above, not per member.
       const attended = Math.min(this.toCount(row?.ATTENDED_COUNT), invited);
       totalAttended += attended;
       totalInvited += invited;
@@ -136,20 +137,17 @@ export class CommitteeEngagementService {
       });
     }
 
-    if (clampedRowCount > 0) {
-      // Worded as detection, not mutation: a clamped row with no roster match is dropped entirely
-      // (it never reaches `members.map`), so "clamped" would overstate what happened to it — only
-      // rows that also joined to a member had their `attended` value actually adjusted.
+    if (overAttendedRowCount > 0) {
       logger.warning(
         req,
         'get_committee_engagement',
         'Warehouse rows had ATTENDED_COUNT greater than INVITED_COUNT; clamped to invited where joined to the roster',
         {
           committee_uid: committeeUid,
-          clamped_count: clampedRowCount,
-          // Deduped by email, like clamped_count, so the two counts describe the same population —
-          // the join-mismatch warning above intentionally uses the raw `rows.length` instead, since
-          // it's asking a different question ("did anything match at all").
+          over_attended_row_count: overAttendedRowCount,
+          // Deduped by email, like over_attended_row_count, so the two counts describe the same
+          // population — the join-mismatch warning above intentionally uses the raw `rows.length`
+          // instead, since it's asking a different question ("did anything match at all").
           deduped_row_count: rowsByEmail.size,
         }
       );
