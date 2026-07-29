@@ -40,9 +40,9 @@ export class MultiSelectComponent {
   /** Show a spinner on the trigger while an async (e.g. server-side) option load is in flight. */
   public readonly loading = input<boolean>(false);
   /** Message shown INSIDE the panel when there are no options and no active filter — kept in-panel so the body-appended overlay never floats over it. */
-  public readonly emptyMessage = input<string | undefined>(undefined);
+  public readonly emptyMessage = input<string>('No results found');
   /** Message rendered INSIDE the panel when the active filter matches no options. */
-  public readonly emptyFilterMessage = input<string | undefined>(undefined);
+  public readonly emptyFilterMessage = input<string>('No results found');
   /**
    * Pin the body-appended overlay panel to the trigger's width. PrimeNG 20 doesn't size a body-appended MultiSelect
    * overlay to its trigger (long labels/CSS floors mis-size it), so when true it's measured against the trigger and matched on each open.
