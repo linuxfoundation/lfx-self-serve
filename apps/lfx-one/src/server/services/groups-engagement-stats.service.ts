@@ -24,7 +24,9 @@ function isGroupsEngagementStats(value: unknown): boolean {
  * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's visible
  * set only — mine semantics, no scope param (LFXV2-1711). Backed by the same dbt engagement model as
  * LFXV2-1705, which isn't readable yet, so both stats are mocked behind `ENGAGEMENT_BACKEND` until
- * that read path exists.
+ * that read path exists. Defaults to `live` (null fields, never fabricated numbers) unless
+ * `ENGAGEMENT_BACKEND=mock` is explicitly set — an unconfigured environment (including a production
+ * deploy that forgot to set the var) must fail to "no data," never to invented-looking data.
  */
 export class GroupsEngagementStatsService {
   /**
@@ -46,7 +48,7 @@ export class GroupsEngagementStatsService {
   }
 
   private async computeEngagementStats(req: Request, username: string): Promise<GroupsEngagementStats> {
-    const backend = process.env['ENGAGEMENT_BACKEND'] === 'live' ? 'live' : 'mock';
+    const backend = process.env['ENGAGEMENT_BACKEND'] === 'mock' ? 'mock' : 'live';
     const computedAt = new Date().toISOString();
 
     if (backend === 'live') {

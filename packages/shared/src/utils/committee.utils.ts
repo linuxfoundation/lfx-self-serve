@@ -8,6 +8,7 @@ import { CommitteeMember } from '../interfaces/member.interface';
 import { BadgeSeverity } from '../interfaces/components.interface';
 import { StatCardItem } from '../interfaces/stat-card.interface';
 import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
+import { formatRelativeTime } from './date-time.utils';
 import { slugify } from './string.utils';
 
 /**
@@ -368,37 +369,14 @@ export function buildEngagementStatCards(stats: GroupsEngagementStats | null, lo
     return [activeMembersCard, meetingsThisMonthCard];
   }
 
-  if (!stats || stats.active_members === null || stats.meetings_this_month === null) {
-    return [
-      { ...activeMembersCard, subLine: 'Unavailable' },
-      { ...meetingsThisMonthCard, subLine: 'Unavailable' },
-    ];
-  }
+  const freshness = stats ? `Updated ${formatRelativeTime(new Date(stats.computed_at))}` : undefined;
 
-  const freshness = formatEngagementFreshness(stats.computed_at);
-  return [
-    { ...activeMembersCard, value: stats.active_members, subLine: `Updated ${freshness}` },
-    { ...meetingsThisMonthCard, value: stats.meetings_this_month, subLine: `Updated ${freshness}` },
-  ];
-}
+  // Each card degrades independently: active_members and meetings_this_month are separate
+  // aggregates (trailing-30-day attendance vs. current-month occurrences), so a partially-deployed
+  // dbt model could plausibly resolve one without the other — neither field's availability implies
+  // the other's.
+  const resolveCard = (base: StatCardItem, value: number | null): StatCardItem =>
+    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine: freshness };
 
-/**
- * Minimal relative-time label ("just now", "5 min ago", "2 hr ago", "3 days ago") for the
- * engagement stat cards' freshness sub-line. Deliberately self-contained rather than reusing
- * `formatRelativeTime` from `date-time.utils.ts`: that file imports the `../constants` barrel,
- * which transitively pulls in `colors.constants.ts` → `@linuxfoundation/lfx-ui-core`, a package
- * that needs the Angular JIT compiler — harmless inside the Angular app, but it crashes this
- * package's plain-Node Vitest run (no `@angular/compiler` loaded) the moment anything in this
- * file's import graph reaches it.
- */
-function formatEngagementFreshness(isoTimestamp: string): string {
-  const diffMs = Date.now() - new Date(isoTimestamp).getTime();
-  if (!Number.isFinite(diffMs)) return 'recently';
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin} min ago`;
-  const diffHr = Math.floor(diffMs / 3_600_000);
-  if (diffHr < 24) return `${diffHr} hr ago`;
-  const diffDay = Math.floor(diffMs / 86_400_000);
-  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+  return [resolveCard(activeMembersCard, stats?.active_members ?? null), resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null)];
 }

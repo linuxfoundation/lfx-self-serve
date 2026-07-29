@@ -445,4 +445,12 @@ describe('buildEngagementStatCards', () => {
       expect(card.subLine).toBe('Unavailable');
     });
   });
+
+  it('degrades each card independently — one null field does not blank the other', () => {
+    const partial: GroupsEngagementStats = { active_members: 9, meetings_this_month: null, computed_at: new Date().toISOString() };
+    const cards = buildEngagementStatCards(partial, false);
+    expect(cards[0]).toMatchObject({ label: 'Active Members', value: 9 });
+    expect(cards[0].subLine).toMatch(/^Updated /);
+    expect(cards[1]).toMatchObject({ label: 'Meetings This Month', value: '—', subLine: 'Unavailable' });
+  });
 });

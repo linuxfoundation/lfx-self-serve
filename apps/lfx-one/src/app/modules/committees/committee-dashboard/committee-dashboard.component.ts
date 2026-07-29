@@ -18,6 +18,7 @@ import {
   GroupsViewMode,
   MyCommittee,
   ProjectContext,
+  StatCardGridColumns,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { buildEngagementStatCards, getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
@@ -150,7 +151,8 @@ export class CommitteeDashboardComponent {
   // Stat card arrays for the shared <lfx-stat-card-grid> component
   public foundationStatCards: Signal<StatCardItem[]>;
   public myStatCards: Signal<StatCardItem[]>;
-  public readonly statCardColumns: Signal<2 | 3 | 4 | 5> = computed(() => (this.isEngagementMetricsEnabled() ? 5 : 3));
+  /** Me-lens stat grid only — the engagement cards (Foundation/Project lens stays a fixed 3). */
+  public readonly myStatCardColumns: Signal<StatCardGridColumns> = computed(() => (this.isEngagementMetricsEnabled() ? 5 : 3));
 
   // Engagement rollup (LFXV2-1711) — flag-gated, mocked pending the LFXV2-1705 dbt model
   public engagementStats: Signal<GroupsEngagementStats | null>;
@@ -199,12 +201,15 @@ export class CommitteeDashboardComponent {
     // block the group-count cards or the groups list below (independent HTTP call).
     this.engagementStats = this.initializeEngagementStats();
 
-    // Stat card arrays consumed by <lfx-stat-card-grid>
+    // Stat card arrays consumed by <lfx-stat-card-grid>. The engagement cards are Me-lens only:
+    // GroupsEngagementStatsService is explicitly "mine semantics, no scope param" (caller-wide, not
+    // project/foundation-scoped), so surfacing it in the Foundation/Project lens row — which is
+    // otherwise entirely scoped to the active project — would misrepresent an all-groups personal
+    // number as if it belonged to the foundation/project being viewed.
     this.foundationStatCards = computed<StatCardItem[]>(() => [
       { value: this.totalCommittees(), label: 'Total Groups', icon: 'fa-light fa-users-rectangle', iconContainerClass: 'bg-gray-200 text-gray-500' },
       { value: this.publicCommittees(), label: 'Public Groups', icon: 'fa-light fa-globe', iconContainerClass: 'bg-blue-100 text-blue-600' },
       { value: this.activeVoting(), label: 'Voting Enabled Groups', icon: 'fa-light fa-check-to-slot', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
-      ...(this.isEngagementMetricsEnabled() ? buildEngagementStatCards(this.engagementStats(), this.engagementStatsLoading()) : []),
     ]);
     this.myStatCards = computed<StatCardItem[]>(() => [
       { value: this.myTotalGroups(), label: 'Total Groups', icon: 'fa-light fa-users-rectangle', iconContainerClass: 'bg-gray-200 text-gray-500' },
@@ -429,10 +434,10 @@ export class CommitteeDashboardComponent {
 
   /**
    * Fetches the engagement rollup once the flag first turns on (browser-only, one-shot — mirrors
-   * the `loadPendingInvitations()` gate above). A fetch failure resolves to `null` rather than
-   * propagating: `buildEngagementStatCards` renders the degraded "Unavailable" state, and the
-   * always-on group-count cards / groups list below are on entirely separate HTTP calls, so a
-   * stats failure here never blocks them.
+   * the `loadPendingInvitations()` gate above). `CommitteeService.getGroupsEngagementStats()` is the
+   * single error-handling site (logs, resolves to `null`) — `buildEngagementStatCards` renders the
+   * degraded "Unavailable" state on a `null`, and the always-on group-count cards / groups list below
+   * are on entirely separate HTTP calls, so a stats failure here never blocks them.
    */
   private initializeEngagementStats(): Signal<GroupsEngagementStats | null> {
     if (isPlatformBrowser(this.platformId)) {
@@ -440,12 +445,7 @@ export class CommitteeDashboardComponent {
         .pipe(
           filter((enabled) => enabled),
           take(1),
-          switchMap(() =>
-            this.committeeService.getGroupsEngagementStats().pipe(
-              catchError(() => of(null)),
-              finalize(() => this.engagementStatsLoading.set(false))
-            )
-          ),
+          switchMap(() => this.committeeService.getGroupsEngagementStats().pipe(finalize(() => this.engagementStatsLoading.set(false)))),
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe((stats) => this.engagementStatsSignal.set(stats));

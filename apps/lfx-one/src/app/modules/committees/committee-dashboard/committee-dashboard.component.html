@@ -42,16 +42,12 @@
 
       <!-- Summary Stat Cards (Foundation/Project lens) -->
       @if (!isMeLens()) {
-        <lfx-stat-card-grid
-          [cards]="foundationStatCards()"
-          [loading]="committeesLoading()"
-          [columns]="statCardColumns()"
-          data-testid="committees-foundation-stats" />
+        <lfx-stat-card-grid [cards]="foundationStatCards()" [loading]="committeesLoading()" data-testid="committees-foundation-stats" />
       }
 
       <!-- Summary Stat Cards (Me lens only) -->
       @if (isMeLens()) {
-        <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myCommitteesLoading()" [columns]="statCardColumns()" data-testid="committees-me-stats" />
+        <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myCommitteesLoading()" [columns]="myStatCardColumns()" data-testid="committees-me-stats" />
       }
 
       @let totalForChips = isMeLens() ? myCommittees().length : committees().length;

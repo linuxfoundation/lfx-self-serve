@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { StatCardGridColumns } from '../interfaces/stat-card.interface';
+
 /** Tailwind grid-column classes for `lfx-stat-card-grid`, keyed by its `columns` input. */
-export const GRID_COLS_CLASS: Record<2 | 3 | 4 | 5, string> = {
+export const GRID_COLS_CLASS: Record<StatCardGridColumns, string> = {
   2: 'sm:grid-cols-2',
   3: 'sm:grid-cols-3',
   4: 'sm:grid-cols-2 lg:grid-cols-4',
@@ -18,7 +20,7 @@ export const GRID_COLS_CLASS: Record<2 | 3 | 4 | 5, string> = {
  * the two cards within each row; both are cleared again at `lg`, where `divide-x` takes over
  * for the single-row 4-column layout.
  */
-export const GRID_DIVIDER_CLASS: Record<2 | 3 | 4 | 5, string> = {
+export const GRID_DIVIDER_CLASS: Record<StatCardGridColumns, string> = {
   2: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   3: 'divide-y divide-gray-200 sm:divide-y-0 sm:divide-x',
   // The `!` (important) modifiers are required: Tailwind's `divide-y-0` reset compiles to

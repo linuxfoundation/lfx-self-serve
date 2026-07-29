@@ -5,20 +5,28 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { getEffectiveUsernameMock, withUserCacheMock, cacheStore } = vi.hoisted(() => {
+const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls } = vi.hoisted(() => {
   const store = new Map<string, unknown>();
+  const calls = { count: 0 };
   return {
     getEffectiveUsernameMock: vi.fn<() => string | null>(),
     // Simulates the real read-through cache well enough to test this service's cache-key plumbing
-    // (same key → fetcher runs once) without depending on valkey.service's Redis-backed internals.
-    withUserCacheMock: vi.fn(async (namespace: string, username: string, _ttlSeconds: number, fetcher: () => Promise<unknown>) => {
-      const key = `${namespace}:${username}`;
-      if (store.has(key)) return store.get(key);
-      const value = await fetcher();
-      store.set(key, value);
-      return value;
-    }),
+    // (same key → fetcher runs once, and a stored value must pass `accept`) without depending on
+    // valkey.service's Redis-backed internals. Counts actual fetcher invocations (not just
+    // withUserCache calls, which happen on every read) so cache-hit behavior is verified through the
+    // public surface instead of spying on a private method.
+    withUserCacheMock: vi.fn(
+      async (namespace: string, username: string, _ttlSeconds: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+        const key = `${namespace}:${username}`;
+        if (store.has(key) && (!accept || accept(store.get(key)))) return store.get(key);
+        calls.count += 1;
+        const value = await fetcher();
+        store.set(key, value);
+        return value;
+      }
+    ),
     cacheStore: store,
+    fetcherCalls: calls,
   };
 });
 
@@ -51,9 +59,12 @@ describe('GroupsEngagementStatsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cacheStore.clear();
+    fetcherCalls.count = 0;
     service = new GroupsEngagementStatsService();
     getEffectiveUsernameMock.mockReturnValue('alice');
-    delete process.env['ENGAGEMENT_BACKEND'];
+    // Fail-safe default: any environment that doesn't explicitly opt in gets 'live' (null fields),
+    // never fabricated numbers — so tests must opt into 'mock' explicitly, matching production.
+    process.env['ENGAGEMENT_BACKEND'] = 'mock';
   });
 
   afterEach(() => {
@@ -96,23 +107,40 @@ describe('GroupsEngagementStatsService', () => {
 
   describe('caching', () => {
     it('does not recompute on a cache hit for the same caller within the TTL', async () => {
-      const computeSpy = vi.spyOn(service as unknown as { computeEngagementStats: (...args: unknown[]) => unknown }, 'computeEngagementStats' as never);
-
       await service.getEngagementStats(buildReq());
       await service.getEngagementStats(buildReq());
 
-      expect(computeSpy).toHaveBeenCalledTimes(1);
+      expect(fetcherCalls.count).toBe(1);
     });
 
     it('recomputes for a different caller (distinct cache key)', async () => {
-      const computeSpy = vi.spyOn(service as unknown as { computeEngagementStats: (...args: unknown[]) => unknown }, 'computeEngagementStats' as never);
-
       getEffectiveUsernameMock.mockReturnValueOnce('alice');
       await service.getEngagementStats(buildReq());
       getEffectiveUsernameMock.mockReturnValueOnce('bob');
       await service.getEngagementStats(buildReq());
 
-      expect(computeSpy).toHaveBeenCalledTimes(2);
+      expect(fetcherCalls.count).toBe(2);
+    });
+
+    it('treats a malformed cached entry as a miss and recomputes (accept validator)', async () => {
+      await service.getEngagementStats(buildReq());
+      expect(fetcherCalls.count).toBe(1);
+
+      // Corrupt the stored entry directly, bypassing the service — simulates a stale/incompatible
+      // shape left behind by a prior schema version sharing the same cache key.
+      cacheStore.set('groups-engagement:v1:alice', { active_members: 'not-a-number' });
+
+      await service.getEngagementStats(buildReq());
+      expect(fetcherCalls.count).toBe(2);
+    });
+
+    it('still produces a valid response when getEffectiveUsername resolves to null', async () => {
+      getEffectiveUsernameMock.mockReturnValue(null);
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(typeof result.computed_at).toBe('string');
+      expect(result.active_members).not.toBeNull();
     });
   });
 
