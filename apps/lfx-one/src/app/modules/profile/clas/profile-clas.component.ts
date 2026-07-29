@@ -6,7 +6,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
 import { isMyClasEmpty, shouldShowGithubCta, splitAgreementsByKind } from '@lfx-one/shared/utils';
-import { environment } from '@environments/environment';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
@@ -40,8 +39,6 @@ interface MyClasState {
 export class ProfileClasComponent {
   private readonly myClasService = inject(MyClasService);
   private readonly messageService = inject(MessageService);
-
-  protected readonly contributorConsoleUrl = environment.urls.contributorConsole;
 
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
