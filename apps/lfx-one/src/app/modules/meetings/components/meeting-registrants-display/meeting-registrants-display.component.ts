@@ -29,6 +29,7 @@ import {
   resolveMeetingBaseCount,
   resolveRsvpOccurrenceId,
 } from '@lfx-one/shared/utils';
+import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -36,6 +37,8 @@ import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
+
+type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: RegistrantAttendanceStatus };
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
@@ -120,9 +123,6 @@ export class MeetingRegistrantsDisplayComponent {
     { label: 'Invited', value: 'invited' },
     { label: 'Not Invited', value: 'uninvited' },
   ];
-
-  /** Shared chip / filter semantics — see {@link getRegistrantAttendanceStatus}. */
-  protected readonly registrantAttendanceStatus = getRegistrantAttendanceStatus;
 
   // Group (Committee) filter options computed from meeting committees
   public readonly groupFilterOptions = this.initGroupFilterOptions();
@@ -436,14 +436,19 @@ export class MeetingRegistrantsDisplayComponent {
     });
   }
 
-  private initFilteredRegistrants() {
+  private initFilteredRegistrants(): Signal<RegistrantWithAttendance[]> {
     return computed(() => {
       const registrants = this.registrants();
       const query = this.searchQuery().toLowerCase().trim();
       const rsvp = this.rsvpFilter();
       const group = this.groupFilter();
 
-      return registrants.filter((registrant) => {
+      return registrants
+        .map((registrant) => ({
+          ...registrant,
+          attendanceStatus: getRegistrantAttendanceStatus(registrant),
+        }))
+        .filter((registrant) => {
         // Search filter
         const matchesSearch =
           !query ||
@@ -452,10 +457,10 @@ export class MeetingRegistrantsDisplayComponent {
           registrant.email?.toLowerCase().includes(query) ||
           registrant.org_name?.toLowerCase().includes(query);
 
-        // RSVP filter — must match chip rendering via getRegistrantAttendanceStatus
+        // RSVP filter — must match chip rendering via attendanceStatus
         let matchesRsvp = true;
         if (rsvp !== 'all') {
-          const status = getRegistrantAttendanceStatus(registrant);
+          const status = registrant.attendanceStatus;
           if (rsvp === 'yes') {
             matchesRsvp = status === 'accepted';
           } else if (rsvp === 'no') {

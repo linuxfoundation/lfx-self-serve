@@ -104,7 +104,7 @@
 
             <!-- RSVP Status Badge Overlay -->
             <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
-              @switch (registrantAttendanceStatus(registrant)) {
+              @switch (registrant.attendanceStatus) {
                 @case ('accepted') {
                   <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
                 }

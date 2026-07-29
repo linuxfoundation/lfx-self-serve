@@ -6,7 +6,7 @@
 // compiler first provides that facade so the module can be imported.
 import '@angular/compiler';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RecurrenceType } from '../enums';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
@@ -135,9 +135,29 @@ describe('resolveRsvpOccurrenceId', () => {
   });
 
   it('falls back to getCurrentOrNextOccurrence when no occurrence context is supplied', () => {
-    // Both ids are valid outputs depending on clock; assert we get one of the series ids.
-    const resolved = resolveRsvpOccurrenceId(recurringMeeting);
-    expect(['1785247200', '1785852000']).toContain(resolved);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+    try {
+      const firstStart = new Date('2026-01-20T14:00:00.000Z');
+      const secondStart = new Date('2026-01-27T14:00:00.000Z');
+      const firstOccurrenceId = String(Math.floor(firstStart.getTime() / 1000));
+      const meeting = {
+        recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+        occurrences: [
+          { occurrence_id: firstOccurrenceId, start_time: firstStart.toISOString(), duration: 60 },
+          {
+            occurrence_id: String(Math.floor(secondStart.getTime() / 1000)),
+            start_time: secondStart.toISOString(),
+            duration: 60,
+          },
+        ],
+        cancelled_occurrences: [],
+      } as Meeting;
+
+      expect(resolveRsvpOccurrenceId(meeting)).toBe(firstOccurrenceId);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
