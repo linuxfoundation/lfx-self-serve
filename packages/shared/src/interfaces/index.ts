@@ -278,3 +278,7 @@ export * from './org-meetings-insights.internal.interface';
 
 // Group Overview activity feed stop-gap (LFXV2-1716)
 export * from './activity-feed.interface';
+
+// Committee member engagement/attendance rollup (LFXV2-1705)
+export * from './committee-engagement.interface';
+export * from './committee-engagement.internal.interface';

@@ -113,3 +113,33 @@ describe('AccessCheckService.checkAccess', () => {
     expect(result.get('a#writer')).toBe(false);
   });
 });
+
+describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () => {
+  let service: AccessCheckService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AccessCheckService();
+  });
+
+  it('resolves the same as checkAccess on success', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['committee:x#viewer@user:alice\ttrue'] });
+
+    const result = await service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' });
+
+    expect(result).toBe(true);
+  });
+
+  it('propagates the upstream error instead of degrading to false', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('boom'));
+
+    await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('boom');
+  });
+
+  it('returns an empty map without calling upstream for an empty input', async () => {
+    const result = await service.checkAccessStrict(req, []);
+
+    expect(result.size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

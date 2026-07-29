@@ -28,76 +28,10 @@ export class AccessCheckService {
       return new Map();
     }
 
-    const resourceTypes = [...new Set(resources.map((r) => r.resource))];
-    const operationName = `check_access_permissions_${resourceTypes.join('_')}`;
-    const startTime = logger.startOperation(req, operationName, {
-      request_count: resources.length,
-      resource_types: resourceTypes,
-      access_types: [...new Set(resources.map((r) => r.access))],
-    });
+    const { operationName, startTime } = this.beginCheckOperation(req, resources);
 
     try {
-      // Transform requests to the expected API format
-      const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
-
-      const requestPayload: AccessCheckApiRequest = {
-        requests: apiRequests,
-      };
-
-      // Make the API request
-      const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        '/access-check',
-        'POST',
-        undefined,
-        requestPayload
-      );
-
-      // Parse each result string into a lookup keyed by the "resource:id#access" tuple it
-      // reports on, rather than trusting positional (array-index) alignment with `resources`.
-      // The upstream response can reorder or dedupe entries, so index-based pairing can silently
-      // attribute one resource's answer to a different resource.
-      const resultByTuple = new Map<string, { hasAccess: boolean; username?: string }>();
-      for (const resultString of response.results) {
-        if (!resultString || typeof resultString !== 'string') {
-          continue;
-        }
-
-        // Format: "resource:id#access@user:username\ttrue/false"
-        const parts = resultString.split('\t');
-        if (parts.length < 2) {
-          continue;
-        }
-
-        const accessPart = parts[0];
-        const hasAccess = parts[1]?.toLowerCase() === 'true';
-        const userMatch = accessPart?.match(/@user:(.+)$/);
-        const tuple = userMatch ? accessPart.slice(0, userMatch.index) : accessPart;
-        const username = userMatch?.[1];
-
-        resultByTuple.set(tuple, { hasAccess, username });
-      }
-
-      // Map results back to resource IDs by re-deriving the same tuple each request sent
-      const resultMap = new Map<string, boolean>();
-      const userAccessInfo: { resourceId: string; username?: string; hasAccess: boolean }[] = [];
-
-      for (const resource of resources) {
-        const tuple = `${resource.resource}:${resource.id}#${resource.access}`;
-        const result = resultByTuple.get(tuple);
-
-        // Fail closed when the upstream response omits this tuple
-        resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
-        userAccessInfo.push({ resourceId: resource.id, username: result?.username, hasAccess: result?.hasAccess ?? false });
-      }
-
-      logger.success(req, operationName, startTime, {
-        request_count: resources.length,
-        granted_count: Array.from(resultMap.values()).filter(Boolean).length,
-      });
-
-      return resultMap;
+      return await this.performCheck(req, resources, operationName, startTime);
     } catch (error) {
       logger.error(req, operationName, startTime, error, {
         request_count: resources.length,
@@ -114,6 +48,23 @@ export class AccessCheckService {
   }
 
   /**
+   * Check access permissions for multiple resources, letting upstream failures propagate instead
+   * of degrading to "no access". For callers that must distinguish "resolved: no access" (403)
+   * from "couldn't verify" (503) — `checkAccess`'s fallback collapses that distinction.
+   * @param req Express request object with auth context
+   * @param resources Array of resources to check access for
+   * @returns Map keyed by "id#access" to their access status
+   */
+  public async checkAccessStrict(req: Request, resources: AccessCheckRequest[]): Promise<Map<string, boolean>> {
+    if (resources.length === 0) {
+      return new Map();
+    }
+
+    const { operationName, startTime } = this.beginCheckOperation(req, resources);
+    return this.performCheck(req, resources, operationName, startTime);
+  }
+
+  /**
    * Check access for a single resource (convenience method)
    * @param req Express request object with auth context
    * @param resource Resource to check access for
@@ -121,6 +72,17 @@ export class AccessCheckService {
    */
   public async checkSingleAccess(req: Request, resource: AccessCheckRequest): Promise<boolean> {
     const results = await this.checkAccess(req, [resource]);
+    return results.get(`${resource.id}#${resource.access}`) || false;
+  }
+
+  /**
+   * Check access for a single resource, propagating upstream failures. See `checkAccessStrict`.
+   * @param req Express request object with auth context
+   * @param resource Resource to check access for
+   * @returns Boolean indicating whether user has access
+   */
+  public async checkSingleAccessStrict(req: Request, resource: AccessCheckRequest): Promise<boolean> {
+    const results = await this.checkAccessStrict(req, [resource]);
     return results.get(`${resource.id}#${resource.access}`) || false;
   }
 
@@ -194,5 +156,77 @@ export class AccessCheckService {
 
   private getResourceId(resource: { uid: string } | { id: string }): string {
     return 'uid' in resource ? resource.uid : resource.id;
+  }
+
+  private beginCheckOperation(req: Request, resources: AccessCheckRequest[]): { operationName: string; startTime: number } {
+    const resourceTypes = [...new Set(resources.map((r) => r.resource))];
+    const operationName = `check_access_permissions_${resourceTypes.join('_')}`;
+    const startTime = logger.startOperation(req, operationName, {
+      request_count: resources.length,
+      resource_types: resourceTypes,
+      access_types: [...new Set(resources.map((r) => r.access))],
+    });
+    return { operationName, startTime };
+  }
+
+  /**
+   * Performs the access-check request/response round trip with no error handling — callers decide
+   * whether to degrade (`checkAccess`) or propagate (`checkAccessStrict`).
+   */
+  private async performCheck(req: Request, resources: AccessCheckRequest[], operationName: string, startTime: number): Promise<Map<string, boolean>> {
+    // Transform requests to the expected API format
+    const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
+
+    const requestPayload: AccessCheckApiRequest = {
+      requests: apiRequests,
+    };
+
+    // Make the API request
+    const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(req, 'LFX_V2_SERVICE', '/access-check', 'POST', undefined, requestPayload);
+
+    // Parse each result string into a lookup keyed by the "resource:id#access" tuple it
+    // reports on, rather than trusting positional (array-index) alignment with `resources`.
+    // The upstream response can reorder or dedupe entries, so index-based pairing can silently
+    // attribute one resource's answer to a different resource.
+    const resultByTuple = new Map<string, { hasAccess: boolean; username?: string }>();
+    for (const resultString of response.results) {
+      if (!resultString || typeof resultString !== 'string') {
+        continue;
+      }
+
+      // Format: "resource:id#access@user:username\ttrue/false"
+      const parts = resultString.split('\t');
+      if (parts.length < 2) {
+        continue;
+      }
+
+      const accessPart = parts[0];
+      const hasAccess = parts[1]?.toLowerCase() === 'true';
+      const userMatch = accessPart?.match(/@user:(.+)$/);
+      const tuple = userMatch ? accessPart.slice(0, userMatch.index) : accessPart;
+      const username = userMatch?.[1];
+
+      resultByTuple.set(tuple, { hasAccess, username });
+    }
+
+    // Map results back to resource IDs by re-deriving the same tuple each request sent
+    const resultMap = new Map<string, boolean>();
+    const userAccessInfo: { resourceId: string; username?: string; hasAccess: boolean }[] = [];
+
+    for (const resource of resources) {
+      const tuple = `${resource.resource}:${resource.id}#${resource.access}`;
+      const result = resultByTuple.get(tuple);
+
+      // Fail closed when the upstream response omits this tuple
+      resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
+      userAccessInfo.push({ resourceId: resource.id, username: result?.username, hasAccess: result?.hasAccess ?? false });
+    }
+
+    logger.success(req, operationName, startTime, {
+      request_count: resources.length,
+      granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+    });
+
+    return resultMap;
   }
 }
