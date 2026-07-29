@@ -40,6 +40,7 @@ import {
   hasMeetingEnded,
   normalizeIndexedMeetingAiSummary,
   parseToInt,
+  resolveRsvpOccurrenceId,
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -537,8 +538,7 @@ export class UserService {
               meeting.my_rsvp = null;
               continue;
             }
-            const occurrence = getCurrentOrNextOccurrence(meeting);
-            const applicable = selectApplicableRsvp(occurrence?.occurrence_id, meetingRsvps);
+            const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), meetingRsvps);
             meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
           }
         } catch (error) {

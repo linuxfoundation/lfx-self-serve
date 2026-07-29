@@ -328,6 +328,25 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
 }
 
 /**
+ * Occurrence id to pass to RSVP BFF endpoints (`getMeetingRegistrants`,
+ * `getMyMeetingRegistrants`, `getMeetingRsvpForCurrentUser`).
+ *
+ * Non-recurring meetings return `undefined` (newest / aggregate RSVP semantics).
+ * Recurring meetings prefer an explicit occurrence or id; when neither is supplied,
+ * fall back to {@link getCurrentOrNextOccurrence} so list/card surfaces that only
+ * hold the meeting payload still resolve against the current/next slot.
+ */
+export function resolveRsvpOccurrenceId(
+  meeting: Meeting,
+  options?: { occurrence?: MeetingOccurrence | null; occurrenceId?: string | null }
+): string | undefined {
+  if (!meeting.recurrence) return undefined;
+  const explicitId = options?.occurrenceId || options?.occurrence?.occurrence_id;
+  if (explicitId) return explicitId;
+  return getCurrentOrNextOccurrence(meeting)?.occurrence_id;
+}
+
+/**
  * Returns the recurrence that should drive the displayed cadence label for a given occurrence:
  * the occurrence's own recurrence override when present (the cadence changed at/after this
  * occurrence — LFXV2-2112), otherwise the meeting's top-level recurrence.
