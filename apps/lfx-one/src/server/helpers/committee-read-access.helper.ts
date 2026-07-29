@@ -15,12 +15,20 @@ const accessCheckService = new AccessCheckService();
  * analytics filter, never the authorization — mirrors `assertOrgLensRead`'s rationale — so the
  * caller's grant is resolved independently before any Snowflake query runs.
  *
+ * Checks `committee#auditor`, not `committee#viewer`: per the platform FGA model
+ * (`charts/lfx-platform/files/model.fga` in `lfx-v2-helm`), `viewer` is defined as
+ * `[user:*] or member or auditor` — the `[user:*]` wildcard makes it resolve `true` for *any*
+ * authenticated caller on a committee marked public, which would leak per-member attendance counts
+ * to callers with no relationship to the committee. `auditor` (`[user, team#member] or writer or
+ * auditor from project or meeting_coordinator from project`, JTBD "View committee settings") has
+ * no such wildcard.
+ *
  * Uses `AccessCheckService.checkSingleAccessStrict` (not `checkSingleAccess`) because the latter
  * swallows upstream failures into `false`, making a transient access-check outage indistinguishable
  * from a genuine denial. Strict resolution preserves the 403 (confirmed no grant) vs 503 (couldn't
  * verify) split — both fail closed, the split is about signal accuracy, not safety.
  *
- * A nonexistent `committeeUid` also resolves to no `viewer` tuple, i.e. 403, same as a real
+ * A nonexistent `committeeUid` also resolves to no `auditor` tuple, i.e. 403, same as a real
  * committee the caller can't see — deliberate, avoids a separate existence check.
  *
  * Must run before any cache read or Snowflake query so an ungranted caller never reaches the data.
@@ -43,11 +51,11 @@ export async function assertCommitteeRead(req: Request, committeeUid: string, op
 
   let hasAccess: boolean;
   try {
-    hasAccess = await accessCheckService.checkSingleAccessStrict(req, { resource: 'committee', id: committeeUid, access: 'viewer' });
+    hasAccess = await accessCheckService.checkSingleAccessStrict(req, { resource: 'committee', id: committeeUid, access: 'auditor' });
   } catch (error) {
     logger.warning(req, operation, 'Access-check lookup failed; cannot verify committee read access', {
       committee_uid: committeeUid,
-      err: error instanceof Error ? error.message : String(error),
+      err: error,
     });
     throw unavailable(error);
   }

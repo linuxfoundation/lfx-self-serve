@@ -70,9 +70,10 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       { uid: 'm1', attended: 9, invited: 10, rate: 0.9, classification: 'High' },
       { uid: 'm2', attended: 0, invited: 0, rate: 0, classification: 'Inactive' },
     ]);
+    expect(result.data_available).toBe(true);
   });
 
-  it('degrades to a zeroed response when the engagement table does not exist yet', async () => {
+  it('degrades to a zeroed, data_available:false response when the engagement table does not exist yet', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'alice@example.com')]);
     execute.mockRejectedValueOnce({ missingObject: true });
 
@@ -82,6 +83,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       members: [{ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive' }],
       summary: { attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 },
       computed_at: null,
+      data_available: false,
     });
     expect(warning).toHaveBeenCalledOnce();
   });
@@ -93,7 +95,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('circuit open');
   });
 
-  it('rolls classification up into active_count and at_risk_count', async () => {
+  it('rolls classification up into active_count and at_risk_count, counting invited-but-zero-attendance members as at risk even though their badge reads Inactive', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'high@x.com'), member('m2', 'low@x.com'), member('m3', 'inactive@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [
@@ -105,20 +107,58 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
     const result = await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-    expect(result.summary).toEqual({ attendance_rate: 0.37, active_count: 1, total_count: 3, at_risk_count: 1 });
+    expect(result.summary).toEqual({ attendance_rate: 0.37, active_count: 1, total_count: 3, at_risk_count: 2 });
   });
 
-  it('picks the first non-null computed_at among the rows', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'b@x.com')]);
+  it('does not count never-invited (no warehouse row) members as at risk', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'never-invited@x.com')]);
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.summary.at_risk_count).toBe(0);
+  });
+
+  it('picks the first non-null computed_at among the warehouse rows directly, independent of roster order or match', async () => {
+    // 'a' matches no roster member (roster has only 'b'), and 'b's row has a null COMPUTED_AT —
+    // the timestamp must still surface from the unmatched row, not depend on the join.
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'b@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [
-        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'b@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28T00:00:00.000Z' },
+        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28T00:00:00.000Z' },
+        { MEMBER_EMAIL: 'b@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null },
       ],
     });
 
     const result = await service.getCommitteeEngagement(req, 'committee-1', 'ytd');
 
     expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
+  });
+
+  it('logs a warning when warehouse rows exist but none match the roster by email', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'roster@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'unrelated@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('join key mismatch'),
+      expect.objectContaining({ committee_uid: 'committee-1', row_count: 1, roster_size: 1 })
+    );
+  });
+
+  it('does not warn about a join mismatch when rows and roster both match', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalled();
   });
 });

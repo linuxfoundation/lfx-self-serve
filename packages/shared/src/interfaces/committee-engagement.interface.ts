@@ -38,6 +38,14 @@ export interface CommitteeEngagementSummary {
 export interface CommitteeEngagementResponse {
   members: CommitteeMemberEngagement[];
   summary: CommitteeEngagementSummary;
-  /** ISO timestamp the warehouse model last computed this data; `null` before the model has emitted any rows. */
+  /** ISO timestamp the warehouse model last computed this data; `null` when unavailable or not yet emitted for any row. */
   computed_at: string | null;
+  /**
+   * `false` when the warehouse query itself couldn't run (e.g. the model hasn't been deployed
+   * yet) — every member then shows zeroed, `Inactive` placeholder stats rather than real data.
+   * `true` means the query succeeded, even if it returned zero rows (e.g. a genuinely new
+   * committee with no attendance history yet). The UI should distinguish "no data available" from
+   * "real data, currently all zero" using this flag rather than inferring it from the numbers.
+   */
+  data_available: boolean;
 }

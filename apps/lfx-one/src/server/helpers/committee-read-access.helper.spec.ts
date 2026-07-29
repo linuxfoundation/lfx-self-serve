@@ -28,7 +28,7 @@ describe('assertCommitteeRead', () => {
     warning.mockReset();
   });
 
-  it('resolves without throwing when the caller has a viewer grant', async () => {
+  it('resolves without throwing when the caller has an auditor grant', async () => {
     checkSingleAccessStrict.mockResolvedValueOnce(true);
 
     await expect(assertCommitteeRead(req, 'committee-1', 'get_committee_engagement')).resolves.toBeUndefined();
@@ -53,11 +53,11 @@ describe('assertCommitteeRead', () => {
     expect(warning).toHaveBeenCalledOnce();
   });
 
-  it('checks the committee resource with the viewer relation', async () => {
+  it('checks the committee resource with the auditor relation, not viewer (viewer is public per the FGA model)', async () => {
     checkSingleAccessStrict.mockResolvedValueOnce(true);
 
     await assertCommitteeRead(req, 'committee-1', 'get_committee_engagement');
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'committee', id: 'committee-1', access: 'viewer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'committee', id: 'committee-1', access: 'auditor' });
   });
 });

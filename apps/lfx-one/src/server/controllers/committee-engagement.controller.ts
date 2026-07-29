@@ -3,9 +3,9 @@
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
 import { assertCommitteeRead } from '../helpers/committee-read-access.helper';
 import { parseCommitteeEngagementWindow } from '../helpers/committee-engagement-window.helper';
+import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeEngagementService } from '../services/committee-engagement.service';
 
@@ -29,8 +29,8 @@ export class CommitteeEngagementController {
     const committeeUid = req.params['uid'];
     const startTime = logger.startOperation(req, operation, { committee_uid: committeeUid });
     try {
-      if (!committeeUid) {
-        throw ServiceValidationError.forField('uid', 'Committee uid path parameter is required', { operation });
+      if (!validateUidParameter(committeeUid, req, next, { operation, service: 'committee_engagement_controller' })) {
+        return;
       }
       const window = parseCommitteeEngagementWindow(req.query['window'], operation);
       await assertCommitteeRead(req, committeeUid, operation);
