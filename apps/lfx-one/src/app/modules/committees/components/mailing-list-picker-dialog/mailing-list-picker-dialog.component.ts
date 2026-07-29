@@ -15,7 +15,7 @@ import { LensService } from '@services/lens.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { finalize, take } from 'rxjs';
 
-import { MailingListEmailPipe } from '../committee-settings-tab/pipes/mailing-list-email.pipe';
+import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-list-type.pipe';
 
 @Component({

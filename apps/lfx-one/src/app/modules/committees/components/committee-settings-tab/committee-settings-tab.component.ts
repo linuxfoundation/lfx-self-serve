@@ -19,7 +19,7 @@ import { catchError, filter, finalize, forkJoin, map, merge, Observable, of, Sub
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
-import { MailingListEmailPipe } from './pipes/mailing-list-email.pipe';
+import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 
 @Component({

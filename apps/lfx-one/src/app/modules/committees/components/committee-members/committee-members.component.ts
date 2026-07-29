@@ -27,7 +27,7 @@ import {
   CommitteeUser,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
-import { canManageCommitteeMembers, resolveCommitteeMemberPermission } from '@lfx-one/shared/utils';
+import { canManageCommitteeMembers, countVotingReps, isVotingRep, resolveCommitteeMemberPermission } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -100,9 +100,7 @@ export class CommitteeMembersComponent implements OnInit {
     if (!committee) return false;
     return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canManageMembers();
   });
-  public readonly votingRepCount: Signal<number> = computed(
-    () => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP).length
-  );
+  public readonly votingRepCount: Signal<number> = computed(() => countVotingReps(this.members()));
   public readonly observerCount: Signal<number> = computed(
     () => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.OBSERVER).length
   );
@@ -530,7 +528,7 @@ export class CommitteeMembersComponent implements OnInit {
       const members = this.members();
       switch (chip) {
         case 'voting':
-          return members.filter((m) => m.voting?.status === CommitteeMemberVotingStatus.VOTING_REP);
+          return members.filter(isVotingRep);
         case 'observers':
           return members.filter((m) => m.voting?.status === CommitteeMemberVotingStatus.OBSERVER);
         case 'chairs':

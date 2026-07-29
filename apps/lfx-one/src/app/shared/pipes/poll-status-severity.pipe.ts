@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { PollStatus, POLL_STATUS_SEVERITY, TagSeverity } from '@lfx-one/shared';
+import { normalizePollStatus, PollStatus, POLL_STATUS_SEVERITY, TagSeverity } from '@lfx-one/shared';
 
 /**
  * Transforms poll status to tag severity for consistent styling
@@ -16,7 +16,7 @@ import { PollStatus, POLL_STATUS_SEVERITY, TagSeverity } from '@lfx-one/shared';
 })
 export class PollStatusSeverityPipe implements PipeTransform {
   public transform(status: PollStatus): TagSeverity {
-    const normalized = (status as string).toLowerCase() as PollStatus;
-    return POLL_STATUS_SEVERITY[normalized] ?? 'secondary';
+    const key = normalizePollStatus(status);
+    return key ? POLL_STATUS_SEVERITY[key] : 'secondary';
   }
 }

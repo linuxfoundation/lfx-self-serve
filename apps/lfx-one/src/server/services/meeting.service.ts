@@ -41,6 +41,7 @@ import {
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
+  selectApplicableRsvp,
   selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -492,10 +493,15 @@ export class MeetingService {
   }
 
   /**
-   * Fetches all registrants for a meeting
-   * @param includeRsvp - If true, includes RSVP status for each registrant
+   * Fetches all registrants for a meeting.
+   * @param includeRsvp - If true, includes RSVP status for each registrant.
+   * @param occurrenceId - Optional occurrence id (seconds or ms) whose RSVP each
+   *   registrant should be resolved against. Pass the id of the occurrence the
+   *   caller is rendering; when omitted, each registrant's most recent RSVP is
+   *   returned regardless of scope — correct only for non-recurring meetings or
+   *   aggregate views. See LFXV2-2864 for the seconds↔ms unit mismatch.
    */
-  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
@@ -512,12 +518,12 @@ export class MeetingService {
       })
     );
 
-    // If include_rsvp is true, fetch RSVP data and attach to registrants
+    // If include_rsvp is true, fetch RSVP data and attach to registrants.
     if (includeRsvp) {
       try {
         const rsvps = await this.getMeetingRsvps(req, meetingUid);
 
-        // Group RSVPs by registrant_id for lookup
+        // Group RSVPs by registrant_id for lookup.
         const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
         for (const rsvp of rsvps) {
           const key = rsvp.registrant_id;
@@ -527,21 +533,17 @@ export class MeetingService {
           rsvpsByRegistrant.get(key)!.push(rsvp);
         }
 
-        // Attach most recent RSVP to each registrant by uid
+        // Resolve the applicable RSVP per registrant against the caller's occurrence.
+        // Delegating to the shared resolver keeps this endpoint aligned with the
+        // detail-page BFF (`getMeetingRsvpForCurrentUser`) and the counts calculator
+        // (`calculateRsvpCounts`) — a newer `single` decline no longer shadows an
+        // older `all` accept on unrelated occurrences (LFXV2-2864).
         registrants = registrants.map((registrant) => {
           const registrantRsvps = rsvpsByRegistrant.get(registrant.uid);
           if (!registrantRsvps || registrantRsvps.length === 0) {
             return { ...registrant, rsvp: null };
           }
-
-          // Sort by most recent modification and pick the first
-          const sorted = [...registrantRsvps].sort((a, b) => {
-            const dateA = new Date(a.modified_at || a.created_at).getTime();
-            const dateB = new Date(b.modified_at || b.created_at).getTime();
-            return dateB - dateA;
-          });
-
-          return { ...registrant, rsvp: sorted[0] };
+          return { ...registrant, rsvp: selectApplicableRsvp(occurrenceId, registrantRsvps) };
         });
       } catch (error) {
         logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
@@ -1193,20 +1195,14 @@ export class MeetingService {
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
       const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
 
-      if (occurrenceId) {
-        // First try to find an occurrence-specific RSVP (takes precedence)
-        const occurrenceRsvp = userRsvps.find((rsvp) => rsvp.occurrence_id === occurrenceId);
-        if (occurrenceRsvp) {
-          return occurrenceRsvp;
-        }
-
-        // Fall back to meeting-level RSVP (no occurrence_id means RSVP for all occurrences)
-        const meetingRsvp = userRsvps.find((rsvp) => !rsvp.occurrence_id);
-        return meetingRsvp || null;
-      }
-
-      // No occurrence specified - return any RSVP for this user
-      return userRsvps[0] || null;
+      // Delegate to the shared scope resolver so this endpoint and
+      // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
+      // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
+      // returning the first one applicable to the target occurrence (see
+      // resolver docs) — replacing the previous strict-equality match which
+      // never fired for occurrence-scoped rows and the arbitrary
+      // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
+      return selectApplicableRsvp(occurrenceId, userRsvps);
     } catch (error) {
       logger.warning(req, 'get_meeting_rsvp_for_current_user', 'Failed to fetch user RSVP, returning null', {
         meeting_id: meetingUid,

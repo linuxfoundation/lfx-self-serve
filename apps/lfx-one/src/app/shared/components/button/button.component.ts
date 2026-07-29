@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, effect, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
+import { resolveAriaPressedPt } from '@lfx-one/shared/utils';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -48,6 +49,18 @@ export class ButtonComponent {
 
   // Accessibility
   public readonly ariaLabel = input<string | undefined>(undefined);
+  /**
+   * Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher).
+   * Only meaningful on the default `<p-button>` branch (no `href`) — `aria-pressed` is valid only on
+   * `role="button"`, and the `href()` anchor branch renders as a link (implicit `role="link"`), where
+   * it would be invalid ARIA. Forwarded to the `<p-button>` branch's internal `<button>` via PrimeNG's
+   * `pt` passthrough (`ptm('root')`) — a plain `[attr.aria-pressed]` at the call site would only reach
+   * the `<p-button>` host, not the real button. Do not combine with `tooltip` on the same instance:
+   * the Tooltip directive on the same host also consumes the `pt` binding for its own `role="tooltip"`
+   * container, so {@link ariaPressedPt} suppresses itself whenever `tooltip` is set rather than leak
+   * `aria-pressed` onto that element.
+   */
+  public readonly ariaPressed = input<boolean | undefined>(undefined);
 
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);
@@ -64,6 +77,39 @@ export class ButtonComponent {
   // Tooltip
   public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
+
+  /**
+   * `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so
+   * the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. See
+   * {@link resolveAriaPressedPt} for why an unset input resolves to `undefined` rather than a pt
+   * object. Deliberately NOT annotated against PrimeNG's own `ButtonPassThrough` type: the same
+   * `<p-button>` host also carries `[pTooltip]`, and the Tooltip directive declares its own `pt`
+   * input of a different (non-nullable) passthrough type — Angular's template checker resolves the
+   * single `[pt]="ariaPressedPt()"` binding against both directives, so `ButtonPassThrough`'s `null`
+   * member fails to type-check against Tooltip's `pt`. The shared package's narrower
+   * `ButtonRootPassThrough` is structurally compatible with both and is what's actually verified here.
+   *
+   * That same dual-consumption means the `pt` value reaches the Tooltip directive's own root element
+   * (its `role="tooltip"` container) too, not just `<p-button>`'s. Resolving to `undefined` whenever
+   * `tooltip` is set prevents `aria-pressed` from ever landing on that tooltip container — no current
+   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA. The
+   * constructor below carries the dev-mode warning for this combination — kept out of this computed
+   * since `computed()` callbacks must stay pure (no side effects, may not run at all if never read).
+   */
+  protected readonly ariaPressedPt = computed(() => (this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed())));
+
+  public constructor() {
+    if (typeof ngDevMode !== 'undefined' && ngDevMode) {
+      effect(() => {
+        if (this.tooltip() && this.ariaPressed() !== undefined) {
+          console.warn('<lfx-button>: `ariaPressed` is ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
+        }
+        if (this.href() && this.ariaPressed() !== undefined) {
+          console.warn('<lfx-button>: `ariaPressed` is ignored on the `href` (anchor) variant — aria-pressed is invalid on role="link".');
+        }
+      });
+    }
+  }
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

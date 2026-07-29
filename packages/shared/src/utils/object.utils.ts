@@ -48,6 +48,18 @@ export function isObjectRow(el: unknown): el is Record<string, unknown> {
   return el !== null && typeof el === 'object' && !Array.isArray(el);
 }
 
+/**
+ * Compile-time exhaustiveness check for a `switch`/`if`-chain over a discriminated union: pass the
+ * variable in a `default` branch and TypeScript flags any unhandled union member as a type error
+ * at the call site, rather than letting a new variant compile and silently fall through to a no-op.
+ * Never throws at runtime — for a `default` branch where the input can be externally-sourced (e.g.
+ * a server-fed action a client hasn't been updated to handle yet) and an uncaught exception would
+ * be worse than a silent no-op, such as inside a DOM event handler.
+ */
+export function assertNeverSilent(_value: never): void {
+  // Intentionally empty — the compile-time check is the entire point.
+}
+
 /** Shallow accept-guard for a read-through cache of object rows; a corrupt/foreign entry degrades to a miss, so callers reading a required contract key must validate it on top of this shape check. */
 export function isObjectRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every(isObjectRow);

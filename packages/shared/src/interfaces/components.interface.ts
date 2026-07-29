@@ -253,6 +253,11 @@ export interface ButtonProps {
   ariaLabel?: string;
 }
 
+/** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
+export interface ButtonRootPassThrough {
+  root: { 'aria-pressed': boolean };
+}
+
 /**
  * Avatar size options
  * @description Available sizes for avatar components

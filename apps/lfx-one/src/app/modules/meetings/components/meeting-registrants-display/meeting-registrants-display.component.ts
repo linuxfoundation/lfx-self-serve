@@ -23,6 +23,7 @@ import {
 import {
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
+  getCurrentOrNextOccurrence,
   getPastMeetingResourceId,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
@@ -295,10 +296,16 @@ export class MeetingRegistrantsDisplayComponent {
             filter((refresh) => refresh && !this.pastMeeting() && !this.externallyManaged()),
             switchMap(() => {
               this.internalLoading.set(true);
+              // Resolve RSVPs against the occurrence the card / drawer is representing, so a
+              // per-occurrence `single` RSVP doesn't shadow the series-wide `all` RSVP on
+              // unrelated occurrences. Falls back to newest RSVP when no occurrence is
+              // available (non-recurring meetings). See LFXV2-2864.
+              const meeting = this.meeting() as Meeting;
+              const occurrenceId = getCurrentOrNextOccurrence(meeting)?.occurrence_id;
               // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
               const registrantsObservable = useMyEndpoint
-                ? this.meetingService.getMyMeetingRegistrants(this.meeting().id, true)
-                : this.meetingService.getMeetingRegistrants(this.meeting().id, true);
+                ? this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId)
+                : this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),

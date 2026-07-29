@@ -2,15 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, getGroupBehavioralClass } from '@lfx-one/shared/constants';
-import { Committee, GroupBehavioralClass, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
+import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
+import {
+  Committee,
+  CommitteeFoundationGroup,
+  GroupBehavioralClass,
+  GroupsViewMode,
+  MyCommittee,
+  ProjectContext,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
+import { getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
@@ -36,12 +45,24 @@ import {
 } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { CommitteeFilterBarComponent } from '../components/committee-filter-bar/committee-filter-bar.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
+import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ButtonComponent, CardComponent, CommitteeInvitationsComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    CommitteeFilterBarComponent,
+    CommitteeInvitationsComponent,
+    CommitteeTableComponent,
+    MyGroupsCardGridComponent,
+    SkeletonModule,
+    EmptyStateComponent,
+    StatCardGridComponent,
+  ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -67,6 +88,8 @@ export class CommitteeDashboardComponent {
   public foundationFilter = signal<string | null>(null);
   public projectFilter = signal<string | null>(null);
   public behavioralClassFilter = signal<GroupBehavioralClass | null>(null);
+  public viewMode = signal<GroupsViewMode>('list');
+  private readonly groupExpansion = signal<Record<string, boolean>>({});
 
   protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
   protected readonly behavioralClassKeys = Object.keys(BEHAVIORAL_CLASS_CONFIG) as GroupBehavioralClass[];
@@ -94,6 +117,16 @@ export class CommitteeDashboardComponent {
   protected readonly personaLoaded = this.personaService.personaLoaded;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
+
+  // My Groups list↔card view toggle
+  public readonly isListView: Signal<boolean> = computed(() => this.viewMode() === 'list');
+  public readonly isCardView: Signal<boolean> = computed(() => this.viewMode() === 'card');
+
+  // All Groups foundation grouping — only activates when scoped to a foundation
+  public readonly showFoundationGrouping: Signal<boolean> = computed(() => !this.isMeLens() && this.isFoundationContext());
+  public foundationGroups: Signal<CommitteeFoundationGroup[]>;
+  /** Effective expansion state per group — defaults every group to expanded unless the user explicitly toggled it (tracked in `groupExpansion`). Deriving this instead of syncing `groupExpansion` via effect() avoids a collapsed-then-expanded flash on first render. */
+  public groupExpansionMap: Signal<Record<string, boolean>>;
 
   // Statistics
   public totalCommittees: Signal<number>;
@@ -138,6 +171,8 @@ export class CommitteeDashboardComponent {
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
+    this.foundationGroups = this.initializeFoundationGroups();
+    this.groupExpansionMap = this.initializeGroupExpansionMap();
 
     // Initialize statistics
     this.totalCommittees = computed(() => this.committees().length);
@@ -183,6 +218,11 @@ export class CommitteeDashboardComponent {
         )
         .subscribe();
     }
+
+    // Deferred to afterNextRender (browser-only, post-hydration) rather than the constructor:
+    // restoring a 'card' view here would render a different template branch than the SSR HTML
+    // on the client's first pass, tripping Angular's hydration mismatch detection (NG0500).
+    afterNextRender(() => this.restoreViewMode());
   }
 
   /**
@@ -256,6 +296,30 @@ export class CommitteeDashboardComponent {
 
   public selectBehavioralClass(cls: GroupBehavioralClass | null): void {
     this.behavioralClassFilter.set(cls);
+  }
+
+  /**
+   * Full filter reset for the My Groups card view. Unlike `<lfx-committee-table>`, which owns
+   * `searchForm` and clears it internally in its own `resetFilters()` before emitting
+   * `resetRequested`, the card grid has no filter bar of its own — its "Reset filters" CTA only
+   * emits `resetRequested`, so this clears every filter that could have produced the empty state:
+   * the search term, voting status, foundation/project filters, and the behavioral-class chip.
+   */
+  public resetAllFilters(): void {
+    this.searchForm.patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    this.foundationFilter.set(null);
+    this.projectFilter.set(null);
+    this.behavioralClassFilter.set(null);
+  }
+
+  public setViewMode(mode: GroupsViewMode): void {
+    this.viewMode.set(mode);
+    this.persistViewMode(mode);
+  }
+
+  public toggleGroupExpansion(key: string): void {
+    const currentlyExpanded = this.groupExpansionMap()[key];
+    this.groupExpansion.update((overrides) => ({ ...overrides, [key]: !currentlyExpanded }));
   }
 
   public onFoundationFilterChange(value: string | null): void {
@@ -542,5 +606,52 @@ export class CommitteeDashboardComponent {
       });
       return counts;
     });
+  }
+
+  /**
+   * Groups the already-filtered All Groups list by foundation/project via the pure
+   * `groupCommitteesByFoundation` (unit-tested directly in `@lfx-one/shared`). Reads
+   * `filteredCommittees()` (not the raw `committees()`) so search/behavioral-class/voting-status
+   * filters keep working identically whether grouping is active or not — a group with zero members
+   * after filtering simply has no bucket, so it's never rendered with an empty header.
+   */
+  private initializeFoundationGroups(): Signal<CommitteeFoundationGroup[]> {
+    return computed(() => (this.showFoundationGrouping() ? groupCommitteesByFoundation(this.filteredCommittees()) : []));
+  }
+
+  /** Effective expansion state per visible group: expanded unless explicitly overridden in `groupExpansion`. */
+  private initializeGroupExpansionMap(): Signal<Record<string, boolean>> {
+    return computed(() => {
+      const overrides = this.groupExpansion();
+      const result: Record<string, boolean> = {};
+      for (const group of this.foundationGroups()) {
+        result[group.key] = group.key in overrides ? overrides[group.key] : true;
+      }
+      return result;
+    });
+  }
+
+  private restoreViewMode(): void {
+    // The only call site is inside afterNextRender(), which never runs server-side, so this guard
+    // is redundant in practice — kept anyway so the browser-API access is locally guarded rather
+    // than relying on the caller, matching persistViewMode() below.
+    if (!isPlatformBrowser(this.platformId)) return;
+    try {
+      const stored = localStorage.getItem(GROUPS_VIEW_MODE_STORAGE_KEY);
+      if (stored === 'list' || stored === 'card') {
+        this.viewMode.set(stored);
+      }
+    } catch {
+      // Corrupt or inaccessible storage — fall back to the 'list' default.
+    }
+  }
+
+  private persistViewMode(mode: GroupsViewMode): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    try {
+      localStorage.setItem(GROUPS_VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // Ignore quota / disabled-storage errors — view mode is a best-effort convenience.
+    }
   }
 }

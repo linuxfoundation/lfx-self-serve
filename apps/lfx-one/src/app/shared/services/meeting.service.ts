@@ -345,13 +345,19 @@ export class MeetingService {
     );
   }
 
-  public getMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false): Observable<MeetingRegistrant[]> {
-    const params = new HttpParams().set('include_rsvp', includeRsvp.toString());
+  public getMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
+    let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
+    if (occurrenceId) {
+      params = params.set('occurrence_id', occurrenceId);
+    }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
-  public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false): Observable<MeetingRegistrant[]> {
-    const params = new HttpParams().set('include_rsvp', includeRsvp.toString());
+  public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
+    let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
+    if (occurrenceId) {
+      params = params.set('occurrence_id', occurrenceId);
+    }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load my registrants for meeting ${meetingUid}:`, error);
