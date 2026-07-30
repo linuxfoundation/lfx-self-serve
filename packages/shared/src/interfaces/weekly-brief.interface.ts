@@ -46,7 +46,8 @@ export interface WeeklyBriefThrottle {
 
 export interface WeeklyBriefCurrentResponse {
   brief: WeeklyBrief | null;
-  throttle: WeeklyBriefThrottle;
+  /** Null alongside a null `brief` on a genuine miss — upstream's `GET /current` never fabricates counters. */
+  throttle: WeeklyBriefThrottle | null;
 }
 
 /**

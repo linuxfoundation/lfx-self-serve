@@ -6,11 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors access-check.service.spec.ts / committee.controller.spec.ts: the `@lfx-one/shared/*`
 // alias isn't wired into this app's vitest config, so runtime collaborators need mocking —
 // including `constants`, since this service spreads WEEKLY_BRIEF_DEFAULT_THROTTLE at runtime
-// (not just a type import).
-const { proxyRequest, proxyRequestWithResponse } = vi.hoisted(() => ({ proxyRequest: vi.fn(), proxyRequestWithResponse: vi.fn() }));
+// (not just a type import). MOCK_THROTTLE is shared between the mock factory and the test
+// assertions below so the two can't drift from each other. (Deliberately not cross-checked
+// against the real constants module here — `vi.importActual` on a real, unmocked
+// `@lfx-one/shared/*` import re-triggers the Angular JIT-compilation failure this file's
+// mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
+const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() => ({
+  proxyRequest: vi.fn(),
+  proxyRequestWithResponse: vi.fn(),
+  MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
+}));
 
 vi.mock('@lfx-one/shared/constants', () => ({
-  WEEKLY_BRIEF_DEFAULT_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
+  WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 
@@ -25,6 +33,8 @@ vi.mock('./logger.service', () => ({
 }));
 
 import type { Request } from 'express';
+
+import { MicroserviceError } from '../errors';
 
 import { WeeklyBriefService } from './weekly-brief.service';
 
@@ -59,12 +69,22 @@ describe('WeeklyBriefService', () => {
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
-    it('generateBrief returns status 200 (synchronous mock completion) without calling upstream', async () => {
+    it('generateBrief (fresh, no force) returns 202/generating and does not claim the quota is exhausted', async () => {
       const { status, data } = await service.generateBrief(req, 'committee-1', {});
-      expect(status).toBe(200);
-      expect(data.brief.state).toBe('generated');
+      expect(status).toBe(202);
+      expect(data.brief.state).toBe('generating');
+      expect(data.brief.regeneration_count).toBe(0);
+      expect(data.throttle.generates_used).toBe(1);
+      expect(data.throttle.regenerations_used).toBe(0);
       expect(proxyRequest).not.toHaveBeenCalled();
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    });
+
+    it('generateBrief (force: true) reports a regeneration, not a second fresh generate', async () => {
+      const { data } = await service.generateBrief(req, 'committee-1', { force: true });
+      expect(data.brief.regeneration_count).toBe(1);
+      expect(data.throttle.generates_used).toBe(1);
+      expect(data.throttle.regenerations_used).toBe(1);
     });
 
     it('saveBrief bumps the revision and marks the brief edited', async () => {
@@ -76,8 +96,19 @@ describe('WeeklyBriefService', () => {
 
     it('refuses to serve mock data when NODE_ENV=production (LFXV2-2175 review: no auth in mock mode)', async () => {
       process.env['NODE_ENV'] = 'production';
-      await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toThrow(/WEEKLY_BRIEF_BACKEND must be "live"/);
+      await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toThrow(/temporarily unavailable/);
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not leak the WEEKLY_BRIEF_BACKEND env var name into the client-facing error message', async () => {
+      process.env['NODE_ENV'] = 'production';
+      try {
+        await service.getCurrentBrief(req, 'committee-1');
+        expect.fail('expected getCurrentBrief to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MicroserviceError);
+        expect((error as MicroserviceError).message).not.toMatch(/WEEKLY_BRIEF_BACKEND/);
+      }
     });
   });
 
@@ -89,7 +120,7 @@ describe('WeeklyBriefService', () => {
     it('getCurrentBrief proxies straight through and does not swallow a 404', async () => {
       const upstreamResult = {
         brief: null,
-        throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-01-01T00:00:00Z' },
+        throttle: null,
       };
       proxyRequest.mockResolvedValueOnce(upstreamResult);
 
@@ -119,8 +150,70 @@ describe('WeeklyBriefService', () => {
       });
     });
 
+    it('generateBrief forwards the upstream 429 throttle body instead of dropping it', async () => {
+      const upstreamBody = {
+        code: 'throttle_exceeded',
+        generates_used: 2,
+        generates_limit: 2,
+        regenerations_used: 3,
+        regenerations_limit: 3,
+        window_resets_at: '2026-01-04T00:00:00Z',
+      };
+      const upstreamError = new MicroserviceError('Too Many Requests', 429, 'THROTTLE_EXCEEDED', { errorBody: upstreamBody });
+      proxyRequestWithResponse.mockRejectedValueOnce(upstreamError);
+
+      try {
+        await service.generateBrief(req, 'committee-1', {});
+        expect.fail('expected generateBrief to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MicroserviceError);
+        const wrapped = error as MicroserviceError;
+        expect(wrapped.statusCode).toBe(429);
+        expect(wrapped.errorBody.details).toEqual(upstreamBody);
+      }
+    });
+
+    it('generateBrief forwards the upstream 409 conflict body (revision) instead of dropping it', async () => {
+      const upstreamBody = { code: 'edited_brief_exists', revision: 4 };
+      const upstreamError = new MicroserviceError('Conflict', 409, 'EDITED_BRIEF_EXISTS', { errorBody: upstreamBody });
+      proxyRequestWithResponse.mockRejectedValueOnce(upstreamError);
+
+      try {
+        await service.generateBrief(req, 'committee-1', {});
+        expect.fail('expected generateBrief to throw');
+      } catch (error) {
+        expect((error as MicroserviceError).errorBody.details).toEqual(upstreamBody);
+      }
+    });
+
+    it('saveBrief proxies straight through with the real revision round-tripped', async () => {
+      const upstreamResult = { uid: 'b1', revision: 2, state: 'edited', brief_text: 'updated' };
+      proxyRequest.mockResolvedValueOnce(upstreamResult);
+
+      const result = await service.saveBrief(req, 'committee-1', { brief_text: 'updated', revision: 1 });
+
+      expect(result).toBe(upstreamResult);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/current', 'PUT', undefined, {
+        brief_text: 'updated',
+        revision: 1,
+      });
+    });
+
+    it('saveBrief forwards the upstream 409 conflict body instead of dropping it', async () => {
+      const upstreamBody = { code: 'revision_conflict', revision: 5 };
+      const upstreamError = new MicroserviceError('Conflict', 409, 'REVISION_CONFLICT', { errorBody: upstreamBody });
+      proxyRequest.mockRejectedValueOnce(upstreamError);
+
+      try {
+        await service.saveBrief(req, 'committee-1', { brief_text: 'x', revision: 1 });
+        expect.fail('expected saveBrief to throw');
+      } catch (error) {
+        expect((error as MicroserviceError).errorBody.details).toEqual(upstreamBody);
+      }
+    });
+
     it('URL-encodes the committeeId path segment', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: null, throttle: {} });
+      proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
       await service.getCurrentBrief(req, 'a/b c');
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/a%2Fb%20c/weekly-briefs/current', 'GET');
     });

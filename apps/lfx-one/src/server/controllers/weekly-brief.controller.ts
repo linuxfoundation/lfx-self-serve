@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { WEEKLY_BRIEF_TEXT_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { GenerateWeeklyBriefRequest, SaveWeeklyBriefRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -8,9 +9,6 @@ import { ServiceValidationError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { WeeklyBriefService } from '../services/weekly-brief.service';
-
-// Mirrors upstream's brief_text bound (GroupWeeklyBriefUpdateRequestBody: maxLength 20000, non-empty).
-const BRIEF_TEXT_MAX_LENGTH = 20_000;
 
 /**
  * Narrow `req.body` to a SaveWeeklyBriefRequest, returning a ServiceValidationError
@@ -24,10 +22,13 @@ function validateSaveBriefBody(body: unknown): { ok: true; value: SaveWeeklyBrie
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
+  // [...str].length counts Unicode code points, not UTF-16 code units — upstream's
+  // maxLength validates rune count, so a plain `.length` check here could reject
+  // astral-plane text (emoji, some CJK extensions) that upstream would accept.
   if (typeof b['brief_text'] !== 'string' || b['brief_text'].trim().length === 0) {
     fieldErrors['brief_text'] = 'brief_text is required and must be a non-empty string';
-  } else if (b['brief_text'].length > BRIEF_TEXT_MAX_LENGTH) {
-    fieldErrors['brief_text'] = `brief_text must be ${BRIEF_TEXT_MAX_LENGTH} characters or fewer`;
+  } else if ([...b['brief_text']].length > WEEKLY_BRIEF_TEXT_MAX_LENGTH) {
+    fieldErrors['brief_text'] = `brief_text must be ${WEEKLY_BRIEF_TEXT_MAX_LENGTH} characters or fewer`;
   }
   if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
     fieldErrors['revision'] = 'revision is required and must be an integer of at least 1';
@@ -143,15 +144,19 @@ export class WeeklyBriefController {
 
       const { status, data } = await this.weeklyBriefService.generateBrief(req, committeeId, body);
 
+      // Upstream marks no attribute of the generate result Required — guard every
+      // read the same way getCurrentBrief already guards `result.brief?.state`,
+      // so a sparse 202 envelope can't turn a successful upstream call into a 500
+      // after the throttle slot has already been consumed.
       logger.success(req, 'generate_weekly_brief', startTime, {
         committee_id: committeeId,
         status_code: status,
-        brief_uid: data.brief.uid,
-        state: data.brief.state,
-        revision: data.brief.revision,
-        regeneration_count: data.brief.regeneration_count,
-        generates_used: data.throttle.generates_used,
-        regenerations_used: data.throttle.regenerations_used,
+        brief_uid: data.brief?.uid,
+        state: data.brief?.state,
+        revision: data.brief?.revision,
+        regeneration_count: data.brief?.regeneration_count,
+        generates_used: data.throttle?.generates_used,
+        regenerations_used: data.throttle?.regenerations_used,
       });
 
       // Forward the upstream status code — 202 (accepted, still generating)

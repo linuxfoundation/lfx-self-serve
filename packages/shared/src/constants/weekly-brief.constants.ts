@@ -18,3 +18,6 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
   regenerations_used: 0,
   regenerations_limit: 3,
 } as const;
+
+/** Mirrors upstream's `brief_text` bound (`GroupWeeklyBriefUpdateRequestBody`: maxLength 20000, non-empty). */
+export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;

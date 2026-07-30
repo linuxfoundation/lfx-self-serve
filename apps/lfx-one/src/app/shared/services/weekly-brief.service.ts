@@ -3,7 +3,6 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { WEEKLY_BRIEF_DEFAULT_THROTTLE } from '@lfx-one/shared/constants';
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
@@ -11,7 +10,7 @@ import {
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take } from 'rxjs';
+import { Observable, take } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -20,17 +19,11 @@ export class WeeklyBriefService {
   private readonly http = inject(HttpClient);
 
   public getWeeklyBrief(committeeId: string): Observable<WeeklyBriefCurrentResponse> {
-    return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`).pipe(
-      catchError((error: unknown) => {
-        // Log before falling back so failures are visible in DataDog RUM and dev console,
-        // rather than silently degrading to the empty state.
-        console.error('weekly-brief: getWeeklyBrief failed, returning empty state', { committeeId, error });
-        return of({
-          brief: null,
-          throttle: { ...WEEKLY_BRIEF_DEFAULT_THROTTLE, window_resets_at: '' },
-        } as WeeklyBriefCurrentResponse);
-      })
-    );
+    return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`);
+    // No catchError — a failed read must reach the caller so it can be classified as a
+    // real error, distinct from the server's own 200-with-null-brief "no brief yet" state.
+    // A blanket fallback here would render a misconfigured deploy or a 404 identically to
+    // "no brief yet, 2 generates available" — see LFXV2-2175 full-branch review.
   }
 
   public generateWeeklyBrief(committeeId: string, body: GenerateWeeklyBriefRequest = {}): Observable<GenerateWeeklyBriefResponse> {

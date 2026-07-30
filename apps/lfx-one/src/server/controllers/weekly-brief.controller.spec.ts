@@ -17,6 +17,10 @@ const { weeklyBriefSvc } = vi.hoisted(() => ({
 // mocked defensively even though this controller's usage is type-only (matches
 // committee.controller.spec.ts's convention).
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// `constants` is a real runtime import here (WEEKLY_BRIEF_TEXT_MAX_LENGTH), unlike
+// `interfaces` above — must be mocked or the real module load re-triggers the
+// Angular JIT-compilation failure this file's mocks otherwise avoid.
+vi.mock('@lfx-one/shared/constants', () => ({ WEEKLY_BRIEF_TEXT_MAX_LENGTH: 20_000 }));
 
 // validation.helper.ts pulls in @lfx-one/shared/constants + /utils for functions this
 // controller never calls (only validateUidParameter is used) — mock the whole module
