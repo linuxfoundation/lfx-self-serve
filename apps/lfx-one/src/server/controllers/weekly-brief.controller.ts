@@ -9,6 +9,9 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { WeeklyBriefService } from '../services/weekly-brief.service';
 
+// Mirrors upstream's brief_text bound (GroupWeeklyBriefUpdateRequestBody: maxLength 20000, non-empty).
+const BRIEF_TEXT_MAX_LENGTH = 20_000;
+
 /**
  * Narrow `req.body` to a SaveWeeklyBriefRequest, returning a ServiceValidationError
  * with a per-field reason when anything is missing or has the wrong type.
@@ -21,11 +24,13 @@ function validateSaveBriefBody(body: unknown): { ok: true; value: SaveWeeklyBrie
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
-  if (typeof b['brief_text'] !== 'string') {
-    fieldErrors['brief_text'] = 'brief_text is required and must be a string';
+  if (typeof b['brief_text'] !== 'string' || b['brief_text'].trim().length === 0) {
+    fieldErrors['brief_text'] = 'brief_text is required and must be a non-empty string';
+  } else if (b['brief_text'].length > BRIEF_TEXT_MAX_LENGTH) {
+    fieldErrors['brief_text'] = `brief_text must be ${BRIEF_TEXT_MAX_LENGTH} characters or fewer`;
   }
-  if (typeof b['revision'] !== 'number' || !Number.isFinite(b['revision'] as number)) {
-    fieldErrors['revision'] = 'revision is required and must be a finite number';
+  if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
+    fieldErrors['revision'] = 'revision is required and must be an integer of at least 1';
   }
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, fieldErrors };
@@ -40,17 +45,39 @@ function validateSaveBriefBody(body: unknown): { ok: true; value: SaveWeeklyBrie
 }
 
 /**
+ * Narrow `req.body` to a GenerateWeeklyBriefRequest. Upstream's
+ * GenerateWeeklyBriefRequestBody has exactly one field (`force: boolean`) —
+ * this whitelists it explicitly rather than forwarding `req.body` verbatim,
+ * so a caller cannot smuggle extra fields through to the proxy call.
+ */
+function validateGenerateBriefBody(body: unknown): { ok: true; value: GenerateWeeklyBriefRequest } | { ok: false; fieldErrors: Record<string, string> } {
+  if (body === undefined || body === null) {
+    return { ok: true, value: {} };
+  }
+  if (typeof body !== 'object') {
+    return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
+  }
+  const b = body as Record<string, unknown>;
+  if (b['force'] !== undefined && typeof b['force'] !== 'boolean') {
+    return { ok: false, fieldErrors: { force: 'force must be a boolean when present' } };
+  }
+  return { ok: true, value: { force: b['force'] as boolean | undefined } };
+}
+
+/**
  * Controller for the WG Weekly Brief endpoints.
  *
- * Upstream HTTP status codes (404 → empty-state via service, 429 throttle,
- * 409 revision conflict) are propagated through `next(error)` to the shared
+ * Upstream HTTP status codes (202 accepted, 429 throttle, 409 edited-brief
+ * conflict) are propagated through — generate forwards the real upstream
+ * status via `weeklyBriefService.generateBrief`'s `{ status, data }` return;
+ * everything else propagates through `next(error)` to the shared
  * apiErrorHandler, which renders the original `statusCode` from MicroserviceError.
  */
 export class WeeklyBriefController {
   private weeklyBriefService: WeeklyBriefService = new WeeklyBriefService();
 
   /**
-   * GET /committees/:committeeId/weekly-briefs/current
+   * GET /api/committees/:committeeId/weekly-briefs/current
    */
   public async getCurrentBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { committeeId } = req.params;
@@ -84,16 +111,12 @@ export class WeeklyBriefController {
   }
 
   /**
-   * POST /committees/:committeeId/weekly-briefs/generate
+   * POST /api/committees/:committeeId/weekly-briefs/generate
    */
   public async generateBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { committeeId } = req.params;
-    const body: GenerateWeeklyBriefRequest = req.body || {};
     const startTime = logger.startOperation(req, 'generate_weekly_brief', {
       committee_id: committeeId,
-      revision: body.revision,
-      force: body.force,
-      has_reason: !!body.reason,
     });
 
     try {
@@ -106,25 +129,41 @@ export class WeeklyBriefController {
         return;
       }
 
-      const result = await this.weeklyBriefService.generateBrief(req, committeeId, body);
+      const validation = validateGenerateBriefBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid generate-weekly-brief request body', {
+            operation: 'generate_weekly_brief',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+      const body = validation.value;
+
+      const { status, data } = await this.weeklyBriefService.generateBrief(req, committeeId, body);
 
       logger.success(req, 'generate_weekly_brief', startTime, {
         committee_id: committeeId,
-        brief_uid: result.brief.uid,
-        revision: result.brief.revision,
-        regeneration_count: result.brief.regeneration_count,
-        generates_used: result.throttle.generates_used,
-        regenerations_used: result.throttle.regenerations_used,
+        status_code: status,
+        brief_uid: data.brief.uid,
+        state: data.brief.state,
+        revision: data.brief.revision,
+        regeneration_count: data.brief.regeneration_count,
+        generates_used: data.throttle.generates_used,
+        regenerations_used: data.throttle.regenerations_used,
       });
 
-      res.json(result);
+      // Forward the upstream status code — 202 (accepted, still generating)
+      // vs 200 must reach the client so it can tell "accepted" from "done".
+      res.status(status).json(data);
     } catch (error) {
       next(error);
     }
   }
 
   /**
-   * PUT /committees/:committeeId/weekly-briefs/current
+   * PUT /api/committees/:committeeId/weekly-briefs/current
    */
   public async saveBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { committeeId } = req.params;

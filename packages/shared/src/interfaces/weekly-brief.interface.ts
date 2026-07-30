@@ -3,14 +3,16 @@
 
 export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' | 'approved' | 'error';
 
-export type WeeklyBriefSourceType = 'meeting' | 'vote' | 'member' | 'mailing_list';
-
+/**
+ * Matches upstream's `GroupWeeklyBriefSourceRef` exactly — `kind` is an open
+ * string (not an enum; documented values include "meeting", "mailing-list",
+ * "doc"), not the invented `source_type` shape this used to have.
+ */
 export interface WeeklyBriefSourceRef {
-  claim_id: string;
-  source_type: WeeklyBriefSourceType;
-  source_uid: string;
-  source_label?: string;
-  source_url?: string;
+  excerpt: string;
+  id: string;
+  kind: string;
+  title: string;
 }
 
 export interface WeeklyBrief {
@@ -28,6 +30,10 @@ export interface WeeklyBrief {
   created_at: string;
   updated_at: string;
   revision: number;
+  /** Set once the brief has been edited via PUT /current; absent if never edited. */
+  last_edited_at?: string;
+  /** LFX username of the caller who last edited the brief. */
+  last_edited_by?: string;
 }
 
 export interface WeeklyBriefThrottle {
@@ -43,9 +49,14 @@ export interface WeeklyBriefCurrentResponse {
   throttle: WeeklyBriefThrottle;
 }
 
+/**
+ * Matches upstream's `GenerateWeeklyBriefRequestBody` exactly — `force` is
+ * the only field the Go service accepts. There is no client-supplied
+ * revision: conflict detection is entirely server-side (409
+ * `edited_brief_exists` with the current `revision` in the error body when
+ * an edited brief exists and `force` isn't set).
+ */
 export interface GenerateWeeklyBriefRequest {
-  reason?: string;
-  revision?: number;
   force?: boolean;
 }
 
