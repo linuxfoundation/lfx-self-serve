@@ -84,24 +84,27 @@ interface RosterPlan {
  * - "The Orlin case": eligible candidates exclude every `Emeritus` member (real or promoted) — the
  *   Emeritus profile always takes precedence in `buildAttendanceProfile`, so an Emeritus candidate
  *   would silently swallow the slot without ever rendering it. Among the rest, the most-recently
- *   real-joined member is used *only* if their tenure is at least `minOrlinTenureDays` — long
- *   enough that this committee's real 30-day meeting cadence could plausibly have produced
- *   `ORLIN_FORCED_COUNTS.invited` real invites since they joined (a member who joined yesterday
- *   cannot honestly show 5 real meetings attended). Otherwise, the first member with no real join
- *   date at all is fabricated exactly `minOrlinTenureDays` of tenure — the shortest tenure that's
- *   still self-consistent with the forced count for *this* committee's cadence. If every member
- *   has real (and either too-recent or too-long) tenure data, no member takes this role.
+ *   real-joined member is used *only* if their tenure is at least `minOrlinTenureDays` *and* less
+ *   than `WINDOW_30D_DAYS` — the upper bound keeps this specifically the "joined *recently*" case
+ *   (the ticket's literal example) rather than any tenured member who happens to clear the lower
+ *   bound; without it, nearly every real committee would show the scenario, but on whichever
+ *   long-tenured member the hash picked, not a recent joiner. Otherwise, the first member with no
+ *   real join date at all is fabricated exactly `minOrlinTenureDays` of tenure — the shortest
+ *   tenure that's still self-consistent with the forced count for *this* committee's cadence. If
+ *   every member has real (and either too-recent or too-long) tenure data, no member takes this
+ *   role.
  *
  * Known trade-off: `CommitteeMember.created_at` is a required field on real roster data (see
  * `member.interface.ts`), so the "no real join date at all" fallback branch above almost never
  * fires against a real committee — the Orlin case only renders when some real member's tenure
- * happens to land in `[minOrlinTenureDays, WINDOW_30D_DAYS)`, a roughly 5-15 day window. This is an
- * accepted limitation of "never override a real, known value" rather than a bug: the alternative
- * (overriding a real member's real join date, the one thing this generator otherwise never does)
- * would make an already-real person's mock data lie about them specifically, which is worse than
- * the scenario simply not showing up for every committee. Small test fixtures (no real
- * `created_at` at all) always exercise it; real committees may or may not, depending on roster
- * composition.
+ * happens to land in `[minOrlinTenureDays, WINDOW_30D_DAYS)`, a roughly 5-15 day window. Widening
+ * or dropping the upper bound would make the scenario reachable on nearly every real committee
+ * without touching any real join date — but at the cost of it no longer demonstrating a *recently
+ * joined* member, which is the point of the Orlin case (see above). The remaining alternative,
+ * overriding a real member's real join date, is rejected outright: that's the one thing this
+ * generator otherwise never does, and would make an already-real person's mock data lie about them
+ * specifically. Small test fixtures (no real `created_at` at all) always exercise the scenario;
+ * real committees may or may not, depending on roster composition.
  */
 function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMember[]): RosterPlan {
   const meetings30d = committeeMeetingsForWindow(committeeUid, WINDOW_30D_DAYS);
