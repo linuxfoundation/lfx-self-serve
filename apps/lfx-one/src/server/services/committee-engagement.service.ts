@@ -216,6 +216,13 @@ export class CommitteeEngagementService {
     const match = TIMESTAMP_SHAPE.exec(value.trim());
     if (!match) return null;
     const [, date, time, utc, offsetHours, offsetMinutes] = match;
+    // The shape regex only constrains digit counts, so '2026-02-30' or '2026-13-01' still matches
+    // it — and V8 rolls an out-of-range calendar date forward into a valid one instead of failing,
+    // so the NaN guard below wouldn't catch it. Round-trip the date part alone (offset-independent;
+    // an offset can legitimately shift the *time*'s UTC date, but not whether the calendar date the
+    // warehouse actually reported was real) to catch what the parser would otherwise silently fix up.
+    const calendarDate = new Date(`${date}T00:00:00Z`);
+    if (Number.isNaN(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== date) return null;
     const zone = utc || !offsetHours ? 'Z' : `${offsetHours}:${offsetMinutes}`;
     const parsed = new Date(`${date}T${time}${zone}`);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();

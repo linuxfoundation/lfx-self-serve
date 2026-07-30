@@ -215,6 +215,34 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.computed_at).toBeNull();
   });
 
+  it('rejects a shape-matching but impossible calendar date instead of letting it roll over to a real one', async () => {
+    // '2026-02-30' matches TIMESTAMP_SHAPE (it's digit-shaped), but Date rolls an out-of-range day
+    // forward into March rather than failing — the calendar round-trip guard is what catches this,
+    // not the post-parse NaN check (which month-13-style shapes fail on their own).
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-02-30 12:00:00' }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.computed_at).toBeNull();
+  });
+
+  it('rejects a shape-matching timestamp with an out-of-range hour, exercising the post-match parse guard', async () => {
+    // The calendar round-trip guard only validates the date portion, so an invalid *time* (the
+    // date '2026-07-28' is real) has to be caught by the final `Number.isNaN(parsed.getTime())`
+    // check — this is what would go dead if that guard were ever removed as "unreachable".
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28 25:00:00' }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.computed_at).toBeNull();
+  });
+
   it('logs a warning when warehouse rows exist but none match the roster by email', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'roster@x.com')]);
     execute.mockResolvedValueOnce({
