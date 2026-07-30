@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -18,6 +18,7 @@ import {
   catchError,
   combineLatest,
   distinctUntilChanged,
+  exhaustMap,
   filter,
   finalize,
   map,
@@ -33,7 +34,7 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent],
+  imports: [CardComponent, ButtonComponent, SkeletonModule, TextareaComponent],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -241,10 +242,19 @@ export class WeeklyBriefCardComponent {
   // brief reaches a terminal state (generated/edited/approved/error), or the attempt
   // cap trips. A transient poll failure doesn't abandon the poll — only the cap does.
   private pollUntilTerminal(committeeUid: string): void {
+    let ticks = 0;
+    let observedTerminal = false;
     timer(0, WEEKLY_BRIEF_POLL_INTERVAL_MS)
       .pipe(
         take(WEEKLY_BRIEF_MAX_POLL_ATTEMPTS),
-        switchMap(() =>
+        tap(() => {
+          ticks += 1;
+        }),
+        // exhaustMap, not switchMap: a GET that outlives one interval tick must not be
+        // cancelled and restarted on the next tick — that would mean no request ever
+        // resolves and the poll dies silently once the attempt cap is hit. Skip a tick
+        // instead if the previous one is still in flight.
+        exhaustMap(() =>
           this.weeklyBriefService.getWeeklyBrief(committeeUid).pipe(
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
@@ -255,7 +265,12 @@ export class WeeklyBriefCardComponent {
         // Drop failed ticks entirely rather than feeding `null` into takeWhile below —
         // a transient poll failure must not look like a terminal state and stop the poll.
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
-        tap((response) => this.briefResponse.set(response)),
+        tap((response) => {
+          this.briefResponse.set(response);
+          if (response.brief?.state !== 'generating') {
+            observedTerminal = true;
+          }
+        }),
         takeWhile((response) => response.brief?.state === 'generating', true),
         // refresh$ is also reachable while a poll is in flight (onRetry, the 409 branch
         // of onGenerate) — stop polling on a manual refresh so a late poll tick can't
@@ -267,7 +282,10 @@ export class WeeklyBriefCardComponent {
       .subscribe({
         complete: () => {
           this.generating.set(false);
-          if (this.brief()?.state === 'generating') {
+          // Only warn when the attempt cap was actually exhausted without ever observing
+          // a terminal state — not when the poll stopped because of a manual refresh/409
+          // (a fresher read is already on its way) or because the component was destroyed.
+          if (!observedTerminal && ticks >= WEEKLY_BRIEF_MAX_POLL_ATTEMPTS) {
             this.messageService.add({
               severity: 'warn',
               summary: 'Still generating',

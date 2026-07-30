@@ -111,7 +111,7 @@ function buildCommitteeFixture(): Committee {
 async function mockCommitteeShell(page: Page): Promise<void> {
   await page.route(`**/api/committees/${TEST_COMMITTEE_UID}`, async (route) => {
     if (route.request().method() !== 'GET') {
-      await route.continue();
+      await route.fallback();
       return;
     }
     await route.fulfill({
@@ -143,21 +143,21 @@ async function mockCommitteeShell(page: Page): Promise<void> {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       return;
     }
-    await route.continue();
+    await route.fallback();
   });
   await page.route(`**/api/votes*`, async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       return;
     }
-    await route.continue();
+    await route.fallback();
   });
   await page.route(`**/api/surveys*`, async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       return;
     }
-    await route.continue();
+    await route.fallback();
   });
 }
 
@@ -172,7 +172,7 @@ async function mockCurrentBrief(page: Page, initial: WeeklyBriefCurrentResponse)
   // the network on fast runs.
   await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
     if (route.request().method() !== 'GET') {
-      await route.continue();
+      await route.fallback();
       return;
     }
     await route.fulfill({
