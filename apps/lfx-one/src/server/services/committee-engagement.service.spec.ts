@@ -221,11 +221,11 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     );
   });
 
-  it('bounds by Unicode code point, not UTF-16 unit, when the 24-character boundary falls across astral-plane characters', async () => {
+  it('bounds the redacted shape to 24 Unicode code points, not 24 UTF-16 units', async () => {
     // Each 👍 is one code point but two UTF-16 units. A truncation bug that counted UTF-16 units
-    // (e.g. `String(raw).slice(0, 24)` before walking) would yield only 12 redacted characters here,
-    // not 24 — this is the case the doc comment's "stops the moment the bound is reached" claim
-    // needs a test for, since every other fixture in this file stays within the BMP.
+    // (e.g. `String(raw).slice(0, 24)` before walking, rather than the `for...of` code-point walk
+    // the doc comment describes) would yield only 12 redacted characters here, not 24 — a case no
+    // other fixture in this file can distinguish, since they all stay within the BMP.
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '👍'.repeat(30) }],
