@@ -100,19 +100,19 @@ describe('WeeklyBriefService', () => {
     it('generateBrief (fresh, no force) returns 202/generating and does not claim the quota is exhausted', async () => {
       const { status, data } = await service.generateBrief(req, 'committee-1', {});
       expect(status).toBe(202);
-      expect(data.brief.state).toBe('generating');
-      expect(data.brief.regeneration_count).toBe(0);
-      expect(data.throttle.generates_used).toBe(1);
-      expect(data.throttle.regenerations_used).toBe(0);
+      expect(data.brief?.state).toBe('generating');
+      expect(data.brief?.regeneration_count).toBe(0);
+      expect(data.throttle?.generates_used).toBe(1);
+      expect(data.throttle?.regenerations_used).toBe(0);
       expect(proxyRequest).not.toHaveBeenCalled();
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
     it('generateBrief (force: true) reports a regeneration, not a second fresh generate', async () => {
       const { data } = await service.generateBrief(req, 'committee-1', { force: true });
-      expect(data.brief.regeneration_count).toBe(1);
-      expect(data.throttle.generates_used).toBe(1);
-      expect(data.throttle.regenerations_used).toBe(1);
+      expect(data.brief?.regeneration_count).toBe(1);
+      expect(data.throttle?.generates_used).toBe(1);
+      expect(data.throttle?.regenerations_used).toBe(1);
     });
 
     it('saveBrief bumps the revision and marks the brief edited', async () => {

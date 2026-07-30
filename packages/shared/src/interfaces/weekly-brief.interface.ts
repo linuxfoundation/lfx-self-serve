@@ -62,8 +62,9 @@ export interface GenerateWeeklyBriefRequest {
 }
 
 export interface GenerateWeeklyBriefResponse {
-  brief: WeeklyBrief;
-  throttle: WeeklyBriefThrottle;
+  /** Upstream's `GroupWeeklyBriefGenerateResult` marks nothing Required — the BFF reads this defensively. */
+  brief?: WeeklyBrief;
+  throttle?: WeeklyBriefThrottle;
 }
 
 export interface SaveWeeklyBriefRequest {
