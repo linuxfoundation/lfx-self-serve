@@ -68,7 +68,9 @@ import { CommitteeEngagementService } from './committee-engagement.service';
 
 const req = {} as unknown as Request;
 const ENGAGEMENT_BACKEND_KEY = 'ENGAGEMENT_BACKEND';
+const NODE_ENV_KEY = 'NODE_ENV';
 const originalEngagementBackend = process.env[ENGAGEMENT_BACKEND_KEY];
+const originalNodeEnv = process.env[NODE_ENV_KEY];
 
 function member(
   uid: string,
@@ -111,9 +113,10 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     service = new CommitteeEngagementService();
   });
 
-  describe('mock backend (ENGAGEMENT_BACKEND unset — the default)', () => {
+  describe('mock backend (ENGAGEMENT_BACKEND=mock, explicit opt-in)', () => {
     beforeEach(() => {
-      delete process.env[ENGAGEMENT_BACKEND_KEY];
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'mock';
+      delete process.env[NODE_ENV_KEY];
     });
 
     it('fetches the roster live and generates mock rows from it, without touching Snowflake', async () => {
@@ -147,7 +150,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(warning).toHaveBeenCalledWith(
         req,
         'get_committee_engagement',
-        'ENGAGEMENT_BACKEND is not live; returning deterministic mock rows',
+        'ENGAGEMENT_BACKEND=mock — returning deterministic mock rows, not real data',
         expect.objectContaining({ committee_uid: 'committee-1', window: '30d', roster_size: 1 })
       );
     });
@@ -311,6 +314,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
   describe('live backend (ENGAGEMENT_BACKEND=live)', () => {
     beforeEach(() => {
       process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
+      delete process.env[NODE_ENV_KEY];
     });
 
     it('queries the engagement table with the committee uid and window bound in order, against the resolved schema', async () => {
@@ -445,9 +449,39 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(setJson).not.toHaveBeenCalled();
     });
   });
+
+  describe('backend selection defaults and the production hard-block', () => {
+    it('defaults to live (not mock) when ENGAGEMENT_BACKEND is unset', async () => {
+      delete process.env[ENGAGEMENT_BACKEND_KEY];
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(execute).toHaveBeenCalled();
+      expect(generateMockEngagementRows).not.toHaveBeenCalled();
+      expect(result.data_source).toBe('live');
+    });
+
+    it('ignores ENGAGEMENT_BACKEND=mock and stays on the live path when NODE_ENV=production', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'mock';
+      process.env[NODE_ENV_KEY] = 'production';
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(execute).toHaveBeenCalled();
+      expect(generateMockEngagementRows).not.toHaveBeenCalled();
+      expect(result.data_source).toBe('live');
+    });
+  });
 });
 
 afterAll(() => {
   if (originalEngagementBackend === undefined) delete process.env[ENGAGEMENT_BACKEND_KEY];
   else process.env[ENGAGEMENT_BACKEND_KEY] = originalEngagementBackend;
+  if (originalNodeEnv === undefined) delete process.env[NODE_ENV_KEY];
+  else process.env[NODE_ENV_KEY] = originalNodeEnv;
 });

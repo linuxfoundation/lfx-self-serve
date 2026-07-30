@@ -55,7 +55,7 @@ export class CommitteeEngagementService {
       // The ops-side signal that a response is fabricated — `data_source: 'mock'` on the response
       // body (below) is the in-band one any consumer must check; this is the log-side counterpart
       // for anyone watching production logs rather than inspecting individual responses.
-      logger.warning(req, 'get_committee_engagement', 'ENGAGEMENT_BACKEND is not live; returning deterministic mock rows', {
+      logger.warning(req, 'get_committee_engagement', 'ENGAGEMENT_BACKEND=mock — returning deterministic mock rows, not real data', {
         committee_uid: committeeUid,
         window,
         roster_size: members.length,

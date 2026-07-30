@@ -3,14 +3,14 @@
 
 /**
  * `ENGAGEMENT_BACKEND` gates `GET /api/committees/:uid/engagement` (LFXV2-1705) between the
- * deterministic mock generator and the real (not-yet-finalized) Snowflake read: unset or anything
- * other than `'live'` selects mock; `'live'` selects the real path — which can't yet produce real
- * data, since the live SQL still targets a legacy placeholder shape; see
- * `CommitteeEngagementResponse.data_available`'s doc for exactly which cases that path yields
- * `true`/`false` today. Defaulting to mock (not live) means local/dev work and integration
- * validation see varied fixtures without any env setup, while an explicit opt-in is required to
- * exercise the real path.
+ * deterministic mock generator and the real (not-yet-finalized) Snowflake read. Defaults to
+ * `live` — mock is explicit opt-in (`ENGAGEMENT_BACKEND=mock`) and additionally hard-blocked
+ * whenever `NODE_ENV=production`, so an unconfigured or production environment fails to
+ * `data_available:false` ("no data yet"), never to fabricated-looking data attached to real,
+ * named committee members. Matches the equivalent gate on the sibling LFXV2-1711 branch
+ * (`groups-engagement-stats.service.ts`). See `CommitteeEngagementResponse.data_available`'s
+ * doc for exactly which cases the live path yields `true`/`false` today.
  */
 export function isEngagementMockBackend(): boolean {
-  return process.env['ENGAGEMENT_BACKEND'] !== 'live';
+  return process.env['ENGAGEMENT_BACKEND'] === 'mock' && process.env['NODE_ENV'] !== 'production';
 }

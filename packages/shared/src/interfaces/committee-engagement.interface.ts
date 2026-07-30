@@ -6,7 +6,7 @@ import { COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS } from '../constants/committee-e
 /** Time window a committee-engagement request/response is scoped to. */
 export type CommitteeEngagementWindow = (typeof COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS)[number];
 
-/** `'mock'` = deterministically fabricated attendance numbers (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the default); `'live'` = the real Snowflake read. See `CommitteeEngagementResponse.data_source`. */
+/** `'mock'` = deterministically fabricated attendance numbers (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in production); `'live'` = the real Snowflake read, the default. See `CommitteeEngagementResponse.data_source`. */
 export type CommitteeEngagementDataSource = 'mock' | 'live';
 
 /**
@@ -95,8 +95,8 @@ export interface CommitteeEngagementResponse {
    * `role`/`voting_status` are roster passthroughs and stay populated regardless of whether a
    * warehouse row matched.
    *
-   * `true`: a mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the common case
-   * today); a genuinely successful live query; or a live cache hit (which the cache only ever
+   * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
+   * production); a genuinely successful live query; or a live cache hit (which the cache only ever
    * persists from that same successful-query case). Both of the latter two are imprecise today —
    * until the live SQL is rewritten against the finalized model, the only query that can succeed is
    * one against the legacy placeholder table returning zero rows, which says nothing real about the
@@ -117,8 +117,9 @@ export interface CommitteeEngagementResponse {
    */
   data_available: boolean;
   /**
-   * `'mock'` when `ENGAGEMENT_BACKEND` is unset/non-`'live'` (the default) — every number in this
-   * response is deterministically fabricated, not real attendance, even though it's attached to
+   * `'mock'` when `ENGAGEMENT_BACKEND=mock` is explicitly set (and `NODE_ENV` isn't `production`,
+   * where mock is hard-blocked) — every number in this response is deterministically fabricated,
+   * not real attendance, even though it's attached to
    * real roster members and `data_available` is `true`. Any consumer that could display this to an
    * end user (rather than use it for local/integration testing) must check this field, not just
    * `data_available`, before presenting the numbers as real.
