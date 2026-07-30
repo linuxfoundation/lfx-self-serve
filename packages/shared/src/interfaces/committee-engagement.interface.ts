@@ -91,16 +91,19 @@ export interface CommitteeEngagementResponse {
    * placeholder stats.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the common case
-   * today); a live cache hit; or a genuinely successful live query. That last case is imprecise
-   * today — until the live SQL is rewritten against the finalized model, the only query that can
-   * succeed is one against the legacy placeholder table returning zero rows, which says nothing
-   * real about the committee but is marked `true` anyway (see the `TODO(LFXV2-1705 follow-up)` at
-   * both call sites in `committee-engagement.service.ts`). Once that rewrite lands, `true` will
-   * mean what it's meant to now: real-shaped rows, even zero of them for a genuinely new committee.
+   * today); a genuinely successful live query; or a live cache hit (which the cache only ever
+   * persists from that same successful-query case). Both of the latter two are imprecise today —
+   * until the live SQL is rewritten against the finalized model, the only query that can succeed is
+   * one against the legacy placeholder table returning zero rows, which says nothing real about the
+   * committee but is marked `true` anyway (see `queryEngagementRows`'s `TODO(LFXV2-1705 follow-up)`
+   * in `committee-engagement.service.ts`). Once that rewrite lands, `true` will mean what it's meant
+   * to now: real-shaped rows, even zero of them for a genuinely new committee.
    *
-   * Regardless of path, the flag means "there's real per-member signal to show," not "this came
-   * from Snowflake." The UI should key its "no data available" state off this flag rather than
-   * inferring it from all-zero numbers.
+   * This flag is about shape, not truth: `true` means "there's a per-member row to render for every
+   * roster member," not "the numbers are real" — a mock response and the placeholder zero-row case
+   * are both `true` while carrying no real attendance signal. Check `data_source` for that
+   * distinction instead. The UI should key its "no data available" placeholder state off this flag
+   * rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
   /**
