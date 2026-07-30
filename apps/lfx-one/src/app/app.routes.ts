@@ -343,7 +343,12 @@ export const routes: Routes = [
       },
       {
         path: 'newsletters',
-        canActivate: [lensRedirectGuard, newsletterAccessGuard, projectQueryParamGuard],
+        // No newsletterAccessGuard at the mount: the Me-lens member feed
+        // (/newsletters/my) must be reachable by regular committee members.
+        // Every manager child route (list/create/edit/analytics) applies the
+        // guard itself in newsletters.routes.ts, and the /foundation and
+        // /project mounts above keep it — so manager surfaces stay gated.
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {

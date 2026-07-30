@@ -102,6 +102,26 @@ export class NewsletterController {
   }
 
   /**
+   * GET /api/newsletters/my-newsletters
+   *
+   * Not project-scoped: the Me-lens feed of sent newsletters reachable via the
+   * user's current committee memberships. Authorization happens per upstream
+   * call — the gateway FGA-checks `committee:{uid}#member` for every committee
+   * the service fans out to.
+   */
+  public async getMyNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_newsletters', {});
+
+    try {
+      const newsletters = await this.newsletterService.getMyNewsletters(req);
+      logger.success(req, 'get_my_newsletters', startTime, { count: newsletters.length });
+      res.json(newsletters);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/projects/:projectUid/newsletters?status=...&page_token=...
    */
   public async listNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
