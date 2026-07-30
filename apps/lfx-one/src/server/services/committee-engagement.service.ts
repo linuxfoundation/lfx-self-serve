@@ -185,16 +185,25 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * `Date` instances convert via `toISOString()`; strings pass through unchanged rather than being
-   * re-parsed with `new Date(value)`. A TIMESTAMP_NTZ string with no zone designator would parse as
-   * *local* time in V8, silently shifting the value by the server's UTC offset — the same trap
-   * `OrgLensProjectsService.latestTimestamp` avoids by never re-parsing string warehouse values.
+   * `Date` instances convert via `toISOString()`. Strings are validated (rejecting garbage like
+   * `'N/A'`) but never converted through `new Date(value).toISOString()` for the *returned* value —
+   * a zone-less `TIMESTAMP_NTZ` string would parse as local time in V8 and silently shift by the
+   * server's UTC offset, the same trap `OrgLensProjectsService.latestTimestamp` avoids by never
+   * re-parsing string warehouse values. The validation `new Date(value)` call below is discarded
+   * (only its validity is used), so it can't introduce that shift into what's returned.
+   *
+   * Warehouse timestamps are assumed UTC by construction (no per-committee timezone concept
+   * exists), so a bare `YYYY-MM-DD HH:MM:SS[.sss]` with no zone designator is normalized to a real
+   * `...Z` ISO string instead of shipping a value the response contract calls "ISO timestamp" but
+   * that technically isn't one.
    */
   private toIsoTimestamp(value: string | Date | null | undefined): string | null {
     if (value instanceof Date) {
       return Number.isNaN(value.getTime()) ? null : value.toISOString();
     }
-    return typeof value === 'string' && value.length > 0 ? value : null;
+    if (typeof value !== 'string' || value.length === 0 || Number.isNaN(new Date(value).getTime())) return null;
+    const hasZoneDesignator = /[Zz]|[+-]\d{2}:?\d{2}$/.test(value);
+    return hasZoneDesignator ? value : `${value.replace(' ', 'T')}Z`;
   }
 
   /** Placeholder table/column names — real names TBD once the dbt model (owned separately) lands. */

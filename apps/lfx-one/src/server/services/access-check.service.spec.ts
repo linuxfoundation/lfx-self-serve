@@ -7,7 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // isn't wired into this app's vitest config, so runtime collaborators need mocking. Only
 // `AccessCheckAccessType`/`AccessCheckRequest`/etc. are imported from shared interfaces — all
 // type-only, so no mock is needed for that subpath (esbuild elides type-only imports).
-const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
+//
+// `loggerError` is hoisted (not left as an inline `vi.fn()` in the `vi.mock` factory below) so it
+// can be reset per test — Vitest/Jest treat two `Error` instances as equal when their message
+// matches, so an unreset mock lets an unrelated earlier test's `logger.error(..., new Error('boom'))`
+// call silently satisfy a later `toHaveBeenCalledWith(..., new Error('boom'), ...)` assertion even
+// if the code path under test never ran.
+const { proxyRequest, loggerError } = vi.hoisted(() => ({ proxyRequest: vi.fn(), loggerError: vi.fn() }));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -15,13 +21,20 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
+  logger: {
+    startOperation: vi.fn(() => 0),
+    success: vi.fn(),
+    error: loggerError,
+    warning: vi.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    sanitize: (v: unknown) => v,
+  },
 }));
 
 import type { Request } from 'express';
 
 import { AccessCheckService } from './access-check.service';
-import { logger } from './logger.service';
 
 const req = {} as unknown as Request;
 
@@ -30,6 +43,7 @@ describe('AccessCheckService.checkAccess', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
+    loggerError.mockReset();
     service = new AccessCheckService();
   });
 
@@ -120,6 +134,7 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
 
   beforeEach(() => {
     proxyRequest.mockReset();
+    loggerError.mockReset();
     service = new AccessCheckService();
   });
 
@@ -132,14 +147,16 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
   });
 
   it('propagates the upstream error instead of degrading to false, and still logs it', async () => {
-    const upstreamError = new Error('boom');
+    const upstreamError = new Error('strict-path-upstream-failure');
     proxyRequest.mockRejectedValueOnce(upstreamError);
 
-    await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('boom');
+    await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('strict-path-upstream-failure');
     // checkAccess degrades and never throws, so its failure path always has a terminal log; a
     // rethrow path needs its own logger.error call or a failed strict check leaves a
-    // started-but-never-finished operation with no error record.
-    expect(logger.error).toHaveBeenCalledWith(req, expect.any(String), expect.any(Number), upstreamError, expect.objectContaining({ request_count: 1 }));
+    // started-but-never-finished operation with no error record. Asserts exactly one call (not
+    // just "called with") since `loggerError` is reset per test in beforeEach.
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expect(loggerError).toHaveBeenCalledWith(req, expect.any(String), expect.any(Number), upstreamError, expect.objectContaining({ request_count: 1 }));
   });
 
   it('returns an empty map without calling upstream for an empty input', async () => {

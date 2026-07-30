@@ -35,10 +35,11 @@ vi.mock('./committee.service', () => ({
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: {
     getInstance: () => ({ execute }),
-    // Delegates to the real regex (not a hand-rolled `missingObject` flag) so this suite would
-    // catch a change to SnowflakeService's wrapped error message breaking the match — the actual
-    // failure mode is the message produced by `execute`'s catch block ("Snowflake query execution
-    // failed: <sdk message>"), which the regex must still match after the wrapping prefix.
+    // Mirrors SnowflakeService.isMissingObjectError's actual regex (copied, not imported — the
+    // real class is mocked wholesale here) against a realistically wrapped error message, rather
+    // than a hand-rolled `missingObject` flag. This still can't catch the real regex changing out
+    // from under this copy, since snowflake.service.ts has no spec of its own today (see the
+    // regex at snowflake.service.ts's `isMissingObjectError` if this ever needs re-syncing).
     isMissingObjectError: (error: unknown) => /does not exist or not authorized/i.test(error instanceof Error ? error.message : String(error)),
   },
 }));
@@ -61,6 +62,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     execute.mockReset();
     getCommitteeMembers.mockReset();
     warning.mockReset();
+    debug.mockReset();
     service = new CommitteeEngagementService();
   });
 
@@ -167,6 +169,28 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     const result = await service.getCommitteeEngagement(req, 'committee-1', 'ytd');
 
     expect(result.computed_at).toBe('2026-07-29T00:00:00.000Z');
+  });
+
+  it('normalizes a zone-less TIMESTAMP_NTZ-shaped COMPUTED_AT to a real UTC ISO string, not a re-parsed local-time one', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28 00:00:00.000' }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
+  });
+
+  it('treats an unparseable COMPUTED_AT string as absent rather than passing it through', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'N/A' }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.computed_at).toBeNull();
   });
 
   it('logs a warning when warehouse rows exist but none match the roster by email', async () => {
