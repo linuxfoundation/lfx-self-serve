@@ -132,3 +132,12 @@ export interface UserMetadataUpdateResponse {
   data?: UserMetadata;
   error?: string;
 }
+
+/**
+ * Response payload for profile picture upload. `public_url` is null in degraded mode
+ * (no CDN configured) — callers fall back to the Auth0-sourced picture already in user_metadata.
+ */
+export interface ProfilePictureUploadResponse {
+  success: boolean;
+  public_url: string | null;
+}

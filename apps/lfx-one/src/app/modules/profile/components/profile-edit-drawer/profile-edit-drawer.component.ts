@@ -9,7 +9,15 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_AVATAR_MIME_TYPES,
+  COUNTRIES,
+  MAX_AVATAR_SIZE_BYTES,
+  normalizeTShirtSize,
+  PENDING_PROFILE_SAVE_KEY,
+  TSHIRT_SIZES,
+  US_STATES,
+} from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -71,10 +79,27 @@ export class ProfileEditDrawerComponent {
   public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
 
-  // True while any drawer mutation is in flight (profile save or primary-email PUT). Every dismissal
-  // and save path gates on this so an in-flight change can't be interrupted or left stale by a
-  // close/reopen — see onVisibleChange and the drawer template.
-  public readonly busy = computed(() => this.saving() || this.savingPrimaryEmail());
+  // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
+  // upload). Every dismissal and save path gates on this so an in-flight change can't be
+  // interrupted or left stale by a close/reopen — see onVisibleChange and the drawer template.
+  public readonly busy = computed(() => this.saving() || this.savingPrimaryEmail() || this.avatarUploading());
+
+  // Avatar signals
+  public readonly avatarUploading = signal(false);
+  // The avatar URL that failed to load, if any — mirrors ProfilePanelComponent's fallback pattern
+  // so a broken/expired picture URL falls back to initials instead of a broken image icon.
+  private readonly avatarErrorUrl = signal<string | null>(null);
+  public readonly avatarUrl = computed(() => this.combinedProfile()?.profile?.picture || '');
+  public readonly avatarInitials = computed(() => {
+    const profile = this.combinedProfile();
+    if (!profile) return 'U';
+    const cleanUsername = stripAuthPrefixOrNull(profile.user.username);
+    return profile.user.first_name?.charAt(0).toUpperCase() || cleanUsername?.charAt(0).toUpperCase() || 'U';
+  });
+  public readonly showAvatarImage = computed(() => {
+    const url = this.avatarUrl();
+    return !!url && this.avatarErrorUrl() !== url;
+  });
 
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
@@ -291,6 +316,60 @@ export class ProfileEditDrawerComponent {
       });
   }
 
+  /**
+   * Validate and upload a newly-selected profile picture. On success, updates the locally-cached
+   * profile (so the drawer's own preview reflects the change if reopened) and emits `saved` so the
+   * host layout refreshes the avatar shown elsewhere in the Me lens.
+   */
+  public onAvatarFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
+    input.value = '';
+    if (!file) {
+      return;
+    }
+
+    if (!(ALLOWED_AVATAR_MIME_TYPES as readonly string[]).includes(file.type)) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Please choose a PNG, JPEG, or WEBP image.' });
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_SIZE_BYTES) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Image must be 20MB or smaller.' });
+      return;
+    }
+
+    this.avatarUploading.set(true);
+    this.userService
+      .uploadProfilePicture(file)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.avatarUploading.set(false))
+      )
+      .subscribe({
+        next: (response) => {
+          if (!response.public_url) {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to upload profile picture. Please try again.' });
+            return;
+          }
+
+          const url = response.public_url;
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Profile picture updated!' });
+          this.combinedProfile.update((profile) => (profile ? { ...profile, profile: { ...(profile.profile ?? {}), picture: url } } : profile));
+          this.saved.emit({ picture: url });
+        },
+        error: () => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to upload profile picture. Please try again.' });
+        },
+      });
+  }
+
+  /** Handle a failed avatar image load: fall back to initials until the URL changes. */
+  public onAvatarError(): void {
+    this.avatarErrorUrl.set(this.avatarUrl());
+  }
+
   // Private methods
 
   /** Seed the form from the opened profile and reset its pristine/saving state. */
@@ -304,6 +383,8 @@ export class ProfileEditDrawerComponent {
     this.profileForm.markAsUntouched();
     this.hasChanges.set(false);
     this.saving.set(false);
+    this.avatarUploading.set(false);
+    this.avatarErrorUrl.set(null);
   }
 
   private populateForm(profile: CombinedProfile): void {

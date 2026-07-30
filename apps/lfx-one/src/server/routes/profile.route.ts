@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Router } from 'express';
+import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_SIZE_BYTES } from '@lfx-one/shared/constants';
+import express, { Router } from 'express';
 
 import { ProfileController } from '../controllers/profile.controller';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -35,6 +36,15 @@ router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req,
 
 // PATCH /api/profile - Update user metadata via NATS (replaces separate user and details endpoints)
 router.patch('/', blockDuringImpersonation, (req, res, next) => profileController.updateUserMetadata(req, res, next));
+
+// POST /api/profile/picture-upload - Upload a profile picture to the object store and persist its
+// URL to user_metadata.picture via NATS. Body is the raw image bytes (not multipart).
+router.post(
+  '/picture-upload',
+  blockDuringImpersonation,
+  express.raw({ type: [...ALLOWED_AVATAR_MIME_TYPES], limit: MAX_AVATAR_SIZE_BYTES }),
+  (req, res, next) => profileController.uploadProfilePicture(req, res, next)
+);
 
 // Email management routes (backed by auth-service via NATS)
 
