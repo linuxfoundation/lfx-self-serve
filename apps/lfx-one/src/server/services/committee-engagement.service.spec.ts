@@ -182,7 +182,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
   });
 
-  it('treats an unparseable COMPUTED_AT string as absent rather than passing it through', async () => {
+  it('treats an unparseable COMPUTED_AT string as absent rather than passing it through, and warns about it', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'N/A' }],
@@ -191,6 +191,25 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
     expect(result.computed_at).toBeNull();
+    // Distinct from a row that simply never reported COMPUTED_AT (routine, no signal) — this row
+    // reported a value and it was rejected, which is worth an operator's attention.
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable COMPUTED_AT'),
+      expect.objectContaining({ committee_uid: 'committee-1', rejected_count: 1, row_count: 1 })
+    );
+  });
+
+  it('does not warn about an unparseable COMPUTED_AT when the row simply never reported one', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalledWith(req, 'get_committee_engagement', expect.stringContaining('unparseable COMPUTED_AT'), expect.anything());
   });
 
   it('normalizes a TIMESTAMP_TZ-shaped COMPUTED_AT (space before the offset) into a canonical UTC ISO string', async () => {

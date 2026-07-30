@@ -108,10 +108,15 @@ export class CommitteeEngagementService {
     // an empty roster, must still surface the model's freshness timestamp) and as the latest of
     // all parseable values, not the first in `ORDER BY MEMBER_EMAIL` order — a partial refresh
     // could otherwise report an arbitrarily stale alphabetically-first row as "as of".
-    const computedAt = rows
-      .map((row) => this.toIsoTimestamp(row.COMPUTED_AT))
+    const parsedTimestamps = rows.map((row) => ({ raw: row.COMPUTED_AT, iso: this.toIsoTimestamp(row.COMPUTED_AT) }));
+    const computedAt = parsedTimestamps
+      .map(({ iso }) => iso)
       .filter((iso): iso is string => iso !== null)
       .reduce((latest: string | null, iso) => (!latest || iso > latest ? iso : latest), null);
+    // Distinct from "no COMPUTED_AT provided" (normal — the model hasn't computed anything for that
+    // row yet, not a data-quality issue): this counts rows that *did* report a value but one
+    // toIsoTimestamp rejected as calendar-invalid or shape-mismatched, which is worth surfacing.
+    const rejectedTimestampCount = parsedTimestamps.filter(({ raw, iso }) => raw !== null && raw !== undefined && iso === null).length;
 
     let totalAttended = 0;
     let totalInvited = 0;
@@ -160,6 +165,14 @@ export class CommitteeEngagementService {
           deduped_row_count: rowsByEmail.size,
         }
       );
+    }
+
+    if (rejectedTimestampCount > 0) {
+      logger.warning(req, 'get_committee_engagement', 'Some warehouse rows had an unparseable COMPUTED_AT; excluded from the freshness timestamp', {
+        committee_uid: committeeUid,
+        rejected_count: rejectedTimestampCount,
+        row_count: rows.length,
+      });
     }
 
     logger.debug(req, 'get_committee_engagement', 'Joined engagement rows to the roster', {
@@ -216,11 +229,13 @@ export class CommitteeEngagementService {
     const match = TIMESTAMP_SHAPE.exec(value.trim());
     if (!match) return null;
     const [, date, time, utc, offsetHours, offsetMinutes] = match;
-    // The shape regex only constrains digit counts, so '2026-02-30' or '2026-13-01' still matches
-    // it — and V8 rolls an out-of-range calendar date forward into a valid one instead of failing,
-    // so the NaN guard below wouldn't catch it. Round-trip the date part alone (offset-independent;
-    // an offset can legitimately shift the *time*'s UTC date, but not whether the calendar date the
-    // warehouse actually reported was real) to catch what the parser would otherwise silently fix up.
+    // The shape regex only constrains digit counts, so an out-of-range day like '2026-02-30' still
+    // matches it — and V8 rolls it forward into a real date (here, March 2) instead of failing, so
+    // the NaN guard below wouldn't catch it (an out-of-range *month* like '2026-13-01' does fail
+    // that guard on its own; only day-overflow silently rolls over). Round-trip the date part alone
+    // (offset-independent; an offset can legitimately shift the *time*'s UTC date, but not whether
+    // the calendar date the warehouse actually reported was real) to catch what the final parse
+    // would otherwise silently fix up.
     const calendarDate = new Date(`${date}T00:00:00Z`);
     if (Number.isNaN(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== date) return null;
     const zone = utc || !offsetHours ? 'Z' : `${offsetHours}:${offsetMinutes}`;
