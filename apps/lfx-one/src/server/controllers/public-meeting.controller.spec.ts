@@ -49,7 +49,7 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
-vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40 }));
+vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40, MEETING_PASSWORD_HEADER: 'x-meeting-password' }));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 
 vi.mock('../services/meeting.service', () => ({
@@ -124,6 +124,7 @@ function buildReqRes(authenticated: boolean, hasUserToken = true) {
   const req = {
     params: { id: MEETING_ID },
     query: {},
+    headers: {},
     // Optional-auth routes can be authenticated with no user bearer token (refresh failure).
     bearerToken: hasUserToken ? 'user-token' : undefined,
     oidc: { isAuthenticated: () => authenticated },
@@ -372,7 +373,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
     validatePasswordMock.mockReturnValue(true);
     const { req, res, next } = buildReqRes(false);
-    req.query.password = 'pw';
+    req.headers['x-meeting-password'] = 'pw';
 
     await controller.getMeetingOccurrences(req, res, next);
 

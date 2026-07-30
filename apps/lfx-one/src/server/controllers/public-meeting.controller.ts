@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
+import { MEETING_PASSWORD_HEADER } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -629,7 +630,9 @@ export class PublicMeetingController {
       return true;
     }
 
-    const { password } = req.query;
+    // The passcode arrives in a request header (never the GET query string, which lands
+    // in access logs and caches — CodeQL js/sensitive-get-query).
+    const password = req.headers[MEETING_PASSWORD_HEADER];
     if (typeof password === 'string' && password && validatePassword(password, meeting.password as string)) {
       return true;
     }
