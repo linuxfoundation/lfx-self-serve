@@ -4,7 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
-import { filterPastMeetingParticipants, getLargestSessionShareUrl, getPastMeetingResourceId, getPastMeetingStartTimeMs, isPastMeetingCalendarRow } from './past-meeting.utils';
+import {
+  filterPastMeetingParticipants,
+  getLargestSessionShareUrl,
+  getPastMeetingResourceId,
+  getPastMeetingStartTimeMs,
+  isPastMeetingCalendarRow,
+} from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
 function participant(partial: Partial<EnrichedPastMeetingParticipant>): EnrichedPastMeetingParticipant {

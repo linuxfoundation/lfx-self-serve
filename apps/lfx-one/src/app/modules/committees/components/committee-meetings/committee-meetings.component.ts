@@ -282,7 +282,7 @@ export class CommitteeMeetingsComponent {
       const allMeetings: (Meeting | PastMeeting)[] = [...this.upcomingMeetings(), ...externalData().pastMeetings];
       const { votes, surveys } = externalData();
 
-      const meetingEvents = allMeetings.flatMap((m) => meetingToCalendarEvents(m));
+      const meetingEvents = allMeetings.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
       const voteEvents = votes.filter((v) => !!v.end_time).map((v) => this.voteToEvent(v));
       const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => this.surveyToEvent(s));
 

@@ -26,6 +26,23 @@ export interface MeetingCalendarClickProps {
 }
 
 /**
+ * Structural FullCalendar event payload for meeting rows.
+ * Uses a plain interface so shared utils do not bind to a duplicate @fullcalendar/core copy.
+ */
+export interface MeetingCalendarEventInput {
+  id: string;
+  title: string;
+  start: string;
+  end?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  textColor?: string;
+  display?: string;
+  classNames?: string[];
+  extendedProps?: MeetingCalendarClickProps;
+}
+
+/**
  * Calendar event interface extending FullCalendar's EventInput
  * @description Meeting events displayed in calendar components with LFX-specific properties
  */

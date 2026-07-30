@@ -1,26 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EventInput } from '@fullcalendar/core';
-
-import { CANCELLED_COLOR, MEETING_TYPE_COLORS } from '../constants';
 import { Meeting, MeetingOccurrenceRoute, PastMeeting } from '../interfaces';
-import type { MeetingCalendarClickProps } from '../interfaces/calendar.interface';
+import type { MeetingCalendarClickProps, MeetingCalendarEventInput } from '../interfaces/calendar.interface';
 
 import { addMinutesToDate } from './date-time.utils';
-import {
-  buildMeetingOccurrenceRoute,
-  hasMeetingEnded,
-  isMeetingOccurrenceCancelled,
-  resolveMeetingCalendarColors,
-} from './meeting.utils';
+import { buildMeetingOccurrenceRoute, hasMeetingEnded, isMeetingOccurrenceCancelled, resolveMeetingCalendarColors } from './meeting.utils';
 import { getPastMeetingResourceId, getPastMeetingStartTimeMs, isPastMeetingCalendarRow } from './past-meeting.utils';
 
 /**
  * Builds FullCalendar event inputs for a meeting or past-meeting row.
  * Shared by committee and dashboard calendar surfaces.
  */
-export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): EventInput[] {
+export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): MeetingCalendarEventInput[] {
   if (meeting.occurrences && meeting.occurrences.length > 0) {
     return meeting.occurrences.map((occ) => {
       const occurrenceDuration = occ.duration ?? meeting.duration;
@@ -45,7 +37,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): EventIn
           type: 'meeting',
           meetingId: meeting.id,
           cancelled: isCancelled,
-          password: meeting.password,
+          password: meeting.password ?? undefined,
           startTime: occ.start_time,
           durationMinutes: occ.duration ?? meeting.duration,
         },
@@ -75,7 +67,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): EventIn
         type: 'meeting',
         meetingId: pastResourceId ?? meeting.id,
         pastMeetingResourceId: pastResourceId,
-        password: meeting.password,
+        password: meeting.password ?? undefined,
         startTime,
         durationMinutes: meeting.duration,
       },
@@ -86,10 +78,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): EventIn
 /**
  * Resolves the router target for a meeting calendar click, or null when the event is inert.
  */
-export function resolveMeetingCalendarClickRoute(
-  props: MeetingCalendarClickProps,
-  eventStart?: Date | null
-): MeetingOccurrenceRoute | null {
+export function resolveMeetingCalendarClickRoute(props: MeetingCalendarClickProps, eventStart?: Date | null): MeetingOccurrenceRoute | null {
   if (props.cancelled || props.type !== 'meeting' || !props.meetingId) {
     return null;
   }

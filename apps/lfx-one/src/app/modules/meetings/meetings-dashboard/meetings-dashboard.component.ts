@@ -999,7 +999,7 @@ export class MeetingsDashboardComponent {
               viewerUsername: this.userService.viewerUsername(),
             })
           : this.filterBySearchAndType([...this.rawFpUpcomingMeetings(), ...this.rawFpPastMeetings()], search, meetingType);
-      return filtered.flatMap((m) => meetingToCalendarEvents(m));
+      return filtered.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
     });
   }
 }
