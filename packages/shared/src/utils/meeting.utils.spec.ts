@@ -9,10 +9,20 @@ import '@angular/compiler';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, PastOccurrenceSummary, QueryServiceItem } from '../interfaces';
+import {
+  CustomRecurrencePattern,
+  Meeting,
+  MeetingOccurrence,
+  MeetingRecurrence,
+  PastMeeting,
+  PastMeetingSummary,
+  PastOccurrenceSummary,
+  QueryServiceItem,
+} from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
   buildOccurrenceNavTimeline,
+  getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
   buildRecurrenceNeverEndDate,
@@ -791,6 +801,26 @@ describe('selectPrimaryPastMeetingSummary', () => {
     ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
+});
+
+describe('getMeetingSeriesUid', () => {
+  it('returns meeting_id for past-meeting payloads whose id is the composite occurrence id', () => {
+    const past = { id: 'series-1-1789551000000', meeting_id: 'series-1' } as PastMeeting;
+
+    expect(getMeetingSeriesUid(past)).toBe('series-1');
+  });
+
+  it('returns id for live meeting payloads without meeting_id', () => {
+    const meeting = { id: 'series-1' } as Meeting;
+
+    expect(getMeetingSeriesUid(meeting)).toBe('series-1');
+  });
+
+  it('falls back to id when meeting_id is present but empty', () => {
+    const past = { id: 'series-1', meeting_id: '' } as PastMeeting;
+
+    expect(getMeetingSeriesUid(past)).toBe('series-1');
   });
 });
 

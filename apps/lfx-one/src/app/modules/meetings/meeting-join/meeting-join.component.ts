@@ -39,11 +39,11 @@ import {
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRecurrence,
+  getMeetingSeriesUid,
   MeetingRegistrant,
   MeetingRsvp,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
-  PastMeeting,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
@@ -765,7 +765,7 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       toObservable(this.meeting).pipe(
         filter((meeting) => !!meeting?.recurrence),
-        map((meeting) => this.getSeriesUid(meeting)),
+        map((meeting) => getMeetingSeriesUid(meeting)),
         distinctUntilChanged(),
         switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password()))
       ),
@@ -830,18 +830,13 @@ export class MeetingJoinComponent implements OnInit {
     return `/meetings/${seriesUid}?${params.toString()}`;
   }
 
-  /** Series UID for occurrence URLs — on past pages `meeting.id` is the composite occurrence id, not the series. */
-  private getSeriesUid(meeting: Meeting): string {
-    return (meeting as unknown as PastMeeting).meeting_id || meeting.id;
-  }
-
   private initializePreviousOccurrenceUrl(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting?.recurrence) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (currentIdx <= 0) return null;
-      return this.buildOccurrenceUrl(this.getSeriesUid(meeting), sorted[currentIdx - 1]);
+      return this.buildOccurrenceUrl(getMeetingSeriesUid(meeting), sorted[currentIdx - 1]);
     });
   }
 
@@ -851,7 +846,7 @@ export class MeetingJoinComponent implements OnInit {
       if (!meeting?.recurrence) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (currentIdx < 0 || currentIdx >= sorted.length - 1) return null;
-      return this.buildOccurrenceUrl(this.getSeriesUid(meeting), sorted[currentIdx + 1]);
+      return this.buildOccurrenceUrl(getMeetingSeriesUid(meeting), sorted[currentIdx + 1]);
     });
   }
 

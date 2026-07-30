@@ -330,6 +330,18 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
 }
 
 /**
+ * Resolves the series UID for a meeting payload without casting: past-meeting
+ * payloads carry the originating series UID in `meeting_id` while their `id` is
+ * the composite occurrence id (`{uid}-{ms-timestamp}`); live payloads use `id`.
+ */
+export function getMeetingSeriesUid(meeting: Meeting): string {
+  if ('meeting_id' in meeting && typeof meeting.meeting_id === 'string' && meeting.meeting_id) {
+    return meeting.meeting_id;
+  }
+  return meeting.id;
+}
+
+/**
  * Merges a meeting's live occurrences with the series timeline from the public
  * occurrences endpoint into one ascending navigation list.
  *
