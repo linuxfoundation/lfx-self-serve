@@ -99,22 +99,31 @@ export class OrgLensProjectsService {
       binds.push(like, like);
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join('\n        AND ')}` : '';
-    // Relevance ordering: addable first (ALREADY_ADDED asc), then prefix matches on name OR slug (bound last, after
-    // SELECT/WHERE binds) so a target like "k8s" isn't buried behind contains-matches. Empty-query preload falls back to catalog rank.
+    // Relevance ordering: addable first (ALREADY_ADDED asc), then the match-strength tier below (bound last, after
+    // SELECT/WHERE binds). Empty-query preload has no tier and falls back to catalog rank.
     // PROJECT_SLUG is the unique final tiebreaker so the 50/500 LIMIT cap is deterministic across requests
     // (rows tied on rank/name can't reshuffle in and out of the cap) — required for paginated ORDER BY/LIMIT.
     // ONBOARDED_PROJECT_RANK is nullable: pin NULLS LAST so a session-level DEFAULT_NULL_ORDERING can't move
     // null-rank rows in/out of the cap, and end on PROJECT_SLUG (unique) so the 50/500 LIMIT is deterministic.
     let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC NULLS LAST, PROJECT_NAME ASC, PROJECT_SLUG ASC';
     if (trimmed.length) {
-      const prefixLike = `${escapeSqlLikePattern(trimmed)}%`;
+      const exactLike = escapeSqlLikePattern(trimmed);
+      const prefixLike = `${exactLike}%`;
+      // Tier by match strength so name matches beat slug-only matches: exact name/slug, then name-prefix, then
+      // slug-prefix, then contains. Without the split, "kub" ranks the many kubernetes-sigs-* slug siblings
+      // above the actual "Kubernetes" project (slug "k8s"); exact-slug still surfaces "k8s" at the very top.
       orderByClause = `ORDER BY
         ALREADY_ADDED ASC,
-        CASE WHEN PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 0 ELSE 1 END ASC,
+        CASE
+          WHEN PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 0
+          WHEN PROJECT_NAME ILIKE ? ESCAPE '!' THEN 1
+          WHEN PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 2
+          ELSE 3
+        END ASC,
         ONBOARDED_PROJECT_RANK ASC NULLS LAST,
         PROJECT_NAME ASC,
         PROJECT_SLUG ASC`;
-      binds.push(prefixLike, prefixLike);
+      binds.push(exactLike, exactLike, prefixLike, prefixLike);
     }
     // Preload keeps the initial panel light; a typed query returns up to the safety cap so the user
     // can scroll the panel to the true end of the match list rather than hitting a hard 20-row wall.
