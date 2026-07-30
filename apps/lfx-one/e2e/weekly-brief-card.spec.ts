@@ -382,9 +382,10 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     const GENERATING_BRIEF: WeeklyBrief = { ...GENERATED_BRIEF, state: 'generating', brief_text: '' };
 
     // Upstream's generate call is a 202 accepted, not a completed brief — the card
-    // must poll GET /current until the brief lands on a terminal state (LFXV2-2175/2176
-    // review). Sequence: call 1 = initial empty-state load; call 2 = the poll's first
-    // (immediate) tick, still `generating`; call 3+ = poll has completed, terminal brief.
+    // renders the 202 body's `generating` state immediately (no GET needed for that),
+    // then polls GET /current one interval later until the brief lands on a terminal
+    // state (LFXV2-2175/2176 review). Sequence: call 1 = initial empty-state load;
+    // call 2 = the poll's first (delayed) tick, already terminal.
     let getCount = 0;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
       if (route.request().method() !== 'GET') {
@@ -393,16 +394,12 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
       }
       getCount += 1;
       const body: WeeklyBriefCurrentResponse =
-        getCount === 1
-          ? { brief: null, throttle: DEFAULT_THROTTLE }
-          : getCount === 2
-            ? { brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE }
-            : { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE };
+        getCount === 1 ? { brief: null, throttle: DEFAULT_THROTTLE } : { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
-    // Intercept POST (generate) — real upstream responds 202 with the brief still
-    // `generating`; the client ignores this body and re-reads via the poll above.
+    // Intercept POST (generate) — real upstream responds 202 with the brief in the
+    // `generating` state; the client renders this body directly, then polls for terminal.
     let capturedPostBody: { force?: boolean } | null = null;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/generate`, async (route) => {
       capturedPostBody = (route.request().postDataJSON() ?? {}) as { force?: boolean };
@@ -431,10 +428,10 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     expect(capturedPostBody).not.toBeNull();
     expect(capturedPostBody!.force).toBeUndefined();
 
-    // Poll's first tick lands the card on the generating state.
+    // The 202 body lands the card on the generating state immediately — no GET needed.
     await expect(page.getByTestId('weekly-brief-card-generating-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Next poll tick returns the terminal brief — empty state stays gone, generated
+    // Poll's first tick returns the terminal brief — empty state stays gone, generated
     // content and actions take over.
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

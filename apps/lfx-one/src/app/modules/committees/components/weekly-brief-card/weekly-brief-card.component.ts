@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Injector, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -29,6 +29,7 @@ import {
   takeUntil,
   takeWhile,
   tap,
+  timeout,
   timer,
 } from 'rxjs';
 
@@ -44,6 +45,7 @@ export class WeeklyBriefCardComponent {
   private readonly weeklyBriefService = inject(WeeklyBriefService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
 
   // Inputs
   public readonly committee = input.required<Committee>();
@@ -122,9 +124,14 @@ export class WeeklyBriefCardComponent {
       .pipe(take(1))
       .subscribe({
         // Upstream's generate call is a 202 accepted, not a completed brief — the
-        // actual generation runs out-of-band. Poll GET /current until it lands on a
-        // terminal state instead of treating the 202 itself as done.
-        next: () => this.pollUntilTerminal(committeeUid),
+        // actual generation runs out-of-band. Render the 202 body's `generating` state
+        // immediately (it's already in hand — no reason to wait a full poll interval
+        // and risk reading back the still-terminal pre-generate brief instead), then
+        // poll GET /current until it lands on a terminal state.
+        next: (res) => {
+          this.briefResponse.set({ brief: res.brief ?? null, throttle: res.throttle ?? null });
+          this.pollUntilTerminal(committeeUid);
+        },
         error: (err: HttpErrorResponse) => {
           this.generating.set(false);
           let detail: string;
@@ -181,6 +188,16 @@ export class WeeklyBriefCardComponent {
 
   public async onCopyAndShare(): Promise<void> {
     const text = this.brief()?.brief_text ?? '';
+    // Matches badge-card.component.ts's copyLink guard: navigator.clipboard is
+    // unavailable during SSR and on some browsers/contexts (non-HTTPS, older Safari).
+    if (!navigator.clipboard?.writeText) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Copy not supported',
+        detail: 'Clipboard access is unavailable in this browser.',
+      });
+      return;
+    }
     try {
       await navigator.clipboard.writeText(text);
       this.messageService.add({
@@ -241,10 +258,12 @@ export class WeeklyBriefCardComponent {
   // Polls GET /current after a generate/regenerate call is accepted (202) until the
   // brief reaches a terminal state (generated/edited/approved/error), or the attempt
   // cap trips. A transient poll failure doesn't abandon the poll — only the cap does.
+  // The caller has already rendered the 202 body's `generating` state, so the first
+  // tick is one interval out rather than immediate.
   private pollUntilTerminal(committeeUid: string): void {
     let ticks = 0;
     let observedTerminal = false;
-    timer(0, WEEKLY_BRIEF_POLL_INTERVAL_MS)
+    timer(WEEKLY_BRIEF_POLL_INTERVAL_MS, WEEKLY_BRIEF_POLL_INTERVAL_MS)
       .pipe(
         take(WEEKLY_BRIEF_MAX_POLL_ATTEMPTS),
         tap(() => {
@@ -253,9 +272,13 @@ export class WeeklyBriefCardComponent {
         // exhaustMap, not switchMap: a GET that outlives one interval tick must not be
         // cancelled and restarted on the next tick — that would mean no request ever
         // resolves and the poll dies silently once the attempt cap is hit. Skip a tick
-        // instead if the previous one is still in flight.
+        // instead if the previous one is still in flight. A per-tick timeout bounds the
+        // exhaustMap wait itself — otherwise a single hung request would block `complete`
+        // (and the attempt cap) indefinitely, since exhaustMap only completes once its
+        // last active inner subscription settles.
         exhaustMap(() =>
           this.weeklyBriefService.getWeeklyBrief(committeeUid).pipe(
+            timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
               return of(null as WeeklyBriefCurrentResponse | null);
@@ -277,6 +300,12 @@ export class WeeklyBriefCardComponent {
         // overwrite a fresher refresh result. skip(1): refresh$ is a BehaviorSubject and
         // replays its current value on subscribe; only a genuinely new emission should cancel.
         takeUntil(this.refresh$.pipe(skip(1))),
+        // Angular's default RouteReuseStrategy can keep this component alive across a
+        // committee navigation (committee-view.component.ts only flips its own loading
+        // state when there was no prior committee) — stop polling for a uid that's no
+        // longer the one on screen, or a late tick would paint the old committee's brief
+        // onto the new one's card.
+        takeUntil(toObservable(this.committee, { injector: this.injector }).pipe(filter((c) => c?.uid !== committeeUid))),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
