@@ -164,10 +164,12 @@ export class CommitteeEngagementService {
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
    * always reflects the full committee; an unmatched member (today, only the live-degrade case —
-   * mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`,
-   * not-joined-within-window — but `role`/`voting_status` still come from the roster itself (see
-   * below), so a roster-Emeritus member still classifies `Emeritus`; everyone else classifies
-   * `Inactive`.
+   * mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`, but
+   * `role`/`voting_status`/join-date all still come from the roster itself where the warehouse row
+   * doesn't have them (see below) — none of those three are warehouse-sourced in the first place, so
+   * there's nothing warehouse-shaped to be missing. A roster-Emeritus member still classifies
+   * `Emeritus`; a member who genuinely joined within the window still gets the tenure-grace `High`
+   * instead of `Inactive`; everyone else classifies `Inactive`.
    */
   private buildResponse(
     req: Request,
@@ -223,7 +225,12 @@ export class CommitteeEngagementService {
       // own no-real-data-fabrication concern, not a contract this live/degraded path needs to match.
       const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
       const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
-      const joinedWithinWindow = row ? this.isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart) : false;
+      // Same roster-fallback reasoning as role/voting-status above: `created_at` is a required
+      // roster field, so it's always in hand even without a matching row, and `isJoinedWithinWindow`
+      // already fails safe (`false`) on null/unparseable input — discarding it here would cost a
+      // recently-joined unmatched member their tenure grace (case 2 of the classifier's decision
+      // order) for no reason, since the roster's join date isn't warehouse-sourced either.
+      const joinedWithinWindow = this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? member.created_at, windowStart);
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;

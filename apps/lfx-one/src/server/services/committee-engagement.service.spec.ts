@@ -312,6 +312,17 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.at_risk_count).toBe(0);
     });
 
+    it('falls back to the roster real created_at on a degraded (unmatched) member, so a recently-joined member still gets tenure grace', async () => {
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin })]);
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.summary.at_risk_count).toBe(0);
+    });
+
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {
       getCommitteeMembers.mockResolvedValueOnce([]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
