@@ -83,11 +83,22 @@
 
         &.meeting-event {
           .fc-event-title {
-            @apply font-medium leading-tight overflow-hidden line-clamp-2;
+            @apply font-medium leading-tight overflow-hidden line-clamp-2 text-white;
           }
 
           .fc-event-time {
-            @apply font-semibold mr-1 block mb-0.5 text-[11px];
+            @apply font-semibold mr-1 block mb-0.5 text-[11px] text-white;
+          }
+
+          // FullCalendar 6 ignores event textColor on timed events — drive contrast via CSS.
+          &.meeting-event-past {
+            .fc-event-title {
+              @apply text-blue-700 #{!important};
+            }
+
+            .fc-event-time {
+              @apply text-blue-900 #{!important};
+            }
           }
         }
       }

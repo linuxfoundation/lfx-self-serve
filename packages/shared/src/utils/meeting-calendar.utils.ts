@@ -22,6 +22,8 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
       const classNames = ['meeting-event'];
       if (isCancelled) {
         classNames.push('cursor-default');
+      } else if (isPast) {
+        classNames.push('meeting-event-past');
       }
       return {
         id: `${meeting.id}-${occ.occurrence_id}`,
@@ -51,6 +53,10 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
   const isPast = pastRow || hasMeetingEnded(meeting);
   const colors = resolveMeetingCalendarColors(false, isPast);
   const pastResourceId = pastRow ? getPastMeetingResourceId(meeting) : undefined;
+  const classNames = ['meeting-event'];
+  if (isPast) {
+    classNames.push('meeting-event-past');
+  }
 
   return [
     {
@@ -62,7 +68,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
       borderColor: colors.border,
       textColor: colors.text,
       display: 'block',
-      classNames: ['meeting-event'],
+      classNames,
       extendedProps: {
         type: 'meeting',
         meetingId: pastResourceId ?? meeting.id,
