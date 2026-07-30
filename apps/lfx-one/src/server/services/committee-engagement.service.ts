@@ -216,8 +216,11 @@ export class CommitteeEngagementService {
       // known Emeritus member would silently lose that short-circuit and classify Inactive on every
       // unmatched/degraded response, even though the roster already knows better. `||`, not `??`,
       // so a blank passthrough falls through too; both fields' real enum values ('None' included)
-      // are always non-empty strings. Last-resort default matches the mock generator's own
-      // no-real-data default, so "None" (not "") is what a consumer sees either way.
+      // are always non-empty strings. Last-resort default is the documented `None` sentinel rather
+      // than '' — matching the mock generator's own role default
+      // (`member.role?.name ?? CommitteeMemberRole.NONE`); its voting-status default differs
+      // (`organicVotingStatus()` hash-derives a rep status, never `None`), but that's mock mode's
+      // own no-real-data-fabrication concern, not a contract this live/degraded path needs to match.
       const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
       const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
       const joinedWithinWindow = row ? this.isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart) : false;
