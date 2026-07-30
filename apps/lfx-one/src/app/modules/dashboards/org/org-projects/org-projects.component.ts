@@ -218,9 +218,12 @@ export class OrgProjectsComponent {
   protected readonly addProjectSelectOptions = computed(() =>
     this.mergeAddableOptions([...this.selectedAddableProjectOptions(), ...this.addableProjectOptions()])
   );
-  protected readonly addProjectsSearchEmptyTitle = computed(() => this.initAddProjectsSearchEmptyTitle());
-  /** Search status shown INSIDE the body-appended panel (as its empty message), not below the trigger where the open dropdown would cover it. */
-  protected readonly addProjectsPanelStatusMessage = computed(() => {
+  /**
+   * Always-visible panel status (searching / load error / all-matches-already-added / min-length). Rendered in the
+   * multi-select FOOTER, which shows regardless of list emptiness — so a still-selected option matching the filter
+   * can't keep the list non-empty and swallow the status (returns undefined when there's nothing to say).
+   */
+  protected readonly addProjectsPanelStatus = computed<string | undefined>(() => {
     if (this.addProjectsSearchLoading()) {
       return 'Searching projects…';
     }
@@ -232,7 +235,21 @@ export class OrgProjectsComponent {
     if (this.addProjectsMatchesAlreadyInWorkspace() && this.addableProjectOptions().length === 0) {
       return 'Matching projects are already in this workspace.';
     }
-    return this.addProjectsSearchEmptyTitle();
+    const query = this.addProjectsSearchQuery().trim();
+    if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
+      return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
+    }
+    return undefined;
+  });
+  /**
+   * Plain empty-list title for PrimeNG's emptyMessage/emptyFilterMessage. Blank while an always-visible status is
+   * active so the footer status isn't duplicated in the empty body; otherwise the ordinary "no matches" copy.
+   */
+  protected readonly addProjectsEmptyMessage = computed(() => {
+    if (this.addProjectsPanelStatus()) {
+      return '';
+    }
+    return this.addProjectsSearchQuery().trim() ? 'No projects match your search.' : 'No projects available to add.';
   });
   protected readonly tableEmptyState = computed<OrgProjectsEmptyState>(() => this.initTableEmptyState());
   protected readonly canDeleteEditingWorkspace = computed(() => {
@@ -594,8 +611,7 @@ export class OrgProjectsComponent {
     this.addProjectsSearchLoading.set(shouldSearch);
     if (!shouldSearch) {
       // Clear stale error / already-in-workspace flags AND the previous query's options now (not after the
-      // debounce). The status copy only renders when the option list is empty, so leaving stale options lets
-      // PrimeNG client-filter them and hides the "type at least N characters" guidance below the min length.
+      // debounce), so below the min length the panel doesn't keep offering stale search hits as pickable rows.
       this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(false);
       this.addProjectsMatchesAlreadyInWorkspace.set(false);
@@ -871,14 +887,6 @@ export class OrgProjectsComponent {
     if (this.error()) return 'Resolve the loading error first';
     if (!this.selectedWorkspace()) return 'No workspace is selected';
     return undefined;
-  }
-
-  private initAddProjectsSearchEmptyTitle(): string {
-    const query = this.addProjectsSearchQuery().trim();
-    if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
-      return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
-    }
-    return query ? 'No projects match your search.' : 'No projects available to add.';
   }
 
   private initTableEmptyState(): OrgProjectsEmptyState {

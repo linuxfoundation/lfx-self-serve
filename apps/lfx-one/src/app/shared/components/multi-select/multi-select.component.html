@@ -25,6 +25,12 @@
     (onFilter)="filterChange.emit($event.filter ?? '')"
     (onPanelShow)="onPanelShow()"
     class="w-full">
+    @if (panelStatus(); as status) {
+      <!-- Footer renders regardless of whether the option list is empty, so a selected option matching the filter can't hide the status. -->
+      <ng-template #footer>
+        <div class="border-t border-gray-100 px-3 py-2 text-center text-sm text-gray-500" data-testid="multi-select-panel-status">{{ status }}</div>
+      </ng-template>
+    }
     @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">
         <div class="flex items-center gap-2">

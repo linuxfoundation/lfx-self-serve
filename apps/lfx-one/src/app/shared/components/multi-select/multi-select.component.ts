@@ -44,6 +44,13 @@ export class MultiSelectComponent {
   /** Message rendered INSIDE the panel when the active filter matches no options. */
   public readonly emptyFilterMessage = input<string>('No results found');
   /**
+   * Always-visible status banner rendered in the panel FOOTER (e.g. searching / load error / min-length hint).
+   * Unlike emptyMessage/emptyFilterMessage — which PrimeNG only renders when the option list is empty — the footer
+   * shows regardless, so a still-selected option that matches the active filter can't keep the list non-empty and
+   * hide the status. Leave undefined for no banner.
+   */
+  public readonly panelStatus = input<string | undefined>(undefined);
+  /**
    * Pin the body-appended overlay panel to the trigger's width. PrimeNG 20 doesn't size a body-appended MultiSelect
    * overlay to its trigger (long labels/CSS floors mis-size it), so when true it's measured against the trigger and matched on each open.
    */

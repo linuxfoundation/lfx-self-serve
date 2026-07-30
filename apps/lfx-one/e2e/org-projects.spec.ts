@@ -256,7 +256,12 @@ test.describe('Org Projects', () => {
   });
 
   test('keeps add-project search results ordered by the latest request', async ({ page }) => {
-    await gotoOrgProjectsPage(page);
+    // Use a workspace that does NOT already contain kubernetes, so the Kubernetes search result is addable
+    // (mapAddableOptions filters out projects already in the selected workspace).
+    await gotoOrgProjectsPage(page, {
+      workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
+      url: `${ORG_PROJECTS_URL}?workspace=custom`,
+    });
     await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, async (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
@@ -274,12 +279,18 @@ test.describe('Org Projects', () => {
     });
 
     await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The dialog fires an on-open empty-query search; it's deliberately slow here. Wait for it to settle before
+    // opening the panel — clicking the multi-select while it's still loading doesn't open the overlay.
+    const onOpenSearch = page.waitForResponse((r) => /\/lens\/projects\/search/.test(r.url()) && r.request().method() === 'GET');
     await page.getByTestId('org-projects-add-project').click();
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    await onOpenSearch;
     // Single search affordance: no standalone search input in the dialog — search lives inside the multi-select's own filter.
     await expect(page.getByRole('dialog', { name: 'Add project(s)' }).getByRole('searchbox')).toHaveCount(0);
     await page.getByTestId('org-projects-add-projects-select').click();
-    await page.getByPlaceholder('Search and select projects').fill('ku');
+    const filter = page.getByRole('searchbox', { name: 'Search and select projects' });
+    await expect(filter).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await filter.fill('ku');
 
     await expect(page.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.waitForTimeout(500);
@@ -312,7 +323,7 @@ test.describe('Org Projects', () => {
         results: [{ slug: 'kubernetes', name: 'Kubernetes', logoUrl: '', foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' } }],
       });
     });
-    await page.getByPlaceholder('Search and select projects').fill('ku');
+    await page.getByRole('searchbox', { name: 'Search and select projects' }).fill('ku');
     await page.getByLabel('Option List').getByText('Kubernetes').click();
     await page.keyboard.press('Escape');
 
@@ -369,9 +380,44 @@ test.describe('Org Projects', () => {
     await page.getByTestId('org-projects-add-project').click();
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
     await page.getByTestId('org-projects-add-projects-select').click();
-    await page.getByPlaceholder('Search and select projects').fill('ku');
+    // Scope to the in-panel filter input by role — the host <lfx-multi-select> also carries the same placeholder.
+    await page.getByRole('searchbox', { name: 'Search and select projects' }).fill('ku');
 
-    await expect(page.getByText('Matching projects are already in this workspace.')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The already-in-workspace status now renders in the always-visible panel footer, so a still-selected option
+    // matching the filter can't hide it (regression guard for the Bugbot "status hidden by selected options" bug).
+    await expect(page.getByTestId('multi-select-panel-status')).toHaveText('Matching projects are already in this workspace.');
+  });
+
+  test('keeps the panel status visible when a selected option still matches the filter', async ({ page }) => {
+    // Kubernetes must be addable (not already in the workspace) so it can be selected, so use a custom workspace.
+    await gotoOrgProjectsPage(page, {
+      workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
+      url: `${ORG_PROJECTS_URL}?workspace=custom`,
+    });
+    await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, {
+        results: [{ slug: 'kubernetes', name: 'Kubernetes', logoUrl: '', foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' } }],
+      });
+    });
+
+    await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-projects-add-project').click();
+    await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    await page.getByTestId('org-projects-add-projects-select').click();
+
+    // Search, then select Kubernetes so it stays in the option list as a checked item.
+    const filter = page.getByRole('searchbox', { name: 'Search and select projects' });
+    await filter.fill('ku');
+    await page.getByLabel('Option List').getByText('Kubernetes').click();
+
+    // Drop below the min search length to a character the selected option still matches. The selected row keeps the
+    // list non-empty, but the min-length guidance must still show in the always-visible footer — the exact Bugbot
+    // "status hidden by selected options" regression this footer fixes.
+    await filter.fill('k');
+    await expect(page.getByTestId('multi-select-panel-status')).toHaveText('Type at least 2 characters to search projects.');
+    await expect(page.getByLabel('Option List').getByText('Kubernetes')).toBeVisible();
   });
 
   test('reloads the project table after adding projects to a workspace', async ({ page }) => {

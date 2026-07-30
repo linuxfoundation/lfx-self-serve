@@ -581,8 +581,9 @@
       [autofocusFilter]="true"
       scrollHeight="16rem"
       [loading]="addProjectsSearchLoading()"
-      [emptyMessage]="addProjectsPanelStatusMessage()"
-      [emptyFilterMessage]="addProjectsPanelStatusMessage()"
+      [emptyMessage]="addProjectsEmptyMessage()"
+      [emptyFilterMessage]="addProjectsEmptyMessage()"
+      [panelStatus]="addProjectsPanelStatus()"
       (filterChange)="onAddProjectsFilter($event)"
       data-testid="org-projects-add-projects-select" />
     @if (addProjectsSaveError()) {
