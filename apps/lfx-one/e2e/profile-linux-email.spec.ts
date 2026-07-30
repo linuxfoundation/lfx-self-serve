@@ -260,6 +260,25 @@ test.describe('Linux.com email — service unavailable', () => {
       return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Bad gateway' }) });
     });
 
+    // Capture console.error output so we can assert the catchError logs the failure
+    // (component logs 'Failed to load Linux.com alias state:' before falling back).
+    // Read the status from the second arg directly rather than string-matching the serialized
+    // preview, so the assertion also fails if the error argument is ever dropped (status would
+    // be undefined) — not just if the prefix changes. Note: the app's initializeConsoleOverride
+    // (main.ts) reshapes HttpErrorResponse args into a plain { status_code, err: { statusCode } }
+    // object before logging, so the HTTP status lives on `status_code`, not `.status`.
+    const aliasLoadErrors: { text: string; status: number | undefined }[] = [];
+    page.on('console', async (msg) => {
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      if (!text.includes('Failed to load Linux.com alias state')) return;
+      const errorArg = msg.args()[1];
+      const status = errorArg
+        ? await errorArg.evaluate((err) => (err && typeof err === 'object' ? (err as { status_code?: number }).status_code : undefined)).catch(() => undefined)
+        : undefined;
+      aliasLoadErrors.push({ text, status });
+    });
+
     await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await expect(page).not.toHaveURL(/auth0\.com/);
@@ -267,5 +286,11 @@ test.describe('Linux.com email — service unavailable', () => {
     await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
+
+    // The catchError path must log the underlying failure (with the 502 detail) so it stays
+    // diagnosable in production — assert both the prefix and the error's HTTP status.
+    await expect
+      .poll(() => aliasLoadErrors)
+      .toContainEqual(expect.objectContaining({ text: expect.stringContaining('Failed to load Linux.com alias state'), status: 502 }));
   });
 });
