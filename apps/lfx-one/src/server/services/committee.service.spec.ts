@@ -146,9 +146,7 @@ describe('CommitteeService — getCommitteeDocuments', () => {
   it('threads resolveAuditUserDisplayName into uploaded_by for folders, links, and files', async () => {
     proxyRequest
       .mockResolvedValueOnce([{ uid: 'folder-1', name: 'Folder', created_by: { name: 'Ada Lovelace' }, committee_uid: 'committee-1' }])
-      .mockResolvedValueOnce([
-        { uid: 'link-1', name: 'Link', url: 'https://example.com', created_by: { name: 'Bob Builder' }, committee_uid: 'committee-1' },
-      ]);
+      .mockResolvedValueOnce([{ uid: 'link-1', name: 'Link', url: 'https://example.com', created_by: { name: 'Bob Builder' }, committee_uid: 'committee-1' }]);
     vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([
       {
         uid: 'file-1',
