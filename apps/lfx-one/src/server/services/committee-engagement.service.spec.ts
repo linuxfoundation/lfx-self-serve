@@ -193,9 +193,9 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.computed_at).toBeNull();
     // Distinct from a row that simply never reported COMPUTED_AT (routine, no signal) — this row
     // reported a value and it was rejected, which is worth an operator's attention. The value's
-    // *shape* is attached, not its content: digits/letters redacted to '9'/'a', so an operator can
-    // tell "looks like a timestamp that failed to parse" from "not a timestamp at all" without any
-    // of the actual value reaching the log.
+    // *shape* is attached, not its content: digits/letters are redacted to '9'/'a', and only a
+    // closed, non-sensitive allowlist of timestamp punctuation (e.g. the '/' below) survives
+    // verbatim as shape signal — everything else is substituted before it reaches the log.
     expect(warning).toHaveBeenCalledWith(
       req,
       'get_committee_engagement',
@@ -218,6 +218,26 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       'get_committee_engagement',
       expect.stringContaining('unparseable COMPUTED_AT'),
       expect.objectContaining({ rejected_sample: ['a'.repeat(24)] })
+    );
+  });
+
+  it('bounds by Unicode code point, not UTF-16 unit, when the 24-character boundary falls across astral-plane characters', async () => {
+    // Each 👍 is one code point but two UTF-16 units. A truncation bug that counted UTF-16 units
+    // (e.g. `String(raw).slice(0, 24)` before walking) would yield only 12 redacted characters here,
+    // not 24 — this is the case the doc comment's "stops the moment the bound is reached" claim
+    // needs a test for, since every other fixture in this file stays within the BMP.
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '👍'.repeat(30) }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable COMPUTED_AT'),
+      expect.objectContaining({ rejected_sample: ['?'.repeat(24)] })
     );
   });
 
