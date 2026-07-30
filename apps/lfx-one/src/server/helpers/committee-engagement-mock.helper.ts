@@ -84,9 +84,10 @@ interface RosterPlan {
  * roster doesn't leave room for them:
  * - `Emeritus`: real `voting.status` wins for every member — including a real `None`, which is a
  *   recorded status like any other, not an absence of one; if nothing on the roster is naturally
- *   `Emeritus`, the first member with no `voting` recorded *at all* is promoted — but only that one
- *   case. If every member already has a real, known status (including a committee where everyone
- *   is `None` — the common case for a committee without voting enabled), no member is promoted;
+ *   `Emeritus`, the first member with no usable real status (no `voting` recorded, or a blank/falsy
+ *   `status`) is promoted — but only that one case. If every member already has a real, known status
+ *   (including a committee where everyone is `None` — the common case for a committee without
+ *   voting enabled), no member is promoted;
  *   this committee's mock output just won't include an `Emeritus` row. This trades away some demo
  *   value (Emeritus is what proves the classifier's Emeritus short-circuit and the `active_count`
  *   exclusion) for the stronger guarantee of never relabeling a real, recorded status — the same

@@ -264,7 +264,9 @@ describe('generateMockEngagementRows', () => {
       // rather than being treated as a real recorded status and emitted verbatim.
       const roster = [member('m0', { voting: { status: '' } as never }), ...ROSTER.slice(1)];
       const rows = generateMockEngagementRows('committee-1', roster);
-      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).not.toBe('');
+      // m0 is guaranteed to land the Emeritus fallback: it's the only member with no usable real
+      // status, and organicVotingStatus can never itself produce 'Emeritus'.
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Emeritus');
     });
 
     it('a real, moderately-recent tenure at a reserved demo slot (not the Orlin case — >=30 real days) produces smaller counts than the fully-synthetic floor would, never a mismatch between the shown join date and the numbers', () => {
