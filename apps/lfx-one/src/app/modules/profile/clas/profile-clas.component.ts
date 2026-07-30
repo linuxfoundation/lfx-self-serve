@@ -1,22 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
-import { isMyClasEmpty, shouldShowGithubCta, splitAgreementsByKind } from '@lfx-one/shared/utils';
+import { isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
-import { RouteLoadingComponent } from '@components/loading/route-loading.component';
+import { TableComponent } from '@components/table/table.component';
 import { MyClasService } from '@services/my-clas.service';
-import { AgreementCardComponent } from './agreement-card/agreement-card.component';
 
 interface MyClasState {
   data: MyClasResponse | null;
@@ -25,13 +25,14 @@ interface MyClasState {
 }
 
 /**
- * Read-only "My CLAs" Profile tab (Me lens). Lists the user's signed ICLAs (any status,
- * labeled) and currently valid ECLAs, resolved server-side from the session identity.
+ * Read-only "My CLAs" Profile tab (Me lens). Lists the user's signed ICLAs and currently
+ * valid ECLAs in a single table (Project / Type / Signed / Document) per the approved M1
+ * mockup — no status column. Agreements are resolved server-side from the session identity.
  * Signing links out to the EasyCLA Contributor Console; ICLA PDFs open via short-lived URLs.
  */
 @Component({
   selector: 'lfx-profile-clas',
-  imports: [RouterLink, AgreementCardComponent, ButtonComponent, CardComponent, EmptyStateComponent, MessageComponent, RouteLoadingComponent, ToastModule],
+  imports: [DatePipe, RouterLink, BadgeComponent, ButtonComponent, EmptyStateComponent, MessageComponent, TableComponent, ToastModule],
   providers: [MessageService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -59,13 +60,9 @@ export class ProfileClasComponent {
 
   protected readonly loading = computed(() => !this.state().loaded);
   protected readonly error = computed(() => this.state().error);
-  protected readonly identity = computed(() => this.state().data?.identity);
 
-  private readonly agreements = computed<MyClaAgreement[]>(() => this.state().data?.agreements ?? []);
-  protected readonly iclas = computed(() => splitAgreementsByKind(this.agreements()).iclas);
-  protected readonly eclas = computed(() => splitAgreementsByKind(this.agreements()).eclas);
+  protected readonly agreements = computed<MyClaAgreement[]>(() => this.state().data?.agreements ?? []);
   protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
-  protected readonly showGithubCta = computed(() => shouldShowGithubCta(this.identity()));
 
   protected retry(): void {
     this.refresh$.next();
