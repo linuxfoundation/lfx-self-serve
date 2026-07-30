@@ -248,6 +248,16 @@ describe('generateMockEngagementRows', () => {
       expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(false);
     });
 
+    it('treats a real, recorded "None" voting status as known — never overwrites it, including at the Emeritus slot', () => {
+      // Regression: `None` is a legitimate real value (a member genuinely has no voting role), not
+      // an absence of data. Only `voting` being unset/null means "no real status recorded" and is
+      // eligible for the Emeritus fallback; a real `None` must pass through exactly like any other
+      // real status. Every member here has a real `None`, so no fallback should ever fire.
+      const roster = ROSTER.map((m) => member(m.uid, { voting: { status: 'None' } as never }));
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.every((r) => r.MEMBER_VOTING_STATUS === 'None')).toBe(true);
+    });
+
     it('a real, moderately-recent tenure at a reserved demo slot (not the Orlin case — >=30 real days) produces smaller counts than the fully-synthetic floor would, never a mismatch between the shown join date and the numbers', () => {
       // 45 real days: short enough that a floored (~200-day) synthetic default would clearly
       // overstate this member's exposure, but >=30 days so it isn't swept into the Orlin path

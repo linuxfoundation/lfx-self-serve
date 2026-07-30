@@ -134,6 +134,21 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.computed_at).toBeNull();
     });
 
+    it('marks the response data_source: mock and warns, so a consumer or operator can tell it apart from a real read', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1' })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_source).toBe('mock');
+      expect(warning).toHaveBeenCalledWith(
+        req,
+        'get_committee_engagement',
+        'ENGAGEMENT_BACKEND is not live; returning deterministic mock rows',
+        expect.objectContaining({ committee_uid: 'committee-1', window: '30d', roster_size: 1 })
+      );
+    });
+
     it('classifies a joined-mid-window member with invited=5, attended=5 as High and never at-risk (the Orlin case)', async () => {
       const recentJoin = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);

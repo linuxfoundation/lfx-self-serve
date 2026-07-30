@@ -52,8 +52,9 @@ export class CommitteeEngagementService {
     if (isEngagementMockBackend()) {
       const members = await this.committeeService.getCommitteeMembers(req, committeeUid);
       const rows = generateMockEngagementRows(committeeUid, members);
-      // The only production signal that a response is fabricated, not warehouse-sourced — nothing
-      // else in this response (data_available:true, real roster uids) distinguishes it otherwise.
+      // The ops-side signal that a response is fabricated — `data_source: 'mock'` on the response
+      // body (below) is the in-band one any consumer must check; this is the log-side counterpart
+      // for anyone watching production logs rather than inspecting individual responses.
       logger.warning(req, 'get_committee_engagement', 'ENGAGEMENT_BACKEND is not live; returning deterministic mock rows', {
         committee_uid: committeeUid,
         window,

@@ -52,7 +52,13 @@ export interface CommitteeMemberEngagement {
 
 /** Aggregate stats for `GET /api/committees/:uid/engagement`. */
 export interface CommitteeEngagementSummary {
-  /** `sum(attended) / sum(invited)` across the full committee roster, 0 when nobody was invited. */
+  /**
+   * `sum(attended) / sum(invited)` across the full committee roster, 0 when nobody was invited.
+   * Unlike `active_count`/`at_risk_count`, this is NOT Emeritus-excluded — a committee with an
+   * Emeritus member (high invitation rate, low real attendance, by design) can show a
+   * depressed rate here alongside an `active_count` that ignores that same member. A UI
+   * surfacing both side-by-side should call this out rather than let them appear to contradict.
+   */
   attendance_rate: number;
   /**
    * Count of non-Emeritus members with real attendance this window, or who joined within it

@@ -32,16 +32,19 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  * case"'s forced counts skip that clamp, so eligibility for the role itself is gated instead (see
  * `planRosterIdentities`) on tenure long enough that the forced count stays plausible. Either way,
  * a member's numbers never imply meetings that happened before their shown join date.
- * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too, falling back to a hash-derived
- * placeholder only for members with none recorded. Two scenarios (`Emeritus`, "the Orlin case" —
+ * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too — including a real `'None'`, which is
+ * itself a recorded status and never overwritten — falling back to a hash-derived placeholder only
+ * for members with no `voting` recorded at all. Two scenarios (`Emeritus`, "the Orlin case" —
  * see below) are guaranteed visible somewhere in the roster whenever that's possible without
  * overriding a real, known value; when every member's real data already rules a scenario out
  * (e.g. every member has a real non-`Emeritus` status), that scenario simply isn't demonstrated
  * for this specific committee rather than being faked.
  *
- * Attendance numbers are a pure function of `(committeeUid, member.uid, window)` via SHA-256
- * hashing — no `Math.random()`/`Date.now()` in the formulas — so the same request produces the
- * same response on every reload, and different committees/members/windows produce different
+ * Every number is derived from stable inputs only — `committeeUid`, `member.uid`, `window`,
+ * the member's real `created_at`/`voting.status` where present, the rest of the roster's identity
+ * plan, and the current UTC date (for the `ytd` window's length) — combined via SHA-256 hashing,
+ * never `Math.random()` or a per-call `Date.now()`. So the same request produces the same response
+ * on every reload within a UTC day, and different committees/members/windows produce different
  * numbers.
  */
 export function generateMockEngagementRows(committeeUid: string, members: CommitteeMember[]): CommitteeEngagementWarehouseRow[] {
@@ -112,10 +115,11 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
   const meetings30d = committeeMeetingsForWindow(committeeUid, WINDOW_30D_DAYS);
   const minOrlinTenureDays = Math.min(WINDOW_30D_DAYS - 1, Math.ceil((ORLIN_FORCED_COUNTS.invited * WINDOW_30D_DAYS) / meetings30d));
 
-  const realVotingStatuses = sortedMembers.map((member) => {
-    const status = member.voting?.status;
-    return status && status !== CommitteeMemberVotingStatus.NONE ? status : null;
-  });
+  // `NONE` is itself a real, recorded status (a member who genuinely has no voting role) — distinct
+  // from `voting` being absent/null (no data recorded at all). Only the latter counts as "no real
+  // status" for the Emeritus fallback below; a real `NONE` must never be overwritten, same as any
+  // other real status.
+  const realVotingStatuses = sortedMembers.map((member) => member.voting?.status ?? null);
   const realJoinedDaysAgo = sortedMembers.map(parseRealJoinedDaysAgo);
 
   const votingStatuses = realVotingStatuses.map(
