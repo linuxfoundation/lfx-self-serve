@@ -41,14 +41,17 @@ export interface CommitteeEngagementWarehouseRow {
   COMMITTEE_MEETINGS_YTD: number;
 }
 
-/** Result of the engagement-rows read, distinguishing a real (possibly empty) result set from the table-not-deployed-yet degrade. */
+/** Result of the engagement-rows read, distinguishing a usable result set from either live-path degrade case (see `dataAvailable`). */
 export interface CommitteeEngagementQueryResult {
   rows: CommitteeEngagementWarehouseRow[];
   /**
-   * `false` when the live read produced no usable rows: the table isn't deployed / not authorized,
-   * or the query succeeded but returned rows in the pre-finalization placeholder shape (can't map
-   * to `CommitteeEngagementWarehouseRow`). `true` only on a genuinely successful query returning
-   * zero (or, once the real model ships, real) rows — distinct from either degrade case above.
+   * Only meaningful for the live path — mock mode always constructs this type directly with `true`
+   * and synchronously-generated rows, no query involved (`committee-engagement.service.ts`'s
+   * `getCommitteeEngagement`). Within the live path: `false` when the read produced no usable rows
+   * (the table isn't deployed / not authorized, or the query succeeded but returned rows in the
+   * pre-finalization placeholder shape — can't map to `CommitteeEngagementWarehouseRow`); `true` on
+   * a cache hit, or a genuinely successful query returning zero (or, once the real model ships,
+   * real) rows.
    */
   dataAvailable: boolean;
 }
