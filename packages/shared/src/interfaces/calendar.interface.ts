@@ -3,6 +3,28 @@
 
 import { EventInput } from '@fullcalendar/core';
 
+/** FullCalendar hex colors for event background and border. */
+export interface CalendarColorPair {
+  bg: string;
+  border: string;
+}
+
+/** FullCalendar hex colors including readable title/time text. */
+export interface CalendarColor extends CalendarColorPair {
+  text: string;
+}
+
+/** Extended props set on meeting calendar events for click routing. */
+export interface MeetingCalendarClickProps {
+  type: string;
+  meetingId?: string;
+  cancelled?: boolean;
+  password?: string;
+  startTime?: string;
+  durationMinutes?: number;
+  pastMeetingResourceId?: string;
+}
+
 /**
  * Calendar event interface extending FullCalendar's EventInput
  * @description Meeting events displayed in calendar components with LFX-specific properties

@@ -11,9 +11,11 @@ import {
   RECURRENCE_DAYS_OF_WEEK,
   RECURRENCE_WEEKLY_ORDINALS,
 } from '../constants';
+import { lfxColors } from '../constants/colors.constants';
 import { RecurrenceType } from '../enums';
 import {
   BuildMeetingOccurrenceRouteOptions,
+  CalendarColor,
   CustomRecurrencePattern,
   Meeting,
   MeetingHostCandidate,
@@ -281,17 +283,16 @@ export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
  * @param cancelledOccurrences Cancelled occurrence IDs (10-digit Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
-export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
-  const cancelledIds = new Set(cancelledOccurrences ?? []);
-  return occurrences.filter((occurrence) => {
-    if (occurrence.status === 'cancel') {
-      return false;
-    }
-    if (cancelledIds.size > 0 && cancelledIds.has(occurrence.occurrence_id)) {
-      return false;
-    }
+export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, cancelledOccurrences?: string[] | null): boolean {
+  if (occurrence.status === 'cancel') {
     return true;
-  });
+  }
+  const cancelledIds = cancelledOccurrences ?? [];
+  return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
+}
+
+export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
+  return occurrences.filter((occurrence) => !isMeetingOccurrenceCancelled(occurrence, cancelledOccurrences));
 }
 
 /**
@@ -471,34 +472,39 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   return now > endTime;
 }
 
+/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
+export const MEETING_END_BUFFER_MS = 40 * 60_000;
+
 /**
- * Returns true when an occurrence is cancelled, honouring both per-occurrence status and the
- * list endpoint's `cancelled_occurrences` IDs (see {@link getActiveOccurrences}).
+ * Returns true when an occurrence's end time plus buffer has passed.
+ * Used for calendar click routing without relying on a partial Meeting cast.
  */
-export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, cancelledOccurrences?: string[] | null): boolean {
-  if (occurrence.status === 'cancel') {
-    return true;
-  }
-  const cancelledIds = cancelledOccurrences ?? [];
-  return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
+export function isOccurrencePast(startTime: string, durationMinutes: number, now = new Date()): boolean {
+  const endTime = new Date(new Date(startTime).getTime() + durationMinutes * 60_000 + MEETING_END_BUFFER_MS);
+  return now.getTime() > endTime.getTime();
 }
 
 /**
  * Resolves FullCalendar hex colors for a meeting occurrence.
  * Active meetings use the default blue; past use a lighter blue; cancelled use cancelled grey.
  */
-export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): { bg: string; border: string; text: string } {
+export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): CalendarColor {
   if (isCancelled) {
     return CANCELLED_COLOR;
   }
   if (isPast) {
     return PAST_MEETING_CALENDAR_COLOR;
   }
-  return { ...MEETING_TYPE_COLORS['default'], text: '#ffffff' };
+  return { ...MEETING_TYPE_COLORS['default'], text: lfxColors.white };
 }
 
 /** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */
-const PAST_MEETING_COMPOSITE_ID = /^\d+-\d{13}$/;
+export const PAST_MEETING_COMPOSITE_ID = /^\d+-\d{13}$/;
+
+/** Returns true when the id matches the past-meeting composite URL shape. */
+export function isPastMeetingCompositeId(id: string): boolean {
+  return PAST_MEETING_COMPOSITE_ID.test(id);
+}
 
 /**
  * Builds an Angular router command for a specific meeting occurrence, mirroring the join page URL
@@ -515,7 +521,7 @@ export function buildMeetingOccurrenceRoute(
     queryParams['password'] = options.password;
   }
 
-  const pastResourceId = options?.pastMeetingResourceId ?? (PAST_MEETING_COMPOSITE_ID.test(meetingId) ? meetingId : undefined);
+  const pastResourceId = options?.pastMeetingResourceId ?? (isPastMeetingCompositeId(meetingId) ? meetingId : undefined);
   if (pastResourceId) {
     return {
       path: ['/meetings', pastResourceId],
@@ -524,8 +530,7 @@ export function buildMeetingOccurrenceRoute(
   }
 
   const timestamp = new Date(startTime).getTime();
-  const occurrence = { start_time: startTime, duration: durationMinutes } as MeetingOccurrence;
-  const isPast = hasMeetingEnded({ duration: durationMinutes } as Meeting, occurrence);
+  const isPast = isOccurrencePast(startTime, durationMinutes);
 
   if (isPast) {
     return {

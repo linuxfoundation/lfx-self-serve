@@ -14,19 +14,16 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { Lens, MeLensMeetingFilters, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
+import { Lens, MeLensMeetingFilters, Meeting, MeetingCalendarClickProps, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
-  addMinutesToDate,
-  buildMeetingOccurrenceRoute,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
-  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
-  isPastMeetingCalendarRow,
-  resolveMeetingCalendarColors,
+  meetingToCalendarEvents,
+  resolveMeetingCalendarClickRoute,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
@@ -266,30 +263,11 @@ export class MeetingsDashboardComponent {
 
   /** FullCalendar event click → navigate to the meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as {
-      type: string;
-      meetingId?: string;
-      cancelled?: boolean;
-      password?: string;
-      startTime?: string;
-      durationMinutes?: number;
-      pastMeetingResourceId?: string;
-    };
-    if (props.cancelled || props.type !== 'meeting' || !props.meetingId) {
+    const route = resolveMeetingCalendarClickRoute(arg.event.extendedProps as MeetingCalendarClickProps, arg.event.start);
+    if (!route) {
       return;
     }
-
-    const startTime = props.startTime ?? arg.event.start?.toISOString();
-    if (!startTime) {
-      void this.router.navigate(['/meetings', props.meetingId], props.password ? { queryParams: { password: props.password } } : {});
-      return;
-    }
-
-    const route = buildMeetingOccurrenceRoute(props.meetingId, startTime, props.durationMinutes ?? 60, {
-      password: props.password,
-      pastMeetingResourceId: props.pastMeetingResourceId,
-    });
-    void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : {});
+    void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
   /** Opens iCal Subscribe modal — foundation/project lenses only; me/org lenses tracked separately. */
@@ -1021,70 +999,7 @@ export class MeetingsDashboardComponent {
               viewerUsername: this.userService.viewerUsername(),
             })
           : this.filterBySearchAndType([...this.rawFpUpcomingMeetings(), ...this.rawFpPastMeetings()], search, meetingType);
-      return filtered.flatMap((m) => this.meetingToEvents(m));
+      return filtered.flatMap((m) => meetingToCalendarEvents(m));
     });
-  }
-
-  private meetingToEvents(meeting: Meeting | PastMeeting): EventInput[] {
-    if (meeting.occurrences && meeting.occurrences.length > 0) {
-      return meeting.occurrences.map((occ) => {
-        const occurrenceDuration = occ.duration ?? meeting.duration;
-        const isCancelled = isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences);
-        const isPast = !isCancelled && hasMeetingEnded(meeting, { ...occ, duration: occurrenceDuration });
-        const colors = resolveMeetingCalendarColors(isCancelled, isPast);
-        const classNames = ['meeting-event'];
-        if (isCancelled) {
-          classNames.push('cursor-default');
-        }
-        return {
-          id: `${meeting.id}-${occ.occurrence_id}`,
-          title: occ.title || meeting.title,
-          start: occ.start_time,
-          end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
-          backgroundColor: colors.bg,
-          borderColor: colors.border,
-          textColor: colors.text,
-          display: 'block',
-          classNames,
-          extendedProps: {
-            type: 'meeting',
-            meetingId: meeting.id,
-            cancelled: isCancelled,
-            password: meeting.password,
-            startTime: occ.start_time,
-            durationMinutes: occ.duration ?? meeting.duration,
-          },
-        };
-      });
-    }
-
-    const pastRow = isPastMeetingCalendarRow(meeting);
-    const startTimeMs = pastRow ? getPastMeetingStartTimeMs(meeting) : null;
-    const startTime = startTimeMs !== null ? new Date(startTimeMs).toISOString() : meeting.start_time;
-    const isPast = pastRow || hasMeetingEnded(meeting);
-    const colors = resolveMeetingCalendarColors(false, isPast);
-    const pastResourceId = pastRow ? getPastMeetingResourceId(meeting) : undefined;
-
-    return [
-      {
-        id: pastResourceId ?? meeting.id,
-        title: meeting.title,
-        start: startTime,
-        end: addMinutesToDate(startTime, meeting.duration).toISOString(),
-        backgroundColor: colors.bg,
-        borderColor: colors.border,
-        textColor: colors.text,
-        display: 'block',
-        classNames: ['meeting-event'],
-        extendedProps: {
-          type: 'meeting',
-          meetingId: pastResourceId ?? meeting.id,
-          pastMeetingResourceId: pastResourceId,
-          password: meeting.password,
-          startTime,
-          durationMinutes: meeting.duration,
-        },
-      },
-    ];
   }
 }

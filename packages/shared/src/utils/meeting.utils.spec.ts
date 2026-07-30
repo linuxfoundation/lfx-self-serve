@@ -9,7 +9,7 @@ import '@angular/compiler';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { CANCELLED_COLOR, MEETING_TYPE_COLORS, PAST_MEETING_CALENDAR_COLOR } from '../constants';
+import { CANCELLED_COLOR, lfxColors, MEETING_TYPE_COLORS, PAST_MEETING_CALENDAR_COLOR } from '../constants';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
@@ -22,7 +22,10 @@ import {
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
   getMeetingOrganizerDisplayName,
+  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
+  isOccurrencePast,
+  isPastMeetingCompositeId,
   isUnresolvableParticipantName,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
@@ -798,7 +801,7 @@ describe('selectPrimaryPastMeetingSummary', () => {
 
 describe('resolveMeetingCalendarColors', () => {
   it('returns default blue for active meetings', () => {
-    expect(resolveMeetingCalendarColors(false)).toEqual({ ...MEETING_TYPE_COLORS['default'], text: '#ffffff' });
+    expect(resolveMeetingCalendarColors(false)).toEqual({ ...MEETING_TYPE_COLORS['default'], text: lfxColors.white });
   });
 
   it('returns lighter blue for past meetings', () => {
@@ -807,6 +810,43 @@ describe('resolveMeetingCalendarColors', () => {
 
   it('returns cancelled grey regardless of past flag', () => {
     expect(resolveMeetingCalendarColors(true, true)).toEqual(CANCELLED_COLOR);
+  });
+});
+
+describe('isMeetingOccurrenceCancelled', () => {
+  const occurrence = { occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' } as MeetingOccurrence;
+
+  it('returns true when occurrence status is cancel', () => {
+    expect(isMeetingOccurrenceCancelled({ ...occurrence, status: 'cancel' }, [])).toBe(true);
+  });
+
+  it('returns true when occurrence id is in cancelled_occurrences', () => {
+    expect(isMeetingOccurrenceCancelled(occurrence, ['123'])).toBe(true);
+  });
+
+  it('returns false for active occurrences with no cancelled ids', () => {
+    expect(isMeetingOccurrenceCancelled(occurrence, ['999'])).toBe(false);
+  });
+});
+
+describe('isPastMeetingCompositeId', () => {
+  it('matches composite past-meeting ids', () => {
+    expect(isPastMeetingCompositeId('99152950841-1630560600000')).toBe(true);
+  });
+
+  it('rejects plain meeting ids and malformed composites', () => {
+    expect(isPastMeetingCompositeId('99152950841')).toBe(false);
+    expect(isPastMeetingCompositeId('99152950841-1630560600000-extra')).toBe(false);
+  });
+});
+
+describe('isOccurrencePast', () => {
+  it('uses the same 40-minute post-end buffer as buildMeetingOccurrenceRoute', () => {
+    vi.useFakeTimers();
+    const start = '2026-07-01T15:00:00Z';
+    vi.setSystemTime(new Date(new Date(start).getTime() + 60 * 60_000 + 30 * 60_000));
+    expect(isOccurrencePast(start, 60)).toBe(false);
+    vi.useRealTimers();
   });
 });
 

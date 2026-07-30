@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
-import { filterPastMeetingParticipants, getLargestSessionShareUrl, getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
+import { filterPastMeetingParticipants, getLargestSessionShareUrl, getPastMeetingResourceId, getPastMeetingStartTimeMs, isPastMeetingCalendarRow } from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
 function participant(partial: Partial<EnrichedPastMeetingParticipant>): EnrichedPastMeetingParticipant {
@@ -202,6 +202,16 @@ describe('getPastMeetingResourceId', () => {
 
   it('falls back to id when meeting_and_occurrence_id is absent', () => {
     expect(getPastMeetingResourceId({ id: 'row-id' })).toBe('row-id');
+  });
+});
+
+describe('isPastMeetingCalendarRow', () => {
+  it('returns true for past-meeting rows with scheduled_start_time', () => {
+    expect(isPastMeetingCalendarRow({ scheduled_start_time: '2026-07-01T15:00:00Z' } as never)).toBe(true);
+  });
+
+  it('returns false for live meeting rows', () => {
+    expect(isPastMeetingCalendarRow({ start_time: '2026-07-01T15:00:00Z', duration: 60 } as never)).toBe(false);
   });
 });
 
