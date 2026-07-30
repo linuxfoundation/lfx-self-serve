@@ -115,6 +115,7 @@
                         class="lfx-table-name-link text-sm text-gray-900 font-medium text-left truncate min-w-0"
                         [attr.aria-label]="'Open newsletter ' + newsletter.subject"
                         [pTooltip]="newsletter.subject"
+                        tooltipEvent="both"
                         tooltipPosition="top"
                         (click)="onOpenSubject($event, newsletter)"
                         [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
