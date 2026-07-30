@@ -229,16 +229,33 @@ describe('MeetingService.getPastOccurrencesForMeeting', () => {
     expect(Object.keys(result[0]).sort()).toEqual(['meeting_and_occurrence_id', 'scheduled_end_time', 'scheduled_start_time']);
   });
 
-  it('drops records missing meeting_and_occurrence_id or scheduled_start_time', async () => {
+  it('drops records missing meeting_and_occurrence_id or any start time', async () => {
     const t1 = Date.UTC(2026, 6, 16, 9, 30);
     proxyRequest.mockResolvedValueOnce({
-      resources: [pastRecord(t1), pastRecord(t1 + 1, { meeting_and_occurrence_id: undefined }), pastRecord(t1 + 2, { scheduled_start_time: undefined })],
+      resources: [
+        pastRecord(t1),
+        pastRecord(t1 + 1, { meeting_and_occurrence_id: undefined }),
+        pastRecord(t1 + 2, { scheduled_start_time: undefined, start_time: undefined }),
+      ],
     });
 
     const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
 
     expect(result).toHaveLength(1);
     expect(result[0].meeting_and_occurrence_id).toBe(`series-1-${t1}`);
+  });
+
+  it('falls back to start_time when the indexed record omits scheduled_start_time', async () => {
+    const t1 = Date.UTC(2026, 6, 16, 9, 30);
+    proxyRequest.mockResolvedValueOnce({
+      resources: [pastRecord(t1, { scheduled_start_time: undefined, scheduled_end_time: undefined, start_time: new Date(t1).toISOString() })],
+    });
+
+    const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].scheduled_start_time).toBe(new Date(t1).toISOString());
+    expect(result[0].scheduled_end_time).toBeUndefined();
   });
 
   it('follows page_token pagination across pages', async () => {

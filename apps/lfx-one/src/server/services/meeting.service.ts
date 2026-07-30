@@ -318,7 +318,9 @@ export class MeetingService {
       return [] as PastMeeting[];
     });
 
-    const dropped = records.filter((r) => !r.meeting_and_occurrence_id || !r.scheduled_start_time);
+    // The indexed v1_past_meeting projection frequently omits scheduled_start_time and only
+    // carries start_time (same reality sortPastMeetingsDescending handles) — accept either.
+    const dropped = records.filter((r) => !r.meeting_and_occurrence_id || !(r.scheduled_start_time || r.start_time));
     if (dropped.length > 0) {
       logger.warning(req, 'get_past_occurrences_for_meeting', 'Dropping past occurrences missing composite id or start time', {
         meeting_id: meetingUid,
@@ -327,12 +329,12 @@ export class MeetingService {
     }
 
     const summaries = records
-      .filter((r): r is PastMeeting & { meeting_and_occurrence_id: string } => !!r.meeting_and_occurrence_id && !!r.scheduled_start_time)
+      .filter((r): r is PastMeeting & { meeting_and_occurrence_id: string } => !!r.meeting_and_occurrence_id && !!(r.scheduled_start_time || r.start_time))
       .map(
         (r): PastOccurrenceSummary => ({
           meeting_and_occurrence_id: r.meeting_and_occurrence_id,
-          scheduled_start_time: r.scheduled_start_time,
-          scheduled_end_time: r.scheduled_end_time,
+          scheduled_start_time: r.scheduled_start_time || r.start_time,
+          scheduled_end_time: r.scheduled_end_time || undefined,
         })
       )
       .sort((a, b) => new Date(a.scheduled_start_time).getTime() - new Date(b.scheduled_start_time).getTime());
