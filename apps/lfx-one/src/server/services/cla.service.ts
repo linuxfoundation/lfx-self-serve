@@ -141,7 +141,9 @@ export class ClaService {
     const identity = await this.resolveIdentity(req);
     const list = await this.fetchMyClas(req, identity);
 
-    const agreements = (list.clas ?? []).map(toMyClaAgreement);
+    // Show only currently-valid CLAs: the endpoint returns invalid rows too (valid=false) by
+    // design (#1158, docs/MY_CLAS_API.md); the consumer drops them (valid !== true, per FR-002).
+    const agreements = (list.clas ?? []).filter((cla) => cla.valid === true).map(toMyClaAgreement);
 
     if (list.skippedIdentities?.length) {
       // Identities EasyCLA could not verify as owned — the natural telemetry signal

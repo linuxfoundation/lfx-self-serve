@@ -212,15 +212,19 @@ describe('ClaService.getMyClas', () => {
     expect(result.identity).toMatchObject({ matchedUserIds: 0, unmatched: true });
   });
 
-  it('does not recompute filtering/dedup — surfaces exactly what upstream returns', async () => {
+  it('filters out invalid CLAs (valid !== true) — surfaces only currently-valid ICLAs/ECLAs', async () => {
     getEffectiveUsername.mockReturnValue('alice');
-    // Upstream owns filtering (invalid ECLAs) and dedup; SS maps 1:1.
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [icla({ signatureID: 'i', valid: false })] });
+    // The endpoint returns invalid rows too (valid=false) by design (#1158, docs/MY_CLAS_API.md);
+    // the consumer drops them, so a valid record is kept and invalid ICLA/ECLA rows are removed.
+    gatewayFetch.mockResolvedValueOnce({
+      userIds: ['u-1'],
+      clas: [icla({ signatureID: 'ok' }), icla({ signatureID: 'gone-icla', valid: false }), ecla({ signatureID: 'gone-ecla', valid: false })],
+    });
 
     const result = await new ClaService().getMyClas(req);
 
-    expect(result.agreements).toHaveLength(1);
-    expect(result.agreements[0]).toMatchObject({ id: 'i', status: 'inactive' });
+    expect(result.agreements.map((a) => a.id)).toEqual(['ok']);
+    expect(result.agreements.every((a) => a.status === 'valid')).toBe(true);
   });
 
   it('authorizes with the target token during impersonation (not the impersonator apiGatewayToken)', async () => {

@@ -25,10 +25,11 @@ interface MyClasState {
 }
 
 /**
- * Read-only "My CLAs" Profile tab (Me lens). Lists the user's signed ICLAs and currently
- * valid ECLAs in a single table (Project / Type / Signed / Document) per the approved M1
- * mockup — no status column. Agreements are resolved server-side from the session identity.
- * Signing links out to the EasyCLA Contributor Console; ICLA PDFs open via short-lived URLs.
+ * Read-only "My CLAs" Profile tab (Me lens). Renders the user's currently-valid signed CLAs
+ * (ICLA + ECLA) from `/v4/my-clas` in a single table (Project / Type / Signed / Document) per
+ * the approved M1 mockup — no status column, because the BFF filters to valid-only so every row
+ * is valid. Agreements are resolved server-side from the session identity; ICLA PDFs open via
+ * short-lived URLs.
  */
 @Component({
   selector: 'lfx-profile-clas',
