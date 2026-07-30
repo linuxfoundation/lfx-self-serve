@@ -143,6 +143,21 @@ async function mockCommitteeShell(page: Page): Promise<void> {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
+  // Documents / invites / mailing-lists — also called by committee-overview /
+  // committee-view but unrelated to the card under test. Each already has its own
+  // catchError fallback so an unmocked 404 wouldn't break rendering, which is exactly
+  // why leaving them unmocked was easy to miss — they'd silently hit the live dev
+  // backend on every run instead (matches committee-about.helper.ts's convention).
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/documents*`, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/invites*`, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await page.route('**/api/mailing-lists*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
   // Meetings / votes / surveys called by committee-overview — return empty
   // collections / zero counts so the page settles deterministically.
   await page.route(`**/api/meetings/count*`, async (route) => {

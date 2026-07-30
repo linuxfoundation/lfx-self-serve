@@ -242,7 +242,16 @@ export class WeeklyBriefCardComponent {
         },
         error: (err: HttpErrorResponse) => {
           this.saving.set(false);
-          const detail = err?.status === 409 ? 'Someone else updated this brief. Reload to see the latest version.' : 'Failed to save brief. Please try again.';
+          let detail: string;
+          if (err?.status === 409) {
+            detail = 'Someone else updated this brief. Reloaded the latest version — your edit was not saved.';
+            // Matches onGenerate's 409 branch: without this, the user is stuck holding a
+            // stale revision in edit mode, and every retry re-409s until a full page reload.
+            this.editMode.set(false);
+            this.refresh$.next();
+          } else {
+            detail = 'Failed to save brief. Please try again.';
+          }
           this.messageService.add({ severity: 'error', summary: 'Save failed', detail });
         },
       });
