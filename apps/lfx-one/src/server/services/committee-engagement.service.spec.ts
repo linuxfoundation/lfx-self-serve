@@ -36,8 +36,10 @@ vi.mock('./snowflake.service', async () => {
   // `SnowflakeService` itself is mocked wholesale (constructing the real class pulls in the
   // snowflake-sdk connection pool and OTel instrumentation), but `isMissingObjectError` is a pure
   // function with no such dependencies, so it's deep-imported for real here rather than
-  // hand-copied — a change to the actual predicate now fails this suite instead of silently
-  // leaving a stale copy green.
+  // hand-copied — a change to the real predicate now fails this suite instead of silently leaving
+  // a stale copy green. This only exercises the extracted helper, not
+  // `SnowflakeService.isMissingObjectError`'s one-line delegation to it (untested — every spec
+  // that touches this class, including this one, mocks it wholesale).
   const { isMissingObjectError } = await vi.importActual<typeof import('../helpers/snowflake-error.helper')>('../helpers/snowflake-error.helper');
   return {
     SnowflakeService: {
