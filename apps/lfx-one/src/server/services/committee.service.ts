@@ -1113,14 +1113,7 @@ export class CommitteeService {
    * Fetches join applications for a committee from the query index.
    */
   public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
-    const committee = await this.getCommitteeById(req, committeeId);
-    if (committee.writer !== true) {
-      throw new AuthorizationError('You do not have permission to view join applications for this group.', {
-        operation: 'get_committee_applications',
-        service: 'committee_service',
-        path: `/committees/${committeeId}/applications`,
-      });
-    }
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'get_committee_applications');
 
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
@@ -1146,6 +1139,8 @@ export class CommitteeService {
     applicationId: string,
     body: ApproveCommitteeJoinApplicationRequest = {}
   ): Promise<CommitteeMember> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'approve_committee_application');
+
     const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
     return this.microserviceProxy.proxyRequest<CommitteeMember>(
       req,
@@ -1163,6 +1158,8 @@ export class CommitteeService {
     applicationId: string,
     body: RejectCommitteeJoinApplicationRequest = {}
   ): Promise<CommitteeJoinApplication> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'reject_committee_application');
+
     const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
     return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
       req,
@@ -1489,6 +1486,18 @@ export class CommitteeService {
       document_uid: documentId,
       document_type: documentType,
     });
+  }
+
+  /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */
+  private async assertCommitteeApplicationWriter(req: Request, committeeId: string, operation: string): Promise<void> {
+    const committee = await this.getCommitteeById(req, committeeId);
+    if (committee.writer !== true) {
+      throw new AuthorizationError('You do not have permission to manage join applications for this group.', {
+        operation,
+        service: 'committee_service',
+        path: `/committees/${committeeId}/applications`,
+      });
+    }
   }
 
   /**
