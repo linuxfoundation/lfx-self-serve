@@ -6,7 +6,7 @@
 // compiler first provides that facade so the module can be imported.
 import '@angular/compiler';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RecurrenceType } from '../enums';
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
@@ -25,6 +25,7 @@ import {
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
   resolveOccurrenceRecurrence,
+  resolveRsvpOccurrenceId,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -102,6 +103,70 @@ describe('sortPastMeetingsDescending', () => {
     const merged = sortPastMeetingsDescending([...page1, ...page2]);
 
     expect(uids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
+  });
+});
+
+describe('resolveRsvpOccurrenceId', () => {
+  const recurringMeeting = {
+    recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+    occurrences: [
+      { occurrence_id: '1785247200', start_time: '2026-07-28T14:00:00Z', duration: 60 },
+      { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 },
+    ],
+    cancelled_occurrences: [],
+  } as Meeting;
+
+  const nonRecurringMeeting = { recurrence: null, occurrences: [] } as unknown as Meeting;
+
+  it('returns undefined for non-recurring meetings', () => {
+    expect(resolveRsvpOccurrenceId(nonRecurringMeeting, { occurrenceId: '1785247200' })).toBeUndefined();
+  });
+
+  it('prefers an explicit occurrence id string', () => {
+    expect(resolveRsvpOccurrenceId(recurringMeeting, { occurrenceId: '1785852000' })).toBe('1785852000');
+  });
+
+  it('prefers an explicit occurrence object', () => {
+    expect(
+      resolveRsvpOccurrenceId(recurringMeeting, {
+        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+      })
+    ).toBe('1785852000');
+  });
+
+  it('falls through empty occurrenceId to occurrence object id', () => {
+    expect(
+      resolveRsvpOccurrenceId(recurringMeeting, {
+        occurrenceId: '',
+        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+      })
+    ).toBe('1785852000');
+  });
+
+  it('falls back to getCurrentOrNextOccurrence when no occurrence context is supplied', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+    try {
+      const firstStart = new Date('2026-01-20T14:00:00.000Z');
+      const secondStart = new Date('2026-01-27T14:00:00.000Z');
+      const firstOccurrenceId = String(Math.floor(firstStart.getTime() / 1000));
+      const meeting = {
+        recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+        occurrences: [
+          { occurrence_id: firstOccurrenceId, start_time: firstStart.toISOString(), duration: 60 },
+          {
+            occurrence_id: String(Math.floor(secondStart.getTime() / 1000)),
+            start_time: secondStart.toISOString(),
+            duration: 60,
+          },
+        ],
+        cancelled_occurrences: [],
+      } as Meeting;
+
+      expect(resolveRsvpOccurrenceId(meeting)).toBe(firstOccurrenceId);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

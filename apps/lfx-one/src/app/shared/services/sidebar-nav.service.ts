@@ -122,6 +122,12 @@ export class SidebarNavService {
           routerLink: '/mailing-lists',
         },
         {
+          label: 'My Newsletters',
+          icon: 'fa-light fa-paper-plane',
+          routerLink: '/newsletters/my',
+          testId: 'sidebar-my-newsletters',
+        },
+        {
           label: 'My ' + VOTE_LABEL.plural,
           icon: 'fa-light fa-check-to-slot',
           routerLink: '/votes',

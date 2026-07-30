@@ -33,6 +33,9 @@ export const INFLUENCE_BAND_LABELS: Record<InfluenceBand, string> = {
   'non-lf': 'Non-LF Project',
 };
 
+/** Metric label for a "no activity yet" row, whose influence bands are not computed (no org-scoped data). */
+export const ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL = 'Unavailable';
+
 /** Sparkline / delta color per trend direction (brand scale values; never hard-coded hex). */
 export const INFLUENCE_TREND_COLOR: Record<InfluenceTrendDirection, string> = {
   up: lfxColors.emerald[500],
@@ -128,5 +131,14 @@ export const DEFAULT_LFX_ONE_PLATINUM_SCHEMA = 'ANALYTICS.PLATINUM_LFX_ONE';
 export const ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG = '__outside_lf__';
 export const ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG = 'outside-lf';
 export const ORG_PROJECTS_SEARCH_MIN_LENGTH = 2;
-export const ORG_PROJECTS_SEARCH_LIMIT = 20;
+/**
+ * Rows for the empty-query preload (dropdown opened before typing). Kept small so the initial panel is
+ * fast; the user narrows the ~13.5k-project catalog by typing.
+ */
+export const ORG_PROJECTS_SEARCH_PRELOAD_LIMIT = 50;
+/**
+ * Safety cap on matches for a typed query, set well above realistic match counts so the user can scroll to the
+ * true end of the list. Results are relevance-ordered (prefix first), so the top items are most relevant even near the cap.
+ */
+export const ORG_PROJECTS_SEARCH_MAX_RESULTS = 500;
 export const ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE = 100;
