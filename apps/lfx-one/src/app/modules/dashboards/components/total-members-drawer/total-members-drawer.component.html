@@ -60,7 +60,7 @@
           </button>
         </div>
 
-        @if (!dataLoading() && hasData()) {
+        @if (!dataLoading()) {
           <div class="flex items-baseline gap-2">
             <span class="text-xl font-semibold text-gray-900" data-testid="total-members-drawer-metric">{{ metricValue() }}</span>
             <lfx-metric-delta [delta]="delta()" testid="total-members-drawer-delta" />
@@ -69,7 +69,11 @@
       </div>
 
       <!-- Chart -->
-      @if (hasData()) {
+      @if (dataLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="total-members-drawer-chart-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasData()) {
         <div class="h-[280px]" data-testid="total-members-drawer-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
         </div>
