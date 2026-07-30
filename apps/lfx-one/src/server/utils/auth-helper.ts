@@ -28,6 +28,27 @@ export function cleanUserDisplayName(value: string | null | undefined): string |
   return stripAuthPrefix(value);
 }
 
+/** Minimal audit-user shape returned by upstream document resources and the indexer. */
+export interface AuditUserLike {
+  name?: string;
+  username?: string;
+}
+
+/**
+ * Resolves a human-friendly Shared By label from an upstream audit user object,
+ * with fallbacks for partial profiles and legacy flat username fields.
+ */
+export function resolveAuditUserDisplayName(
+  user?: AuditUserLike | null,
+  legacyUsername?: string | null
+): string | undefined {
+  const name = user?.name?.trim();
+  if (name) return name;
+  const fromUser = cleanUserDisplayName(user?.username);
+  if (fromUser) return fromUser;
+  return cleanUserDisplayName(legacyUsername);
+}
+
 /**
  * Gets the username from the current authentication context
  * Supports both Authelia token authentication and OIDC claims authentication

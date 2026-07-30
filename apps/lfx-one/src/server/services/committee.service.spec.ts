@@ -25,7 +25,7 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
-vi.mock('../utils/auth-helper', () => ({ cleanUserDisplayName: vi.fn(), getUsernameFromAuth: vi.fn() }));
+vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName: vi.fn(), getUsernameFromAuth: vi.fn() }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
