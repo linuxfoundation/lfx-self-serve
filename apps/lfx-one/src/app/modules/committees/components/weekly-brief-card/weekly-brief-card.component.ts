@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -52,7 +52,6 @@ export class WeeklyBriefCardComponent {
   private readonly weeklyBriefService = inject(WeeklyBriefService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
@@ -88,6 +87,13 @@ export class WeeklyBriefCardComponent {
   // further down with the other private helpers) because @typescript-eslint/member-ordering
   // requires all fields, public or private, before the constructor.
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
+
+  // Shared by initBriefResponseSubscription and pollUntilTerminal — a field initializer
+  // runs in this component's injection context automatically, so this needs no explicit
+  // Injector. pollUntilTerminal calling toObservable(this.committee) itself would create
+  // a fresh, never-cleaned-up effect (Angular releases it only on component destroy) on
+  // every single generate/regenerate/load-into-generating call, not just once.
+  private readonly committee$ = toObservable(this.committee);
 
   // Guards against starting a second concurrent poll — pollUntilTerminal is reachable
   // both from onGenerate and from the initial-load pipeline (a page load / navigation
@@ -162,8 +168,8 @@ export class WeeklyBriefCardComponent {
         take(1),
         // The component can be destroyed while this request is still in flight (click
         // Generate, then navigate away) — without this, `next` still runs against a
-        // destroyed component and pollUntilTerminal's toObservable(this.committee) throws
-        // (DestroyRef.onDestroy on an already-destroyed view).
+        // destroyed component: it writes to signals nothing reads anymore and starts a
+        // poll (pollUntilTerminal) with nothing left to stop it early via destroy.
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
@@ -281,7 +287,7 @@ export class WeeklyBriefCardComponent {
 
   // Private initializer functions
   private initBriefResponseSubscription(): void {
-    const committeeUid$ = toObservable(this.committee).pipe(
+    const committeeUid$ = this.committee$.pipe(
       filter((c): c is Committee => !!c?.uid),
       map((c) => c.uid),
       // A refresh (e.g. joining/leaving, a description save) re-emits a new Committee
@@ -380,7 +386,7 @@ export class WeeklyBriefCardComponent {
         // state when there was no prior committee) — stop polling for a uid that's no
         // longer the one on screen, or a late tick would paint the old committee's brief
         // onto the new one's card.
-        takeUntil(toObservable(this.committee, { injector: this.injector }).pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
         takeUntilDestroyed(this.destroyRef),
         // finalize, not just the complete callback below: an error escaping this pipe
         // (e.g. a throw inside the tap/takeWhile predicates above, outside exhaustMap's

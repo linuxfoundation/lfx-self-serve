@@ -40,6 +40,7 @@
  */
 
 import { expect, Page, Route, test } from '@playwright/test';
+import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 
 const TEST_COMMITTEE_UID = 'wb-card-e2e-committee-uid';
@@ -99,6 +100,11 @@ function buildCommitteeFixture(): Committee {
     project_uid: 'project-uid-wb',
     writer: true,
     join_mode: 'open',
+    // committee-overview wraps its whole "not a visitor" content block (including the
+    // weekly-brief card) in @if (!isVisitor()), and isVisitor() is `myRole() === null`.
+    // Without a my_role here the card never renders regardless of the flag or canEdit —
+    // matches committee-about.helper.ts's buildBaseCommittee, which sets this too.
+    my_role: CommitteeMemberRole.CHAIR,
   };
 }
 
@@ -142,11 +148,21 @@ async function mockCommitteeShell(page: Page): Promise<void> {
   await page.route(`**/api/meetings/count*`, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
   });
+  // committee-overview calls MeetingService.getPastMeetingsByCommittee, which hits
+  // /api/past-meetings — NOT /api/meetings (the glob below can't match it; `*` doesn't
+  // cross `/` and there's no `/api/meetings` substring in the URL at all). Without this,
+  // the request escapes every mock here and hits the live dev backend on every test run.
+  await page.route(`**/api/past-meetings*`, async (route) => {
+    if (route.request().method() === 'GET') {
+      // Unwraps `.data` from a PaginatedResponse — a bare array leaves it `undefined` and
+      // throws in [...this.meetings()] during CD (matches committee-about.helper.ts).
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+      return;
+    }
+    await route.fallback();
+  });
   await page.route(`**/api/meetings*`, async (route) => {
     if (route.request().method() === 'GET') {
-      // MeetingService.getPastMeetingsByCommittee unwraps `.data` from a PaginatedResponse —
-      // a bare array leaves it `undefined` and throws in [...this.meetings()] during CD
-      // (matches committee-about.helper.ts's mockCommitteeApis).
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
       return;
     }
