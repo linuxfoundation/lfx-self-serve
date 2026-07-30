@@ -362,9 +362,10 @@
                       </ng-template>
                       <ng-template #body let-row>
                         <tr
-                          class="border-b border-gray-100"
+                          class="cursor-pointer border-b border-gray-100 hover:bg-blue-50"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null">
+                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null"
+                          (click)="openLeaderboardDetail('technical', row)">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
@@ -491,9 +492,10 @@
                       </ng-template>
                       <ng-template #body let-row>
                         <tr
-                          class="border-b border-gray-100"
+                          class="cursor-pointer border-b border-gray-100 hover:bg-blue-50"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null">
+                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null"
+                          (click)="openLeaderboardDetail('ecosystem', row)">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
@@ -734,3 +736,10 @@
     </div>
   }
 </p-drawer>
+
+<!-- Leaderboard row score-breakdown drawer (LFXV2-2934) -->
+<lfx-org-leaderboard-detail-drawer
+  [dimension]="leaderboardDetailDimension()"
+  [orgName]="leaderboardDetailOrgName()"
+  [projectName]="hero()?.projectName ?? ''"
+  [(visible)]="leaderboardDetailOpen" />
