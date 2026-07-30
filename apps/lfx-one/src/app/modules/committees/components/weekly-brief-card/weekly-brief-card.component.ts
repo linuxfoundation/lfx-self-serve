@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { WEEKLY_BRIEF_MAX_POLL_ATTEMPTS, WEEKLY_BRIEF_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
 import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, filter, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, switchMap, take, takeWhile, tap, timer } from 'rxjs';
 
 @Component({
   selector: 'lfx-weekly-brief-card',
@@ -25,10 +26,16 @@ export class WeeklyBriefCardComponent {
   // Injections
   private readonly weeklyBriefService = inject(WeeklyBriefService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Inputs
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+
+  // Reactive form for the editor textarea — `lfx-textarea` requires a FormGroup + control name.
+  public readonly editForm = new FormGroup({
+    briefText: new FormControl('', { nonNullable: true }),
+  });
 
   // UI state signals
   public readonly fetchLoading = signal(true);
@@ -37,16 +44,15 @@ export class WeeklyBriefCardComponent {
   public readonly saving = signal(false);
   public readonly editMode = signal(false);
 
-  // Reactive form for the editor textarea — `lfx-textarea` requires a FormGroup + control name.
-  public readonly editForm = new FormGroup({
-    briefText: new FormControl('', { nonNullable: true }),
-  });
+  // Written by both the initial-load pipeline and the post-generate poll (see
+  // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
+  // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
+  private readonly briefResponse = signal<WeeklyBriefCurrentResponse | null>(null);
 
-  // Refresh trigger — declared above briefResponse so the toSignal call sees it.
-  // Logically part of the private helpers band (section 11).
+  // Refresh trigger consumed by initBriefResponseSubscription — declared here (not
+  // further down with the other private helpers) because @typescript-eslint/member-ordering
+  // requires all fields, public or private, before the constructor.
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
-
-  private readonly briefResponse: Signal<WeeklyBriefCurrentResponse | null> = this.initBriefResponse();
 
   // Derived signals
   public readonly brief: Signal<WeeklyBrief | null> = computed(() => this.briefResponse()?.brief ?? null);
@@ -78,6 +84,10 @@ export class WeeklyBriefCardComponent {
     })}`;
   });
 
+  public constructor() {
+    this.initBriefResponseSubscription();
+  }
+
   // Public actions
   public onGenerate(): void {
     if (this.generating()) return;
@@ -94,16 +104,16 @@ export class WeeklyBriefCardComponent {
       .generateWeeklyBrief(committeeUid, body)
       .pipe(take(1))
       .subscribe({
-        next: () => {
-          this.generating.set(false);
-          this.refresh$.next();
-        },
+        // Upstream's generate call is a 202 accepted, not a completed brief — the
+        // actual generation runs out-of-band. Poll GET /current until it lands on a
+        // terminal state instead of treating the 202 itself as done.
+        next: () => this.pollUntilTerminal(committeeUid),
         error: (err: HttpErrorResponse) => {
           this.generating.set(false);
           let detail: string;
           switch (err?.status) {
             case 429:
-              detail = 'Weekly generation limit reached. Try again next week.';
+              detail = currentBrief ? 'Weekly regeneration limit reached. Try again next week.' : 'Weekly generation limit reached. Try again next week.';
               break;
             case 409:
               // Upstream's edited-brief guard: someone else edited the brief
@@ -179,28 +189,71 @@ export class WeeklyBriefCardComponent {
     this.refresh$.next();
   }
 
-  // Private initializers
-  private initBriefResponse(): Signal<WeeklyBriefCurrentResponse | null> {
-    const committee$ = toObservable(this.committee);
-    return toSignal(
-      combineLatest([committee$, this.refresh$]).pipe(
-        filter(([c]) => !!c?.uid),
-        switchMap(([c]) => {
+  // Private initializer functions
+  private initBriefResponseSubscription(): void {
+    const committeeUid$ = toObservable(this.committee).pipe(
+      filter((c): c is Committee => !!c?.uid),
+      map((c) => c.uid),
+      // A refresh (e.g. joining/leaving, a description save) re-emits a new Committee
+      // object with the same uid — skip the redundant brief round-trip when the id
+      // itself hasn't changed (matches committee-view.component.ts's initUpcomingMeetings).
+      distinctUntilChanged()
+    );
+    combineLatest([committeeUid$, this.refresh$])
+      .pipe(
+        switchMap(([uid]) => {
           this.fetchLoading.set(true);
           this.fetchError.set(false);
-          return this.weeklyBriefService.getWeeklyBrief(c.uid).pipe(
-            catchError(() => {
+          return this.weeklyBriefService.getWeeklyBrief(uid).pipe(
+            catchError((err: unknown) => {
               // A failed read (e.g. upstream 503) must not look like "no brief
               // yet" — flag it so the template can show a distinct, retryable
               // unavailable state instead of the empty-state Generate prompt.
+              console.error('[weekly-brief-card] failed to load current brief', err);
               this.fetchError.set(true);
               return of(null as WeeklyBriefCurrentResponse | null);
             }),
             finalize(() => this.fetchLoading.set(false))
           );
-        })
-      ),
-      { initialValue: null }
-    );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => this.briefResponse.set(response));
+  }
+
+  // Polls GET /current after a generate/regenerate call is accepted (202) until the
+  // brief reaches a terminal state (generated/edited/approved/error), or the attempt
+  // cap trips. A transient poll failure doesn't abandon the poll — only the cap does.
+  private pollUntilTerminal(committeeUid: string): void {
+    timer(0, WEEKLY_BRIEF_POLL_INTERVAL_MS)
+      .pipe(
+        take(WEEKLY_BRIEF_MAX_POLL_ATTEMPTS),
+        switchMap(() =>
+          this.weeklyBriefService.getWeeklyBrief(committeeUid).pipe(
+            catchError((err: unknown) => {
+              console.error('[weekly-brief-card] poll tick failed, will retry', err);
+              return of(null as WeeklyBriefCurrentResponse | null);
+            })
+          )
+        ),
+        // Drop failed ticks entirely rather than feeding `null` into takeWhile below —
+        // a transient poll failure must not look like a terminal state and stop the poll.
+        filter((response): response is WeeklyBriefCurrentResponse => response !== null),
+        tap((response) => this.briefResponse.set(response)),
+        takeWhile((response) => response.brief?.state === 'generating', true),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        complete: () => {
+          this.generating.set(false);
+          if (this.brief()?.state === 'generating') {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Still generating',
+              detail: 'This is taking longer than expected — check back in a bit, or refresh.',
+            });
+          }
+        },
+      });
   }
 }

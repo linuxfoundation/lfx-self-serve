@@ -5,11 +5,16 @@
  * WG Weekly Brief — AI Assistant Card E2E Tests
  *
  * Covers the AI Assistant card mounted on committee-overview:
- * - Feature-flag gating (wg-weekly-brief OFF → card hidden)
- * - Empty state render + Generate action
+ * - Feature-flag gating (wg-weekly-brief OFF → card hidden; paired with a positive
+ *   control proving the same fixture renders when LD is reachable)
+ * - Empty state render + Generate action, and its disabled state once the weekly
+ *   generate quota is exhausted
  * - Generated state render (header, throttle badge, action buttons)
  * - Edit → Save round-trip (PUT request shape + UI re-render to `edited`)
- * - Generate-from-empty happy path (POST → re-render to `generated`)
+ * - Generate-from-empty: POST (202/generating) → poll GET /current → re-render to
+ *   `generated` — upstream's generate call is async, not a completed brief in the
+ *   POST response (see weekly-brief.service.ts on the BFF)
+ * - Read-failure → retryable unavailable state → recovery
  *
  * Architecture notes (mirrors repo convention):
  * - API mocking is per-spec via `page.route()` (see org-membership-documentation.spec.ts
@@ -209,6 +214,9 @@ test.describe('WG Weekly Brief card — feature-flag gating', () => {
     await mockCommitteeShell(page);
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
 
     // Wait for committee-overview to actually mount so the @if has had a chance
     // to evaluate — the stats grid is a stable signal that overview is rendered.
@@ -216,6 +224,21 @@ test.describe('WG Weekly Brief card — feature-flag gating', () => {
 
     // The host wrapper testid on the lfx-weekly-brief-card element must not appear.
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toHaveCount(0);
+  });
+
+  // Positive control for the OFF case above: same committee fixture, LaunchDarkly left
+  // reachable (not blocked) — proves the card's absence above is actually caused by the
+  // flag, not by a fixture/rendering issue that would hide it either way.
+  test('card IS rendered for the same fixture when LaunchDarkly is reachable', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: null, throttle: DEFAULT_THROTTLE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 });
 
@@ -225,6 +248,9 @@ test.describe('WG Weekly Brief card — empty state (flag ON)', () => {
     await mockCurrentBrief(page, { brief: null, throttle: DEFAULT_THROTTLE });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
 
     // The card wrapper appears once the flag resolves ON and canEdit is true.
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -235,7 +261,25 @@ test.describe('WG Weekly Brief card — empty state (flag ON)', () => {
 
     const generateBtn = page.getByTestId('weekly-brief-card-generate-button');
     await expect(generateBtn).toBeVisible();
-    await expect(generateBtn).toBeEnabled();
+    // data-testid sits on the <lfx-button> host, not the native <button> PrimeNG
+    // renders inside it — toBeEnabled() on the host is always true regardless of the
+    // real [disabled] binding. Assert on the inner button instead.
+    await expect(generateBtn.locator('button')).toBeEnabled();
+  });
+
+  test('Generate is disabled once the weekly generate quota is exhausted', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: null, throttle: { ...DEFAULT_THROTTLE, generates_used: DEFAULT_THROTTLE.generates_limit } });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-empty-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const generateBtn = page.getByTestId('weekly-brief-card-generate-button');
+    await expect(generateBtn.locator('button')).toBeDisabled();
   });
 });
 
@@ -245,6 +289,9 @@ test.describe('WG Weekly Brief card — generated state (flag ON)', () => {
     await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // Brief body text is rendered (no testid on the <pre> — assert via text).
@@ -286,10 +333,15 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(editedBrief) });
         return;
       }
-      await route.continue(); // GET falls through to mockCurrentBrief
+      // route.continue() forwards to the network, NOT the next-registered handler —
+      // route.fallback() is what lets mockCurrentBrief's GET handler run.
+      await route.fallback();
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
@@ -324,23 +376,47 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
 });
 
 test.describe('WG Weekly Brief card — Generate from empty', () => {
-  test('clicking Generate fires POST and the UI re-renders to the generated state', async ({ page }) => {
+  test('clicking Generate fires POST, polls until terminal, and the UI re-renders to the generated state', async ({ page }) => {
     await mockCommitteeShell(page);
-    const briefMock = await mockCurrentBrief(page, { brief: null, throttle: DEFAULT_THROTTLE });
 
-    // Intercept POST (generate). On success, swap the GET response to the generated brief.
-    let capturedPostBody: { revision?: number } | null = null;
+    const GENERATING_BRIEF: WeeklyBrief = { ...GENERATED_BRIEF, state: 'generating', brief_text: '' };
+
+    // Upstream's generate call is a 202 accepted, not a completed brief — the card
+    // must poll GET /current until the brief lands on a terminal state (LFXV2-2175/2176
+    // review). Sequence: call 1 = initial empty-state load; call 2 = the poll's first
+    // (immediate) tick, still `generating`; call 3+ = poll has completed, terminal brief.
+    let getCount = 0;
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      getCount += 1;
+      const body: WeeklyBriefCurrentResponse =
+        getCount === 1
+          ? { brief: null, throttle: DEFAULT_THROTTLE }
+          : getCount === 2
+            ? { brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE }
+            : { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    // Intercept POST (generate) — real upstream responds 202 with the brief still
+    // `generating`; the client ignores this body and re-reads via the poll above.
+    let capturedPostBody: { force?: boolean } | null = null;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/generate`, async (route) => {
-      capturedPostBody = (route.request().postDataJSON() ?? {}) as { revision?: number };
-      briefMock.setResponse({ brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+      capturedPostBody = (route.request().postDataJSON() ?? {}) as { force?: boolean };
       await route.fulfill({
-        status: 200,
+        status: 202,
         contentType: 'application/json',
-        body: JSON.stringify({ brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE }),
+        body: JSON.stringify({ brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE }),
       });
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
@@ -351,11 +427,15 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     await page.getByTestId('weekly-brief-card-generate-button').click();
     await postPromise;
 
-    // First generate from empty → no prior revision in the request body.
+    // First generate from empty → no force flag in the request body.
     expect(capturedPostBody).not.toBeNull();
-    expect(capturedPostBody!.revision).toBeUndefined();
+    expect(capturedPostBody!.force).toBeUndefined();
 
-    // Empty state disappears and the generated content takes over.
+    // Poll's first tick lands the card on the generating state.
+    await expect(page.getByTestId('weekly-brief-card-generating-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Next poll tick returns the terminal brief — empty state stays gone, generated
+    // content and actions take over.
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('weekly-brief-card-regenerate-button')).toBeVisible();
@@ -390,6 +470,9 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    // If global-setup didn't pin auth state, the page redirects to Auth0's login screen
+    // and every assertion below would just be validating the login page.
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // Failed read → distinct unavailable state, NOT the empty "No brief yet" prompt.

@@ -21,3 +21,11 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
 
 /** Mirrors upstream's `brief_text` bound (`UpdateCurrentWeeklyBriefRequestBody`: maxLength 20000, non-empty). */
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
+
+/**
+ * Generation is async upstream (202/generating; the LLM call runs out-of-band) — the
+ * card polls GET /current on this interval, up to this many attempts, until the brief
+ * reaches a terminal state. 4s x 20 attempts = ~80s cap.
+ */
+export const WEEKLY_BRIEF_POLL_INTERVAL_MS = 4000;
+export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
