@@ -145,7 +145,7 @@
   [(visible)]="previewVisible"
   [subject]="selected()?.subject ?? ''"
   [bodyHtml]="previewBody()"
-  [displayName]="selected()?.project_name ?? 'Newsletter'"
-  [headerTitle]="selected()?.project_name ?? 'Newsletter'"
+  [displayName]="selected()?.project_name || 'Newsletter'"
+  [headerTitle]="selected()?.project_name || 'Newsletter'"
   [headerSubtitle]="drawerSubtitle()"
   data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>
