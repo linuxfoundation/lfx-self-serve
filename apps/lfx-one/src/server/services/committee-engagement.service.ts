@@ -163,11 +163,12 @@ export class CommitteeEngagementService {
    * defensive backstop, not an expected occurrence.
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
-   * always reflects the full committee; an unmatched member (today, only the live-degrade case —
-   * mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`, but
-   * `role`/`voting_status`/join-date all still come from the roster itself where the warehouse row
-   * doesn't have them (see below) — none of those three are warehouse-sourced in the first place, so
-   * there's nothing warehouse-shaped to be missing. A roster-Emeritus member still classifies
+   * always reflects the full committee; a member with no matching row (today, only the live-degrade
+   * case — mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`, but
+   * `role`/`voting_status`/join-date fall back to the roster's own values (see below) whenever the
+   * row is absent or its own value for that field is missing — these three are roster attributes
+   * the warehouse row also mirrors, not warehouse-computed metrics, so the roster is an equally
+   * authoritative source when the row can't supply them. A roster-Emeritus member still classifies
    * `Emeritus`; a member who genuinely joined within the window still gets the tenure-grace `High`
    * instead of `Inactive`; everyone else classifies `Inactive`.
    */
@@ -226,10 +227,10 @@ export class CommitteeEngagementService {
       const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
       const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
       // Same roster-fallback reasoning as role/voting-status above: `created_at` is a required
-      // roster field, so it's always in hand even without a matching row, and `isJoinedWithinWindow`
-      // already fails safe (`false`) on null/unparseable input — discarding it here would cost a
-      // recently-joined unmatched member their tenure grace (case 2 of the classifier's decision
-      // order) for no reason, since the roster's join date isn't warehouse-sourced either.
+      // roster field, so it's always in hand whenever the row is absent or its own MEMBER_JOINED_AT
+      // is null, and `isJoinedWithinWindow` already fails safe (`false`) on null/unparseable input —
+      // discarding it here would cost a recently-joined member their tenure grace (case 2 of the
+      // classifier's decision order) for no reason.
       const joinedWithinWindow = this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? member.created_at, windowStart);
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
@@ -300,7 +301,7 @@ export class CommitteeEngagementService {
     return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   }
 
-  /** `false` (fail-safe: no tenure protection) for a missing or unparseable join date, matching the "unmatched member" default. */
+  /** `false` (fail-safe: no tenure protection) for a missing or unparseable join date — the caller's fallback chain only reaches that case when neither the row nor the roster has a usable one. */
   private isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {
     if (!joinedAt) return false;
     const joined = joinedAt instanceof Date ? joinedAt : new Date(joinedAt);

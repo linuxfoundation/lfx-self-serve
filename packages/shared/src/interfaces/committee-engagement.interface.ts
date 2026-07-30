@@ -90,8 +90,10 @@ export interface CommitteeEngagementResponse {
    * in `committee-engagement.internal.interface.ts`). Every member then shows zeroed counts and
    * classifies `Inactive` — except a roster member with a real `Emeritus` voting status (classifies
    * `Emeritus`) or one who genuinely joined within the requested window (classifies `High`, the
-   * tenure-grace tier, instead of `Inactive` off zero invites). `role`/`voting_status`/join-date are
-   * all roster passthroughs and stay populated regardless of whether a warehouse row matched.
+   * tenure-grace tier, instead of `Inactive` off zero invites) — the roster's own join date still
+   * feeds that classification even on an unmatched row, though it isn't itself a response field.
+   * `role`/`voting_status` are roster passthroughs and stay populated regardless of whether a
+   * warehouse row matched.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the common case
    * today); a genuinely successful live query; or a live cache hit (which the cache only ever
@@ -107,9 +109,10 @@ export interface CommitteeEngagementResponse {
    * whether the numbers are real, and today neither this flag nor `data_source` can guarantee that
    * (see the imprecise `true` cases above); that guarantee only exists once the live SQL rewrite
    * lands. It also doesn't gate whether per-member rows are present — `members[]` is roster-complete
-   * either way, with `role`/`voting_status`/join-date always populated and counts zeroed on `false`
-   * (see above for the roster-Emeritus and tenure-grace exceptions to the `Inactive` default). The
-   * UI should key its "no data available" placeholder state off this flag rather than inferring it
+   * either way, with `role`/`voting_status` always populated and counts zeroed on `false` (see above
+   * for the roster-Emeritus and tenure-grace exceptions to the `Inactive` default — the roster join
+   * date behind that second exception isn't itself a response field). The UI should key its "no data
+   * available" placeholder state off this flag rather than inferring it
    * from all-zero numbers.
    */
   data_available: boolean;

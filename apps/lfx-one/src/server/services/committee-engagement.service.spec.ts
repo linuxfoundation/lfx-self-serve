@@ -321,6 +321,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
       expect(result.summary.at_risk_count).toBe(0);
+      expect(result.summary.active_count).toBe(1);
     });
 
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {
