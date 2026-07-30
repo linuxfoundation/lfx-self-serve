@@ -808,8 +808,6 @@ export interface CreateCommitteeDocumentRequest {
   description?: string;
   /** Parent folder UID (to place a link inside a folder) */
   parent_uid?: string;
-  /** Display name of the creator (populated by BFF from session) */
-  created_by_name?: string;
 }
 
 /**

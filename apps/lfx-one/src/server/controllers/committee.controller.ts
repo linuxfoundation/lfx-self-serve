@@ -910,9 +910,6 @@ export class CommitteeController {
 
       const data: CreateCommitteeDocumentRequest = req.body;
 
-      // Always override created_by_name from OIDC session — never trust client-provided values
-      data.created_by_name = (req.oidc?.user?.['name'] as string) || (req.oidc?.user?.['nickname'] as string) || '';
-
       // Validate required fields
       const validDocTypes = ['link', 'folder'];
       const fieldErrors: Record<string, string> = {};
