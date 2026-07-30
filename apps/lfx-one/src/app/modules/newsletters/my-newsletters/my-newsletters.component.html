@@ -97,8 +97,8 @@
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[50%]">Subject</th>
-                  <th class="w-[20%]">Sent</th>
+                  <th class="w-[50%]">Title</th>
+                  <th class="w-[20%]">Received</th>
                   <th class="w-[30%]">Project / Foundation</th>
                 </tr>
               </ng-template>
@@ -138,11 +138,14 @@
   }
 </div>
 
-<!-- Preview drawer: renders the newsletter as recipients saw it. Opened once
-     the body fetch resolves in onOpenNewsletter. -->
+<!-- Reader drawer: renders the newsletter as recipients saw it. Opened once
+     the body fetch resolves in onOpenNewsletter. Header is reader-framed
+     (project + received date) rather than the sender-side "Preview" default. -->
 <lfx-newsletter-preview-drawer
   [(visible)]="previewVisible"
   [subject]="selected()?.subject ?? ''"
   [bodyHtml]="previewBody()"
-  [displayName]="selected()?.project_name ?? 'Newsletter'"
+  [displayName]="selected()?.project_name || 'Newsletter'"
+  [headerTitle]="selected()?.project_name || 'Newsletter'"
+  [headerSubtitle]="drawerSubtitle()"
   data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>

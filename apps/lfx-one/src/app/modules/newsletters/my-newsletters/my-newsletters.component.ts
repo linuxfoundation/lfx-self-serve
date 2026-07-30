@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, formatDate } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -77,6 +77,11 @@ export class MyNewslettersComponent {
   protected readonly showFoundationFilter: Signal<boolean> = computed(() => this.foundationOptions().length > 1);
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.foundationFilter() || this.projectFilter()));
+  /** Reader-framed drawer subtitle, e.g. "Received Jul 29, 2026". */
+  protected readonly drawerSubtitle: Signal<string> = computed(() => {
+    const sentAt = this.selected()?.sent_at;
+    return sentAt ? `Received ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
+  });
 
   // === Constructor ===
   public constructor() {
