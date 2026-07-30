@@ -78,11 +78,11 @@ describe('getEffectiveSub', () => {
 
 describe('resolveAuditUserDisplayName', () => {
   it('returns the audit user name when present', () => {
-    expect(resolveAuditUserDisplayName({ name: 'Manish Dixit', username: 'manishdixitlfx' })).toBe('Manish Dixit');
+    expect(resolveAuditUserDisplayName({ name: 'Ada Lovelace', username: 'alovelace' })).toBe('Ada Lovelace');
   });
 
   it('falls back to stripped username on a partial audit user object', () => {
-    expect(resolveAuditUserDisplayName({ username: 'auth0|manishdixitlfx' })).toBe('manishdixitlfx');
+    expect(resolveAuditUserDisplayName({ username: 'auth0|alovelace' })).toBe('alovelace');
   });
 
   it('falls back to a legacy flat username field', () => {
