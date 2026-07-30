@@ -203,11 +203,18 @@ export class CommitteeEngagementService {
       if (row) matchedCount++;
 
       const counts = row ? this.countsForWindow(row, window) : { invited: 0, attended: 0, committeeMeetings: 0 };
-      // Clamped to `invited`: the dbt model enforces `attended <= invited` as a grain invariant,
-      // but nothing stops a mismatched grain assumption or a future live-read bug from violating
-      // it, and an unclamped value here would produce a >100% rate.
+      // Clamped to `invited`: the finalized model's own dbt tests are expected to enforce
+      // `attended <= invited` as a grain invariant, but this defends against that guarantee being
+      // violated in practice (a mismatched grain assumption, a future live-read bug) rather than
+      // assuming it's already broken — an unclamped value here would produce a >100% rate.
       const attended = Math.min(counts.attended, counts.invited);
-      const votingStatus = row?.MEMBER_VOTING_STATUS ?? '';
+      // Falls back to the roster's own role/voting-status (already in hand, not warehouse-sourced)
+      // rather than '' when there's no matching row — otherwise a real, known Emeritus member would
+      // silently lose that short-circuit and classify Inactive on every unmatched/degraded response,
+      // even though the roster already knows better. `||`, not `??`, so a blank passthrough falls
+      // through too; both fields' real enum values ('None' included) are always non-empty strings.
+      const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || '';
+      const role = row?.MEMBER_ROLE || member.role?.name || '';
       const joinedWithinWindow = row ? this.isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart) : false;
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
@@ -224,7 +231,7 @@ export class CommitteeEngagementService {
         invited: counts.invited,
         rate: computeCommitteeEngagementRate(attended, counts.invited),
         classification,
-        role: row?.MEMBER_ROLE ?? '',
+        role,
         voting_status: votingStatus,
         committee_meetings: counts.committeeMeetings,
       };

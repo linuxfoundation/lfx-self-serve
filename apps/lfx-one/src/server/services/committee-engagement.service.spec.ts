@@ -70,8 +70,11 @@ const req = {} as unknown as Request;
 const ENGAGEMENT_BACKEND_KEY = 'ENGAGEMENT_BACKEND';
 const originalEngagementBackend = process.env[ENGAGEMENT_BACKEND_KEY];
 
-function member(uid: string): import('@lfx-one/shared/interfaces').CommitteeMember {
-  return { uid } as unknown as import('@lfx-one/shared/interfaces').CommitteeMember;
+function member(
+  uid: string,
+  overrides: Partial<import('@lfx-one/shared/interfaces').CommitteeMember> = {}
+): import('@lfx-one/shared/interfaces').CommitteeMember {
+  return { uid, ...overrides } as unknown as import('@lfx-one/shared/interfaces').CommitteeMember;
 }
 
 function row(overrides: Partial<import('@lfx-one/shared/interfaces').CommitteeEngagementWarehouseRow> = {}) {
@@ -297,6 +300,16 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
         data_available: false,
         data_source: 'live',
       });
+    });
+
+    it('falls back to the roster real role/voting-status on a degraded (unmatched) member, so a real Emeritus member still short-circuits', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'Chair' } as never, voting: { status: 'Emeritus' } as never })]);
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ role: 'Chair', voting_status: 'Emeritus', classification: 'Emeritus' });
+      expect(result.summary.at_risk_count).toBe(0);
     });
 
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {

@@ -7,12 +7,14 @@ import type { CommitteeEngagementClassification, CommitteeEngagementClassificati
 
 /**
  * `attended / invited`, 0 when nobody was invited. Clamps `attended` to `invited` so a warehouse
- * data-quality glitch (or a grain mismatch, until the real dbt model's schema is confirmed) can't
- * produce a rate over 1 — nothing upstream enforces `attended <= invited`. Always personal
- * `attended/invited`, never `attended/committee_meetings` — the real model's `committee_meetings_*`
- * column is a committee-wide total that would misclassify a tenure-limited member (e.g. the
- * ticket's Orlin example: `invited_ytd=5, attended_ytd=5` reads as 100%, but `5/committee_meetings`
- * would read as ~36% and wrongly land him in At-Risk).
+ * data-quality glitch can't produce a rate over 1 — the finalized model's own dbt tests are
+ * expected to enforce `attended <= invited` as a grain invariant, but this is a defensive clamp
+ * against that guarantee being violated in practice (a future live-read bug, a stale cache entry),
+ * not a sign the invariant is known to be unenforced. Always personal `attended/invited`, never
+ * `attended/committee_meetings` — the real model's `committee_meetings_*` column is a committee-wide
+ * total that would misclassify a tenure-limited member (e.g. the ticket's Orlin example:
+ * `invited_ytd=5, attended_ytd=5` reads as 100%, but `5/committee_meetings` would read as ~36% and
+ * wrongly land him in At-Risk).
  */
 function rawCommitteeEngagementRate(attended: number, invited: number): number {
   if (invited <= 0) return 0;
