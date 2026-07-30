@@ -88,11 +88,14 @@ export interface CommitteeEngagementResponse {
    * couldn't run (the model isn't deployed yet), or it ran and returned rows, but in the legacy
    * placeholder shape rather than the finalized model's shape (see `LegacyEngagementPlaceholderRow`
    * in `committee-engagement.internal.interface.ts`) — every member then shows zeroed, `Inactive`
-   * placeholder stats rather than real data, either way. `true` covers both a successful live query
-   * that returns real-shaped rows (even zero of them, for a genuinely new committee) and a
-   * mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`) — the flag means "there's real
-   * per-member signal to show," not "this came from Snowflake." The UI should key its "no data
-   * available" state off this flag rather than inferring it from all-zero numbers.
+   * placeholder stats rather than real data, either way. `true` is reachable two ways: a
+   * mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the common case today), or —
+   * until the live SQL is rewritten against the finalized model — only the narrow case of the
+   * legacy placeholder table existing and genuinely returning zero rows; once that rewrite lands,
+   * `true` is meant to mean a successful live query returning real-shaped rows (even zero, for a
+   * genuinely new committee). Either way the flag means "there's real per-member signal to show,"
+   * not "this came from Snowflake." The UI should key its "no data available" state off this flag
+   * rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
   /**

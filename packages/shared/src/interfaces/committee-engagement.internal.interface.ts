@@ -44,7 +44,12 @@ export interface CommitteeEngagementWarehouseRow {
 /** Result of the engagement-rows read, distinguishing a real (possibly empty) result set from the table-not-deployed-yet degrade. */
 export interface CommitteeEngagementQueryResult {
   rows: CommitteeEngagementWarehouseRow[];
-  /** `false` when the warehouse table doesn't exist yet — distinct from a real query returning zero rows. */
+  /**
+   * `false` when the live read produced no usable rows: the table isn't deployed / not authorized,
+   * or the query succeeded but returned rows in the pre-finalization placeholder shape (can't map
+   * to `CommitteeEngagementWarehouseRow`). `true` only on a genuinely successful query returning
+   * zero (or, once the real model ships, real) rows — distinct from either degrade case above.
+   */
   dataAvailable: boolean;
 }
 
