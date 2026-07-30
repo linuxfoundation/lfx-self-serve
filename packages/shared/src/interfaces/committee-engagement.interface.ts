@@ -22,7 +22,7 @@ export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Ina
  * (`platinum_lfx_one_committee_meeting_attendance`, `lf-dbt#2694`): `votingStatus` (`'Emeritus'`
  * short-circuits to a neutral tier) and `joinedWithinWindow` (whether `member_joined_at` falls
  * after the requested window's start — tenure clipping, so a brand-new member's zero invites
- * doesn't read as disengagement). Consumed by `committee-engagement-classifier.util.ts`.
+ * doesn't read as disengagement). Consumed by `committee-engagement-classifier.utils.ts`.
  */
 export interface CommitteeEngagementClassificationInput {
   attended: number;
@@ -64,7 +64,7 @@ export interface CommitteeEngagementSummary {
    * Count of non-Emeritus members with real attendance this window, or who joined within it
    * (active by definition of being newly on the roster) — broader than "classified High/Medium":
    * a Low-classified member with some real attendance still counts here. See
-   * `committee-engagement-classifier.util.ts`'s `isCommitteeMemberActive`.
+   * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`.
    */
   active_count: number;
   /** Full committee roster size (including members with no engagement data). */
@@ -84,12 +84,15 @@ export interface CommitteeEngagementResponse {
    */
   computed_at: string | null;
   /**
-   * `false` only when the live warehouse query itself couldn't run (the model isn't deployed yet)
-   * — every member then shows zeroed, `Inactive` placeholder stats rather than real data. `true`
-   * covers both a successful live query (even one returning zero rows for a genuinely new
-   * committee) and a mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`) — the flag
-   * means "there's real per-member signal to show," not "this came from Snowflake." The UI should
-   * key its "no data available" state off this flag rather than inferring it from all-zero numbers.
+   * `false` when the live warehouse query couldn't produce usable rows — either the query itself
+   * couldn't run (the model isn't deployed yet), or it ran and returned rows, but in the legacy
+   * placeholder shape rather than the finalized model's shape (see `LegacyEngagementPlaceholderRow`
+   * in `committee-engagement.internal.interface.ts`) — every member then shows zeroed, `Inactive`
+   * placeholder stats rather than real data, either way. `true` covers both a successful live query
+   * that returns real-shaped rows (even zero of them, for a genuinely new committee) and a
+   * mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`) — the flag means "there's real
+   * per-member signal to show," not "this came from Snowflake." The UI should key its "no data
+   * available" state off this flag rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
   /**

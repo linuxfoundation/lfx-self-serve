@@ -115,9 +115,9 @@ describe('generateMockEngagementRows', () => {
   });
 
   it('gives organic members varied tenure, not the demo-slot tenure floor flattened across all of them', () => {
-    // Regression: the eligibility list for the 3 reserved demo patterns (indices 2-4 in a bare
-    // roster) previously also matched every later organic member (5+), flattening all of their
-    // fallback tenure to the same fixed floor instead of organicJoinedDaysAgo's varied range.
+    // Only the first 3 reserved demo-pattern slots (indices 2-4 in a bare roster) get the fixed
+    // DEMO_TENURE_FALLBACK_DAYS floor; every later organic member (5+) must fall through to
+    // organicJoinedDaysAgo's varied range instead of being flattened to the same floor.
     const rows = generateMockEngagementRows('committee-1', ROSTER);
     const organicJoinDates = rows.slice(5).map((r) => r.MEMBER_JOINED_AT);
     expect(new Set(organicJoinDates).size).toBeGreaterThan(1);

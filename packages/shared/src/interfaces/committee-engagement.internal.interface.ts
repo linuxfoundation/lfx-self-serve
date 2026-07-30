@@ -12,7 +12,7 @@
  * / attended, not the committee's meeting total. `COMMITTEE_MEETINGS_*` is the committee-wide total
  * regardless of who was invited — an "invitation rate" secondary signal only
  * (`INVITED_COUNT_* / COMMITTEE_MEETINGS_*`), never the rate denominator (that's always
- * `ATTENDED_COUNT_* / INVITED_COUNT_*` — see `committee-engagement-classifier.util.ts`).
+ * `ATTENDED_COUNT_* / INVITED_COUNT_*` — see `committee-engagement-classifier.utils.ts`).
  *
  * No `COMPUTED_AT` — the real model doesn't expose one yet (pipeline-freshness is a separate
  * follow-up); the BFF always returns `computed_at: null` until that lands.

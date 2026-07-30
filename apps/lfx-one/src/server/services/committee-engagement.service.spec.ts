@@ -8,7 +8,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime import needs a stub. The classifier functions are deep-imported
 // from their real implementation (not hand-copied) so a decision-table change there fails this
 // suite too; their own boundary behavior is exhaustively covered in
-// packages/shared/src/utils/committee-engagement-classifier.util.spec.ts.
+// packages/shared/src/utils/committee-engagement-classifier.utils.spec.ts.
 const { execute, getCommitteeMembers, generateMockEngagementRows, warning, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
@@ -27,8 +27,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   VALKEY_CACHE: { COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600 },
 }));
 vi.mock('@lfx-one/shared/utils', async () => {
-  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.util')>(
-    '../../../../../packages/shared/src/utils/committee-engagement-classifier.util'
+  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.utils')>(
+    '../../../../../packages/shared/src/utils/committee-engagement-classifier.utils'
   );
   return {
     classifyCommitteeEngagement: actual.classifyCommitteeEngagement,

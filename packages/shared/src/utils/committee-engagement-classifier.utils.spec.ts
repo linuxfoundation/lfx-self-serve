@@ -9,7 +9,7 @@ import {
   computeCommitteeEngagementRate,
   isCommitteeMemberActive,
   isCommitteeMemberAtRisk,
-} from './committee-engagement-classifier.util';
+} from './committee-engagement-classifier.utils';
 
 const VOTING_REP = CommitteeMemberVotingStatus.VOTING_REP;
 const EMERITUS = CommitteeMemberVotingStatus.EMERITUS;

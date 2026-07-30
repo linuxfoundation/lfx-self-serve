@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { formatCommitteeEngagementFreshness } from './committee-engagement-freshness.util';
+import { formatCommitteeEngagementFreshness } from './committee-engagement-freshness.utils';
 
 describe('formatCommitteeEngagementFreshness', () => {
   it('returns the daily-refresh fallback for null (the only reachable case today)', () => {

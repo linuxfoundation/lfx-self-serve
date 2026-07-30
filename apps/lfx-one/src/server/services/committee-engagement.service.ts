@@ -44,9 +44,8 @@ export class CommitteeEngagementService {
   /**
    * Mock mode fetches the roster live (so mock rows can anchor to real uids) and generates rows
    * synchronously in-memory — no Snowflake call, no cache, nothing to await beyond the roster read.
-   * Live mode keeps its original two-independent-reads-in-parallel shape entirely unchanged: the
-   * roster and Snowflake reads still race via `Promise.all`, `queryEngagementRows` still owns its
-   * own caching and missing-object degrade, and neither is touched by this method.
+   * Live mode races the roster and Snowflake reads via `Promise.all`; `queryEngagementRows` owns
+   * its own caching and missing-object degrade independently of this method.
    */
   public async getCommitteeEngagement(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementResponse> {
     if (isEngagementMockBackend()) {
@@ -153,17 +152,19 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * Joins on `MEMBER_USER_ID` = `CommitteeMember.uid` — an exact key, unlike the email-based join
-   * this replaced, so there's no blank/duplicate-email data-quality layer needed here anymore. A
-   * minimal duplicate-uid guard remains (last-write-wins, logged) in case a future live
-   * implementation has a grain bug; the model's own dbt tests already enforce uniqueness on this
-   * grain, so this is a defensive backstop, not an expected occurrence.
+   * Joins on `MEMBER_USER_ID` = `CommitteeMember.uid`, per the finalized dbt model's documented
+   * grain (`committee_id, member_user_id` — see `committee-engagement.internal.interface.ts`); an
+   * exact key needing no blank/duplicate-email data-quality layer. This assumes `member_user_id`
+   * resolves to the same identity as `CommitteeMember.uid` — worth re-confirming against the real
+   * model once the live read is wired up, since it's untestable before then. A minimal
+   * duplicate-uid guard remains (last-write-wins, logged) in case a future live implementation has
+   * a grain bug; the model's own dbt tests already enforce uniqueness on this grain, so this is a
+   * defensive backstop, not an expected occurrence.
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
    * always reflects the full committee; an unmatched member (today, only the live-degrade case —
    * mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`, not-Emeritus,
-   * not-joined-within-window, classifying `Inactive` — unchanged from this file's original degrade
-   * behavior.
+   * not-joined-within-window, classifying `Inactive`.
    */
   private buildResponse(
     req: Request,
