@@ -172,10 +172,11 @@ export class CommitteeEngagementService {
         committee_uid: committeeUid,
         rejected_count: rejectedTimestamps.length,
         row_count: rows.length,
-        // A rejection is almost certainly a format problem (the dbt model is still unwritten), and
-        // the raw value is the one datum that identifies it — bounded so a systemic rejection
-        // doesn't turn into an unbounded log line. Timestamps only, no PII risk.
-        rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => String(raw)),
+        // A rejection is almost certainly a format problem (the dbt model is still unwritten, and
+        // COMPUTED_AT's real column type/width are unknown), and the raw value is the one datum
+        // that identifies it. Bounded to 3 values, each truncated — a rejected value is by
+        // definition not a timestamp, so nothing here guarantees it's short or PII-free.
+        rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => String(raw).slice(0, 64)),
       });
     }
 

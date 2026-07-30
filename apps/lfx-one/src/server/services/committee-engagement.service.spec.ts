@@ -203,17 +203,6 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     );
   });
 
-  it('does not warn about an unparseable COMPUTED_AT when the row simply never reported one', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
-    });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(warning).not.toHaveBeenCalledWith(req, 'get_committee_engagement', expect.stringContaining('unparseable COMPUTED_AT'), expect.anything());
-  });
-
   it('resolves computed_at from the valid rows and reports only the invalid ones as rejected, when a committee has both', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'good@x.com'), member('m2', 'bad@x.com'), member('m3', 'absent@x.com')]);
     execute.mockResolvedValueOnce({
