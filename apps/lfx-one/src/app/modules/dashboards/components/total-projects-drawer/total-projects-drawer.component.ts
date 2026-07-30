@@ -94,7 +94,7 @@ export class TotalProjectsDrawerComponent {
   );
 
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
-  protected readonly metricValue: Signal<string> = computed(() => this.data().totalProjects.toLocaleString());
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
   protected readonly delta = computed(() => computePeriodDelta(this.data().monthlyData));
   protected readonly primarySearch: Signal<string> = this.initPrimarySearch();
   private readonly drawerData = this.initDrawerData();
@@ -193,6 +193,13 @@ export class TotalProjectsDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    return computed(() => {
+      const m = this.data().monthlyData;
+      return m.length ? m[m.length - 1].toLocaleString() : this.data().totalProjects.toLocaleString();
+    });
+  }
+
   private initPrimarySearch(): Signal<string> {
     return toSignal(this.searchForm.get('query')!.valueChanges.pipe(tap(() => this.primaryPage.set(1))), { initialValue: '' });
   }

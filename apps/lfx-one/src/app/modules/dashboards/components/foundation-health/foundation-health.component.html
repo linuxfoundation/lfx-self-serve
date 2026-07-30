@@ -49,7 +49,11 @@
   } @else {
     <!-- Carousel Container -->
     <div class="relative overflow-hidden">
-      <div lfxScrollShadow [scrollDistance]="320" class="flex gap-4 items-start overflow-x-auto hide-scrollbar scroll-smooth" data-testid="foundation-health-carousel">
+      <div
+        lfxScrollShadow
+        [scrollDistance]="320"
+        class="flex gap-4 items-start overflow-x-auto hide-scrollbar scroll-smooth"
+        data-testid="foundation-health-carousel">
         @for (card of metricCards(); track card.testId) {
           @switch (card.customContentType) {
             <!-- Bar Chart - Use shared metric card -->

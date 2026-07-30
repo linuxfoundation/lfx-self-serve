@@ -39,7 +39,7 @@ export class TotalMembersDrawerComponent {
 
   // === Computed Signals ===
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
-  protected readonly metricValue: Signal<string> = computed(() => this.data().totalMembers.toLocaleString());
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
   protected readonly delta = computed(() => computePeriodDelta(this.data().monthlyData));
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
@@ -81,6 +81,13 @@ export class TotalMembersDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    return computed(() => {
+      const m = this.data().monthlyData;
+      return m.length ? m[m.length - 1].toLocaleString() : this.data().totalMembers.toLocaleString();
+    });
+  }
+
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const { monthlyData, monthlyLabels } = this.data();

@@ -78,7 +78,7 @@
           <lfx-chart type="line" [data]="primaryChartData()" [options]="primaryChartOptions" height="100%"></lfx-chart>
         </div>
       } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="total-projects-drawer-chart-empty">
+        <div class="text-center py-8 border border-gray-200 rounded-lg" data-testid="total-projects-drawer-chart-empty">
           <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
           <p class="text-sm text-gray-500">No trend data available for this foundation.</p>
         </div>
@@ -109,7 +109,7 @@
           <lfx-chart type="bar" [data]="lifecycleChartData()" [options]="barChartSectionOptions" height="100%"></lfx-chart>
         </div>
       } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="total-projects-drawer-lifecycle-empty">
+        <div class="text-center py-8 border border-gray-200 rounded-lg" data-testid="total-projects-drawer-lifecycle-empty">
           <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
           <p class="text-sm text-gray-500">No lifecycle data available for this foundation.</p>
         </div>
@@ -151,31 +151,31 @@
           </div>
         } @else {
           <!-- Table -->
-          <div class="overflow-auto border border-slate-200 rounded-lg">
+          <div class="overflow-auto border border-gray-200 rounded-lg">
             <table class="w-full text-sm" data-testid="total-projects-drawer-table-grid">
-              <thead class="bg-slate-50 border-b border-slate-200">
+              <thead class="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Project Name</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Lifecycle Stage</th>
-                  <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Contributors</th>
-                  <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Commits (90d)</th>
-                  <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Maintainers</th>
-                  <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Stars</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Last Updated</th>
+                  <th class="text-left py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Project Name</th>
+                  <th class="text-left py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Lifecycle Stage</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Contributors</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Commits (90d)</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Maintainers</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Stars</th>
+                  <th class="text-left py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Last Updated</th>
                 </tr>
               </thead>
               <tbody>
                 @for (project of primaryPaginatedData(); track project.id) {
-                  <tr class="border-b border-slate-100 hover:bg-slate-50" [attr.data-testid]="'total-projects-drawer-table-row-' + project.id">
-                    <td class="py-3 px-4 font-medium text-slate-900 whitespace-nowrap">{{ project.projectName }}</td>
+                  <tr class="border-b border-gray-100 hover:bg-gray-50" [attr.data-testid]="'total-projects-drawer-table-row-' + project.id">
+                    <td class="py-3 px-4 font-medium text-gray-900 whitespace-nowrap">{{ project.projectName }}</td>
                     <td class="py-3 px-4">
                       @if (project.lifecycleStage) {
                         <span
                           class="inline-flex px-2 py-1 rounded-full text-xs"
                           [ngClass]="{
-                            'bg-green-100 text-green-800': project.lifecycleStage === LifecycleStage.Graduated,
+                            'bg-emerald-100 text-emerald-800': project.lifecycleStage === LifecycleStage.Graduated,
                             'bg-blue-100 text-blue-800': project.lifecycleStage === LifecycleStage.Incubating,
-                            'bg-purple-100 text-purple-800': project.lifecycleStage === LifecycleStage.Sandbox,
+                            'bg-violet-100 text-violet-800': project.lifecycleStage === LifecycleStage.Sandbox,
                           }">
                           {{ project.lifecycleStage }}
                         </span>
@@ -183,15 +183,15 @@
                         <span class="text-sm text-gray-400">&mdash;</span>
                       }
                     </td>
-                    <td class="text-right py-3 px-4 text-slate-700">{{ project.activeContributors | number }}</td>
-                    <td class="text-right py-3 px-4 text-slate-700">{{ project.commitsLast90Days | number }}</td>
-                    <td class="text-right py-3 px-4 text-slate-700">{{ project.maintainers }}</td>
-                    <td class="text-right py-3 px-4 text-slate-700">{{ project.stars | number }}</td>
-                    <td class="py-3 px-4 text-slate-600 whitespace-nowrap">{{ project.lastUpdated ?? '—' }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.activeContributors | number }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.commitsLast90Days | number }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.maintainers }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.stars | number }}</td>
+                    <td class="py-3 px-4 text-gray-600 whitespace-nowrap">{{ project.lastUpdated ?? '—' }}</td>
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="7" class="py-8 text-center text-slate-500">
+                    <td colspan="7" class="py-8 text-center text-gray-500">
                       @if (primarySearch()) {
                         No projects found matching "{{ primarySearch() }}"
                       } @else {
@@ -207,7 +207,7 @@
           <!-- Pagination -->
           @if (primaryFilteredData().length > 0) {
             <div class="flex items-center justify-between" data-testid="total-projects-drawer-pagination">
-              <span class="text-sm text-slate-600">{{ primaryPageInfo() }}</span>
+              <span class="text-sm text-gray-600">{{ primaryPageInfo() }}</span>
 
               <div class="flex items-center gap-1">
                 <lfx-button
