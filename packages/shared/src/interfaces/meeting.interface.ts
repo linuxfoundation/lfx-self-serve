@@ -750,6 +750,19 @@ export interface PastMeeting extends Meeting {
   user_attended?: boolean;
 }
 
+/** Angular router target for navigating to a specific meeting occurrence. */
+export interface MeetingOccurrenceRoute {
+  path: string[];
+  queryParams?: Record<string, string>;
+}
+
+/** Options when building a meeting occurrence route. */
+export interface BuildMeetingOccurrenceRouteOptions {
+  password?: string;
+  /** Canonical past-meeting composite id (`meeting_and_occurrence_id`); skips `{id}-{timestamp}` suffixing. */
+  pastMeetingResourceId?: string;
+}
+
 /**
  * Minimal projection of a v1_past_meeting record for occurrence navigation
  * @description Timestamps only — safe to expose on the public occurrences endpoint

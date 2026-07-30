@@ -3,13 +3,29 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
-import { RecurrenceType } from '../enums';
 import {
+  CANCELLED_COLOR,
+  MEETING_ORGANIZER_SKIP_IDENTIFIERS,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  PAST_SURVEY_CALENDAR_COLOR,
+  PAST_VOTE_CALENDAR_COLOR,
+  RECURRENCE_DAYS_OF_WEEK,
+  RECURRENCE_WEEKLY_ORDINALS,
+  SURVEY_COLOR,
+  VOTE_COLOR,
+} from '../constants';
+import { lfxColors } from '../constants/colors.constants';
+import { RecurrenceType } from '../enums';
+import { PollStatus } from '../enums/poll.enum';
+import {
+  BuildMeetingOccurrenceRouteOptions,
+  CalendarColor,
   CustomRecurrencePattern,
   Meeting,
   MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOccurrenceRoute,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
@@ -26,7 +42,9 @@ import {
   User,
   V1PastMeetingSummary,
   V1SummaryDetail,
+  Vote,
 } from '../interfaces';
+import { normalizePollStatus } from './poll.utils';
 
 const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
 const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
@@ -274,17 +292,16 @@ export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
  * @param cancelledOccurrences Cancelled occurrence IDs (10-digit Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
-export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
-  const cancelledIds = new Set(cancelledOccurrences ?? []);
-  return occurrences.filter((occurrence) => {
-    if (occurrence.status === 'cancel') {
-      return false;
-    }
-    if (cancelledIds.size > 0 && cancelledIds.has(occurrence.occurrence_id)) {
-      return false;
-    }
+export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, cancelledOccurrences?: string[] | null): boolean {
+  if (occurrence.status === 'cancel') {
     return true;
-  });
+  }
+  const cancelledIds = cancelledOccurrences ?? [];
+  return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
+}
+
+export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
+  return occurrences.filter((occurrence) => !isMeetingOccurrenceCancelled(occurrence, cancelledOccurrences));
 }
 
 /**
@@ -535,6 +552,110 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   const startTime = new Date(meeting.start_time);
   const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
   return now > endTime;
+}
+
+/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
+export const MEETING_END_BUFFER_MS = 40 * 60_000;
+
+/**
+ * Returns true when an occurrence's end time plus buffer has passed.
+ * Used for calendar click routing without relying on a partial Meeting cast.
+ */
+export function isOccurrencePast(startTime: string, durationMinutes: number, now = new Date()): boolean {
+  const endTime = new Date(new Date(startTime).getTime() + durationMinutes * 60_000 + MEETING_END_BUFFER_MS);
+  return now.getTime() > endTime.getTime();
+}
+
+/**
+ * Resolves FullCalendar hex colors for a meeting occurrence.
+ * Active meetings use the default blue; past use a lighter blue; cancelled use cancelled grey.
+ */
+export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): CalendarColor {
+  if (isCancelled) {
+    return CANCELLED_COLOR;
+  }
+  if (isPast) {
+    return PAST_MEETING_CALENDAR_COLOR;
+  }
+  return { ...MEETING_TYPE_COLORS['default'], text: lfxColors.white };
+}
+
+/** Returns true when a calendar deadline timestamp is invalid or already passed. */
+export function isCalendarDeadlinePast(deadlineIso: string | null | undefined, now = new Date()): boolean {
+  if (!deadlineIso) {
+    return false;
+  }
+  const ms = new Date(deadlineIso).getTime();
+  if (Number.isNaN(ms)) {
+    return true;
+  }
+  return now.getTime() >= ms;
+}
+
+/** Resolves FullCalendar hex colors for a vote deadline event. */
+export function resolveVoteCalendarColors(isPast = false): CalendarColor {
+  return isPast ? PAST_VOTE_CALENDAR_COLOR : VOTE_COLOR;
+}
+
+/** Resolves FullCalendar hex colors for a survey cutoff event. */
+export function resolveSurveyCalendarColors(isPast = false): CalendarColor {
+  return isPast ? PAST_SURVEY_CALENDAR_COLOR : SURVEY_COLOR;
+}
+
+/** Returns true when a vote deadline event should render with past calendar styling. */
+export function isVoteCalendarEventPast(vote: Pick<Vote, 'end_time' | 'status' | 'early_end_time'>, now = new Date()): boolean {
+  if (normalizePollStatus(vote.status) === PollStatus.ENDED) {
+    return true;
+  }
+  return isCalendarDeadlinePast(vote.early_end_time ?? vote.end_time, now);
+}
+
+/** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */
+export const PAST_MEETING_COMPOSITE_ID = /^\d+-\d{13}$/;
+
+/** Returns true when the id matches the past-meeting composite URL shape. */
+export function isPastMeetingCompositeId(id: string): boolean {
+  return PAST_MEETING_COMPOSITE_ID.test(id);
+}
+
+/**
+ * Builds an Angular router command for a specific meeting occurrence, mirroring the join page URL
+ * contract (`?occurrence=` for upcoming, `/meetings/{id}-{timestamp}` for past).
+ */
+export function buildMeetingOccurrenceRoute(
+  meetingId: string,
+  startTime: string,
+  durationMinutes: number,
+  options?: BuildMeetingOccurrenceRouteOptions
+): MeetingOccurrenceRoute {
+  const queryParams: Record<string, string> = {};
+  if (options?.password) {
+    queryParams['password'] = options.password;
+  }
+
+  const pastResourceId = options?.pastMeetingResourceId ?? (isPastMeetingCompositeId(meetingId) ? meetingId : undefined);
+  if (pastResourceId) {
+    return {
+      path: ['/meetings', pastResourceId],
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    };
+  }
+
+  const timestamp = new Date(startTime).getTime();
+  const isPast = isOccurrencePast(startTime, durationMinutes);
+
+  if (isPast) {
+    return {
+      path: ['/meetings', `${meetingId}-${timestamp}`],
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    };
+  }
+
+  queryParams['occurrence'] = timestamp.toString();
+  return {
+    path: ['/meetings', meetingId],
+    queryParams,
+  };
 }
 
 /**

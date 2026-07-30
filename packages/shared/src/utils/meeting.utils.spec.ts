@@ -6,9 +6,19 @@
 // compiler first provides that facade so the module can be imported.
 import '@angular/compiler';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { RecurrenceType } from '../enums';
+import { PollStatus, RecurrenceType } from '../enums';
+import {
+  CANCELLED_COLOR,
+  lfxColors,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  PAST_SURVEY_CALENDAR_COLOR,
+  PAST_VOTE_CALENDAR_COLOR,
+  SURVEY_COLOR,
+  VOTE_COLOR,
+} from '../constants';
 import {
   CustomRecurrencePattern,
   Meeting,
@@ -18,9 +28,11 @@ import {
   PastMeetingSummary,
   PastOccurrenceSummary,
   QueryServiceItem,
+  Vote,
 } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildMeetingOccurrenceRoute,
   buildOccurrenceNavTimeline,
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
@@ -31,12 +43,20 @@ import {
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
   getMeetingOrganizerDisplayName,
+  isCalendarDeadlinePast,
+  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
+  isOccurrencePast,
+  isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
+  resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
+  resolveSurveyCalendarColors,
+  resolveVoteCalendarColors,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -801,6 +821,172 @@ describe('selectPrimaryPastMeetingSummary', () => {
     ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
+});
+
+describe('resolveMeetingCalendarColors', () => {
+  it('returns default blue for active meetings', () => {
+    expect(resolveMeetingCalendarColors(false)).toEqual({ ...MEETING_TYPE_COLORS['default'], text: lfxColors.white });
+  });
+
+  it('returns lighter blue for past meetings', () => {
+    expect(resolveMeetingCalendarColors(false, true)).toEqual(PAST_MEETING_CALENDAR_COLOR);
+  });
+
+  it('returns cancelled grey regardless of past flag', () => {
+    expect(resolveMeetingCalendarColors(true, true)).toEqual(CANCELLED_COLOR);
+  });
+});
+
+describe('resolveVoteCalendarColors', () => {
+  it('returns amber for active vote deadlines', () => {
+    expect(resolveVoteCalendarColors(false)).toEqual(VOTE_COLOR);
+  });
+
+  it('returns lighter amber for past vote deadlines', () => {
+    expect(resolveVoteCalendarColors(true)).toEqual(PAST_VOTE_CALENDAR_COLOR);
+  });
+});
+
+describe('resolveSurveyCalendarColors', () => {
+  it('returns violet for active survey cutoffs', () => {
+    expect(resolveSurveyCalendarColors(false)).toEqual(SURVEY_COLOR);
+  });
+
+  it('returns lighter violet for past survey cutoffs', () => {
+    expect(resolveSurveyCalendarColors(true)).toEqual(PAST_SURVEY_CALENDAR_COLOR);
+  });
+});
+
+describe('isCalendarDeadlinePast', () => {
+  it('returns false for a future deadline', () => {
+    expect(isCalendarDeadlinePast('2099-01-01T00:00:00Z', new Date('2026-01-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('returns true when the deadline has passed', () => {
+    expect(isCalendarDeadlinePast('2026-01-01T00:00:00Z', new Date('2026-01-02T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('isVoteCalendarEventPast', () => {
+  it('returns true for ended votes', () => {
+    expect(isVoteCalendarEventPast({ end_time: '2099-01-01T00:00:00Z', status: PollStatus.ENDED } as Vote)).toBe(true);
+  });
+
+  it('returns true when the close time has passed', () => {
+    expect(isVoteCalendarEventPast({ end_time: '2026-01-01T00:00:00Z', status: PollStatus.ACTIVE } as Vote, new Date('2026-01-02T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('isMeetingOccurrenceCancelled', () => {
+  const occurrence = { occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' } as MeetingOccurrence;
+
+  it('returns true when occurrence status is cancel', () => {
+    expect(isMeetingOccurrenceCancelled({ ...occurrence, status: 'cancel' }, [])).toBe(true);
+  });
+
+  it('returns true when occurrence id is in cancelled_occurrences', () => {
+    expect(isMeetingOccurrenceCancelled(occurrence, ['123'])).toBe(true);
+  });
+
+  it('returns false for active occurrences with no cancelled ids', () => {
+    expect(isMeetingOccurrenceCancelled(occurrence, ['999'])).toBe(false);
+  });
+});
+
+describe('isPastMeetingCompositeId', () => {
+  it('matches composite past-meeting ids', () => {
+    expect(isPastMeetingCompositeId('99152950841-1630560600000')).toBe(true);
+  });
+
+  it('rejects plain meeting ids and malformed composites', () => {
+    expect(isPastMeetingCompositeId('99152950841')).toBe(false);
+    expect(isPastMeetingCompositeId('99152950841-1630560600000-extra')).toBe(false);
+  });
+});
+
+describe('isOccurrencePast', () => {
+  it('uses the same 40-minute post-end buffer as buildMeetingOccurrenceRoute', () => {
+    vi.useFakeTimers();
+    const start = '2026-07-01T15:00:00Z';
+    vi.setSystemTime(new Date(new Date(start).getTime() + 60 * 60_000 + 30 * 60_000));
+    expect(isOccurrencePast(start, 60)).toBe(false);
+    vi.useRealTimers();
+  });
+});
+
+describe('buildMeetingOccurrenceRoute', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('routes upcoming occurrences with ?occurrence=', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-15T15:00:00Z', 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841'],
+      queryParams: { occurrence: new Date('2026-07-15T15:00:00Z').getTime().toString() },
+    });
+  });
+
+  it('routes ended occurrences to the composite past URL', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-01T12:00:00Z'));
+
+    const start = '2026-07-01T15:00:00Z';
+    const route = buildMeetingOccurrenceRoute('99152950841', start, 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', `99152950841-${new Date(start).getTime()}`],
+      queryParams: undefined,
+    });
+  });
+
+  it('treats the meeting as upcoming inside the 40-minute post-end buffer', () => {
+    vi.useFakeTimers();
+    const start = '2026-07-01T15:00:00Z';
+    vi.setSystemTime(new Date(new Date(start).getTime() + 60 * 60_000 + 30 * 60_000));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', start, 60);
+
+    expect(route.path).toEqual(['/meetings', '99152950841']);
+    expect(route.queryParams?.['occurrence']).toBe(new Date(start).getTime().toString());
+  });
+
+  it('preserves password query params', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-15T15:00:00Z', 60, { password: 'secret' });
+
+    expect(route.queryParams).toEqual({
+      password: 'secret',
+      occurrence: new Date('2026-07-15T15:00:00Z').getTime().toString(),
+    });
+  });
+
+  it('uses the canonical past-meeting resource id without double-encoding', () => {
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-01T15:00:00Z', 60, {
+      pastMeetingResourceId: '99152950841-1630560600000',
+      password: 'secret',
+    });
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841-1630560600000'],
+      queryParams: { password: 'secret' },
+    });
+  });
+
+  it('detects an already-composite meeting id', () => {
+    const route = buildMeetingOccurrenceRoute('99152950841-1630560600000', '2026-07-01T15:00:00Z', 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841-1630560600000'],
+      queryParams: undefined,
+    });
   });
 });
 
