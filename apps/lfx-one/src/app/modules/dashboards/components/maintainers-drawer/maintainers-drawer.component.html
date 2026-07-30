@@ -62,7 +62,7 @@
         </div>
 
         <!-- Metric Value -->
-        @if (!monthlyDataLoading() && hasData()) {
+        @if (!monthlyDataLoading() && (hasData() || hasTrendData())) {
           <div class="flex items-baseline gap-2">
             <span class="text-xl font-semibold text-gray-900" data-testid="maintainers-drawer-metric">{{ metricValue() }}</span>
             <lfx-metric-delta [delta]="delta()" testid="maintainers-drawer-delta" />

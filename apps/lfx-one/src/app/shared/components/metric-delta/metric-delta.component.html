@@ -9,10 +9,10 @@
     [class.text-gray-500]="delta.direction === 'neutral'"
     [attr.data-testid]="testid()">
     @if (delta.direction === 'up') {
-      <span aria-hidden="true">▲</span>
+      <span aria-hidden="true">▲ </span>
       <span class="sr-only">Increased </span>
     } @else if (delta.direction === 'down') {
-      <span aria-hidden="true">▼</span>
+      <span aria-hidden="true">▼ </span>
       <span class="sr-only">Decreased </span>
     } @else {
       <span class="sr-only">No change </span>

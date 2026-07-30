@@ -37,6 +37,10 @@ export class TotalMembersDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationTotalMembersResponse>(DEFAULT_FOUNDATION_TOTAL_MEMBERS);
 
+  // True while the parent's eager monthly fetch is in flight, so the headline
+  // metric/delta can be hidden during a foundation switch while the drawer is open.
+  public readonly dataLoading = input<boolean>(false);
+
   // === Computed Signals ===
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
   protected readonly metricValue: Signal<string> = this.initMetricValue();
@@ -84,7 +88,7 @@ export class TotalMembersDrawerComponent {
   private initMetricValue(): Signal<string> {
     return computed(() => {
       const m = this.data().monthlyData;
-      return m.length ? m[m.length - 1].toLocaleString() : this.data().totalMembers.toLocaleString();
+      return m.length ? m[m.length - 1].toLocaleString('en-US') : this.data().totalMembers.toLocaleString('en-US');
     });
   }
 

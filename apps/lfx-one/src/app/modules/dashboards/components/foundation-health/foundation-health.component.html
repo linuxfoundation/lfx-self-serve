@@ -194,7 +194,8 @@
 <lfx-total-members-drawer
   [visible]="activeDrawer() === DashboardDrawerType.TotalMembers"
   (visibleChange)="handleDrawerClose()"
-  [data]="totalMembersData()"></lfx-total-members-drawer>
+  [data]="totalMembersData()"
+  [dataLoading]="totalMembersLoading()"></lfx-total-members-drawer>
 
 <lfx-active-contributors-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ActiveContributors"

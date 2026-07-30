@@ -171,7 +171,7 @@ export class MaintainersDrawerComponent {
   private initMetricValue(): Signal<string> {
     return computed(() => {
       const monthly = this.monthlyData().monthlyData;
-      return monthly.length ? monthly[monthly.length - 1].toLocaleString() : this.data().currentMaintainers.toLocaleString();
+      return monthly.length ? monthly[monthly.length - 1].toLocaleString('en-US') : this.data().currentMaintainers.toLocaleString('en-US');
     });
   }
 

@@ -196,7 +196,7 @@ export class TotalProjectsDrawerComponent {
   private initMetricValue(): Signal<string> {
     return computed(() => {
       const m = this.data().monthlyData;
-      return m.length ? m[m.length - 1].toLocaleString() : this.data().totalProjects.toLocaleString();
+      return m.length ? m[m.length - 1].toLocaleString('en-US') : this.data().totalProjects.toLocaleString('en-US');
     });
   }
 
