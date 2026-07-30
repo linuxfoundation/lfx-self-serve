@@ -764,7 +764,10 @@ export class MeetingJoinComponent implements OnInit {
     }
     return toSignal(
       toObservable(this.meeting).pipe(
-        filter((meeting) => !!meeting?.recurrence),
+        // Recurring meetings always fetch. Past payloads (composite id ≠ series uid) fetch even
+        // without a recurrence rule — the ITX past_meetings payload omits `recurrence` entirely,
+        // and the timeline itself reveals whether there is anywhere to navigate.
+        filter((meeting) => !!meeting && (!!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id)),
         map((meeting) => getMeetingSeriesUid(meeting)),
         distinctUntilChanged(),
         switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password()))
@@ -833,7 +836,7 @@ export class MeetingJoinComponent implements OnInit {
   private initializePreviousOccurrenceUrl(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.recurrence) return null;
+      if (!meeting) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (currentIdx <= 0) return null;
       return this.buildOccurrenceUrl(getMeetingSeriesUid(meeting), sorted[currentIdx - 1]);
@@ -843,7 +846,7 @@ export class MeetingJoinComponent implements OnInit {
   private initializeNextOccurrenceUrl(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.recurrence) return null;
+      if (!meeting) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (currentIdx < 0 || currentIdx >= sorted.length - 1) return null;
       return this.buildOccurrenceUrl(getMeetingSeriesUid(meeting), sorted[currentIdx + 1]);
@@ -853,9 +856,12 @@ export class MeetingJoinComponent implements OnInit {
   private initializeOccurrenceLabel(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.recurrence) return null;
+      if (!meeting) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (sorted.length === 0) return null;
+      // Payloads without a recurrence rule (e.g. past pages) only surface the nav when the
+      // series timeline actually has somewhere to go.
+      if (!meeting.recurrence && sorted.length < 2) return null;
       return `${currentIdx + 1} of ${sorted.length}`;
     });
   }
