@@ -104,10 +104,9 @@ interface RosterPlan {
  * joined* member, which is the point of the Orlin case (see above). The remaining alternative,
  * overriding a real member's real join date, is rejected outright: that's the one thing this
  * generator otherwise never does, and would make an already-real person's mock data lie about them
- * specifically. Test fixtures with at least two members and no real `created_at` always exercise
- * the scenario (a single-member fixture loses it to the Emeritus fallback instead — both fallbacks
- * want "the first member with no real data" and only one index exists to give); real committees
- * may or may not, depending on roster composition.
+ * specifically. Test fixtures with at least two members and neither real `created_at` nor real
+ * `voting.status` data exercise the scenario (both fallbacks in `planRosterIdentities` then have a
+ * distinct index to claim); real committees may or may not, depending on roster composition.
  */
 function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMember[]): RosterPlan {
   const meetings30d = committeeMeetingsForWindow(committeeUid, WINDOW_30D_DAYS);
