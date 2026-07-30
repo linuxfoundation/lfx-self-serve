@@ -193,6 +193,28 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.computed_at).toBeNull();
   });
 
+  it('normalizes a TIMESTAMP_TZ-shaped COMPUTED_AT (space before the offset) into a canonical UTC ISO string', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28 00:00:00.000 -0700' }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.computed_at).toBe('2026-07-28T07:00:00.000Z');
+  });
+
+  it('rejects a date-only COMPUTED_AT string rather than fabricating a 00:00:00 time', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28' }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.computed_at).toBeNull();
+  });
+
   it('logs a warning when warehouse rows exist but none match the roster by email', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'roster@x.com')]);
     execute.mockResolvedValueOnce({

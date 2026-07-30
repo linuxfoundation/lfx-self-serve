@@ -17,6 +17,13 @@ import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
 /**
+ * Matches `YYYY-MM-DD[T ]HH:MM:SS[.sss][Z | ±HH[:]MM]` — the shapes Snowflake actually renders for
+ * TIMESTAMP_NTZ (no zone) and TIMESTAMP_TZ/LTZ (space before the offset), and nothing looser. Groups:
+ * date, time, a literal `Z`, offset hours, offset minutes.
+ */
+const TIMESTAMP_SHAPE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*(?:(Z)|([+-]\d{2}):?(\d{2}))?$/i;
+
+/**
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705) from the (not-yet-deployed)
  * committee-engagement warehouse model and joins it against the committee roster. Table/column
  * names are a placeholder pending the real dbt model.
@@ -185,25 +192,33 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * `Date` instances convert via `toISOString()`. Strings are validated (rejecting garbage like
-   * `'N/A'`) but never converted through `new Date(value).toISOString()` for the *returned* value —
-   * a zone-less `TIMESTAMP_NTZ` string would parse as local time in V8 and silently shift by the
-   * server's UTC offset, the same trap `OrgLensProjectsService.latestTimestamp` avoids by never
-   * re-parsing string warehouse values. The validation `new Date(value)` call below is discarded
-   * (only its validity is used), so it can't introduce that shift into what's returned.
+   * `Date` instances convert via `toISOString()`. Strings are matched against a strict
+   * `YYYY-MM-DD[T ]HH:MM:SS[.sss][Z | ±HH:MM]` shape rather than gated on bare `Date`-parseability
+   * — `new Date(value)` parses far more than real timestamps (`new Date('2026-07-28')` and even
+   * `new Date('July 28, 2026')` both succeed), so a validity-only gate would let non-timestamp
+   * strings through and get a fabricated `Z` glued onto them.
    *
-   * Warehouse timestamps are assumed UTC by construction (no per-committee timezone concept
-   * exists), so a bare `YYYY-MM-DD HH:MM:SS[.sss]` with no zone designator is normalized to a real
-   * `...Z` ISO string instead of shipping a value the response contract calls "ISO timestamp" but
-   * that technically isn't one.
+   * Once the shape matches, an explicit zone is attached *before* the one `new Date(...)` call that
+   * produces the returned value — `Z` when one was already present or absent entirely (warehouse
+   * timestamps are assumed UTC by construction; no per-committee timezone concept exists), or the
+   * extracted offset otherwise. Parsing only ever happens with an explicit, unambiguous zone
+   * attached, so this can't hit the trap `OrgLensProjectsService.latestTimestamp` avoids: a
+   * zone-less string re-parsed via bare `new Date(value)` is interpreted as *local* time in V8,
+   * silently shifting by the server's UTC offset. Every non-null return here is a canonical
+   * `toISOString()` output, so the lexicographic `iso > latest` comparison this feeds into stays
+   * correct even if a warehouse column ever mixed timestamp formats across rows.
    */
   private toIsoTimestamp(value: string | Date | null | undefined): string | null {
     if (value instanceof Date) {
       return Number.isNaN(value.getTime()) ? null : value.toISOString();
     }
-    if (typeof value !== 'string' || value.length === 0 || Number.isNaN(new Date(value).getTime())) return null;
-    const hasZoneDesignator = /[Zz]|[+-]\d{2}:?\d{2}$/.test(value);
-    return hasZoneDesignator ? value : `${value.replace(' ', 'T')}Z`;
+    if (typeof value !== 'string') return null;
+    const match = TIMESTAMP_SHAPE.exec(value.trim());
+    if (!match) return null;
+    const [, date, time, utc, offsetHours, offsetMinutes] = match;
+    const zone = utc || !offsetHours ? 'Z' : `${offsetHours}:${offsetMinutes}`;
+    const parsed = new Date(`${date}T${time}${zone}`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
   /** Placeholder table/column names — real names TBD once the dbt model (owned separately) lands. */
