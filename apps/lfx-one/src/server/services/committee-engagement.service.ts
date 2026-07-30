@@ -226,13 +226,16 @@ export class CommitteeEngagementService {
       // own no-real-data-fabrication concern, not a contract this live/degraded path needs to match.
       const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
       const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
-      // Same roster-fallback reasoning as role/voting-status above, including `||` over `??` so a
-      // blank `MEMBER_JOINED_AT` falls through too, not just null: `created_at` is a required
-      // roster field, so it's always in hand whenever the row can't supply one, and
-      // `isJoinedWithinWindow` already fails safe (`false`) on null/unparseable input — discarding
-      // the roster's value here would cost a recently-joined member their tenure grace (case 2 of
-      // the classifier's decision order) for no reason.
-      const joinedWithinWindow = this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT || member.created_at, windowStart);
+      // Same roster-fallback reasoning as role/voting-status above, but checked independently
+      // rather than value-selected: a value-selection fallback (`row value || roster value`) would
+      // pick a present-but-unparseable row date over a perfectly good roster one, since both are
+      // truthy — `isJoinedWithinWindow` can't tell "unparseable" from "valid but outside the
+      // window" from the inside. Checking both and taking either `true` sidesteps that: `created_at`
+      // is a required roster field, so it's always available to fall back to, and discarding it here
+      // would cost a recently-joined member their tenure grace (case 2 of the classifier's decision
+      // order) whenever the row's own date is missing, blank, or unparseable.
+      const joinedWithinWindow =
+        this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || this.isJoinedWithinWindow(member.created_at, windowStart);
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;
@@ -302,7 +305,7 @@ export class CommitteeEngagementService {
     return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   }
 
-  /** `false` (fail-safe: no tenure protection) for a missing or unparseable join date — the caller's fallback chain only reaches that case when neither the row nor the roster has a usable one. */
+  /** `false` (fail-safe: no tenure protection) for a missing or unparseable join date. The caller ORs two independent calls (row date, roster date) rather than picking one value to check, so a present-but-unparseable row date can't shadow a genuinely usable roster one. */
   private isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {
     if (!joinedAt) return false;
     const joined = joinedAt instanceof Date ? joinedAt : new Date(joinedAt);

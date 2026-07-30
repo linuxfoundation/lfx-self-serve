@@ -176,6 +176,32 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(1);
     });
 
+    it('falls back to the roster real created_at when a matched row has a blank MEMBER_JOINED_AT', async () => {
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin })]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', MEMBER_JOINED_AT: '', INVITED_COUNT_30D: 0 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.summary.active_count).toBe(1);
+    });
+
+    it('falls back to the roster real created_at when a matched row has a present but unparseable MEMBER_JOINED_AT, not just a missing/blank one', async () => {
+      // A truthy-but-unparseable row date is exactly the case a value-selection fallback
+      // (`row value || roster value`) would get wrong — it would pick the bad row value since it's
+      // truthy, never falling through to the perfectly good roster one. The independent-OR check
+      // must catch this case too.
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin })]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', MEMBER_JOINED_AT: 'not-a-real-date', INVITED_COUNT_30D: 0 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.summary.active_count).toBe(1);
+    });
+
     it('classifies an Emeritus member as Emeritus regardless of a low real attendance rate, and never at-risk', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       generateMockEngagementRows.mockReturnValueOnce([
