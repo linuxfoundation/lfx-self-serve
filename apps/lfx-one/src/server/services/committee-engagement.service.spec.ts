@@ -9,14 +9,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // from their real implementation (not hand-copied) so a threshold change there fails this suite
 // too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.util.spec.ts.
-const { execute, getCommitteeMembers, warning, debug } = vi.hoisted(() => ({
+const { execute, getCommitteeMembers, warning, debug, withCommitteeCache } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
   warning: vi.fn(),
   debug: vi.fn(),
+  // Passthrough by default (always calls the fetcher) so every existing test still exercises the
+  // join logic directly; the caching-specific tests below override this per-case.
+  withCommitteeCache: vi.fn((_committeeUid: string, _subResource: string, _ttl: number, fetcher: () => unknown) => fetcher()),
 }));
 
-vi.mock('@lfx-one/shared/constants', () => ({ DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE' }));
+vi.mock('@lfx-one/shared/constants', () => ({
+  DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
+  VALKEY_CACHE: { COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600 },
+}));
+vi.mock('./valkey.service', () => ({ withCommitteeCache }));
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.util')>(
     '../../../../../packages/shared/src/utils/committee-engagement-classifier.util'
@@ -68,6 +75,9 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     getCommitteeMembers.mockReset();
     warning.mockReset();
     debug.mockReset();
+    // Cleared, not reset — resetting would drop the passthrough default implementation set in
+    // vi.hoisted above, which every test other than the caching-specific ones below relies on.
+    withCommitteeCache.mockClear();
     service = new CommitteeEngagementService();
   });
 
@@ -535,5 +545,51 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
     expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('treats an unparseable INVITED_COUNT as 0 (not the same silent path as an unmatched member) and warns', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'unmatched@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 'not-a-number', COMPUTED_AT: null }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.members[0]).toEqual({ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive' });
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable ATTENDED_COUNT/INVITED_COUNT'),
+      expect.objectContaining({ committee_uid: 'committee-1', unparseable_count_row_count: 1, roster_size: 2 })
+    );
+  });
+
+  it('does not warn about unparseable counts for a member with no matching row at all', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('reads through the committee-scoped cache, keyed by committee uid and window', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '90d');
+
+    expect(withCommitteeCache).toHaveBeenCalledWith('committee-1', 'engagement:90d', 3600, expect.any(Function));
+  });
+
+  it('returns the cached response without querying the roster or Snowflake on a cache hit', async () => {
+    const cached = { members: [], summary: { attendance_rate: 0, active_count: 0, total_count: 0, at_risk_count: 0 }, computed_at: null, data_available: true };
+    withCommitteeCache.mockResolvedValueOnce(cached);
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result).toBe(cached);
+    expect(getCommitteeMembers).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 });

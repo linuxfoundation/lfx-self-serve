@@ -216,25 +216,38 @@ export class SnowflakeService {
 
             return result;
           } catch (error) {
-            span.setStatus({
-              code: SpanStatusCode.ERROR,
-              message: error instanceof Error ? error.message : String(error),
-            });
-            span.recordException(error instanceof Error ? error : new Error(String(error)));
-
+            // `expectMissingObject` callers (LFXV2-1705's not-yet-deployed committee-engagement
+            // table, and the pre-existing project.service.ts / org-lens-project-detail.service.ts
+            // callers) still need this to throw — they distinguish the missing-object case in their
+            // own catch block via `isMissingObjectError` — but the span/log severity below must not
+            // mark this as a failure, or every request against a not-yet-deployed table (a normal,
+            // anticipated state, not an incident) emits an ERROR-level log and an errored trace span
+            // for as long as the table stays undeployed, polluting error tracking and any alerting
+            // keyed on this operation.
             const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
-            if (expectedMissing) {
-              this.recordSuccess();
-            } else {
-              this.recordFailure();
-            }
 
-            logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
-              query_hash: queryHash,
-              sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
-              circuit_state: this.circuitState,
-              consecutive_failures: this.consecutiveFailures,
-            });
+            if (expectedMissing) {
+              span.setStatus({ code: SpanStatusCode.OK });
+              this.recordSuccess();
+              logger.warning(undefined, 'snowflake_query', 'Query hit an expected missing-object/not-authorized error', {
+                query_hash: queryHash,
+                sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+              });
+            } else {
+              span.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: error instanceof Error ? error.message : String(error),
+              });
+              span.recordException(error instanceof Error ? error : new Error(String(error)));
+              this.recordFailure();
+
+              logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
+                query_hash: queryHash,
+                sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+                circuit_state: this.circuitState,
+                consecutive_failures: this.consecutiveFailures,
+              });
+            }
 
             // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
             const errorMessage = error instanceof Error ? error.message : String(error);

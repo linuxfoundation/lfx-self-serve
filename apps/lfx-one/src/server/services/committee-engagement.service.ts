@@ -8,6 +8,7 @@ import type {
   CommitteeEngagementWindow,
   CommitteeMember,
 } from '@lfx-one/shared/interfaces';
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { classifyCommitteeEngagement, computeCommitteeEngagementRate, isCommitteeMemberAtRisk } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
@@ -15,6 +16,7 @@ import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper'
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
+import { withCommitteeCache } from './valkey.service';
 
 /**
  * Matches `YYYY-MM-DD[T ]HH:MM:SS[.sss][Z | ±HH[:]MM]` — the shapes Snowflake actually renders for
@@ -36,17 +38,22 @@ export class CommitteeEngagementService {
   private readonly committeeService = new CommitteeService();
 
   /**
-   * Two independent reads run in parallel — one query-service call for the roster, one Snowflake
-   * call for engagement rows — and are joined in memory. No per-member Snowflake call, so this
-   * stays N+1-free regardless of committee size.
+   * Cached per `(committeeUid, window)` for an hour, matching every sibling Snowflake-backed
+   * analytics endpoint (`withOrgCache` callers) — the caller's `auditor` grant is already verified
+   * by `assertCommitteeRead` in the controller before this runs, so a cache hit can't bypass it.
+   * On a miss: two independent reads run in parallel — one query-service call for the roster, one
+   * Snowflake call for engagement rows — and are joined in memory. No per-member Snowflake call, so
+   * this stays N+1-free regardless of committee size.
    */
   public async getCommitteeEngagement(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementResponse> {
-    const [members, queryResult] = await Promise.all([
-      this.committeeService.getCommitteeMembers(req, committeeUid),
-      this.queryEngagementRows(req, committeeUid, window),
-    ]);
+    return withCommitteeCache(committeeUid, `engagement:${window}`, VALKEY_CACHE.COMMITTEE_ENGAGEMENT_TTL_SECONDS, async () => {
+      const [members, queryResult] = await Promise.all([
+        this.committeeService.getCommitteeMembers(req, committeeUid),
+        this.queryEngagementRows(req, committeeUid, window),
+      ]);
 
-    return this.buildResponse(req, committeeUid, members, queryResult);
+      return this.buildResponse(req, committeeUid, members, queryResult);
+    });
   }
 
   private async queryEngagementRows(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementQueryResult> {
@@ -123,7 +130,9 @@ export class CommitteeEngagementService {
     // map below and never actually clamped, so this counts detection, not mutation. Counted over
     // rows, not roster members, so a grain mismatch affecting only former-member rows (the normal
     // case, not an edge case — see the join-mismatch warning below) isn't invisible.
-    const overAttendedRowCount = [...rowsByEmail.values()].filter((row) => this.toCount(row.ATTENDED_COUNT) > this.toCount(row.INVITED_COUNT)).length;
+    const overAttendedRowCount = [...rowsByEmail.values()].filter(
+      (row) => (this.toCount(row.ATTENDED_COUNT) ?? 0) > (this.toCount(row.INVITED_COUNT) ?? 0)
+    ).length;
 
     // Computed independently of the roster join below (a warehouse row with no roster match, or
     // an empty roster, must still surface the model's freshness timestamp) and as the latest of
@@ -172,16 +181,23 @@ export class CommitteeEngagementService {
     let activeCount = 0;
     let atRiskCount = 0;
     let matchedCount = 0;
+    // A matched row whose ATTENDED_COUNT/INVITED_COUNT doesn't parse as a number at all — distinct
+    // from an *unmatched* member (no row, legitimately 0) and from over-attendance (a row that
+    // parses fine but reports attended > invited, counted separately above).
+    let unparseableCountRowCount = 0;
 
     const memberEngagements = members.map((member) => {
       const row = rowsByEmail.get(this.normalizeEmail(member.email));
       if (row) matchedCount++;
-      const invited = this.toCount(row?.INVITED_COUNT);
+      const parsedInvited = row ? this.toCount(row.INVITED_COUNT) : 0;
+      const parsedAttended = row ? this.toCount(row.ATTENDED_COUNT) : 0;
+      if (parsedInvited === null || parsedAttended === null) unparseableCountRowCount++;
+      const invited = parsedInvited ?? 0;
       // Clamped to `invited`: nothing upstream guarantees ATTENDED_COUNT <= INVITED_COUNT, and an
       // unclamped value here would produce a >100% rate and a response where `attended` exceeds
       // `invited` for the same member. Detection is logged once per request via
       // `overAttendedRowCount` above, not per member.
-      const attended = Math.min(this.toCount(row?.ATTENDED_COUNT), invited);
+      const attended = Math.min(parsedAttended ?? 0, invited);
       totalAttended += attended;
       totalInvited += invited;
 
@@ -226,6 +242,14 @@ export class CommitteeEngagementService {
         // that — not its content. See redactedShape's doc comment for the redaction policy; bounded
         // to 3 rows, 24 code points each.
         rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => this.redactedShape(raw)),
+      });
+    }
+
+    if (unparseableCountRowCount > 0) {
+      logger.warning(req, 'get_committee_engagement', 'A matched warehouse row had an unparseable ATTENDED_COUNT/INVITED_COUNT; treated as 0', {
+        committee_uid: committeeUid,
+        unparseable_count_row_count: unparseableCountRowCount,
+        roster_size: members.length,
       });
     }
 
@@ -281,9 +305,17 @@ export class CommitteeEngagementService {
     return shape.join('');
   }
 
-  private toCount(value: unknown): number {
+  /**
+   * `null` on an unparseable value (not `0`) so callers can tell "this row reported a value that
+   * doesn't parse as a count" from "there's no row at all" — both used to collapse to the same
+   * silent `0`, which meant a warehouse row with a corrupt `ATTENDED_COUNT`/`INVITED_COUNT` (an
+   * unknown real column type per `engagementTable()`'s TODO) was indistinguishable from a member
+   * with no engagement data, breaking this file's otherwise-universal "never drop a row silently"
+   * posture.
+   */
+  private toCount(value: unknown): number | null {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
   }
 
   /**

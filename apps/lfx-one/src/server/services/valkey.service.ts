@@ -289,6 +289,12 @@ export function buildOrgCacheKey(accountId: string, subResource: string): string
   return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${accountId}:${subResource}`;
 }
 
+/** Per-committee Snowflake-namespace cache key (committee uid + caller-chosen sub-resource); null (fail-closed → direct fetch) when the uid isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildCommitteeCacheKey(committeeUid: string, subResource: string): string | null {
+  if (!isFilterSafeIdentifier(committeeUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.COMMITTEE_ENGAGEMENT_NAMESPACE}:${committeeUid}:${subResource}`;
+}
+
 /** Per-user cache key (caller username + org uid under a caller-chosen namespace); null (fail-closed → direct fetch) when the username or org uid isn't filter-safe, keeping cache identity aligned with the authz principal and the `:`-delimited key uncorruptible. */
 export function buildPerUserOrgKey(namespace: string, username: string, orgUid: string): string | null {
   if (!isFilterSafeUsername(username) || !isFilterSafeIdentifier(orgUid)) return null;
@@ -304,6 +310,17 @@ export function withOrgCache<T>(
   accept?: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+}
+
+/** Read-through helper for the per-committee Snowflake-backed namespace; a null key (unsafe committee uid) fetches directly. */
+export function withCommitteeCache<T>(
+  committeeUid: string,
+  subResource: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildCommitteeCacheKey(committeeUid, subResource), ttlSeconds, fetcher, accept);
 }
 
 /** Best-effort invalidation of a per-user org key (e.g. after a write so the caller's own next read is fresh); an unsafe identity yields a null key → no-op. */
