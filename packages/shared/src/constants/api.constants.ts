@@ -15,6 +15,14 @@ export const DEFAULT_QUERY_PARAMS: Record<string, string> = {
 };
 
 /**
+ * Request header carrying a meeting passcode to public endpoints.
+ * @description Keeps the passcode out of GET query strings, where it would land in
+ * access logs and caches (CodeQL js/sensitive-get-query). Lowercase to match
+ * Express's normalized req.headers keys.
+ */
+export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
+
+/**
  * Maximum number of `filters_or` clauses per query-service request.
  * @description URL-length guard for batched lookups on `/query/resources`. When the caller has
  * more than this many IDs/values to OR together, split into chunks of this size to keep each

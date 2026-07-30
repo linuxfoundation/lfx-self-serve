@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
-import { LINKEDIN_PROFILE_PATTERN, PAST_MEETING_RECORDING_CACHE_TTL_MS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { LINKEDIN_PROFILE_PATTERN, MEETING_PASSWORD_HEADER, PAST_MEETING_RECORDING_CACHE_TTL_MS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
@@ -31,6 +31,7 @@ import {
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicPastMeetingResponse,
   QueryServiceCountResponse,
@@ -211,6 +212,19 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Fetches the series timeline (past + future occurrences) for occurrence navigation.
+   * The password gates private/restricted series server-side; it travels in a request
+   * header so it never appears in the GET URL. Degrades to empty on failure.
+   */
+  public getPublicMeetingOccurrences(id: string, password?: string | null): Observable<PublicMeetingOccurrencesResponse> {
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
+
+    return this.http
+      .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`, { headers })
+      .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
   }
 
   public getPublicMeetingJoinUrl(
