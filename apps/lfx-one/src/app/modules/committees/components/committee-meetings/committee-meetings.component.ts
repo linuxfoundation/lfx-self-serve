@@ -286,7 +286,9 @@ export class CommitteeMeetingsComponent {
 
       const meetingEvents = allMeetings.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
       const voteEvents = votes.filter((v) => !!v.end_time).map((v) => voteToCalendarEvent(v) as EventInput);
-      const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => surveyToCalendarEvent(s) as EventInput);
+      const surveyEvents = surveys
+        .filter((s): s is Survey & { survey_cutoff_date: string } => !!s.survey_cutoff_date)
+        .map((s) => surveyToCalendarEvent(s) as EventInput);
 
       return [...meetingEvents, ...voteEvents, ...surveyEvents];
     });
