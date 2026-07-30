@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
+
 /**
  * Default WG Weekly Brief throttle counters.
  *
@@ -29,3 +31,6 @@ export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
  */
 export const WEEKLY_BRIEF_POLL_INTERVAL_MS = 4000;
 export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
+
+/** States a poll of GET /current should stop on — everything else (`empty`, `generating`) keeps it running. */
+export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new Set(['generated', 'edited', 'approved', 'error']);

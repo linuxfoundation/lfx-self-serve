@@ -9,7 +9,12 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { WEEKLY_BRIEF_MAX_POLL_ATTEMPTS, WEEKLY_BRIEF_POLL_INTERVAL_MS, WEEKLY_BRIEF_TEXT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
+  WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_TERMINAL_STATES,
+  WEEKLY_BRIEF_TEXT_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
 import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { MessageService } from 'primeng/api';
@@ -88,11 +93,6 @@ export class WeeklyBriefCardComponent {
   // landing on an already-`generating` brief).
   private pollActive = false;
 
-  // Only these states end a poll — everything else (`generating`, `empty`, a null brief
-  // on a not-yet-visible write) must keep it running. Checking equality with `'generating'`
-  // instead would treat `empty`/null as terminal and stop polling mid-generation.
-  private readonly terminalBriefStates: ReadonlySet<string> = new Set(['generated', 'edited', 'approved', 'error']);
-
   // Derived signals
   public readonly brief: Signal<WeeklyBrief | null> = computed(() => this.briefResponse()?.brief ?? null);
   public readonly throttle: Signal<WeeklyBriefThrottle | null> = computed(() => this.briefResponse()?.throttle ?? null);
@@ -150,7 +150,18 @@ export class WeeklyBriefCardComponent {
     const body = currentBrief ? { force: true } : {};
     this.weeklyBriefService
       .generateWeeklyBrief(committeeUid, body)
-      .pipe(take(1))
+      .pipe(
+        // Bounds the pre-poll window: without this, a stalled POST leaves generating()
+        // true and pollTimedOut() false indefinitely — the same dead end pollUntilTerminal
+        // exists to close, just before the poll itself ever starts.
+        timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS * 2),
+        take(1),
+        // The component can be destroyed while this request is still in flight (click
+        // Generate, then navigate away) — without this, `next` still runs against a
+        // destroyed component and pollUntilTerminal's toObservable(this.committee) throws
+        // (DestroyRef.onDestroy on an already-destroyed view).
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         // Upstream's generate call is a 202 accepted, not a completed brief — the
         // actual generation runs out-of-band. Render the 202 body's `generating` state
@@ -203,7 +214,7 @@ export class WeeklyBriefCardComponent {
     this.saving.set(true);
     this.weeklyBriefService
       .saveWeeklyBrief(committeeUid, { brief_text: text, revision: current.revision })
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.saving.set(false);
@@ -336,7 +347,7 @@ export class WeeklyBriefCardComponent {
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
           this.briefResponse.set(response);
-          if (this.terminalBriefStates.has(response.brief?.state ?? '')) {
+          if (response.brief && WEEKLY_BRIEF_TERMINAL_STATES.has(response.brief.state)) {
             observedTerminal = true;
           }
         }),
@@ -345,7 +356,7 @@ export class WeeklyBriefCardComponent {
         // yet, not that generation is done; treating either as terminal here would stop
         // the poll mid-generation and drop the card to "No brief yet" with the quota
         // already spent.
-        takeWhile((response) => !this.terminalBriefStates.has(response.brief?.state ?? ''), true),
+        takeWhile((response) => !response.brief || !WEEKLY_BRIEF_TERMINAL_STATES.has(response.brief.state), true),
         // refresh$ is also reachable while a poll is in flight (onRetry, the 409 branch
         // of onGenerate) — stop polling on a manual refresh so a late poll tick can't
         // overwrite a fresher refresh result. skip(1): refresh$ is a BehaviorSubject and
