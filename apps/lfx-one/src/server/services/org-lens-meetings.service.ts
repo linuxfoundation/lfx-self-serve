@@ -78,7 +78,11 @@ export class OrgLensMeetingsService {
   public async getKpiSummary(req: Request, accountId: string, range: OrgMeetingsSupportedTimeRange): Promise<OrgMeetingsKpiSummary> {
     return withOrgCache(
       accountId,
-      `meetings-kpi:${range}`,
+      // `v2`: entries written before the delta ceiling was retired hold the old "No comparable prior
+      // period" label. The shape is unchanged, so `isKpiSummary` accepts them and they would serve
+      // the retired label for up to a TTL. Versioning the sub-resource key moves reads to a fresh
+      // space without discarding the other Org Lens surfaces under the shared namespace.
+      `meetings-kpi:v2:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         // Only logged on a miss, so the absence of this line in a trace means the cache served it —
@@ -145,7 +149,10 @@ export class OrgLensMeetingsService {
   public async getInfluenceRows(req: Request, accountId: string): Promise<OrgInfluenceRow[]> {
     return withOrgCache(
       accountId,
-      'meetings-influence',
+      // `v2`: same reason as the KPI key — the Δ-YoY column shares the delta formatter, so cached
+      // rows can carry the retired label. `meetings-spend` is deliberately left at v1; it has no
+      // delta labels, so evicting it would discard warm entries for no behaviour change.
+      'meetings-influence:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         logger.debug(req, 'get_org_lens_meetings_influence', 'Cache miss; querying Snowflake', { account_id: accountId });
