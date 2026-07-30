@@ -336,6 +336,8 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
  * Entries are deduped by their Unix-millisecond start instant with priority
  * live > endpoint future > past record, so an in-progress occurrence whose
  * v1_past_meeting record is already forming keeps its joinable live entry.
+ * `cancelled_occurrences` filtering applies to future entries only — a cancelled
+ * occurrence never runs, so no v1_past_meeting record exists to filter.
  * Past entries derive their canonical instant from the composite
  * `meeting_and_occurrence_id` suffix (authoritative for past-meeting URLs),
  * not from `scheduled_start_time`.

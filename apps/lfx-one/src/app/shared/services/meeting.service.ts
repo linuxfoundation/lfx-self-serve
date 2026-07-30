@@ -214,10 +214,18 @@ export class MeetingService {
     );
   }
 
-  /** Fetches the series timeline (past + future occurrences) for occurrence navigation. Degrades to empty on failure. */
-  public getPublicMeetingOccurrences(id: string): Observable<PublicMeetingOccurrencesResponse> {
+  /**
+   * Fetches the series timeline (past + future occurrences) for occurrence navigation.
+   * The password gates private/restricted series server-side. Degrades to empty on failure.
+   */
+  public getPublicMeetingOccurrences(id: string, password?: string | null): Observable<PublicMeetingOccurrencesResponse> {
+    let params = new HttpParams();
+    if (password) {
+      params = params.set('password', password);
+    }
+
     return this.http
-      .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`)
+      .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`, { params })
       .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
   }
 

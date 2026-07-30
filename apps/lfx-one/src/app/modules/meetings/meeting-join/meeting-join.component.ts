@@ -765,10 +765,9 @@ export class MeetingJoinComponent implements OnInit {
     return toSignal(
       toObservable(this.meeting).pipe(
         filter((meeting) => !!meeting?.recurrence),
-        // On past pages the payload is a PastMeeting whose id is the composite occurrence id — meeting_id is the series UID
-        map((meeting) => (meeting as unknown as PastMeeting).meeting_id || meeting.id),
+        map((meeting) => this.getSeriesUid(meeting)),
         distinctUntilChanged(),
-        switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid))
+        switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password()))
       ),
       { initialValue: empty }
     );

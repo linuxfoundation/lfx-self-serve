@@ -764,6 +764,13 @@ export interface PastOccurrenceSummary {
 }
 
 /**
+ * Minimal projection of a live occurrence for the public occurrences endpoint
+ * @description Timestamps and status only — titles, descriptions, and counts are
+ * deliberately excluded from the public payload
+ */
+export type MeetingOccurrenceSummary = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status'>;
+
+/**
  * Series timeline for the public meeting occurrences endpoint
  * @description Past occurrences from v1_past_meeting records plus a minimal
  * projection of the live series' current/future occurrences
@@ -772,7 +779,7 @@ export interface PublicMeetingOccurrencesResponse {
   /** Past occurrences, ascending by scheduled start time */
   past: PastOccurrenceSummary[];
   /** Current/future occurrences (minimal projection); empty when the series no longer exists */
-  future: MeetingOccurrence[];
+  future: MeetingOccurrenceSummary[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
 }

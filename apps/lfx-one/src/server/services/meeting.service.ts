@@ -295,7 +295,8 @@ export class MeetingService {
    *
    * Each past occurrence is its own v1_past_meeting record keyed by the series UID
    * (`meeting_id`). No `filter_grants` — callers run this in a public/M2M context and
-   * the projection carries timestamps only.
+   * the projection carries timestamps only. Completeness is not guaranteed: a later-page
+   * fetch failure returns the pages already accumulated (acceptable for navigation).
    */
   public async getPastOccurrencesForMeeting(req: Request, meetingUid: string): Promise<PastOccurrenceSummary[]> {
     logger.debug(req, 'get_past_occurrences_for_meeting', 'Fetching past occurrences', {
