@@ -26,8 +26,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705), gated between a
  * deterministic mock generator and the real (not-yet-deployed) warehouse read by
  * `ENGAGEMENT_BACKEND` (see `isEngagementMockBackend`), and joins whichever source produced rows
- * against the committee roster. Both sources produce the same `CommitteeEngagementWarehouseRow`
- * shape, so `buildResponse` below doesn't need to know or care which one ran.
+ * against the committee roster via `buildResponse`. Only the mock generator actually produces
+ * `CommitteeEngagementWarehouseRow`-shaped rows today — the live SQL in `queryEngagementRows`
+ * still targets the original placeholder columns (see that method's TODO) and, since the table
+ * doesn't exist yet, always degrades to an empty row set before any shape mismatch could surface.
+ * `buildResponse` itself doesn't branch on which path ran; the live SQL still needs a rewrite to
+ * genuinely match this shape once the real read surface is decided.
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();
