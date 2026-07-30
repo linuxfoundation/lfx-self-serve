@@ -226,12 +226,13 @@ export class CommitteeEngagementService {
       // own no-real-data-fabrication concern, not a contract this live/degraded path needs to match.
       const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
       const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
-      // Same roster-fallback reasoning as role/voting-status above: `created_at` is a required
-      // roster field, so it's always in hand whenever the row is absent or its own MEMBER_JOINED_AT
-      // is null, and `isJoinedWithinWindow` already fails safe (`false`) on null/unparseable input —
-      // discarding it here would cost a recently-joined member their tenure grace (case 2 of the
-      // classifier's decision order) for no reason.
-      const joinedWithinWindow = this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? member.created_at, windowStart);
+      // Same roster-fallback reasoning as role/voting-status above, including `||` over `??` so a
+      // blank `MEMBER_JOINED_AT` falls through too, not just null: `created_at` is a required
+      // roster field, so it's always in hand whenever the row can't supply one, and
+      // `isJoinedWithinWindow` already fails safe (`false`) on null/unparseable input — discarding
+      // the roster's value here would cost a recently-joined member their tenure grace (case 2 of
+      // the classifier's decision order) for no reason.
+      const joinedWithinWindow = this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT || member.created_at, windowStart);
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;

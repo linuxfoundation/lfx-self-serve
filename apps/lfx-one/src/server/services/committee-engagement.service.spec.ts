@@ -165,6 +165,17 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.at_risk_count).toBe(0);
     });
 
+    it('falls back to the roster real created_at when a matched row has a null MEMBER_JOINED_AT, so tenure grace still applies', async () => {
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin })]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', MEMBER_JOINED_AT: null, INVITED_COUNT_30D: 0 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.summary.active_count).toBe(1);
+    });
+
     it('classifies an Emeritus member as Emeritus regardless of a low real attendance rate, and never at-risk', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       generateMockEngagementRows.mockReturnValueOnce([
