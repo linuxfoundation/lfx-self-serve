@@ -222,7 +222,7 @@ export class CommitteeViewComponent {
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(
-    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit()
+    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
   );
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 

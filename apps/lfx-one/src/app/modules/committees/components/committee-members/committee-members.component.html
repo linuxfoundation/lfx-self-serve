@@ -7,8 +7,20 @@
 
   <!-- Committee Members Section -->
   <lfx-card>
-    @if (!isMembersVisible()) {
+    @if (!showMembersSection()) {
       <div class="text-sm text-gray-500 text-center py-6" data-testid="members-hidden-placeholder">Member list is not publicly visible for this group.</div>
+    } @else if (!showMemberRoster() && canSendMemberInvites()) {
+      <div class="flex flex-col items-center gap-4 py-4" data-testid="members-invite-only">
+        <p class="text-sm text-gray-500 text-center max-w-md">The member list is not visible for this group, but you can invite people to join.</p>
+        <lfx-button
+          icon="fa-light fa-paper-plane"
+          label="Invite Someone"
+          size="small"
+          severity="info"
+          (onClick)="openInviteMemberDialog()"
+          data-testid="invite-member-btn">
+        </lfx-button>
+      </div>
     } @else {
       <!-- Quick Filter Chips -->
       <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="members-filter-chips">

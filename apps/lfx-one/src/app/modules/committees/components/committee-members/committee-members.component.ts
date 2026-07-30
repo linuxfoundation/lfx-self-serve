@@ -3,9 +3,9 @@
 
 import { DatePipe, TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, OnInit, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -70,6 +70,7 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Input signals
   public committee = input.required<Committee | null>();
@@ -110,14 +111,16 @@ export class CommitteeMembersComponent implements OnInit {
     () => this.canManageMembers() && this.joinMode() === 'application' && (this.applicationsLoading() || this.pendingApplications().length > 0)
   );
   public readonly pendingApplications = computed(() => this.applications().filter((app) => (app.status ?? '').toLowerCase() === 'pending'));
-  // Fail-closed: only show members when visibility is explicitly set to basic_profile.
+  // Fail-closed: only show the roster when visibility is explicitly set to basic_profile.
   // Undefined/null/unknown values default to hidden so committees without a persisted
   // setting don't inadvertently expose the member list.
-  public readonly isMembersVisible = computed(() => {
+  public readonly showMemberRoster = computed(() => {
     const committee = this.committee();
     if (!committee) return false;
     return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canManageMembers();
   });
+  /** Roster and/or invite-only member actions (LFXV2-2690: invite path when roster is hidden). */
+  public readonly showMembersSection = computed(() => this.showMemberRoster() || this.canSendMemberInvites());
   public readonly votingRepCount: Signal<number> = computed(() => countVotingReps(this.members()));
   public readonly observerCount: Signal<number> = computed(
     () => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.OBSERVER).length
@@ -485,7 +488,8 @@ export class CommitteeMembersComponent implements OnInit {
           const application = applications.find((app) => app.uid === applicationUid);
           return !application || (application.status ?? '').toLowerCase() !== 'pending';
         }),
-        take(1)
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: () => {

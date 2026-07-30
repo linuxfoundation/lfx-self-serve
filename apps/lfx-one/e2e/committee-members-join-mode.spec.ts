@@ -47,6 +47,18 @@ test.describe('Group Members tab join modes (LFXV2-2690)', () => {
     await expect(page.getByTestId('add-member-btn')).toHaveCount(0);
   });
 
+  test('member in invite_only group with hidden roster: Members tab shows invite-only view', async ({ page }) => {
+    await mockCommitteeApis(page, {
+      committee: baseCommittee({ my_role: 'Member', writer: false, join_mode: 'invite_only', member_visibility: 'hidden' }),
+    });
+    await gotoMembersTab(page);
+
+    await expect(page.getByTestId('members-invite-only')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('invite-member-btn')).toBeVisible();
+    await expect(page.getByTestId('members-hidden-placeholder')).toHaveCount(0);
+    await expect(page.getByTestId('add-member-btn')).toHaveCount(0);
+  });
+
   test('admin in application mode: pending applications section renders when applications exist', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true, join_mode: 'application' }) });
 
