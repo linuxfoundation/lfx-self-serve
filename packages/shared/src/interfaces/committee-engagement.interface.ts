@@ -6,8 +6,13 @@ import { COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS } from '../constants/committee-e
 /** Time window a committee-engagement request/response is scoped to. */
 export type CommitteeEngagementWindow = (typeof COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS)[number];
 
-/** Engagement tier derived in the BFF from the member's attendance rate. */
-export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive';
+/**
+ * Engagement tier derived in the BFF from the member's personal attendance rate.
+ * `Emeritus` is a seat-type override, not a rate tier — Emeritus members never classify
+ * `Inactive`/`Low` regardless of their real attendance, since they're on the roster for
+ * legacy/honorific reasons rather than active participation.
+ */
+export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'Emeritus';
 
 /** Per-member attendance rollup for a single committee + window. */
 export interface CommitteeMemberEngagement {
@@ -20,13 +25,24 @@ export interface CommitteeMemberEngagement {
   /** `attended / invited`, 0 when `invited` is 0, rounded to 2 decimal places. */
   rate: number;
   classification: CommitteeEngagementClassification;
+  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — passthrough for the UI to call out distinctly. */
+  role: string;
+  /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'` — passthrough, drives the `Emeritus` classification. */
+  voting_status: string;
+  /** Committee-wide meeting count for the window, regardless of who was invited — an informational "invitation rate" signal (`invited / committee_meetings`), never the rate denominator. */
+  committee_meetings: number;
 }
 
 /** Aggregate stats for `GET /api/committees/:uid/engagement`. */
 export interface CommitteeEngagementSummary {
   /** `sum(attended) / sum(invited)` across the full committee roster, 0 when nobody was invited. */
   attendance_rate: number;
-  /** Members classified High or Medium. */
+  /**
+   * Count of non-Emeritus members with real attendance this window, or who joined within it
+   * (active by definition of being newly on the roster) — broader than "classified High/Medium":
+   * a Low-classified member with some real attendance still counts here. See
+   * `committee-engagement-classifier.util.ts`'s `isCommitteeMemberActive`.
+   */
   active_count: number;
   /** Full committee roster size (including members with no engagement data). */
   total_count: number;
@@ -38,14 +54,19 @@ export interface CommitteeEngagementSummary {
 export interface CommitteeEngagementResponse {
   members: CommitteeMemberEngagement[];
   summary: CommitteeEngagementSummary;
-  /** ISO timestamp the warehouse model last computed this data; `null` when unavailable or not yet emitted for any row. */
+  /**
+   * ISO timestamp the warehouse model last computed this data. Always `null` today — the real
+   * model doesn't expose a freshness column yet (a separate pipeline-freshness follow-up); use
+   * `formatCommitteeEngagementFreshness` for a UI-facing label instead of rendering this raw.
+   */
   computed_at: string | null;
   /**
-   * `false` when the warehouse query itself couldn't run (e.g. the model hasn't been deployed
-   * yet) — every member then shows zeroed, `Inactive` placeholder stats rather than real data.
-   * `true` means the query succeeded, even if it returned zero rows (e.g. a genuinely new
-   * committee with no attendance history yet). The UI should distinguish "no data available" from
-   * "real data, currently all zero" using this flag rather than inferring it from the numbers.
+   * `false` only when the live warehouse query itself couldn't run (the model isn't deployed yet)
+   * — every member then shows zeroed, `Inactive` placeholder stats rather than real data. `true`
+   * covers both a successful live query (even one returning zero rows for a genuinely new
+   * committee) and a mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`) — the flag
+   * means "there's real per-member signal to show," not "this came from Snowflake." The UI should
+   * key its "no data available" state off this flag rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
 }

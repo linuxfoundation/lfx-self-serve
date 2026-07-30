@@ -2,12 +2,31 @@
 // SPDX-License-Identifier: MIT
 
 import { COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS } from '../constants/committee-engagement.constants';
+import { CommitteeMemberVotingStatus } from '../enums';
 import type { CommitteeEngagementClassification } from '../interfaces/committee-engagement.interface';
+
+/**
+ * Classification inputs beyond the raw counts, per LFXV2-1705's finalized model semantics
+ * (`platinum_lfx_one_committee_meeting_attendance`, `lf-dbt#2694`): `votingStatus` (`'Emeritus'`
+ * short-circuits to a neutral tier) and `joinedWithinWindow` (whether `member_joined_at` falls
+ * after the requested window's start — tenure clipping, so a brand-new member's zero invites
+ * doesn't read as disengagement).
+ */
+export interface CommitteeEngagementClassificationInput {
+  attended: number;
+  invited: number;
+  votingStatus: string;
+  joinedWithinWindow: boolean;
+}
 
 /**
  * `attended / invited`, 0 when nobody was invited. Clamps `attended` to `invited` so a warehouse
  * data-quality glitch (or a grain mismatch, until the real dbt model's schema is confirmed) can't
- * produce a rate over 1 — nothing upstream enforces `attended <= invited`.
+ * produce a rate over 1 — nothing upstream enforces `attended <= invited`. Always personal
+ * `attended/invited`, never `attended/committee_meetings` — the real model's `committee_meetings_*`
+ * column is a committee-wide total that would misclassify a tenure-limited member (e.g. the
+ * ticket's Orlin example: `invited_ytd=5, attended_ytd=5` reads as 100%, but `5/committee_meetings`
+ * would read as ~36% and wrongly land him in At-Risk).
  */
 function rawCommitteeEngagementRate(attended: number, invited: number): number {
   if (invited <= 0) return 0;
@@ -19,20 +38,34 @@ function rawCommitteeEngagementRate(attended: number, invited: number): number {
  * `rawCommitteeEngagementRate`, rounded to 2 decimal places for display. Classification uses the
  * unrounded rate (`classifyCommitteeEngagement`) — thresholding the rounded value would flip a
  * rate like 0.395 into the `Medium` bucket (rounds to 0.40) despite falling under the `medium`
- * threshold before rounding.
+ * threshold before rounding. Unaffected by seat type or tenure — those change the classification
+ * tier, never the underlying number, so an Emeritus member's real (low) rate is still visible.
  */
 export function computeCommitteeEngagementRate(attended: number, invited: number): number {
   return Math.round(rawCommitteeEngagementRate(attended, invited) * 100) / 100;
 }
 
 /**
- * A member never invited in the window and a member invited but who attended nothing are both
- * `Inactive` — the first has no signal, the second has a negative one, but neither is a "low but
- * present" engagement level like `Low` is meant to capture.
+ * Decision order (see the ticket's Jira thread for the full rationale):
+ * 1. `Emeritus` voting status always wins — on the roster for legacy/honorific reasons, real
+ *    attendance (often ~5%, per the model's real observed data) shouldn't read as disengagement.
+ * 2. No invites yet, but joined within the window: no real opportunity has existed, so this can't
+ *    be `Inactive` — tenure, not disengagement. Classified `High` (active by definition) rather
+ *    than a new tier, since the ticket's classification set is fixed.
+ * 3. No invites, and been a member the whole window: a genuine no-signal veteran — unchanged from
+ *    the original rule.
+ * 4-6. Invited at least once: threshold on the real (unrounded) rate as before.
+ * 7. Invited at least once, attended nothing: a real disengagement signal regardless of tenure —
+ *    unlike case 2, they had an actual opportunity and skipped every one of them, so tenure does
+ *    not protect this case.
  */
-export function classifyCommitteeEngagement(attended: number, invited: number): CommitteeEngagementClassification {
+export function classifyCommitteeEngagement(input: CommitteeEngagementClassificationInput): CommitteeEngagementClassification {
+  const { attended, invited, votingStatus, joinedWithinWindow } = input;
+  if (votingStatus === CommitteeMemberVotingStatus.EMERITUS) return 'Emeritus';
+  if (invited <= 0) return joinedWithinWindow ? 'High' : 'Inactive';
+
   const rate = rawCommitteeEngagementRate(attended, invited);
-  if (invited <= 0 || rate <= 0) return 'Inactive';
+  if (rate <= 0) return 'Inactive';
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.high) return 'High';
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.medium) return 'Medium';
   return 'Low';
@@ -42,10 +75,22 @@ export function classifyCommitteeEngagement(attended: number, invited: number): 
  * `Low` members are at risk by definition. A member invited within the window who attended
  * nothing is at risk too, even though `classifyCommitteeEngagement` also calls them `Inactive` —
  * that tier's other member (never invited at all) has no signal to act on, but this one does.
- * Lives next to the classifier, not in the caller, so the "which Inactive members count as at
- * risk" rule can't drift from the tier definitions above it.
+ * `Emeritus` and the tenure-grace `High` (case 2 above) are never at-risk — neither matches `Low`
+ * or `Inactive`, so no extra exclusion logic is needed here.
  */
-export function isCommitteeMemberAtRisk(attended: number, invited: number): boolean {
-  const classification = classifyCommitteeEngagement(attended, invited);
-  return classification === 'Low' || (classification === 'Inactive' && invited > 0);
+export function isCommitteeMemberAtRisk(input: CommitteeEngagementClassificationInput): boolean {
+  const classification = classifyCommitteeEngagement(input);
+  return classification === 'Low' || (classification === 'Inactive' && input.invited > 0);
+}
+
+/**
+ * The "Active Members x/y" summary rule — deliberately broader than "classified High/Medium":
+ * per the ticket, the numerator is members with *any* real attendance this window, plus members
+ * who joined within it (active by definition of being newly on the roster), excluding Emeritus.
+ * A `Low`-classified member (some attendance, just under the Medium threshold) still counts here —
+ * this is a distinct rule from `classifyCommitteeEngagement`, not a rollup of its tiers.
+ */
+export function isCommitteeMemberActive(input: CommitteeEngagementClassificationInput): boolean {
+  if (input.votingStatus === CommitteeMemberVotingStatus.EMERITUS) return false;
+  return input.attended > 0 || input.joinedWithinWindow;
 }

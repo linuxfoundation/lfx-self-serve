@@ -48,3 +48,4 @@ export * from './persona.utils';
 export * from './metric-trend.utils';
 export * from './org-meetings-insights.utils';
 export * from './committee-engagement-classifier.util';
+export * from './committee-engagement-freshness.util';

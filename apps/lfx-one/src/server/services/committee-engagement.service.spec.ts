@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors project.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime import needs a stub. The classifier functions are deep-imported
-// from their real implementation (not hand-copied) so a threshold change there fails this suite
-// too; their own boundary behavior is exhaustively covered in
+// from their real implementation (not hand-copied) so a decision-table change there fails this
+// suite too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.util.spec.ts.
-const { execute, getCommitteeMembers, warning, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
+const { execute, getCommitteeMembers, generateMockEngagementRows, warning, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
+  generateMockEngagementRows: vi.fn(),
   warning: vi.fn(),
   debug: vi.fn(),
-  // Returns null by default (cache bypassed → direct fetch, same as an unsafe committee uid) so
-  // every existing test exercises the Snowflake fetch path directly; the caching-specific tests
-  // below override this per-case.
+  // Returns null by default (cache bypassed → direct fetch) so live-mode tests exercise the
+  // Snowflake fetch path directly unless a test overrides it.
   buildCommitteeCacheKey: vi.fn<(committeeUid: string, subResource: string) => string | null>(() => null),
   getJson: vi.fn(),
   setJson: vi.fn(),
@@ -26,7 +26,6 @@ vi.mock('@lfx-one/shared/constants', () => ({
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
   VALKEY_CACHE: { COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600 },
 }));
-vi.mock('./valkey.service', () => ({ buildCommitteeCacheKey, valkeyService: { getJson, setJson } }));
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.util')>(
     '../../../../../packages/shared/src/utils/committee-engagement-classifier.util'
@@ -34,9 +33,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return {
     classifyCommitteeEngagement: actual.classifyCommitteeEngagement,
     computeCommitteeEngagementRate: actual.computeCommitteeEngagementRate,
+    isCommitteeMemberActive: actual.isCommitteeMemberActive,
     isCommitteeMemberAtRisk: actual.isCommitteeMemberAtRisk,
   };
 });
+vi.mock('../helpers/committee-engagement-mock.helper', () => ({ generateMockEngagementRows }));
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeMembers = getCommitteeMembers;
@@ -58,6 +59,7 @@ vi.mock('./snowflake.service', async () => {
     },
   };
 });
+vi.mock('./valkey.service', () => ({ buildCommitteeCacheKey, valkeyService: { getJson, setJson } }));
 vi.mock('./logger.service', () => ({
   logger: { warning, debug },
 }));
@@ -65,9 +67,30 @@ vi.mock('./logger.service', () => ({
 import { CommitteeEngagementService } from './committee-engagement.service';
 
 const req = {} as unknown as Request;
+const ENGAGEMENT_BACKEND_KEY = 'ENGAGEMENT_BACKEND';
+const originalEngagementBackend = process.env[ENGAGEMENT_BACKEND_KEY];
 
-function member(uid: string, email: string) {
-  return { uid, email } as unknown as import('@lfx-one/shared/interfaces').CommitteeMember;
+function member(uid: string): import('@lfx-one/shared/interfaces').CommitteeMember {
+  return { uid } as unknown as import('@lfx-one/shared/interfaces').CommitteeMember;
+}
+
+function row(overrides: Partial<import('@lfx-one/shared/interfaces').CommitteeEngagementWarehouseRow> = {}) {
+  return {
+    MEMBER_USER_ID: 'm1',
+    MEMBER_JOINED_AT: '2020-01-01T00:00:00.000Z',
+    MEMBER_ROLE: 'None',
+    MEMBER_VOTING_STATUS: 'Voting Rep',
+    INVITED_COUNT_30D: 0,
+    ATTENDED_COUNT_30D: 0,
+    COMMITTEE_MEETINGS_30D: 0,
+    INVITED_COUNT_90D: 0,
+    ATTENDED_COUNT_90D: 0,
+    COMMITTEE_MEETINGS_90D: 0,
+    INVITED_COUNT_YTD: 0,
+    ATTENDED_COUNT_YTD: 0,
+    COMMITTEE_MEETINGS_YTD: 0,
+    ...overrides,
+  };
 }
 
 describe('CommitteeEngagementService.getCommitteeEngagement', () => {
@@ -76,568 +99,259 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
   beforeEach(() => {
     execute.mockReset();
     getCommitteeMembers.mockReset();
+    generateMockEngagementRows.mockReset();
     warning.mockReset();
     debug.mockReset();
-    // Reassigned (not just cleared) after reset — resetting drops the default `null` return
-    // vi.hoisted above, which every test other than the caching-specific ones below relies on to
-    // bypass the cache entirely.
     buildCommitteeCacheKey.mockReset().mockReturnValue(null);
     getJson.mockReset();
     setJson.mockReset();
     service = new CommitteeEngagementService();
   });
 
-  it('joins warehouse rows to the roster by case/whitespace-normalized email', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'Alice@Example.com '), member('m2', 'bob@example.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: ' alice@example.com', ATTENDED_COUNT: 9, INVITED_COUNT: 10, COMPUTED_AT: '2026-07-28T00:00:00.000Z' },
-        // bob has no matching row -> defaults to Inactive
-      ],
+  describe('mock backend (ENGAGEMENT_BACKEND unset — the default)', () => {
+    beforeEach(() => {
+      delete process.env[ENGAGEMENT_BACKEND_KEY];
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('fetches the roster live and generates mock rows from it, without touching Snowflake', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([]);
 
-    expect(result.members).toEqual([
-      { uid: 'm1', attended: 9, invited: 10, rate: 0.9, classification: 'High' },
-      { uid: 'm2', attended: 0, invited: 0, rate: 0, classification: 'Inactive' },
-    ]);
-    expect(result.data_available).toBe(true);
-  });
+      await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('queries the engagement table with the committee uid and window bound in order, against the resolved schema', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([]);
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '90d');
-
-    expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEMBER_MEETING_ATTENDANCE'), ['committee-1', '90d'], {
-      expectMissingObject: true,
-    });
-    expect(execute).toHaveBeenCalledWith(
-      expect.stringMatching(/WHERE\s+COMMITTEE_UID\s*=\s*\?\s+AND\s+TIME_RANGE_TYPE\s*=\s*\?/),
-      expect.anything(),
-      expect.anything()
-    );
-  });
-
-  it('degrades to a zeroed, data_available:false response when the engagement table does not exist yet', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'alice@example.com')]);
-    // Realistic wrapped form SnowflakeService.execute() actually throws (see snowflake.service.ts's
-    // catch block), not a hand-rolled flag — pins the regex against the wrapping prefix surviving.
-    execute.mockRejectedValueOnce(
-      new Error(
-        "Snowflake query execution failed: SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEMBER_MEETING_ATTENDANCE' does not exist or not authorized."
-      )
-    );
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(result).toEqual({
-      members: [{ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive' }],
-      summary: { attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 },
-      computed_at: null,
-      data_available: false,
-    });
-    expect(warning).toHaveBeenCalledOnce();
-  });
-
-  it('rethrows a non-missing-object Snowflake error', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([]);
-    execute.mockRejectedValueOnce(new Error('circuit open'));
-
-    await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('circuit open');
-  });
-
-  it('rethrows a wrong-column-name compilation error rather than degrading to data_available:false', async () => {
-    // Pins the engagementTable() TODO's claim: a wrong column name is a different Snowflake
-    // compilation error than isMissingObjectError's "does not exist or not authorized" match, so it
-    // correctly 500s instead of silently degrading like a genuinely-not-deployed-yet table would.
-    getCommitteeMembers.mockResolvedValueOnce([]);
-    execute.mockRejectedValueOnce(
-      new Error("Snowflake query execution failed: SQL compilation error: error line 2 at position 13\ninvalid identifier 'MEMBER_EMAIL'")
-    );
-
-    await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('invalid identifier');
-  });
-
-  it('rolls classification up into active_count and at_risk_count, counting invited-but-zero-attendance members as at risk even though their badge reads Inactive', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'high@x.com'), member('m2', 'low@x.com'), member('m3', 'inactive@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'high@x.com', ATTENDED_COUNT: 10, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'low@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'inactive@x.com', ATTENDED_COUNT: 0, INVITED_COUNT: 10, COMPUTED_AT: null },
-      ],
+      expect(getCommitteeMembers).toHaveBeenCalledWith(req, 'committee-1');
+      expect(generateMockEngagementRows).toHaveBeenCalledWith('committee-1', [member('m1')]);
+      expect(execute).not.toHaveBeenCalled();
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '90d');
+    it('is always data_available: true and computed_at: null', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1' })]);
 
-    expect(result.summary).toEqual({ attendance_rate: 0.37, active_count: 1, total_count: 3, at_risk_count: 2 });
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('does not count never-invited (no warehouse row) members as at risk', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'never-invited@x.com')]);
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(result.summary.at_risk_count).toBe(0);
-  });
-
-  it('picks the latest computed_at among the warehouse rows directly, independent of roster order, match, or row order', async () => {
-    // 'a' matches no roster member (roster has only 'c'), 'b' has a null COMPUTED_AT, and the
-    // latest timestamp ('2026-07-29', row 'c') sorts after an earlier one ('2026-07-28', row
-    // 'a') despite appearing later in the result set — the pick must not be "first" or
-    // "roster-joined", it must be "latest, across every row Snowflake returned".
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'c@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28T00:00:00.000Z' },
-        { MEMBER_EMAIL: 'b@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'c@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-29T00:00:00.000Z' },
-      ],
+      expect(result.data_available).toBe(true);
+      expect(result.computed_at).toBeNull();
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', 'ytd');
+    it('classifies a joined-mid-window member with invited=5, attended=5 as High and never at-risk (the Orlin case)', async () => {
+      const recentJoin = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', MEMBER_JOINED_AT: recentJoin, INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5 }),
+      ]);
 
-    expect(result.computed_at).toBe('2026-07-29T00:00:00.000Z');
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('normalizes a zone-less TIMESTAMP_NTZ-shaped COMPUTED_AT to a real UTC ISO string, not a re-parsed local-time one', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28 00:00:00.000' }],
+      expect(result.members[0]).toMatchObject({ uid: 'm1', attended: 5, invited: 5, rate: 1, classification: 'High' });
+      expect(result.summary.at_risk_count).toBe(0);
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('classifies an Emeritus member as Emeritus regardless of a low real attendance rate, and never at-risk', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', MEMBER_VOTING_STATUS: 'Emeritus', INVITED_COUNT_30D: 20, ATTENDED_COUNT_30D: 1 }),
+      ]);
 
-    expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('treats an unparseable COMPUTED_AT string as absent rather than passing it through, and warns with its redacted shape', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'N/A' }],
+      expect(result.members[0]).toMatchObject({ classification: 'Emeritus', voting_status: 'Emeritus' });
+      expect(result.summary.at_risk_count).toBe(0);
+      expect(result.summary.active_count).toBe(0);
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('the new active_count rule counts a Low-classified member (some real attendance) as active', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 100, ATTENDED_COUNT_30D: 10 })]);
 
-    expect(result.computed_at).toBeNull();
-    // Distinct from a row that simply never reported COMPUTED_AT (routine, no signal) — this row
-    // reported a value and it was rejected, which is worth an operator's attention. The value's
-    // *shape* is attached, not its content: digits/letters are redacted to '9'/'a', and only a
-    // closed, non-sensitive allowlist of timestamp punctuation (e.g. the '/' below) survives
-    // verbatim as shape signal — everything else is substituted before it reaches the log.
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ committee_uid: 'committee-1', rejected_count: 1, row_count: 1, rejected_sample: ['a/a'] })
-    );
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('bounds the redacted shape to 24 characters for a long rejected COMPUTED_AT value', async () => {
-    const longValue = 'x'.repeat(500);
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: longValue }],
+      expect(result.members[0]?.classification).toBe('Low');
+      expect(result.summary.active_count).toBe(1);
+      expect(result.summary.at_risk_count).toBe(1);
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('classifies a never-invited veteran member as Inactive, and a never-invited-but-joined-within-window member as High', async () => {
+      const recentJoin = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('veteran'), member('new-joiner')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'veteran' }), row({ MEMBER_USER_ID: 'new-joiner', MEMBER_JOINED_AT: recentJoin })]);
 
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ rejected_sample: ['a'.repeat(24)] })
-    );
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('bounds the redacted shape to 24 Unicode code points, not 24 UTF-16 units', async () => {
-    // Each 👍 is one code point but two UTF-16 units. A truncation bug that counted UTF-16 units
-    // (e.g. `String(raw).slice(0, 24)` before walking, rather than the `for...of` code-point walk
-    // the doc comment describes) would yield only 12 redacted characters here, not 24 — a case no
-    // other fixture in this file reaches the 24-code-point bound (the astral case at line ~303
-    // below is only 9 code points, nowhere near it).
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '👍'.repeat(30) }],
+      expect(result.members.find((m) => m.uid === 'veteran')?.classification).toBe('Inactive');
+      expect(result.members.find((m) => m.uid === 'new-joiner')?.classification).toBe('High');
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('computes summary as an aggregation over the (varied, non-zero) members — not hardcoded zeros', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('m2'), member('m3')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 }), // High
+        row({ MEMBER_USER_ID: 'm2', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 5 }), // Medium
+        row({ MEMBER_USER_ID: 'm3', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 0 }), // Inactive
+      ]);
 
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ rejected_sample: ['?'.repeat(24)] })
-    );
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('resolves computed_at from the valid rows and reports only the invalid ones as rejected, when a committee has both', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'good@x.com'), member('m2', 'bad@x.com'), member('m3', 'absent@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'good@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28T00:00:00.000Z' },
-        { MEMBER_EMAIL: 'bad@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'garbage' },
-        { MEMBER_EMAIL: 'absent@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null },
-      ],
+      expect(result.summary.total_count).toBe(3);
+      expect(result.summary.attendance_rate).toBe(computeExpectedRate(14, 30));
+      expect(result.summary).not.toEqual({ attendance_rate: 0, active_count: 0, total_count: 3, at_risk_count: 0 });
+
+      function computeExpectedRate(attended: number, invited: number): number {
+        return Math.round((attended / invited) * 100) / 100;
+      }
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('joins by member uid, tolerating a roster member the mock rows omit (defaults to Inactive/zero)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('unmatched')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 10 })]);
 
-    expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ rejected_count: 1, row_count: 3, rejected_sample: ['aaaaaaa'] })
-    );
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('normalizes a TIMESTAMP_TZ-shaped COMPUTED_AT (space before the offset) into a canonical UTC ISO string', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28 00:00:00.000 -0700' }],
+      expect(result.members.find((m) => m.uid === 'unmatched')).toMatchObject({ attended: 0, invited: 0, classification: 'Inactive' });
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('warns and keeps the last row when two rows share the same MEMBER_USER_ID', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 1 }),
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 }),
+      ]);
 
-    expect(result.computed_at).toBe('2026-07-28T07:00:00.000Z');
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('rejects a date-only COMPUTED_AT string rather than fabricating a 00:00:00 time, and redacts its digits in the warning sample', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28' }],
+      expect(result.members[0]).toMatchObject({ attended: 9 });
+      expect(warning).toHaveBeenCalledWith(
+        req,
+        'get_committee_engagement',
+        expect.stringContaining('shared the same member uid'),
+        expect.objectContaining({ committee_uid: 'committee-1', duplicate_uid_row_count: 1, row_count: 2 })
+      );
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('exposes role, voting_status, and committee_meetings on each member', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'Chair', MEMBER_VOTING_STATUS: 'Voting Rep', COMMITTEE_MEETINGS_30D: 12, INVITED_COUNT_30D: 10 }),
+      ]);
 
-    expect(result.computed_at).toBeNull();
-    // This is the diagnostically valuable half of the redaction: a timestamp-shaped-but-rejected
-    // value should still read as timestamp-shaped after redaction, not just "not a timestamp".
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ rejected_sample: ['9999-99-99'] })
-    );
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('redacts symbols and non-Latin letters (default-deny, not default-allow) in the warning sample', async () => {
-    // Redacting only known digit/letter classes and letting anything else — symbols, emoji,
-    // combining marks — through unchanged wouldn't actually guarantee "no content reaches the log".
-    // Cyrillic letters must redact like Latin ones, and a character that's neither a recognized
-    // digit/letter nor known timestamp punctuation (👍) must become the '?' placeholder rather than
-    // passing through verbatim.
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'Алексей 👍' }],
+      expect(result.members[0]).toMatchObject({ role: 'Chair', voting_status: 'Voting Rep', committee_meetings: 12 });
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('reads the requested window off the row, differing across windows for the same member', async () => {
+      getCommitteeMembers.mockResolvedValue([member('m1')]);
+      generateMockEngagementRows.mockReturnValue([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, INVITED_COUNT_90D: 15, ATTENDED_COUNT_90D: 10 }),
+      ]);
 
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ rejected_sample: ['aaaaaaa ?'] })
-    );
+      const result30d = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+      const result90d = await service.getCommitteeEngagement(req, 'committee-1', '90d');
+
+      expect(result30d.members[0]).toMatchObject({ attended: 5, invited: 5 });
+      expect(result90d.members[0]).toMatchObject({ attended: 10, invited: 15 });
+    });
   });
 
-  it('rejects a shape-matching but impossible calendar date instead of letting it roll over to a real one', async () => {
-    // '2026-02-30' matches TIMESTAMP_SHAPE (it's digit-shaped), but Date rolls an out-of-range day
-    // forward into March rather than failing — the calendar round-trip guard is what catches this,
-    // not the post-parse NaN check (which month-13-style shapes fail on their own).
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-02-30 12:00:00' }],
+  describe('live backend (ENGAGEMENT_BACKEND=live)', () => {
+    beforeEach(() => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('queries the engagement table with the committee uid and window bound in order, against the resolved schema', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce({ rows: [] });
 
-    expect(result.computed_at).toBeNull();
-  });
+      await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-  it('rejects a shape-matching timestamp with an out-of-range hour, exercising the post-match parse guard', async () => {
-    // The calendar round-trip guard only validates the date portion, so an invalid *time* (the
-    // date '2026-07-28' is real) has to be caught by the final `Number.isNaN(parsed.getTime())`
-    // check — this is what would go dead if that guard were ever removed as "unreachable".
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28 25:00:00' }],
+      expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEMBER_MEETING_ATTENDANCE'), ['committee-1', '90d'], {
+        expectMissingObject: true,
+      });
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('degrades to a zeroed, data_available:false response when the engagement table is missing', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
 
-    expect(result.computed_at).toBeNull();
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('logs a warning when warehouse rows exist but none match the roster by email', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'roster@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'unrelated@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+      expect(result).toEqual({
+        members: [{ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive', role: '', voting_status: '', committee_meetings: 0 }],
+        summary: { attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 },
+        computed_at: null,
+        data_available: false,
+      });
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
 
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('join key mismatch'),
-      expect.objectContaining({ committee_uid: 'committee-1', row_count: 1, roster_size: 1 })
-    );
-  });
-
-  it('does not warn about a join mismatch when the roster is empty (rows may legitimately persist for a since-emptied committee)', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'former-member@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+      await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('connection reset');
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('rethrows a wrong-column-name compilation error rather than degrading to data_available:false', async () => {
+      // A wrong table name and a wrong column name are NOT the same failure mode: the former hits
+      // isMissingObjectError's "does not exist or not authorized" match (indistinguishable from
+      // "not deployed yet"), but the latter is a different Snowflake compilation error than
+      // isMissingObjectError's match, so it correctly rethrows as a 500 instead of degrading.
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockRejectedValueOnce(
+        new Error("Snowflake query execution failed: SQL compilation error: error line 2 at position 13\ninvalid identifier 'MEMBER_EMAIL'")
+      );
 
-    expect(warning).not.toHaveBeenCalled();
-  });
-
-  it('does not warn about a join mismatch when rows and roster both match', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+      await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('invalid identifier');
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('builds the engagement-rows cache key from the committee uid and window', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce({ rows: [] });
 
-    expect(warning).not.toHaveBeenCalled();
-  });
+      await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-  it('warns with duplicate_email_row_count when the warehouse returns multiple rows for one member email, and the last row wins', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'A@X.COM', ATTENDED_COUNT: 9, INVITED_COUNT: 10, COMPUTED_AT: null },
-      ],
+      expect(buildCommitteeCacheKey).toHaveBeenCalledWith('committee-1', 'engagement-rows:90d');
     });
 
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('returns cached rows without querying Snowflake on a cache hit, but still fetches the roster live', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce([row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5 })]);
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
 
-    // Pins the message's claim: without this assertion, flipping the join to first-wins would
-    // leave every other test green while making "last row wins" false.
-    expect(result.members[0]).toEqual({ uid: 'm1', attended: 9, invited: 10, rate: 0.9, classification: 'High' });
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('dropped or overwritten'),
-      expect.objectContaining({ committee_uid: 'committee-1', duplicate_email_row_count: 1, blank_email_row_count: 0, row_count: 2 })
-    );
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('warns with blank_email_row_count (not duplicate_email_row_count) when a warehouse row has a blank member email', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: '', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
-      ],
+      expect(execute).not.toHaveBeenCalled();
+      expect(getCommitteeMembers).toHaveBeenCalledOnce();
+      expect(result.data_available).toBe(true);
+      expect(result.members[0]).toMatchObject({ attended: 5, invited: 5 });
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('caches the rows on a successful query (cache miss)', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce(null);
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      const rows = [row({ MEMBER_USER_ID: 'm1' })];
+      execute.mockResolvedValueOnce({ rows });
 
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('dropped or overwritten'),
-      expect.objectContaining({ duplicate_email_row_count: 0, blank_email_row_count: 1, row_count: 2 })
-    );
-  });
+      await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('does not warn about dropped rows when every warehouse row has a distinct, non-blank email', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'b@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'b@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
-      ],
+      expect(setJson).toHaveBeenCalledWith('cache-key', rows, 3600);
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    it('does not cache the missing-object degrade — "no data yet" must not outlive the real dbt model landing', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce(null);
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
 
-    expect(warning).not.toHaveBeenCalled();
-  });
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-  it('warns with duplicate_roster_email_count when two distinct roster members share a normalized email', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'shared@x.com'), member('m2', 'SHARED@X.COM')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'shared@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }],
+      expect(result.data_available).toBe(false);
+      expect(setJson).not.toHaveBeenCalled();
     });
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    // Both roster entries resolve to the same warehouse row and each contribute it to the summary
-    // totals — documents the current behavior rather than silently masking it.
-    expect(result.members[0]).toMatchObject({ attended: 5, invited: 10, rate: 0.5, classification: 'Medium' });
-    expect(result.members[1]).toMatchObject({ attended: 5, invited: 10, rate: 0.5, classification: 'Medium' });
-    expect(result.summary.total_count).toBe(2);
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('share a normalized email'),
-      expect.objectContaining({ committee_uid: 'committee-1', duplicate_roster_email_count: 1, roster_size: 2 })
-    );
   });
+});
 
-  it('does not warn about roster email collisions when every roster member has a distinct email', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'b@x.com')]);
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(warning).not.toHaveBeenCalled();
-  });
-
-  it('clamps attended to invited when a warehouse row reports ATTENDED_COUNT greater than INVITED_COUNT, and warns once', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'over-attended@x.com'), member('m2', 'normal@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'over-attended@x.com', ATTENDED_COUNT: 12, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'normal@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null },
-      ],
-    });
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(result.members[0]).toEqual({ uid: 'm1', attended: 10, invited: 10, rate: 1, classification: 'High' });
-    expect(result.summary.attendance_rate).toBe(0.75); // (10 + 5) / (10 + 10), not (12 + 5) / (10 + 10)
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('clamped to invited'),
-      expect.objectContaining({ committee_uid: 'committee-1', over_attended_row_count: 1, deduped_row_count: 2 })
-    );
-  });
-
-  it('still detects and warns about an over-attended row that matches no current roster member', async () => {
-    // The over-attended row count is scoped to warehouse rows, not roster members, precisely so a
-    // grain mismatch affecting rows for members no longer on the roster isn't invisible — unmatched
-    // rows are the expected case (see the empty-roster join-mismatch test above), not an edge case.
-    // (That row is never clamped — it's dropped before Math.min, since it has no roster match.)
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'current-member@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [
-        { MEMBER_EMAIL: 'current-member@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null },
-        { MEMBER_EMAIL: 'former-member@x.com', ATTENDED_COUNT: 12, INVITED_COUNT: 10, COMPUTED_AT: null },
-      ],
-    });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('clamped to invited'),
-      expect.objectContaining({ committee_uid: 'committee-1', over_attended_row_count: 1, deduped_row_count: 2 })
-    );
-  });
-
-  it('does not warn about clamping when every row is within bounds', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }],
-    });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(warning).not.toHaveBeenCalled();
-  });
-
-  it('treats an unparseable INVITED_COUNT as 0 (not the same silent path as an unmatched member) and warns', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'unmatched@x.com')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 'not-a-number', COMPUTED_AT: null }],
-    });
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(result.members[0]).toEqual({ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive' });
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable ATTENDED_COUNT/INVITED_COUNT'),
-      expect.objectContaining({ committee_uid: 'committee-1', unparseable_count_member_count: 1, roster_size: 2 })
-    );
-  });
-
-  it('counts unparseable_count_member_count per member, not per row, when two members share the same unparseable row', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'shared@x.com'), member('m2', 'SHARED@X.COM')]);
-    execute.mockResolvedValueOnce({
-      rows: [{ MEMBER_EMAIL: 'shared@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 'not-a-number', COMPUTED_AT: null }],
-    });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(warning).toHaveBeenCalledWith(
-      req,
-      'get_committee_engagement',
-      expect.stringContaining('unparseable ATTENDED_COUNT/INVITED_COUNT'),
-      expect.objectContaining({ unparseable_count_member_count: 2, roster_size: 2 })
-    );
-  });
-
-  it('does not warn about unparseable counts for a member with no matching row at all', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(warning).not.toHaveBeenCalled();
-  });
-
-  it('builds the engagement-rows cache key from the committee uid and window', async () => {
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '90d');
-
-    expect(buildCommitteeCacheKey).toHaveBeenCalledWith('committee-1', 'engagement-rows:90d');
-  });
-
-  it('returns cached rows without querying Snowflake on a cache hit, but still fetches the roster live', async () => {
-    buildCommitteeCacheKey.mockReturnValue('cache-key');
-    getJson.mockResolvedValueOnce([{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }]);
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(execute).not.toHaveBeenCalled();
-    expect(getCommitteeMembers).toHaveBeenCalledOnce();
-    expect(result.data_available).toBe(true);
-    expect(result.members[0]).toMatchObject({ attended: 5, invited: 10 });
-  });
-
-  it('caches the rows on a successful query (cache miss)', async () => {
-    buildCommitteeCacheKey.mockReturnValue('cache-key');
-    getJson.mockResolvedValueOnce(null);
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    const rows = [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }];
-    execute.mockResolvedValueOnce({ rows });
-
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(setJson).toHaveBeenCalledWith('cache-key', rows, 3600);
-  });
-
-  it('does not cache the missing-object degrade — "no data yet" must not outlive the real dbt model landing', async () => {
-    buildCommitteeCacheKey.mockReturnValue('cache-key');
-    getJson.mockResolvedValueOnce(null);
-    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
-    execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
-
-    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
-
-    expect(result.data_available).toBe(false);
-    expect(setJson).not.toHaveBeenCalled();
-  });
+afterAll(() => {
+  if (originalEngagementBackend === undefined) delete process.env[ENGAGEMENT_BACKEND_KEY];
+  else process.env[ENGAGEMENT_BACKEND_KEY] = originalEngagementBackend;
 });
