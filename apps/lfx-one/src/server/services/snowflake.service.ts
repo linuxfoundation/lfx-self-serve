@@ -228,10 +228,15 @@ export class SnowflakeService {
 
             if (expectedMissing) {
               span.setStatus({ code: SpanStatusCode.OK });
+              span.setAttribute('snowflake.expected_missing_object', true);
               this.recordSuccess();
               logger.warning(undefined, 'snowflake_query', 'Query hit an expected missing-object/not-authorized error', {
                 query_hash: queryHash,
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+                // The regex this checks also matches a missing GRANT, not just a missing table —
+                // `err` is what lets a reader (or an alert on this field) tell those apart instead
+                // of assuming every hit here is the expected pre-deploy state.
+                err: error,
               });
             } else {
               span.setStatus({

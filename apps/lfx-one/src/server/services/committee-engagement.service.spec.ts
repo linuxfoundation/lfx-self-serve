@@ -9,21 +9,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // from their real implementation (not hand-copied) so a threshold change there fails this suite
 // too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.util.spec.ts.
-const { execute, getCommitteeMembers, warning, debug, withCommitteeCache } = vi.hoisted(() => ({
+const { execute, getCommitteeMembers, warning, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
   warning: vi.fn(),
   debug: vi.fn(),
-  // Passthrough by default (always calls the fetcher) so every existing test still exercises the
-  // join logic directly; the caching-specific tests below override this per-case.
-  withCommitteeCache: vi.fn((_committeeUid: string, _subResource: string, _ttl: number, fetcher: () => unknown) => fetcher()),
+  // Returns null by default (cache bypassed → direct fetch, same as an unsafe committee uid) so
+  // every existing test exercises the Snowflake fetch path directly; the caching-specific tests
+  // below override this per-case.
+  buildCommitteeCacheKey: vi.fn<(committeeUid: string, subResource: string) => string | null>(() => null),
+  getJson: vi.fn(),
+  setJson: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
   VALKEY_CACHE: { COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600 },
 }));
-vi.mock('./valkey.service', () => ({ withCommitteeCache }));
+vi.mock('./valkey.service', () => ({ buildCommitteeCacheKey, valkeyService: { getJson, setJson } }));
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.util')>(
     '../../../../../packages/shared/src/utils/committee-engagement-classifier.util'
@@ -75,9 +78,12 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     getCommitteeMembers.mockReset();
     warning.mockReset();
     debug.mockReset();
-    // Cleared, not reset — resetting would drop the passthrough default implementation set in
-    // vi.hoisted above, which every test other than the caching-specific ones below relies on.
-    withCommitteeCache.mockClear();
+    // Reassigned (not just cleared) after reset — resetting drops the default `null` return
+    // vi.hoisted above, which every test other than the caching-specific ones below relies on to
+    // bypass the cache entirely.
+    buildCommitteeCacheKey.mockReset().mockReturnValue(null);
+    getJson.mockReset();
+    setJson.mockReset();
     service = new CommitteeEngagementService();
   });
 
@@ -560,7 +566,23 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       req,
       'get_committee_engagement',
       expect.stringContaining('unparseable ATTENDED_COUNT/INVITED_COUNT'),
-      expect.objectContaining({ committee_uid: 'committee-1', unparseable_count_row_count: 1, roster_size: 2 })
+      expect.objectContaining({ committee_uid: 'committee-1', unparseable_count_member_count: 1, roster_size: 2 })
+    );
+  });
+
+  it('counts unparseable_count_member_count per member, not per row, when two members share the same unparseable row', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'shared@x.com'), member('m2', 'SHARED@X.COM')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'shared@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 'not-a-number', COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable ATTENDED_COUNT/INVITED_COUNT'),
+      expect.objectContaining({ unparseable_count_member_count: 2, roster_size: 2 })
     );
   });
 
@@ -573,23 +595,49 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(warning).not.toHaveBeenCalled();
   });
 
-  it('reads through the committee-scoped cache, keyed by committee uid and window', async () => {
+  it('builds the engagement-rows cache key from the committee uid and window', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({ rows: [] });
 
     await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-    expect(withCommitteeCache).toHaveBeenCalledWith('committee-1', 'engagement:90d', 3600, expect.any(Function));
+    expect(buildCommitteeCacheKey).toHaveBeenCalledWith('committee-1', 'engagement-rows:90d');
   });
 
-  it('returns the cached response without querying the roster or Snowflake on a cache hit', async () => {
-    const cached = { members: [], summary: { attendance_rate: 0, active_count: 0, total_count: 0, at_risk_count: 0 }, computed_at: null, data_available: true };
-    withCommitteeCache.mockResolvedValueOnce(cached);
+  it('returns cached rows without querying Snowflake on a cache hit, but still fetches the roster live', async () => {
+    buildCommitteeCacheKey.mockReturnValue('cache-key');
+    getJson.mockResolvedValueOnce([{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }]);
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
 
     const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-    expect(result).toBe(cached);
-    expect(getCommitteeMembers).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
+    expect(getCommitteeMembers).toHaveBeenCalledOnce();
+    expect(result.data_available).toBe(true);
+    expect(result.members[0]).toMatchObject({ attended: 5, invited: 10 });
+  });
+
+  it('caches the rows on a successful query (cache miss)', async () => {
+    buildCommitteeCacheKey.mockReturnValue('cache-key');
+    getJson.mockResolvedValueOnce(null);
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    const rows = [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }];
+    execute.mockResolvedValueOnce({ rows });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(setJson).toHaveBeenCalledWith('cache-key', rows, 3600);
+  });
+
+  it('does not cache the missing-object degrade — "no data yet" must not outlive the real dbt model landing', async () => {
+    buildCommitteeCacheKey.mockReturnValue('cache-key');
+    getJson.mockResolvedValueOnce(null);
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(result.data_available).toBe(false);
+    expect(setJson).not.toHaveBeenCalled();
   });
 });

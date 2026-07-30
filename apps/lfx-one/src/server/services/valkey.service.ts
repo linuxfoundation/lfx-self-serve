@@ -312,17 +312,6 @@ export function withOrgCache<T>(
   return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
 }
 
-/** Read-through helper for the per-committee Snowflake-backed namespace; a null key (unsafe committee uid) fetches directly. */
-export function withCommitteeCache<T>(
-  committeeUid: string,
-  subResource: string,
-  ttlSeconds: number,
-  fetcher: () => Promise<T>,
-  accept?: (value: unknown) => boolean
-): Promise<T> {
-  return valkeyService.withCache(buildCommitteeCacheKey(committeeUid, subResource), ttlSeconds, fetcher, accept);
-}
-
 /** Best-effort invalidation of a per-user org key (e.g. after a write so the caller's own next read is fresh); an unsafe identity yields a null key → no-op. */
 export function invalidatePerUserCache(namespace: string, username: string, orgUid: string): Promise<boolean> {
   return valkeyService.del(buildPerUserOrgKey(namespace, username, orgUid));

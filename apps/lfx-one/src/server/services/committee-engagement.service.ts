@@ -16,7 +16,7 @@ import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper'
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
-import { withCommitteeCache } from './valkey.service';
+import { buildCommitteeCacheKey, valkeyService } from './valkey.service';
 
 /**
  * Matches `YYYY-MM-DD[T ]HH:MM:SS[.sss][Z | ±HH[:]MM]` — the shapes Snowflake actually renders for
@@ -38,25 +38,39 @@ export class CommitteeEngagementService {
   private readonly committeeService = new CommitteeService();
 
   /**
-   * Cached per `(committeeUid, window)` for an hour, matching every sibling Snowflake-backed
-   * analytics endpoint (`withOrgCache` callers) — the caller's `auditor` grant is already verified
-   * by `assertCommitteeRead` in the controller before this runs, so a cache hit can't bypass it.
-   * On a miss: two independent reads run in parallel — one query-service call for the roster, one
-   * Snowflake call for engagement rows — and are joined in memory. No per-member Snowflake call, so
-   * this stays N+1-free regardless of committee size.
+   * Two independent reads run in parallel — one query-service call for the roster, one Snowflake
+   * call for engagement rows — and are joined in memory. No per-member Snowflake call, so this
+   * stays N+1-free regardless of committee size. Only the Snowflake read is cached (see
+   * `queryEngagementRows`): the roster comes from a caller-token, upstream-access-filtered
+   * query-service call, so caching it under a shared committee-scoped key could serve one caller's
+   * filtered view to a different caller, and it needs to reflect roster writes immediately rather
+   * than up to an hour late.
    */
   public async getCommitteeEngagement(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementResponse> {
-    return withCommitteeCache(committeeUid, `engagement:${window}`, VALKEY_CACHE.COMMITTEE_ENGAGEMENT_TTL_SECONDS, async () => {
-      const [members, queryResult] = await Promise.all([
-        this.committeeService.getCommitteeMembers(req, committeeUid),
-        this.queryEngagementRows(req, committeeUid, window),
-      ]);
+    const [members, queryResult] = await Promise.all([
+      this.committeeService.getCommitteeMembers(req, committeeUid),
+      this.queryEngagementRows(req, committeeUid, window),
+    ]);
 
-      return this.buildResponse(req, committeeUid, members, queryResult);
-    });
+    return this.buildResponse(req, committeeUid, members, queryResult);
   }
 
+  /**
+   * Cached per `(committeeUid, window)` for an hour, matching the sibling Snowflake-backed
+   * analytics pattern in `org-lens-project-detail.service.ts`'s roster block — including its
+   * `degradedMissingObject` guard: the missing-object degrade is deliberately never written to the
+   * cache, or "no data yet" would keep being served for up to an hour after the real dbt model
+   * lands (and, per the comment below, a transient GRANT regression would get an hour of false
+   * "no data" too). The caller's `auditor` grant is already verified by `assertCommitteeRead` in
+   * the controller before this runs, so a cache hit can't bypass it.
+   */
   private async queryEngagementRows(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementQueryResult> {
+    const key = buildCommitteeCacheKey(committeeUid, `engagement-rows:${window}`);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<CommitteeEngagementWarehouseRow[]>(key, Array.isArray);
+      if (cached !== null) return { rows: cached, dataAvailable: true };
+    }
+
     const sql = `
       SELECT MEMBER_EMAIL, ATTENDED_COUNT, INVITED_COUNT, COMPUTED_AT
       FROM ${this.engagementTable()}
@@ -64,10 +78,13 @@ export class CommitteeEngagementService {
       ORDER BY MEMBER_EMAIL
     `;
     logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid, window });
+
+    let rows: CommitteeEngagementWarehouseRow[];
+    let degradedMissingObject = false;
     try {
       const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [committeeUid, window], { expectMissingObject: true });
-      logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, window, row_count: result.rows.length });
-      return { rows: result.rows, dataAvailable: true };
+      rows = result.rows;
+      logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, window, row_count: rows.length });
     } catch (error) {
       // Pre-dbt-deploy the engagement table is absent; degrade to the empty response the
       // members table expects instead of 5xx per committee page load. `dataAvailable: false`
@@ -78,13 +95,20 @@ export class CommitteeEngagementService {
       // misconfiguration will degrade identically to the pre-deploy state. The message and
       // attached `err` below are worded to not assert which case this is; check `err` first.
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      degradedMissingObject = true;
+      rows = [];
       logger.warning(req, 'get_committee_engagement', 'Engagement query hit a missing-object/not-authorized error; returning empty response', {
         committee_uid: committeeUid,
         window,
         err: error,
       });
-      return { rows: [], dataAvailable: false };
     }
+
+    if (key !== null && !degradedMissingObject) {
+      await valkeyService.setJson(key, rows, VALKEY_CACHE.COMMITTEE_ENGAGEMENT_TTL_SECONDS);
+    }
+
+    return { rows, dataAvailable: !degradedMissingObject };
   }
 
   /**
@@ -181,17 +205,20 @@ export class CommitteeEngagementService {
     let activeCount = 0;
     let atRiskCount = 0;
     let matchedCount = 0;
-    // A matched row whose ATTENDED_COUNT/INVITED_COUNT doesn't parse as a number at all — distinct
-    // from an *unmatched* member (no row, legitimately 0) and from over-attendance (a row that
-    // parses fine but reports attended > invited, counted separately above).
-    let unparseableCountRowCount = 0;
+    // Counts roster *members* whose matched row's ATTENDED_COUNT/INVITED_COUNT didn't parse as a
+    // number at all — deliberately member-grain, not row-grain like `overAttendedRowCount`, since
+    // two members sharing a normalized email (see `duplicateRosterEmailCount` above) would each
+    // independently hit the same unparseable row and both need to surface here. Distinct from an
+    // *unmatched* member (no row, legitimately 0) and from over-attendance (a row that parses fine
+    // but reports attended > invited, counted separately above).
+    let unparseableCountMemberCount = 0;
 
     const memberEngagements = members.map((member) => {
       const row = rowsByEmail.get(this.normalizeEmail(member.email));
       if (row) matchedCount++;
       const parsedInvited = row ? this.toCount(row.INVITED_COUNT) : 0;
       const parsedAttended = row ? this.toCount(row.ATTENDED_COUNT) : 0;
-      if (parsedInvited === null || parsedAttended === null) unparseableCountRowCount++;
+      if (parsedInvited === null || parsedAttended === null) unparseableCountMemberCount++;
       const invited = parsedInvited ?? 0;
       // Clamped to `invited`: nothing upstream guarantees ATTENDED_COUNT <= INVITED_COUNT, and an
       // unclamped value here would produce a >100% rate and a response where `attended` exceeds
@@ -245,12 +272,17 @@ export class CommitteeEngagementService {
       });
     }
 
-    if (unparseableCountRowCount > 0) {
-      logger.warning(req, 'get_committee_engagement', 'A matched warehouse row had an unparseable ATTENDED_COUNT/INVITED_COUNT; treated as 0', {
-        committee_uid: committeeUid,
-        unparseable_count_row_count: unparseableCountRowCount,
-        roster_size: members.length,
-      });
+    if (unparseableCountMemberCount > 0) {
+      logger.warning(
+        req,
+        'get_committee_engagement',
+        'Matched warehouse rows had an unparseable ATTENDED_COUNT/INVITED_COUNT for one or more roster members; treated as 0',
+        {
+          committee_uid: committeeUid,
+          unparseable_count_member_count: unparseableCountMemberCount,
+          roster_size: members.length,
+        }
+      );
     }
 
     logger.debug(req, 'get_committee_engagement', 'Joined engagement rows to the roster', {
