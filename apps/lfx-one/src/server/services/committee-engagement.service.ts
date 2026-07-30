@@ -114,9 +114,9 @@ export class CommitteeEngagementService {
       .filter((iso): iso is string => iso !== null)
       .reduce((latest: string | null, iso) => (!latest || iso > latest ? iso : latest), null);
     // Distinct from "no COMPUTED_AT provided" (normal — the model hasn't computed anything for that
-    // row yet, not a data-quality issue): this counts rows that *did* report a value but one
+    // row yet, not a data-quality issue): this collects rows that *did* report a value but one
     // toIsoTimestamp rejected as calendar-invalid or shape-mismatched, which is worth surfacing.
-    const rejectedTimestampCount = parsedTimestamps.filter(({ raw, iso }) => raw !== null && raw !== undefined && iso === null).length;
+    const rejectedTimestamps = parsedTimestamps.filter(({ raw, iso }) => raw !== null && raw !== undefined && iso === null);
 
     let totalAttended = 0;
     let totalInvited = 0;
@@ -167,11 +167,15 @@ export class CommitteeEngagementService {
       );
     }
 
-    if (rejectedTimestampCount > 0) {
+    if (rejectedTimestamps.length > 0) {
       logger.warning(req, 'get_committee_engagement', 'Some warehouse rows had an unparseable COMPUTED_AT; excluded from the freshness timestamp', {
         committee_uid: committeeUid,
-        rejected_count: rejectedTimestampCount,
+        rejected_count: rejectedTimestamps.length,
         row_count: rows.length,
+        // A rejection is almost certainly a format problem (the dbt model is still unwritten), and
+        // the raw value is the one datum that identifies it — bounded so a systemic rejection
+        // doesn't turn into an unbounded log line. Timestamps only, no PII risk.
+        rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => String(raw)),
       });
     }
 
