@@ -13,7 +13,23 @@ import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, switchMap, take, takeWhile, tap, timer } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  of,
+  skip,
+  switchMap,
+  take,
+  takeUntil,
+  takeWhile,
+  tap,
+  timer,
+} from 'rxjs';
 
 @Component({
   selector: 'lfx-weekly-brief-card',
@@ -241,6 +257,11 @@ export class WeeklyBriefCardComponent {
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => this.briefResponse.set(response)),
         takeWhile((response) => response.brief?.state === 'generating', true),
+        // refresh$ is also reachable while a poll is in flight (onRetry, the 409 branch
+        // of onGenerate) — stop polling on a manual refresh so a late poll tick can't
+        // overwrite a fresher refresh result. skip(1): refresh$ is a BehaviorSubject and
+        // replays its current value on subscribe; only a genuinely new emission should cancel.
+        takeUntil(this.refresh$.pipe(skip(1))),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
