@@ -294,11 +294,11 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
   });
 
   it('redacts symbols and non-Latin letters (default-deny, not default-allow) in the warning sample', async () => {
-    // A prior version of this redaction only mapped known digit/letter classes and let anything
-    // else — symbols, emoji, combining marks — through unchanged, which doesn't actually guarantee
-    // "no content reaches the log". Cyrillic letters must redact like Latin ones, and a character
-    // that's neither a recognized digit/letter nor known timestamp punctuation (👍) must become the
-    // '?' placeholder rather than passing through verbatim.
+    // Redacting only known digit/letter classes and letting anything else — symbols, emoji,
+    // combining marks — through unchanged wouldn't actually guarantee "no content reaches the log".
+    // Cyrillic letters must redact like Latin ones, and a character that's neither a recognized
+    // digit/letter nor known timestamp punctuation (👍) must become the '?' placeholder rather than
+    // passing through verbatim.
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'Алексей 👍' }],
@@ -373,6 +373,58 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: null }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('warns when the warehouse returns multiple rows for one member email', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [
+        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
+        { MEMBER_EMAIL: 'A@X.COM', ATTENDED_COUNT: 9, INVITED_COUNT: 10, COMPUTED_AT: null },
+      ],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('multiple rows for one member email'),
+      expect.objectContaining({ committee_uid: 'committee-1', dropped_row_count: 1, row_count: 2 })
+    );
+  });
+
+  it('warns when a warehouse row has a blank member email', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [
+        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
+        { MEMBER_EMAIL: '', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
+      ],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('multiple rows for one member email'),
+      expect.objectContaining({ dropped_row_count: 1, row_count: 2 })
+    );
+  });
+
+  it('does not warn about dropped rows when every warehouse row has a distinct, non-blank email', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'b@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [
+        { MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
+        { MEMBER_EMAIL: 'b@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 10, COMPUTED_AT: null },
+      ],
     });
 
     await service.getCommitteeEngagement(req, 'committee-1', '30d');

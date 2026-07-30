@@ -99,12 +99,28 @@ export class CommitteeEngagementService {
       const email = this.normalizeEmail(row.MEMBER_EMAIL);
       if (email) rowsByEmail.set(email, row);
     }
+    // Last-write-wins on a duplicate email, and a blank email is dropped outright — both silently,
+    // unless flagged here. The declared grain (COMMITTEE_UID, MEMBER_EMAIL, TIME_RANGE_TYPE) is a
+    // guess pending the real dbt model; if it's finer than that, this is the one signal that would
+    // reveal rows disappearing rather than just failing to join.
+    const droppedRowCount = rows.length - rowsByEmail.size;
+    if (droppedRowCount > 0) {
+      logger.warning(
+        req,
+        'get_committee_engagement',
+        'Warehouse returned multiple rows for one member email (or rows with a blank email); only the last row per email was used',
+        {
+          committee_uid: committeeUid,
+          dropped_row_count: droppedRowCount,
+          row_count: rows.length,
+        }
+      );
+    }
 
-    // Named "over-attended", not "clamped": this counts every deduped row where ATTENDED_COUNT
-    // exceeds INVITED_COUNT, including rows with no roster match — those are dropped entirely in
-    // the map below, never actually clamped. Counted over rows, not roster members, so a grain
-    // mismatch affecting only former-member rows (the normal case, not an edge case — see the
-    // join-mismatch warning below) isn't invisible.
+    // Named "over-attended", not "clamped": rows with no roster match are dropped entirely in the
+    // map below and never actually clamped, so this counts detection, not mutation. Counted over
+    // rows, not roster members, so a grain mismatch affecting only former-member rows (the normal
+    // case, not an edge case — see the join-mismatch warning below) isn't invisible.
     const overAttendedRowCount = [...rowsByEmail.values()].filter((row) => this.toCount(row.ATTENDED_COUNT) > this.toCount(row.INVITED_COUNT)).length;
 
     // Computed independently of the roster join below (a warehouse row with no roster match, or
@@ -215,12 +231,12 @@ export class CommitteeEngagementService {
    * from "not a timestamp at all" — the allowlisted characters are the only ones that carry that
    * shape signal, and they're a closed, non-sensitive set, not free-form content.
    *
-   * Default-*deny*, not default-allow: an earlier version redacted only known digit/letter classes
-   * and let anything else (symbols, emoji, combining marks) through unchanged, which doesn't
-   * actually shrink what a caller could put in this column. Walks by Unicode code point via
-   * `for...of` (not `Array.from` + `.slice`, which would materialize the entire string before
-   * truncating — a real cost against a column whose real width is unknown) and stops the moment the
-   * bound is reached, so a surrogate pair is never split into two invalid lone surrogates either.
+   * Default-*deny*, not default-allow: redacting only known digit/letter classes and letting
+   * anything else (symbols, emoji, combining marks) through unchanged wouldn't actually shrink what
+   * a caller could put in this column. Walks by Unicode code point via `for...of` (not `Array.from`
+   * + `.slice`, which would materialize the entire string before truncating — a real cost against a
+   * column whose real width is unknown) and stops the moment the bound is reached, so a surrogate
+   * pair is never split into two invalid lone surrogates either.
    */
   private redactedShape(raw: unknown): string {
     const MAX_CODE_POINTS = 24;
@@ -279,7 +295,13 @@ export class CommitteeEngagementService {
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
-  /** Placeholder table/column names — real names TBD once the dbt model (owned separately) lands. */
+  /**
+   * TODO(LFXV2-1705 follow-up): placeholder table name. Every column this service reads
+   * (`MEMBER_EMAIL`, `ATTENDED_COUNT`, `INVITED_COUNT`, `COMPUTED_AT`, `COMMITTEE_UID`,
+   * `TIME_RANGE_TYPE`) and the assumed grain are guesses pending the real dbt model, owned
+   * separately (see the ticket). Until reconciled, a wrong table/column name and "not deployed
+   * yet" are indistinguishable — both degrade to `data_available: false` via `expectMissingObject`.
+   */
   private engagementTable(): string {
     return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE`;
   }
