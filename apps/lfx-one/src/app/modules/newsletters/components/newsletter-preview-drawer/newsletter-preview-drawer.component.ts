@@ -19,6 +19,12 @@ export class NewsletterPreviewDrawerComponent {
   public readonly logoUrl = input<string | undefined>(undefined);
   public readonly displayName = input.required<string>();
 
+  // === Inputs (drawer header) ===
+  // Defaults keep the sender-side "Preview" framing used by the manage and
+  // list pages; reader-side pages (My Newsletters) pass their own text.
+  public readonly headerTitle = input<string>('Preview');
+  public readonly headerSubtitle = input<string>('As your recipients will see it');
+
   // === Model Signals (two-way) ===
   public readonly visible = model<boolean>(false);
 
