@@ -250,9 +250,10 @@ describe('generateMockEngagementRows', () => {
 
     it('treats a real, recorded "None" voting status as known — never overwrites it, including at the Emeritus slot', () => {
       // Regression: `None` is a legitimate real value (a member genuinely has no voting role), not
-      // an absence of data. Only `voting` being unset/null means "no real status recorded" and is
-      // eligible for the Emeritus fallback; a real `None` must pass through exactly like any other
-      // real status. Every member here has a real `None`, so no fallback should ever fire.
+      // an absence of data. Only `voting` being unset/null — or a blank/falsy `status` — means "no
+      // real status recorded" and is eligible for the Emeritus fallback; a real `None` must pass
+      // through exactly like any other real status. Every member here has a real `None`, so no
+      // fallback should ever fire.
       const roster = ROSTER.map((m) => member(m.uid, { voting: { status: 'None' } as never }));
       const rows = generateMockEngagementRows('committee-1', roster);
       expect(rows.every((r) => r.MEMBER_VOTING_STATUS === 'None')).toBe(true);
@@ -264,8 +265,9 @@ describe('generateMockEngagementRows', () => {
       // rather than being treated as a real recorded status and emitted verbatim.
       const roster = [member('m0', { voting: { status: '' } as never }), ...ROSTER.slice(1)];
       const rows = generateMockEngagementRows('committee-1', roster);
-      // m0 is guaranteed to land the Emeritus fallback: it's the only member with no usable real
-      // status, and organicVotingStatus can never itself produce 'Emeritus'.
+      // No member in this roster has a usable real status (m1-m7 have no `voting` at all), so the
+      // fallback picks the first null in sorted-uid order — m0 — and organicVotingStatus can never
+      // itself produce 'Emeritus', making the outcome fully deterministic.
       expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Emeritus');
     });
 

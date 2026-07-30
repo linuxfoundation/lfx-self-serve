@@ -34,7 +34,8 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  * a member's numbers never imply meetings that happened before their shown join date.
  * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too — including a real `'None'`, which is
  * itself a recorded status and never overwritten — falling back to a hash-derived placeholder only
- * for members with no `voting` recorded at all. Two scenarios (`Emeritus`, "the Orlin case" —
+ * for members with no usable real status (no `voting` recorded, or a blank/falsy `status`). Two
+ * scenarios (`Emeritus`, "the Orlin case" —
  * see below) are guaranteed visible somewhere in the roster whenever that's possible without
  * overriding a real, known value; when every member's real data already rules a scenario out
  * (e.g. every member has a real non-`Emeritus` status), that scenario simply isn't demonstrated
