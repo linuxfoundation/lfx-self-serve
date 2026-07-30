@@ -43,7 +43,9 @@ import { expect, Page, Route, test } from '@playwright/test';
 import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 
 const TEST_COMMITTEE_UID = 'wb-card-e2e-committee-uid';
-const COMMITTEE_URL = `/committees/${TEST_COMMITTEE_UID}`;
+// Committees are mounted under /groups, not /committees (see committee-about.helper.ts's
+// gotoCommitteeTab and app.routes.ts's `path: 'groups'` registration).
+const COMMITTEE_URL = `/groups/${TEST_COMMITTEE_UID}`;
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(60_000);
@@ -142,14 +144,19 @@ async function mockCommitteeShell(page: Page): Promise<void> {
   });
   await page.route(`**/api/meetings*`, async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      // MeetingService.getPastMeetingsByCommittee unwraps `.data` from a PaginatedResponse —
+      // a bare array leaves it `undefined` and throws in [...this.meetings()] during CD
+      // (matches committee-about.helper.ts's mockCommitteeApis).
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
       return;
     }
     await route.fallback();
   });
   await page.route(`**/api/votes*`, async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      // VoteService.getVotesByCommittee unwraps `.data` from a PaginatedResponse — same
+      // envelope requirement as meetings above.
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
       return;
     }
     await route.fallback();
@@ -296,19 +303,18 @@ test.describe('WG Weekly Brief card — generated state (flag ON)', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Brief body text is rendered (no testid on the <pre> — assert via text).
-    await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
 
     // Week label "May 17 – May 23, 2026" — assert on the human format.
     await expect(page.getByText(/May\s+17/)).toBeVisible();
     await expect(page.getByText(/May\s+23,\s+2026/)).toBeVisible();
 
     // "Generated" state badge.
-    await expect(page.getByText('Generated', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('weekly-brief-card-state-badge')).toHaveText('Generated');
 
     // Throttle text: "1/2 generates · 0/3 regenerations used this week"
-    await expect(page.getByText(/1\/2 generates/)).toBeVisible();
-    await expect(page.getByText(/0\/3 regenerations/)).toBeVisible();
+    await expect(page.getByTestId('weekly-brief-card-throttle')).toContainText('1/2 generates');
+    await expect(page.getByTestId('weekly-brief-card-throttle')).toContainText('0/3 regenerations');
 
     // All three primary action buttons are visible.
     await expect(page.getByTestId('weekly-brief-card-regenerate-button')).toBeVisible();
@@ -345,7 +351,7 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
     // and every assertion below would just be validating the login page.
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
 
     // Enter edit mode.
     await page.getByTestId('weekly-brief-card-edit-button').click();
@@ -374,8 +380,8 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
 
     // UI exits edit mode and shows the new state badge.
     await expect(textarea).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByText('Edited', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByText(editedText)).toBeVisible();
+    await expect(page.getByTestId('weekly-brief-card-state-badge')).toHaveText('Edited', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(editedText);
   });
 });
 
@@ -388,17 +394,19 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     // Upstream's generate call is a 202 accepted, not a completed brief — the card
     // renders the 202 body's `generating` state immediately (no GET needed for that),
     // then polls GET /current one interval later until the brief lands on a terminal
-    // state (LFXV2-2175/2176 review). Sequence: call 1 = initial empty-state load;
-    // call 2 = the poll's first (delayed) tick, already terminal.
-    let getCount = 0;
+    // state (LFXV2-2175/2176 review). Keyed off whether generate has been accepted
+    // rather than a raw GET count — a flag transiently going false (e.g. LaunchDarkly
+    // re-evaluating and remounting the card) can add an extra initial-load GET that
+    // would desync a count-based sequence.
+    let generateAccepted = false;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;
       }
-      getCount += 1;
-      const body: WeeklyBriefCurrentResponse =
-        getCount === 1 ? { brief: null, throttle: DEFAULT_THROTTLE } : { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE };
+      const body: WeeklyBriefCurrentResponse = generateAccepted
+        ? { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE }
+        : { brief: null, throttle: DEFAULT_THROTTLE };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
@@ -407,6 +415,7 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     let capturedPostBody: { force?: boolean } | null = null;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/generate`, async (route) => {
       capturedPostBody = (route.request().postDataJSON() ?? {}) as { force?: boolean };
+      generateAccepted = true;
       await route.fulfill({
         status: 202,
         contentType: 'application/json',
@@ -438,7 +447,7 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     // Poll's first tick returns the terminal brief — empty state stays gone, generated
     // content and actions take over.
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('weekly-brief-card-regenerate-button')).toBeVisible();
     await expect(page.getByTestId('weekly-brief-card-edit-button')).toBeVisible();
     await expect(page.getByTestId('weekly-brief-card-copy-button')).toBeVisible();
@@ -456,6 +465,12 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
     // from this tab at all. Regression coverage for a bug where only onGenerate()'s own
     // poll call covered this state, leaving a load-time generating brief a permanent
     // spinner with no recovery (LFXV2-2176 review).
+    //
+    // Keyed off a one-way toggle, not a raw GET count: once any read observes the
+    // terminal brief, every read after it (including an extra initial-load GET from,
+    // say, LaunchDarkly re-evaluating and remounting the card) stays terminal too —
+    // a fixed "call N is terminal" index would desync on exactly that kind of extra call.
+    let terminalObserved = false;
     let getCount = 0;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
       if (route.request().method() !== 'GET') {
@@ -463,8 +478,12 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
         return;
       }
       getCount += 1;
-      const body: WeeklyBriefCurrentResponse =
-        getCount === 1 ? { brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE } : { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE };
+      if (getCount > 1) {
+        terminalObserved = true;
+      }
+      const body: WeeklyBriefCurrentResponse = terminalObserved
+        ? { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE }
+        : { brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
@@ -477,7 +496,7 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
     await expect(page.getByTestId('weekly-brief-card-generating-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // The poll's own tick (not a user action) carries it to the terminal brief.
-    await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
     expect(getCount).toBeGreaterThanOrEqual(2);
   });
 });

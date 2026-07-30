@@ -36,6 +36,7 @@ import {
   takeWhile,
   tap,
   timeout,
+  TimeoutError,
   timer,
 } from 'rxjs';
 
@@ -142,7 +143,10 @@ export class WeeklyBriefCardComponent {
     if (!committeeUid) return;
     this.generating.set(true);
     this.pollTimedOut.set(false);
-    const currentBrief = this.brief();
+    // renderableBrief, not brief: a real brief object with state: 'empty' renders the
+    // empty-state Generate button (gated on canGenerate/generates), but brief() alone is
+    // truthy for it — sending force: true would spend a regeneration instead.
+    const currentBrief = this.renderableBrief();
     // GenerateWeeklyBriefRequest only accepts `force` (LFXV2-2175 review: there is no
     // client-supplied revision — conflict detection is entirely server-side, via 409
     // edited_brief_exists). force: true is what both re-requests a brief that already
@@ -175,7 +179,16 @@ export class WeeklyBriefCardComponent {
           this.briefResponse.set({ brief: res.brief ?? this.brief(), throttle: res.throttle ?? this.throttle() });
           this.pollUntilTerminal(committeeUid);
         },
-        error: (err: HttpErrorResponse) => {
+        error: (err: HttpErrorResponse | TimeoutError) => {
+          if (err instanceof TimeoutError) {
+            // The POST itself timed out, but upstream may well have accepted it (202,
+            // quota consumed, generation running) — fall into the same poll that handles
+            // a normal 202, rather than toasting an error and leaving the card able to
+            // spend a second generate/regenerate on what might already be in progress.
+            // The poll's own attempt cap (pollTimedOut) bounds this if nothing comes back.
+            this.pollUntilTerminal(committeeUid);
+            return;
+          }
           this.generating.set(false);
           let detail: string;
           switch (err?.status) {
@@ -368,12 +381,19 @@ export class WeeklyBriefCardComponent {
         // longer the one on screen, or a late tick would paint the old committee's brief
         // onto the new one's card.
         takeUntil(toObservable(this.committee, { injector: this.injector }).pipe(filter((c) => c?.uid !== committeeUid))),
-        takeUntilDestroyed(this.destroyRef)
+        takeUntilDestroyed(this.destroyRef),
+        // finalize, not just the complete callback below: an error escaping this pipe
+        // (e.g. a throw inside the tap/takeWhile predicates above, outside exhaustMap's
+        // own catchError) must still release pollActive and clear generating — otherwise
+        // it's stuck true for the rest of the component's lifetime with no way to
+        // restart polling, the same dead end this method exists to close.
+        finalize(() => {
+          this.pollActive = false;
+          this.generating.set(false);
+        })
       )
       .subscribe({
         complete: () => {
-          this.pollActive = false;
-          this.generating.set(false);
           // Only warn when the attempt cap was actually exhausted without ever observing
           // a terminal state — not when the poll stopped because of a manual refresh/409
           // (a fresher read is already on its way) or because the component was destroyed.
