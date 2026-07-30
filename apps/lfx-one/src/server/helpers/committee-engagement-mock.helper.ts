@@ -88,7 +88,8 @@ interface RosterPlan {
  *   than `WINDOW_30D_DAYS` — the upper bound keeps this specifically the "joined *recently*" case
  *   (the ticket's literal example) rather than any tenured member who happens to clear the lower
  *   bound; without it, nearly every real committee would show the scenario, but on whichever
- *   long-tenured member the hash picked, not a recent joiner. Otherwise, the first member with no
+ *   member happens to be the most recently real-joined eligible one — on a mature roster, likely
+ *   someone with years of tenure, not a recent joiner. Otherwise, the first member with no
  *   real join date at all is fabricated exactly `minOrlinTenureDays` of tenure — the shortest
  *   tenure that's still self-consistent with the forced count for *this* committee's cadence. If
  *   every member has real (and either too-recent or too-long) tenure data, no member takes this
@@ -103,8 +104,10 @@ interface RosterPlan {
  * joined* member, which is the point of the Orlin case (see above). The remaining alternative,
  * overriding a real member's real join date, is rejected outright: that's the one thing this
  * generator otherwise never does, and would make an already-real person's mock data lie about them
- * specifically. Small test fixtures (no real `created_at` at all) always exercise the scenario;
- * real committees may or may not, depending on roster composition.
+ * specifically. Test fixtures with at least two members and no real `created_at` always exercise
+ * the scenario (a single-member fixture loses it to the Emeritus fallback instead — both fallbacks
+ * want "the first member with no real data" and only one index exists to give); real committees
+ * may or may not, depending on roster composition.
  */
 function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMember[]): RosterPlan {
   const meetings30d = committeeMeetingsForWindow(committeeUid, WINDOW_30D_DAYS);
