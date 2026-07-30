@@ -85,7 +85,11 @@ export class WeeklyBriefCardComponent {
     if (!committeeUid) return;
     this.generating.set(true);
     const currentBrief = this.brief();
-    const body = currentBrief ? { revision: currentBrief.revision } : {};
+    // GenerateWeeklyBriefRequest only accepts `force` (LFXV2-2175 review: there is no
+    // client-supplied revision — conflict detection is entirely server-side, via 409
+    // edited_brief_exists). force: true is what both re-requests a brief that already
+    // exists (Regenerate) and counts against the separate regenerations throttle.
+    const body = currentBrief ? { force: true } : {};
     this.weeklyBriefService
       .generateWeeklyBrief(committeeUid, body)
       .pipe(take(1))
