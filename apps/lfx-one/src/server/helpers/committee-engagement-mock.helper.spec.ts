@@ -258,6 +258,15 @@ describe('generateMockEngagementRows', () => {
       expect(rows.every((r) => r.MEMBER_VOTING_STATUS === 'None')).toBe(true);
     });
 
+    it('treats a blank/falsy voting status as unrecorded, not as a real value to preserve', () => {
+      // Regression: `||`, not `??`, on `member.voting?.status` — an empty-string passthrough from
+      // upstream is falsy-but-non-null and must still fall through to the organic/Emeritus fallback
+      // rather than being treated as a real recorded status and emitted verbatim.
+      const roster = [member('m0', { voting: { status: '' } as never }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).not.toBe('');
+    });
+
     it('a real, moderately-recent tenure at a reserved demo slot (not the Orlin case — >=30 real days) produces smaller counts than the fully-synthetic floor would, never a mismatch between the shown join date and the numbers', () => {
       // 45 real days: short enough that a floored (~200-day) synthetic default would clearly
       // overstate this member's exposure, but >=30 days so it isn't swept into the Orlin path

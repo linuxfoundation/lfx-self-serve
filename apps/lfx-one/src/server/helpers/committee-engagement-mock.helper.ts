@@ -42,9 +42,11 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  *
  * Every number is derived from stable inputs only — `committeeUid`, `member.uid`, `window`,
  * the member's real `created_at`/`voting.status` where present, the rest of the roster's identity
- * plan, and the current UTC date (for the `ytd` window's length) — combined via SHA-256 hashing,
- * never `Math.random()` or a per-call `Date.now()`. So the same request produces the same response
- * on every reload within a UTC day, and different committees/members/windows produce different
+ * plan, and the current UTC date (via `todayUtcMidnightMs()` — sets the `ytd` window's length, and
+ * every member's days-ago tenure, so a member with under-window real tenure can shift by one day's
+ * worth of exposure across a UTC day boundary) — combined via SHA-256 hashing, never
+ * `Math.random()` or a per-call `Date.now()`. So the same request produces the same response on
+ * every reload within a UTC day, and different committees/members/windows produce different
  * numbers.
  */
 export function generateMockEngagementRows(committeeUid: string, members: CommitteeMember[]): CommitteeEngagementWarehouseRow[] {
@@ -80,10 +82,15 @@ interface RosterPlan {
  * Resolves per-member identity plus which members (if any) take on the two guaranteed
  * demonstration roles, in one pass so both guarantees can be skipped independently when the real
  * roster doesn't leave room for them:
- * - `Emeritus`: real `voting.status` wins for every member; if nothing on the roster is naturally
- *   `Emeritus`, the first member with no real voting status recorded is promoted — but only that
- *   one case. If every member already has a real, known (non-`Emeritus`) status, no member is
- *   promoted; this committee's mock output just won't include an `Emeritus` row.
+ * - `Emeritus`: real `voting.status` wins for every member — including a real `None`, which is a
+ *   recorded status like any other, not an absence of one; if nothing on the roster is naturally
+ *   `Emeritus`, the first member with no `voting` recorded *at all* is promoted — but only that one
+ *   case. If every member already has a real, known status (including a committee where everyone
+ *   is `None` — the common case for a committee without voting enabled), no member is promoted;
+ *   this committee's mock output just won't include an `Emeritus` row. This trades away some demo
+ *   value (Emeritus is what proves the classifier's Emeritus short-circuit and the `active_count`
+ *   exclusion) for the stronger guarantee of never relabeling a real, recorded status — the same
+ *   trade this file makes for tenure data (see the "Known trade-off" note below).
  * - "The Orlin case": eligible candidates exclude every `Emeritus` member (real or promoted) — the
  *   Emeritus profile always takes precedence in `buildAttendanceProfile`, so an Emeritus candidate
  *   would silently swallow the slot without ever rendering it. Among the rest, the most-recently
@@ -116,10 +123,11 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
   const minOrlinTenureDays = Math.min(WINDOW_30D_DAYS - 1, Math.ceil((ORLIN_FORCED_COUNTS.invited * WINDOW_30D_DAYS) / meetings30d));
 
   // `NONE` is itself a real, recorded status (a member who genuinely has no voting role) — distinct
-  // from `voting` being absent/null (no data recorded at all). Only the latter counts as "no real
-  // status" for the Emeritus fallback below; a real `NONE` must never be overwritten, same as any
-  // other real status.
-  const realVotingStatuses = sortedMembers.map((member) => member.voting?.status ?? null);
+  // from `voting` being absent/null, or `voting.status` being an empty/blank passthrough value (no
+  // data recorded at all, either way). Only those latter cases count as "no real status" for the
+  // Emeritus fallback below; `||`, not `??`, so a falsy-but-non-`NONE` status (e.g. `''`) still
+  // falls through instead of being treated as real and blocking the fallback.
+  const realVotingStatuses = sortedMembers.map((member) => member.voting?.status || null);
   const realJoinedDaysAgo = sortedMembers.map(parseRealJoinedDaysAgo);
 
   const votingStatuses = realVotingStatuses.map(
