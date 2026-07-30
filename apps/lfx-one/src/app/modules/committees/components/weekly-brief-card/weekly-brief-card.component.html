@@ -16,6 +16,10 @@
       <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-generating-state">
         <i class="fa-light fa-sparkles text-2xl text-blue-500 animate-pulse"></i>
         <span class="text-sm text-gray-600">Generating your brief…</span>
+        @if (pollTimedOut()) {
+          <span class="text-sm text-gray-500">This is taking longer than expected.</span>
+          <lfx-button label="Refresh" severity="secondary" [outlined]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-generating-refresh-button" />
+        }
       </div>
     </lfx-card>
   } @else if (brief()?.state === 'error') {
@@ -59,7 +63,11 @@
         }
 
         @if (editMode()) {
-          <lfx-textarea [form]="editForm" control="briefText" [rows]="8" styleClass="w-full h-48 text-sm" dataTestId="weekly-brief-card-edit-textarea" />
+          <!-- No data-testid: lfx-textarea only forwards data-test (see the wrapper's own
+               convention) to the inner <textarea>, and a testid on the <lfx-textarea> host
+               itself wouldn't reach the actual editable element. The e2e spec selects the
+               inner <textarea> structurally via the card's own testid instead. -->
+          <lfx-textarea [form]="editForm" control="briefText" [rows]="8" [maxlength]="briefTextMaxLength" styleClass="w-full h-48 text-sm" />
 
           <div class="flex gap-2">
             <lfx-button label="Save" (onClick)="onSave()" [loading]="saving()" data-testid="weekly-brief-card-save-button" />

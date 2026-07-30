@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Injector, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { WEEKLY_BRIEF_MAX_POLL_ATTEMPTS, WEEKLY_BRIEF_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+import { WEEKLY_BRIEF_MAX_POLL_ATTEMPTS, WEEKLY_BRIEF_POLL_INTERVAL_MS, WEEKLY_BRIEF_TEXT_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { MessageService } from 'primeng/api';
@@ -46,10 +47,15 @@ export class WeeklyBriefCardComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+
+  // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
+  // produce a save the BFF is guaranteed to reject.
+  protected readonly briefTextMaxLength = WEEKLY_BRIEF_TEXT_MAX_LENGTH;
 
   // Reactive form for the editor textarea — `lfx-textarea` requires a FormGroup + control name.
   public readonly editForm = new FormGroup({
@@ -60,6 +66,10 @@ export class WeeklyBriefCardComponent {
   public readonly fetchLoading = signal(true);
   public readonly fetchError = signal(false);
   public readonly generating = signal(false);
+  // True once the poll's attempt cap trips without ever observing a terminal state —
+  // the generating branch would otherwise be a permanent dead end with no way out
+  // short of a page reload. See pollUntilTerminal.
+  public readonly pollTimedOut = signal(false);
   public readonly saving = signal(false);
   public readonly editMode = signal(false);
 
@@ -113,6 +123,7 @@ export class WeeklyBriefCardComponent {
     const committeeUid = this.committee()?.uid;
     if (!committeeUid) return;
     this.generating.set(true);
+    this.pollTimedOut.set(false);
     const currentBrief = this.brief();
     // GenerateWeeklyBriefRequest only accepts `force` (LFXV2-2175 review: there is no
     // client-supplied revision — conflict detection is entirely server-side, via 409
@@ -129,7 +140,10 @@ export class WeeklyBriefCardComponent {
         // and risk reading back the still-terminal pre-generate brief instead), then
         // poll GET /current until it lands on a terminal state.
         next: (res) => {
-          this.briefResponse.set({ brief: res.brief ?? null, throttle: res.throttle ?? null });
+          // Upstream marks nothing Required on the 202 envelope — a bare 202 with no
+          // brief/throttle must not wipe what's already rendered (most visible on
+          // Regenerate, where a real brief is on screen when this fires).
+          this.briefResponse.set({ brief: res.brief ?? this.brief(), throttle: res.throttle ?? this.throttle() });
           this.pollUntilTerminal(committeeUid);
         },
         error: (err: HttpErrorResponse) => {
@@ -188,9 +202,9 @@ export class WeeklyBriefCardComponent {
 
   public async onCopyAndShare(): Promise<void> {
     const text = this.brief()?.brief_text ?? '';
-    // Matches badge-card.component.ts's copyLink guard: navigator.clipboard is
+    // Matches planning-tab.component.ts's copyToClipboard guard: navigator.clipboard is
     // unavailable during SSR and on some browsers/contexts (non-HTTPS, older Safari).
-    if (!navigator.clipboard?.writeText) {
+    if (!isPlatformBrowser(this.platformId) || !navigator.clipboard?.writeText) {
       this.messageService.add({
         severity: 'error',
         summary: 'Copy not supported',
@@ -238,6 +252,7 @@ export class WeeklyBriefCardComponent {
         switchMap(([uid]) => {
           this.fetchLoading.set(true);
           this.fetchError.set(false);
+          this.pollTimedOut.set(false);
           return this.weeklyBriefService.getWeeklyBrief(uid).pipe(
             catchError((err: unknown) => {
               // A failed read (e.g. upstream 503) must not look like "no brief
@@ -315,6 +330,9 @@ export class WeeklyBriefCardComponent {
           // a terminal state — not when the poll stopped because of a manual refresh/409
           // (a fresher read is already on its way) or because the component was destroyed.
           if (!observedTerminal && ticks >= WEEKLY_BRIEF_MAX_POLL_ATTEMPTS) {
+            // The generating branch renders on brief()?.state === 'generating' too, so
+            // without this flag it would be a dead end with no way out but a page reload.
+            this.pollTimedOut.set(true);
             this.messageService.add({
               severity: 'warn',
               summary: 'Still generating',

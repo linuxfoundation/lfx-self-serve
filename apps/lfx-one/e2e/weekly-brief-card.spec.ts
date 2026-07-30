@@ -23,8 +23,8 @@
  *   (see helpers/global-setup.ts).
  * - The repo has no e2e LaunchDarkly override helper. For the flag-ON tests we mock
  *   only the WG weekly-brief endpoints and rely on the `wg-weekly-brief` LD flag being
- *   ON in the dev environment (mirroring how the spec 016 board-committee tests rely on
- *   `org-lens-enabled` being ON; see org-membership-board-committee.spec.ts header).
+ *   ON in the dev environment (mirroring how org-membership-documentation.spec.ts relies
+ *   on the `org-lens-enabled` flag being ON — see that file's header).
  *   For the flag-OFF test we block the LaunchDarkly SDK endpoints so OpenFeature's
  *   provider fails to initialize and the flag falls back to its `false` default
  *   (see feature-flag.service.ts:getBooleanFlag — returns `defaultValue` when the
@@ -348,7 +348,9 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
     // Enter edit mode.
     await page.getByTestId('weekly-brief-card-edit-button').click();
 
-    const textarea = page.getByTestId('weekly-brief-card-edit-textarea');
+    // lfx-textarea has no data-testid forwarding to its inner <textarea> — select it
+    // structurally within the card instead.
+    const textarea = page.getByTestId('committee-overview-weekly-brief-card').locator('textarea');
     await expect(textarea).toBeVisible();
     await expect(textarea).toHaveValue(GENERATED_BRIEF.brief_text);
 
@@ -369,7 +371,7 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
     expect(capturedPutBody!.revision).toBe(GENERATED_BRIEF.revision);
 
     // UI exits edit mode and shows the new state badge.
-    await expect(page.getByTestId('weekly-brief-card-edit-textarea')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(textarea).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByText('Edited', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByText(editedText)).toBeVisible();
   });

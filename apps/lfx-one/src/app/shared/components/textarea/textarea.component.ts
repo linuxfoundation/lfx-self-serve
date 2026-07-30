@@ -24,5 +24,4 @@ export class TextareaComponent {
   public autoResize = input<boolean>(false);
   public maxlength = input<number>();
   public dataTest = input<string>();
-  public dataTestId = input<string>();
 }
