@@ -72,6 +72,8 @@ export class MultiSelectComponent {
     const width = trigger.getBoundingClientRect().width;
     // The overlay is appended to <body>, so reach it via its unique panel class rather than a
     // descendant query. Set on the next frame so the overlay element is in the DOM and laid out.
+    // Assumes a given panelStyleClass identifies a single open overlay at a time — if two instances
+    // sharing the class were open simultaneously this would match the first one; callers keep the class unique.
     requestAnimationFrame(() => {
       const panel = document.querySelector<HTMLElement>(`.p-multiselect-overlay.${panelClass}`);
       if (panel && width > 0) {

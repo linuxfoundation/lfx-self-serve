@@ -68,6 +68,9 @@ export class OrgLensProjectsService {
     return response;
   }
 
+  // NOTE: accountId is intentionally unused — this search spans the GLOBAL onboarded catalog (an admin can add any
+  // project), not the caller's org-scoped ORG_LENS_PROJECTS. It's retained in the signature for parity with the
+  // other service methods and as the hook for a future org-scoped authorization gate.
   public async searchProjects(accountId: string, query: string, excludeSlugs: readonly string[] = []): Promise<OrgLensProjectSearchResponse> {
     const trimmed = query.trim();
     if (trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
@@ -479,6 +482,9 @@ export class OrgLensProjectsService {
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
       health: hasHealthScore ? this.mapHealthScore(healthScore) : 'unavailable',
+      // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
+      // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
+      // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.
       technicalInfluence: this.mapInfluence(row.TECHNICAL_INFLUENCE, 'silent'),
       ecosystemInfluence: this.mapInfluence(row.ECOSYSTEM_INFLUENCE, 'non-lf'),
       influenceScore: this.round1(row.INFLUENCE_SCORE ?? 0),
