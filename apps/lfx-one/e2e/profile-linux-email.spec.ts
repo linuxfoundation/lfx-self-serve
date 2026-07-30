@@ -262,9 +262,11 @@ test.describe('Linux.com email — service unavailable', () => {
 
     // Capture console.error output so we can assert the catchError logs the failure
     // (component logs 'Failed to load Linux.com alias state:' before falling back).
-    // Read the second arg's HTTP status directly from the page rather than string-matching
-    // the serialized error preview, so the assertion also fails if the error argument is
-    // ever dropped (status would be undefined) — not just if the prefix changes.
+    // Read the status from the second arg directly rather than string-matching the serialized
+    // preview, so the assertion also fails if the error argument is ever dropped (status would
+    // be undefined) — not just if the prefix changes. Note: the app's initializeConsoleOverride
+    // (main.ts) reshapes HttpErrorResponse args into a plain { status_code, err: { statusCode } }
+    // object before logging, so the HTTP status lives on `status_code`, not `.status`.
     const aliasLoadErrors: { text: string; status: number | undefined }[] = [];
     page.on('console', async (msg) => {
       if (msg.type() !== 'error') return;
@@ -272,7 +274,7 @@ test.describe('Linux.com email — service unavailable', () => {
       if (!text.includes('Failed to load Linux.com alias state')) return;
       const errorArg = msg.args()[1];
       const status = errorArg
-        ? await errorArg.evaluate((err) => (err && typeof err === 'object' ? (err as { status?: number }).status : undefined)).catch(() => undefined)
+        ? await errorArg.evaluate((err) => (err && typeof err === 'object' ? (err as { status_code?: number }).status_code : undefined)).catch(() => undefined)
         : undefined;
       aliasLoadErrors.push({ text, status });
     });
