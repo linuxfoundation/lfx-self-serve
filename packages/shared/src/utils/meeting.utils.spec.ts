@@ -9,9 +9,10 @@ import '@angular/compiler';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
+import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, PastOccurrenceSummary, QueryServiceItem } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildOccurrenceNavTimeline,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
   buildRecurrenceNeverEndDate,
@@ -790,5 +791,92 @@ describe('selectPrimaryPastMeetingSummary', () => {
     ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
+});
+
+describe('buildOccurrenceNavTimeline', () => {
+  const T1 = Date.UTC(2026, 6, 16, 9, 30); // Jul 16
+  const T2 = Date.UTC(2026, 6, 23, 9, 30); // Jul 23
+  const T3 = Date.UTC(2026, 6, 30, 9, 30); // Jul 30 (current)
+  const T4 = Date.UTC(2026, 7, 6, 9, 30); // Aug 6
+
+  const live = (instant: number, overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence => ({
+    occurrence_id: String(Math.floor(instant / 1000)),
+    start_time: new Date(instant).toISOString(),
+    duration: 30,
+    ...overrides,
+  });
+
+  const pastRecord = (instant: number, overrides: Partial<PastOccurrenceSummary> = {}): PastOccurrenceSummary => ({
+    meeting_and_occurrence_id: `series-uid-${instant}`,
+    scheduled_start_time: new Date(instant).toISOString(),
+    scheduled_end_time: new Date(instant + 30 * 60000).toISOString(),
+    ...overrides,
+  });
+
+  it('merges past records before live occurrences in ascending order', () => {
+    const result = buildOccurrenceNavTimeline([live(T3), live(T4)], { past: [pastRecord(T2), pastRecord(T1)], future: [] });
+
+    expect(result.map((o) => new Date(o.start_time).getTime())).toEqual([T1, T2, T3, T4]);
+    expect(result[0].meeting_and_occurrence_id).toBe(`series-uid-${T1}`);
+    expect(result[2].meeting_and_occurrence_id).toBeUndefined();
+  });
+
+  it('prefers the live entry when a past record exists for the same instant (in-progress occurrence)', () => {
+    const result = buildOccurrenceNavTimeline([live(T3)], { past: [pastRecord(T3)], future: [] });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].meeting_and_occurrence_id).toBeUndefined();
+  });
+
+  it('uses endpoint future occurrences when no live payload is available (past page)', () => {
+    const result = buildOccurrenceNavTimeline([], { past: [pastRecord(T1)], future: [live(T3), live(T4)] });
+
+    expect(result.map((o) => new Date(o.start_time).getTime())).toEqual([T1, T3, T4]);
+  });
+
+  it('filters cancelled endpoint future occurrences via cancelled_occurrences ids', () => {
+    const cancelled = live(T4);
+    const result = buildOccurrenceNavTimeline([], {
+      past: [],
+      future: [live(T3), cancelled],
+      cancelled_occurrences: [cancelled.occurrence_id],
+    });
+
+    expect(result.map((o) => new Date(o.start_time).getTime())).toEqual([T3]);
+  });
+
+  it('derives the past instant from the composite id suffix, not scheduled_start_time', () => {
+    // Composite suffix and scheduled_start_time disagree — the suffix is authoritative
+    const result = buildOccurrenceNavTimeline([], {
+      past: [pastRecord(T1, { meeting_and_occurrence_id: `series-uid-${T2}` })],
+      future: [],
+    });
+
+    expect(new Date(result[0].start_time).getTime()).toBe(T2);
+    expect(result[0].occurrence_id).toBe(String(Math.floor(T2 / 1000)));
+  });
+
+  it('skips past records whose composite id has no 13-digit millisecond suffix', () => {
+    const result = buildOccurrenceNavTimeline([], {
+      past: [pastRecord(T1, { meeting_and_occurrence_id: 'series-uid-only' })],
+      future: [],
+    });
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('computes past duration from scheduled times with a fallback for missing end times', () => {
+    const result = buildOccurrenceNavTimeline(
+      [],
+      {
+        past: [pastRecord(T1), pastRecord(T2, { scheduled_end_time: undefined })],
+        future: [],
+      },
+      45
+    );
+
+    expect(result[0].duration).toBe(30);
+    expect(result[1].duration).toBe(45);
   });
 });

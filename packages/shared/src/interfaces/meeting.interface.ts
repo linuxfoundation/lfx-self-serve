@@ -751,6 +751,43 @@ export interface PastMeeting extends Meeting {
 }
 
 /**
+ * Minimal projection of a v1_past_meeting record for occurrence navigation
+ * @description Timestamps only — safe to expose on the public occurrences endpoint
+ */
+export interface PastOccurrenceSummary {
+  /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000") */
+  meeting_and_occurrence_id: string;
+  /** Scheduled start time of the past occurrence */
+  scheduled_start_time: string;
+  /** Scheduled end time of the past occurrence */
+  scheduled_end_time?: string;
+}
+
+/**
+ * Series timeline for the public meeting occurrences endpoint
+ * @description Past occurrences from v1_past_meeting records plus a minimal
+ * projection of the live series' current/future occurrences
+ */
+export interface PublicMeetingOccurrencesResponse {
+  /** Past occurrences, ascending by scheduled start time */
+  past: PastOccurrenceSummary[];
+  /** Current/future occurrences (minimal projection); empty when the series no longer exists */
+  future: MeetingOccurrence[];
+  /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
+  cancelled_occurrences?: string[];
+}
+
+/**
+ * Occurrence navigation entry on the meeting join page
+ * @description A live/future occurrence, or a past occurrence when the
+ * composite meeting_and_occurrence_id is present
+ */
+export interface OccurrenceNavItem extends MeetingOccurrence {
+  /** Composite past-meeting ID — present only for past occurrences; links directly to /meetings/{id} */
+  meeting_and_occurrence_id?: string;
+}
+
+/**
  * Past meeting participant information
  * @description Individual participant who was invited/attended a past meeting
  */

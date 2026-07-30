@@ -32,6 +32,7 @@ const {
     // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
+    getPastOccurrencesForMeeting: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -281,5 +282,86 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.invited).toBe(true);
     expect(payload.meeting.host_key).toBeUndefined();
+  });
+});
+
+describe('PublicMeetingController.getMeetingOccurrences', () => {
+  let controller: PublicMeetingController;
+
+  const T1 = Date.UTC(2026, 6, 16, 9, 30);
+  const T2 = Date.UTC(2026, 6, 30, 9, 30);
+
+  const pastSummaries = [
+    {
+      meeting_and_occurrence_id: `${MEETING_ID}-${T1}`,
+      scheduled_start_time: new Date(T1).toISOString(),
+      scheduled_end_time: new Date(T1 + 30 * 60000).toISOString(),
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+  });
+
+  it('returns past summaries plus a minimal projection of live occurrences without leaking sensitive fields', async () => {
+    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
+    meetingSvc.getMeetingById.mockResolvedValue(
+      buildMeeting({
+        password: 'secret',
+        cancelled_occurrences: ['1784323800'],
+        occurrences: [
+          {
+            occurrence_id: String(Math.floor(T2 / 1000)),
+            start_time: new Date(T2).toISOString(),
+            duration: 30,
+            status: 'available',
+            title: 'should not leak',
+            description: 'should not leak',
+            registrant_count: 12,
+          },
+        ],
+      } as Partial<Meeting>)
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.past).toEqual(pastSummaries);
+    expect(payload.cancelled_occurrences).toEqual(['1784323800']);
+    expect(payload.future).toHaveLength(1);
+    // Minimal projection only — timestamps and status, no titles/descriptions/counts
+    expect(Object.keys(payload.future[0]).sort()).toEqual(['duration', 'occurrence_id', 'start_time', 'status']);
+    expect(JSON.stringify(payload)).not.toContain('secret');
+    expect(JSON.stringify(payload)).not.toContain('should not leak');
+  });
+
+  it('degrades to an empty future list when the live series fetch fails (deleted/ended series)', async () => {
+    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
+    meetingSvc.getMeetingById.mockRejectedValue(new Error('itx 404'));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.past).toEqual(pastSummaries);
+    expect(payload.future).toEqual([]);
+    expect(payload.cancelled_occurrences).toBeUndefined();
+  });
+
+  it('runs with an M2M token (public endpoint, no user session required)', async () => {
+    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue([]);
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res } = buildReqRes(false);
+    const next = vi.fn();
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
+    expect(req.bearerToken).toBe('m2m-token');
   });
 });

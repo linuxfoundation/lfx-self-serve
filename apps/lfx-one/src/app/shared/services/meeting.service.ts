@@ -31,6 +31,7 @@ import {
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicPastMeetingResponse,
   QueryServiceCountResponse,
@@ -211,6 +212,13 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  /** Fetches the series timeline (past + future occurrences) for occurrence navigation. Degrades to empty on failure. */
+  public getPublicMeetingOccurrences(id: string): Observable<PublicMeetingOccurrencesResponse> {
+    return this.http
+      .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`)
+      .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
   }
 
   public getPublicMeetingJoinUrl(

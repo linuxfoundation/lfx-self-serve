@@ -3,7 +3,7 @@
 
 import { Meeting } from '@lfx-one/shared';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
-import { CreateMeetingRegistrantRequest, MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { CreateMeetingRegistrantRequest, MeetingOccurrence, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -352,6 +352,62 @@ export class PublicMeetingController {
         full_access: fullAccess,
       });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/meetings/:id/occurrences
+   * Returns the series timeline for a meeting: past occurrences (from v1_past_meeting
+   * records) plus a minimal projection of the live series' current/future occurrences.
+   * Timestamps only — no titles, passwords, or join info.
+   */
+  public async getMeetingOccurrences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+
+    const startTime = logger.startOperation(req, 'get_public_meeting_occurrences', {
+      meeting_id: id,
+    });
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_meeting_occurrences', req, next)) {
+        return;
+      }
+
+      await this.setupM2MToken(req);
+
+      // Live series fetch degrades to null (deleted/ended series still has past occurrences)
+      const [past, liveMeeting] = await Promise.all([
+        this.meetingService.getPastOccurrencesForMeeting(req, id),
+        this.meetingService.getMeetingById(req, id, 'v1_meeting', false).catch(() => null),
+      ]);
+
+      // Minimal projection only — the full ITX payload carries sensitive fields (e.g. password)
+      const future: MeetingOccurrence[] = (liveMeeting?.occurrences ?? []).map(
+        (o) =>
+          ({
+            occurrence_id: o.occurrence_id,
+            start_time: o.start_time,
+            duration: o.duration,
+            status: o.status,
+          }) as MeetingOccurrence
+      );
+
+      const response: PublicMeetingOccurrencesResponse = {
+        past,
+        future,
+        cancelled_occurrences: liveMeeting?.cancelled_occurrences ?? undefined,
+      };
+
+      logger.success(req, 'get_public_meeting_occurrences', startTime, {
+        meeting_id: id,
+        past_count: past.length,
+        future_count: future.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      // Error handler will log
       next(error);
     }
   }
