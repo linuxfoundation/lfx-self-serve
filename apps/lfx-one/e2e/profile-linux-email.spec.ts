@@ -262,9 +262,19 @@ test.describe('Linux.com email — service unavailable', () => {
 
     // Capture console.error output so we can assert the catchError logs the failure
     // (component logs 'Failed to load Linux.com alias state:' before falling back).
-    const consoleErrors: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    // Read the second arg's HTTP status directly from the page rather than string-matching
+    // the serialized error preview, so the assertion also fails if the error argument is
+    // ever dropped (status would be undefined) — not just if the prefix changes.
+    const aliasLoadErrors: { text: string; status: number | undefined }[] = [];
+    page.on('console', async (msg) => {
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      if (!text.includes('Failed to load Linux.com alias state')) return;
+      const errorArg = msg.args()[1];
+      const status = errorArg
+        ? await errorArg.evaluate((err) => (err && typeof err === 'object' ? (err as { status?: number }).status : undefined)).catch(() => undefined)
+        : undefined;
+      aliasLoadErrors.push({ text, status });
     });
 
     await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
@@ -275,7 +285,10 @@ test.describe('Linux.com email — service unavailable', () => {
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
 
-    // The catchError path must log the underlying failure so it stays diagnosable in production.
-    await expect.poll(() => consoleErrors).toEqual(expect.arrayContaining([expect.stringContaining('Failed to load Linux.com alias state')]));
+    // The catchError path must log the underlying failure (with the 502 detail) so it stays
+    // diagnosable in production — assert both the prefix and the error's HTTP status.
+    await expect
+      .poll(() => aliasLoadErrors)
+      .toContainEqual(expect.objectContaining({ text: expect.stringContaining('Failed to load Linux.com alias state'), status: 502 }));
   });
 });
