@@ -45,6 +45,15 @@ async function stubIdentities(page: Page): Promise<void> {
   });
 }
 
+/** Stub the alias GET as purchased-but-unclaimed — the first-time-claim starting state. */
+async function stubUnclaimedLinuxEmail(page: Page): Promise<void> {
+  await page.route('**/api/profile/linux-email', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null, primaryEmail: PRIMARY_EMAIL };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
 /**
  * Stub the alias GET/POST pair so the claim endpoint fails on the forward step
  * while the alias itself is left claimed upstream (mirrors the real add_alias-then-
@@ -187,21 +196,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
 
   test('shows the normal hint on a first-time claim with a single verified email', async ({ page }) => {
     await stubIdentities(page);
-
-    // Regression guard for the perf goal of this tab: the primary email now arrives inline on
-    // the linux-email response, so the tab must not make a second /api/profile/emails round-trip.
-    // Count GET hits (fulfilling so the assertion fails loudly rather than hanging if reintroduced).
-    let emailsFetchCount = 0;
-    await page.route('**/api/profile/emails', (route) => {
-      if (route.request().method() === 'GET') emailsFetchCount++;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ primary_email: PRIMARY_EMAIL, alternate_emails: [] }) });
-    });
-
-    await page.route('**/api/profile/linux-email', (route) => {
-      if (route.request().method() !== 'GET') return route.fallback();
-      const body: LinuxAliasData = { state: 'purchased_unclaimed', domain: DOMAIN, alias: null, email: null, forwardTo: null, primaryEmail: PRIMARY_EMAIL };
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    });
+    await stubUnclaimedLinuxEmail(page);
 
     await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -210,6 +205,27 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claim-forward-select')).toBeVisible();
     await expect(page.getByText('Choose one of your verified email addresses.')).toBeVisible();
+  });
+
+  test('does not make a second /api/profile/emails fetch on the Linux.com tab', async ({ page }) => {
+    // Perf regression guard: the primary email arrives inline, so the tab must not make a second
+    // /api/profile/emails round-trip. GET-scoped, fulfilled so a reintroduced fetch fails loudly.
+    await stubIdentities(page);
+
+    let emailsFetchCount = 0;
+    await page.route('**/api/profile/emails', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      emailsFetchCount++;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ primary_email: PRIMARY_EMAIL, alternate_emails: [] }) });
+    });
+    await stubUnclaimedLinuxEmail(page);
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    // Let the tab finish rendering before asserting no /emails fetch was made.
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
     expect(emailsFetchCount).toBe(0);
   });
 });
@@ -244,6 +260,25 @@ test.describe('Linux.com email — service unavailable', () => {
       return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Bad gateway' }) });
     });
 
+    // Capture console.error output so we can assert the catchError logs the failure
+    // (component logs 'Failed to load Linux.com alias state:' before falling back).
+    // Read the status from the second arg directly rather than string-matching the serialized
+    // preview, so the assertion also fails if the error argument is ever dropped (status would
+    // be undefined) — not just if the prefix changes. Note: the app's initializeConsoleOverride
+    // (main.ts) reshapes HttpErrorResponse args into a plain { status_code, err: { statusCode } }
+    // object before logging, so the HTTP status lives on `status_code`, not `.status`.
+    const aliasLoadErrors: { text: string; status: number | undefined }[] = [];
+    page.on('console', async (msg) => {
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      if (!text.includes('Failed to load Linux.com alias state')) return;
+      const errorArg = msg.args()[1];
+      const status = errorArg
+        ? await errorArg.evaluate((err) => (err && typeof err === 'object' ? (err as { status_code?: number }).status_code : undefined)).catch(() => undefined)
+        : undefined;
+      aliasLoadErrors.push({ text, status });
+    });
+
     await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await expect(page).not.toHaveURL(/auth0\.com/);
@@ -251,5 +286,11 @@ test.describe('Linux.com email — service unavailable', () => {
     await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
+
+    // The catchError path must log the underlying failure (with the 502 detail) so it stays
+    // diagnosable in production — assert both the prefix and the error's HTTP status.
+    await expect
+      .poll(() => aliasLoadErrors)
+      .toContainEqual(expect.objectContaining({ text: expect.stringContaining('Failed to load Linux.com alias state'), status: 502 }));
   });
 });
