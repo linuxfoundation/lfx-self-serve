@@ -35,7 +35,11 @@ const accessCheckService = new AccessCheckService();
  * verify) split — both fail closed, the split is about signal accuracy, not safety.
  *
  * A nonexistent `committeeUid` also resolves to no `auditor` tuple, i.e. 403, same as a real
- * committee the caller can't see — deliberate, avoids a separate existence check.
+ * committee the caller can't see — deliberate, avoids a separate existence check. This follows from
+ * how OpenFGA's Check API works, not from an assumption about this endpoint: Check evaluates a
+ * relationship graph and answers `false` when no path exists, it never requires the object to be
+ * pre-registered, so an unknown object ID is not a distinct error case upstream — there is nothing
+ * for `checkSingleAccessStrict` to throw on.
  *
  * Must run before any cache read or Snowflake query so an ungranted caller never reaches the data.
  */

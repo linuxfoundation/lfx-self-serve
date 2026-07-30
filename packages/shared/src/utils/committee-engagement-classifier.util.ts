@@ -5,14 +5,24 @@ import { COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS } from '../constants/committee-eng
 import type { CommitteeEngagementClassification } from '../interfaces/committee-engagement.interface';
 
 /**
- * `attended / invited`, 0 when nobody was invited, rounded to 2 decimal places. Clamps `attended`
- * to `invited` so a warehouse data-quality glitch (or a grain mismatch, until the real dbt model's
- * schema is confirmed) can't produce a rate over 1 — nothing upstream enforces `attended <= invited`.
+ * `attended / invited`, 0 when nobody was invited. Clamps `attended` to `invited` so a warehouse
+ * data-quality glitch (or a grain mismatch, until the real dbt model's schema is confirmed) can't
+ * produce a rate over 1 — nothing upstream enforces `attended <= invited`.
  */
-export function computeCommitteeEngagementRate(attended: number, invited: number): number {
+function rawCommitteeEngagementRate(attended: number, invited: number): number {
   if (invited <= 0) return 0;
   const clampedAttended = Math.min(Math.max(attended, 0), invited);
-  return Math.round((clampedAttended / invited) * 100) / 100;
+  return clampedAttended / invited;
+}
+
+/**
+ * `rawCommitteeEngagementRate`, rounded to 2 decimal places for display. Classification uses the
+ * unrounded rate (`classifyCommitteeEngagement`) — thresholding the rounded value would flip a
+ * rate like 0.395 into the `Medium` bucket (rounds to 0.40) despite falling under the `medium`
+ * threshold before rounding.
+ */
+export function computeCommitteeEngagementRate(attended: number, invited: number): number {
+  return Math.round(rawCommitteeEngagementRate(attended, invited) * 100) / 100;
 }
 
 /**
@@ -21,7 +31,7 @@ export function computeCommitteeEngagementRate(attended: number, invited: number
  * present" engagement level like `Low` is meant to capture.
  */
 export function classifyCommitteeEngagement(attended: number, invited: number): CommitteeEngagementClassification {
-  const rate = computeCommitteeEngagementRate(attended, invited);
+  const rate = rawCommitteeEngagementRate(attended, invited);
   if (invited <= 0 || rate <= 0) return 'Inactive';
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.high) return 'High';
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.medium) return 'Medium';

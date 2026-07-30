@@ -40,7 +40,7 @@ export class CommitteeEngagementController {
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 }

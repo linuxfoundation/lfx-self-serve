@@ -452,6 +452,36 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(warning).not.toHaveBeenCalled();
   });
 
+  it('warns with duplicate_roster_email_count when two distinct roster members share a normalized email', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'shared@x.com'), member('m2', 'SHARED@X.COM')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'shared@x.com', ATTENDED_COUNT: 5, INVITED_COUNT: 10, COMPUTED_AT: null }],
+    });
+
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    // Both roster entries resolve to the same warehouse row and each contribute it to the summary
+    // totals — documents the current behavior rather than silently masking it.
+    expect(result.members[0]).toMatchObject({ attended: 5, invited: 10, rate: 0.5, classification: 'Medium' });
+    expect(result.members[1]).toMatchObject({ attended: 5, invited: 10, rate: 0.5, classification: 'Medium' });
+    expect(result.summary.total_count).toBe(2);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('share a normalized email'),
+      expect.objectContaining({ committee_uid: 'committee-1', duplicate_roster_email_count: 1, roster_size: 2 })
+    );
+  });
+
+  it('does not warn about roster email collisions when every roster member has a distinct email', async () => {
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com'), member('m2', 'b@x.com')]);
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).not.toHaveBeenCalled();
+  });
+
   it('clamps attended to invited when a warehouse row reports ATTENDED_COUNT greater than INVITED_COUNT, and warns once', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'over-attended@x.com'), member('m2', 'normal@x.com')]);
     execute.mockResolvedValueOnce({

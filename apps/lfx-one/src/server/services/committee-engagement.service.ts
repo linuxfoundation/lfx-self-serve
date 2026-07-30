@@ -139,6 +139,34 @@ export class CommitteeEngagementService {
     // toIsoTimestamp rejected as calendar-invalid or shape-mismatched, which is worth surfacing.
     const rejectedTimestamps = parsedTimestamps.filter(({ raw, iso }) => raw !== null && raw !== undefined && iso === null);
 
+    // Roster-side mirror of the warehouse-side duplicate check above: two distinct committee
+    // members sharing a normalized email both resolve to the same warehouse row below, so that
+    // row's attended/invited counts get summed into `totalAttended`/`totalInvited` once per
+    // colliding member rather than once per row. Not corrected here — `total_count` is defined as
+    // roster size (every membership entry counts, per this method's own doc comment), and whether
+    // two entries that happen to share an email should collapse into one person for the summary is
+    // a product decision, not an implementation default. Surfaced so it isn't silently invisible.
+    const rosterEmails = new Set<string>();
+    let blankRosterEmailCount = 0;
+    for (const member of members) {
+      const normalized = this.normalizeEmail(member.email);
+      if (normalized) rosterEmails.add(normalized);
+      else blankRosterEmailCount++;
+    }
+    const duplicateRosterEmailCount = members.length - rosterEmails.size - blankRosterEmailCount;
+    if (duplicateRosterEmailCount > 0) {
+      logger.warning(
+        req,
+        'get_committee_engagement',
+        'Multiple roster members share a normalized email; their engagement rows are counted once per member, not once per person',
+        {
+          committee_uid: committeeUid,
+          duplicate_roster_email_count: duplicateRosterEmailCount,
+          roster_size: members.length,
+        }
+      );
+    }
+
     let totalAttended = 0;
     let totalInvited = 0;
     let activeCount = 0;

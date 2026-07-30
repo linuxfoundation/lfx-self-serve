@@ -55,6 +55,18 @@ describe('classifyCommitteeEngagement', () => {
   it('classifies perfect attendance as High', () => {
     expect(classifyCommitteeEngagement(10, 10)).toBe('High');
   });
+
+  it('classifies a rate that only reaches the medium threshold after rounding as Low', () => {
+    // 395/1000 = 0.395, which rounds to the displayed 0.40 (the medium threshold) but is below it
+    // before rounding. Classification must use the raw rate or this misclassifies as Medium.
+    expect(computeCommitteeEngagementRate(395, 1000)).toBe(0.4);
+    expect(classifyCommitteeEngagement(395, 1000)).toBe('Low');
+  });
+
+  it('classifies a rate that only reaches the high threshold after rounding as Medium', () => {
+    expect(computeCommitteeEngagementRate(745, 1000)).toBe(0.75);
+    expect(classifyCommitteeEngagement(745, 1000)).toBe('Medium');
+  });
 });
 
 describe('isCommitteeMemberAtRisk', () => {
