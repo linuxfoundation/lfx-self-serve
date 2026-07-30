@@ -169,10 +169,7 @@ export class MaintainersDrawerComponent {
 
   // === Private Initializers ===
   private initMetricValue(): Signal<string> {
-    return computed(() => {
-      const monthly = this.monthlyData().monthlyData;
-      return monthly.length ? monthly[monthly.length - 1].toLocaleString('en-US') : this.data().currentMaintainers.toLocaleString('en-US');
-    });
+    return computed(() => this.data().currentMaintainers.toLocaleString('en-US'));
   }
 
   private initDrawerData(): Signal<{ distribution: FoundationMaintainersDistributionResponse }> {
