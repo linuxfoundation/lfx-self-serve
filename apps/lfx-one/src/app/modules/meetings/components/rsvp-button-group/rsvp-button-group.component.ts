@@ -7,6 +7,7 @@ import { Component, computed, inject, input, InputSignal, output, OutputEmitterR
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
 import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
+import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -175,7 +176,7 @@ export class RsvpButtonGroupComponent {
           if (this.disabled()) {
             return of(null);
           }
-          const occurrenceId = this.meeting().recurrence ? this.occurrenceId() : undefined;
+          const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrenceId: this.occurrenceId() });
           if (authenticated && meeting?.id) {
             return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId).pipe(catchError(() => of(null)));
           }

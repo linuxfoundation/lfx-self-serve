@@ -17,6 +17,7 @@ import {
   Project,
   RsvpCounts,
 } from '@lfx-one/shared';
+import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
@@ -96,7 +97,7 @@ export class MeetingRsvpDetailsComponent {
             // Resolve RSVPs against the target occurrence so a `single` decline for a
             // future date doesn't overwrite the current occurrence's per-registrant
             // chip (LFXV2-2864).
-            const occurrenceId = this.currentOccurrence()?.occurrence_id;
+            const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
             return this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
               map((registrants) => ({
                 registrants,

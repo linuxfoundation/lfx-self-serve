@@ -75,7 +75,7 @@ export class FoundationHealthComponent {
 
   // Loading signals for each data source
   protected readonly totalProjectsLoading = signal(true);
-  private readonly totalMembersLoading = signal(true);
+  protected readonly totalMembersLoading = signal(true);
   private readonly softwareValueLoading = signal(true);
   private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);

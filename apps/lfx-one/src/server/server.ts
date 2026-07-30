@@ -56,6 +56,7 @@ import enrollmentRouter from './routes/enrollment.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
+import userNewslettersRouter from './routes/user-newsletters.route';
 import votesRouter from './routes/votes.route';
 import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
@@ -333,6 +334,9 @@ app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/crowdfunding', crowdfundingRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
+// User-scoped newsletter feed (Me lens). Mounted alongside the project-scoped
+// manager router below — different prefixes, no overlap.
+app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
