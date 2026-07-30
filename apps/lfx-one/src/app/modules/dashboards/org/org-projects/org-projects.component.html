@@ -257,13 +257,30 @@
             <ng-template #body let-project let-rowIndex="rowIndex">
               <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
                 <td>
-                  <a
-                    [routerLink]="['/org/projects', project.slug]"
-                    class="flex items-center gap-2 text-left"
-                    [attr.aria-label]="'View ' + project.name + ' project detail'">
-                    <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
-                    <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
-                  </a>
+                  <div class="flex items-center gap-2">
+                    @if (project.noActivityYet) {
+                      <!-- No org-scoped row exists yet, so the project-detail page would 404 — render the name as plain text. -->
+                      <div class="flex items-center gap-2 text-left">
+                        <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
+                        <span class="text-sm font-medium text-gray-900">{{ project.name }}</span>
+                      </div>
+                    } @else {
+                      <a
+                        [routerLink]="['/org/projects', project.slug]"
+                        class="flex items-center gap-2 text-left"
+                        [attr.aria-label]="'View ' + project.name + ' project detail'">
+                        <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
+                        <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
+                      </a>
+                    }
+                    @if (project.noActivityYet) {
+                      <span
+                        class="inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
+                        [attr.data-testid]="'org-projects-no-activity-' + project.slug"
+                        >No activity yet</span
+                      >
+                    }
+                  </div>
                 </td>
                 <td>
                   <span
@@ -288,7 +305,7 @@
                       @for (bar of project.technicalBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
-                      @if (project.technicalInfluence === 'non-lf') {
+                      @if (project.technicalInfluence === 'non-lf' && !project.noActivityYet) {
                         <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
                         <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                       }
@@ -302,7 +319,7 @@
                       @for (bar of project.ecosystemBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
-                      @if (project.ecosystemInfluence === 'non-lf') {
+                      @if (project.ecosystemInfluence === 'non-lf' && !project.noActivityYet) {
                         <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
                         <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                       }
@@ -311,51 +328,67 @@
                   </span>
                 </td>
                 <td>
-                  <div class="flex flex-col items-start gap-1.5">
-                    <span
-                      class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                      tabindex="0"
-                      role="img"
-                      [attr.aria-label]="project.trendAriaLabel"
-                      [pTooltip]="project.trendTooltipHtml"
-                      [escape]="false"
-                      tooltipPosition="top"
-                      tooltipStyleClass="lfx-tooltip-trend"
-                      [attr.data-testid]="'org-projects-trend-' + project.slug">
-                      <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
-                    </span>
-                    @if (project.showTrendArrow) {
-                      <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
-                        <span class="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full" [class]="project.trendArrowBadgeClass">
-                          <i [class]="project.trendArrowIcon" aria-hidden="true"></i>
-                        </span>
-                        <span class="font-semibold" [class]="project.trendDeltaTextClass">{{ project.trendDeltaLabel }}</span>
+                  @if (project.noActivityYet) {
+                    <span class="text-sm text-gray-500" [attr.data-testid]="'org-projects-trend-' + project.slug">{{ metricUnavailableLabel }}</span>
+                  } @else {
+                    <div class="flex flex-col items-start gap-1.5">
+                      <span
+                        class="block h-8 w-20 cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        tabindex="0"
+                        role="img"
+                        [attr.aria-label]="project.trendAriaLabel"
+                        [pTooltip]="project.trendTooltipHtml"
+                        [escape]="false"
+                        tooltipPosition="top"
+                        tooltipStyleClass="lfx-tooltip-trend"
+                        [attr.data-testid]="'org-projects-trend-' + project.slug">
+                        <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
                       </span>
-                    } @else {
-                      <span class="text-xs font-semibold text-gray-500" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">{{
-                        project.trendDeltaLabel
-                      }}</span>
-                    }
-                  </div>
+                      @if (project.showTrendArrow) {
+                        <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
+                          <span class="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full" [class]="project.trendArrowBadgeClass">
+                            <i [class]="project.trendArrowIcon" aria-hidden="true"></i>
+                          </span>
+                          <span class="font-semibold" [class]="project.trendDeltaTextClass">{{ project.trendDeltaLabel }}</span>
+                        </span>
+                      } @else {
+                        <span class="text-xs font-semibold text-gray-500" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">{{
+                          project.trendDeltaLabel
+                        }}</span>
+                      }
+                    </div>
+                  }
                 </td>
                 <td>
-                  <a
-                    [routerLink]="['/org/projects', project.slug]"
-                    [queryParams]="contributorsDrawerQueryParams"
-                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    [attr.aria-label]="project.contributorsAriaLabel"
-                    [attr.data-testid]="'org-projects-contributors-' + project.slug"
-                    >{{ project.contributors.length }}</a
-                  >
+                  @if (project.noActivityYet) {
+                    <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-projects-contributors-' + project.slug">{{
+                      project.contributors.length
+                    }}</span>
+                  } @else {
+                    <a
+                      [routerLink]="['/org/projects', project.slug]"
+                      [queryParams]="contributorsDrawerQueryParams"
+                      class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="project.contributorsAriaLabel"
+                      [attr.data-testid]="'org-projects-contributors-' + project.slug"
+                      >{{ project.contributors.length }}</a
+                    >
+                  }
                 </td>
                 <td>
-                  <a
-                    [routerLink]="['/org/projects', project.slug]"
-                    class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    [attr.aria-label]="project.participantsAriaLabel"
-                    [attr.data-testid]="'org-projects-participants-' + project.slug"
-                    >{{ project.participants.length }}</a
-                  >
+                  @if (project.noActivityYet) {
+                    <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-projects-participants-' + project.slug">{{
+                      project.participants.length
+                    }}</span>
+                  } @else {
+                    <a
+                      [routerLink]="['/org/projects', project.slug]"
+                      class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="project.participantsAriaLabel"
+                      [attr.data-testid]="'org-projects-participants-' + project.slug"
+                      >{{ project.participants.length }}</a
+                    >
+                  }
                 </td>
                 <td class="text-right">
                   <lfx-button
@@ -544,33 +577,15 @@
       placeholder="Search and select projects"
       styleClass="w-full"
       panelStyleClass="org-projects-add-projects-select-panel"
+      [matchTriggerWidth]="true"
+      [autofocusFilter]="true"
       scrollHeight="16rem"
+      [loading]="addProjectsSearchLoading()"
+      [emptyMessage]="addProjectsEmptyMessage()"
+      [emptyFilterMessage]="addProjectsEmptyMessage()"
+      [panelStatus]="addProjectsPanelStatus()"
       (filterChange)="onAddProjectsFilter($event)"
       data-testid="org-projects-add-projects-select" />
-    @if (addProjectsSearchLoading()) {
-      <div class="flex items-center gap-2 text-sm text-gray-500" data-testid="org-projects-add-projects-loading">
-        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-        <span>Searching projects…</span>
-      </div>
-    } @else if (addProjectsSearchError()) {
-      <div class="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="org-projects-add-projects-error">
-        <div class="flex items-start gap-2 text-sm text-amber-800">
-          <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
-          <span>Could not load project matches. Try again.</span>
-        </div>
-        <lfx-button
-          label="Retry"
-          icon="fa-light fa-rotate-right"
-          severity="secondary"
-          [outlined]="true"
-          size="small"
-          (onClick)="retryAddableProjectsSearch()" />
-      </div>
-    } @else if (addableProjectOptions().length === 0 && selectedAddProjectCount() === 0) {
-      <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600" data-testid="org-projects-add-projects-empty">
-        {{ addProjectsSearchEmptyTitle() }}
-      </div>
-    }
     @if (addProjectsSaveError()) {
       <div
         class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
