@@ -480,9 +480,7 @@ export class CommitteeMembersComponent implements OnInit {
     timer(400, 400)
       .pipe(
         take(6),
-        switchMap(() =>
-          this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of([] as CommitteeJoinApplication[])))
-        ),
+        switchMap(() => this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of([] as CommitteeJoinApplication[])))),
         filter((applications) => {
           const application = applications.find((app) => app.uid === applicationUid);
           return !application || (application.status ?? '').toLowerCase() !== 'pending';
