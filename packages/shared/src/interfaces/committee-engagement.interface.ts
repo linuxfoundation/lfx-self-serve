@@ -87,8 +87,10 @@ export interface CommitteeEngagementResponse {
    * `false`: the live query couldn't produce usable rows — either it couldn't run at all (the model
    * isn't deployed, or the role isn't granted on it), or it ran and returned rows in the legacy
    * placeholder shape rather than the finalized model's shape (see `LegacyEngagementPlaceholderRow`
-   * in `committee-engagement.internal.interface.ts`). Every member then shows zeroed, `Inactive`
-   * placeholder stats.
+   * in `committee-engagement.internal.interface.ts`). Every member then shows zeroed counts and
+   * classifies `Inactive` — except a roster member with a real `Emeritus` voting status, who still
+   * classifies `Emeritus`; `role`/`voting_status` are roster passthroughs and stay populated
+   * regardless of whether a warehouse row matched.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the common case
    * today); a genuinely successful live query; or a live cache hit (which the cache only ever
@@ -104,8 +106,9 @@ export interface CommitteeEngagementResponse {
    * whether the numbers are real, and today neither this flag nor `data_source` can guarantee that
    * (see the imprecise `true` cases above); that guarantee only exists once the live SQL rewrite
    * lands. It also doesn't gate whether per-member rows are present — `members[]` is roster-complete
-   * either way, zeroed/`Inactive` on `false`. The UI should key its "no data available" placeholder
-   * state off this flag rather than inferring it from all-zero numbers.
+   * either way, with `role`/`voting_status` always populated and counts zeroed on `false` (see
+   * above for the roster-Emeritus exception to the `Inactive` default). The UI should key its "no
+   * data available" placeholder state off this flag rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
   /**

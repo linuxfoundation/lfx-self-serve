@@ -11,6 +11,7 @@ import type {
   LegacyEngagementPlaceholderRow,
 } from '@lfx-one/shared/interfaces';
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { classifyCommitteeEngagement, computeCommitteeEngagementRate, isCommitteeMemberActive, isCommitteeMemberAtRisk } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
@@ -163,8 +164,10 @@ export class CommitteeEngagementService {
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
    * always reflects the full committee; an unmatched member (today, only the live-degrade case —
-   * mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`, not-Emeritus,
-   * not-joined-within-window, classifying `Inactive`.
+   * mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`,
+   * not-joined-within-window — but `role`/`voting_status` still come from the roster itself (see
+   * below), so a roster-Emeritus member still classifies `Emeritus`; everyone else classifies
+   * `Inactive`.
    */
   private buildResponse(
     req: Request,
@@ -209,12 +212,14 @@ export class CommitteeEngagementService {
       // assuming it's already broken — an unclamped value here would produce a >100% rate.
       const attended = Math.min(counts.attended, counts.invited);
       // Falls back to the roster's own role/voting-status (already in hand, not warehouse-sourced)
-      // rather than '' when there's no matching row — otherwise a real, known Emeritus member would
-      // silently lose that short-circuit and classify Inactive on every unmatched/degraded response,
-      // even though the roster already knows better. `||`, not `??`, so a blank passthrough falls
-      // through too; both fields' real enum values ('None' included) are always non-empty strings.
-      const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || '';
-      const role = row?.MEMBER_ROLE || member.role?.name || '';
+      // rather than defaulting straight to 'None' when there's no matching row — otherwise a real,
+      // known Emeritus member would silently lose that short-circuit and classify Inactive on every
+      // unmatched/degraded response, even though the roster already knows better. `||`, not `??`,
+      // so a blank passthrough falls through too; both fields' real enum values ('None' included)
+      // are always non-empty strings. Last-resort default matches the mock generator's own
+      // no-real-data default, so "None" (not "") is what a consumer sees either way.
+      const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
+      const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
       const joinedWithinWindow = row ? this.isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart) : false;
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };

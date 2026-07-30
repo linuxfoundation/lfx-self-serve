@@ -294,7 +294,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result).toEqual({
-        members: [{ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive', role: '', voting_status: '', committee_meetings: 0 }],
+        members: [{ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive', role: 'None', voting_status: 'None', committee_meetings: 0 }],
         summary: { attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 },
         computed_at: null,
         data_available: false,
