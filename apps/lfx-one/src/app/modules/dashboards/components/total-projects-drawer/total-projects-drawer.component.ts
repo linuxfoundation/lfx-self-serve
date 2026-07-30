@@ -194,9 +194,10 @@ export class TotalProjectsDrawerComponent {
 
   // === Private Initializers ===
   private initMetricValue(): Signal<string> {
+    // Guarded by hasData() (monthlyData non-empty) in the template, so the last month is always present.
     return computed(() => {
       const m = this.data().monthlyData;
-      return m.length ? m[m.length - 1].toLocaleString('en-US') : this.data().totalProjects.toLocaleString('en-US');
+      return m[m.length - 1].toLocaleString('en-US');
     });
   }
 
