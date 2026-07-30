@@ -15,8 +15,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
 
-  /** Domain + schema-version segment for the per-committee Snowflake-backed engagement cache (shared across callers). */
-  COMMITTEE_ENGAGEMENT_NAMESPACE: 'committee-engagement-sf:v1',
+  /** Domain + schema-version segment for the per-committee Snowflake-backed engagement cache (shared across callers). `v2`: the cached row shape changed from an email-keyed, single-window row to a uid-keyed row carrying all three windows — bumped so no entry written under the old shape can be read back as the new one. */
+  COMMITTEE_ENGAGEMENT_NAMESPACE: 'committee-engagement-sf:v2',
 
   /** Domain + schema-version segment for the per-user org seats cache. */
   ORG_SEATS_NAMESPACE: 'org-seats:v1',

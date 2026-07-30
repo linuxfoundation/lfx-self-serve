@@ -6,6 +6,9 @@ import { COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS } from '../constants/committee-e
 /** Time window a committee-engagement request/response is scoped to. */
 export type CommitteeEngagementWindow = (typeof COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS)[number];
 
+/** `'mock'` = deterministically fabricated attendance numbers (`ENGAGEMENT_BACKEND` unset/non-`'live'`, the default); `'live'` = the real Snowflake read. See `CommitteeEngagementResponse.data_source`. */
+export type CommitteeEngagementDataSource = 'mock' | 'live';
+
 /**
  * Engagement tier derived in the BFF from the member's personal attendance rate.
  * `Emeritus` is a seat-type override, not a rate tier — Emeritus members never classify
@@ -90,5 +93,5 @@ export interface CommitteeEngagementResponse {
    * end user (rather than use it for local/integration testing) must check this field, not just
    * `data_available`, before presenting the numbers as real.
    */
-  data_source: 'mock' | 'live';
+  data_source: CommitteeEngagementDataSource;
 }

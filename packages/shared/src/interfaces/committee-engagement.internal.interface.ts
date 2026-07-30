@@ -47,3 +47,16 @@ export interface CommitteeEngagementQueryResult {
   /** `false` when the warehouse table doesn't exist yet — distinct from a real query returning zero rows. */
   dataAvailable: boolean;
 }
+
+/**
+ * The live SQL in `committee-engagement.service.ts`'s `queryEngagementRows` still selects these
+ * pre-finalization placeholder columns, not `CommitteeEngagementWarehouseRow`'s real fields — a
+ * distinct type (rather than casting to the finalized interface) so the compiler, not just a
+ * comment, reflects that the two shapes share no fields and there's no honest mapping between them.
+ */
+export interface LegacyEngagementPlaceholderRow {
+  MEMBER_EMAIL: string;
+  ATTENDED_COUNT: number;
+  INVITED_COUNT: number;
+  COMPUTED_AT: string | Date | null;
+}

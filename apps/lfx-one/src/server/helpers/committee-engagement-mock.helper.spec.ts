@@ -114,6 +114,15 @@ describe('generateMockEngagementRows', () => {
     expect(generateMockEngagementRows('committee-1', [])).toEqual([]);
   });
 
+  it('gives organic members varied tenure, not the demo-slot tenure floor flattened across all of them', () => {
+    // Regression: the eligibility list for the 3 reserved demo patterns (indices 2-4 in a bare
+    // roster) previously also matched every later organic member (5+), flattening all of their
+    // fallback tenure to the same fixed floor instead of organicJoinedDaysAgo's varied range.
+    const rows = generateMockEngagementRows('committee-1', ROSTER);
+    const organicJoinDates = rows.slice(5).map((r) => r.MEMBER_JOINED_AT);
+    expect(new Set(organicJoinDates).size).toBeGreaterThan(1);
+  });
+
   it('invited never exceeds committee_meetings for any row, including the forced-count Orlin slot', () => {
     const rows = generateMockEngagementRows('committee-1', ROSTER);
     for (const row of rows) {
@@ -170,11 +179,43 @@ describe('generateMockEngagementRows', () => {
       expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
     });
 
-    it('a real, already-recent join date exercises the Orlin scenario organically without needing the fallback', () => {
+    it('a real, already-recent join date exercises the Orlin scenario organically (forced invited=attended=5), not just a passthrough date', () => {
       const recentJoin = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
       const roster = [member('m0'), member('m1', { created_at: recentJoin }), ...ROSTER.slice(2)];
       const rows = generateMockEngagementRows('committee-1', roster);
-      expect(rows.find((r) => r.MEMBER_USER_ID === 'm1')?.MEMBER_JOINED_AT).toBe(recentJoin);
+      const row = rows.find((r) => r.MEMBER_USER_ID === 'm1');
+      expect(row?.MEMBER_JOINED_AT).toBe(recentJoin);
+      expect(row).toMatchObject({
+        INVITED_COUNT_30D: 5,
+        ATTENDED_COUNT_30D: 5,
+        INVITED_COUNT_90D: 5,
+        ATTENDED_COUNT_90D: 5,
+        INVITED_COUNT_YTD: 5,
+        ATTENDED_COUNT_YTD: 5,
+      });
+    });
+
+    it('does not fabricate an Emeritus member when every real member already has a known, non-Emeritus status', () => {
+      const roster = ROSTER.map((m, i) => member(m.uid, { voting: { status: i % 2 === 0 ? 'Voting Rep' : 'Observer' } as never }));
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(false);
+    });
+
+    it('a real, moderately-recent tenure at a reserved demo slot (not the Orlin case — >=30 real days) produces smaller counts than the fully-synthetic floor would, never a mismatch between the shown join date and the numbers', () => {
+      // 45 real days: short enough that a floored (~200-day) synthetic default would clearly
+      // overstate this member's exposure, but >=30 days so it isn't swept into the Orlin path
+      // instead (any real join within the 30d window takes that path — see the test above).
+      const moderatelyRecentJoin = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+      const rosterWithRealTenure = [ROSTER[0], ROSTER[1], member(ROSTER[2].uid, { created_at: moderatelyRecentJoin }), ...ROSTER.slice(3)];
+
+      const rowsWithRealTenure = generateMockEngagementRows('committee-1', rosterWithRealTenure);
+      const rowsAllSynthetic = generateMockEngagementRows('committee-1', ROSTER);
+
+      const realRow = rowsWithRealTenure.find((r) => r.MEMBER_USER_ID === ROSTER[2].uid);
+      const syntheticRow = rowsAllSynthetic.find((r) => r.MEMBER_USER_ID === ROSTER[2].uid);
+
+      expect(realRow?.MEMBER_JOINED_AT).toBe(moderatelyRecentJoin);
+      expect(realRow?.INVITED_COUNT_90D as number).toBeLessThan(syntheticRow?.INVITED_COUNT_90D as number);
     });
   });
 });

@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  CommitteeEngagementDataSource,
   CommitteeEngagementQueryResult,
   CommitteeEngagementResponse,
   CommitteeEngagementWarehouseRow,
   CommitteeEngagementWindow,
   CommitteeMember,
+  LegacyEngagementPlaceholderRow,
 } from '@lfx-one/shared/interfaces';
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { classifyCommitteeEngagement, computeCommitteeEngagementRate, isCommitteeMemberActive, isCommitteeMemberAtRisk } from '@lfx-one/shared/utils';
@@ -23,28 +25,17 @@ import { buildCommitteeCacheKey, valkeyService } from './valkey.service';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The live SQL in `queryEngagementRows` still selects these pre-finalization placeholder columns,
- * not `CommitteeEngagementWarehouseRow`'s real fields — a distinct type (rather than casting to
- * the finalized interface) so the compiler, not just a comment, reflects that the two shapes share
- * no fields and there's no honest mapping between them.
- */
-interface LegacyEngagementPlaceholderRow {
-  MEMBER_EMAIL: string;
-  ATTENDED_COUNT: number;
-  INVITED_COUNT: number;
-  COMPUTED_AT: string | Date | null;
-}
-
-/**
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705), gated between a
  * deterministic mock generator and the real (not-yet-deployed) warehouse read by
  * `ENGAGEMENT_BACKEND` (see `isEngagementMockBackend`), and joins whichever source produced rows
  * against the committee roster via `buildResponse`. Only the mock generator actually produces
  * `CommitteeEngagementWarehouseRow`-shaped rows today — the live SQL in `queryEngagementRows`
- * still targets the original placeholder columns (see that method's TODO) and always resolves to
- * an empty row set, explicitly, rather than ever handing `buildResponse` a mismatched shape.
- * `buildResponse` itself doesn't branch on which path ran; the live SQL still needs a rewrite to
- * genuinely produce this shape once the real read surface is decided.
+ * still targets the original placeholder columns (see that method's TODO) and, on every path that
+ * runs the query itself, resolves to an empty row set rather than ever handing `buildResponse` a
+ * mismatched shape (a stale Valkey entry written under a prior cache-key version is the one thing
+ * this doesn't guard against — see the cache key's own version-bump history). `buildResponse`
+ * itself doesn't branch on which path ran; the live SQL still needs a rewrite to genuinely produce
+ * this shape once the real read surface is decided.
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -179,7 +170,7 @@ export class CommitteeEngagementService {
     members: CommitteeMember[],
     queryResult: CommitteeEngagementQueryResult,
     window: CommitteeEngagementWindow,
-    dataSource: 'mock' | 'live'
+    dataSource: CommitteeEngagementDataSource
   ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
