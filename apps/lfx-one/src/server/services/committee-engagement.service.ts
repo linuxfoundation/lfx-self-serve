@@ -23,6 +23,9 @@ import { SnowflakeService } from './snowflake.service';
  */
 const TIMESTAMP_SHAPE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*(?:(Z)|([+-]\d{2}):?(\d{2}))?$/i;
 
+/** The only characters `redactedShape` (below) passes through verbatim — everything else is substituted. */
+const TIMESTAMP_PUNCTUATION = new Set(['-', ':', '.', '+', '/', ' ', 'T', 'Z']);
+
 /**
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705) from the (not-yet-deployed)
  * committee-engagement warehouse model and joins it against the committee roster. Table/column
@@ -174,10 +177,8 @@ export class CommitteeEngagementService {
         row_count: rows.length,
         // A rejection is almost certainly a format problem (the dbt model is still unwritten, and
         // COMPUTED_AT's real column type/width are unknown), and its shape is what would identify
-        // that — not its content. Logging the raw value would raise the same "don't log PII" concern
-        // every free-text warehouse column does; digits/letters are redacted to '9'/'a' so the
-        // structure survives (does it look like a real timestamp that failed to parse, or garbage
-        // entirely?) without logging anything from the value itself. Bounded to 3 rows, 24 chars each.
+        // that — not its content. See redactedShape's doc comment for the redaction policy; bounded
+        // to 3 rows, 24 code points each.
         rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => this.redactedShape(raw)),
       });
     }
@@ -207,28 +208,31 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * Redacts a rejected `COMPUTED_AT` value to its structural shape for logging — Unicode digits
-   * become `9`, Unicode letters/marks become `a`, a fixed set of timestamp-punctuation characters
-   * (`- : . + / T Z` and space) pass through, and everything else becomes `?` — so a warning reader
-   * can tell "looks like a real timestamp that failed to parse" from "not a timestamp at all"
-   * without any of the value's actual content ever reaching the log.
+   * Redacts a rejected `COMPUTED_AT` value to its structural shape for logging: only a fixed
+   * allowlist of timestamp-punctuation characters (`- : . + / T Z` and space) passes through
+   * verbatim; every Unicode digit becomes `9`, every Unicode letter/mark becomes `a`, and anything
+   * else becomes `?`. A warning reader can tell "looks like a real timestamp that failed to parse"
+   * from "not a timestamp at all" — the allowlisted characters are the only ones that carry that
+   * shape signal, and they're a closed, non-sensitive set, not free-form content.
    *
    * Default-*deny*, not default-allow: an earlier version redacted only known digit/letter classes
    * and let anything else (symbols, emoji, combining marks) through unchanged, which doesn't
-   * actually guarantee "no content reaches the log" — only an explicit allowlist for the characters
-   * that carry real timestamp-shape signal does. Iterates by Unicode code point (`Array.from`, not
-   * `.slice`/index access) so a surrogate pair isn't split into two lone, invalid surrogates.
+   * actually shrink what a caller could put in this column. Walks by Unicode code point via
+   * `for...of` (not `Array.from` + `.slice`, which would materialize the entire string before
+   * truncating — a real cost against a column whose real width is unknown) and stops the moment the
+   * bound is reached, so a surrogate pair is never split into two invalid lone surrogates either.
    */
   private redactedShape(raw: unknown): string {
-    const TIMESTAMP_PUNCTUATION = new Set(['-', ':', '.', '+', '/', ' ', 'T', 'Z']);
-    return Array.from(String(raw))
-      .slice(0, 24)
-      .map((char) => {
-        if (/\p{Nd}/u.test(char)) return '9';
-        if (/[\p{L}\p{M}]/u.test(char)) return TIMESTAMP_PUNCTUATION.has(char) ? char : 'a';
-        return TIMESTAMP_PUNCTUATION.has(char) ? char : '?';
-      })
-      .join('');
+    const MAX_CODE_POINTS = 24;
+    const shape: string[] = [];
+    for (const char of String(raw)) {
+      if (shape.length === MAX_CODE_POINTS) break;
+      if (TIMESTAMP_PUNCTUATION.has(char)) shape.push(char);
+      else if (/\p{Nd}/u.test(char)) shape.push('9');
+      else if (/[\p{L}\p{M}]/u.test(char)) shape.push('a');
+      else shape.push('?');
+    }
+    return shape.join('');
   }
 
   private toCount(value: unknown): number {
