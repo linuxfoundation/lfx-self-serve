@@ -128,6 +128,18 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('circuit open');
   });
 
+  it('rethrows a wrong-column-name compilation error rather than degrading to data_available:false', async () => {
+    // Pins the engagementTable() TODO's claim: a wrong column name is a different Snowflake
+    // compilation error than isMissingObjectError's "does not exist or not authorized" match, so it
+    // correctly 500s instead of silently degrading like a genuinely-not-deployed-yet table would.
+    getCommitteeMembers.mockResolvedValueOnce([]);
+    execute.mockRejectedValueOnce(
+      new Error("Snowflake query execution failed: SQL compilation error: error line 2 at position 13\ninvalid identifier 'MEMBER_EMAIL'")
+    );
+
+    await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('invalid identifier');
+  });
+
   it('rolls classification up into active_count and at_risk_count, counting invited-but-zero-attendance members as at risk even though their badge reads Inactive', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'high@x.com'), member('m2', 'low@x.com'), member('m3', 'inactive@x.com')]);
     execute.mockResolvedValueOnce({

@@ -98,8 +98,9 @@ export class CommitteeEngagementService {
     // happened: a blank email is a data-quality problem in the row itself, while a duplicate email
     // means the declared grain (COMMITTEE_UID, MEMBER_EMAIL, TIME_RANGE_TYPE) — a guess pending the
     // real dbt model — is finer than assumed. Last-write-wins on a duplicate (ORDER BY MEMBER_EMAIL
-    // has no tiebreaker on TIME_RANGE_TYPE or COMPUTED_AT, so "last" is whichever the warehouse
-    // happened to emit second, not a deliberate choice) — flagged here since it's otherwise silent.
+    // has no tiebreaker on COMPUTED_AT — TIME_RANGE_TYPE is pinned to one value by the WHERE clause,
+    // so it was never a candidate — so "last" is whichever the warehouse happened to emit second,
+    // not a deliberate choice) — flagged here since it's otherwise silent.
     const rowsByEmail = new Map<string, CommitteeEngagementWarehouseRow>();
     let blankEmailRowCount = 0;
     for (const row of rows) {
