@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { computePeriodChange } from './metric-trend.utils';
+import { computePeriodChange, computePeriodDelta } from './metric-trend.utils';
 
 describe('computePeriodChange', () => {
   it('returns neutral trend and undefined changePercentage for an empty series', () => {
@@ -49,5 +49,53 @@ describe('computePeriodChange', () => {
 
   it('uses only the last two elements of a longer series', () => {
     expect(computePeriodChange([10, 20, 30, 40, 60])).toEqual({ trend: 'up', changePercentage: '▲ +50.0% vs last month' });
+  });
+});
+
+describe('computePeriodDelta', () => {
+  it('returns null for an empty series', () => {
+    expect(computePeriodDelta([])).toBeNull();
+  });
+
+  it('returns null for a single-element series', () => {
+    expect(computePeriodDelta([42])).toBeNull();
+  });
+
+  it('returns null when the prior value is 0', () => {
+    expect(computePeriodDelta([0, 10])).toBeNull();
+  });
+
+  it('classifies a positive delta as up with an absolute percentage', () => {
+    expect(computePeriodDelta([100, 150])).toEqual({ direction: 'up', deltaLabel: '50.0', periodLabel: 'vs last month' });
+  });
+
+  it('classifies a negative delta as down with an absolute percentage', () => {
+    expect(computePeriodDelta([150, 100])).toEqual({ direction: 'down', deltaLabel: '33.3', periodLabel: 'vs last month' });
+  });
+
+  it('classifies an exactly-zero delta as neutral with 0.0', () => {
+    expect(computePeriodDelta([100, 100])).toEqual({ direction: 'neutral', deltaLabel: '0.0', periodLabel: 'vs last month' });
+  });
+
+  it('treats a sub-threshold positive delta as neutral so the arrow never contradicts the rounded 0.0%', () => {
+    // raw +0.04% rounds to 0.0% — direction must stay neutral, not up
+    expect(computePeriodDelta([10000, 10004])).toEqual({ direction: 'neutral', deltaLabel: '0.0', periodLabel: 'vs last month' });
+  });
+
+  it('treats a sub-threshold negative delta as neutral and never leaks -0.0', () => {
+    // raw -0.04% rounds to 0.0% — direction must stay neutral, not down, and no "-0.0" leaks
+    expect(computePeriodDelta([10004, 10000])).toEqual({ direction: 'neutral', deltaLabel: '0.0', periodLabel: 'vs last month' });
+  });
+
+  it('passes the custom period label through', () => {
+    expect(computePeriodDelta([100, 150], 'vs last quarter')).toEqual({
+      direction: 'up',
+      deltaLabel: '50.0',
+      periodLabel: 'vs last quarter',
+    });
+  });
+
+  it('uses only the last two elements of a longer series', () => {
+    expect(computePeriodDelta([10, 20, 30, 40, 60])).toEqual({ direction: 'up', deltaLabel: '50.0', periodLabel: 'vs last month' });
   });
 });
