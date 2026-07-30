@@ -179,8 +179,43 @@ describe('generateMockEngagementRows', () => {
       expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
     });
 
+    it('never assigns the Orlin case to a real Emeritus member, even if they are the most-recently-joined real member', () => {
+      // Regression: buildAttendanceProfile checks isEmeritus before the Orlin slot, so an
+      // Emeritus candidate would silently absorb the role without ever rendering forced counts.
+      const recentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [member('m0', { voting: { status: 'Emeritus' } as never, created_at: recentJoin }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const emeritusRow = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      expect(emeritusRow?.MEMBER_VOTING_STATUS).toBe('Emeritus');
+      expect(emeritusRow?.INVITED_COUNT_30D).not.toBe(5);
+    });
+
+    it('does not force the literal Orlin counts on a real member whose tenure is too short to plausibly support them', () => {
+      // A member who really joined yesterday cannot honestly show 5 real meetings attended,
+      // regardless of the ticket's literal example — the forced counts must stay off unless real
+      // (or fabricated-fallback) tenure is long enough for this committee's real meeting cadence.
+      const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [member('m0'), member('m1', { created_at: yesterday }), ...ROSTER.slice(2)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const row = rows.find((r) => r.MEMBER_USER_ID === 'm1');
+      expect(row?.MEMBER_JOINED_AT).toBe(yesterday);
+      expect(row?.INVITED_COUNT_30D).not.toBe(5);
+      expect(row?.INVITED_COUNT_30D as number).toBeLessThanOrEqual(1);
+    });
+
+    it('a present but unparseable created_at is treated as absent, not passed through raw', () => {
+      const rows = generateMockEngagementRows('committee-1', [member('m0', { created_at: 'not-a-real-date' }), ...ROSTER.slice(1)]);
+      const row = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      expect(row?.MEMBER_JOINED_AT).not.toBe('not-a-real-date');
+      expect(Number.isNaN(new Date(row?.MEMBER_JOINED_AT as string).getTime())).toBe(false);
+    });
+
     it('a real, already-recent join date exercises the Orlin scenario organically (forced invited=attended=5), not just a passthrough date', () => {
-      const recentJoin = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+      // 27 days: recent enough to be Orlin-eligible (< 30d) but comfortably above
+      // minOrlinTenureDays for any committee-meetings cadence this generator can produce (the
+      // 15-day value this test previously used could fall below that per-committee threshold —
+      // see the tenure-plausibility test below for the case where it does).
+      const recentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
       const roster = [member('m0'), member('m1', { created_at: recentJoin }), ...ROSTER.slice(2)];
       const rows = generateMockEngagementRows('committee-1', roster);
       const row = rows.find((r) => r.MEMBER_USER_ID === 'm1');

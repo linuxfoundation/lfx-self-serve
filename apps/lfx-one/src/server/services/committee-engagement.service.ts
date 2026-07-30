@@ -30,12 +30,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * `ENGAGEMENT_BACKEND` (see `isEngagementMockBackend`), and joins whichever source produced rows
  * against the committee roster via `buildResponse`. Only the mock generator actually produces
  * `CommitteeEngagementWarehouseRow`-shaped rows today — the live SQL in `queryEngagementRows`
- * still targets the original placeholder columns (see that method's TODO) and, on every path that
- * runs the query itself, resolves to an empty row set rather than ever handing `buildResponse` a
- * mismatched shape (a stale Valkey entry written under a prior cache-key version is the one thing
- * this doesn't guard against — see the cache key's own version-bump history). `buildResponse`
- * itself doesn't branch on which path ran; the live SQL still needs a rewrite to genuinely produce
- * this shape once the real read surface is decided.
+ * still targets the original placeholder columns (see that method's TODO) and resolves to an
+ * empty row set rather than ever handing `buildResponse` a mismatched shape — including on a
+ * cache hit, since `COMMITTEE_ENGAGEMENT_NAMESPACE`'s version segment is bumped whenever the
+ * cached row shape changes, so no entry written under a prior shape can be read back as this one.
+ * `buildResponse` itself doesn't branch on which path ran; the live SQL still needs a rewrite to
+ * genuinely produce this shape once the real read surface is decided.
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();

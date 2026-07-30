@@ -16,7 +16,6 @@ const WINDOW_90D_DAYS = 90;
  * real and the attendance numbers must stay consistent with whatever tenure that date implies.
  */
 const DEMO_TENURE_FALLBACK_DAYS = 200;
-const ORLIN_FALLBACK_JOINED_DAYS_AGO = 20;
 const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
 
 /**
@@ -25,10 +24,13 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  * real committee roster (every row's `MEMBER_USER_ID` is a real `CommitteeMember.uid`).
  *
  * Only attendance numbers are fabricated. `MEMBER_ROLE` is always the roster's real `role` (or
- * `'None'` if unset), and `MEMBER_JOINED_AT` is always the real `created_at` when present. Because
- * that join date is always real, every fabricated attendance number is computed against the same
- * *real* tenure it's paired with — a member's numbers never imply meetings that happened before
- * their real join date, or invited counts inconsistent with the join date shown alongside them.
+ * `'None'` if unset), and `MEMBER_JOINED_AT` is the real `created_at` whenever it parses (see
+ * `parseRealJoinedDaysAgo` — a present-but-invalid value is treated the same as absent, never
+ * passed through raw). Every fabricated attendance number is computed against that same tenure:
+ * for most profiles this is an explicit `effectiveDays` clamp in `computeWindowCounts`; the "Orlin
+ * case"'s forced counts skip that clamp, so eligibility for the role itself is gated instead (see
+ * `planRosterIdentities`) on tenure long enough that the forced count stays plausible. Either way,
+ * a member's numbers never imply meetings that happened before their shown join date.
  * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too, falling back to a hash-derived
  * placeholder only for members with none recorded. Two scenarios (`Emeritus`, "the Orlin case" —
  * see below) are guaranteed visible somewhere in the roster whenever that's possible without
@@ -55,14 +57,17 @@ interface MemberIdentity {
 
 interface RosterPlan {
   identities: MemberIdentity[];
-  /** Sorted index of the member demonstrating the "Orlin case" (forced low-but-100%-rate counts); `null` when no member can take the role without contradicting real tenure data. */
+  /** Sorted index of the member demonstrating the "Orlin case" (forced low-but-100%-rate counts); `null` when no member (excluding any `Emeritus`) can take the role without contradicting real tenure data. */
   orlinIndex: number | null;
+  /** Tenure (days) to use for `orlinIndex` when that member has no real join date — computed per committee so the forced counts stay plausible against this committee's own real 30-day meeting cadence; unused when `orlinIndex` is `null` or has real tenure data. */
+  orlinFallbackJoinedDaysAgo: number;
   /**
-   * Every sorted index except `orlinIndex` and real-`Emeritus` members, in order — i.e. every
-   * member eligible for a reserved pattern. Only the first `DEMO_ATTENDANCE_PROFILES.length`
-   * of these actually receive one (Inactive/Low/Medium); the rest are organic. Kept as a plain
-   * eligibility list rather than pre-sliced so `buildAttendanceProfile` can compute the same
-   * boundary once, from `indexOf`, for both the tenure default and the pattern assignment.
+   * Every sorted index except `orlinIndex` and any `Emeritus` member (real or promoted), in
+   * order — i.e. every member eligible for a reserved pattern. Only the first
+   * `DEMO_ATTENDANCE_PROFILES.length` of these actually receive one (Inactive/Low/Medium); the
+   * rest are organic. Kept as a plain eligibility list rather than pre-sliced so
+   * `buildAttendanceProfile` can compute the same boundary once, from `indexOf`, for both the
+   * tenure default and the pattern assignment.
    */
   demoAttendanceIndices: number[];
 }
@@ -75,13 +80,21 @@ interface RosterPlan {
  *   `Emeritus`, the first member with no real voting status recorded is promoted — but only that
  *   one case. If every member already has a real, known (non-`Emeritus`) status, no member is
  *   promoted; this committee's mock output just won't include an `Emeritus` row.
- * - "The Orlin case": the roster's most-recently-real-joined member, if any joined within the
- *   `30d` window, is used as-is (the scenario occurs organically). Otherwise, the first member
- *   with no real join date at all is fabricated a recent one — never a member whose real tenure
- *   would contradict it. If every member has real (non-recent) tenure data, no member takes this
- *   role either.
+ * - "The Orlin case": eligible candidates exclude every `Emeritus` member (real or promoted) — the
+ *   Emeritus profile always takes precedence in `buildAttendanceProfile`, so an Emeritus candidate
+ *   would silently swallow the slot without ever rendering it. Among the rest, the most-recently
+ *   real-joined member is used *only* if their tenure is at least `minOrlinTenureDays` — long
+ *   enough that this committee's real 30-day meeting cadence could plausibly have produced
+ *   `ORLIN_FORCED_COUNTS.invited` real invites since they joined (a member who joined yesterday
+ *   cannot honestly show 5 real meetings attended). Otherwise, the first member with no real join
+ *   date at all is fabricated exactly `minOrlinTenureDays` of tenure — the shortest tenure that's
+ *   still self-consistent with the forced count for *this* committee's cadence. If every member
+ *   has real (and either too-recent or too-long) tenure data, no member takes this role.
  */
 function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMember[]): RosterPlan {
+  const meetings30d = committeeMeetingsForWindow(committeeUid, WINDOW_30D_DAYS);
+  const minOrlinTenureDays = Math.min(WINDOW_30D_DAYS - 1, Math.ceil((ORLIN_FORCED_COUNTS.invited * WINDOW_30D_DAYS) / meetings30d));
+
   const realVotingStatuses = sortedMembers.map((member) => {
     const status = member.voting?.status;
     return status && status !== CommitteeMemberVotingStatus.NONE ? status : null;
@@ -101,19 +114,19 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
     if (emeritusFallbackIndex !== -1) votingStatuses[emeritusFallbackIndex] = CommitteeMemberVotingStatus.EMERITUS;
   }
 
+  const isEmeritus = (index: number): boolean => votingStatuses[index] === CommitteeMemberVotingStatus.EMERITUS;
+
   let orlinIndex = realJoinedDaysAgo.reduce<number | null>((mostRecentIndex, days, index) => {
-    if (days === null || days >= WINDOW_30D_DAYS) return mostRecentIndex;
+    if (days === null || days < minOrlinTenureDays || days >= WINDOW_30D_DAYS || isEmeritus(index)) return mostRecentIndex;
     if (mostRecentIndex === null || days < (realJoinedDaysAgo[mostRecentIndex] as number)) return index;
     return mostRecentIndex;
   }, null);
   if (orlinIndex === null) {
-    const fallbackIndex = realJoinedDaysAgo.findIndex((days, index) => days === null && index !== emeritusFallbackIndex);
+    const fallbackIndex = realJoinedDaysAgo.findIndex((days, index) => days === null && !isEmeritus(index));
     orlinIndex = fallbackIndex === -1 ? null : fallbackIndex;
   }
 
-  const demoAttendanceIndices = sortedMembers
-    .map((_, index) => index)
-    .filter((index) => index !== orlinIndex && votingStatuses[index] !== CommitteeMemberVotingStatus.EMERITUS);
+  const demoAttendanceIndices = sortedMembers.map((_, index) => index).filter((index) => index !== orlinIndex && !isEmeritus(index));
 
   return {
     identities: sortedMembers.map((_, index) => ({
@@ -121,6 +134,7 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
       realJoinedDaysAgo: realJoinedDaysAgo[index] as number | null,
     })),
     orlinIndex,
+    orlinFallbackJoinedDaysAgo: minOrlinTenureDays,
     demoAttendanceIndices,
   };
 }
@@ -213,7 +227,7 @@ function buildAttendanceProfile(committeeUid: string, member: CommitteeMember, i
   }
 
   if (index === plan.orlinIndex) {
-    return { joinedDaysAgo: identity.realJoinedDaysAgo ?? ORLIN_FALLBACK_JOINED_DAYS_AGO, invitationRate: 1, forcedCounts: ORLIN_FORCED_COUNTS };
+    return { joinedDaysAgo: identity.realJoinedDaysAgo ?? plan.orlinFallbackJoinedDaysAgo, invitationRate: 1, forcedCounts: ORLIN_FORCED_COUNTS };
   }
 
   if (isReservedDemoSlot) {
@@ -236,9 +250,12 @@ function computeWindowCounts(
   profile: AttendanceProfile
 ): { invited: number; attended: number } {
   if (profile.forcedCounts) {
-    // Clamped to the committee-wide ceiling: a very short `ytd` window early in the calendar year
-    // can have fewer total meetings than the forced count, which would otherwise imply this
-    // member was invited to more meetings than the committee held.
+    // Only clamped to the committee-wide ceiling here — a very short `ytd` window early in the
+    // calendar year can have fewer total meetings than the forced count, which would otherwise
+    // imply this member was invited to more meetings than the committee held. Tenure plausibility
+    // (this member couldn't honestly show 5 real invites if they joined yesterday) is enforced
+    // earlier, as an eligibility gate on who can be assigned this role at all — see
+    // `planRosterIdentities`'s `minOrlinTenureDays` — rather than by scaling the count down here.
     const invited = Math.min(profile.forcedCounts.invited, committeeMeetings);
     return { invited, attended: Math.min(profile.forcedCounts.attended, invited) };
   }
@@ -262,9 +279,12 @@ function buildMockRow(committeeUid: string, member: CommitteeMember, index: numb
   const counts90d = computeWindowCounts(committeeUid, member.uid, '90d', WINDOW_90D_DAYS, meetings90d, profile);
   const countsYtd = computeWindowCounts(committeeUid, member.uid, 'ytd', windowYtdDays(), meetingsYtd, profile);
 
-  // Always real when available; only a member with no real created_at at all gets a join date
-  // derived from the (also-fabricated-tenure) profile, keeping the two consistent either way.
-  const joinedAt = member.created_at ?? new Date(todayUtcMidnightMs() - profile.joinedDaysAgo * DAY_MS).toISOString();
+  // Keyed off `identity.realJoinedDaysAgo`, not `member.created_at` truthiness directly — a
+  // present-but-unparseable `created_at` is a non-empty string (truthy), which would otherwise
+  // leak the raw invalid value here while the counts above were computed against the fabricated
+  // fallback tenure. `realJoinedDaysAgo` is `parseRealJoinedDaysAgo`'s authoritative "was there
+  // usable real tenure" signal, so checking it keeps this and `profile.joinedDaysAgo` consistent.
+  const joinedAt = identity.realJoinedDaysAgo !== null ? member.created_at : new Date(todayUtcMidnightMs() - profile.joinedDaysAgo * DAY_MS).toISOString();
 
   return {
     MEMBER_USER_ID: member.uid,
