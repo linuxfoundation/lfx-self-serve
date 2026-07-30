@@ -58,6 +58,13 @@ export interface ClaimAliasRequest {
   forwardTo: string;
 }
 
+/**
+ * Response from `POST /api/profile/linux-email/claim`. Excludes `primaryEmail`: the claim
+ * handler doesn't read user_emails, and the client refetches via the GET after a successful
+ * claim rather than consuming this body.
+ */
+export type ClaimAliasResponse = Omit<LinuxAliasData, 'primaryEmail'>;
+
 /** Body for `PUT /api/profile/linux-email/forward`. */
 export interface UpdateForwardRequest {
   forwardTo: string;
