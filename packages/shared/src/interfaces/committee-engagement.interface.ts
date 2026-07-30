@@ -14,6 +14,20 @@ export type CommitteeEngagementWindow = (typeof COMMITTEE_ENGAGEMENT_SUPPORTED_W
  */
 export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'Emeritus';
 
+/**
+ * Classification inputs beyond the raw counts, per LFXV2-1705's finalized model semantics
+ * (`platinum_lfx_one_committee_meeting_attendance`, `lf-dbt#2694`): `votingStatus` (`'Emeritus'`
+ * short-circuits to a neutral tier) and `joinedWithinWindow` (whether `member_joined_at` falls
+ * after the requested window's start — tenure clipping, so a brand-new member's zero invites
+ * doesn't read as disengagement). Consumed by `committee-engagement-classifier.util.ts`.
+ */
+export interface CommitteeEngagementClassificationInput {
+  attended: number;
+  invited: number;
+  votingStatus: string;
+  joinedWithinWindow: boolean;
+}
+
 /** Per-member attendance rollup for a single committee + window. */
 export interface CommitteeMemberEngagement {
   /** `CommitteeMember.uid` this row corresponds to. */
@@ -69,4 +83,12 @@ export interface CommitteeEngagementResponse {
    * key its "no data available" state off this flag rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
+  /**
+   * `'mock'` when `ENGAGEMENT_BACKEND` is unset/non-`'live'` (the default) — every number in this
+   * response is deterministically fabricated, not real attendance, even though it's attached to
+   * real roster members and `data_available` is `true`. Any consumer that could display this to an
+   * end user (rather than use it for local/integration testing) must check this field, not just
+   * `data_available`, before presenting the numbers as real.
+   */
+  data_source: 'mock' | 'live';
 }

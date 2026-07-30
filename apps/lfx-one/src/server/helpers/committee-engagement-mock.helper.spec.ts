@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import { generateMockEngagementRows } from './committee-engagement-mock.helper';
 
-function member(uid: string) {
-  return { uid } as unknown as import('@lfx-one/shared/interfaces').CommitteeMember;
+function member(uid: string, overrides: Partial<import('@lfx-one/shared/interfaces').CommitteeMember> = {}) {
+  return { uid, ...overrides } as unknown as import('@lfx-one/shared/interfaces').CommitteeMember;
 }
 
 // A roster of 6+ so all 5 reserved slots plus at least one organic member are exercised.
@@ -112,5 +112,69 @@ describe('generateMockEngagementRows', () => {
 
   it('returns an empty array for an empty roster', () => {
     expect(generateMockEngagementRows('committee-1', [])).toEqual([]);
+  });
+
+  it('invited never exceeds committee_meetings for any row, including the forced-count Orlin slot', () => {
+    const rows = generateMockEngagementRows('committee-1', ROSTER);
+    for (const row of rows) {
+      for (const suffix of ['30D', '90D', 'YTD'] as const) {
+        expect(row[`INVITED_COUNT_${suffix}`]).toBeLessThanOrEqual(row[`COMMITTEE_MEETINGS_${suffix}`]);
+        expect(row[`ATTENDED_COUNT_${suffix}`]).toBeLessThanOrEqual(row[`INVITED_COUNT_${suffix}`]);
+      }
+    }
+  });
+
+  describe('real roster identity data (never fabricated)', () => {
+    it('always passes through the real role, never a synthesized one', () => {
+      const roster = [member('m0', { role: { name: 'Chair' } as never }), member('m1', { role: { name: 'Secretary' } as never }), ...ROSTER.slice(2)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_ROLE).toBe('Chair');
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm1')?.MEMBER_ROLE).toBe('Secretary');
+    });
+
+    it('defaults role to None when the roster has no real role, rather than fabricating one', () => {
+      const rows = generateMockEngagementRows('committee-1', [member('m0')]);
+      expect(rows[0]?.MEMBER_ROLE).toBe('None');
+    });
+
+    it('always passes through the real created_at as MEMBER_JOINED_AT', () => {
+      const realJoinDate = '2019-03-01T00:00:00.000Z';
+      const rows = generateMockEngagementRows('committee-1', [member('m0', { created_at: realJoinDate }), ...ROSTER.slice(1)]);
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_JOINED_AT).toBe(realJoinDate);
+    });
+
+    it('prefers a real non-None voting status over fabrication, even at the reserved Emeritus slot', () => {
+      const roster = [member('m0', { voting: { status: 'Observer' } as never }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Observer');
+    });
+
+    it('does not force an Emeritus override anywhere when the roster already has a real one', () => {
+      const roster = [
+        member('m0', { voting: { status: 'Voting Rep' } as never }),
+        member('m1', { voting: { status: 'Emeritus' } as never }),
+        ...ROSTER.slice(2),
+      ];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const emeritusRows = rows.filter((r) => r.MEMBER_VOTING_STATUS === 'Emeritus');
+      expect(emeritusRows).toHaveLength(1);
+      expect(emeritusRows[0]?.MEMBER_USER_ID).toBe('m1');
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
+    });
+
+    it('still guarantees an Emeritus member (fallback) when no real member has one', () => {
+      const roster = [member('m0', { voting: { status: 'Voting Rep' } as never }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(true);
+      // The member with a real (non-Emeritus) status is never the one overridden.
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
+    });
+
+    it('a real, already-recent join date exercises the Orlin scenario organically without needing the fallback', () => {
+      const recentJoin = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [member('m0'), member('m1', { created_at: recentJoin }), ...ROSTER.slice(2)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      expect(rows.find((r) => r.MEMBER_USER_ID === 'm1')?.MEMBER_JOINED_AT).toBe(recentJoin);
+    });
   });
 });

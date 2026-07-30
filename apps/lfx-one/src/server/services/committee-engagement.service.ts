@@ -23,15 +23,28 @@ import { buildCommitteeCacheKey, valkeyService } from './valkey.service';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * The live SQL in `queryEngagementRows` still selects these pre-finalization placeholder columns,
+ * not `CommitteeEngagementWarehouseRow`'s real fields — a distinct type (rather than casting to
+ * the finalized interface) so the compiler, not just a comment, reflects that the two shapes share
+ * no fields and there's no honest mapping between them.
+ */
+interface LegacyEngagementPlaceholderRow {
+  MEMBER_EMAIL: string;
+  ATTENDED_COUNT: number;
+  INVITED_COUNT: number;
+  COMPUTED_AT: string | Date | null;
+}
+
+/**
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705), gated between a
  * deterministic mock generator and the real (not-yet-deployed) warehouse read by
  * `ENGAGEMENT_BACKEND` (see `isEngagementMockBackend`), and joins whichever source produced rows
  * against the committee roster via `buildResponse`. Only the mock generator actually produces
  * `CommitteeEngagementWarehouseRow`-shaped rows today — the live SQL in `queryEngagementRows`
- * still targets the original placeholder columns (see that method's TODO) and, since the table
- * doesn't exist yet, always degrades to an empty row set before any shape mismatch could surface.
+ * still targets the original placeholder columns (see that method's TODO) and always resolves to
+ * an empty row set, explicitly, rather than ever handing `buildResponse` a mismatched shape.
  * `buildResponse` itself doesn't branch on which path ran; the live SQL still needs a rewrite to
- * genuinely match this shape once the real read surface is decided.
+ * genuinely produce this shape once the real read surface is decided.
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -48,7 +61,14 @@ export class CommitteeEngagementService {
     if (isEngagementMockBackend()) {
       const members = await this.committeeService.getCommitteeMembers(req, committeeUid);
       const rows = generateMockEngagementRows(committeeUid, members);
-      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window);
+      // The only production signal that a response is fabricated, not warehouse-sourced — nothing
+      // else in this response (data_available:true, real roster uids) distinguishes it otherwise.
+      logger.warning(req, 'get_committee_engagement', 'ENGAGEMENT_BACKEND is not live; returning deterministic mock rows', {
+        committee_uid: committeeUid,
+        window,
+        roster_size: members.length,
+      });
+      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock');
     }
 
     const [members, queryResult] = await Promise.all([
@@ -56,7 +76,7 @@ export class CommitteeEngagementService {
       this.queryEngagementRows(req, committeeUid, window),
     ]);
 
-    return this.buildResponse(req, committeeUid, members, queryResult, window);
+    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live');
   }
 
   /**
@@ -70,10 +90,13 @@ export class CommitteeEngagementService {
    *
    * TODO(LFXV2-1705 follow-up): this SQL still targets the original placeholder shape
    * (`MEMBER_EMAIL`/`ATTENDED_COUNT`/`INVITED_COUNT`/`COMPUTED_AT`), not the finalized
-   * `platinum_lfx_one_committee_meeting_attendance` model's real columns — harmless today only
-   * because the table doesn't exist yet and this always degrades via `isMissingObjectError`
-   * regardless of what it selects. Needs a full rewrite once the live read surface (query-service
-   * vs. direct Snowflake) is decided.
+   * `platinum_lfx_one_committee_meeting_attendance` model's real columns. Typed against
+   * `LegacyEngagementPlaceholderRow` — not `CommitteeEngagementWarehouseRow` — since the two
+   * shapes share no fields and there's no honest mapping between them; a successful query (which
+   * would only happen if a table under the old placeholder name/columns exists, not the real
+   * model) degrades the same way a missing table does rather than silently type-casting an old row
+   * into the new shape and producing `undefined`/`NaN` throughout the response. Needs a full
+   * rewrite once the live read surface (query-service vs. direct Snowflake) is decided.
    */
   private async queryEngagementRows(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementQueryResult> {
     const key = buildCommitteeCacheKey(committeeUid, `engagement-rows:${window}`);
@@ -90,12 +113,29 @@ export class CommitteeEngagementService {
     `;
     logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid, window });
 
-    let rows: CommitteeEngagementWarehouseRow[];
-    let degradedMissingObject = false;
+    const rows: CommitteeEngagementWarehouseRow[] = [];
+    let dataAvailable = false;
     try {
-      const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [committeeUid, window], { expectMissingObject: true });
-      rows = result.rows;
-      logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, window, row_count: rows.length });
+      const result = await this.snowflakeService.execute<LegacyEngagementPlaceholderRow>(sql, [committeeUid, window], { expectMissingObject: true });
+      if (result.rows.length > 0) {
+        // A table under the placeholder name/columns exists and returned rows — can't happen once
+        // the real model deploys under its own name, but if it ever does, this is not a shape this
+        // service can map, so it degrades rather than fabricating MEMBER_USER_ID/etc. from columns
+        // that don't have that information.
+        logger.warning(
+          req,
+          'get_committee_engagement',
+          'Live engagement query returned rows in the pre-finalization placeholder shape; cannot map to the current model, returning empty response',
+          {
+            committee_uid: committeeUid,
+            window,
+            row_count: result.rows.length,
+          }
+        );
+      } else {
+        dataAvailable = true;
+        logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, window, row_count: 0 });
+      }
     } catch (error) {
       // Pre-dbt-deploy the engagement table is absent; degrade to the empty response the
       // members table expects instead of 5xx per committee page load. `dataAvailable: false`
@@ -106,8 +146,6 @@ export class CommitteeEngagementService {
       // misconfiguration will degrade identically to the pre-deploy state. The message and
       // attached `err` below are worded to not assert which case this is; check `err` first.
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
-      degradedMissingObject = true;
-      rows = [];
       logger.warning(req, 'get_committee_engagement', 'Engagement query hit a missing-object/not-authorized error; returning empty response', {
         committee_uid: committeeUid,
         window,
@@ -115,11 +153,11 @@ export class CommitteeEngagementService {
       });
     }
 
-    if (key !== null && !degradedMissingObject) {
+    if (key !== null && dataAvailable) {
       await valkeyService.setJson(key, rows, VALKEY_CACHE.COMMITTEE_ENGAGEMENT_TTL_SECONDS);
     }
 
-    return { rows, dataAvailable: !degradedMissingObject };
+    return { rows, dataAvailable };
   }
 
   /**
@@ -140,7 +178,8 @@ export class CommitteeEngagementService {
     committeeUid: string,
     members: CommitteeMember[],
     queryResult: CommitteeEngagementQueryResult,
-    window: CommitteeEngagementWindow
+    window: CommitteeEngagementWindow,
+    dataSource: 'mock' | 'live'
   ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
@@ -225,6 +264,7 @@ export class CommitteeEngagementService {
       // `formatCommitteeEngagementFreshness` gives the UI a "Updated daily" label for this case.
       computed_at: null,
       data_available: dataAvailable,
+      data_source: dataSource,
     };
   }
 

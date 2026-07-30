@@ -280,6 +280,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
         summary: { attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 },
         computed_at: null,
         data_available: false,
+        data_source: 'live',
       });
     });
 
@@ -325,16 +326,34 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.members[0]).toMatchObject({ attended: 5, invited: 5 });
     });
 
-    it('caches the rows on a successful query (cache miss)', async () => {
+    it('caches an empty result on a genuinely successful (empty) query', async () => {
       buildCommitteeCacheKey.mockReturnValue('cache-key');
       getJson.mockResolvedValueOnce(null);
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
-      const rows = [row({ MEMBER_USER_ID: 'm1' })];
-      execute.mockResolvedValueOnce({ rows });
+      execute.mockResolvedValueOnce({ rows: [] });
 
-      await service.getCommitteeEngagement(req, 'committee-1', '30d');
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(setJson).toHaveBeenCalledWith('cache-key', rows, 3600);
+      expect(setJson).toHaveBeenCalledWith('cache-key', [], 3600);
+      expect(result.data_available).toBe(true);
+    });
+
+    it('degrades (and does not cache) when the live query succeeds but returns rows in the old placeholder shape, since they cannot be mapped to the current model', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce(null);
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockResolvedValueOnce({ rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 2, COMPUTED_AT: null }] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(false);
+      expect(setJson).not.toHaveBeenCalled();
+      expect(warning).toHaveBeenCalledWith(
+        req,
+        'get_committee_engagement',
+        expect.stringContaining('pre-finalization placeholder shape'),
+        expect.objectContaining({ committee_uid: 'committee-1', row_count: 1 })
+      );
     });
 
     it('does not cache the missing-object degrade — "no data yet" must not outlive the real dbt model landing', async () => {

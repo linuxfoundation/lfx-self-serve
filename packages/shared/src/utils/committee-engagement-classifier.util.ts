@@ -3,21 +3,7 @@
 
 import { COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS } from '../constants/committee-engagement.constants';
 import { CommitteeMemberVotingStatus } from '../enums';
-import type { CommitteeEngagementClassification } from '../interfaces/committee-engagement.interface';
-
-/**
- * Classification inputs beyond the raw counts, per LFXV2-1705's finalized model semantics
- * (`platinum_lfx_one_committee_meeting_attendance`, `lf-dbt#2694`): `votingStatus` (`'Emeritus'`
- * short-circuits to a neutral tier) and `joinedWithinWindow` (whether `member_joined_at` falls
- * after the requested window's start — tenure clipping, so a brand-new member's zero invites
- * doesn't read as disengagement).
- */
-export interface CommitteeEngagementClassificationInput {
-  attended: number;
-  invited: number;
-  votingStatus: string;
-  joinedWithinWindow: boolean;
-}
+import type { CommitteeEngagementClassification, CommitteeEngagementClassificationInput } from '../interfaces/committee-engagement.interface';
 
 /**
  * `attended / invited`, 0 when nobody was invited. Clamps `attended` to `invited` so a warehouse
