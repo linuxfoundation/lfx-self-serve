@@ -142,7 +142,9 @@ export function voteToCalendarEvent(vote: Pick<Vote, 'uid' | 'name' | 'end_time'
 }
 
 /** Builds a FullCalendar event input for a committee survey cutoff. */
-export function surveyToCalendarEvent(survey: Pick<Survey, 'uid' | 'survey_title' | 'survey_cutoff_date'> & { survey_cutoff_date: string }): MeetingCalendarEventInput {
+export function surveyToCalendarEvent(
+  survey: Pick<Survey, 'uid' | 'survey_title' | 'survey_cutoff_date'> & { survey_cutoff_date: string }
+): MeetingCalendarEventInput {
   const isPast = isSurveyCalendarEventPast(survey);
   const colors = resolveSurveyCalendarColors(isPast);
   const classNames = ['survey-event', 'cursor-default'];

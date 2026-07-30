@@ -874,12 +874,7 @@ describe('isVoteCalendarEventPast', () => {
   });
 
   it('returns true when the close time has passed', () => {
-    expect(
-      isVoteCalendarEventPast(
-        { end_time: '2026-01-01T00:00:00Z', status: PollStatus.ACTIVE } as Vote,
-        new Date('2026-01-02T00:00:00Z')
-      )
-    ).toBe(true);
+    expect(isVoteCalendarEventPast({ end_time: '2026-01-01T00:00:00Z', status: PollStatus.ACTIVE } as Vote, new Date('2026-01-02T00:00:00Z'))).toBe(true);
   });
 });
 
