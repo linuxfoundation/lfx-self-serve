@@ -47,7 +47,6 @@
     <div class="flex flex-col gap-3" data-testid="total-projects-drawer-primary">
       <!-- Section Header -->
       <div class="flex items-center justify-between">
-        <!-- Title + Tooltip -->
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-gray-900">Total Projects</h3>
           <button
@@ -61,150 +60,46 @@
           </button>
         </div>
 
-        <!-- Chart / Table Toggle -->
-        <lfx-select-button
-          [form]="viewForm"
-          control="primaryView"
-          [options]="viewOptions"
-          optionLabel="label"
-          optionValue="value"
-          [unselectable]="true"
-          (onChange)="onPrimaryViewChange($event)"
-          data-testid="total-projects-drawer-view-toggle"></lfx-select-button>
-      </div>
-
-      <!-- Chart View -->
-      @if (primaryView() === 'chart') {
-        @if (dataLoading()) {
-          <div class="flex items-center justify-center py-12" data-testid="total-projects-drawer-chart-loading">
-            <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
-          </div>
-        } @else if (hasData()) {
-          <div class="h-[200px]" data-testid="total-projects-drawer-chart">
-            <lfx-chart type="line" [data]="primaryChartData()" [options]="primaryChartOptions" height="100%"></lfx-chart>
-          </div>
-        } @else {
-          <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="total-projects-drawer-chart-empty">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No trend data available for this foundation.</p>
+        @if (hasData() && !dataLoading()) {
+          <div class="flex items-baseline gap-2">
+            <span class="text-xl font-semibold text-gray-900" data-testid="total-projects-drawer-metric">{{ metricValue() }}</span>
+            <lfx-metric-delta [delta]="delta()" testid="total-projects-drawer-delta" />
           </div>
         }
-      }
+      </div>
 
-      <!-- Table View -->
-      @if (primaryView() === 'table') {
-        <div class="flex flex-col gap-3" data-testid="total-projects-drawer-table">
-          <!-- Search Bar -->
-          <lfx-input-text
-            [form]="searchForm"
-            control="query"
-            type="text"
-            size="small"
-            icon="fa-light fa-magnifying-glass"
-            placeholder="Search projects by name or stage..."
-            data-testid="total-projects-drawer-search"></lfx-input-text>
-
-          <!-- Loading state -->
-          @if (drawerLoading()) {
-            <div class="flex items-center justify-center py-12" data-testid="total-projects-drawer-table-loading">
-              <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
-            </div>
-          } @else {
-            <!-- Table -->
-            <div class="overflow-auto border border-slate-200 rounded-lg">
-              <table class="w-full text-sm" data-testid="total-projects-drawer-table-grid">
-                <thead class="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Project Name</th>
-                    <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Lifecycle Stage</th>
-                    <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Contributors</th>
-                    <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Commits (90d)</th>
-                    <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Maintainers</th>
-                    <th class="text-right py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Stars</th>
-                    <th class="text-left py-3 px-4 font-medium text-slate-700 whitespace-nowrap">Last Updated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (project of primaryPaginatedData(); track project.id) {
-                    <tr class="border-b border-slate-100 hover:bg-slate-50" [attr.data-testid]="'total-projects-drawer-table-row-' + project.id">
-                      <td class="py-3 px-4 font-medium text-slate-900 whitespace-nowrap">{{ project.projectName }}</td>
-                      <td class="py-3 px-4">
-                        @if (project.lifecycleStage) {
-                          <span
-                            class="inline-flex px-2 py-1 rounded-full text-xs"
-                            [ngClass]="{
-                              'bg-green-100 text-green-800': project.lifecycleStage === LifecycleStage.Graduated,
-                              'bg-blue-100 text-blue-800': project.lifecycleStage === LifecycleStage.Incubating,
-                              'bg-purple-100 text-purple-800': project.lifecycleStage === LifecycleStage.Sandbox,
-                            }">
-                            {{ project.lifecycleStage }}
-                          </span>
-                        } @else {
-                          <span class="text-sm text-gray-400">&mdash;</span>
-                        }
-                      </td>
-                      <td class="text-right py-3 px-4 text-slate-700">{{ project.activeContributors | number }}</td>
-                      <td class="text-right py-3 px-4 text-slate-700">{{ project.commitsLast90Days | number }}</td>
-                      <td class="text-right py-3 px-4 text-slate-700">{{ project.maintainers }}</td>
-                      <td class="text-right py-3 px-4 text-slate-700">{{ project.stars | number }}</td>
-                      <td class="py-3 px-4 text-slate-600 whitespace-nowrap">{{ project.lastUpdated ?? '—' }}</td>
-                    </tr>
-                  } @empty {
-                    <tr>
-                      <td colspan="7" class="py-8 text-center text-slate-500">
-                        @if (primarySearch()) {
-                          No projects found matching "{{ primarySearch() }}"
-                        } @else {
-                          No project data available for this foundation.
-                        }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-
-            <!-- Pagination -->
-            @if (primaryFilteredData().length > 0) {
-              <div class="flex items-center justify-between" data-testid="total-projects-drawer-pagination">
-                <span class="text-sm text-slate-600">{{ primaryPageInfo() }}</span>
-
-                <div class="flex items-center gap-1">
-                  <lfx-button
-                    icon="fa-light fa-chevron-left"
-                    [outlined]="true"
-                    size="small"
-                    [disabled]="primaryPage() === 1"
-                    (onClick)="goToPrimaryPage(primaryPage() - 1)"
-                    ariaLabel="Previous page"></lfx-button>
-
-                  @for (page of primaryVisiblePages(); track page) {
-                    <lfx-button
-                      [label]="page.toString()"
-                      [outlined]="primaryPage() !== page"
-                      size="small"
-                      (onClick)="goToPrimaryPage(page)"
-                      [ariaLabel]="'Page ' + page"></lfx-button>
-                  }
-
-                  <lfx-button
-                    icon="fa-light fa-chevron-right"
-                    [outlined]="true"
-                    size="small"
-                    [disabled]="primaryPage() === primaryTotalPages()"
-                    (onClick)="goToPrimaryPage(primaryPage() + 1)"
-                    ariaLabel="Next page"></lfx-button>
-                </div>
-              </div>
-            }
-          }
+      <!-- Chart -->
+      @if (dataLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="total-projects-drawer-chart-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasData()) {
+        <div class="h-[200px]" data-testid="total-projects-drawer-chart">
+          <lfx-chart type="line" [data]="primaryChartData()" [options]="primaryChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-gray-200 rounded-lg" data-testid="total-projects-drawer-chart-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No trend data available for this foundation.</p>
         </div>
       }
     </div>
 
     <!-- Secondary Section: Projects by Lifecycle Stage -->
     <div class="flex flex-col gap-3" data-testid="total-projects-drawer-secondary">
-      <h3 class="text-sm font-medium text-gray-900">Projects by Lifecycle Stage</h3>
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">Projects by Lifecycle Stage</h3>
+        <button
+          type="button"
+          class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+          pTooltip="Breakdown of foundation projects by lifecycle stage (Sandbox, Incubating, Graduated)"
+          tooltipPosition="top"
+          tooltipEvent="both"
+          aria-label="Breakdown of foundation projects by lifecycle stage (Sandbox, Incubating, Graduated)"
+          data-testid="total-projects-drawer-lifecycle-info">
+          <i class="fa-light fa-circle-info"></i>
+        </button>
+      </div>
       @if (drawerLoading()) {
         <div class="flex items-center justify-center py-8">
           <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
@@ -214,11 +109,136 @@
           <lfx-chart type="bar" [data]="lifecycleChartData()" [options]="barChartSectionOptions" height="100%"></lfx-chart>
         </div>
       } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="total-projects-drawer-lifecycle-empty">
+        <div class="text-center py-8 border border-gray-200 rounded-lg" data-testid="total-projects-drawer-lifecycle-empty">
           <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
           <p class="text-sm text-gray-500">No lifecycle data available for this foundation.</p>
         </div>
       }
+    </div>
+
+    <!-- Table Section: searchable project list -->
+    <div class="flex flex-col gap-3" data-testid="total-projects-drawer-table-section">
+      <!-- Section Header -->
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">All Projects</h3>
+        <button
+          type="button"
+          class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+          pTooltip="Search and browse individual foundation projects"
+          tooltipPosition="top"
+          tooltipEvent="both"
+          aria-label="Search and browse individual foundation projects"
+          data-testid="total-projects-drawer-table-info">
+          <i class="fa-light fa-circle-info"></i>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-3" data-testid="total-projects-drawer-table">
+        <!-- Search Bar -->
+        <lfx-input-text
+          [form]="searchForm"
+          control="query"
+          type="text"
+          size="small"
+          icon="fa-light fa-magnifying-glass"
+          placeholder="Search projects by name or stage..."
+          data-testid="total-projects-drawer-search"></lfx-input-text>
+
+        <!-- Loading state -->
+        @if (drawerLoading()) {
+          <div class="flex items-center justify-center py-12" data-testid="total-projects-drawer-table-loading">
+            <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+          </div>
+        } @else {
+          <!-- Table -->
+          <div class="overflow-auto border border-gray-200 rounded-lg">
+            <table class="w-full text-sm" data-testid="total-projects-drawer-table-grid">
+              <thead class="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th class="text-left py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Project Name</th>
+                  <th class="text-left py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Lifecycle Stage</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Contributors</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Commits (90d)</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Maintainers</th>
+                  <th class="text-right py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Stars</th>
+                  <th class="text-left py-3 px-4 font-medium text-gray-700 whitespace-nowrap">Last Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (project of primaryPaginatedData(); track project.id) {
+                  <tr class="border-b border-gray-100 hover:bg-gray-50" [attr.data-testid]="'total-projects-drawer-table-row-' + project.id">
+                    <td class="py-3 px-4 font-medium text-gray-900 whitespace-nowrap">{{ project.projectName }}</td>
+                    <td class="py-3 px-4">
+                      @if (project.lifecycleStage) {
+                        <span
+                          class="inline-flex px-2 py-1 rounded-full text-xs"
+                          [ngClass]="{
+                            'bg-emerald-100 text-emerald-800': project.lifecycleStage === LifecycleStage.Graduated,
+                            'bg-blue-100 text-blue-800': project.lifecycleStage === LifecycleStage.Incubating,
+                            'bg-violet-100 text-violet-800': project.lifecycleStage === LifecycleStage.Sandbox,
+                          }">
+                          {{ project.lifecycleStage }}
+                        </span>
+                      } @else {
+                        <span class="text-sm text-gray-400">&mdash;</span>
+                      }
+                    </td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.activeContributors | number }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.commitsLast90Days | number }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.maintainers }}</td>
+                    <td class="text-right py-3 px-4 text-gray-700">{{ project.stars | number }}</td>
+                    <td class="py-3 px-4 text-gray-600 whitespace-nowrap">{{ project.lastUpdated ?? '—' }}</td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="7" class="py-8 text-center text-gray-500">
+                      @if (primarySearch()) {
+                        No projects found matching "{{ primarySearch() }}"
+                      } @else {
+                        No project data available for this foundation.
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          @if (primaryFilteredData().length > 0) {
+            <div class="flex items-center justify-between" data-testid="total-projects-drawer-pagination">
+              <span class="text-sm text-gray-600">{{ primaryPageInfo() }}</span>
+
+              <div class="flex items-center gap-1">
+                <lfx-button
+                  icon="fa-light fa-chevron-left"
+                  [outlined]="true"
+                  size="small"
+                  [disabled]="primaryPage() === 1"
+                  (onClick)="goToPrimaryPage(primaryPage() - 1)"
+                  ariaLabel="Previous page"></lfx-button>
+
+                @for (page of primaryVisiblePages(); track page) {
+                  <lfx-button
+                    [label]="page.toString()"
+                    [outlined]="primaryPage() !== page"
+                    size="small"
+                    (onClick)="goToPrimaryPage(page)"
+                    [ariaLabel]="'Page ' + page"></lfx-button>
+                }
+
+                <lfx-button
+                  icon="fa-light fa-chevron-right"
+                  [outlined]="true"
+                  size="small"
+                  [disabled]="primaryPage() === primaryTotalPages()"
+                  (onClick)="goToPrimaryPage(primaryPage() + 1)"
+                  ariaLabel="Next page"></lfx-button>
+              </div>
+            </div>
+          }
+        }
+      </div>
     </div>
 
     <!-- Insights Handoff -->
