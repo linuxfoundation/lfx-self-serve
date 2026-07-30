@@ -99,11 +99,13 @@ export interface CommitteeEngagementResponse {
    * in `committee-engagement.service.ts`). Once that rewrite lands, `true` will mean what it's meant
    * to now: real-shaped rows, even zero of them for a genuinely new committee.
    *
-   * This flag is about shape, not truth: `true` means "there's a per-member row to render for every
-   * roster member," not "the numbers are real" — a mock response and the placeholder zero-row case
-   * are both `true` while carrying no real attendance signal. Check `data_source` for that
-   * distinction instead. The UI should key its "no data available" placeholder state off this flag
-   * rather than inferring it from all-zero numbers.
+   * `true` means the read completed without degrading (mock generation, a cache hit, or a live
+   * query that neither errored nor returned unmappable placeholder rows) — it says nothing about
+   * whether the numbers are real, and today neither this flag nor `data_source` can guarantee that
+   * (see the imprecise `true` cases above); that guarantee only exists once the live SQL rewrite
+   * lands. It also doesn't gate whether per-member rows are present — `members[]` is roster-complete
+   * either way, zeroed/`Inactive` on `false`. The UI should key its "no data available" placeholder
+   * state off this flag rather than inferring it from all-zero numbers.
    */
   data_available: boolean;
   /**
