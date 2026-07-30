@@ -60,7 +60,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 - **Input:** User clicks Foundation/Project lens and chooses Foundation context without selecting a row.
 - **Required permission:** At least one auditor/explicit-role-permitted foundation.
 - **Destination:** Last selected valid foundation first; highest-grant eligible foundation only on cold start.
-- **Default order:** Existing selected foundation (if still auditor/role-permitted), last selected valid foundation (if still auditor/role-permitted), foundation with a writer/manage grant, foundation with an auditor/explicit role grant, first grant-permitted foundation in stable sort order, none -> stay in Me/discovery.
+- **Default order:** Existing selected foundation (if still auditor/role-permitted), last selected valid foundation (if still auditor/role-permitted), foundation with a writer/manage grant (stable sort order breaks ties among multiple), otherwise foundation with an auditor/explicit role grant (stable sort order breaks ties), none -> stay in Me/discovery.
 - **Allowed actions:** Read context data. Create/manage only if writer permission exists for the selected foundation.
 - **Denied actions:** Never default into a no-grant foundation. Do not show create/manage because of persona alone in the target model.
 
@@ -69,7 +69,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 - **Input:** User clicks Foundation/Project lens and chooses Project context without selecting a row.
 - **Required permission:** At least one auditor/explicit-role-permitted project.
 - **Destination:** Last selected valid project first; highest-grant eligible project only on cold start.
-- **Default order:** Existing selected project (if still auditor/role-permitted), last selected valid project (if still auditor/role-permitted), project with a writer/manage grant, project with an auditor/explicit role grant, first grant-permitted project in stable sort order, none -> stay in Me/discovery.
+- **Default order:** Existing selected project (if still auditor/role-permitted), last selected valid project (if still auditor/role-permitted), project with a writer/manage grant (stable sort order breaks ties among multiple), otherwise project with an auditor/explicit role grant (stable sort order breaks ties), none -> stay in Me/discovery.
 - **Allowed actions:** Read context data. Create/manage only if writer permission exists for the selected project.
 - **Denied actions:** Never default into a no-grant project. Contributor/Maintainer persona alone does not grant create/manage authority or context entry.
 
@@ -95,9 +95,9 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Create Action From Me
 
 - **Example:** Create Meeting, Create Group, Add Mailing List, Create Newsletter, Create Vote, Create Survey, Upload File, Add Link.
-- **Required permission:** User must choose a target Foundation/Project context, then writer permission must pass for that target.
+- **Required permission:** User must choose a target, then the action-specific grant must pass for that target. For most creates the target is Foundation/Project and the grant is writer permission. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`; Create Meeting alone can also be authorized by `project.meeting_coordinator` without project writer.
 - **Destination:** Create flow scoped to the chosen target context.
-- **Allowed actions:** Continue to create form after target context and writer permission are confirmed.
+- **Allowed actions:** Continue to create form after target context and its action-specific grant are confirmed.
 - **Denied actions:** Do not create against an implicit/global Me context.
 
 ### Pending Action From Me
@@ -152,6 +152,9 @@ terms (auditor grant, writer grant, named capability).
   auditor access this scenario assumes — without an auditor/explicit role
   grant, this user has no Foundation context at all (see Context Entry
   above) and works from Me instead.
+- **Regression case:** a user with a Board Member presentation signal but no
+  auditor/explicit role grant on the foundation never sees it in the
+  Foundation selector and is never defaulted into it.
 
 ### Maintainer-Shaped Project Presentation With Writer Grant
 
@@ -187,6 +190,9 @@ terms (auditor grant, writer grant, named capability).
 - **Note:** same caveat as Board Member above — the Contributor signal alone
   does not grant Foundation/Project context entry; most contributors should
   not be auditors, and without a grant this user's experience is Me only.
+- **Regression case:** a user with a Contributor presentation signal but no
+  auditor/explicit role grant on the project never sees it in the Project
+  selector and is never defaulted into it.
 
 ### LF Staff Mode
 
@@ -203,7 +209,7 @@ terms (auditor grant, writer grant, named capability).
 
 - **Me:** Show cross-context meetings and personal meeting actions.
 - **Foundation/Project:** Show context-scoped meetings.
-- **Create/manage:** Requires target context plus writer permission.
+- **Create/manage:** Requires target context plus writer permission, OR `project.meeting_coordinator` on the target project (meetings only), OR `committee.writer` when the target is a committee/group.
 - **Read-only:** User can view/join/RSVP where eligible, but cannot edit, delete, invite as manager, or manage resources.
 
 ### Groups
@@ -231,14 +237,14 @@ terms (auditor grant, writer grant, named capability).
 
 - **Me:** Show votes the user has been invited to or can view across contexts.
 - **Foundation/Project:** Show context-scoped votes.
-- **Create/manage:** Requires target context plus writer permission.
+- **Create/manage:** Requires target context plus writer permission, OR `committee.writer` when the target is a committee/group.
 - **Read-only:** User can vote or view results when eligible, but cannot create, edit, close, or delete votes.
 
 ### Surveys
 
 - **Me:** Show surveys the user has been invited to or can view across contexts.
 - **Foundation/Project:** Show context-scoped surveys.
-- **Create/manage:** Requires target context plus writer permission.
+- **Create/manage:** Requires target context plus writer permission, OR `committee.writer` when the target is a committee/group.
 - **Read-only:** User can respond or view allowed results, but cannot create, edit, close, or delete surveys.
 
 ### Documents
