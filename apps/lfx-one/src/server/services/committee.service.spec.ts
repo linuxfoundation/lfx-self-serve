@@ -26,9 +26,12 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
-vi.mock('../helpers/query-service.helper', () => ({
-  fetchAllQueryResources: vi.fn(),
-}));
+vi.mock('../helpers/query-service.helper', async () => {
+  const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+  return {
+    fetchAllQueryResources: vi.fn(actual.fetchAllQueryResources),
+  };
+});
 vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn() }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
