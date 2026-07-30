@@ -4,7 +4,7 @@
 import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 
-import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from './auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, resolveAuditUserDisplayName } from './auth-helper';
 
 interface TargetUser {
   email?: string;
@@ -73,5 +73,29 @@ describe('getEffectiveSub', () => {
   it('returns the OIDC sub when not impersonating', () => {
     const req = buildReq({ oidc: { sub: 'auth0|user' } });
     expect(getEffectiveSub(req)).toBe('auth0|user');
+  });
+});
+
+describe('resolveAuditUserDisplayName', () => {
+  it('returns the audit user name when present', () => {
+    expect(resolveAuditUserDisplayName({ name: 'Ada Lovelace', username: 'alovelace' })).toBe('Ada Lovelace');
+  });
+
+  it('falls back to stripped username on a partial audit user object', () => {
+    expect(resolveAuditUserDisplayName({ username: 'auth0|alovelace' })).toBe('alovelace');
+  });
+
+  it('falls back to a legacy flat username field', () => {
+    expect(resolveAuditUserDisplayName(undefined, 'auth0|legacyuser')).toBe('legacyuser');
+  });
+
+  it('falls back to legacy username when audit username is whitespace-only', () => {
+    expect(resolveAuditUserDisplayName({ username: '   ' }, 'auth0|legacyuser')).toBe('legacyuser');
+    expect(resolveAuditUserDisplayName(undefined, '   ')).toBeUndefined();
+  });
+
+  it('returns undefined when no name or username is available', () => {
+    expect(resolveAuditUserDisplayName(undefined, undefined)).toBeUndefined();
+    expect(resolveAuditUserDisplayName({ name: '  ', username: '' }, '')).toBeUndefined();
   });
 });

@@ -12,9 +12,17 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, PAST_MEETING_SORT, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
-import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { Committee, Meeting, MeetingCalendarClickProps, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
+import {
+  getCurrentOrNextOccurrence,
+  hasMeetingEnded,
+  meetingToCalendarEvents,
+  resolveMeetingCalendarClickRoute,
+  sortPastMeetingsDescending,
+  surveyToCalendarEvent,
+  voteToCalendarEvent,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -161,11 +169,11 @@ export class CommitteeMeetingsComponent {
 
   /** Handles FullCalendar event click — navigates to meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean };
-    if (props.cancelled) return;
-    if (props.type === 'meeting' && props.meetingId) {
-      void this.router.navigate(['/meetings', props.meetingId]);
+    const route = resolveMeetingCalendarClickRoute(arg.event.extendedProps as MeetingCalendarClickProps, arg.event.start);
+    if (!route) {
+      return;
     }
+    void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
   /** Checks writer permission fresh before navigating — prevents a demoted member from reaching /meetings/create. */
@@ -276,81 +284,13 @@ export class CommitteeMeetingsComponent {
       const allMeetings: (Meeting | PastMeeting)[] = [...this.upcomingMeetings(), ...externalData().pastMeetings];
       const { votes, surveys } = externalData();
 
-      const meetingEvents = allMeetings.flatMap((m) => this.meetingToEvents(m));
-      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => this.voteToEvent(v));
-      const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => this.surveyToEvent(s));
+      const meetingEvents = allMeetings.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
+      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => voteToCalendarEvent(v) as EventInput);
+      const surveyEvents = surveys
+        .filter((s): s is Survey & { survey_cutoff_date: string } => !!s.survey_cutoff_date)
+        .map((s) => surveyToCalendarEvent(s) as EventInput);
 
       return [...meetingEvents, ...voteEvents, ...surveyEvents];
     });
-  }
-
-  private meetingToEvents(meeting: Meeting | PastMeeting): EventInput[] {
-    const typeKey = (meeting.meeting_type ?? 'default').toLowerCase();
-    const colors = MEETING_TYPE_COLORS[typeKey] ?? MEETING_TYPE_COLORS['default'];
-
-    // Recurring meetings — expand each occurrence as a separate calendar event
-    if (meeting.occurrences && meeting.occurrences.length > 0) {
-      return meeting.occurrences.map((occ) => {
-        const isCancelled = occ.status === 'cancel';
-        const c = isCancelled ? CANCELLED_COLOR : colors;
-        return {
-          id: `${meeting.id}-${occ.occurrence_id}`,
-          title: occ.title || meeting.title,
-          start: occ.start_time,
-          end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
-          backgroundColor: c.bg,
-          borderColor: c.border,
-          textColor: '#ffffff',
-          display: 'block',
-          // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
-          classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
-          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
-        };
-      });
-    }
-
-    // Non-recurring — single event
-    return [
-      {
-        id: meeting.id,
-        title: meeting.title,
-        start: meeting.start_time,
-        end: addMinutesToDate(meeting.start_time, meeting.duration).toISOString(),
-        backgroundColor: colors.bg,
-        borderColor: colors.border,
-        textColor: '#ffffff',
-        display: 'block',
-        classNames: ['meeting-event'],
-        extendedProps: { type: 'meeting', meetingId: meeting.id },
-      },
-    ];
-  }
-
-  private voteToEvent(vote: Vote): EventInput {
-    return {
-      id: `vote-${vote.uid}`,
-      title: `Vote closes: ${vote.name}`,
-      start: vote.end_time,
-      allDay: true,
-      backgroundColor: VOTE_COLOR.bg,
-      borderColor: VOTE_COLOR.border,
-      textColor: '#ffffff',
-      classNames: ['cursor-default'],
-      extendedProps: { type: 'vote', voteId: vote.uid },
-    };
-  }
-
-  private surveyToEvent(survey: Survey): EventInput {
-    return {
-      id: `survey-${survey.uid}`,
-      title: `Survey: ${survey.survey_title}`,
-      start: survey.survey_cutoff_date ?? undefined,
-      allDay: true,
-      backgroundColor: SURVEY_COLOR.bg,
-      borderColor: SURVEY_COLOR.border,
-      textColor: '#ffffff',
-      classNames: ['cursor-default'],
-      extendedProps: { type: 'survey', surveyId: survey.uid },
-    };
   }
 }

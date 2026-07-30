@@ -179,8 +179,8 @@
                     </div>
                   }
 
-                  <!-- Occurrence Navigation (recurring meetings only) -->
-                  @if (meeting().recurrence && occurrenceLabel()) {
+                  <!-- Occurrence Navigation (recurring meetings; past pages key off the series timeline since ITX past payloads omit `recurrence`) -->
+                  @if (occurrenceLabel()) {
                     <div class="flex items-center gap-3" data-testid="occurrence-navigation">
                       @if (previousOccurrenceUrl(); as prevUrl) {
                         <a

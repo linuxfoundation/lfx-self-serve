@@ -3,7 +3,7 @@
 
 import { Request } from 'express';
 
-import { LfxAccessTokenClaims } from '@lfx-one/shared/interfaces';
+import { LfxAccessTokenClaims, AuditUserProfile } from '@lfx-one/shared/interfaces';
 
 /**
  * Strips the auth provider prefix (e.g. "auth0|") from a username/sub claim.
@@ -25,7 +25,20 @@ export function stripAuthPrefix(username: string): string {
  */
 export function cleanUserDisplayName(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
-  return stripAuthPrefix(value);
+  const cleaned = stripAuthPrefix(value).trim();
+  return cleaned || undefined;
+}
+
+/**
+ * Resolves a human-friendly Shared By label from an upstream audit user object,
+ * with fallbacks for partial profiles and legacy flat username fields.
+ */
+export function resolveAuditUserDisplayName(user?: AuditUserProfile | null, legacyUsername?: string | null): string | undefined {
+  const name = user?.name?.trim();
+  if (name) return name;
+  const fromUser = cleanUserDisplayName(user?.username);
+  if (fromUser) return fromUser;
+  return cleanUserDisplayName(legacyUsername);
 }
 
 /**
