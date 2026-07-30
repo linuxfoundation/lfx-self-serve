@@ -260,6 +260,13 @@ test.describe('Linux.com email — service unavailable', () => {
       return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Bad gateway' }) });
     });
 
+    // Capture console.error output so we can assert the catchError logs the failure
+    // (component logs 'Failed to load Linux.com alias state:' before falling back).
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+
     await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await expect(page).not.toHaveURL(/auth0\.com/);
@@ -267,5 +274,8 @@ test.describe('Linux.com email — service unavailable', () => {
     await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
+
+    // The catchError path must log the underlying failure so it stays diagnosable in production.
+    await expect.poll(() => consoleErrors).toEqual(expect.arrayContaining([expect.stringContaining('Failed to load Linux.com alias state')]));
   });
 });
