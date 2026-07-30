@@ -12,6 +12,7 @@ import {
   hasMeetingEnded,
   isCalendarDeadlinePast,
   isMeetingOccurrenceCancelled,
+  isOccurrencePast,
   isVoteCalendarEventPast,
   resolveMeetingCalendarColors,
   resolveSurveyCalendarColors,
@@ -61,7 +62,7 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
   const pastRow = isPastMeetingCalendarRow(meeting);
   const startTimeMs = pastRow ? getPastMeetingStartTimeMs(meeting) : null;
   const startTime = startTimeMs !== null ? new Date(startTimeMs).toISOString() : meeting.start_time;
-  const isPast = pastRow || hasMeetingEnded(meeting);
+  const isPast = isOccurrencePast(startTime, meeting.duration);
   const colors = resolveMeetingCalendarColors(false, isPast);
   const pastResourceId = pastRow ? getPastMeetingResourceId(meeting) : undefined;
   const classNames = ['meeting-event'];
