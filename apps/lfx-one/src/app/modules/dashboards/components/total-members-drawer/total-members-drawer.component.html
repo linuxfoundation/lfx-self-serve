@@ -70,8 +70,13 @@
 
       <!-- Chart -->
       @if (dataLoading()) {
-        <div class="flex items-center justify-center py-12" data-testid="total-members-drawer-chart-loading">
-          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        <div
+          class="flex items-center justify-center py-12"
+          role="status"
+          aria-live="polite"
+          aria-label="Loading member organizations chart"
+          data-testid="total-members-drawer-chart-loading">
+          <i aria-hidden="true" class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
         </div>
       } @else if (hasData()) {
         <div class="h-[280px]" data-testid="total-members-drawer-chart">
