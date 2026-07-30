@@ -34,7 +34,7 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
@@ -1113,6 +1113,15 @@ export class CommitteeService {
    * Fetches join applications for a committee from the query index.
    */
   public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
+    const committee = await this.getCommitteeById(req, committeeId);
+    if (committee.writer !== true) {
+      throw new AuthorizationError('You do not have permission to view join applications for this group.', {
+        operation: 'get_committee_applications',
+        service: 'committee_service',
+        path: `/committees/${committeeId}/applications`,
+      });
+    }
+
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];

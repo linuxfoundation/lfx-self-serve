@@ -48,6 +48,9 @@ test.describe('Group Members tab join modes (LFXV2-2690)', () => {
   });
 
   test('admin in application mode: pending applications section renders when applications exist', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true, join_mode: 'application' }) });
+
+    // Register after mockCommitteeApis — Playwright runs the last matching route first.
     await page.route(`**/api/committees/${COMMITTEE_UID}/applications*`, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
       return route.fulfill({
@@ -66,7 +69,6 @@ test.describe('Group Members tab join modes (LFXV2-2690)', () => {
       });
     });
 
-    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true, join_mode: 'application' }) });
     await gotoMembersTab(page);
 
     await expect(page.getByTestId('pending-applications')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

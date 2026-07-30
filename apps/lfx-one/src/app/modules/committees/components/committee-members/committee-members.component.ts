@@ -35,7 +35,7 @@ import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, of, startWith, take } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, filter, of, startWith, switchMap, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -257,7 +257,7 @@ export class CommitteeMembersComponent implements OnInit {
               summary: 'Application Approved',
               detail: `${application.applicant_email} has been added to the group.`,
             });
-            this.refreshMembers();
+            this.refreshAfterApplicationReview(application.uid);
           },
           error: (err: HttpErrorResponse) => {
             this.processingApplicationUid.set(null);
@@ -296,7 +296,7 @@ export class CommitteeMembersComponent implements OnInit {
             summary: 'Application Rejected',
             detail: `The request from ${application.applicant_email} has been rejected.`,
           });
-          this.refreshMembers();
+          this.refreshAfterApplicationReview(application.uid);
         },
         error: (err: HttpErrorResponse) => {
           this.processingApplicationUid.set(null);
@@ -461,6 +461,45 @@ export class CommitteeMembersComponent implements OnInit {
 
   private refreshMembers(): void {
     this.refresh.emit();
+  }
+
+  /**
+   * Refreshes members/applications after approve/reject. The query index can lag the upstream
+   * write, so poll until the application is no longer pending before giving up.
+   */
+  private refreshAfterApplicationReview(applicationUid: string): void {
+    const committeeId = this.committee()?.uid;
+    this.refreshMembers();
+
+    if (!committeeId) {
+      return;
+    }
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        switchMap(() =>
+          this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of([] as CommitteeJoinApplication[])))
+        ),
+        filter((applications) => {
+          const application = applications.find((app) => app.uid === applicationUid);
+          return !application || (application.status ?? '').toLowerCase() !== 'pending';
+        }),
+        take(1)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
   }
 
   private getMemberDisplayName(member: CommitteeMember): string {

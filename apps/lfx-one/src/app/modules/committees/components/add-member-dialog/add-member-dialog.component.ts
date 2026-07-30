@@ -112,10 +112,11 @@ export class AddMemberDialogComponent {
   public readonly parsed: Signal<EmailListParseResult> = computed(() => parseEmailList(this.rawEmails()));
   public readonly categorized: Signal<CategorizedCommitteeEmails> = computed(() => {
     const result: CategorizedCommitteeEmails = { toInvite: [], alreadyMembers: [], alreadyInvited: [] };
+    const skipPendingInvites = this.isDirectAdd();
     for (const email of this.parsed().valid) {
       if (this.existingMemberEmails.has(email)) {
         result.alreadyMembers.push(email);
-      } else if (this.existingInviteEmails.has(email)) {
+      } else if (!skipPendingInvites && this.existingInviteEmails.has(email)) {
         result.alreadyInvited.push(email);
       } else {
         result.toInvite.push(email);
@@ -158,7 +159,7 @@ export class AddMemberDialogComponent {
 
   /** Append a searched person's email to the textarea (autofill convenience). */
   public addEmail(user: DecoratedCommitteeSearchResult): void {
-    if (user.alreadyMember || user.alreadyInvited || user.added) {
+    if (user.alreadyMember || user.added || (!this.isDirectAdd() && user.alreadyInvited)) {
       return;
     }
     const email = (user.email ?? '').trim();
@@ -475,7 +476,7 @@ export class AddMemberDialogComponent {
             ...r,
             added: added.has(email),
             alreadyMember: this.existingMemberEmails.has(email),
-            alreadyInvited: this.existingInviteEmails.has(email),
+            alreadyInvited: !this.isDirectAdd() && this.existingInviteEmails.has(email),
             lfAccount: hasLfAccount(r),
           };
         });
