@@ -15,6 +15,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, finalize, of } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
@@ -39,6 +40,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     SelectComponent,
     SkeletonModule,
     TableComponent,
+    TooltipModule,
   ],
   templateUrl: './my-newsletters.component.html',
   styleUrl: './my-newsletters.component.scss',
