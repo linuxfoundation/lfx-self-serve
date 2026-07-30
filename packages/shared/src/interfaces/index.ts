@@ -48,6 +48,7 @@ export * from './meeting-attachment.interface';
 
 // Dashboard metric interfaces (unified)
 export * from './dashboard-metric.interface';
+export * from './metric-trend.interface';
 
 // AI interfaces
 export * from './ai.interface';
