@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
@@ -41,6 +41,7 @@ interface MyClasState {
 export class ProfileClasComponent {
   private readonly myClasService = inject(MyClasService);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
@@ -49,12 +50,19 @@ export class ProfileClasComponent {
 
   private readonly state = toSignal(
     this.refresh$.pipe(
-      switchMap(() =>
-        this.myClasService.getMyClas().pipe(
+      switchMap(() => {
+        // Skip the fetch during SSR. The server's HTTP call doesn't carry the user's session
+        // cookie reliably, so it tends to fail and bakes a false "Couldn't load your CLAs" error
+        // into the SSR HTML — a red-banner flash on hydration before the browser fetch resolves.
+        if (!isPlatformBrowser(this.platformId)) {
+          return of<MyClasState>({ data: null, error: false, loaded: false });
+        }
+
+        return this.myClasService.getMyClas().pipe(
           switchMap((data) => of<MyClasState>({ data, error: false, loaded: true })),
           catchError(() => of<MyClasState>({ data: null, error: true, loaded: true }))
-        )
-      )
+        );
+      })
     ),
     { initialValue: { data: null, error: false, loaded: false } as MyClasState }
   );
