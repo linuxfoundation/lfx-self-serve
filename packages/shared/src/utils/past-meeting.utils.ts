@@ -25,9 +25,19 @@ export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meet
   return meeting.meeting_and_occurrence_id ?? meeting.id;
 }
 
-/** Past-meeting list rows carry scheduled_start_time; live Meeting rows do not. */
+/** Past-meeting list rows carry scheduled_start_time and/or past-only identity fields. */
 export function isPastMeetingCalendarRow(meeting: Meeting | PastMeeting): meeting is PastMeeting {
-  return typeof (meeting as PastMeeting).scheduled_start_time === 'string';
+  const row = meeting as PastMeeting;
+  if (typeof row.scheduled_start_time === 'string') {
+    return true;
+  }
+  if (row.meeting_and_occurrence_id) {
+    return true;
+  }
+  if ('meeting_id' in meeting && typeof row.meeting_id === 'string' && row.meeting_id) {
+    return true;
+  }
+  return false;
 }
 
 /**

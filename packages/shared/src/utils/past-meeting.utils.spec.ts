@@ -216,6 +216,20 @@ describe('isPastMeetingCalendarRow', () => {
     expect(isPastMeetingCalendarRow({ scheduled_start_time: '2026-07-01T15:00:00Z' } as never)).toBe(true);
   });
 
+  it('returns true for v1_past_meeting rows that omit scheduled_start_time', () => {
+    expect(
+      isPastMeetingCalendarRow({
+        meeting_and_occurrence_id: '99152950841-1630560600000',
+        start_time: '2026-07-01T15:00:00Z',
+        meeting_id: '99152950841',
+      } as never)
+    ).toBe(true);
+  });
+
+  it('returns true when only meeting_id identifies a past row', () => {
+    expect(isPastMeetingCalendarRow({ meeting_id: '99152950841', id: '99152950841-1630560600000' } as never)).toBe(true);
+  });
+
   it('returns false for live meeting rows', () => {
     expect(isPastMeetingCalendarRow({ start_time: '2026-07-01T15:00:00Z', duration: 60 } as never)).toBe(false);
   });
