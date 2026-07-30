@@ -89,6 +89,11 @@ describe('resolveAuditUserDisplayName', () => {
     expect(resolveAuditUserDisplayName(undefined, 'auth0|legacyuser')).toBe('legacyuser');
   });
 
+  it('falls back to legacy username when audit username is whitespace-only', () => {
+    expect(resolveAuditUserDisplayName({ username: '   ' }, 'auth0|legacyuser')).toBe('legacyuser');
+    expect(resolveAuditUserDisplayName(undefined, '   ')).toBeUndefined();
+  });
+
   it('returns undefined when no name or username is available', () => {
     expect(resolveAuditUserDisplayName(undefined, undefined)).toBeUndefined();
     expect(resolveAuditUserDisplayName({ name: '  ', username: '' }, '')).toBeUndefined();

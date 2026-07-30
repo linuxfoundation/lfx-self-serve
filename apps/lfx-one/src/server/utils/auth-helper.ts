@@ -25,7 +25,8 @@ export function stripAuthPrefix(username: string): string {
  */
 export function cleanUserDisplayName(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
-  return stripAuthPrefix(value);
+  const cleaned = stripAuthPrefix(value).trim();
+  return cleaned || undefined;
 }
 
 /**
