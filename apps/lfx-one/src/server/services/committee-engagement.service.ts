@@ -173,10 +173,12 @@ export class CommitteeEngagementService {
         rejected_count: rejectedTimestamps.length,
         row_count: rows.length,
         // A rejection is almost certainly a format problem (the dbt model is still unwritten, and
-        // COMPUTED_AT's real column type/width are unknown), and the raw value is the one datum
-        // that identifies it. Bounded to 3 values, each truncated — a rejected value is by
-        // definition not a timestamp, so nothing here guarantees it's short or PII-free.
-        rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => String(raw).slice(0, 64)),
+        // COMPUTED_AT's real column type/width are unknown), and its shape is what would identify
+        // that — not its content. Logging the raw value would raise the same "don't log PII" concern
+        // every free-text warehouse column does; digits/letters are redacted to '9'/'a' so the
+        // structure survives (does it look like a real timestamp that failed to parse, or garbage
+        // entirely?) without logging anything from the value itself. Bounded to 3 rows, 24 chars each.
+        rejected_sample: rejectedTimestamps.slice(0, 3).map(({ raw }) => this.redactedShape(raw)),
       });
     }
 
@@ -202,6 +204,17 @@ export class CommitteeEngagementService {
 
   private normalizeEmail(email: string | null | undefined): string {
     return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  }
+
+  /** Redacts a rejected `COMPUTED_AT` value to its structural shape for logging — digits become
+   * `9`, letters become `a`, everything else (punctuation, whitespace) survives — so a warning
+   * reader can tell "looks like a real timestamp that failed to parse" from "not a timestamp at
+   * all" without the value's actual content ever reaching the log. */
+  private redactedShape(raw: unknown): string {
+    return String(raw)
+      .slice(0, 24)
+      .replace(/\d/g, '9')
+      .replace(/[A-Za-z]/g, 'a');
   }
 
   private toCount(value: unknown): number {

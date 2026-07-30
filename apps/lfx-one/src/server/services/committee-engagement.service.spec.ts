@@ -182,7 +182,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.computed_at).toBe('2026-07-28T00:00:00.000Z');
   });
 
-  it('treats an unparseable COMPUTED_AT string as absent rather than passing it through, and warns with a sample of the raw value', async () => {
+  it('treats an unparseable COMPUTED_AT string as absent rather than passing it through, and warns with its redacted shape', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'N/A' }],
@@ -192,14 +192,32 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
     expect(result.computed_at).toBeNull();
     // Distinct from a row that simply never reported COMPUTED_AT (routine, no signal) — this row
-    // reported a value and it was rejected, which is worth an operator's attention. The raw value
-    // is attached (not just a count) since a rejection is almost certainly a format problem and
-    // the raw string is the one datum that identifies it.
+    // reported a value and it was rejected, which is worth an operator's attention. The value's
+    // *shape* is attached, not its content: digits/letters redacted to '9'/'a', so an operator can
+    // tell "looks like a timestamp that failed to parse" from "not a timestamp at all" without any
+    // of the actual value reaching the log.
     expect(warning).toHaveBeenCalledWith(
       req,
       'get_committee_engagement',
       expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ committee_uid: 'committee-1', rejected_count: 1, row_count: 1, rejected_sample: ['N/A'] })
+      expect.objectContaining({ committee_uid: 'committee-1', rejected_count: 1, row_count: 1, rejected_sample: ['a/a'] })
+    );
+  });
+
+  it('bounds the redacted shape to 24 characters for a long rejected COMPUTED_AT value', async () => {
+    const longValue = 'x'.repeat(500);
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: longValue }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable COMPUTED_AT'),
+      expect.objectContaining({ rejected_sample: ['a'.repeat(24)] })
     );
   });
 
@@ -220,7 +238,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       req,
       'get_committee_engagement',
       expect.stringContaining('unparseable COMPUTED_AT'),
-      expect.objectContaining({ rejected_count: 1, row_count: 3, rejected_sample: ['garbage'] })
+      expect.objectContaining({ rejected_count: 1, row_count: 3, rejected_sample: ['aaaaaaa'] })
     );
   });
 
