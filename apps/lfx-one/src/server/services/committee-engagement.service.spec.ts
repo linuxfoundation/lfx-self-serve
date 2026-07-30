@@ -32,17 +32,20 @@ vi.mock('./committee.service', () => ({
     public getCommitteeMembers = getCommitteeMembers;
   },
 }));
-vi.mock('./snowflake.service', () => ({
-  SnowflakeService: {
-    getInstance: () => ({ execute }),
-    // Mirrors SnowflakeService.isMissingObjectError's actual regex (copied, not imported — the
-    // real class is mocked wholesale here) against a realistically wrapped error message, rather
-    // than a hand-rolled `missingObject` flag. This still can't catch the real regex changing out
-    // from under this copy, since snowflake.service.ts has no spec of its own today (see the
-    // regex at snowflake.service.ts's `isMissingObjectError` if this ever needs re-syncing).
-    isMissingObjectError: (error: unknown) => /does not exist or not authorized/i.test(error instanceof Error ? error.message : String(error)),
-  },
-}));
+vi.mock('./snowflake.service', async () => {
+  // `SnowflakeService` itself is mocked wholesale (constructing the real class pulls in the
+  // snowflake-sdk connection pool and OTel instrumentation), but `isMissingObjectError` is a pure
+  // function with no such dependencies, so it's deep-imported for real here rather than
+  // hand-copied — a change to the actual predicate now fails this suite instead of silently
+  // leaving a stale copy green.
+  const { isMissingObjectError } = await vi.importActual<typeof import('../helpers/snowflake-error.helper')>('../helpers/snowflake-error.helper');
+  return {
+    SnowflakeService: {
+      getInstance: () => ({ execute }),
+      isMissingObjectError,
+    },
+  };
+});
 vi.mock('./logger.service', () => ({
   logger: { warning, debug },
 }));

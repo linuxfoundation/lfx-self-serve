@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
+import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -88,8 +89,7 @@ export class SnowflakeService {
   }
 
   public static isMissingObjectError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /does not exist or not authorized/i.test(message);
+    return isMissingObjectError(error);
   }
 
   private constructor() {
