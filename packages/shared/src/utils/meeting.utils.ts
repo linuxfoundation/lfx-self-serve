@@ -25,9 +25,11 @@ import {
   MeetingOrganizerLink,
   MeetingRecurrence,
   MeetingUserInfo,
+  OccurrenceNavItem,
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
+  PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
   SummaryData,
@@ -335,6 +337,79 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Resolves the series UID for a meeting payload without casting: past-meeting
+ * payloads carry the originating series UID in `meeting_id` while their `id` is
+ * the composite occurrence id (`{uid}-{ms-timestamp}`); live payloads use `id`.
+ */
+export function getMeetingSeriesUid(meeting: Meeting): string {
+  if ('meeting_id' in meeting && typeof meeting.meeting_id === 'string' && meeting.meeting_id) {
+    return meeting.meeting_id;
+  }
+  return meeting.id;
+}
+
+/**
+ * Merges a meeting's live occurrences with the series timeline from the public
+ * occurrences endpoint into one ascending navigation list.
+ *
+ * Entries are deduped by their Unix-millisecond start instant with priority
+ * live > endpoint future > past record, so an in-progress occurrence whose
+ * v1_past_meeting record is already forming keeps its joinable live entry.
+ * `cancelled_occurrences` filtering applies to future entries only — a cancelled
+ * occurrence never runs, so no v1_past_meeting record exists to filter.
+ * Past entries derive their canonical instant from the composite
+ * `meeting_and_occurrence_id` suffix (authoritative for past-meeting URLs),
+ * not from `scheduled_start_time`.
+ *
+ * @param liveOccurrences Active (non-cancelled) occurrences from the live meeting payload
+ * @param series Timeline from the public occurrences endpoint
+ * @param fallbackDuration Duration (minutes) for past entries lacking an end time
+ * @returns Merged occurrence list sorted ascending by start instant
+ */
+export function buildOccurrenceNavTimeline(
+  liveOccurrences: MeetingOccurrence[],
+  series: PublicMeetingOccurrencesResponse,
+  fallbackDuration?: number
+): OccurrenceNavItem[] {
+  const byInstant = new Map<number, OccurrenceNavItem>();
+
+  const addIfAbsent = (instant: number, item: OccurrenceNavItem): void => {
+    if (!Number.isFinite(instant) || byInstant.has(instant)) {
+      return;
+    }
+    byInstant.set(instant, item);
+  };
+
+  for (const occurrence of liveOccurrences) {
+    addIfAbsent(new Date(occurrence.start_time).getTime(), occurrence);
+  }
+
+  for (const occurrence of getActiveOccurrences(series.future, series.cancelled_occurrences)) {
+    addIfAbsent(new Date(occurrence.start_time).getTime(), occurrence);
+  }
+
+  for (const past of series.past) {
+    const suffix = past.meeting_and_occurrence_id.split('-').pop() ?? '';
+    const instant = /^\d{13}$/.test(suffix) ? parseInt(suffix, 10) : NaN;
+    if (!Number.isFinite(instant)) {
+      continue;
+    }
+    const scheduledDuration =
+      past.scheduled_end_time && past.scheduled_start_time
+        ? Math.round((new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000)
+        : 0;
+    addIfAbsent(instant, {
+      meeting_and_occurrence_id: past.meeting_and_occurrence_id,
+      occurrence_id: String(Math.floor(instant / 1000)),
+      start_time: new Date(instant).toISOString(),
+      duration: scheduledDuration > 0 ? scheduledDuration : (fallbackDuration ?? 0),
+    });
+  }
+
+  return [...byInstant.values()].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 }
 
 /**

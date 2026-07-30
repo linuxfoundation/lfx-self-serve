@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, formatDate } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -15,6 +15,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, finalize, of } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
@@ -39,6 +40,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     SelectComponent,
     SkeletonModule,
     TableComponent,
+    TooltipModule,
   ],
   templateUrl: './my-newsletters.component.html',
   styleUrl: './my-newsletters.component.scss',
@@ -77,6 +79,11 @@ export class MyNewslettersComponent {
   protected readonly showFoundationFilter: Signal<boolean> = computed(() => this.foundationOptions().length > 1);
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.foundationFilter() || this.projectFilter()));
+  /** Reader-framed drawer subtitle, e.g. "Received Jul 29, 2026". */
+  protected readonly drawerSubtitle: Signal<string> = computed(() => {
+    const sentAt = this.selected()?.sent_at;
+    return sentAt ? `Received ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
+  });
 
   // === Constructor ===
   public constructor() {

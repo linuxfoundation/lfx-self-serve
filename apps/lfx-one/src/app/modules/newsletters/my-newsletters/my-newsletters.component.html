@@ -94,11 +94,12 @@
               [rows]="10"
               [rowsPerPageOptions]="[10, 25, 50]"
               dataKey="id"
+              tableStyleClass="table-fixed"
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[50%]">Subject</th>
-                  <th class="w-[20%]">Sent</th>
+                  <th class="w-[50%]">Title</th>
+                  <th class="w-[20%]">Received</th>
                   <th class="w-[30%]">Project / Foundation</th>
                 </tr>
               </ng-template>
@@ -108,17 +109,20 @@
                      Enter/Space); the row click is a supplementary pointer convenience. -->
                 <tr class="cursor-pointer" (click)="onOpenNewsletter(newsletter)" [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
                   <td>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
                       <button
                         type="button"
-                        class="lfx-table-name-link text-sm text-gray-900 font-medium text-left"
+                        class="lfx-table-name-link text-sm text-gray-900 font-medium text-left truncate min-w-0"
                         [attr.aria-label]="'Open newsletter ' + newsletter.subject"
+                        [pTooltip]="newsletter.subject"
+                        tooltipEvent="both"
+                        tooltipPosition="top"
                         (click)="onOpenSubject($event, newsletter)"
                         [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
                         {{ newsletter.subject }}
                       </button>
                       @if (openingId() === newsletter.id) {
-                        <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400" aria-hidden="true"></i>
+                        <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400 flex-none" aria-hidden="true"></i>
                       }
                     </div>
                   </td>
@@ -138,11 +142,14 @@
   }
 </div>
 
-<!-- Preview drawer: renders the newsletter as recipients saw it. Opened once
-     the body fetch resolves in onOpenNewsletter. -->
+<!-- Reader drawer: renders the newsletter as recipients saw it. Opened once
+     the body fetch resolves in onOpenNewsletter. Header is reader-framed
+     (project + received date) rather than the sender-side "Preview" default. -->
 <lfx-newsletter-preview-drawer
   [(visible)]="previewVisible"
   [subject]="selected()?.subject ?? ''"
   [bodyHtml]="previewBody()"
-  [displayName]="selected()?.project_name ?? 'Newsletter'"
+  [displayName]="selected()?.project_name || 'Newsletter'"
+  [headerTitle]="selected()?.project_name || 'Newsletter'"
+  [headerSubtitle]="drawerSubtitle()"
   data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>

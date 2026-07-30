@@ -7,8 +7,8 @@
  * Members see the sent newsletters whose recipient committees include a
  * committee they currently belong to. The BFF derives the feed from live
  * committee membership (leaving a group hides its newsletters; joining
- * reveals past ones), so the UI just renders the flat list: subject, sent
- * date, project/foundation, client-side search + filters, and a preview
+ * reveals past ones), so the UI just renders the flat list: title, received
+ * date, project/foundation, client-side search + filters, and a reader
  * drawer that fetches the rendered body on demand.
  *
  * Prerequisites:
@@ -136,8 +136,13 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await stubNewsletterDetailApi(page);
   });
 
-  test('lists sent newsletters with subject, sent date, and project name', async ({ page }) => {
+  test('lists sent newsletters with title, received date, and project name', async ({ page }) => {
     await gotoMyNewsletters(page);
+
+    // Reader-framed column headers (not the sender-side Subject / Sent).
+    const table = page.getByTestId('my-newsletters-table');
+    await expect(table.locator('th').nth(0)).toHaveText('Title');
+    await expect(table.locator('th').nth(1)).toHaveText('Received');
 
     const firstRow = page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`);
     await expect(firstRow).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -159,7 +164,7 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await expect(page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`)).toHaveCount(0);
   });
 
-  test('clicking a newsletter opens the preview drawer with the rendered body', async ({ page }) => {
+  test('clicking a newsletter opens the reader drawer with the rendered body', async ({ page }) => {
     await gotoMyNewsletters(page);
 
     await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
@@ -167,6 +172,13 @@ test.describe('My Newsletters — Me-lens feed', () => {
     const drawer = page.getByTestId('my-newsletters-preview-drawer');
     await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(drawer).toContainText('TAC July Update');
+
+    // Reader-framed drawer header: project + received date, no sender-side
+    // "Preview / As your recipients will see it" text.
+    const drawerHeader = page.getByTestId('newsletter-preview-drawer-header');
+    await expect(drawerHeader).toContainText('Test Project');
+    await expect(drawerHeader).toContainText('Received Jul 15, 2026');
+    await expect(drawerHeader).not.toContainText('Preview');
   });
 
   test('shows the empty state when the user has no reachable newsletters', async ({ page }) => {

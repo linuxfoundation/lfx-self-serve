@@ -46,21 +46,39 @@
     <!-- Member Organizations Chart Section -->
     <div class="flex flex-col gap-3" data-testid="total-members-drawer-chart-section">
       <!-- Section Header -->
-      <div class="flex items-center gap-2">
-        <h3 class="text-sm font-medium text-gray-900">Member Organizations</h3>
-        <button
-          type="button"
-          class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
-          pTooltip="Total # of member organizations across the foundation per month"
-          tooltipPosition="top"
-          tooltipEvent="both"
-          aria-label="Total # of member organizations across the foundation per month">
-          <i class="fa-light fa-circle-info"></i>
-        </button>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h3 class="text-sm font-medium text-gray-900">Member Organizations</h3>
+          <button
+            type="button"
+            class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
+            pTooltip="Total # of member organizations across the foundation per month"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            aria-label="Total # of member organizations across the foundation per month">
+            <i class="fa-light fa-circle-info"></i>
+          </button>
+        </div>
+
+        @if (!dataLoading()) {
+          <div class="flex items-baseline gap-2">
+            <span class="text-xl font-semibold text-gray-900" data-testid="total-members-drawer-metric">{{ metricValue() }}</span>
+            <lfx-metric-delta [delta]="delta()" testid="total-members-drawer-delta" />
+          </div>
+        }
       </div>
 
       <!-- Chart -->
-      @if (hasData()) {
+      @if (dataLoading()) {
+        <div
+          class="flex items-center justify-center py-12"
+          role="status"
+          aria-live="polite"
+          aria-label="Loading member organizations chart"
+          data-testid="total-members-drawer-chart-loading">
+          <i aria-hidden="true" class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasData()) {
         <div class="h-[280px]" data-testid="total-members-drawer-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
         </div>

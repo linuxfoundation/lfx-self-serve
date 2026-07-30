@@ -50,6 +50,18 @@ function project(slug: string, name: string) {
   };
 }
 
+function noActivityProject(slug: string, name: string) {
+  return {
+    ...project(slug, name),
+    health: 'unavailable',
+    trend: { deltaPct: 0, technicalDeltaPct: 0, ecosystemDeltaPct: 0, direction: 'flat', series: [0, 0, 0, 0] },
+    contributors: [],
+    participants: [],
+    healthMetrics: [],
+    noActivityYet: true,
+  };
+}
+
 function projectsResponse(projects = [project('kubernetes', 'Kubernetes')]) {
   return {
     orgSlug: 'red-hat-llc',
@@ -244,16 +256,26 @@ test.describe('Org Projects', () => {
   });
 
   test('keeps add-project search results ordered by the latest request', async ({ page }) => {
-    await gotoOrgProjectsPage(page);
+    // Use a workspace that does NOT already contain these results, so both are addable
+    // (mapAddableOptions filters out projects already in the selected workspace).
+    await gotoOrgProjectsPage(page, {
+      workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
+      url: `${ORG_PROJECTS_URL}?workspace=custom`,
+    });
     await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, async (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
       const url = new URL(route.request().url());
       const query = url.searchParams.get('q') ?? '';
-      if (!query) {
+      // On-open empty-query preload resolves instantly so the panel opens without waiting.
+      if (!query) return fulfillJson(route, { results: [] });
+      // The earlier, shorter query 'ku' is deliberately SLOW; the later 'kube' is fast, so the stale 'ku'
+      // response lands AFTER the latest one. Both results contain "kube" so PrimeNG's client-side filter
+      // keeps either visible — only the request-id guard, not client filtering, can drop the stale one.
+      if (query === 'ku') {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return fulfillJson(route, {
-          results: [{ slug: 'old-result', name: 'Old Result', logoUrl: '', foundation: { slug: 'old', name: 'Old', logoUrl: '' } }],
+          results: [{ slug: 'kube-stale', name: 'Kube Stale', logoUrl: '', foundation: { slug: 'old', name: 'Old', logoUrl: '' } }],
         });
       }
       return fulfillJson(route, {
@@ -267,11 +289,24 @@ test.describe('Org Projects', () => {
     // Single search affordance: no standalone search input in the dialog — search lives inside the multi-select's own filter.
     await expect(page.getByRole('dialog', { name: 'Add project(s)' }).getByRole('searchbox')).toHaveCount(0);
     await page.getByTestId('org-projects-add-projects-select').click();
-    await page.getByPlaceholder('Search and select projects').fill('ku');
+    const filter = page.getByRole('searchbox', { name: 'Search and select projects' });
+    await expect(filter).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await expect(page.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await page.waitForTimeout(500);
-    await expect(page.getByText('Old Result')).toHaveCount(0);
+    // Fire the slow 'ku' request (waiting past the 300ms debounce so it actually dispatches and is in-flight),
+    // then refine to the fast 'kube' request while 'ku' is still pending — a genuine concurrent race.
+    await filter.fill('ku');
+    await page.waitForTimeout(400);
+    await filter.fill('kube');
+
+    // The fast 'kube' result renders first. Scope to the option list — the background projects table also
+    // has a "Kubernetes" row, so an unscoped getByText would be ambiguous.
+    const optionList = page.getByLabel('Option List');
+    await expect(optionList.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Wait past the slow 'ku' response so a stale-invalidation regression would surface: its 'Kube Stale' row
+    // (which also matches the "kube" filter) must never replace the latest 'kube' results.
+    await page.waitForTimeout(2500);
+    await expect(optionList.getByText('Kube Stale')).toHaveCount(0);
+    await expect(optionList.getByText('Kubernetes')).toBeVisible();
   });
 
   test('shows add-project search and save failures without hiding the dialog', async ({ page }) => {
@@ -288,7 +323,10 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('org-projects-add-project').click();
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
-    await expect(page.getByTestId('org-projects-add-projects-error')).toContainText('Could not load project matches', { timeout: DATA_LOAD_TIMEOUT });
+    // The search error now renders inside the body-appended select panel (as its empty message);
+    // recovery is by editing the search, not a Retry button.
+    await page.getByTestId('org-projects-add-projects-select').click();
+    await expect(page.getByText('Edit your search to try again')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, (route) => {
@@ -297,8 +335,7 @@ test.describe('Org Projects', () => {
         results: [{ slug: 'kubernetes', name: 'Kubernetes', logoUrl: '', foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' } }],
       });
     });
-    await page.getByRole('button', { name: 'Retry' }).click();
-    await page.getByTestId('org-projects-add-projects-select').click();
+    await page.getByRole('searchbox', { name: 'Search and select projects' }).fill('ku');
     await page.getByLabel('Option List').getByText('Kubernetes').click();
     await page.keyboard.press('Escape');
 
@@ -312,6 +349,87 @@ test.describe('Org Projects', () => {
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
     await expect(page.getByTestId('org-projects-add-projects-save-error')).toContainText('Could not add the selected projects', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+  });
+
+  test('renders no-activity rows as non-links with unavailable metrics', async ({ page }) => {
+    await stubOrgContext(page);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, projectsResponse([noActivityProject('kubernetes', 'Kubernetes')]));
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+
+    const row = page.getByTestId('org-projects-row-kubernetes');
+    await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The "No activity yet" pill is shown and the project name is plain text (the detail page would 404).
+    await expect(page.getByTestId('org-projects-no-activity-kubernetes')).toBeVisible();
+    await expect(row.getByRole('link')).toHaveCount(0);
+    // Influence and trend read "Unavailable" instead of the misleading measured-looking fallbacks.
+    await expect(page.getByTestId('org-projects-trend-kubernetes')).toHaveText('Unavailable');
+    await expect(row.getByText('Unavailable').first()).toBeVisible();
+    // Contributor / participant counts are plain text (0), not links to the detail page.
+    await expect(page.getByTestId('org-projects-contributors-kubernetes')).toHaveText('0');
+    await expect(page.getByTestId('org-projects-participants-kubernetes')).toHaveText('0');
+  });
+
+  test('shows the already-in-workspace empty state when a search matches only existing projects', async ({ page }) => {
+    await gotoOrgProjectsPage(page);
+    await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, { results: [], hasMatchesAlreadyInWorkspace: true });
+    });
+
+    await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-projects-add-project').click();
+    await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    await page.getByTestId('org-projects-add-projects-select').click();
+    // Scope to the in-panel filter input by role — the host <lfx-multi-select> also carries the same placeholder.
+    await page.getByRole('searchbox', { name: 'Search and select projects' }).fill('ku');
+
+    // The already-in-workspace status now renders in the always-visible panel footer, so a still-selected option
+    // matching the filter can't hide it (regression guard for the Bugbot "status hidden by selected options" bug).
+    await expect(page.getByTestId('multi-select-panel-status')).toHaveText('Matching projects are already in this workspace.');
+  });
+
+  test('keeps the panel status visible when a selected option still matches the filter', async ({ page }) => {
+    // Kubernetes must be addable (not already in the workspace) so it can be selected, so use a custom workspace.
+    await gotoOrgProjectsPage(page, {
+      workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
+      url: `${ORG_PROJECTS_URL}?workspace=custom`,
+    });
+    await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, {
+        results: [{ slug: 'kubernetes', name: 'Kubernetes', logoUrl: '', foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' } }],
+      });
+    });
+
+    await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-projects-add-project').click();
+    await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    await page.getByTestId('org-projects-add-projects-select').click();
+
+    // Search, then select Kubernetes so it stays in the option list as a checked item.
+    const filter = page.getByRole('searchbox', { name: 'Search and select projects' });
+    await filter.fill('ku');
+    await page.getByLabel('Option List').getByText('Kubernetes').click();
+
+    // Drop below the min search length to a character the selected option still matches. The selected row keeps the
+    // list non-empty, but the min-length guidance must still show in the always-visible footer — the exact Bugbot
+    // "status hidden by selected options" regression this footer fixes.
+    await filter.fill('k');
+    await expect(page.getByTestId('multi-select-panel-status')).toHaveText('Type at least 2 characters to search projects.');
+    await expect(page.getByLabel('Option List').getByText('Kubernetes')).toBeVisible();
   });
 
   test('reloads the project table after adding projects to a workspace', async ({ page }) => {
