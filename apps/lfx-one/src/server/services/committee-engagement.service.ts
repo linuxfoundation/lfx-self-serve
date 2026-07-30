@@ -94,27 +94,28 @@ export class CommitteeEngagementService {
   ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
+    // Two distinct failure modes, counted separately so a reader isn't left guessing which one
+    // happened: a blank email is a data-quality problem in the row itself, while a duplicate email
+    // means the declared grain (COMMITTEE_UID, MEMBER_EMAIL, TIME_RANGE_TYPE) — a guess pending the
+    // real dbt model — is finer than assumed. Last-write-wins on a duplicate (ORDER BY MEMBER_EMAIL
+    // has no tiebreaker on TIME_RANGE_TYPE or COMPUTED_AT, so "last" is whichever the warehouse
+    // happened to emit second, not a deliberate choice) — flagged here since it's otherwise silent.
     const rowsByEmail = new Map<string, CommitteeEngagementWarehouseRow>();
+    let blankEmailRowCount = 0;
     for (const row of rows) {
       const email = this.normalizeEmail(row.MEMBER_EMAIL);
       if (email) rowsByEmail.set(email, row);
+      else blankEmailRowCount++;
     }
-    // Last-write-wins on a duplicate email, and a blank email is dropped outright — both silently,
-    // unless flagged here. The declared grain (COMMITTEE_UID, MEMBER_EMAIL, TIME_RANGE_TYPE) is a
-    // guess pending the real dbt model; if it's finer than that, this is the one signal that would
-    // reveal rows disappearing rather than just failing to join.
-    const droppedRowCount = rows.length - rowsByEmail.size;
-    if (droppedRowCount > 0) {
-      logger.warning(
-        req,
-        'get_committee_engagement',
-        'Warehouse returned multiple rows for one member email (or rows with a blank email); only the last row per email was used',
-        {
-          committee_uid: committeeUid,
-          dropped_row_count: droppedRowCount,
-          row_count: rows.length,
-        }
-      );
+    const duplicateEmailRowCount = rows.length - rowsByEmail.size - blankEmailRowCount;
+
+    if (duplicateEmailRowCount > 0 || blankEmailRowCount > 0) {
+      logger.warning(req, 'get_committee_engagement', 'Some warehouse rows were dropped or overwritten before joining to the roster', {
+        committee_uid: committeeUid,
+        duplicate_email_row_count: duplicateEmailRowCount,
+        blank_email_row_count: blankEmailRowCount,
+        row_count: rows.length,
+      });
     }
 
     // Named "over-attended", not "clamped": rows with no roster match are dropped entirely in the
@@ -299,8 +300,12 @@ export class CommitteeEngagementService {
    * TODO(LFXV2-1705 follow-up): placeholder table name. Every column this service reads
    * (`MEMBER_EMAIL`, `ATTENDED_COUNT`, `INVITED_COUNT`, `COMPUTED_AT`, `COMMITTEE_UID`,
    * `TIME_RANGE_TYPE`) and the assumed grain are guesses pending the real dbt model, owned
-   * separately (see the ticket). Until reconciled, a wrong table/column name and "not deployed
-   * yet" are indistinguishable — both degrade to `data_available: false` via `expectMissingObject`.
+   * separately (see the ticket). Until reconciled: a wrong *table* name degrades identically to
+   * "not deployed yet" via `expectMissingObject`/`isMissingObjectError`'s "does not exist or not
+   * authorized" match — the two stay indistinguishable, which is the known limitation this TODO is
+   * about. A wrong *column* name does not degrade the same way — Snowflake's "invalid identifier"
+   * compilation error doesn't match that regex, so it rethrows as a 500 instead, which is the
+   * correct failure mode for a genuinely broken query rather than a silent zeroed response.
    */
   private engagementTable(): string {
     return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE`;

@@ -380,7 +380,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(warning).not.toHaveBeenCalled();
   });
 
-  it('warns when the warehouse returns multiple rows for one member email', async () => {
+  it('warns with duplicate_email_row_count when the warehouse returns multiple rows for one member email, and the last row wins', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [
@@ -389,17 +389,20 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       ],
     });
 
-    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+    const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
+    // Pins the message's claim: without this assertion, flipping the join to first-wins would
+    // leave every other test green while making "last row wins" false.
+    expect(result.members[0]).toEqual({ uid: 'm1', attended: 9, invited: 10, rate: 0.9, classification: 'High' });
     expect(warning).toHaveBeenCalledWith(
       req,
       'get_committee_engagement',
-      expect.stringContaining('multiple rows for one member email'),
-      expect.objectContaining({ committee_uid: 'committee-1', dropped_row_count: 1, row_count: 2 })
+      expect.stringContaining('dropped or overwritten'),
+      expect.objectContaining({ committee_uid: 'committee-1', duplicate_email_row_count: 1, blank_email_row_count: 0, row_count: 2 })
     );
   });
 
-  it('warns when a warehouse row has a blank member email', async () => {
+  it('warns with blank_email_row_count (not duplicate_email_row_count) when a warehouse row has a blank member email', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [
@@ -413,8 +416,8 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(warning).toHaveBeenCalledWith(
       req,
       'get_committee_engagement',
-      expect.stringContaining('multiple rows for one member email'),
-      expect.objectContaining({ dropped_row_count: 1, row_count: 2 })
+      expect.stringContaining('dropped or overwritten'),
+      expect.objectContaining({ duplicate_email_row_count: 0, blank_email_row_count: 1, row_count: 2 })
     );
   });
 
