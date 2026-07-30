@@ -9,64 +9,97 @@ SPDX-License-Identifier: MIT
   <!-- Header -->
   <div>
     <h2 class="text-lg font-semibold text-slate-800">My CLAs</h2>
-    <p class="mt-0.5 text-sm text-slate-500">Your signed Individual (ICLA) and Employee (ECLA) Contributor License Agreements.</p>
   </div>
 
-  @if (loading()) {
-    <lfx-route-loading />
-  } @else if (error()) {
-    <lfx-message
-      severity="error"
-      title="Couldn't load your CLAs"
-      text="Something went wrong loading your agreements. Please try again."
-      [attr.data-testid]="'my-clas-error'" />
-    <div>
-      <lfx-button label="Retry" icon="fa-light fa-rotate-right" size="small" [outlined]="true" (click)="retry()" />
+  @if (error()) {
+    <div role="alert" data-testid="my-clas-error">
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Couldn't load your CLAs"
+        subtitle="Something went wrong loading your agreements. Please try again."
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-arrow-rotate-left"
+        (ctaClick)="retry()" />
     </div>
   } @else {
-    <!-- Identity hint: history may be incomplete when nothing matched -->
-    @if (identity()?.unmatched) {
-      <lfx-message
-        severity="info"
-        text="We couldn't match any agreements to your account yet. Your CLA history may be incomplete — try linking the accounts you contributed with."
-        [attr.data-testid]="'my-clas-unmatched-hint'" />
-    }
+    <lfx-message severity="info" [attr.data-testid]="'my-clas-info-banner'">
+      <p class="text-sm">
+        Your signed ICLAs (Individual CLA) and ECLAs (Employee CLA), matched to your Identities. Missing one?
+        <a class="font-semibold text-blue-600 hover:underline" routerLink="/profile/identities">Link your Email, GitHub, or GitLab accounts →</a>
+      </p>
+    </lfx-message>
 
-    <!-- GitHub-link CTA -->
-    @if (showGithubCta()) {
-      <lfx-message severity="info" [attr.data-testid]="'my-clas-github-cta'">
-        <span>
-          Don't see your CLAs? Many contributions are matched by your GitHub account.
-          <a class="font-semibold text-blue-600 hover:underline" routerLink="/profile/identities">Link your GitHub account →</a>
-        </span>
-      </lfx-message>
-    }
-
-    @if (isEmpty()) {
+    @if (!loading() && isEmpty()) {
       <lfx-empty-state
         icon="fa-light fa-file-signature"
         title="No CLAs on file yet"
         subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities." />
     } @else {
-      <!-- ICLAs -->
-      @if (iclas().length) {
-        <lfx-card>
-          <div class="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Individual CLAs (ICLA)</div>
-          @for (agreement of iclas(); track agreement.id) {
-            <lfx-agreement-card [agreement]="agreement" [downloading]="downloadingId() === agreement.id" (download)="onDownload($event)" />
-          }
-        </lfx-card>
-      }
+      <lfx-table
+        [value]="agreements()"
+        [loading]="loading()"
+        [skeletonRows]="3"
+        dataKey="id"
+        styleClass="overflow-hidden rounded-xl border border-gray-200"
+        data-testid="my-clas-table">
+        <ng-template #header>
+          <tr class="border-b border-slate-100 bg-slate-50">
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Project</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Type</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Signed</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Document</th>
+          </tr>
+        </ng-template>
 
-      <!-- ECLAs -->
-      @if (eclas().length) {
-        <lfx-card>
-          <div class="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Employee CLAs (ECLA)</div>
-          @for (agreement of eclas(); track agreement.id) {
-            <lfx-agreement-card [agreement]="agreement" />
-          }
-        </lfx-card>
-      }
+        <ng-template #body let-agreement let-rowIndex="rowIndex">
+          <tr
+            class="transition-colors hover:bg-slate-50/60"
+            [class.border-b]="rowIndex < agreements().length - 1"
+            [class.border-slate-100]="rowIndex < agreements().length - 1"
+            [attr.data-row-index]="rowIndex"
+            [attr.data-testid]="'agreement-row-' + agreement.id">
+            <td class="px-5 py-3.5">
+              <div class="flex min-w-0 items-center gap-3">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
+                  <i class="fa-light fa-file-signature text-sm text-slate-400"></i>
+                </div>
+                <span class="truncate text-sm font-semibold text-slate-900">{{ agreement.projectName }}</span>
+              </div>
+            </td>
+
+            <td class="px-5 py-3.5">
+              @if (agreement.kind === 'ECLA') {
+                <lfx-badge
+                  [value]="agreement.companyName ? 'ECLA · ' + agreement.companyName : 'ECLA'"
+                  severity="secondary"
+                  styleClass="!bg-purple-100 !text-purple-800" />
+              } @else {
+                <lfx-badge value="ICLA" severity="info" />
+              }
+            </td>
+
+            <td class="px-5 py-3.5">
+              <span class="text-sm text-slate-600">{{ agreement.signedOn ? (agreement.signedOn | date: 'mediumDate' : 'UTC') : '—' }}</span>
+            </td>
+
+            <td class="px-5 py-3.5">
+              @if (agreement.pdfAvailable) {
+                <lfx-button
+                  label="Download PDF"
+                  icon="fa-light fa-download"
+                  size="small"
+                  [text]="true"
+                  [loading]="downloadingId() === agreement.id"
+                  (onClick)="onDownload(agreement.id)" />
+              } @else if (agreement.kind === 'ECLA') {
+                <span class="text-xs text-slate-400">Covered by Corporate CLA (CCLA)</span>
+              } @else {
+                <span class="text-xs text-slate-400">PDF unavailable</span>
+              }
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
     }
   }
 </section>
