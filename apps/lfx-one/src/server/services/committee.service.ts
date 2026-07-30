@@ -17,6 +17,8 @@ import {
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   MyCommittee,
@@ -1105,6 +1107,62 @@ export class CommitteeService {
   public async submitApplication(req: Request, committeeId: string, body: CreateCommitteeJoinApplicationRequest): Promise<CommitteeJoinApplication> {
     logger.debug(req, 'submit_committee_application', 'Submitting join application', { committee_uid: committeeId });
     return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/applications`, 'POST', {}, body);
+  }
+
+  /**
+   * Fetches join applications for a committee from the query index.
+   */
+  public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_application',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeJoinApplication>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+  }
+
+  public async approveApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: ApproveCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeMember> {
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/approve`,
+      'POST',
+      {},
+      payload
+    );
+  }
+
+  public async rejectApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: RejectCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeJoinApplication> {
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/reject`,
+      'POST',
+      {},
+      payload
+    );
   }
 
   // ── Committee Documents ────────────────────────────────────────────────────

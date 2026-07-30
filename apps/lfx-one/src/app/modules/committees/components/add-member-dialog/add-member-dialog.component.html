@@ -2,10 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-5 px-1" data-testid="add-member-dialog">
-  <p class="text-sm text-gray-500">
-    Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile, so you don't need to enter
-    their details. They appear as "Pending" until they accept.
-  </p>
+  @if (isDirectAdd()) {
+    <p class="text-sm text-gray-500">
+      Add people by email — one or many at once. Members are added immediately to the group. A notification email is sent by default unless you uncheck the
+      option below.
+    </p>
+  } @else {
+    <p class="text-sm text-gray-500">
+      Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile. They appear as "Pending"
+      until they accept.
+    </p>
+  }
 
   <!-- ── Find existing people (typeahead autofill, optional) ──────────────────── -->
   <div class="flex flex-col gap-2">
@@ -85,7 +92,9 @@
     }
 
     @if (!searchLoading() && searchResults().length === 0 && queryValue().length >= 2) {
-      <p class="text-xs text-gray-400">No matches for "{{ queryValue() }}". You can still invite them by typing their email below.</p>
+      <p class="text-xs text-gray-400">
+        No matches for "{{ queryValue() }}". You can still {{ isDirectAdd() ? 'add them' : 'invite them' }} by typing their email below.
+      </p>
     }
   </div>
 
@@ -104,7 +113,8 @@
       <div class="flex flex-col gap-1 text-xs" data-testid="add-member-preview">
         @if (categorized().toInvite.length > 0) {
           <span class="text-emerald-600 font-medium">
-            <i class="fa-light fa-paper-plane" aria-hidden="true"></i> {{ categorized().toInvite.length }} to invite
+            <i class="fa-light fa-{{ isDirectAdd() ? 'user-plus' : 'paper-plane' }}" aria-hidden="true"></i>
+            {{ categorized().toInvite.length }} to {{ isDirectAdd() ? 'add' : 'invite' }}
           </span>
         }
         @if (categorized().alreadyMembers.length > 0) {
@@ -127,10 +137,16 @@
     @if (showOrganizationField()) {
       <div class="flex w-full flex-col gap-2">
         <label class="block text-sm font-medium text-gray-700">Organization <span class="text-gray-400 font-normal">(optional)</span></label>
-        <p class="text-xs text-gray-500">
-          Invitees must confirm their organization when accepting. Optionally set a suggested default here — it pre-fills the accept flow but is not required.
-          If you select an existing user above, this will auto-populate from their profile.
-        </p>
+        @if (isDirectAdd()) {
+          <p class="text-xs text-gray-500">
+            Optionally set a default organization for the new member(s). If you select an existing user above, this auto-populates from their profile.
+          </p>
+        } @else {
+          <p class="text-xs text-gray-500">
+            Invitees must confirm their organization when accepting. Optionally set a suggested default here — it pre-fills the accept flow but is not required.
+            If you select an existing user above, this will auto-populate from their profile.
+          </p>
+        }
         <lfx-organization-search
           [form]="form"
           nameControl="organization"
@@ -166,6 +182,10 @@
         appendTo="body"
         data-testid="add-member-role"></lfx-select>
     </div>
+
+    @if (isDirectAdd()) {
+      <lfx-checkbox [form]="form" control="send_notification" label="Send notification email" data-testid="add-member-send-notification"></lfx-checkbox>
+    }
   </div>
 
   <!-- ── Footer ───────────────────────────────────────────────────────────────── -->
@@ -181,8 +201,8 @@
       data-testid="add-member-cancel"></lfx-button>
 
     <lfx-button
-      label="Send Invites"
-      icon="fa-light fa-paper-plane"
+      [label]="isDirectAdd() ? 'Add Members' : 'Send Invites'"
+      [icon]="isDirectAdd() ? 'fa-light fa-user-plus' : 'fa-light fa-paper-plane'"
       [loading]="submitting()"
       [disabled]="!canSubmit() || submitting()"
       (onClick)="onSubmit()"

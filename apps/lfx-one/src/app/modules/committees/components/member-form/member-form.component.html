@@ -250,6 +250,10 @@
     </div>
   }
 
+  @if (!isEditing && !wizardMode) {
+    <lfx-checkbox [form]="form()" control="send_notification" label="Send notification email" data-testid="member-form-send-notification"></lfx-checkbox>
+  }
+
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-6 border-t">
     <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>

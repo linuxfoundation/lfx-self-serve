@@ -58,11 +58,13 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('group-join-cta-visitor-cta')).toHaveCount(0);
   });
 
-  test('visitor of an application-mode group: neither the join CTA nor the invite-only notice renders', async ({ page }) => {
+  test('visitor of an application-mode group: sees the apply CTA, not join or invite-only notice', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'application' }) });
     await gotoCommitteeTab(page);
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('group-join-cta-application-cta')).toBeVisible();
+    await expect(page.getByTestId('group-join-cta-apply-btn')).toBeVisible();
     await expect(page.getByTestId('group-join-cta-visitor-cta')).toHaveCount(0);
     await expect(page.getByTestId('group-join-cta-invite-only-notice')).toHaveCount(0);
   });

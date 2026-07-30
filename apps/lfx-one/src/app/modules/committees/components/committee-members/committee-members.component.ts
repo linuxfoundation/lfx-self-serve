@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TitleCasePipe } from '@angular/common';
+import { DatePipe, TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
@@ -19,12 +19,14 @@ import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibi
 import {
   Committee,
   CommitteeInvite,
+  CommitteeJoinApplication,
   CommitteeMember,
   CommitteeMemberFilterChip,
   CommitteeMemberFilterChipConfig,
   CommitteeMemberPermissionInfo,
   CommitteePermissionLevel,
   CommitteeUser,
+  JoinMode,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import { canManageCommitteeMembers, countVotingReps, isVotingRep, resolveCommitteeMemberPermission } from '@lfx-one/shared/utils';
@@ -38,10 +40,12 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
+import { RejectApplicationDialogComponent } from '../reject-application-dialog/reject-application-dialog.component';
 
 @Component({
   selector: 'lfx-committee-members',
   imports: [
+    DatePipe,
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
@@ -73,6 +77,10 @@ export class CommitteeMembersComponent implements OnInit {
   public membersLoading = input<boolean>(true);
   public invites = input<CommitteeInvite[]>([]);
   public invitesLoading = input<boolean>(false);
+  public applications = input<CommitteeJoinApplication[]>([]);
+  public applicationsLoading = input<boolean>(false);
+  /** Non-writer members in invite_only groups may send invites. */
+  public canSendMemberInvites = input<boolean>(false);
 
   public readonly refresh = output<void>();
 
@@ -80,6 +88,7 @@ export class CommitteeMembersComponent implements OnInit {
   public selectedMember = signal<CommitteeMember | null>(null);
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
+  public processingApplicationUid = signal<string | null>(null);
   public memberFilterChip = signal<CommitteeMemberFilterChip>('all');
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
@@ -92,6 +101,15 @@ export class CommitteeMembersComponent implements OnInit {
   // `writer from project`). No separate inherited check is needed here — a foundation-level
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
+  public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
+  /** Invites are forbidden in closed mode (LFXV2-2690). */
+  public readonly showPendingInvites = computed(
+    () => this.canManageMembers() && this.joinMode() !== 'closed' && (this.invitesLoading() || this.invites().length > 0)
+  );
+  public readonly showPendingApplications = computed(
+    () => this.canManageMembers() && this.joinMode() === 'application' && (this.applicationsLoading() || this.pendingApplications().length > 0)
+  );
+  public readonly pendingApplications = computed(() => this.applications().filter((app) => (app.status ?? '').toLowerCase() === 'pending'));
   // Fail-closed: only show members when visibility is explicitly set to basic_profile.
   // Undefined/null/unknown values default to hidden so committees without a persisted
   // setting don't inadvertently expose the member list.
@@ -186,6 +204,7 @@ export class CommitteeMembersComponent implements OnInit {
         committee: this.committee(),
         existingMembers: this.members(),
         existingInvites: this.invites(),
+        mode: 'direct-add',
       },
     });
 
@@ -193,6 +212,101 @@ export class CommitteeMembersComponent implements OnInit {
       if (result === true) {
         this.refreshMembers();
       }
+    });
+  }
+
+  public openInviteMemberDialog(): void {
+    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
+      header: 'Invite Someone',
+      width: '540px',
+      modal: true,
+      closable: true,
+      data: {
+        committee: this.committee(),
+        existingMembers: this.members(),
+        existingInvites: this.invites(),
+        mode: 'invite',
+      },
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+      if (result === true) {
+        this.refreshMembers();
+      }
+    });
+  }
+
+  public approveApplication(application: CommitteeJoinApplication): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.processingApplicationUid()) return;
+
+    this.confirmationService.confirm({
+      message: `Approve ${application.applicant_email}'s request to join this group?`,
+      header: 'Approve Application',
+      acceptLabel: 'Approve',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-success p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        this.processingApplicationUid.set(application.uid);
+        this.committeeService.approveApplication(committee.uid, application.uid).subscribe({
+          next: () => {
+            this.processingApplicationUid.set(null);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Application Approved',
+              detail: `${application.applicant_email} has been added to the group.`,
+            });
+            this.refreshMembers();
+          },
+          error: (err: HttpErrorResponse) => {
+            this.processingApplicationUid.set(null);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to Approve',
+              detail: getHttpErrorDetail(err, 'Failed to approve the application. Please try again.'),
+            });
+          },
+        });
+      },
+    });
+  }
+
+  public rejectApplication(application: CommitteeJoinApplication): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.processingApplicationUid()) return;
+
+    const dialogRef = this.dialogService.open(RejectApplicationDialogComponent, {
+      header: 'Reject Application',
+      width: '480px',
+      modal: true,
+      closable: true,
+      data: { applicantEmail: application.applicant_email },
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((reviewerNotes: string | null | undefined) => {
+      if (reviewerNotes === undefined) return;
+
+      this.processingApplicationUid.set(application.uid);
+      this.committeeService.rejectApplication(committee.uid, application.uid, reviewerNotes || undefined).subscribe({
+        next: () => {
+          this.processingApplicationUid.set(null);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Application Rejected',
+            detail: `The request from ${application.applicant_email} has been rejected.`,
+          });
+          this.refreshMembers();
+        },
+        error: (err: HttpErrorResponse) => {
+          this.processingApplicationUid.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Reject',
+            detail: getHttpErrorDetail(err, 'Failed to reject the application. Please try again.'),
+          });
+        },
+      });
     });
   }
 

@@ -14,6 +14,8 @@ import {
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberOptions,
   CreateCommitteeMemberRequest,
   MyCommittee,
@@ -164,6 +166,32 @@ export class CommitteeService {
   public submitApplication(committeeId: string, message?: string): Observable<CommitteeJoinApplication> {
     const body: CreateCommitteeJoinApplicationRequest = { message: message || '' };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
+  }
+
+  /** Lists join applications for a committee (from query index). */
+  public getCommitteeApplications(committeeId: string): Observable<CommitteeJoinApplication[]> {
+    return this.http.get<CommitteeJoinApplication[]>(`/api/committees/${committeeId}/applications`).pipe(take(1));
+  }
+
+  /** Approves a pending join application and adds the applicant as a member. */
+  public approveApplication(committeeId: string, applicationId: string, body?: ApproveCommitteeJoinApplicationRequest): Observable<CommitteeMember> {
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body }).pipe(take(1));
+  }
+
+  /** Rejects a pending join application. */
+  public rejectApplication(
+    committeeId: string,
+    applicationId: string,
+    reviewerNotes?: string,
+    body?: RejectCommitteeJoinApplicationRequest
+  ): Observable<CommitteeJoinApplication> {
+    return this.http
+      .post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications/${applicationId}/reject`, {
+        notify: true,
+        reviewer_notes: reviewerNotes,
+        ...body,
+      })
+      .pipe(take(1));
   }
 
   // ── Committee Documents ─────────────────────────────────────────────────

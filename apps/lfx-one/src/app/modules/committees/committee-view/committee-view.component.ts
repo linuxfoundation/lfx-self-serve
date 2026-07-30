@@ -24,7 +24,7 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList, Meeting, PendingInvitation, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, Meeting, PendingInvitation, ProjectContext, TabConfigEntry, CommitteeJoinApplication } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import { canManageCommitteeMembers, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -129,6 +129,7 @@ export class CommitteeViewComponent {
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
+  public applicationsLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
 
   // -- Computed / toSignal --
@@ -136,6 +137,7 @@ export class CommitteeViewComponent {
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
   // Pending invites share the members refresh trigger so adding/revoking refreshes both.
   public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
+  public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
 
   // Membership identity comes from server-enriched fields on the committee record,
   // resolved via the username-tagged membership query so visibility doesn't depend
@@ -177,6 +179,13 @@ export class CommitteeViewComponent {
   public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
+  public canSendMemberInvites: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    if (!committee || this.canEdit() || this.isVisitor()) return false;
+    return committee.join_mode === 'invite_only';
+  });
 
   public canReview: Signal<boolean> = computed(() => {
     if (this.canEdit()) return false;
@@ -740,7 +749,7 @@ export class CommitteeViewComponent {
         switchMap(([committee]) => {
           // Only managers can see pending invites — gate the fetch (not just the display) so
           // non-managers never request invitee emails and we don't rely on upstream authz to reject.
-          if (!committee?.uid || !canManageCommitteeMembers(committee)) {
+          if (!committee?.uid || !canManageCommitteeMembers(committee) || committee.join_mode === 'closed') {
             this.invitesLoading.set(false);
             return of([] as CommitteeInvite[]);
           }
@@ -758,6 +767,27 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] as CommitteeInvite[] }
+    );
+  }
+
+  private initializeApplications(): Signal<CommitteeJoinApplication[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
+        switchMap(([committee]) => {
+          if (!committee?.uid || !canManageCommitteeMembers(committee) || committee.join_mode !== 'application') {
+            this.applicationsLoading.set(false);
+            return of([] as CommitteeJoinApplication[]);
+          }
+
+          this.applicationsLoading.set(true);
+
+          return this.committeeService.getCommitteeApplications(committee.uid).pipe(
+            catchError(() => of([] as CommitteeJoinApplication[])),
+            finalize(() => this.applicationsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as CommitteeJoinApplication[] }
     );
   }
 

@@ -64,6 +64,9 @@ export interface CommitteeOrganizationReference {
  */
 export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 
+/** Add-member dialog mode: admin direct-add vs member invite-by-email. */
+export type AddMemberDialogMode = 'direct-add' | 'invite';
+
 /**
  * Status of a committee invite. Mirrors the committee-service `committee_invite`
  * resource status enum (lfx-v2-committee-service): an invite is `pending` until the

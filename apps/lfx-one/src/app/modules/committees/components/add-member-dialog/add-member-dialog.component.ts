@@ -7,22 +7,26 @@ import { Component, computed, DestroyRef, inject, Signal, signal, viewChild } fr
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
+import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
+  AddMemberDialogMode,
   CategorizedCommitteeEmails,
   Committee,
   CommitteeInvite,
   CommitteeInviteResult,
   CommitteeMember,
+  CommitteeOrganizationReference,
+  CreateCommitteeMemberRequest,
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
-  UserSearchResult,
   OrganizationResolveResult,
-  CommitteeOrganizationReference,
+  UserSearchResult,
 } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload, committeeRequiresOrganization, hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
@@ -35,13 +39,14 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, take, tap, toArray } from 'rxjs';
 
 /**
- * Invite people to a committee by email — single or bulk.
+ * Add people to a committee by email — single or bulk.
  *
- * The committee/registrant search corpus is not the LF identity directory, so this
- * flow does not try to match every person to an existing account. Anyone is added by
- * inviting their email (invite-and-forget); the invitee completes their own profile on
- * accept, and an LFID is reconciled then. The typeahead is a convenience for finding
- * people already known to v2 and appending their email — never a gate.
+ * Supports two modes (see {@link AddMemberDialogMode}):
+ * - `direct-add` — writers add members immediately via POST /members (LFXV2-2690).
+ * - `invite` — non-writer members in invite_only groups send email invites.
+ *
+ * The typeahead is a convenience for finding people already known to v2 and appending
+ * their email — never a gate.
  */
 @Component({
   selector: 'lfx-add-member-dialog',
@@ -51,6 +56,7 @@ import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Ob
     UserInitialsPipe,
     UserAvatarColorPipe,
     ButtonComponent,
+    CheckboxComponent,
     InputTextComponent,
     OrganizationSearchComponent,
     SelectComponent,
@@ -72,6 +78,8 @@ export class AddMemberDialogComponent {
   private resolvedOrganizationName = '';
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
+  public readonly mode: AddMemberDialogMode = this.config.data?.mode ?? 'direct-add';
+  public readonly isDirectAdd = computed(() => this.mode === 'direct-add');
   /** True when the committee requires organization on accept — shows an optional default org field. */
   public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   private readonly existingMemberEmails = new Set<string>(
@@ -87,6 +95,7 @@ export class AddMemberDialogComponent {
     organization: new FormControl(''),
     organization_url: new FormControl(''),
     organization_id: new FormControl<string | null>(null),
+    send_notification: new FormControl<boolean>(true, { nonNullable: true }),
   });
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
 
@@ -167,8 +176,6 @@ export class AddMemberDialogComponent {
         .pipe(take(1), takeUntilDestroyed(this.destroyRef))
         .subscribe((employer) => {
           if (employer?.name && !this.form.get('organization')!.value?.trim()) {
-            // Set resolvedOrganizationName before patching so the name-change subscription
-            // does not clear organization_id / organization_url immediately after autofill.
             this.resolvedOrganizationName = employer.name.trim();
             this.form.patchValue({
               organization: employer.name.trim(),
@@ -199,7 +206,6 @@ export class AddMemberDialogComponent {
     if (this.showOrganizationField()) {
       this.orgSubmitAttempted.set(true);
       if (this.organizationSearch()?.manualMode()) {
-        // Touch the website control so its inline required/URL validators become visible.
         this.form.get('organization_url')?.markAsTouched();
       }
       if (this.orgInvalid()) {
@@ -211,26 +217,11 @@ export class AddMemberDialogComponent {
     const role = this.form.get('role')!.value || null;
 
     const fanOut = (organization: CommitteeOrganizationReference | null | undefined): void => {
-      from(emails)
-        .pipe(
-          mergeMap(
-            (email): Observable<CommitteeInviteResult> =>
-              this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role, organization }).pipe(
-                map(() => ({ email, success: true })),
-                catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
-              ),
-            COMMITTEE_INVITE_CONCURRENCY
-          ),
-          toArray(),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe((results) => {
-          this.submitting.set(false);
-          this.summarize(results);
-          if (results.some((r) => r.success)) {
-            this.dialogRef.close(true);
-          }
-        });
+      if (this.isDirectAdd()) {
+        this.fanOutDirectAdd(committeeId, emails, role, organization);
+        return;
+      }
+      this.fanOutInvites(committeeId, emails, role, organization);
     };
 
     if (this.showOrganizationField()) {
@@ -251,20 +242,91 @@ export class AddMemberDialogComponent {
     fanOut(undefined);
   }
 
-  private organizationFormValue(): {
-    organization: string;
-    organization_url: string;
-    organization_id: string | null;
-  } {
-    const raw = this.form.getRawValue();
-    return {
-      organization: raw.organization ?? '',
-      organization_url: raw.organization_url ?? '',
-      organization_id: raw.organization_id,
-    };
+  private fanOutDirectAdd(committeeId: string, emails: string[], role: string | null, organization: CommitteeOrganizationReference | null | undefined): void {
+    const skipNotification = !this.form.get('send_notification')!.value;
+
+    from(emails)
+      .pipe(
+        mergeMap((email): Observable<CommitteeInviteResult> => {
+          const memberData: CreateCommitteeMemberRequest = { email };
+          if (role) {
+            memberData.role = { name: role as CommitteeMemberRole };
+          }
+          if (organization) {
+            memberData.organization = organization;
+          }
+          return this.committeeService.createCommitteeMember(committeeId, memberData, { skipNotification }).pipe(
+            map(() => ({ email, success: true })),
+            catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.directAddFailureReason(err) }))
+          );
+        }, COMMITTEE_INVITE_CONCURRENCY),
+        toArray(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((results) => {
+        this.submitting.set(false);
+        this.summarizeDirectAdd(results);
+        if (results.some((r) => r.success)) {
+          this.dialogRef.close(true);
+        }
+      });
   }
 
-  private summarize(results: CommitteeInviteResult[]): void {
+  private fanOutInvites(committeeId: string, emails: string[], role: string | null, organization: CommitteeOrganizationReference | null | undefined): void {
+    from(emails)
+      .pipe(
+        mergeMap(
+          (email): Observable<CommitteeInviteResult> =>
+            this.committeeService.createCommitteeInvite(committeeId, { invitee_email: email, role, organization }).pipe(
+              map(() => ({ email, success: true })),
+              catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.inviteFailureReason(err) }))
+            ),
+          COMMITTEE_INVITE_CONCURRENCY
+        ),
+        toArray(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((results) => {
+        this.submitting.set(false);
+        this.summarizeInvites(results);
+        if (results.some((r) => r.success)) {
+          this.dialogRef.close(true);
+        }
+      });
+  }
+
+  private summarizeDirectAdd(results: CommitteeInviteResult[]): void {
+    const succeeded = results.filter((r) => r.success);
+    const failed = results.filter((r) => !r.success);
+
+    if (failed.length === 0) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Members Added',
+        detail: succeeded.length === 1 ? `Added ${succeeded[0].email}.` : `Added ${succeeded.length} people to the group.`,
+      });
+      return;
+    }
+
+    if (succeeded.length === 0) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Unable to Add',
+        detail: failed.length === 1 ? `Could not add ${failed[0].email}: ${failed[0].reason}.` : `None of the ${failed.length} members could be added.`,
+        life: 6000,
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Some Adds Failed',
+      detail: `Added ${succeeded.length} of ${results.length}. Could not add: ${failed.map((f) => f.email).join(', ')}.`,
+      life: 8000,
+    });
+  }
+
+  private summarizeInvites(results: CommitteeInviteResult[]): void {
     const succeeded = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
 
@@ -295,12 +357,33 @@ export class AddMemberDialogComponent {
     });
   }
 
+  private directAddFailureReason(err: HttpErrorResponse): string {
+    if (err.status === 409) {
+      return 'already a member';
+    }
+    const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
+    return upstream ?? 'add failed';
+  }
+
   private inviteFailureReason(err: HttpErrorResponse): string {
     if (err.status === 409) {
       return 'already invited or a member';
     }
     const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
     return upstream ?? 'invite failed';
+  }
+
+  private organizationFormValue(): {
+    organization: string;
+    organization_url: string;
+    organization_id: string | null;
+  } {
+    const raw = this.form.getRawValue();
+    return {
+      organization: raw.organization ?? '',
+      organization_url: raw.organization_url ?? '',
+      organization_id: raw.organization_id,
+    };
   }
 
   private initOrgFormValues() {
@@ -310,15 +393,11 @@ export class AddMemberDialogComponent {
   private initOrgInvalid(): Signal<boolean> {
     return computed(() => {
       if (!this.showOrganizationField()) return false;
-      // In manual mode, org validity is entirely determined by the URL form control's
-      // validator state (Validators.required + trimmedRequired + httpsUrlValidator).
       if (this.organizationSearch()?.manualMode()) {
         return this.orgUrlStatus() === 'INVALID';
       }
       const vals = this.orgFormValues();
       const hasName = !!(vals.organization ?? '').trim();
-      // User typed in the search box but never selected a result (e.g. org doesn't exist in CDP).
-      // The parent form stays empty in that case, so check the component's pending search text.
       const pendingSearch = this.organizationSearch()?.searchTerm() ?? '';
       if (!hasName && pendingSearch) return true;
       if (!hasName) return false;
@@ -339,12 +418,8 @@ export class AddMemberDialogComponent {
   private initShowOrgError(): Signal<boolean> {
     return computed(() => {
       if (!this.orgInvalid()) return false;
-      // In manual mode the user is creating a new org — "not found" is irrelevant.
-      // Validation for that path is handled inline inside the org-search template.
       if (this.organizationSearch()?.manualMode()) return false;
       if (this.orgSubmitAttempted()) return true;
-      // Show immediately while the user has typed a search term with no confirmed selection —
-      // same reactive-as-you-type UX as the email invalid warning (no submit click needed).
       const hasName = !!(this.orgFormValues().organization ?? '').trim();
       return !hasName && !!(this.organizationSearch()?.searchTerm() ?? '');
     });
@@ -364,7 +439,6 @@ export class AddMemberDialogComponent {
           this.searchLoading.set(true);
           const trimmed = q.trim();
           return this.searchService.searchUsers(trimmed, 'committee_member').pipe(
-            // Re-rank so name matches surface first and incidental email/alias matches are demoted (LFXV2-2058).
             map((users) => rankUserSearchResults(users, trimmed)),
             tap(() => this.searchLoading.set(false)),
             catchError(() => {
