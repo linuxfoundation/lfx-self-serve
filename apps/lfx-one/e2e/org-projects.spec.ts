@@ -256,7 +256,7 @@ test.describe('Org Projects', () => {
   });
 
   test('keeps add-project search results ordered by the latest request', async ({ page }) => {
-    // Use a workspace that does NOT already contain kubernetes, so the Kubernetes search result is addable
+    // Use a workspace that does NOT already contain these results, so both are addable
     // (mapAddableOptions filters out projects already in the selected workspace).
     await gotoOrgProjectsPage(page, {
       workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
@@ -267,10 +267,15 @@ test.describe('Org Projects', () => {
       if (route.request().method() !== 'GET') return route.fallback();
       const url = new URL(route.request().url());
       const query = url.searchParams.get('q') ?? '';
-      if (!query) {
+      // On-open empty-query preload resolves instantly so the panel opens without waiting.
+      if (!query) return fulfillJson(route, { results: [] });
+      // The earlier, shorter query 'ku' is deliberately SLOW; the later 'kube' is fast, so the stale 'ku'
+      // response lands AFTER the latest one. Both results contain "kube" so PrimeNG's client-side filter
+      // keeps either visible — only the request-id guard, not client filtering, can drop the stale one.
+      if (query === 'ku') {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return fulfillJson(route, {
-          results: [{ slug: 'old-result', name: 'Old Result', logoUrl: '', foundation: { slug: 'old', name: 'Old', logoUrl: '' } }],
+          results: [{ slug: 'kube-stale', name: 'Kube Stale', logoUrl: '', foundation: { slug: 'old', name: 'Old', logoUrl: '' } }],
         });
       }
       return fulfillJson(route, {
@@ -279,22 +284,29 @@ test.describe('Org Projects', () => {
     });
 
     await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    // The dialog fires an on-open empty-query search; it's deliberately slow here. Wait for it to settle before
-    // opening the panel — clicking the multi-select while it's still loading doesn't open the overlay.
-    const onOpenSearch = page.waitForResponse((r) => /\/lens\/projects\/search/.test(r.url()) && r.request().method() === 'GET');
     await page.getByTestId('org-projects-add-project').click();
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
-    await onOpenSearch;
     // Single search affordance: no standalone search input in the dialog — search lives inside the multi-select's own filter.
     await expect(page.getByRole('dialog', { name: 'Add project(s)' }).getByRole('searchbox')).toHaveCount(0);
     await page.getByTestId('org-projects-add-projects-select').click();
     const filter = page.getByRole('searchbox', { name: 'Search and select projects' });
     await expect(filter).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await filter.fill('ku');
 
-    await expect(page.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await page.waitForTimeout(500);
-    await expect(page.getByText('Old Result')).toHaveCount(0);
+    // Fire the slow 'ku' request (waiting past the 300ms debounce so it actually dispatches and is in-flight),
+    // then refine to the fast 'kube' request while 'ku' is still pending — a genuine concurrent race.
+    await filter.fill('ku');
+    await page.waitForTimeout(400);
+    await filter.fill('kube');
+
+    // The fast 'kube' result renders first. Scope to the option list — the background projects table also
+    // has a "Kubernetes" row, so an unscoped getByText would be ambiguous.
+    const optionList = page.getByLabel('Option List');
+    await expect(optionList.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Wait past the slow 'ku' response so a stale-invalidation regression would surface: its 'Kube Stale' row
+    // (which also matches the "kube" filter) must never replace the latest 'kube' results.
+    await page.waitForTimeout(2500);
+    await expect(optionList.getByText('Kube Stale')).toHaveCount(0);
+    await expect(optionList.getByText('Kubernetes')).toBeVisible();
   });
 
   test('shows add-project search and save failures without hiding the dialog', async ({ page }) => {
