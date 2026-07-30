@@ -83,9 +83,27 @@ export class WeeklyBriefCardComponent {
   // requires all fields, public or private, before the constructor.
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
+  // Guards against starting a second concurrent poll — pollUntilTerminal is reachable
+  // both from onGenerate and from the initial-load pipeline (a page load / navigation
+  // landing on an already-`generating` brief).
+  private pollActive = false;
+
+  // Only these states end a poll — everything else (`generating`, `empty`, a null brief
+  // on a not-yet-visible write) must keep it running. Checking equality with `'generating'`
+  // instead would treat `empty`/null as terminal and stop polling mid-generation.
+  private readonly terminalBriefStates: ReadonlySet<string> = new Set(['generated', 'edited', 'approved', 'error']);
+
   // Derived signals
   public readonly brief: Signal<WeeklyBrief | null> = computed(() => this.briefResponse()?.brief ?? null);
   public readonly throttle: Signal<WeeklyBriefThrottle | null> = computed(() => this.briefResponse()?.throttle ?? null);
+
+  // brief() is truthy even in the `empty` state (a real WeeklyBrief object with
+  // state: 'empty'), which would otherwise fall through into the generated-content
+  // branch below — rendering Regenerate/Edit/Copy & Share over zero brief text.
+  public readonly renderableBrief: Signal<WeeklyBrief | null> = computed(() => {
+    const b = this.brief();
+    return b && b.state !== 'empty' ? b : null;
+  });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {
     const t = this.throttle();
@@ -267,15 +285,28 @@ export class WeeklyBriefCardComponent {
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((response) => this.briefResponse.set(response));
+      .subscribe((response) => {
+        this.briefResponse.set(response);
+        // Covers a page reload, navigating back to this committee, or a co-chair's
+        // generation already in flight — not just this tab's own onGenerate() call.
+        // Without this, a card that *loads* into the generating state never polls and
+        // is stuck on the spinner with no way to reach a terminal state.
+        const uid = this.committee()?.uid;
+        if (uid && response?.brief?.state === 'generating') {
+          this.pollUntilTerminal(uid);
+        }
+      });
   }
 
-  // Polls GET /current after a generate/regenerate call is accepted (202) until the
-  // brief reaches a terminal state (generated/edited/approved/error), or the attempt
-  // cap trips. A transient poll failure doesn't abandon the poll — only the cap does.
-  // The caller has already rendered the 202 body's `generating` state, so the first
-  // tick is one interval out rather than immediate.
+  // Polls GET /current after a generate/regenerate call is accepted (202) — or after a
+  // load lands on an already-in-progress generation — until the brief reaches a
+  // terminal state (generated/edited/approved/error), or the attempt cap trips. A
+  // transient poll failure doesn't abandon the poll — only the cap does.
   private pollUntilTerminal(committeeUid: string): void {
+    if (this.pollActive) return;
+    this.pollActive = true;
+    this.generating.set(true);
+    this.pollTimedOut.set(false);
     let ticks = 0;
     let observedTerminal = false;
     timer(WEEKLY_BRIEF_POLL_INTERVAL_MS, WEEKLY_BRIEF_POLL_INTERVAL_MS)
@@ -305,11 +336,16 @@ export class WeeklyBriefCardComponent {
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
           this.briefResponse.set(response);
-          if (response.brief?.state !== 'generating') {
+          if (this.terminalBriefStates.has(response.brief?.state ?? '')) {
             observedTerminal = true;
           }
         }),
-        takeWhile((response) => response.brief?.state === 'generating', true),
+        // Keep polling on anything that ISN'T a terminal state — not just 'generating'.
+        // A null brief or state: 'empty' on an early tick means the write isn't visible
+        // yet, not that generation is done; treating either as terminal here would stop
+        // the poll mid-generation and drop the card to "No brief yet" with the quota
+        // already spent.
+        takeWhile((response) => !this.terminalBriefStates.has(response.brief?.state ?? ''), true),
         // refresh$ is also reachable while a poll is in flight (onRetry, the 409 branch
         // of onGenerate) — stop polling on a manual refresh so a late poll tick can't
         // overwrite a fresher refresh result. skip(1): refresh$ is a BehaviorSubject and
@@ -325,6 +361,7 @@ export class WeeklyBriefCardComponent {
       )
       .subscribe({
         complete: () => {
+          this.pollActive = false;
           this.generating.set(false);
           // Only warn when the attempt cap was actually exhausted without ever observing
           // a terminal state — not when the poll stopped because of a manual refresh/409

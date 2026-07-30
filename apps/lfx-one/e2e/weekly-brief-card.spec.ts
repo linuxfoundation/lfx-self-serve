@@ -14,6 +14,8 @@
  * - Generate-from-empty: POST (202/generating) → poll GET /current → re-render to
  *   `generated` — upstream's generate call is async, not a completed brief in the
  *   POST response (see weekly-brief.service.ts on the BFF)
+ * - A page load landing directly on an already-`generating` brief (no POST from this
+ *   tab) also polls to terminal on its own
  * - Read-failure → retryable unavailable state → recovery
  *
  * Architecture notes (mirrors repo convention):
@@ -348,9 +350,9 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
     // Enter edit mode.
     await page.getByTestId('weekly-brief-card-edit-button').click();
 
-    // lfx-textarea has no data-testid forwarding to its inner <textarea> — select it
-    // structurally within the card instead.
-    const textarea = page.getByTestId('committee-overview-weekly-brief-card').locator('textarea');
+    // lfx-textarea forwards dataTest as [attr.data-test] on the inner <textarea>, not
+    // data-testid — select it accordingly.
+    const textarea = page.locator('[data-test="weekly-brief-card-edit-textarea"]');
     await expect(textarea).toBeVisible();
     await expect(textarea).toHaveValue(GENERATED_BRIEF.brief_text);
 
@@ -440,6 +442,43 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     await expect(page.getByTestId('weekly-brief-card-regenerate-button')).toBeVisible();
     await expect(page.getByTestId('weekly-brief-card-edit-button')).toBeVisible();
     await expect(page.getByTestId('weekly-brief-card-copy-button')).toBeVisible();
+  });
+});
+
+test.describe('WG Weekly Brief card — loads directly into the generating state', () => {
+  test('a page load landing on an already-generating brief polls to terminal on its own, without a Generate click', async ({ page }) => {
+    await mockCommitteeShell(page);
+
+    const GENERATING_BRIEF: WeeklyBrief = { ...GENERATED_BRIEF, state: 'generating', brief_text: '' };
+
+    // Reproduces a page reload / navigate-back / co-chair-triggered-generation mid-flight:
+    // the card's very first read already returns `generating`, with no POST /generate
+    // from this tab at all. Regression coverage for a bug where only onGenerate()'s own
+    // poll call covered this state, leaving a load-time generating brief a permanent
+    // spinner with no recovery (LFXV2-2176 review).
+    let getCount = 0;
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      getCount += 1;
+      const body: WeeklyBriefCurrentResponse =
+        getCount === 1 ? { brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE } : { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // First read already generating — no click happened, so this proves the load
+    // pipeline itself started the poll.
+    await expect(page.getByTestId('weekly-brief-card-generating-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // The poll's own tick (not a user action) carries it to the terminal brief.
+    await expect(page.getByText(GENERATED_BRIEF.brief_text)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    expect(getCount).toBeGreaterThanOrEqual(2);
   });
 });
 
