@@ -9,11 +9,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_30D_DAYS = 30;
 const WINDOW_90D_DAYS = 90;
 /**
- * Fallback tenure (days) used only when a member has no real `created_at` to work with at all —
- * a fully synthetic identity, never a real one being overridden. Applied to the Emeritus slot and
- * the three attendance-pattern demo slots (Inactive/Low/Medium) alike; a member with real tenure
- * data — however short — always uses that instead, since the emitted `MEMBER_JOINED_AT` is always
- * real and the attendance numbers must stay consistent with whatever tenure that date implies.
+ * Fallback tenure (days) used only when a member has no *usable* real `created_at` (absent, or
+ * present but unparseable — see `parseRealJoinedDaysAgo`) — a fully synthetic identity, never a
+ * real one being overridden. Applied to the Emeritus slot and the three attendance-pattern demo
+ * slots (Inactive/Low/Medium) alike; a member with usable real tenure data — however short —
+ * always uses that instead, and `MEMBER_JOINED_AT` is derived from this same fallback whenever
+ * it's used, so the emitted date and the numbers computed from it never disagree.
  */
 const DEMO_TENURE_FALLBACK_DAYS = 200;
 const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
@@ -90,6 +91,17 @@ interface RosterPlan {
  *   date at all is fabricated exactly `minOrlinTenureDays` of tenure — the shortest tenure that's
  *   still self-consistent with the forced count for *this* committee's cadence. If every member
  *   has real (and either too-recent or too-long) tenure data, no member takes this role.
+ *
+ * Known trade-off: `CommitteeMember.created_at` is a required field on real roster data (see
+ * `member.interface.ts`), so the "no real join date at all" fallback branch above almost never
+ * fires against a real committee — the Orlin case only renders when some real member's tenure
+ * happens to land in `[minOrlinTenureDays, WINDOW_30D_DAYS)`, a roughly 5-15 day window. This is an
+ * accepted limitation of "never override a real, known value" rather than a bug: the alternative
+ * (overriding a real member's real join date, the one thing this generator otherwise never does)
+ * would make an already-real person's mock data lie about them specifically, which is worse than
+ * the scenario simply not showing up for every committee. Small test fixtures (no real
+ * `created_at` at all) always exercise it; real committees may or may not, depending on roster
+ * composition.
  */
 function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMember[]): RosterPlan {
   const meetings30d = committeeMeetingsForWindow(committeeUid, WINDOW_30D_DAYS);
@@ -212,10 +224,10 @@ function buildAttendanceProfile(committeeUid: string, member: CommitteeMember, i
   // instead of `organicJoinedDaysAgo`'s varied range.
   const demoSlot = plan.demoAttendanceIndices.indexOf(index);
   const isReservedDemoSlot = demoSlot >= 0 && demoSlot < DEMO_ATTENDANCE_PROFILES.length;
-  // Real tenure always wins when it exists, however short — the emitted MEMBER_JOINED_AT is always
-  // real, so the attendance numbers must be computed against that same real tenure to stay
-  // internally consistent. The fabricated defaults below only ever apply to a member with no real
-  // join date at all.
+  // Usable real tenure always wins when it exists, however short. The fabricated defaults below
+  // apply only when there's none to use (`identity.realJoinedDaysAgo === null`) — the same case in
+  // which `buildMockRow` derives `MEMBER_JOINED_AT` from this value instead of `member.created_at`
+  // — so whichever tenure is used here is always the one the emitted join date agrees with.
   const joinedDaysAgo =
     identity.realJoinedDaysAgo ?? (isEmeritus || isReservedDemoSlot ? DEMO_TENURE_FALLBACK_DAYS : organicJoinedDaysAgo(hashToUnitInterval(`${seed}:tenure`)));
 
@@ -240,7 +252,7 @@ function buildAttendanceProfile(committeeUid: string, member: CommitteeMember, i
   };
 }
 
-/** Personal invited/attended for one window, given a member's stable profile and that window's committee-wide meeting count. `effectiveDays` clips exposure to how long the member has actually been on the roster, so a recent joiner's numbers don't imply meetings that happened before they joined. */
+/** Personal invited/attended for one window, given a member's stable profile and that window's committee-wide meeting count. For every profile except a forced-count one (the "Orlin case"), `effectiveDays` clips exposure to how long the member has actually been on the roster, so a recent joiner's numbers don't imply meetings that happened before they joined; the forced-count path skips this and is instead kept plausible by an eligibility gate on who can hold that role at all (see `planRosterIdentities`'s `minOrlinTenureDays`). */
 function computeWindowCounts(
   committeeUid: string,
   memberUid: string,

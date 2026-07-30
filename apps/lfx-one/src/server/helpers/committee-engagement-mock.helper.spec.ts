@@ -42,7 +42,7 @@ describe('generateMockEngagementRows', () => {
     }
   });
 
-  it('reserved slot 1 is the Orlin case: joined ~20 days ago, invited=attended=5 in every window', () => {
+  it('reserved slot 1 is the Orlin case: joined recently (within the plausible-tenure fallback), invited=attended=5 in every window', () => {
     const rows = generateMockEngagementRows('committee-1', ROSTER);
     const row = rows[1];
     expect(row?.INVITED_COUNT_30D).toBe(5);
@@ -179,15 +179,27 @@ describe('generateMockEngagementRows', () => {
       expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
     });
 
-    it('never assigns the Orlin case to a real Emeritus member, even if they are the most-recently-joined real member', () => {
+    it('never assigns the Orlin case to a real Emeritus member, even if they are the most-recently-joined real member — a different eligible member takes it instead', () => {
       // Regression: buildAttendanceProfile checks isEmeritus before the Orlin slot, so an
-      // Emeritus candidate would silently absorb the role without ever rendering forced counts.
-      const recentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
-      const roster = [member('m0', { voting: { status: 'Emeritus' } as never, created_at: recentJoin }), ...ROSTER.slice(1)];
+      // Emeritus candidate would silently absorb the role without ever rendering forced counts —
+      // and without redirecting to anyone else. Asserting only "the Emeritus member doesn't show
+      // 5/5" isn't enough to catch that: it's also true, coincidentally, in some cases even without
+      // the exclusion, since the Emeritus profile's own numbers rarely happen to equal 5/5 anyway.
+      // The real assertion is that *someone else* renders the scenario once the most-recent
+      // candidate is excluded for being Emeritus.
+      const mostRecentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
+      const secondMostRecentJoin = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [
+        member('m0', { voting: { status: 'Emeritus' } as never, created_at: mostRecentJoin }),
+        member('m1', { voting: { status: 'Voting Rep' } as never, created_at: secondMostRecentJoin }),
+        ...ROSTER.slice(2),
+      ];
       const rows = generateMockEngagementRows('committee-1', roster);
-      const emeritusRow = rows.find((r) => r.MEMBER_USER_ID === 'm0');
-      expect(emeritusRow?.MEMBER_VOTING_STATUS).toBe('Emeritus');
-      expect(emeritusRow?.INVITED_COUNT_30D).not.toBe(5);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      const m1 = rows.find((r) => r.MEMBER_USER_ID === 'm1');
+      expect(m0?.MEMBER_VOTING_STATUS).toBe('Emeritus');
+      expect(m0?.INVITED_COUNT_30D).not.toBe(5);
+      expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
     });
 
     it('does not force the literal Orlin counts on a real member whose tenure is too short to plausibly support them', () => {
