@@ -206,15 +206,29 @@ export class CommitteeEngagementService {
     return typeof email === 'string' ? email.trim().toLowerCase() : '';
   }
 
-  /** Redacts a rejected `COMPUTED_AT` value to its structural shape for logging — digits become
-   * `9`, letters become `a`, everything else (punctuation, whitespace) survives — so a warning
-   * reader can tell "looks like a real timestamp that failed to parse" from "not a timestamp at
-   * all" without the value's actual content ever reaching the log. */
+  /**
+   * Redacts a rejected `COMPUTED_AT` value to its structural shape for logging — Unicode digits
+   * become `9`, Unicode letters/marks become `a`, a fixed set of timestamp-punctuation characters
+   * (`- : . + / T Z` and space) pass through, and everything else becomes `?` — so a warning reader
+   * can tell "looks like a real timestamp that failed to parse" from "not a timestamp at all"
+   * without any of the value's actual content ever reaching the log.
+   *
+   * Default-*deny*, not default-allow: an earlier version redacted only known digit/letter classes
+   * and let anything else (symbols, emoji, combining marks) through unchanged, which doesn't
+   * actually guarantee "no content reaches the log" — only an explicit allowlist for the characters
+   * that carry real timestamp-shape signal does. Iterates by Unicode code point (`Array.from`, not
+   * `.slice`/index access) so a surrogate pair isn't split into two lone, invalid surrogates.
+   */
   private redactedShape(raw: unknown): string {
-    return String(raw)
+    const TIMESTAMP_PUNCTUATION = new Set(['-', ':', '.', '+', '/', ' ', 'T', 'Z']);
+    return Array.from(String(raw))
       .slice(0, 24)
-      .replace(/\d/g, '9')
-      .replace(/[A-Za-z]/g, 'a');
+      .map((char) => {
+        if (/\p{Nd}/u.test(char)) return '9';
+        if (/[\p{L}\p{M}]/u.test(char)) return TIMESTAMP_PUNCTUATION.has(char) ? char : 'a';
+        return TIMESTAMP_PUNCTUATION.has(char) ? char : '?';
+      })
+      .join('');
   }
 
   private toCount(value: unknown): number {

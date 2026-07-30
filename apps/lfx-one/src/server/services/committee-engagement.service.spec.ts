@@ -253,7 +253,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     expect(result.computed_at).toBe('2026-07-28T07:00:00.000Z');
   });
 
-  it('rejects a date-only COMPUTED_AT string rather than fabricating a 00:00:00 time', async () => {
+  it('rejects a date-only COMPUTED_AT string rather than fabricating a 00:00:00 time, and redacts its digits in the warning sample', async () => {
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '2026-07-28' }],
@@ -262,6 +262,35 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
     expect(result.computed_at).toBeNull();
+    // This is the diagnostically valuable half of the redaction: a timestamp-shaped-but-rejected
+    // value should still read as timestamp-shaped after redaction, not just "not a timestamp".
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable COMPUTED_AT'),
+      expect.objectContaining({ rejected_sample: ['9999-99-99'] })
+    );
+  });
+
+  it('redacts symbols and non-Latin letters (default-deny, not default-allow) in the warning sample', async () => {
+    // A prior version of this redaction only mapped known digit/letter classes and let anything
+    // else — symbols, emoji, combining marks — through unchanged, which doesn't actually guarantee
+    // "no content reaches the log". Cyrillic letters must redact like Latin ones, and a character
+    // that's neither a recognized digit/letter nor known timestamp punctuation (👍) must become the
+    // '?' placeholder rather than passing through verbatim.
+    getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
+    execute.mockResolvedValueOnce({
+      rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: 'Алексей 👍' }],
+    });
+
+    await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_committee_engagement',
+      expect.stringContaining('unparseable COMPUTED_AT'),
+      expect.objectContaining({ rejected_sample: ['aaaaaaa ?'] })
+    );
   });
 
   it('rejects a shape-matching but impossible calendar date instead of letting it roll over to a real one', async () => {
