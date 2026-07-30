@@ -35,7 +35,7 @@ import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, filter, of, startWith, switchMap, take, timer } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, of, startWith, take, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -483,7 +483,7 @@ export class CommitteeMembersComponent implements OnInit {
     timer(400, 400)
       .pipe(
         take(6),
-        switchMap(() => this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of([] as CommitteeJoinApplication[])))),
+        exhaustMap(() => this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of([] as CommitteeJoinApplication[])))),
         filter((applications) => {
           const application = applications.find((app) => app.uid === applicationUid);
           return !application || (application.status ?? '').toLowerCase() !== 'pending';
