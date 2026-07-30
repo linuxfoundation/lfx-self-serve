@@ -3,9 +3,20 @@
 
 import { Meeting, MeetingOccurrenceRoute, PastMeeting } from '../interfaces';
 import type { MeetingCalendarClickProps, MeetingCalendarEventInput } from '../interfaces/calendar.interface';
+import { Vote } from '../interfaces/poll.interface';
+import { Survey } from '../interfaces/survey.interface';
 
 import { addMinutesToDate } from './date-time.utils';
-import { buildMeetingOccurrenceRoute, hasMeetingEnded, isMeetingOccurrenceCancelled, resolveMeetingCalendarColors } from './meeting.utils';
+import {
+  buildMeetingOccurrenceRoute,
+  hasMeetingEnded,
+  isCalendarDeadlinePast,
+  isMeetingOccurrenceCancelled,
+  isVoteCalendarEventPast,
+  resolveMeetingCalendarColors,
+  resolveSurveyCalendarColors,
+  resolveVoteCalendarColors,
+} from './meeting.utils';
 import { getPastMeetingResourceId, getPastMeetingStartTimeMs, isPastMeetingCalendarRow } from './past-meeting.utils';
 
 /**
@@ -101,4 +112,53 @@ export function resolveMeetingCalendarClickRoute(props: MeetingCalendarClickProp
     password: props.password,
     pastMeetingResourceId: props.pastMeetingResourceId,
   });
+}
+
+/** Returns true when a survey cutoff event should render with past calendar styling. */
+export function isSurveyCalendarEventPast(survey: Pick<Survey, 'survey_cutoff_date'>, now = new Date()): boolean {
+  return isCalendarDeadlinePast(survey.survey_cutoff_date, now);
+}
+
+/** Builds a FullCalendar event input for a committee vote deadline. */
+export function voteToCalendarEvent(vote: Pick<Vote, 'uid' | 'name' | 'end_time' | 'status' | 'early_end_time'>): MeetingCalendarEventInput {
+  const isPast = isVoteCalendarEventPast(vote);
+  const colors = resolveVoteCalendarColors(isPast);
+  const classNames = ['vote-event', 'cursor-default'];
+  if (isPast) {
+    classNames.push('vote-event-past');
+  }
+
+  return {
+    id: `vote-${vote.uid}`,
+    title: `Vote closes: ${vote.name}`,
+    start: vote.end_time,
+    allDay: true,
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
+    textColor: colors.text,
+    classNames,
+    extendedProps: { type: 'vote', voteId: vote.uid },
+  };
+}
+
+/** Builds a FullCalendar event input for a committee survey cutoff. */
+export function surveyToCalendarEvent(survey: Pick<Survey, 'uid' | 'survey_title' | 'survey_cutoff_date'> & { survey_cutoff_date: string }): MeetingCalendarEventInput {
+  const isPast = isSurveyCalendarEventPast(survey);
+  const colors = resolveSurveyCalendarColors(isPast);
+  const classNames = ['survey-event', 'cursor-default'];
+  if (isPast) {
+    classNames.push('survey-event-past');
+  }
+
+  return {
+    id: `survey-${survey.uid}`,
+    title: `Survey: ${survey.survey_title}`,
+    start: survey.survey_cutoff_date,
+    allDay: true,
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
+    textColor: colors.text,
+    classNames,
+    extendedProps: { type: 'survey', surveyId: survey.uid },
+  };
 }

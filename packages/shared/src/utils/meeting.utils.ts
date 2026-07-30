@@ -8,11 +8,16 @@ import {
   MEETING_ORGANIZER_SKIP_IDENTIFIERS,
   MEETING_TYPE_COLORS,
   PAST_MEETING_CALENDAR_COLOR,
+  PAST_SURVEY_CALENDAR_COLOR,
+  PAST_VOTE_CALENDAR_COLOR,
   RECURRENCE_DAYS_OF_WEEK,
   RECURRENCE_WEEKLY_ORDINALS,
+  SURVEY_COLOR,
+  VOTE_COLOR,
 } from '../constants';
 import { lfxColors } from '../constants/colors.constants';
 import { RecurrenceType } from '../enums';
+import { PollStatus } from '../enums/poll.enum';
 import {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
@@ -37,7 +42,9 @@ import {
   User,
   V1PastMeetingSummary,
   V1SummaryDetail,
+  Vote,
 } from '../interfaces';
+import { normalizePollStatus } from './poll.utils';
 
 const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
 const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
@@ -571,6 +578,36 @@ export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = fals
     return PAST_MEETING_CALENDAR_COLOR;
   }
   return { ...MEETING_TYPE_COLORS['default'], text: lfxColors.white };
+}
+
+/** Returns true when a calendar deadline timestamp is invalid or already passed. */
+export function isCalendarDeadlinePast(deadlineIso: string | null | undefined, now = new Date()): boolean {
+  if (!deadlineIso) {
+    return false;
+  }
+  const ms = new Date(deadlineIso).getTime();
+  if (Number.isNaN(ms)) {
+    return true;
+  }
+  return now.getTime() >= ms;
+}
+
+/** Resolves FullCalendar hex colors for a vote deadline event. */
+export function resolveVoteCalendarColors(isPast = false): CalendarColor {
+  return isPast ? PAST_VOTE_CALENDAR_COLOR : VOTE_COLOR;
+}
+
+/** Resolves FullCalendar hex colors for a survey cutoff event. */
+export function resolveSurveyCalendarColors(isPast = false): CalendarColor {
+  return isPast ? PAST_SURVEY_CALENDAR_COLOR : SURVEY_COLOR;
+}
+
+/** Returns true when a vote deadline event should render with past calendar styling. */
+export function isVoteCalendarEventPast(vote: Pick<Vote, 'end_time' | 'status' | 'early_end_time'>, now = new Date()): boolean {
+  if (normalizePollStatus(vote.status) === PollStatus.ENDED) {
+    return true;
+  }
+  return isCalendarDeadlinePast(vote.early_end_time ?? vote.end_time, now);
 }
 
 /** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */

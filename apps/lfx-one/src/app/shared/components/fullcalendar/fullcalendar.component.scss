@@ -101,6 +101,30 @@
             }
           }
         }
+
+        &.vote-event {
+          .fc-event-title {
+            @apply text-white;
+          }
+
+          &.vote-event-past {
+            .fc-event-title {
+              @apply text-amber-700 #{!important};
+            }
+          }
+        }
+
+        &.survey-event {
+          .fc-event-title {
+            @apply text-white;
+          }
+
+          &.survey-event-past {
+            .fc-event-title {
+              @apply text-violet-700 #{!important};
+            }
+          }
+        }
       }
     }
   }

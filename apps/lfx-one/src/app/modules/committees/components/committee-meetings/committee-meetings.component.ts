@@ -12,7 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
+import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { Committee, Meeting, MeetingCalendarClickProps, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
@@ -20,6 +20,8 @@ import {
   meetingToCalendarEvents,
   resolveMeetingCalendarClickRoute,
   sortPastMeetingsDescending,
+  surveyToCalendarEvent,
+  voteToCalendarEvent,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -283,38 +285,10 @@ export class CommitteeMeetingsComponent {
       const { votes, surveys } = externalData();
 
       const meetingEvents = allMeetings.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
-      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => this.voteToEvent(v));
-      const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => this.surveyToEvent(s));
+      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => voteToCalendarEvent(v) as EventInput);
+      const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => surveyToCalendarEvent(s) as EventInput);
 
       return [...meetingEvents, ...voteEvents, ...surveyEvents];
     });
-  }
-
-  private voteToEvent(vote: Vote): EventInput {
-    return {
-      id: `vote-${vote.uid}`,
-      title: `Vote closes: ${vote.name}`,
-      start: vote.end_time,
-      allDay: true,
-      backgroundColor: VOTE_COLOR.bg,
-      borderColor: VOTE_COLOR.border,
-      textColor: '#ffffff',
-      classNames: ['cursor-default'],
-      extendedProps: { type: 'vote', voteId: vote.uid },
-    };
-  }
-
-  private surveyToEvent(survey: Survey): EventInput {
-    return {
-      id: `survey-${survey.uid}`,
-      title: `Survey: ${survey.survey_title}`,
-      start: survey.survey_cutoff_date ?? undefined,
-      allDay: true,
-      backgroundColor: SURVEY_COLOR.bg,
-      borderColor: SURVEY_COLOR.border,
-      textColor: '#ffffff',
-      classNames: ['cursor-default'],
-      extendedProps: { type: 'survey', surveyId: survey.uid },
-    };
   }
 }

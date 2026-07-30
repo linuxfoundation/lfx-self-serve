@@ -31,7 +31,29 @@ export const PAST_MEETING_CALENDAR_COLOR: CalendarColor = {
 };
 
 /** Calendar color for vote deadline events. */
-export const VOTE_COLOR: CalendarColorPair = { bg: lfxColors.amber[500], border: lfxColors.amber[600] };
+export const VOTE_COLOR: CalendarColor = {
+  bg: lfxColors.amber[500],
+  border: lfxColors.amber[600],
+  text: lfxColors.white,
+};
+
+/** Calendar color for past vote deadline events — light fill with dark text for WCAG contrast. */
+export const PAST_VOTE_CALENDAR_COLOR: CalendarColor = {
+  bg: lfxColors.amber[100],
+  border: lfxColors.amber[400],
+  text: lfxColors.amber[700],
+};
 
 /** Calendar color for survey cutoff events. */
-export const SURVEY_COLOR: CalendarColorPair = { bg: lfxColors.violet[500], border: lfxColors.violet[600] };
+export const SURVEY_COLOR: CalendarColor = {
+  bg: lfxColors.violet[500],
+  border: lfxColors.violet[600],
+  text: lfxColors.white,
+};
+
+/** Calendar color for past survey cutoff events — light fill with dark text for WCAG contrast. */
+export const PAST_SURVEY_CALENDAR_COLOR: CalendarColor = {
+  bg: lfxColors.violet[100],
+  border: lfxColors.violet[400],
+  text: lfxColors.violet[700],
+};

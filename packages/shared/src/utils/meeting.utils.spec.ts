@@ -8,8 +8,17 @@ import '@angular/compiler';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { RecurrenceType } from '../enums';
-import { CANCELLED_COLOR, lfxColors, MEETING_TYPE_COLORS, PAST_MEETING_CALENDAR_COLOR } from '../constants';
+import { PollStatus, RecurrenceType } from '../enums';
+import {
+  CANCELLED_COLOR,
+  lfxColors,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  PAST_SURVEY_CALENDAR_COLOR,
+  PAST_VOTE_CALENDAR_COLOR,
+  SURVEY_COLOR,
+  VOTE_COLOR,
+} from '../constants';
 import {
   CustomRecurrencePattern,
   Meeting,
@@ -19,6 +28,7 @@ import {
   PastMeetingSummary,
   PastOccurrenceSummary,
   QueryServiceItem,
+  Vote,
 } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
@@ -33,16 +43,20 @@ import {
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
   getMeetingOrganizerDisplayName,
+  isCalendarDeadlinePast,
   isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
   isOccurrencePast,
   isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
   resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
+  resolveSurveyCalendarColors,
+  resolveVoteCalendarColors,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -821,6 +835,51 @@ describe('resolveMeetingCalendarColors', () => {
 
   it('returns cancelled grey regardless of past flag', () => {
     expect(resolveMeetingCalendarColors(true, true)).toEqual(CANCELLED_COLOR);
+  });
+});
+
+describe('resolveVoteCalendarColors', () => {
+  it('returns amber for active vote deadlines', () => {
+    expect(resolveVoteCalendarColors(false)).toEqual(VOTE_COLOR);
+  });
+
+  it('returns lighter amber for past vote deadlines', () => {
+    expect(resolveVoteCalendarColors(true)).toEqual(PAST_VOTE_CALENDAR_COLOR);
+  });
+});
+
+describe('resolveSurveyCalendarColors', () => {
+  it('returns violet for active survey cutoffs', () => {
+    expect(resolveSurveyCalendarColors(false)).toEqual(SURVEY_COLOR);
+  });
+
+  it('returns lighter violet for past survey cutoffs', () => {
+    expect(resolveSurveyCalendarColors(true)).toEqual(PAST_SURVEY_CALENDAR_COLOR);
+  });
+});
+
+describe('isCalendarDeadlinePast', () => {
+  it('returns false for a future deadline', () => {
+    expect(isCalendarDeadlinePast('2099-01-01T00:00:00Z', new Date('2026-01-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('returns true when the deadline has passed', () => {
+    expect(isCalendarDeadlinePast('2026-01-01T00:00:00Z', new Date('2026-01-02T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('isVoteCalendarEventPast', () => {
+  it('returns true for ended votes', () => {
+    expect(isVoteCalendarEventPast({ end_time: '2099-01-01T00:00:00Z', status: PollStatus.ENDED } as Vote)).toBe(true);
+  });
+
+  it('returns true when the close time has passed', () => {
+    expect(
+      isVoteCalendarEventPast(
+        { end_time: '2026-01-01T00:00:00Z', status: PollStatus.ACTIVE } as Vote,
+        new Date('2026-01-02T00:00:00Z')
+      )
+    ).toBe(true);
   });
 });
 

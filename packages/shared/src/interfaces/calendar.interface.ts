@@ -14,7 +14,7 @@ export interface CalendarColor extends CalendarColorPair {
   text: string;
 }
 
-/** Extended props set on meeting calendar events for click routing. */
+/** Extended props set on committee calendar events for click routing. */
 export interface MeetingCalendarClickProps {
   type: string;
   meetingId?: string;
@@ -23,10 +23,12 @@ export interface MeetingCalendarClickProps {
   startTime?: string;
   durationMinutes?: number;
   pastMeetingResourceId?: string;
+  voteId?: string;
+  surveyId?: string;
 }
 
 /**
- * Structural FullCalendar event payload for meeting rows.
+ * Structural FullCalendar event payload for committee calendar rows.
  * Uses a plain interface so shared utils do not bind to a duplicate @fullcalendar/core copy.
  */
 export interface MeetingCalendarEventInput {
@@ -34,6 +36,7 @@ export interface MeetingCalendarEventInput {
   title: string;
   start: string;
   end?: string;
+  allDay?: boolean;
   backgroundColor?: string;
   borderColor?: string;
   textColor?: string;
