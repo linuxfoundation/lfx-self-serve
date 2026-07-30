@@ -88,6 +88,15 @@ export class AddMemberDialogComponent {
   private readonly existingInviteEmails = new Set<string>(
     ((this.config.data?.existingInvites as CommitteeInvite[]) ?? []).map((i) => (i.invitee_email ?? '').trim().toLowerCase()).filter(Boolean)
   );
+  /** Pending invite UID by email — used to revoke stale invites after admin direct-add. */
+  private readonly pendingInviteUidByEmail = new Map<string, string>(
+    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? [])
+      .filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')
+      .flatMap((invite) => {
+        const email = (invite.invitee_email ?? '').trim().toLowerCase();
+        return email && invite.uid ? [[email, invite.uid] as const] : [];
+      })
+  );
 
   public readonly form = new FormGroup({
     emails: new FormControl<string>('', { nonNullable: true }),
@@ -257,7 +266,17 @@ export class AddMemberDialogComponent {
             memberData.organization = organization;
           }
           return this.committeeService.createCommitteeMember(committeeId, memberData, { skipNotification }).pipe(
-            map(() => ({ email, success: true })),
+            switchMap(() => {
+              const inviteUid = this.pendingInviteUidByEmail.get(email.toLowerCase());
+              if (!inviteUid) {
+                return of({ email, success: true as const });
+              }
+              // Reconcile stale pending invite so the roster does not show member + invite.
+              return this.committeeService.revokeCommitteeInvite(committeeId, inviteUid).pipe(
+                map(() => ({ email, success: true as const })),
+                catchError(() => of({ email, success: true as const }))
+              );
+            }),
             catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.directAddFailureReason(err) }))
           );
         }, COMMITTEE_INVITE_CONCURRENCY),

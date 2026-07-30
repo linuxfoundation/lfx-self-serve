@@ -254,7 +254,6 @@ export class CommitteeMembersComponent implements OnInit {
         this.processingApplicationUid.set(application.uid);
         this.committeeService.approveApplication(committee.uid, application.uid).subscribe({
           next: () => {
-            this.processingApplicationUid.set(null);
             this.messageService.add({
               severity: 'success',
               summary: 'Application Approved',
@@ -293,7 +292,6 @@ export class CommitteeMembersComponent implements OnInit {
       this.processingApplicationUid.set(application.uid);
       this.committeeService.rejectApplication(committee.uid, application.uid, reviewerNotes || undefined).subscribe({
         next: () => {
-          this.processingApplicationUid.set(null);
           this.messageService.add({
             severity: 'success',
             summary: 'Application Rejected',
@@ -474,7 +472,14 @@ export class CommitteeMembersComponent implements OnInit {
     const committeeId = this.committee()?.uid;
     this.refreshMembers();
 
+    const releaseReviewLock = (): void => {
+      if (this.processingApplicationUid() === applicationUid) {
+        this.processingApplicationUid.set(null);
+      }
+    };
+
     if (!committeeId) {
+      releaseReviewLock();
       return;
     }
 
@@ -483,8 +488,11 @@ export class CommitteeMembersComponent implements OnInit {
     timer(400, 400)
       .pipe(
         take(6),
-        exhaustMap(() => this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of([] as CommitteeJoinApplication[])))),
-        filter((applications) => {
+        exhaustMap(() => this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of(null as CommitteeJoinApplication[] | null)))),
+        filter((applications): applications is CommitteeJoinApplication[] => {
+          if (applications === null) {
+            return false;
+          }
           const application = applications.find((app) => app.uid === applicationUid);
           return !application || (application.status ?? '').toLowerCase() !== 'pending';
         }),
@@ -495,11 +503,13 @@ export class CommitteeMembersComponent implements OnInit {
         next: () => {
           pollSucceeded = true;
           this.refreshMembers();
+          releaseReviewLock();
         },
         complete: () => {
           if (!pollSucceeded) {
             this.refreshMembers();
           }
+          releaseReviewLock();
         },
       });
   }
