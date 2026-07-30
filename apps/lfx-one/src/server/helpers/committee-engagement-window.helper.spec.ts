@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 // Mirrors committee-engagement.service.spec.ts / snowflake-schema.helper.spec.ts: `@lfx-one/shared/constants`
 // resolves through a barrel with transitive imports that don't survive outside an Angular
 // build/test context, but the two values this helper needs are deep-imported from their real
-// implementation (not hand-copied) so adding/removing a supported window fails this suite too.
+// implementation (not hand-copied). Unlike those siblings, this doesn't make the suite fail on a
+// constant change — `it.each` below derives its cases from the same constant, so adding or
+// removing a window just changes what's covered, silently, rather than failing anything. The
+// benefit here is that the parameterized cases track the real window list instead of a stale
+// snapshot of it, not regression detection.
 vi.mock('@lfx-one/shared/constants', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/committee-engagement.constants')>(
     '../../../../../packages/shared/src/constants/committee-engagement.constants'
@@ -17,16 +21,15 @@ vi.mock('@lfx-one/shared/constants', async () => {
   };
 });
 
-import {
-  COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
-  COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS,
-} from '../../../../../packages/shared/src/constants/committee-engagement.constants';
+import { COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS } from '../../../../../packages/shared/src/constants/committee-engagement.constants';
 import { ServiceValidationError } from '../errors';
 import { parseCommitteeEngagementWindow } from './committee-engagement-window.helper';
 
 describe('parseCommitteeEngagementWindow', () => {
   it('defaults to 30d when the parameter is omitted', () => {
-    expect(parseCommitteeEngagementWindow(undefined, 'get_committee_engagement')).toBe(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
+    // Pinned to the literal, not COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW — the mock resolves the same
+    // constant the helper reads, so comparing against it here couldn't fail if the default changed.
+    expect(parseCommitteeEngagementWindow(undefined, 'get_committee_engagement')).toBe('30d');
   });
 
   it.each(COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS)('passes through the supported value %s', (value) => {
