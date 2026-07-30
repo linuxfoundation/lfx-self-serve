@@ -225,7 +225,8 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     // Each 👍 is one code point but two UTF-16 units. A truncation bug that counted UTF-16 units
     // (e.g. `String(raw).slice(0, 24)` before walking, rather than the `for...of` code-point walk
     // the doc comment describes) would yield only 12 redacted characters here, not 24 — a case no
-    // other fixture in this file can distinguish, since they all stay within the BMP.
+    // other fixture in this file reaches the 24-code-point bound (the astral case at line ~303
+    // below is only 9 code points, nowhere near it).
     getCommitteeMembers.mockResolvedValueOnce([member('m1', 'a@x.com')]);
     execute.mockResolvedValueOnce({
       rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 1, COMPUTED_AT: '👍'.repeat(30) }],
