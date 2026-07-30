@@ -147,6 +147,25 @@ describe('WeeklyBriefController', () => {
 
       expect(weeklyBriefSvc.saveBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { brief_text: 'updated', revision: 1 });
     });
+
+    it('accepts a 15,000-code-point emoji string (30,000 UTF-16 units, under the code-point limit)', async () => {
+      weeklyBriefSvc.saveBrief.mockResolvedValue({ uid: 'b1', revision: 2, state: 'edited' });
+      const briefText = '😀'.repeat(15_000);
+
+      await controller.saveBrief(buildReq({ brief_text: briefText, revision: 1 }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.saveBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { brief_text: briefText, revision: 1 });
+    });
+
+    it('rejects a 20,001-code-point emoji string (LFXV2-2175 review: count code points, not UTF-16 units)', async () => {
+      const next = vi.fn();
+      const briefText = '😀'.repeat(20_001);
+
+      await controller.saveBrief(buildReq({ brief_text: briefText, revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.saveBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
   });
 
   describe('getCurrentBrief', () => {

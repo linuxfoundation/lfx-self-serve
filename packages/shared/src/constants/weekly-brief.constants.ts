@@ -4,11 +4,9 @@
 /**
  * Default WG Weekly Brief throttle counters.
  *
- * Used by both the BFF (`apps/lfx-one/src/server/services/weekly-brief.service.ts`)
- * and the Angular client (`apps/lfx-one/src/app/shared/services/weekly-brief.service.ts`)
- * for empty-envelope fallbacks. The runtime `window_resets_at` is computed at the
- * call site (Sunday→Saturday UTC on the server, empty string on the client fallback)
- * and is intentionally not part of this constant.
+ * Used by the BFF (`apps/lfx-one/src/server/services/weekly-brief.service.ts`) for
+ * its mock-mode envelope. The runtime `window_resets_at` is computed at the call
+ * site and is intentionally not part of this constant.
  *
  * Policy: 2 fresh generates and 3 regenerations per rolling week.
  */
@@ -19,5 +17,5 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
   regenerations_limit: 3,
 } as const;
 
-/** Mirrors upstream's `brief_text` bound (`GroupWeeklyBriefUpdateRequestBody`: maxLength 20000, non-empty). */
+/** Mirrors upstream's `brief_text` bound (`UpdateCurrentWeeklyBriefRequestBody`: maxLength 20000, non-empty). */
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;

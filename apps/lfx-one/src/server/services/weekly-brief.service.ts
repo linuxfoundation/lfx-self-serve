@@ -33,7 +33,7 @@ function nextSundayIso(): string {
  * the previous, completed week on Sunday–Friday, and the current (not-yet-
  * completed) week only on Saturday.
  */
-function briefWindow(): { window_start: string; window_end: string } {
+export function briefWindow(): { window_start: string; window_end: string } {
   const now = new Date();
   const day = now.getUTCDay(); // 0 = Sunday, 6 = Saturday
   const thisWeekSunday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day, 0, 0, 0, 0));

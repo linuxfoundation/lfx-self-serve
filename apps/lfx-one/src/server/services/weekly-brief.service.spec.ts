@@ -36,9 +36,37 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 
-import { WeeklyBriefService } from './weekly-brief.service';
+import { briefWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
+
+describe('briefWindow', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('selects the previous, completed week on a weekday (Wednesday)', () => {
+    // 2026-01-14 is a Wednesday (UTC).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+    const { window_start, window_end } = briefWindow();
+
+    expect(window_start).toBe('2026-01-04T00:00:00.000Z'); // previous Sunday
+    expect(window_end).toBe('2026-01-10T23:59:59.999Z'); // previous Saturday
+  });
+
+  it('selects the current (not-yet-completed) week on a Saturday', () => {
+    // 2026-01-17 is a Saturday (UTC).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-17T12:00:00.000Z'));
+
+    const { window_start, window_end } = briefWindow();
+
+    expect(window_start).toBe('2026-01-11T00:00:00.000Z'); // this week's Sunday
+    expect(window_end).toBe('2026-01-17T23:59:59.999Z'); // today
+  });
+});
 
 describe('WeeklyBriefService', () => {
   let service: WeeklyBriefService;
