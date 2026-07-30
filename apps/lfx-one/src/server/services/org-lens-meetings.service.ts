@@ -31,19 +31,13 @@ const TREND_DIRECTIONS: readonly OrgMeetingsDeltaDirection[] = ['up', 'down', 'f
 const KPI_NO_CHANGE_LABEL = 'No change vs. prior period';
 const INFLUENCE_NO_CHANGE_LABEL = 'No change YoY';
 const NEW_LABEL = 'New';
-const NO_COMPARABLE_BASELINE_LABEL = 'No comparable prior period';
 
 /**
- * Above this growth rate the prior period was too thin to be a baseline, and the ratio describes the
- * emptiness of that window rather than the organization's activity. Only ~3.5 years of attendance
- * history exist, so the long windows compare against a nearly-empty preceding period: prod holds 113
- * org/window rows above this line, most with a prior of exactly 1, topping out near +115,000%.
- *
- * Deliberately a ceiling on the computed ratio rather than a floor on the prior count. Suppressing
- * every small baseline would relabel ~3,090 rows to fix ~87 of them, discarding legitimate readings
- * like "2 meetings → 3" (+50%), and would still miss the priors of 3 and 6 that also explode.
+ * For an influence row whose `PRIOR_YEAR_SCORE` is absent — not zero, and not small. There is no
+ * percentage to render because there is no baseline to divide by. An oversized ratio is a different
+ * case and renders its number.
  */
-const MAX_MEANINGFUL_DELTA_PCT = 1000;
+const UNKNOWN_BASELINE_LABEL = 'No comparable prior period';
 
 /**
  * `PRIOR_YEAR_SCORE` is a continuous score, so an exact `=== 0` test would let a stored 1e-7 fall
@@ -60,7 +54,7 @@ type SpendBreakdownKind = 'foundation' | 'project' | 'meeting_type' | 'role';
  * time someone edits one of the label constants.
  */
 interface FormattedDelta {
-  kind: 'no-change' | 'runaway' | 'pct';
+  kind: 'no-change' | 'pct';
   label: string;
   direction: OrgMeetingsDeltaDirection;
 }
@@ -84,7 +78,11 @@ export class OrgLensMeetingsService {
   public async getKpiSummary(req: Request, accountId: string, range: OrgMeetingsSupportedTimeRange): Promise<OrgMeetingsKpiSummary> {
     return withOrgCache(
       accountId,
-      `meetings-kpi:${range}`,
+      // `v2`: entries written before the delta ceiling was retired hold the old "No comparable prior
+      // period" label. The shape is unchanged, so `isKpiSummary` accepts them and they would serve
+      // the retired label for up to a TTL. Versioning the sub-resource key moves reads to a fresh
+      // space without discarding the other Org Lens surfaces under the shared namespace.
+      `meetings-kpi:v2:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         // Only logged on a miss, so the absence of this line in a trace means the cache served it —
@@ -151,7 +149,10 @@ export class OrgLensMeetingsService {
   public async getInfluenceRows(req: Request, accountId: string): Promise<OrgInfluenceRow[]> {
     return withOrgCache(
       accountId,
-      'meetings-influence',
+      // `v2`: same reason as the KPI key — the Δ-YoY column shares the delta formatter, so cached
+      // rows can carry the retired label. `meetings-spend` is deliberately left at v1; it has no
+      // delta labels, so evicting it would discard warm entries for no behaviour change.
+      'meetings-influence:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         logger.debug(req, 'get_org_lens_meetings_influence', 'Cache miss; querying Snowflake', { account_id: accountId });
@@ -207,11 +208,10 @@ export class OrgLensMeetingsService {
 
   /**
    * A zero prior period has no percentage to express, so it renders "New" rather than an infinite
-   * one, and a near-zero one renders a statement rather than a ratio in the tens of thousands.
-   * Whole percents match the counts' own granularity, and a change that rounds to zero is reported
-   * as no change rather than as "+0%".
-   *
-   * Only the upside needs the ceiling: a decline is bounded at -100%, so it cannot run away.
+   * one. Every other delta renders its percentage, however large: a thin prior period produces a
+   * five-figure ratio, but that reflects ~3.5 years of attendance history rather than an error, and
+   * showing it keeps the coverage gap visible. Whole percents match the counts' own granularity, and
+   * a change that rounds to zero is reported as no change rather than as "+0%".
    */
   private kpiDelta(current: unknown, prior: unknown): { value: number; label: string; direction: OrgMeetingsDeltaDirection } {
     const value = this.toCount(current);
@@ -226,16 +226,10 @@ export class OrgLensMeetingsService {
     return { value, label, direction };
   }
 
-  /**
-   * Shared tail of both delta rules: no change, a runaway ratio, or a signed percentage. Only the
-   * upside is bounded — a decline cannot pass -100%, so it can never run away.
-   */
+  /** Shared tail of both delta rules: no change, or a signed percentage. */
   private formatDelta(pct: number, suffix: string, noChangeLabel: string): FormattedDelta {
     if (pct === 0) {
       return { kind: 'no-change', label: noChangeLabel, direction: 'flat' };
-    }
-    if (pct > MAX_MEANINGFUL_DELTA_PCT) {
-      return { kind: 'runaway', label: NO_COMPARABLE_BASELINE_LABEL, direction: 'up' };
     }
     return { kind: 'pct', label: `${this.signed(pct)}${suffix}`, direction: pct > 0 ? 'up' : 'down' };
   }
@@ -305,7 +299,7 @@ export class OrgLensMeetingsService {
     // direction is flat because there is no baseline to have moved from.
     const priorScoreRaw = row.PRIOR_YEAR_SCORE === null || row.PRIOR_YEAR_SCORE === undefined ? NaN : Number(row.PRIOR_YEAR_SCORE);
     if (!Number.isFinite(priorScoreRaw)) {
-      return { label: NO_COMPARABLE_BASELINE_LABEL, direction: 'flat' };
+      return { label: UNKNOWN_BASELINE_LABEL, direction: 'flat' };
     }
 
     if (priorScoreRaw < INFLUENCE_ZERO_SCORE_EPSILON) {
@@ -414,8 +408,13 @@ export class OrgLensMeetingsService {
     return direction && TREND_DIRECTIONS.includes(direction) ? direction : 'flat';
   }
 
+  /**
+   * Grouped because a thin prior period pushes the ratio into six figures, where "+115000" is hard to
+   * size at a glance. The locale is pinned so the server renders the same string everywhere.
+   */
   private signed(value: number): string {
-    return value > 0 ? `+${value}` : `${value}`;
+    const formatted = Math.abs(value).toLocaleString('en-US');
+    return value > 0 ? `+${formatted}` : `-${formatted}`;
   }
 
   private toFiniteNumber(value: unknown): number {

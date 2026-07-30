@@ -4,8 +4,10 @@
 import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_TOTAL_MEMBERS, lfxColors } from '@lfx-one/shared/constants';
+import { computePeriodDelta } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -14,7 +16,7 @@ import type { FoundationTotalMembersResponse } from '@lfx-one/shared/interfaces'
 
 @Component({
   selector: 'lfx-total-members-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule, MetricDeltaComponent],
   templateUrl: './total-members-drawer.component.html',
 })
 export class TotalMembersDrawerComponent {
@@ -35,8 +37,14 @@ export class TotalMembersDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationTotalMembersResponse>(DEFAULT_FOUNDATION_TOTAL_MEMBERS);
 
+  // True while the parent's eager monthly fetch is in flight, so the headline
+  // metric/delta can be hidden during a foundation switch while the drawer is open.
+  public readonly dataLoading = input<boolean>(false);
+
   // === Computed Signals ===
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.data().monthlyData));
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
   protected readonly chartOptions: ChartOptions<'bar'> = {
@@ -77,6 +85,13 @@ export class TotalMembersDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    return computed(() => {
+      const m = this.data().monthlyData;
+      return m.length ? m[m.length - 1].toLocaleString('en-US') : this.data().totalMembers.toLocaleString('en-US');
+    });
+  }
+
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const { monthlyData, monthlyLabels } = this.data();

@@ -184,3 +184,97 @@ describe('MeetingService.getMeetingHostKey', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('MeetingService.getPastOccurrencesForMeeting', () => {
+  let service: MeetingService;
+
+  const pastRecord = (ms: number, overrides: Record<string, unknown> = {}) => ({
+    id: `v1_past_meeting:series-1-${ms}`,
+    data: {
+      meeting_id: 'series-1',
+      meeting_and_occurrence_id: `series-1-${ms}`,
+      scheduled_start_time: new Date(ms).toISOString(),
+      scheduled_end_time: new Date(ms + 30 * 60000).toISOString(),
+      title: 'should not leak',
+      ...overrides,
+    },
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('queries v1_past_meeting filtered by the series meeting_id without filter_grants', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const params = proxyRequest.mock.calls[0][4];
+    expect(params.type).toBe('v1_past_meeting');
+    expect(params.filters).toEqual(['meeting_id:series-1']);
+    expect(params).not.toHaveProperty('filter_grants');
+  });
+
+  it('maps records to minimal summaries sorted ascending by scheduled start', async () => {
+    const t1 = Date.UTC(2026, 6, 16, 9, 30);
+    const t2 = Date.UTC(2026, 6, 23, 9, 30);
+    proxyRequest.mockResolvedValueOnce({ resources: [pastRecord(t2), pastRecord(t1)] });
+
+    const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(result.map((r) => r.meeting_and_occurrence_id)).toEqual([`series-1-${t1}`, `series-1-${t2}`]);
+    // Minimal projection only — no title or other past-meeting fields
+    expect(Object.keys(result[0]).sort()).toEqual(['meeting_and_occurrence_id', 'scheduled_end_time', 'scheduled_start_time']);
+  });
+
+  it('drops records missing meeting_and_occurrence_id or any start time', async () => {
+    const t1 = Date.UTC(2026, 6, 16, 9, 30);
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        pastRecord(t1),
+        pastRecord(t1 + 1, { meeting_and_occurrence_id: undefined }),
+        pastRecord(t1 + 2, { scheduled_start_time: undefined, start_time: undefined }),
+      ],
+    });
+
+    const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].meeting_and_occurrence_id).toBe(`series-1-${t1}`);
+  });
+
+  it('falls back to start_time when the indexed record omits scheduled_start_time', async () => {
+    const t1 = Date.UTC(2026, 6, 16, 9, 30);
+    proxyRequest.mockResolvedValueOnce({
+      resources: [pastRecord(t1, { scheduled_start_time: undefined, scheduled_end_time: undefined, start_time: new Date(t1).toISOString() })],
+    });
+
+    const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].scheduled_start_time).toBe(new Date(t1).toISOString());
+    expect(result[0].scheduled_end_time).toBeUndefined();
+  });
+
+  it('follows page_token pagination across pages', async () => {
+    const t1 = Date.UTC(2026, 6, 16, 9, 30);
+    const t2 = Date.UTC(2026, 6, 23, 9, 30);
+    proxyRequest.mockResolvedValueOnce({ resources: [pastRecord(t1)], page_token: 'next' }).mockResolvedValueOnce({ resources: [pastRecord(t2)] });
+
+    const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[1][4].page_token).toBe('next');
+    expect(result).toHaveLength(2);
+  });
+
+  it('returns an empty list when the query service call fails', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('query service down'));
+
+    const result = await service.getPastOccurrencesForMeeting(req, 'series-1');
+
+    expect(result).toEqual([]);
+  });
+});

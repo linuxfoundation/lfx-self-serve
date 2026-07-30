@@ -14,6 +14,9 @@ router.post('/register', (req, res, next) => publicMeetingController.registerFor
 // GET /public/api/meetings/past/:id - get a past meeting with tiered access (public access, no authentication required)
 router.get('/past/:id', (req, res, next) => publicMeetingController.getPublicPastMeetingById(req, res, next));
 
+// GET /public/api/meetings/:id/occurrences - get the series timeline (past + future occurrences) for a meeting (public access, no authentication required)
+router.get('/:id/occurrences', (req, res, next) => publicMeetingController.getMeetingOccurrences(req, res, next));
+
 // GET /public/api/meetings/:id - get a single meeting (public access, no authentication required)
 router.get('/:id', (req, res, next) => publicMeetingController.getMeetingById(req, res, next));
 

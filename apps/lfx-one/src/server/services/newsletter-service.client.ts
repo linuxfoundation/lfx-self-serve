@@ -3,6 +3,7 @@
 
 import { NEWSLETTER_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import {
+  CommitteeNewsletterListResponse,
   CreateNewsletterRequest,
   Newsletter,
   NewsletterAnalytics,
@@ -54,6 +55,23 @@ export class NewsletterServiceClient {
       `/projects/${projectUid}/newsletters`,
       'GET',
       Object.keys(query).length ? query : undefined
+    );
+  }
+
+  /**
+   * Member-facing committee-scoped list: sent newsletters whose audience
+   * includes the committee, ordered by sent_at descending. The upstream
+   * gateway authorizes the caller against `committee:{committee_uid}#member`
+   * (live FGA membership), so this must always run with the user's bearer
+   * token — never M2M.
+   */
+  public async listCommitteeNewsletters(req: Request, committeeUid: string, pageToken?: string): Promise<CommitteeNewsletterListResponse> {
+    return this.microserviceProxy.proxyRequest<CommitteeNewsletterListResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeUid}/newsletters`,
+      'GET',
+      pageToken ? { page_token: pageToken } : undefined
     );
   }
 
