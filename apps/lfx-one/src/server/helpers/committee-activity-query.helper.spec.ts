@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors committee-engagement-window.helper.spec.ts: `@lfx-one/shared/constants` resolves through
 // a barrel with transitive imports that don't survive outside an Angular build/test context, so the
@@ -28,6 +28,10 @@ function mockRequest(query: Record<string, string> = {}): Request {
 const OPERATION = 'get_committee_activity';
 
 describe('parseCommitteeActivityQuery', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('defaults limit to 8 and leaves since/cursor undefined when omitted', () => {
     expect(parseCommitteeActivityQuery(mockRequest(), OPERATION)).toEqual({ since: undefined, cursor: undefined, limit: 8 });
   });
@@ -37,13 +41,16 @@ describe('parseCommitteeActivityQuery', () => {
     expect(result.since).toBe('2026-01-01T00:00:00.000Z');
   });
 
-  it('normalizes a since value Date.parse accepts but upstream RFC3339 validation would reject', () => {
+  it('normalizes a zone-less since value (interpreted in the server timezone) to UTC RFC3339', () => {
     // Upstream (query-service) only accepts strict RFC3339 or date-only; Date.parse is more
     // permissive (no zone designator, slash-separated, etc.) — an unnormalized value forwarded
     // as-is would 400 upstream on every leg and silently degrade to an empty feed instead.
+    // Pinned against a literal (not `new Date(x).toISOString()`, which would just restate the
+    // implementation) and TZ stubbed explicitly, since a zone-less string is parsed in the
+    // server's local timezone — the exact behavior normalizeTimestamp's caller should know about.
+    vi.stubEnv('TZ', 'UTC');
     const result = parseCommitteeActivityQuery(mockRequest({ since: '2026-01-01T00:00:00' }), OPERATION);
-    expect(result.since).toBe(new Date('2026-01-01T00:00:00').toISOString());
-    expect(result.since).toMatch(/Z$/);
+    expect(result.since).toBe('2026-01-01T00:00:00.000Z');
   });
 
   it('rejects an unparseable since value instead of silently ignoring it', () => {
@@ -69,9 +76,10 @@ describe('parseCommitteeActivityQuery', () => {
   });
 
   it('normalizes a decoded page_token before value the same way as since', () => {
+    vi.stubEnv('TZ', 'UTC');
     const badToken = Buffer.from(JSON.stringify({ before: '2026-01-05T00:00:00', key: 'vote:vote-1' }), 'utf8').toString('base64url');
     const result = parseCommitteeActivityQuery(mockRequest({ page_token: badToken }), OPERATION);
-    expect(result.cursor?.before).toBe(new Date('2026-01-05T00:00:00').toISOString());
+    expect(result.cursor?.before).toBe('2026-01-05T00:00:00.000Z');
   });
 
   it('rejects a malformed page_token instead of silently restarting the feed', () => {

@@ -89,6 +89,24 @@ function compareEventsDesc(a: { occurred_at: string; key: string }, b: { occurre
   return b.key.localeCompare(a.key);
 }
 
+/**
+ * Ceils an ISO timestamp to the next whole second. query-service's `date_to` parameter round-trips
+ * through Go's `time.RFC3339` layout server-side (`cmd/service/converters.go`), which has no
+ * fractional-seconds component — sub-second precision is silently truncated before the range
+ * filter is applied. `cursor.before` can carry millisecond precision (`Date.toISOString()` always
+ * emits it, and some upstream sources' own timestamps do too), so sending it verbatim as `date_to`
+ * would shrink the upstream boundary below the true cursor position — under-fetching, not
+ * over-fetching, and permanently excluding same-second siblings before the in-memory `isAfterCursor`
+ * pass ever sees them (the exact failure the compound cursor exists to prevent, reintroduced one
+ * layer upstream). Ceiling instead of truncating guarantees the upstream boundary is never tighter
+ * than the true one; the in-memory pass still applies the exact `(occurred_at, key)` comparison, so
+ * the resulting over-fetch (at most ~1 second of extra rows) is trimmed correctly, not a correctness gap.
+ */
+function ceilToWholeSecond(iso: string): string {
+  const ms = Date.parse(iso);
+  return new Date(Math.ceil(ms / 1000) * 1000).toISOString();
+}
+
 function isAtOrAfterSince(occurredAt: string, since: string | undefined): boolean {
   if (!since) return true;
   const ms = Date.parse(occurredAt);
@@ -131,11 +149,12 @@ export class CommitteeActivityService {
     // keeps small `limit` values (e.g. 1) from starving that guarantee.
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
     // Sent to every leg as an inclusive upstream `date_to` (query-service's date_to is documented
-    // inclusive) — this can over-fetch items exactly at the boundary timestamp, which is fine: the
-    // in-memory isAfterCursor pass below applies the real exclusive-compound-cursor comparison, so
-    // upstream over-inclusion just means a few extra rows get fetched and correctly trimmed, not a
-    // correctness gap.
-    const before = cursor?.before;
+    // inclusive), ceiled to the next whole second — see ceilToWholeSecond's doc comment for why:
+    // upstream truncates sub-second precision, so the raw cursor.before could otherwise shrink the
+    // boundary below the true cursor position. The in-memory isAfterCursor pass (which uses the
+    // exact, un-ceiled cursor.before) is what actually enforces the boundary; the ceiled value here
+    // only bounds what gets fetched, so a wider upstream window is always safe, a narrower one isn't.
+    const before = cursor ? ceilToWholeSecond(cursor.before) : undefined;
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentEvents] = await Promise.all([
       this.fetchCommittee(req, committeeUid),

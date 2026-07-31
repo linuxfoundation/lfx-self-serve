@@ -31,6 +31,11 @@ function isParseableTimestamp(value: string): boolean {
  * value wouldn't surface as an error at all — it would silently return a thinner feed. Normalizing
  * once here, rather than validating against the stricter upstream grammar, keeps any
  * currently-working caller working.
+ *
+ * A zone-less input (e.g. `2026-01-05T00:00:00`) is interpreted in the server process's local
+ * timezone, per `Date.parse`/`new Date()` semantics — this is a silent assumption on the caller's
+ * behalf, not just a format change, since the same string normalizes to a different instant
+ * depending on `TZ`. Callers that care about exact instants should always include a zone designator.
  */
 function normalizeTimestamp(value: string): string {
   return new Date(value).toISOString();

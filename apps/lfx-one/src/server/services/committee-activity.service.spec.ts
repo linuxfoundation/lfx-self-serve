@@ -71,7 +71,7 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import type { PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
+import type { ActivityPageCursor, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 
 import { CommitteeActivityService } from './committee-activity.service';
 
@@ -209,23 +209,40 @@ describe('CommitteeActivityService', () => {
         limit: 8,
       });
 
+      // date_to is ceiled to the next whole second before being sent upstream (see the dedicated
+      // ceiling test below) — an already-whole-second cursor still round-trips through
+      // Date.toISOString(), which always emits milliseconds, hence the trailing `.000Z`.
       expect(getMeetings).toHaveBeenCalledWith(
         req,
-        expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00Z' }),
+        expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00.000Z' }),
         'v1_past_meeting',
         false
       );
       expect(getVotes).toHaveBeenCalledWith(
         req,
-        expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00Z' })
+        expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00.000Z' })
       );
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
         '/query/resources',
         'GET',
-        expect.objectContaining({ type: 'survey', date_field: 'last_modified_at', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00Z' })
+        expect.objectContaining({ type: 'survey', date_field: 'last_modified_at', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00.000Z' })
       );
+    });
+
+    it('ceils a sub-second cursor to the next whole second before sending it upstream as date_to', async () => {
+      // query-service reformats date_to through Go's time.RFC3339 (no fractional-seconds layout),
+      // silently truncating sub-second precision — a raw cursor.before with milliseconds would
+      // shrink the upstream boundary below the true cursor position and permanently exclude
+      // same-second siblings before the in-memory isAfterCursor pass ever sees them. Ceiling
+      // guarantees the upstream boundary is never tighter than the true one.
+      await service.getCommitteeActivity(req, COMMITTEE_UID, {
+        cursor: { before: '2026-02-01T00:00:00.123Z', key: 'vote:unrelated' },
+        limit: 8,
+      });
+
+      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }));
     });
 
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
@@ -335,7 +352,7 @@ describe('CommitteeActivityService', () => {
       expect(page1.data).toHaveLength(1);
       expect(page1.page_token).toBeDefined();
 
-      const lastCursorArg = encodeActivityPageToken.mock.calls.at(-1)?.[0] as { before: string; key: string };
+      const lastCursorArg = encodeActivityPageToken.mock.calls.at(-1)?.[0] as ActivityPageCursor;
       const page2 = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor: lastCursorArg, limit: 1 });
 
       expect(page2.data).toHaveLength(1);
@@ -362,10 +379,14 @@ describe('CommitteeActivityService', () => {
       getVotes.mockResolvedValue({ data: [voteY, voteX] });
       const reversedOrder = uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }));
 
-      expect(forwardOrder).toEqual(reversedOrder);
+      // 'vote:v-y' sorts before 'vote:v-x' under compareEventsDesc's descending key tiebreak
+      // (b.key.localeCompare(a.key)) — asserting the concrete order, not just forward/reversed
+      // agreement, pins down THAT the tiebreak is key-descending, not merely that it's stable.
+      expect(forwardOrder).toEqual(['v-y', 'v-x']);
+      expect(reversedOrder).toEqual(['v-y', 'v-x']);
     });
 
-    it('drops the sibling of a colliding-key event at a page boundary — the risk document_type-discrimination guards against', async () => {
+    it('keeps a folder and a file that share a uid across a page boundary — document_type discrimination prevents the cursor from dropping one', async () => {
       // eventKey collisions matter specifically at the cursor boundary: compareEventsDesc treats
       // two same-timestamp, same-key events as equal, so isAfterCursor excludes both once one has
       // been returned. Paginating (not just checking both survive an unpaginated merge) is what
@@ -384,7 +405,7 @@ describe('CommitteeActivityService', () => {
       expect(page1.data).toHaveLength(1);
       expect(page1.page_token).toBeDefined();
 
-      const cursor = encodeActivityPageToken.mock.calls.at(-1)?.[0] as { before: string; key: string };
+      const cursor = encodeActivityPageToken.mock.calls.at(-1)?.[0] as ActivityPageCursor;
       const page2 = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
 
       expect(page2.data).toHaveLength(1);
