@@ -50,9 +50,9 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v2` bump: entries cached before the no-activity hydration landed hold activity-only rows; versioning the
-    // sub-resource key drops them so freshly viewed workspaces don't omit no-activity rows for up to the TTL.
-    const cacheKey = `projects:v2:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator (read as `!== 'full'` → Unavailable),
+    // so versioning the sub-resource key drops them; the validator below also rejects any entry missing metricsState.
+    const cacheKey = `projects:v3:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
@@ -966,6 +966,9 @@ export class OrgLensProjectsService {
       (project) =>
         typeof project.slug === 'string' &&
         typeof project.name === 'string' &&
+        // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch instead of
+        // rendering every row Unavailable (`undefined !== 'full'`).
+        (project.metricsState === 'full' || project.metricsState === 'health-only' || project.metricsState === 'unavailable') &&
         Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
         Array.isArray(project.healthMetrics) &&
         Array.isArray(project.maintainers) &&

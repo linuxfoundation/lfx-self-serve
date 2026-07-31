@@ -47,6 +47,7 @@ function project(slug: string, name: string) {
       { label: 'Development', value: 85 },
       { label: 'Security', value: 75 },
     ],
+    metricsState: 'full',
   };
 }
 
