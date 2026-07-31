@@ -87,7 +87,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 
 - **Read examples:** View meeting details, view vote results, view survey results, open document, view sent newsletter.
 - **Write examples:** Edit a meeting, manage agenda, update survey, manage document, edit newsletter draft.
-- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. Writer permission for the item's resolved target context for write actions.
+- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific grant on the item's resolved target object for write actions — writer permission for a Foundation/Project target, or committee writer / meeting coordinator when the target resolves to a committee or group.
 - **Destination:** Stay in Me or open the item detail/drawer with target context attached.
 - **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when writer permission passes.
 - **Denied actions:** If writer permission fails, keep eligible view/read actions only.
@@ -95,7 +95,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Create Action From Me
 
 - **Example:** Create Meeting, Create Group, Add Mailing List, Create Newsletter, Create Vote, Create Survey, Upload File, Add Link.
-- **Required permission:** User must choose a target, then the action-specific grant must pass for that target. For most creates the target is Foundation/Project and the grant is writer permission. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`; Create Meeting alone can also be authorized by `project.meeting_coordinator` without project writer.
+- **Required permission:** User must choose a target object (project, foundation, committee, or group), then the action-specific grant on that object must pass. For most creates the target is Foundation/Project and the grant is writer permission. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`; Create Meeting alone can also be authorized by `project.meeting_coordinator` without project writer.
 - **Destination:** Create flow scoped to the chosen target context.
 - **Allowed actions:** Continue to create form after target context and its action-specific grant are confirmed.
 - **Denied actions:** Do not create against an implicit/global Me context.
@@ -209,7 +209,7 @@ terms (auditor grant, writer grant, named capability).
 
 - **Me:** Show cross-context meetings and personal meeting actions.
 - **Foundation/Project:** Show context-scoped meetings.
-- **Create/manage:** Requires target context plus writer permission, OR `project.meeting_coordinator` on the target project (meetings only), OR `committee.writer` when the target is a committee/group.
+- **Create/manage:** Requires the organizer-granting relation for the target — Project/Foundation Writer, Project Meeting Coordinator (meetings only), or Committee Writer when the target is a committee/group — per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer).
 - **Read-only:** User can view/join/RSVP where eligible, but cannot edit, delete, invite as manager, or manage resources.
 
 ### Groups

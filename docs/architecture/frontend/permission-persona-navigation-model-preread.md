@@ -104,7 +104,7 @@ These already work or mostly work today:
 - Akrites shows the strongest discovery pattern: users can inspect packages and choose **Open for stewardship** from Me without starting in Foundation/Project context.
 - Lens access is already derived from writer grants, not persona alone (shipped, PR #1130), and the create picker is a lazy direct-grant tree with search (shipped, PR #1193).
 - A backend "what can I create, and where" API covering group/committee targets (LFXV2-2753) was rescoped after #1130 shipped and its ticket status is now Discarded — it is not in progress. There is no committed replacement work item for that API today.
-- The Executive Director fast path is still present in `writerGuard` (`writer.guard.ts`) and in `newsletter-access.guard.ts` on `main` — both grant **write** access unconditionally to ED persona, covering meetings, votes, surveys, mailing lists, newsletters, and documents. The `executive_director` relation does carry one write-capable inheritance today — `campaign_manager`, scoped to the Campaigns feature (see Model Asks below) — but it does not inherit project `writer`, and none of the general write actions these two guards protect are backed by any ED-inherited relation. `PERMISSIONS.md`'s rendered Project table only shows `Executive Director` in view/read rows because it does not render the marketing/campaign relations at all, not because those relations don't exist in the live model (`model.fga`). Granting general project write through this fast path is very likely a bug, not a deliberate model choice, and is tracked separately for removal rather than treated as an open design question.
+- The Executive Director fast path is still present in `writerGuard` (`writer.guard.ts`) and in `newsletter-access.guard.ts` on `main` — both grant **write** access unconditionally to ED persona, covering meetings, votes, surveys, mailing lists, newsletters, and documents. That is very likely a guard bug, not a permission the model grants: `executive_director` does not inherit project `writer`, so none of those general write actions are backed by any ED-inherited relation. The model does route two _intentional_ marketing permissions through `executive_director` — `marketing_auditor` (read) and `campaign_manager` (write, scoped to Campaigns) — which `PERMISSIONS.md`'s rendered Project table omits entirely, so it looks like ED grants nothing but reads even though the live model (`model.fga`) says otherwise. See Writer Actions and Model Asks below for how the app should check these.
 
 Current confusion:
 
@@ -132,23 +132,26 @@ Me pages can support actions when the target context is known.
 Rule for row/item actions:
 
 ```text
-Me item + resolved target Foundation/Project context + writer permission = allowed create/manage action
+Me item + resolved target object (project, foundation, committee, group)
++ the action-specific grant on that object = allowed create/manage action
 ```
 
 Rule for create actions:
 
 ```text
-Me create action + chosen target Foundation/Project context + writer permission = allowed create/manage action
+Me create action + chosen target object (project, foundation, committee, group)
++ the action-specific grant on that object = allowed create/manage action
 ```
 
-This means Me can be an action workspace, but it is not the authorization context. The target Foundation/Project remains the authority for writer checks.
+This means Me can be an action workspace, but it is not the authorization context. The resolved target object remains the authority for its action-specific grant check.
 
-"Target Foundation/Project + writer permission" is the common case, not the only one. The shipped create flow (PR #1193) also resolves committee/group targets for meetings, surveys, and votes: `writerGuard` accepts `committee.writer` for those three features when a `committee_uid` is present, and accepts `project.meeting_coordinator` for meetings specifically, independent of `project.writer`. A committee writer or meeting coordinator can legitimately hold no direct project-level auditor/writer grant. Wherever this document says "writer permission" for a Me-originated action, read it as "the action-specific grant for the resolved target" — project/foundation writer, committee writer, or meeting coordinator — not exclusively project/foundation writer.
+The target is usually Foundation/Project and the grant is writer permission, but that's the common case, not the only one. The shipped create flow (PR #1193) also resolves committee/group targets for meetings, surveys, and votes: `writerGuard` accepts `committee.writer` for those three features when a `committee_uid` is present, and accepts `project.meeting_coordinator` for meetings specifically, independent of `project.writer`. A committee writer or meeting coordinator can legitimately hold no direct project-level auditor/writer grant.
 
 Me-originated actions should carry target context:
 
 ```text
-Me task + target Foundation/Project context + writer permission = allowed create/manage action
+Me task + target object (project, foundation, committee, group)
++ the action-specific grant on that object = allowed create/manage action
 ```
 
 Examples:
@@ -226,15 +229,15 @@ Current writerGuard = Executive Director fast path or canWrite()
 Target writerGuard = resolved target context + canWrite()
 ```
 
-ED-shaped pages need a named capability checked like any other permission, not a persona guard — and for two of the three, that capability already exists in the model, it just isn't wired into the guards on `main` yet:
+ED-shaped pages gate on the existing named permissions — checked like any other permission, never on a persona guard and never by referencing the `executive_director` relation from application code:
 
-- **Campaigns** should check `campaign_manager` (write-capable, inherited from `executive_director` or the `marketing_ops` team).
-- **Marketing Impact** should check `marketing_auditor` (read-only, inherited from `executive_director`, `marketing_ops`, or a parent project).
-- **Health Metrics** is the one page intended to stay ED-gated by design, not migrated to a shared capability.
+- **Campaigns** checks `campaign_manager` (write-capable; the model currently bundles it into `executive_director` and the `marketing_ops` team).
+- **Marketing Impact** checks `marketing_auditor` (read-only; the model currently bundles it into `executive_director`, `marketing_ops`, and parent-project inheritance).
+- **Health Metrics** stays ED-gated by design — this page does not migrate to a shared capability (LFXV2-2726 is evaluating an LF Staff answer, not yet started).
 
-This migration is tracked in LFXV2-2236 ("Add Marketing Ops UI access (FGA guards)," in review as of this writing) — today, all three pages on `main` still gate solely on `executiveDirectorGuard` (a pure persona check with no FGA lookup). Until that ticket merges, treat "Current UI Facts" as describing the actual state, not this target state.
+None of these three needs a new capability invented for it — the permissions already exist in the model. This migration is tracked in LFXV2-2236 ("Add Marketing Ops UI access (FGA guards)," in review as of this writing) — today, all three pages on `main` still gate solely on `executiveDirectorGuard` (a pure persona check with no FGA lookup). Until that ticket merges, treat "Current UI Facts" as describing the actual state, not this target state.
 
-This leaves one real open model question, not three: should the `executive_director` relation itself be removed (see Model Asks below), given that it is also the sole non-`marketing_ops` path to `campaign_manager`/`marketing_auditor` for every ED, and Health Metrics has no planned replacement gate other than possibly LF Staff access (LFXV2-2726, not yet started). Create/edit/manage routes should not use ED as an authorization shortcut unless the user also has writer permission for the selected target context.
+Whether the `executive_director` relation itself stays in the model, is renamed, or is bundled differently is the platform team's call, not the app's (see Model Asks below) — the app checks `marketing_auditor` and `campaign_manager` directly and does not care which relations feed them. Create/edit/manage routes should not use ED as an authorization shortcut unless the user also has writer permission for the selected target context.
 
 LF Staff Mode should have its own explicit staff eligibility and audit expectations. It should not be inferred from ED, Board Member, Maintainer, Contributor, or writer permission.
 
@@ -449,28 +452,24 @@ Discovery action = explicit request/registration/subscription/workflow
 
 Two open questions in the FGA model, not the UI, that this document depends on:
 
-1. **Decision on the ED relation.** Today `executive_director` is a real FGA
-   relation on Project. Removing it is not a single-consequence change:
-   - Its `auditor` grant is redundant with LF-staff-inherited auditor
-     everywhere except one project that has a non-staff ED (fixable with a
-     direct auditor grant for that one user).
-   - It is also, today, the sole non-`marketing_ops` path to
-     `marketing_auditor` (read) and `campaign_manager` (write) — removing
-     `executive_director` outright would silently drop marketing dashboard
-     and Campaigns capability for **every** ED who is not separately on the
-     `marketing_ops` team, not just the one non-staff exception. This has to
-     be resolved for every affected ED, not assumed away.
-   - Health Metrics has no planned replacement gate other than possibly LF
-     Staff access (LFXV2-2726, not yet started) — if `executive_director` is
-     removed entirely, Health Metrics needs its own answer.
+1. **Permission bundling for ED-derived capabilities.** The app checks
+   `auditor`, `writer`, `marketing_auditor`, and `campaign_manager` directly
+   and never branches on the `executive_director` relation itself (see
+   Writer Actions above). Today the model bundles all of those permissions
+   into `executive_director` for most EDs — `auditor` (also redundant with
+   LF-staff-inherited auditor for staff EDs), plus `marketing_auditor` and
+   `campaign_manager` (not redundant with anything else for the one
+   non-staff ED).
 
-   There is a live, unresolved tension here worth surfacing rather than
-   picking a side: Eric Searcy (platform team) said in Slack that the
-   relation "should probably be removed," while LFXV2-2236 (in review) is
-   currently building _around_ keeping `executive_director` as an
-   inheritance source for `campaign_manager`/`marketing_auditor`. Both can't
-   be fully true at once — this needs an explicit platform-team decision,
-   not an inference from either signal alone.
+   Whether `executive_director` stays in the model, is renamed, or is
+   replaced by direct grants and team inheritance is the platform team's
+   bundling decision — a role is a named bundle of permissions, and this
+   document does not argue for keeping or removing it. The only requirement
+   is that every user who should hold `auditor`, `marketing_auditor`, or
+   `campaign_manager` continues to receive them through _some_ bundle after
+   any model change: the one project with a non-staff ED (today's sole
+   exception on the `auditor` side), and the marketing permission edges for
+   _every_ ED, not just that one project.
 
 2. **Org lens for LF staff.** LF staff should get org-lens switching the same
    way they get project/foundation access today — through team inheritance,
