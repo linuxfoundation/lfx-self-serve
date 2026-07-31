@@ -97,6 +97,15 @@ describe('WeeklyBriefController', () => {
       expect(next).toHaveBeenCalledOnce();
     });
 
+    it('rejects an array body instead of treating it as an empty object (dealako review round 3: typeof [] === object)', async () => {
+      const next = vi.fn();
+
+      await controller.generateBrief(buildReq([]), buildRes(), next);
+
+      expect(weeklyBriefSvc.generateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
     it('silently drops unknown fields (e.g. a stale client still sending revision) rather than forwarding them', async () => {
       weeklyBriefSvc.generateBrief.mockResolvedValue({ status: 200, data: { brief: { uid: 'b1' }, throttle: {} } });
 

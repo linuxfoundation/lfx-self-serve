@@ -57,7 +57,10 @@ function validateGenerateBriefBody(body: unknown): { ok: true; value: GenerateWe
   if (body === undefined || body === null) {
     return { ok: true, value: {} };
   }
-  if (typeof body !== 'object') {
+  // typeof [] === 'object' in JS — without the explicit Array.isArray check, an array body
+  // has no `force` key, so every field is "absent" and this would return `{ ok: true, value: {}
+  // }` instead of rejecting the malformed request (dealako review round 3).
+  if (typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;

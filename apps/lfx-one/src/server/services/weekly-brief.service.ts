@@ -204,11 +204,14 @@ export class WeeklyBriefService {
 
   /**
    * Refuses mock mode outright in production instead of silently serving
-   * fabricated brief content: mock mode never calls upstream, so it also
-   * never enforces committee-level authorization — any authenticated caller
-   * would get a "brief" for any committee UID they type. `WEEKLY_BRIEF_BACKEND`
-   * ships unset in `.env.example`, so this is the only thing standing between
-   * a misconfigured deploy and that failure mode.
+   * fabricated brief content. `assertCommitteeRead`/`assertCommitteeWrite` gate
+   * every request at the controller level regardless of mock or live mode, so a
+   * caller without committee access is already rejected before reaching this
+   * service — this check instead guards against a *misconfigured deploy*
+   * serving fabricated mock content to a legitimately-authorized caller who
+   * expects real committee-service data. `WEEKLY_BRIEF_BACKEND` ships unset in
+   * `.env.example`, so this is the only thing standing between that
+   * misconfiguration and production.
    */
   private isLive(req: Request): boolean {
     const backend = process.env['WEEKLY_BRIEF_BACKEND'];
