@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
+import { MEETING_PASSWORD_HEADER } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
-import { CreateMeetingRegistrantRequest, MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -356,6 +357,74 @@ export class PublicMeetingController {
     }
   }
 
+  /**
+   * GET /public/api/meetings/:id/occurrences
+   * Returns the series timeline for a meeting: past occurrences (from v1_past_meeting
+   * records) plus a minimal projection of the live series' current/future occurrences.
+   * Timestamps only — no titles, passwords, or join info. Private/restricted series are
+   * gated by the same access chain as getMeetingById (password, registrant, organizer).
+   */
+  public async getMeetingOccurrences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+
+    const startTime = logger.startOperation(req, 'get_public_meeting_occurrences', {
+      meeting_id: id,
+    });
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_meeting_occurrences', req, next)) {
+        return;
+      }
+
+      // Save the user's original token before setting M2M token (needed for the organizer check)
+      const originalToken = req.bearerToken;
+      const m2mToken = await this.setupM2MToken(req);
+
+      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', false).catch(() => null);
+
+      // Fail closed: when the live series can't be loaded, its visibility can't be
+      // verified, so the timeline is not exposed.
+      const allowed = liveMeeting ? await this.canViewSeriesTimeline(req, liveMeeting, m2mToken, originalToken) : false;
+      if (!allowed) {
+        next(
+          new AuthorizationError('Not authorized to view this meeting series', {
+            operation: 'get_public_meeting_occurrences',
+            service: 'public_meeting_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id);
+
+      // Minimal projection only — the full ITX payload carries sensitive fields (e.g. password)
+      const future: MeetingOccurrenceSummary[] = (liveMeeting?.occurrences ?? []).map((o) => ({
+        occurrence_id: o.occurrence_id,
+        start_time: o.start_time,
+        duration: o.duration,
+        status: o.status,
+      }));
+
+      const response: PublicMeetingOccurrencesResponse = {
+        past,
+        future,
+        cancelled_occurrences: liveMeeting?.cancelled_occurrences ?? undefined,
+      };
+
+      logger.success(req, 'get_public_meeting_occurrences', startTime, {
+        meeting_id: id,
+        past_count: past.length,
+        future_count: future.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      // Error handler will log
+      next(error);
+    }
+  }
+
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const { password } = req.query;
@@ -547,6 +616,66 @@ export class PublicMeetingController {
       operation,
       service: 'public_meeting_controller',
     });
+  }
+
+  /**
+   * Access gate for the public series-timeline endpoint, mirroring getMeetingById's chain:
+   * public non-restricted series are open; private/restricted series require a valid
+   * password, a registrant record (checked via M2M, matching the invited fallback), or an
+   * organizer relation (checked with the user's own token — never the M2M identity).
+   * Restores the M2M token on req before returning.
+   */
+  private async canViewSeriesTimeline(req: Request, meeting: Meeting, m2mToken: string, originalToken: string | undefined): Promise<boolean> {
+    if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
+      return true;
+    }
+
+    // The passcode arrives in a request header (never the GET query string, which lands
+    // in access logs and caches — CodeQL js/sensitive-get-query).
+    const password = req.headers[MEETING_PASSWORD_HEADER];
+    if (typeof password === 'string' && password && validatePassword(password, meeting.password as string)) {
+      return true;
+    }
+
+    if (!req.oidc?.isAuthenticated()) {
+      return false;
+    }
+
+    const email = getEffectiveEmail(req);
+    if (email) {
+      try {
+        const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, meeting.id, email, m2mToken);
+        if (registrants.length > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
+          meeting_id: meeting.id,
+          err: error,
+        });
+      }
+    }
+
+    // Guard on originalToken, not just isAuthenticated: running the access check while the
+    // M2M token is active would evaluate the application identity and could leak access.
+    if (originalToken !== undefined) {
+      req.bearerToken = originalToken;
+      try {
+        const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, { ...meeting }, 'v1_meeting', 'organizer');
+        if (meetingWithAccess.organizer) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Organizer check failed, denying series timeline access', {
+          meeting_id: meeting.id,
+          err: error,
+        });
+      } finally {
+        req.bearerToken = m2mToken;
+      }
+    }
+
+    return false;
   }
 
   /**

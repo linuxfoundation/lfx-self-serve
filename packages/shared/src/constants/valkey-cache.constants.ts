@@ -33,6 +33,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
 
+  /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
+  GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -44,6 +47,9 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
+
+  /** Freshness window for the Groups dashboard engagement-stats cache — absorbs repeated dashboard refreshes. */
+  GROUPS_ENGAGEMENT_TTL_SECONDS: 60,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

@@ -21,6 +21,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
+  buildOccurrenceNavTimeline,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
   getActiveOccurrences,
@@ -38,20 +39,23 @@ import {
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRecurrence,
+  getMeetingSeriesUid,
   MeetingRegistrant,
   MeetingRsvp,
+  OccurrenceNavItem,
   resolveOccurrenceRecurrence,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
   Project,
+  PublicMeetingOccurrencesResponse,
   PublicPastMeetingResponse,
   ROOT_PROJECT_SLUG,
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -152,7 +156,9 @@ export class MeetingJoinComponent implements OnInit {
   // the per-occurrence override (occurrence.recurrence is null there), so this resolves to the
   // top-level rule until that backend path stamps the effective recurrence. Forward-compatible.
   public displayRecurrence: Signal<MeetingRecurrence | null>;
-  private occurrenceContext: Signal<{ sorted: MeetingOccurrence[]; currentIdx: number }>;
+  // Full series timeline (past + future) fetched from the public occurrences endpoint for recurring meetings.
+  private seriesOccurrences: Signal<PublicMeetingOccurrencesResponse>;
+  private occurrenceContext: Signal<{ sorted: OccurrenceNavItem[]; currentIdx: number }>;
   protected previousOccurrenceUrl: Signal<string | null>;
   protected nextOccurrenceUrl: Signal<string | null>;
   protected occurrenceLabel: Signal<string | null>;
@@ -307,6 +313,7 @@ export class MeetingJoinComponent implements OnInit {
     this.meeting = this.initializeMeeting();
     this.currentOccurrence = this.initializeCurrentOccurrence();
     this.displayRecurrence = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
+    this.seriesOccurrences = this.initializeSeriesOccurrences();
     this.occurrenceContext = this.initializeOccurrenceContext();
     this.previousOccurrenceUrl = this.initializePreviousOccurrenceUrl();
     this.nextOccurrenceUrl = this.initializeNextOccurrenceUrl();
@@ -671,7 +678,7 @@ export class MeetingJoinComponent implements OnInit {
           }
 
           // Check if this is a past meeting occurrence ID (format: meetingId-timestamp)
-          if (this.isPastMeetingOccurrenceId(meetingId)) {
+          if (isPastMeetingCompositeId(meetingId)) {
             this.loadedViaPastMeetingId.set(true);
             return this.meetingService.getPublicPastMeeting(meetingId).pipe(
               tap((res: PublicPastMeetingResponse) => {
@@ -726,11 +733,6 @@ export class MeetingJoinComponent implements OnInit {
     ) as Signal<Meeting & { project: Partial<Project> }>;
   }
 
-  private isPastMeetingOccurrenceId(id: string): boolean {
-    const parts = id.split('-');
-    return parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d{13}$/.test(parts[1]);
-  }
-
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
     return computed(() => {
       const meeting = this.meeting();
@@ -746,74 +748,115 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  private initializeOccurrenceContext(): Signal<{ sorted: MeetingOccurrence[]; currentIdx: number }> {
+  /**
+   * Fetches the full series timeline (past + future occurrences) for recurring meetings.
+   * Skipped on the server — the nav is progressive enhancement; the client fetches at hydration.
+   */
+  private initializeSeriesOccurrences(): Signal<PublicMeetingOccurrencesResponse> {
+    const empty: PublicMeetingOccurrencesResponse = { past: [], future: [] };
+    if (isPlatformServer(this.platformId)) {
+      return signal(empty).asReadonly();
+    }
+    return toSignal(
+      toObservable(this.meeting).pipe(
+        // Recurring meetings always fetch. Past payloads (composite id ≠ series uid) fetch even
+        // without a recurrence rule — the ITX past_meetings payload omits `recurrence` entirely,
+        // and the timeline itself reveals whether there is anywhere to navigate.
+        filter((meeting) => !!meeting && (!!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id)),
+        map((meeting) => getMeetingSeriesUid(meeting)),
+        distinctUntilChanged(),
+        switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password()))
+      ),
+      { initialValue: empty }
+    );
+  }
+
+  private initializeOccurrenceContext(): Signal<{ sorted: OccurrenceNavItem[]; currentIdx: number }> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.occurrences?.length) return { sorted: [], currentIdx: -1 };
-      const sorted = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).sort(
-        (a: MeetingOccurrence, b: MeetingOccurrence) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-      );
+      if (!meeting) return { sorted: [], currentIdx: -1 };
+      // On past pages the payload's occurrences (if any) describe the live series, not the
+      // viewed occurrence — the merged timeline below supplies both directions instead.
+      const liveOccurrences = !this.loadedViaPastMeetingId() ? getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences) : [];
+      const sorted = buildOccurrenceNavTimeline(liveOccurrences, this.seriesOccurrences(), meeting.duration);
+      if (sorted.length === 0) return { sorted, currentIdx: -1 };
+
+      const routeId = this.activatedRoute.snapshot.paramMap.get('id') ?? '';
+      if (this.loadedViaPastMeetingId()) {
+        // The route id IS the composite past-occurrence id — match it directly first
+        const idxById = sorted.findIndex((o: OccurrenceNavItem) => o.meeting_and_occurrence_id === routeId);
+        if (idxById >= 0) return { sorted, currentIdx: idxById };
+      }
+
       const current = this.currentOccurrence();
       let currentTime: number;
       if (current) {
         currentTime = new Date(current.start_time).getTime();
       } else {
         // For past meetings loaded via /meetings/{id}-{timestamp}, extract timestamp from route
-        const routeId = this.activatedRoute.snapshot.paramMap.get('id') ?? '';
         const parts = routeId.split('-');
         currentTime = parts.length === 2 && /^\d{13}$/.test(parts[1]) ? parseInt(parts[1], 10) : Date.now();
       }
-      let currentIdx = sorted.findIndex((o: MeetingOccurrence) => new Date(o.start_time).getTime() === currentTime);
+      let currentIdx = sorted.findIndex((o: OccurrenceNavItem) => new Date(o.start_time).getTime() === currentTime);
       if (currentIdx < 0) {
-        currentIdx = sorted.findIndex((o: MeetingOccurrence) => new Date(o.start_time).getTime() >= currentTime);
+        currentIdx = sorted.findIndex((o: OccurrenceNavItem) => new Date(o.start_time).getTime() >= currentTime);
       }
       if (currentIdx < 0) currentIdx = sorted.length - 1;
       return { sorted, currentIdx };
     });
   }
 
-  private buildOccurrenceUrl(meetingId: string, occurrence: MeetingOccurrence): string {
-    const timestamp = new Date(occurrence.start_time).getTime();
-    const meeting = this.meeting();
-    const isPast = hasMeetingEnded(meeting, occurrence);
+  private buildOccurrenceUrl(seriesUid: string, occurrence: OccurrenceNavItem): string {
     const password = this.password();
     const params = new URLSearchParams();
     if (password) params.set('password', password);
+    // Past record: its composite id is the canonical past-meeting URL — never reconstruct from start_time
+    if (occurrence.meeting_and_occurrence_id) {
+      const base = `/meetings/${occurrence.meeting_and_occurrence_id}`;
+      const qs = params.toString();
+      return qs ? `${base}?${qs}` : base;
+    }
+    const timestamp = new Date(occurrence.start_time).getTime();
+    const meeting = this.meeting();
+    const isPast = hasMeetingEnded(meeting, occurrence);
     if (isPast) {
-      const base = `/meetings/${meetingId}-${timestamp}`;
+      const base = `/meetings/${seriesUid}-${timestamp}`;
       const qs = params.toString();
       return qs ? `${base}?${qs}` : base;
     }
     params.set('occurrence', timestamp.toString());
-    return `/meetings/${meetingId}?${params.toString()}`;
+    return `/meetings/${seriesUid}?${params.toString()}`;
   }
 
   private initializePreviousOccurrenceUrl(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.recurrence) return null;
+      if (!meeting) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (currentIdx <= 0) return null;
-      return this.buildOccurrenceUrl(meeting.id, sorted[currentIdx - 1]);
+      return this.buildOccurrenceUrl(getMeetingSeriesUid(meeting), sorted[currentIdx - 1]);
     });
   }
 
   private initializeNextOccurrenceUrl(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.recurrence) return null;
+      if (!meeting) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (currentIdx < 0 || currentIdx >= sorted.length - 1) return null;
-      return this.buildOccurrenceUrl(meeting.id, sorted[currentIdx + 1]);
+      return this.buildOccurrenceUrl(getMeetingSeriesUid(meeting), sorted[currentIdx + 1]);
     });
   }
 
   private initializeOccurrenceLabel(): Signal<string | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.recurrence) return null;
+      if (!meeting) return null;
       const { sorted, currentIdx } = this.occurrenceContext();
       if (sorted.length === 0) return null;
+      // Payloads without a recurrence rule (e.g. past pages) only surface the nav when the
+      // series timeline actually has somewhere to go.
+      if (!meeting.recurrence && sorted.length < 2) return null;
       return `${currentIdx + 1} of ${sorted.length}`;
     });
   }

@@ -16,6 +16,7 @@ import {
   CdpIdentity,
   CdpWorkExperienceRequest,
   ClaimAliasRequest,
+  ClaimAliasResponse,
   CombinedProfile,
   DeveloperTokenInfo,
   EmailManagementData,
@@ -727,11 +728,7 @@ export class ProfileController {
       }
 
       logger.success(req, 'claim_linux_alias', startTime, { domain });
-      // primaryEmail is null here: this handler doesn't read user_emails, and the client
-      // refetches via getLinuxAlias() after a successful claim rather than consuming this body.
-      res
-        .status(200)
-        .json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo, primaryEmail: null } satisfies LinuxAliasData);
+      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo } satisfies ClaimAliasResponse);
     } catch (error) {
       next(error);
     }

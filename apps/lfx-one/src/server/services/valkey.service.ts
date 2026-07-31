@@ -301,6 +301,12 @@ export function buildPerUserOrgKey(namespace: string, username: string, orgUid: 
   return `${keyPrefix()}:${namespace}:${username}:${orgUid}`;
 }
 
+/** Per-user cache key with no org scoping (caller username only, under a caller-chosen namespace); null (fail-closed → direct fetch) when the username isn't filter-safe. For "mine semantics" data that isn't scoped to any org/project. */
+export function buildUserCacheKey(namespace: string, username: string): string | null {
+  if (!isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${namespace}:${username}`;
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,
@@ -327,6 +333,17 @@ export function withPerUserCache<T>(
   accept?: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept);
+}
+
+/** Read-through helper for a per-user, org-independent namespace; a null key (unsafe username) fetches directly. */
+export function withUserCache<T>(
+  namespace: string,
+  username: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildUserCacheKey(namespace, username), ttlSeconds, fetcher, accept);
 }
 
 /** Shared accessor — forwards to the current singleton so resetInstance() is always honored (no stale binding). */

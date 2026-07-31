@@ -6,12 +6,35 @@
 // compiler first provides that facade so the module can be imported.
 import '@angular/compiler';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { RecurrenceType } from '../enums';
-import { CustomRecurrencePattern, Meeting, MeetingOccurrence, MeetingRecurrence, PastMeeting, PastMeetingSummary, QueryServiceItem } from '../interfaces';
+import { PollStatus, RecurrenceType } from '../enums';
+import {
+  CANCELLED_COLOR,
+  lfxColors,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  PAST_SURVEY_CALENDAR_COLOR,
+  PAST_VOTE_CALENDAR_COLOR,
+  SURVEY_COLOR,
+  VOTE_COLOR,
+} from '../constants';
+import {
+  CustomRecurrencePattern,
+  Meeting,
+  MeetingOccurrence,
+  MeetingRecurrence,
+  PastMeeting,
+  PastMeetingSummary,
+  PastOccurrenceSummary,
+  QueryServiceItem,
+  Vote,
+} from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildMeetingOccurrenceRoute,
+  buildOccurrenceNavTimeline,
+  getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
   buildRecurrenceNeverEndDate,
@@ -20,12 +43,20 @@ import {
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
   getMeetingOrganizerDisplayName,
+  isCalendarDeadlinePast,
+  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
+  isOccurrencePast,
+  isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
+  resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
+  resolveSurveyCalendarColors,
+  resolveVoteCalendarColors,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -790,5 +821,278 @@ describe('selectPrimaryPastMeetingSummary', () => {
     ];
 
     expect(selectPrimaryPastMeetingSummary(resources)?.uid).toBe('newer-created');
+  });
+});
+
+describe('resolveMeetingCalendarColors', () => {
+  it('returns default blue for active meetings', () => {
+    expect(resolveMeetingCalendarColors(false)).toEqual({ ...MEETING_TYPE_COLORS['default'], text: lfxColors.white });
+  });
+
+  it('returns lighter blue for past meetings', () => {
+    expect(resolveMeetingCalendarColors(false, true)).toEqual(PAST_MEETING_CALENDAR_COLOR);
+  });
+
+  it('returns cancelled grey regardless of past flag', () => {
+    expect(resolveMeetingCalendarColors(true, true)).toEqual(CANCELLED_COLOR);
+  });
+});
+
+describe('resolveVoteCalendarColors', () => {
+  it('returns amber for active vote deadlines', () => {
+    expect(resolveVoteCalendarColors(false)).toEqual(VOTE_COLOR);
+  });
+
+  it('returns lighter amber for past vote deadlines', () => {
+    expect(resolveVoteCalendarColors(true)).toEqual(PAST_VOTE_CALENDAR_COLOR);
+  });
+});
+
+describe('resolveSurveyCalendarColors', () => {
+  it('returns violet for active survey cutoffs', () => {
+    expect(resolveSurveyCalendarColors(false)).toEqual(SURVEY_COLOR);
+  });
+
+  it('returns lighter violet for past survey cutoffs', () => {
+    expect(resolveSurveyCalendarColors(true)).toEqual(PAST_SURVEY_CALENDAR_COLOR);
+  });
+});
+
+describe('isCalendarDeadlinePast', () => {
+  it('returns false for a future deadline', () => {
+    expect(isCalendarDeadlinePast('2099-01-01T00:00:00Z', new Date('2026-01-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('returns true when the deadline has passed', () => {
+    expect(isCalendarDeadlinePast('2026-01-01T00:00:00Z', new Date('2026-01-02T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('isVoteCalendarEventPast', () => {
+  it('returns true for ended votes', () => {
+    expect(isVoteCalendarEventPast({ end_time: '2099-01-01T00:00:00Z', status: PollStatus.ENDED } as Vote)).toBe(true);
+  });
+
+  it('returns true when the close time has passed', () => {
+    expect(isVoteCalendarEventPast({ end_time: '2026-01-01T00:00:00Z', status: PollStatus.ACTIVE } as Vote, new Date('2026-01-02T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('isMeetingOccurrenceCancelled', () => {
+  const occurrence = { occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' } as MeetingOccurrence;
+
+  it('returns true when occurrence status is cancel', () => {
+    expect(isMeetingOccurrenceCancelled({ ...occurrence, status: 'cancel' }, [])).toBe(true);
+  });
+
+  it('returns true when occurrence id is in cancelled_occurrences', () => {
+    expect(isMeetingOccurrenceCancelled(occurrence, ['123'])).toBe(true);
+  });
+
+  it('returns false for active occurrences with no cancelled ids', () => {
+    expect(isMeetingOccurrenceCancelled(occurrence, ['999'])).toBe(false);
+  });
+});
+
+describe('isPastMeetingCompositeId', () => {
+  it('matches composite past-meeting ids', () => {
+    expect(isPastMeetingCompositeId('99152950841-1630560600000')).toBe(true);
+  });
+
+  it('rejects plain meeting ids and malformed composites', () => {
+    expect(isPastMeetingCompositeId('99152950841')).toBe(false);
+    expect(isPastMeetingCompositeId('99152950841-1630560600000-extra')).toBe(false);
+  });
+});
+
+describe('isOccurrencePast', () => {
+  it('uses the same 40-minute post-end buffer as buildMeetingOccurrenceRoute', () => {
+    vi.useFakeTimers();
+    const start = '2026-07-01T15:00:00Z';
+    vi.setSystemTime(new Date(new Date(start).getTime() + 60 * 60_000 + 30 * 60_000));
+    expect(isOccurrencePast(start, 60)).toBe(false);
+    vi.useRealTimers();
+  });
+});
+
+describe('buildMeetingOccurrenceRoute', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('routes upcoming occurrences with ?occurrence=', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-15T15:00:00Z', 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841'],
+      queryParams: { occurrence: new Date('2026-07-15T15:00:00Z').getTime().toString() },
+    });
+  });
+
+  it('routes ended occurrences to the composite past URL', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-01T12:00:00Z'));
+
+    const start = '2026-07-01T15:00:00Z';
+    const route = buildMeetingOccurrenceRoute('99152950841', start, 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', `99152950841-${new Date(start).getTime()}`],
+      queryParams: undefined,
+    });
+  });
+
+  it('treats the meeting as upcoming inside the 40-minute post-end buffer', () => {
+    vi.useFakeTimers();
+    const start = '2026-07-01T15:00:00Z';
+    vi.setSystemTime(new Date(new Date(start).getTime() + 60 * 60_000 + 30 * 60_000));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', start, 60);
+
+    expect(route.path).toEqual(['/meetings', '99152950841']);
+    expect(route.queryParams?.['occurrence']).toBe(new Date(start).getTime().toString());
+  });
+
+  it('preserves password query params', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
+
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-15T15:00:00Z', 60, { password: 'secret' });
+
+    expect(route.queryParams).toEqual({
+      password: 'secret',
+      occurrence: new Date('2026-07-15T15:00:00Z').getTime().toString(),
+    });
+  });
+
+  it('uses the canonical past-meeting resource id without double-encoding', () => {
+    const route = buildMeetingOccurrenceRoute('99152950841', '2026-07-01T15:00:00Z', 60, {
+      pastMeetingResourceId: '99152950841-1630560600000',
+      password: 'secret',
+    });
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841-1630560600000'],
+      queryParams: { password: 'secret' },
+    });
+  });
+
+  it('detects an already-composite meeting id', () => {
+    const route = buildMeetingOccurrenceRoute('99152950841-1630560600000', '2026-07-01T15:00:00Z', 60);
+
+    expect(route).toEqual({
+      path: ['/meetings', '99152950841-1630560600000'],
+      queryParams: undefined,
+    });
+  });
+});
+
+describe('getMeetingSeriesUid', () => {
+  it('returns meeting_id for past-meeting payloads whose id is the composite occurrence id', () => {
+    const past = { id: 'series-1-1789551000000', meeting_id: 'series-1' } as PastMeeting;
+
+    expect(getMeetingSeriesUid(past)).toBe('series-1');
+  });
+
+  it('returns id for live meeting payloads without meeting_id', () => {
+    const meeting = { id: 'series-1' } as Meeting;
+
+    expect(getMeetingSeriesUid(meeting)).toBe('series-1');
+  });
+
+  it('falls back to id when meeting_id is present but empty', () => {
+    const past = { id: 'series-1', meeting_id: '' } as PastMeeting;
+
+    expect(getMeetingSeriesUid(past)).toBe('series-1');
+  });
+});
+
+describe('buildOccurrenceNavTimeline', () => {
+  const T1 = Date.UTC(2026, 6, 16, 9, 30); // Jul 16
+  const T2 = Date.UTC(2026, 6, 23, 9, 30); // Jul 23
+  const T3 = Date.UTC(2026, 6, 30, 9, 30); // Jul 30 (current)
+  const T4 = Date.UTC(2026, 7, 6, 9, 30); // Aug 6
+
+  const live = (instant: number, overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence => ({
+    occurrence_id: String(Math.floor(instant / 1000)),
+    start_time: new Date(instant).toISOString(),
+    duration: 30,
+    ...overrides,
+  });
+
+  const pastRecord = (instant: number, overrides: Partial<PastOccurrenceSummary> = {}): PastOccurrenceSummary => ({
+    meeting_and_occurrence_id: `series-uid-${instant}`,
+    scheduled_start_time: new Date(instant).toISOString(),
+    scheduled_end_time: new Date(instant + 30 * 60000).toISOString(),
+    ...overrides,
+  });
+
+  it('merges past records before live occurrences in ascending order', () => {
+    const result = buildOccurrenceNavTimeline([live(T3), live(T4)], { past: [pastRecord(T2), pastRecord(T1)], future: [] });
+
+    expect(result.map((o) => new Date(o.start_time).getTime())).toEqual([T1, T2, T3, T4]);
+    expect(result[0].meeting_and_occurrence_id).toBe(`series-uid-${T1}`);
+    expect(result[2].meeting_and_occurrence_id).toBeUndefined();
+  });
+
+  it('prefers the live entry when a past record exists for the same instant (in-progress occurrence)', () => {
+    const result = buildOccurrenceNavTimeline([live(T3)], { past: [pastRecord(T3)], future: [] });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].meeting_and_occurrence_id).toBeUndefined();
+  });
+
+  it('uses endpoint future occurrences when no live payload is available (past page)', () => {
+    const result = buildOccurrenceNavTimeline([], { past: [pastRecord(T1)], future: [live(T3), live(T4)] });
+
+    expect(result.map((o) => new Date(o.start_time).getTime())).toEqual([T1, T3, T4]);
+  });
+
+  it('filters cancelled endpoint future occurrences via cancelled_occurrences ids', () => {
+    const cancelled = live(T4);
+    const result = buildOccurrenceNavTimeline([], {
+      past: [],
+      future: [live(T3), cancelled],
+      cancelled_occurrences: [cancelled.occurrence_id],
+    });
+
+    expect(result.map((o) => new Date(o.start_time).getTime())).toEqual([T3]);
+  });
+
+  it('derives the past instant from the composite id suffix, not scheduled_start_time', () => {
+    // Composite suffix and scheduled_start_time disagree — the suffix is authoritative
+    const result = buildOccurrenceNavTimeline([], {
+      past: [pastRecord(T1, { meeting_and_occurrence_id: `series-uid-${T2}` })],
+      future: [],
+    });
+
+    expect(new Date(result[0].start_time).getTime()).toBe(T2);
+    expect(result[0].occurrence_id).toBe(String(Math.floor(T2 / 1000)));
+  });
+
+  it('skips past records whose composite id has no 13-digit millisecond suffix', () => {
+    const result = buildOccurrenceNavTimeline([], {
+      past: [pastRecord(T1, { meeting_and_occurrence_id: 'series-uid-only' })],
+      future: [],
+    });
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('computes past duration from scheduled times with a fallback for missing end times', () => {
+    const result = buildOccurrenceNavTimeline(
+      [],
+      {
+        past: [pastRecord(T1), pastRecord(T2, { scheduled_end_time: undefined })],
+        future: [],
+      },
+      45
+    );
+
+    expect(result[0].duration).toBe(30);
+    expect(result[1].duration).toBe(45);
   });
 });
