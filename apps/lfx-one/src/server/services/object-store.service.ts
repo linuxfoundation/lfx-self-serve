@@ -47,8 +47,9 @@ export class ObjectStoreService {
   /**
    * Upload a user's profile picture. Keyed stably per user (`avatars/<username>`) so a
    * re-upload overwrites the same object. Returns the CDN-fronted public URL with a
-   * cache-busting query param when CDN_URL_PREFIX is configured, else null — degraded
-   * mode, callers fall back to the existing Auth0-sourced picture.
+   * cache-busting query param when CDN_URL_PREFIX is configured, else null. A null url
+   * means no absolute URL exists to persist — this service doesn't treat that as an
+   * error itself, but callers that require a public URL (e.g. ProfileController) must.
    */
   public async uploadProfilePicture(req: Request, username: string, buffer: Buffer, contentType: string): Promise<{ url: string | null }> {
     await this.ensureBucket();
