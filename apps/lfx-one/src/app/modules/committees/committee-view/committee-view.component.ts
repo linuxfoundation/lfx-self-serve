@@ -131,6 +131,8 @@ export class CommitteeViewComponent {
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
+  /** Committee UIDs where this session submitted a join application (visitor apply flow). */
+  private readonly pendingApplicationCommitteeUids = signal<ReadonlySet<string>>(new Set());
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -149,6 +151,11 @@ export class CommitteeViewComponent {
   // committee response carrying the new my_role.
   public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  /** True when the visitor submitted an application for the current committee this session. */
+  public hasPendingApplication: Signal<boolean> = computed(() => {
+    const uid = this.committee()?.uid;
+    return !!uid && this.pendingApplicationCommitteeUids().has(uid);
+  });
 
   // Pending invitation for THIS committee, surfaced from the shared cross-surface cache so a user
   // landing on a group they were invited to can accept/decline right here. Excludes invites already
@@ -373,6 +380,9 @@ export class CommitteeViewComponent {
           },
         });
     } else if (joinMode === 'application') {
+      if (this.hasPendingApplication()) {
+        return;
+      }
       this.openApplicationDialog(committee.uid, committee.name);
     } else {
       // closed — no self-service action available
@@ -606,6 +616,7 @@ export class CommitteeViewComponent {
         .pipe(finalize(() => this.joiningOrLeaving.set(false)))
         .subscribe({
           next: () => {
+            this.markPendingApplication(committeeUid);
             this.messageService.add({
               severity: 'success',
               summary: 'Application Submitted',
@@ -617,6 +628,7 @@ export class CommitteeViewComponent {
             const upstream = err.error?.message as string | undefined;
             let detail: string;
             if (err.status === 409) {
+              this.markPendingApplication(committeeUid);
               detail = 'You already have a pending application for this group.';
             } else {
               detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
@@ -628,6 +640,10 @@ export class CommitteeViewComponent {
   }
 
   // -- Private initializer functions --
+  private markPendingApplication(committeeUid: string): void {
+    this.pendingApplicationCommitteeUids.update((uids) => new Set([...uids, committeeUid]));
+  }
+
   private initPendingInvitationFromRoute(): Signal<PendingInvitation | null> {
     return computed(() => {
       if (this.errorType() !== 'access-denied') {

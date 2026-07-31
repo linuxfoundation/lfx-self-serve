@@ -33,6 +33,15 @@
         data-testid="group-join-cta-apply-btn"></lfx-button>
     </div>
   </div>
+} @else if (showApplicationPendingNotice()) {
+  <!-- Visitor — application submitted, awaiting admin review -->
+  <div class="rounded-xl bg-gray-50 border border-gray-200 p-6 text-center" role="status" data-testid="group-join-cta-application-pending-notice">
+    <div class="flex flex-col gap-3 items-center">
+      <i class="fa-light fa-hourglass-half text-2xl text-gray-500" aria-hidden="true"></i>
+      <h3 class="text-base font-semibold text-gray-900">{{ applicationPendingTitle }}</h3>
+      <p class="text-sm text-gray-600 max-w-md">{{ applicationPendingDescription }}</p>
+    </div>
+  </div>
 } @else if (showInviteOnlyNotice()) {
   <!-- Invite-only groups: informational only — visitors must wait for an invitation -->
   <div class="rounded-xl bg-gray-50 border border-gray-200 p-6 text-center" role="status" data-testid="group-join-cta-invite-only-notice">

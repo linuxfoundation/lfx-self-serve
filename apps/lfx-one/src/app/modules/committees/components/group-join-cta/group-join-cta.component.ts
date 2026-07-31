@@ -18,6 +18,7 @@ export class GroupJoinCtaComponent {
   public readonly committee = input.required<Committee>();
   public readonly isVisitor = input<boolean>(false);
   public readonly hasPendingInvite = input<boolean>(false);
+  public readonly hasPendingApplication = input<boolean>(false);
 
   public readonly joinRequested = output<void>();
 
@@ -30,9 +31,12 @@ export class GroupJoinCtaComponent {
   public readonly joinCtaDescription = 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
   public readonly applyCtaDescription = 'Submit a request to join this group. A group admin will review your application and notify you of their decision.';
   public readonly inviteOnlyTitle = 'Membership is by invitation only';
+  public readonly applicationPendingTitle = 'Application submitted';
+  public readonly applicationPendingDescription = 'Your request to join is pending review. A group admin will notify you once a decision is made.';
 
   public canJoin: Signal<boolean> = this.initCanJoin();
   public canApply: Signal<boolean> = this.initCanApply();
+  public showApplicationPendingNotice: Signal<boolean> = this.initShowApplicationPendingNotice();
   public showInviteOnlyNotice: Signal<boolean> = this.initShowInviteOnlyNotice();
   public joinCtaTitle: Signal<string> = this.initJoinCtaTitle();
   public inviteOnlyDescription: Signal<string> = this.initInviteOnlyDescription();
@@ -51,7 +55,14 @@ export class GroupJoinCtaComponent {
   private initCanApply(): Signal<boolean> {
     return computed(() => {
       const mode = this.committee().join_mode;
-      return this.isVisitor() && mode === 'application' && !this.hasPendingInvite();
+      return this.isVisitor() && mode === 'application' && !this.hasPendingInvite() && !this.hasPendingApplication();
+    });
+  }
+
+  private initShowApplicationPendingNotice(): Signal<boolean> {
+    return computed(() => {
+      const mode = this.committee().join_mode;
+      return this.isVisitor() && mode === 'application' && !this.hasPendingInvite() && this.hasPendingApplication();
     });
   }
 

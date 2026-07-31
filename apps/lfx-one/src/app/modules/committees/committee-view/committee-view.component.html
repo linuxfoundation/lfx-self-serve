@@ -166,7 +166,7 @@
                     [loading]="joiningOrLeaving()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-join-btn" />
-                } @else if (committee()?.join_mode === 'application') {
+                } @else if (committee()?.join_mode === 'application' && !hasPendingApplication()) {
                   <lfx-button
                     label="Apply to Join"
                     icon="fa-light fa-file-signature"
@@ -378,6 +378,7 @@
             [myMemberUid]="myMemberUid()"
             [myRoleLoading]="myRoleLoading()"
             [hasPendingInvite]="!!pendingInvitation()"
+            [hasPendingApplication]="hasPendingApplication()"
             [meetings]="upcomingMeetings()"
             [upcomingMeetingsLoading]="meetingsLoading()"
             (joinRequested)="handleJoinRequest()"
@@ -390,6 +391,7 @@
             [canEdit]="canEdit()"
             [isVisitor]="isVisitor()"
             [hasPendingInvite]="!!pendingInvitation()"
+            [hasPendingApplication]="hasPendingApplication()"
             [associatedMailingLists]="associatedMailingLists()"
             [subGroups]="subGroups()"
             [subGroupsLoading]="subGroupsLoading()"
