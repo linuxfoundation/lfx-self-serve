@@ -4,10 +4,12 @@
 import express, { Router } from 'express';
 
 import { CommitteeController } from '../controllers/committee.controller';
+import { CommitteeEngagementController } from '../controllers/committee-engagement.controller';
 
 const router = Router();
 
 const committeeController = new CommitteeController();
+const committeeEngagementController = new CommitteeEngagementController();
 
 // Committee CRUD routes - using new controller pattern
 router.get('/', (req, res, next) => committeeController.getCommittees(req, res, next));
@@ -26,6 +28,9 @@ router.get('/:id/members/:memberId', (req, res, next) => committeeController.get
 router.post('/:id/members', (req, res, next) => committeeController.createCommitteeMember(req, res, next));
 router.put('/:id/members/:memberId', (req, res, next) => committeeController.updateCommitteeMember(req, res, next));
 router.delete('/:id/members/:memberId', (req, res, next) => committeeController.deleteCommitteeMember(req, res, next));
+
+// ── Member engagement/attendance rollup (LFXV2-1705) ──────────────────────────
+router.get('/:uid/engagement', (req, res, next) => committeeEngagementController.getEngagement(req, res, next));
 
 // ── Invite routes (invite-by-email add-member) ───────────────────────────────
 router.get('/:id/invites', (req, res, next) => committeeController.getCommitteeInvites(req, res, next));
