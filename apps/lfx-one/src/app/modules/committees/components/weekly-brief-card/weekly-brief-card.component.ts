@@ -166,6 +166,12 @@ export class WeeklyBriefCardComponent {
         // exists to close, just before the poll itself ever starts.
         timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS * 2),
         take(1),
+        // Angular's RouteReuseStrategy can keep this component alive across a committee
+        // navigation (same rationale as pollUntilTerminal's identical guard below) — a
+        // generate started on committee A whose response arrives after the user has
+        // already navigated to committee B must not overwrite B's briefResponse with A's
+        // stale data.
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
         // The component can be destroyed while this request is still in flight (click
         // Generate, then navigate away) — without this, `next` still runs against a
         // destroyed component: it writes to signals nothing reads anymore and starts a
@@ -200,6 +206,10 @@ export class WeeklyBriefCardComponent {
           switch (err?.status) {
             case 429:
               detail = currentBrief ? 'Weekly regeneration limit reached. Try again next week.' : 'Weekly generation limit reached. Try again next week.';
+              // Without this, a stale client-side throttle count can leave canGenerate/
+              // canRegenerate enabled after a quota-exhausted response, letting the user
+              // re-trigger the same 429 on every click — matches the 409 branch below.
+              this.refresh$.next();
               break;
             case 409:
               // Upstream's edited-brief guard: someone else edited the brief
@@ -304,6 +314,16 @@ export class WeeklyBriefCardComponent {
       // itself hasn't changed (matches committee-view.component.ts's initUpcomingMeetings).
       distinctUntilChanged()
     );
+    // Committee reuse (RouteReuseStrategy) means this instance survives a navigation
+    // between committees — without an explicit reset, a stale `editMode`/`editForm`
+    // (edited text from the previous committee, rendered against the new committee's
+    // brief) or a leftover `generating` flag from a generate call cut off mid-flight
+    // (see the takeUntil guard in onGenerate) would bleed onto the new committee's card.
+    committeeUid$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.generating.set(false);
+      this.editMode.set(false);
+      this.editForm.reset({ briefText: '' });
+    });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(
         switchMap(([uid]) => {

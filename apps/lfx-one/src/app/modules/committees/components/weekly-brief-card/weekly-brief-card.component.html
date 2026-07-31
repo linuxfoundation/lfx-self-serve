@@ -70,12 +70,17 @@
         @if (editMode()) {
           <!-- lfx-textarea forwards dataTest as [attr.data-test] onto the inner <textarea>
                itself (unlike a data-testid on the <lfx-textarea> host, which wouldn't reach
-               it) — matches every other lfx-textarea call site in the repo. -->
+               it) — matches every other lfx-textarea call site in the repo. No visible field
+               label precedes this control (only the card's "AI Assistant" heading above,
+               which isn't programmatically associated with it) — the sr-only label + id below
+               give screen-reader users a name for what this textarea edits. -->
+          <label for="weekly-brief-card-edit-textarea" class="sr-only">Edit weekly brief</label>
           <lfx-textarea
             [form]="editForm"
             control="briefText"
             [rows]="8"
             [maxlength]="briefTextMaxLength"
+            id="weekly-brief-card-edit-textarea"
             styleClass="w-full h-48 text-sm"
             dataTest="weekly-brief-card-edit-textarea" />
 
