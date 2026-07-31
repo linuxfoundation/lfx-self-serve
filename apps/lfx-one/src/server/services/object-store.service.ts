@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -57,7 +57,8 @@ export class ObjectStoreService {
   public async uploadProfilePicture(req: Request, username: string, buffer: Buffer, contentType: string): Promise<{ url: string | null }> {
     await this.ensureBucket();
 
-    const key = `avatars/${encodeURIComponent(username.trim().toLowerCase())}`;
+    const sanitizedUsername = username.trim().toLowerCase();
+    const key = `avatars/${sanitizedUsername}`;
     const startTime = logger.startOperation(req, 'object_store_upload_profile_picture', {
       key,
       content_type: contentType,
@@ -75,8 +76,12 @@ export class ObjectStoreService {
         })
       );
 
+      // Percent-encode only at URL-construction time — the S3 key itself stays unencoded (matches
+      // packages/shared/src/utils/avatar.utils.ts's buildMyprofileAvatarUrl convention), since
+      // encoding the key would cause the HTTP layer to decode it before it reaches S3, mismatching
+      // the literally-encoded stored key.
       const cdnPrefix = process.env['CDN_URL_PREFIX'];
-      const url = cdnPrefix ? `${cdnPrefix.replace(/\/+$/, '')}/${key}?v=${Date.now()}` : null;
+      const url = cdnPrefix ? `${cdnPrefix.replace(/\/+$/, '')}/avatars/${encodeURIComponent(sanitizedUsername)}?v=${Date.now()}` : null;
 
       logger.success(req, 'object_store_upload_profile_picture', startTime, { key, has_cdn_url: !!url });
 
@@ -116,7 +121,12 @@ export class ObjectStoreService {
       await client.send(new HeadBucketCommand({ Bucket: bucket }));
       logger.success(undefined, 'object_store_ensure_bucket', startTime, { bucket, created: false });
     } catch (error) {
-      if (process.env['S3_CREATE_MISSING_BUCKET'] !== 'true') {
+      // Only a confirmed 404/NotFound means "bucket is missing" — a 403, timeout, or 5xx must
+      // rethrow rather than be treated as missing, or a permissions/outage error gets masked as
+      // "not ready yet" and silently attempted as a create.
+      const isConfirmedNotFound = error instanceof NotFound || (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
+
+      if (!isConfirmedNotFound || process.env['S3_CREATE_MISSING_BUCKET'] !== 'true') {
         logger.error(undefined, 'object_store_ensure_bucket', startTime, error, { bucket });
         throw error;
       }

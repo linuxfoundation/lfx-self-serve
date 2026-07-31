@@ -45,17 +45,20 @@
               }
             </div>
 
-            <label
-              for="drawer-edit-avatar-input"
+            <button
+              type="button"
               class="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
               [class.cursor-not-allowed]="avatarUploading() || busy()"
               [class.cursor-pointer]="!avatarUploading() && !busy()"
               [class.opacity-40]="avatarUploading() || busy()"
+              [disabled]="avatarUploading() || busy()"
               [attr.aria-label]="avatarUploading() ? 'Uploading photo' : 'Change photo'"
+              (click)="triggerAvatarUpload()"
               data-testid="profile-edit-drawer-avatar-upload-label">
               <i class="fa-light text-xs" [class.fa-spinner]="avatarUploading()" [class.fa-spin]="avatarUploading()" [class.fa-pencil]="!avatarUploading()"></i>
-            </label>
+            </button>
             <input
+              #avatarInput
               type="file"
               id="drawer-edit-avatar-input"
               accept="image/png,image/jpeg,image/webp"

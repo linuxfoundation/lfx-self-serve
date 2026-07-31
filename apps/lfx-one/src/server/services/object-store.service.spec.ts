@@ -29,7 +29,7 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
-import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand } from '@aws-sdk/client-s3';
 
 import { ObjectStoreService } from './object-store.service';
 
@@ -37,6 +37,16 @@ const ORIGINAL_ENV = { ...process.env };
 
 function buildReq(): any {
   return { path: '/test', log: {} };
+}
+
+function buildNotFoundError(): NotFound {
+  return new NotFound({ message: 'The specified bucket does not exist', $metadata: { httpStatusCode: 404 } });
+}
+
+function buildForbiddenError(): Error & { $metadata: { httpStatusCode: number } } {
+  const error = new Error('Forbidden') as Error & { $metadata: { httpStatusCode: number } };
+  error.$metadata = { httpStatusCode: 403 };
+  return error;
 }
 
 describe('ObjectStoreService', () => {
@@ -63,17 +73,16 @@ describe('ObjectStoreService', () => {
       expect(sendMock.mock.calls[0][0]).toBeInstanceOf(HeadBucketCommand);
     });
 
-    it('rethrows and does not create a bucket when HeadBucket fails and S3_CREATE_MISSING_BUCKET is not "true"', async () => {
-      const headError = new Error('NotFound');
-      sendMock.mockRejectedValueOnce(headError);
+    it('rethrows and does not create a bucket when HeadBucket fails with a confirmed 404 and S3_CREATE_MISSING_BUCKET is not "true"', async () => {
+      sendMock.mockRejectedValueOnce(buildNotFoundError());
 
-      await expect(service.ensureBucket()).rejects.toThrow('NotFound');
+      await expect(service.ensureBucket()).rejects.toThrow();
       expect(sendMock).toHaveBeenCalledOnce();
     });
 
-    it('creates the bucket only when S3_CREATE_MISSING_BUCKET is exactly "true"', async () => {
+    it('creates the bucket only when HeadBucket confirms a 404 and S3_CREATE_MISSING_BUCKET is exactly "true"', async () => {
       process.env['S3_CREATE_MISSING_BUCKET'] = 'true';
-      sendMock.mockRejectedValueOnce(new Error('NotFound')).mockResolvedValueOnce({});
+      sendMock.mockRejectedValueOnce(buildNotFoundError()).mockResolvedValueOnce({});
 
       await service.ensureBucket();
 
@@ -83,9 +92,17 @@ describe('ObjectStoreService', () => {
 
     it('never creates a bucket based on S3_ENDPOINT_URL alone', async () => {
       process.env['S3_ENDPOINT_URL'] = 'http://localhost:5222';
-      sendMock.mockRejectedValueOnce(new Error('NotFound'));
+      sendMock.mockRejectedValueOnce(buildNotFoundError());
 
-      await expect(service.ensureBucket()).rejects.toThrow('NotFound');
+      await expect(service.ensureBucket()).rejects.toThrow();
+      expect(sendMock).toHaveBeenCalledOnce();
+    });
+
+    it('rethrows and does not create a bucket on a non-404 error (e.g. 403) even when S3_CREATE_MISSING_BUCKET is "true"', async () => {
+      process.env['S3_CREATE_MISSING_BUCKET'] = 'true';
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.ensureBucket()).rejects.toThrow('Forbidden');
       expect(sendMock).toHaveBeenCalledOnce();
     });
   });
@@ -103,7 +120,7 @@ describe('ObjectStoreService', () => {
   });
 
   describe('uploadProfilePicture', () => {
-    it('uploads with a stable, sanitized key and the correct object metadata', async () => {
+    it('uploads with a stable, sanitized (unencoded) key and the correct object metadata', async () => {
       sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
 
       await service.uploadProfilePicture(buildReq(), '  Some.User@Example.com  ', Buffer.from('img'), 'image/png');
@@ -114,7 +131,7 @@ describe('ObjectStoreService', () => {
       expect(putCommand).toBeInstanceOf(PutObjectCommand);
       expect(putCommand.input).toMatchObject({
         Bucket: 'avatars-bucket',
-        Key: `avatars/${encodeURIComponent('some.user@example.com')}`,
+        Key: 'avatars/some.user@example.com',
         ContentType: 'image/png',
         CacheControl: 'public, max-age=31536000',
       });
@@ -127,6 +144,17 @@ describe('ObjectStoreService', () => {
       const { url } = await service.uploadProfilePicture(buildReq(), 'user1', Buffer.from('img'), 'image/png');
 
       expect(url).toMatch(new RegExp(`^https://cdn\\.example\\.com/avatars/user1\\?v=\\d+$`));
+    });
+
+    it('percent-encodes the username in the public URL (stored key stays unencoded) so the URL round-trips through HTTP decoding back to the stored key', async () => {
+      process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/';
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+
+      const { url } = await service.uploadProfilePicture(buildReq(), 'some.user@example.com', Buffer.from('img'), 'image/png');
+
+      expect(url).toMatch(new RegExp(`^https://cdn\\.example\\.com/avatars/${encodeURIComponent('some.user@example.com')}\\?v=\\d+$`));
+      const putCommand = sendMock.mock.calls[1][0];
+      expect(putCommand.input.Key).toBe('avatars/some.user@example.com');
     });
 
     it('returns a null url (degraded mode) when CDN_URL_PREFIX is unset', async () => {

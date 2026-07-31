@@ -376,7 +376,8 @@ export class ProfileController {
         );
       }
 
-      const contentType = (req.headers['content-type'] || '').split(';')[0].trim();
+      const rawContentType = req.headers['content-type'];
+      const contentType = (Array.isArray(rawContentType) ? rawContentType[0] : rawContentType || '').split(';')[0].trim();
       if (!(ALLOWED_AVATAR_MIME_TYPES as readonly string[]).includes(contentType)) {
         return next(
           ServiceValidationError.forField('content-type', `Unsupported image type: ${contentType || 'unknown'}`, {

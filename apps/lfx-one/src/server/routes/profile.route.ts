@@ -2,14 +2,34 @@
 // SPDX-License-Identifier: MIT
 
 import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_SIZE_BYTES } from '@lfx-one/shared/constants';
-import express, { Router } from 'express';
+import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { ProfileController } from '../controllers/profile.controller';
+import { MicroserviceError } from '../errors/microservice.error';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 
 const profileController = new ProfileController();
+
+/**
+ * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
+ * reaches the global error handler, which only preserves the real statusCode for BaseApiError
+ * instances and would otherwise flatten this into a generic 500.
+ */
+function handlePictureUploadParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
+  if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
+    next(
+      new MicroserviceError('Image exceeds the maximum upload size', 413, 'PAYLOAD_TOO_LARGE', {
+        operation: 'upload_profile_picture',
+        service: 'profile_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
+  next(err);
+}
 
 /**
  * Profile routes for authenticated users
@@ -43,7 +63,8 @@ router.post(
   '/picture-upload',
   blockDuringImpersonation,
   express.raw({ type: [...ALLOWED_AVATAR_MIME_TYPES], limit: MAX_AVATAR_SIZE_BYTES }),
-  (req, res, next) => profileController.uploadProfilePicture(req, res, next)
+  handlePictureUploadParseError,
+  (req: Request, res: Response, next: NextFunction) => profileController.uploadProfilePicture(req, res, next)
 );
 
 // Email management routes (backed by auth-service via NATS)

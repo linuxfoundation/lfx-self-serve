@@ -149,6 +149,15 @@ describe('ProfileController.uploadProfilePicture', () => {
     expect(objectStoreSvc.uploadProfilePicture).not.toHaveBeenCalled();
   });
 
+  it('rejects a disallowed content type when the header arrives as an array (proxied/duplicate header)', async () => {
+    const next = vi.fn();
+
+    await controller.uploadProfilePicture(buildReq({ headers: { 'content-type': ['application/pdf', 'image/png'] } }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+    expect(objectStoreSvc.uploadProfilePicture).not.toHaveBeenCalled();
+  });
+
   it('rejects an empty body', async () => {
     const next = vi.fn();
 

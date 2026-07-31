@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -85,6 +85,7 @@ export class ProfileEditDrawerComponent {
   public readonly busy = computed(() => this.saving() || this.savingPrimaryEmail() || this.avatarUploading());
 
   // Avatar signals
+  private readonly avatarInput = viewChild<ElementRef<HTMLInputElement>>('avatarInput');
   public readonly avatarUploading = signal(false);
   // The avatar URL that failed to load, if any — mirrors ProfilePanelComponent's fallback pattern
   // so a broken/expired picture URL falls back to initials instead of a broken image icon.
@@ -321,6 +322,11 @@ export class ProfileEditDrawerComponent {
    * profile (so the drawer's own preview reflects the change if reopened) and emits `saved` so the
    * host layout refreshes the avatar shown elsewhere in the Me lens.
    */
+  /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
+  public triggerAvatarUpload(): void {
+    this.avatarInput()?.nativeElement.click();
+  }
+
   public onAvatarFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
