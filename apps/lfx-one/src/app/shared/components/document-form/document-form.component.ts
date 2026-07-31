@@ -17,11 +17,12 @@ import {
   CreateProjectDocumentType,
   DocumentFormEntityType,
   DocumentFormMode,
+  PendingDocumentFile,
 } from '@lfx-one/shared/interfaces';
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
-import { Observable } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, of, toArray } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -45,8 +46,10 @@ export class DocumentFormComponent {
 
   // === Writable Signals ===
   public submitting = signal<boolean>(false);
-  public selectedFile = signal<File | null>(null);
+  public pendingFiles = signal<PendingDocumentFile[]>([]);
   public fileError = signal<string | null>(null);
+  /** Set once at least one file in this dialog session has uploaded successfully — drives the Cancel/Done label and close-on-cancel behavior. */
+  public anyUploadSucceeded = signal<boolean>(false);
 
   // Config-based properties
   /** Resource type this dialog targets — drives service dispatch + uniqueness scope copy. */
@@ -67,6 +70,7 @@ export class DocumentFormComponent {
   public isFolder: Signal<boolean> = this.initIsFolder();
   public isFile: Signal<boolean> = this.initIsFile();
   public submitLabel: Signal<string> = this.initSubmitLabel();
+  public cancelLabel: Signal<string> = this.initCancelLabel();
   public descriptionPlaceholder: Signal<string> = this.initDescriptionPlaceholder();
 
   public constructor() {
@@ -82,7 +86,7 @@ export class DocumentFormComponent {
   }
 
   public onCancel(): void {
-    this.dialogRef.close();
+    this.dialogRef.close(this.anyUploadSucceeded() || undefined);
   }
 
   public onSubmit(): void {
@@ -94,43 +98,18 @@ export class DocumentFormComponent {
     const formValue = this.form.getRawValue();
 
     if (this.isFile()) {
-      const file = this.selectedFile();
-      if (!file) {
-        this.fileError.set('Please select a file to upload.');
+      const itemsToUpload = this.pendingFiles().filter((item) => item.status === 'pending' || item.status === 'error');
+      if (itemsToUpload.length === 0) {
+        this.fileError.set('Please select at least one file to upload.');
+        return;
+      }
+      if (itemsToUpload.some((item) => !item.name.trim())) {
+        this.fileError.set('Every file needs a name before uploading.');
         return;
       }
 
-      const metadata = {
-        name: formValue.name,
-        description: formValue.description || undefined,
-        folder_uid: formValue.parent_uid || undefined,
-      };
-
-      this.submitting.set(true);
-      const upload$: Observable<unknown> =
-        this.entityType === 'project'
-          ? this.projectService.uploadProjectDocument(this.entityId, file, metadata)
-          : this.committeeService.uploadCommitteeDocument(this.entityId, file, metadata);
-
-      upload$.subscribe({
-        next: () => {
-          this.submitting.set(false);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'File uploaded successfully',
-          });
-          this.dialogRef.close(true);
-        },
-        error: (err: HttpErrorResponse) => {
-          this.submitting.set(false);
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: this.extractErrorMessage(err, 'Failed to upload file'),
-          });
-        },
-      });
+      this.fileError.set(null);
+      this.uploadPendingFiles(itemsToUpload, formValue.description || undefined, formValue.parent_uid || undefined);
       return;
     }
 
@@ -180,28 +159,47 @@ export class DocumentFormComponent {
     }
     if (files.length === 0) return;
 
-    const file = files[0];
-    const error = this.validateFile(file);
-    if (error) {
-      this.fileError.set(error);
-      this.selectedFile.set(null);
-      return;
-    }
+    const existingNames = new Set(this.pendingFiles().map((item) => item.file.name));
+    const newItems: PendingDocumentFile[] = [];
+
+    files.forEach((file) => {
+      const error = this.validateFile(file);
+      if (error) {
+        this.messageService.add({ severity: 'error', summary: 'File Upload Error', detail: error, life: 5000 });
+        return;
+      }
+      if (existingNames.has(file.name)) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'File Upload Error',
+          detail: `A file named "${file.name}" is already in the list.`,
+          life: 5000,
+        });
+        return;
+      }
+
+      existingNames.add(file.name);
+      newItems.push({
+        id: crypto.randomUUID(),
+        file,
+        // Pre-fill from the basename (sans extension); user can edit inline before submit.
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        status: 'pending',
+      });
+    });
+
+    if (newItems.length === 0) return;
 
     this.fileError.set(null);
-    this.selectedFile.set(file);
-
-    // Auto-fill the Name field from the file basename (sans extension) if empty
-    const nameControl = this.form.get('name');
-    if (nameControl && !nameControl.value) {
-      const baseName = file.name.replace(/\.[^/.]+$/, '');
-      nameControl.setValue(baseName);
-    }
+    this.pendingFiles.update((items) => [...items, ...newItems]);
   }
 
-  public clearSelectedFile(): void {
-    this.selectedFile.set(null);
-    this.fileError.set(null);
+  public updatePendingFileName(id: string, name: string): void {
+    this.pendingFiles.update((items) => items.map((item) => (item.id === id ? { ...item, name } : item)));
+  }
+
+  public removePendingFile(id: string): void {
+    this.pendingFiles.update((items) => items.filter((item) => item.id !== id));
   }
 
   /**
@@ -235,8 +233,8 @@ export class DocumentFormComponent {
     }
 
     if (this.isFile()) {
+      // No `name` control — per-file display name lives on each PendingDocumentFile instead.
       return new FormGroup({
-        name: new FormControl('', [Validators.required]),
         description: new FormControl(''),
         parent_uid: new FormControl<string | null>(this.defaultParentUid),
       });
@@ -247,6 +245,80 @@ export class DocumentFormComponent {
     return new FormGroup({
       name: new FormControl('', [Validators.required]),
     });
+  }
+
+  /**
+   * Uploads every given pending file in parallel (RxJS `mergeMap`, unbounded concurrency).
+   * Each call is individually `catchError`'d so one failure doesn't abort the others —
+   * successes are never rolled back on partial failure. Per-file status is updated as each
+   * settles (not just aggregated at the end) so the template can render live per-file state.
+   */
+  private uploadPendingFiles(items: PendingDocumentFile[], description: string | undefined, folderUid: string | undefined): void {
+    this.submitting.set(true);
+    const uploadingIds = new Set(items.map((item) => item.id));
+    this.pendingFiles.update((current) =>
+      current.map((item) => (uploadingIds.has(item.id) ? { ...item, status: 'uploading' as const, errorMessage: undefined } : item))
+    );
+
+    from(items)
+      .pipe(
+        mergeMap((item) => {
+          const metadata = { name: item.name, description, folder_uid: folderUid };
+          const upload$: Observable<unknown> =
+            this.entityType === 'project'
+              ? this.projectService.uploadProjectDocument(this.entityId, item.file, metadata)
+              : this.committeeService.uploadCommitteeDocument(this.entityId, item.file, metadata);
+
+          return upload$.pipe(
+            map(() => ({ id: item.id, ok: true as const })),
+            catchError((err: HttpErrorResponse) =>
+              of({ id: item.id, ok: false as const, message: this.extractErrorMessage(err, `Failed to upload "${item.name}"`) })
+            )
+          );
+        }),
+        toArray()
+      )
+      .subscribe((results) => {
+        this.submitting.set(false);
+
+        const succeededIds = new Set(results.filter((result) => result.ok).map((result) => result.id));
+        const failures = new Map(
+          results.filter((result): result is { id: string; ok: false; message: string } => !result.ok).map((result) => [result.id, result.message])
+        );
+
+        this.pendingFiles.update((current) =>
+          current
+            .filter((item) => !succeededIds.has(item.id))
+            .map((item) => (failures.has(item.id) ? { ...item, status: 'error' as const, errorMessage: failures.get(item.id) } : item))
+        );
+
+        const successCount = succeededIds.size;
+        const failureCount = failures.size;
+        if (successCount > 0) {
+          this.anyUploadSucceeded.set(true);
+        }
+
+        if (failureCount === 0) {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: successCount === 1 ? 'File uploaded successfully' : `${successCount} files uploaded successfully`,
+          });
+          this.dialogRef.close(true);
+        } else if (successCount > 0) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Partial Upload',
+            detail: `${successCount} of ${successCount + failureCount} files uploaded. Fix the errors below and try again.`,
+          });
+        } else {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: failureCount === 1 ? 'Failed to upload file. Please try again.' : 'Failed to upload files. Please try again.',
+          });
+        }
+      });
   }
 
   private validateFile(file: File): string | null {
@@ -296,6 +368,10 @@ export class DocumentFormComponent {
       if (this.isLink()) return 'Add Link';
       return 'Create Folder';
     });
+  }
+
+  private initCancelLabel(): Signal<string> {
+    return computed(() => (this.isFile() && this.anyUploadSucceeded() ? 'Done' : 'Cancel'));
   }
 
   private initDescriptionPlaceholder(): Signal<string> {

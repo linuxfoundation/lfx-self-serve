@@ -771,6 +771,22 @@ export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 /** Which resource type the shared document form dialog operates against. Drives service dispatch + copy. */
 export type DocumentFormEntityType = 'committee' | 'project';
 
+/** Upload status of a single file staged in the document form dialog's multi-file file-mode flow. */
+export type PendingDocumentFileStatus = 'pending' | 'uploading' | 'success' | 'error';
+
+/** A file staged for upload in the document form dialog, tracked independently through parallel upload. */
+export interface PendingDocumentFile {
+  /** Client-generated identifier — not a server UID, used for list tracking before upload. */
+  id: string;
+  /** The actual File object to be uploaded. */
+  file: File;
+  /** Display name, pre-filled from the file basename and editable before submit. */
+  name: string;
+  status: PendingDocumentFileStatus;
+  /** Set when status is 'error' — surfaced inline under this file's row. */
+  errorMessage?: string;
+}
+
 /**
  * A document or resource link associated with a committee.
  */
