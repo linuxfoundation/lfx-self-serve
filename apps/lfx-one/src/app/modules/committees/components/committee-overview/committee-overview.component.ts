@@ -268,9 +268,17 @@ export class CommitteeOverviewComponent {
       }
       case 'vote-drawer': {
         // this.votes() and the activity feed are two independent server fetches (the former
-        // page_size=100 by updated_at, the latter the 25 most recent by occurred_at) — a vote
-        // recent enough to appear in the feed isn't guaranteed to be within the former's window,
-        // so this lookup can miss. Surface that rather than a dead click with zero feedback.
+        // page_size=100 by updated_at; the latter defaults to ACTIVITY_FEED_DEFAULT_PAGE_SIZE most
+        // recent by occurred_at, unless this call ever starts passing page_size) — a vote recent
+        // enough to appear in the feed isn't guaranteed to be within the former's window, so this
+        // lookup can miss.
+        //
+        // A miss here is recoverable in principle — VoteResultsDrawerComponent's own initVote()
+        // re-fetches by voteId with a startWith(listVote) fallback, so opening the drawer with just
+        // voteId set (no local seed) would still resolve. Not done here: the drawer's template has
+        // no `@else` on `@if (vote(); as voteData)`, so a null seed renders an empty drawer with no
+        // loading or not-found state until (or unless) that fetch settles — worse than this toast
+        // for the genuinely-missing case, and out of this component's scope to add. Toast instead.
         const vote = this.votes().find((v) => v.uid === action.voteUid);
         if (vote) {
           this.selectedVoteId.set(vote.uid);
@@ -282,7 +290,10 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'survey-drawer': {
-        // Same independent-fetch mismatch as the vote-drawer case above.
+        // Same independent-fetch mismatch and same recoverable-in-principle/toast-instead
+        // trade-off as the vote-drawer case above — SurveyResultsDrawerComponent's own
+        // initSurvey() has the identical startWith/re-fetch shape and the identical missing
+        // `@else` on its template's `@if`.
         const survey = this.surveys().find((s) => s.uid === action.surveyUid);
         if (survey) {
           this.selectedSurveyId.set(survey.uid);
