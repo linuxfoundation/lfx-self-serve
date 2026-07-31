@@ -31,7 +31,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
   // parseCommitteeActivityQuery, which reads ACTIVITY_FEED_DEFAULT_PAGE_SIZE) is reachable from
   // this spec; hand-listing only the constants this file's own tests happen to need would leave a
   // confusing "no export defined on the mock" trap for the next test that reaches further into it.
-  return { ...activityEvent, PAST_MEETING_SORT: meeting.PAST_MEETING_SORT };
+  return { ...activityEvent, ...meeting };
 });
 vi.mock('@lfx-one/shared/enums', () => ({
   PollStatus: { ACTIVE: 'active', DISABLED: 'disabled', ENDED: 'ended' },
@@ -290,11 +290,12 @@ describe('CommitteeActivityService', () => {
     });
 
     it('rejects an empty-string since rather than silently treating it as "no since"', async () => {
-      // `''` is neither undefined (skip validation) nor a valid timestamp (Number.isNaN(Date.parse('')))
-      // is true), so it's rejected the same way any other unparseable value is — not treated as
-      // an omitted `since`, which the earlier truthiness-based check (`rawSince ? ... : undefined`)
-      // used to do implicitly. Pins that the validation guard and the normalization call below it
-      // now agree on the same `!== undefined` predicate.
+      // `''` is neither undefined (skip validation) nor a valid timestamp (Number.isNaN(Date.parse(''))
+      // is true), so it's rejected the same way any other unparseable value is — not treated as an
+      // omitted `since`, which the earlier truthiness-based check (`rawSince ? ... : undefined`)
+      // used to do implicitly. Pins the guard's treatment of `''` as invalid, not omitted. The
+      // matching `!== undefined` predicate on the normalization line below is defensive only — it's
+      // unreachable while this guard stands, so it isn't (and can't be) covered by this test.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: '', limit: 8 })).rejects.toThrow(ServiceValidationError);
 
       expect(getVotes).not.toHaveBeenCalled();
