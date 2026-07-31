@@ -175,7 +175,7 @@ export class DocumentsDashboardComponent {
   }
 
   protected openUploadFileDialog(): void {
-    this.openDocumentDialog('file', 'Upload File');
+    this.openDocumentDialog('file', 'Upload Files');
   }
 
   protected openNewFolderDialog(): void {
@@ -504,7 +504,11 @@ export class DocumentsDashboardComponent {
       header,
       width: '560px',
       modal: true,
-      closable: true,
+      // File mode can partially succeed mid-batch; the header close icon bypasses the form's
+      // own success-aware close result, so route dismissal only through Cancel/Done there.
+      // closeOnEscape defaults to true independently of closable — must be disabled too.
+      closable: mode !== 'file',
+      closeOnEscape: mode !== 'file',
       data: {
         mode,
         entityType: 'project',
