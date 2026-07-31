@@ -134,8 +134,11 @@ export interface UserMetadataUpdateResponse {
 }
 
 /**
- * Response payload for profile picture upload. `public_url` is null in degraded mode
- * (no CDN configured) — callers fall back to the Auth0-sourced picture already in user_metadata.
+ * Response payload for profile picture upload. The server only sends this on success, and only
+ * once it has a CDN URL to persist — a null `public_url` (CDN unconfigured) is rejected upstream
+ * as a config error before a response is ever built, so `public_url` is never null here in
+ * practice. The type stays nullable to mirror ObjectStoreService.uploadProfilePicture's return
+ * shape, which callers with a CDN dependency (like this one) must treat as a hard requirement.
  */
 export interface ProfilePictureUploadResponse {
   success: boolean;
