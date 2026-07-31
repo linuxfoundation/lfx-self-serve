@@ -19,8 +19,15 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() 
 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
+  WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
+  NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
+  NEWSLETTER_BODY_MAX_LENGTH: 100_000,
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// `formatUtcDateRangeLabel` lives in the same `@lfx-one/shared/utils` barrel as
+// form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
+// in the real barrel and hit the same JIT-compilation failure the mocks above avoid.
+vi.mock('@lfx-one/shared/utils', () => ({ formatUtcDateRangeLabel: vi.fn(() => 'Jan 1 – Jan 7, 2026') }));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -31,6 +38,12 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
+// shareBrief's collaborators — not exercised by this spec (no shareBrief tests here),
+// but WeeklyBriefService's constructor instantiates all three, so they must at least
+// be constructible without pulling in their own real import chains.
+vi.mock('./committee.service', () => ({ CommitteeService: class {} }));
+vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
+vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
 
 import type { Request } from 'express';
 

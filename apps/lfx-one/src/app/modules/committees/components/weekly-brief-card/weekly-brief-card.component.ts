@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -15,9 +15,11 @@ import {
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
+import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
+import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import {
   BehaviorSubject,
@@ -42,7 +44,7 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, TextareaComponent],
+  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -51,6 +53,7 @@ export class WeeklyBriefCardComponent {
   // Injections
   private readonly weeklyBriefService = inject(WeeklyBriefService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -76,6 +79,7 @@ export class WeeklyBriefCardComponent {
   // short of a page reload. See pollUntilTerminal.
   public readonly pollTimedOut = signal(false);
   public readonly saving = signal(false);
+  public readonly sharing = signal(false);
   public readonly editMode = signal(false);
 
   // Written by both the initial-load pipeline and the post-generate poll (see
@@ -125,18 +129,15 @@ export class WeeklyBriefCardComponent {
   public readonly weekLabel: Signal<string> = computed(() => {
     const b = this.brief();
     if (!b) return '';
-    // window_start / window_end are UTC ISO boundaries (Sun 00:00Z → Sat
-    // 23:59Z). Format with timeZone: 'UTC' so users in negative offsets
-    // don't see the start shift to the prior day.
-    const start = new Date(b.window_start);
-    const end = new Date(b.window_end);
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} – ${end.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'UTC',
-    })}`;
+    // window_start / window_end are UTC ISO boundaries (Sun 00:00Z → Sat 23:59Z).
+    return formatUtcDateRangeLabel(b.window_start, b.window_end);
   });
+
+  // Recipients actually resolve from committee membership (via the newsletter
+  // send pipeline), not the Groups.io mailing list — the label must describe
+  // the real audience, not the list address, or the confirm dialog would
+  // promise a destination the send never uses.
+  public readonly shareAudienceLabel: Signal<string> = computed(() => `all members of ${this.committee()?.name ?? 'this committee'}`);
 
   public constructor() {
     this.initBriefResponseSubscription();
@@ -276,6 +277,20 @@ export class WeeklyBriefCardComponent {
           this.messageService.add({ severity: 'error', summary: 'Save failed', detail });
         },
       });
+  }
+
+  public onShareToMailingList(): void {
+    // The Share action only renders outside edit mode (see the template's
+    // @if (editMode()) branch), so there is never an unsaved-edit case to
+    // guard here — the brief is always whatever was last saved.
+    this.confirmationService.confirm({
+      header: 'Share to Mailing List',
+      message: `Send the current brief by email to ${this.shareAudienceLabel()}?`,
+      icon: 'fa-light fa-paper-plane',
+      acceptLabel: 'Send',
+      rejectLabel: 'Cancel',
+      accept: () => this.performShare(),
+    });
   }
 
   public async onCopyAndShare(): Promise<void> {
@@ -478,6 +493,74 @@ export class WeeklyBriefCardComponent {
               detail: 'This is taking longer than expected — check back in a bit, or refresh.',
             });
           }
+        },
+      });
+  }
+
+  // Other private helpers
+  private performShare(): void {
+    const committeeUid = this.committee()?.uid;
+    const revision = this.brief()?.revision;
+    if (!committeeUid || revision === undefined) return;
+    this.sharing.set(true);
+    this.weeklyBriefService
+      .shareWeeklyBrief(committeeUid, revision)
+      .pipe(
+        take(1),
+        finalize(() => this.sharing.set(false))
+      )
+      .subscribe({
+        next: (result: ShareWeeklyBriefResult) => {
+          if (result.total_recipients === 0) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'No recipients',
+              detail: 'No recipients were found for this committee — nothing was sent.',
+            });
+            return;
+          }
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Queued',
+            detail: `Brief queued for delivery to ${result.total_recipients} recipient${result.total_recipients === 1 ? '' : 's'}.`,
+          });
+        },
+        error: (err: HttpErrorResponse) => {
+          const code = (err?.error as { code?: string } | undefined)?.code;
+          const status = err?.status;
+          let detail: string;
+          if (status === 404) {
+            detail = 'No brief available to share.';
+          } else if (status === 403) {
+            detail = 'Only project writers can share the weekly brief by email. Contact a project administrator.';
+          } else if (status === 409) {
+            if (code === 'NO_MAILING_LIST') {
+              detail = 'No mailing list configured for this committee.';
+            } else if (code === 'BACKEND_NOT_LIVE') {
+              detail = 'Sharing is not available in this environment yet.';
+            } else if (code === 'REVISION_MISMATCH') {
+              detail = 'This brief was updated since you last viewed it. Reload to review the latest version before sharing.';
+              this.refresh$.next();
+            } else {
+              detail = 'This brief is already being sent, or was already sent.';
+            }
+          } else if (status === 400) {
+            // ServiceValidationError's top-level `error` field is a generic
+            // "Validation failed for X" — the actionable text lives in the
+            // per-field `errors[]` array.
+            const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;
+            detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
+          } else if (status === 0 || status === 408 || status >= 500) {
+            // The send is async — a dropped connection, timeout, or 5xx here
+            // may mean the newsletter was already accepted upstream before
+            // the failure reached the client. Don't invite a retry that
+            // could send the brief twice. (status === 0 covers network
+            // failures/aborts, which never surface an HTTP status.)
+            detail = 'The send may not have completed — check the project’s Newsletters list before trying again.';
+          } else {
+            detail = 'Failed to share brief. Please try again.';
+          }
+          this.messageService.add({ severity: 'error', summary: 'Share failed', detail });
         },
       });
   }

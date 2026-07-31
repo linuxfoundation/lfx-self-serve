@@ -7,6 +7,7 @@ import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
+  ShareWeeklyBriefResult,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
 } from '@lfx-one/shared/interfaces';
@@ -54,5 +55,10 @@ export class WeeklyBriefService {
    */
   public saveWeeklyBrief(committeeId: string, body: SaveWeeklyBriefRequest): Observable<WeeklyBrief> {
     return this.http.put<WeeklyBrief>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`, body).pipe(take(1));
+  }
+
+  public shareWeeklyBrief(committeeId: string, revision: number): Observable<ShareWeeklyBriefResult> {
+    return this.http.post<ShareWeeklyBriefResult>(`/api/committees/${committeeId}/weekly-briefs/share`, { revision });
+    // No catchError — caller handles 404 (no brief) / 409 (no mailing list / stale revision) states
   }
 }

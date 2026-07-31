@@ -41,7 +41,7 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
-import { Committee, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
+import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 
 const TEST_COMMITTEE_UID = 'wb-card-e2e-committee-uid';
 // Committees are mounted under /groups, not /committees (see committee-about.helper.ts's
@@ -85,7 +85,7 @@ const USED_THROTTLE_AFTER_GENERATE: WeeklyBriefThrottle = {
   generates_used: 1,
 };
 
-function buildCommitteeFixture(): Committee {
+function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
   return {
     uid: TEST_COMMITTEE_UID,
     name: 'Weekly Brief Test WG',
@@ -105,6 +105,7 @@ function buildCommitteeFixture(): Committee {
     // Without a my_role here the card never renders regardless of the flag or canEdit —
     // matches committee-about.helper.ts's buildBaseCommittee, which sets this too.
     my_role: CommitteeMemberRole.CHAIR,
+    ...overrides,
   };
 }
 
@@ -118,7 +119,7 @@ function buildCommitteeFixture(): Committee {
  * explicitly mocked here (lens, project context, mailing lists, etc.) is left
  * to the dev backend — the card only reads `committee.uid` and `canEdit`.
  */
-async function mockCommitteeShell(page: Page): Promise<void> {
+async function mockCommitteeShell(page: Page, committeeOverrides: Partial<Committee> = {}): Promise<void> {
   await page.route(`**/api/committees/${TEST_COMMITTEE_UID}`, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
@@ -127,7 +128,7 @@ async function mockCommitteeShell(page: Page): Promise<void> {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildCommitteeFixture()),
+      body: JSON.stringify(buildCommitteeFixture(committeeOverrides)),
     });
   });
 
@@ -226,6 +227,19 @@ async function mockCurrentBrief(page: Page, initial: WeeklyBriefCurrentResponse)
       current = next;
     },
   };
+}
+
+/**
+ * Mock POST /api/committees/:uid/weekly-briefs/share with a fixed status/body.
+ */
+async function mockShareBrief(
+  page: Page,
+  status: number,
+  body: ShareWeeklyBriefResult | { error: string; code: string; errors?: { field: string; message: string; code: string }[] }
+): Promise<void> {
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`, async (route) => {
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  });
 }
 
 /**
@@ -585,5 +599,187 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
     await page.getByTestId('weekly-brief-card-unavailable-retry-button').click();
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('weekly-brief-card-unavailable-state')).toHaveCount(0);
+  });
+});
+
+test.describe('WG Weekly Brief card — Share to Mailing List (flag ON)', () => {
+  test('sends the current brief and shows a success toast', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true, mailing_list: 'wg-tsc@lists.example.org' });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    let shareCalled = false;
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`, async (route) => {
+      shareCalled = true;
+      const result: ShareWeeklyBriefResult = { committee_name: 'Weekly Brief Test WG', total_recipients: 4 };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(result) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const shareBtn = page.getByTestId('weekly-brief-card-share-button');
+    await expect(shareBtn).toBeVisible();
+    await expect(shareBtn).toBeEnabled();
+    await shareBtn.click();
+
+    // Confirm dialog appears, describing the true recipient audience
+    // (committee members) — never the Groups.io mailing-list address, which
+    // is not who actually receives the email.
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.p-confirmdialog')).toContainText('all members of Weekly Brief Test WG');
+
+    const sharePromise = page.waitForRequest(
+      (req) => req.method() === 'POST' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+    await sharePromise;
+
+    expect(shareCalled).toBe(true);
+    await expect(page.getByText(/Brief queued for delivery to 4 recipients/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+});
+
+test.describe('WG Weekly Brief card — Share disabled (no mailing list)', () => {
+  test('Share button is visible but disabled, with a visible hint, when the committee has no mailing list', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: false });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const shareBtn = page.getByTestId('weekly-brief-card-share-button');
+    await expect(shareBtn).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(shareBtn).toBeDisabled();
+
+    // The disabled reason is a plain visible hint (not a tooltip) so it's
+    // reachable without hover/focus for keyboard and screen-reader users.
+    const hint = page.getByTestId('weekly-brief-card-share-disabled-hint');
+    await expect(hint).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(hint).toContainText('No mailing list configured for this committee');
+  });
+});
+
+test.describe('WG Weekly Brief card — Share failure', () => {
+  test('a failed send surfaces an error toast (no silent drop)', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true, mailing_list: 'wg-tsc@lists.example.org' });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    await mockShareBrief(page, 409, { error: 'Committee has no mailing list configured', code: 'NO_MAILING_LIST' });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-share-button').click();
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+
+    const sharePromise = page.waitForRequest(
+      (req) => req.method() === 'POST' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+    await sharePromise;
+
+    await expect(page.getByText(/No mailing list configured for this committee/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('a 400 validation error surfaces the actual field message, not the generic envelope text', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    await mockShareBrief(page, 400, {
+      error: 'Validation failed for brief_text',
+      code: 'VALIDATION_ERROR',
+      errors: [
+        { field: 'brief_text', message: 'Brief is too long to share (must render to 100000 characters or fewer as HTML)', code: 'FIELD_VALIDATION_ERROR' },
+      ],
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-share-button').click();
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+
+    await expect(page.getByText(/Brief is too long to share/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText('Validation failed for brief_text', { exact: true })).toHaveCount(0);
+  });
+
+  test('a 409 BACKEND_NOT_LIVE reports the environment reason distinctly from a no-mailing-list conflict', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    await mockShareBrief(page, 409, { error: 'Sharing is not available in this environment', code: 'BACKEND_NOT_LIVE' });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-share-button').click();
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+
+    await expect(page.getByText(/Sharing is not available in this environment yet/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('a 409 REVISION_MISMATCH prompts a reload instead of silently sending stale content', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    await mockShareBrief(page, 409, { error: 'The brief has been updated since you last viewed it', code: 'REVISION_MISMATCH' });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-share-button').click();
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+
+    const sharePromise = page.waitForRequest(
+      (req) => req.method() === 'POST' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    const sharedBody = sharePromise.then((req) => req.postDataJSON() as { revision?: number });
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+    await sharePromise;
+
+    // The client sends back the revision it displayed — proves the confirmation was
+    // tied to a specific version of the brief, not just "whatever is current".
+    expect((await sharedBody).revision).toBe(GENERATED_BRIEF.revision);
+
+    await expect(page.getByText(/updated since you last viewed it.*Reload to review the latest version/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('a 5xx/ambiguous failure warns that the send may already have gone out, instead of inviting a retry', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    await mockShareBrief(page, 503, { error: 'Upstream newsletter service unavailable', code: 'SERVICE_UNAVAILABLE' });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-share-button').click();
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+
+    // This is the safeguard that prevents a duplicate send: a 5xx here must
+    // NOT render the generic "try again" copy, since the async send may
+    // already have been accepted upstream before the failure reached the client.
+    await expect(page.getByText(/The send may not have completed/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText('Failed to share brief. Please try again.', { exact: true })).toHaveCount(0);
+  });
+});
+
+test.describe('WG Weekly Brief card — Regenerate disabled (throttle exhausted)', () => {
+  test('Regenerate button is visible but disabled, with a visible hint, when the weekly regeneration limit is reached', async ({ page }) => {
+    await mockCommitteeShell(page);
+    const exhaustedThrottle: WeeklyBriefThrottle = { ...DEFAULT_THROTTLE, regenerations_used: 3, regenerations_limit: 3 };
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: exhaustedThrottle });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const regenerateBtn = page.getByTestId('weekly-brief-card-regenerate-button');
+    await expect(regenerateBtn).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(regenerateBtn).toBeDisabled();
+
+    const hint = page.getByTestId('weekly-brief-card-regenerate-disabled-hint');
+    await expect(hint).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(hint).toContainText('Weekly regeneration limit reached');
   });
 });

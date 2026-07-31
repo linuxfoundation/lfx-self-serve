@@ -4,6 +4,13 @@
 import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 
 /**
+ * Brief states a "Share to Mailing List" action may fire from — i.e. states
+ * with saved brief_text worth sending. Excludes `empty`, `generating`, and
+ * `error`.
+ */
+export const WEEKLY_BRIEF_SHAREABLE_STATES: readonly WeeklyBriefState[] = ['generated', 'edited', 'approved'] as const;
+
+/**
  * Default WG Weekly Brief throttle counters.
  *
  * Used by the BFF (`apps/lfx-one/src/server/services/weekly-brief.service.ts`) for
