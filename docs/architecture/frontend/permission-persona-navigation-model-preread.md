@@ -6,42 +6,57 @@ Working spec for aligning how the LFX Self Serve experience in this repo decides
 
 Separate the product model into four decisions:
 
-- **Where can I go?** An auditor or explicit role grant controls Foundation/Project context eligibility.
+- **Where can I go?** Outside of Me, `auditor` access (explicit or inherited) is what's needed to browse into a Foundation/Project/Organization context. It's the only relation that matters for context entry: any higher relation (writer, owner) includes `auditor` by inheritance.
 - **What is my persona there?** Persona shapes presentation — navigation, dashboards, sections, and metrics — never access.
-- **What can I do there?** Contextual writer permission controls create/manage actions.
+- **What can I do there?** Each action checks the specific relation its API call requires against the target object. That's often `writer`, but not always — for example, meeting organizer, or the author-only edit rule on poll responses.
 - **What can I discover?** Discovery surfaces let users find events, meetups, packages, projects, foundations, groups, and subscription surfaces outside their current contexts.
 
 The key rule:
 
 ```text
 Context access is not action authority.
-Every gate is a permission check.
+Every gate is an evaluated FGA relation check.
 Persona shapes presentation only.
-Roles are grant bundles in the FGA model, never branches in code.
+Code branches on evaluated relation checks, never on role or persona labels.
 ```
 
 ## Core Principle
 
-Roles exist only in the authorization model (OpenFGA): a role is a named
-bundle of permissions, permissions are assigned to roles, and roles are
-assigned to users via relations/grants. Personas (Board Member, Contributor,
-Maintainer, and the presentation use of ED) are detected signals for shaping
-the experience — they are not modeled in OpenFGA, except that ED also
-happens to be a real relation (see Role pairs and Terminology below).
+Personas (Board Member, Contributor, Maintainer, and the presentation use of
+ED) are detected signals for shaping the experience — they are not modeled
+in OpenFGA, except that ED also happens to correspond to a real relation
+(see Persona pairs and Terminology below).
 
-Application code never branches on role or persona to decide an _access_
-question: whether a context can be entered, a route can open, or a write can
-proceed. Those are always answered by a permission check against the
-resolved target object — the app consumes capabilities, not identities.
+OpenFGA relations exist as a model (graph) describing how relationships
+evaluate transitively across the objects we define — for example, writers
+of a project include the writers of that project's parent; writers of a
+committee include the writers of the committee's project. A tuple is a
+concrete edge in that graph for real data (project A is a parent of project
+B; user X is a writer of project A); a tuple between a user and an object is
+what this document calls an _explicit role grant_. Evaluating a relation
+means traversing that graph to assert whether it holds (is user X a writer
+of project B?), not checking a stored label.
+
+Permissions — the rules for which relation an API call requires — are
+implemented as RuleSets on the API routes themselves, not as labels attached
+to a relation. A relation isn't a "bundle" of permissions; you can aggregate
+every API a relation gates to describe what a user with that relation can
+do, but the relation itself is not a collection of those actions.
+
+Application code branches on the _evaluated result_ of a relation check —
+the boolean or role returned from an access-check API call against the
+resolved target object — never on a persona label, to decide whether a
+context can be entered, a route can open, or a write can proceed.
 
 If a page or feature must exist for one audience only, that is a permission
-too: model it as a relation/capability in FGA, grant it to the appropriate
-role, and check the capability.
+too: model it as a relation in FGA, configure it as the RuleSet for the API
+routes that power the page, and wire up permission/access pre-checks in the
+UI for early bail-out on page rendering, or for conditionally showing links
+into the page (tab, nav, sidebar).
 
 Persona may branch _presentation_ code — which layout, dashboard variant, or
 copy renders (layout, emphasis, copy, ordering) — but never an access
-decision. "Decision" in this document always means an access/gating
-decision; a presentation choice is not a decision in that sense, so persona
+decision. A presentation choice is not an access decision, so persona
 driving presentation is not an exception to the rule above.
 
 ## Terminology: Viewer vs Auditor
@@ -50,15 +65,17 @@ The FGA model already distinguishes two different kinds of read access, and
 this document uses those names precisely instead of the ambiguous "view
 permission":
 
-- **Viewer** — discoverability only. You can tell the thing exists (a public
-  meeting, an active project) but you do not get access to what is inside it
-  (participants, formation-stage child projects, private documents). Viewer
-  is not ordinarily assigned directly: it is conditional on object attributes
-  (public/conditional) or inherited from another role you hold (a committee
-  `member` role always inherits `viewer`, too). Maps to Discovery.
-- **Auditor** — privileged read. You get access to the private data "inside"
-  the object, not just its existence. Auditor is what makes a Foundation or
-  Project eligible to appear in the selector and be entered as a context.
+- **Viewer** — discoverability only. You can tell the thing exists and see
+  limited (typically public) data about it, but not privileged data or its
+  subordinate/connected objects (participants, formation-stage child
+  projects, private documents). Viewer is not ordinarily assigned directly:
+  it is conditional on object attributes (public/conditional) or inherited
+  from another relation you hold (a committee `member` relation always
+  inherits `viewer`, too). Maps to Discovery.
+- **Auditor** — privileged read. You get access to privileged data on the
+  object itself, as well as its subordinate/connected objects, not just its
+  existence. Auditor is what makes a Foundation or Project eligible to
+  appear in the selector and be entered as a context.
 
 The app's UI copy today labels the auditor relation "Viewer" in at least one
 surface (Org Lens Access role badges and role pickers), while other surfaces
@@ -78,7 +95,7 @@ discoverability only, it reads "viewer/discoverable."
 The product currently blends three things that should stay separate:
 
 1. Can the user view this foundation or project?
-2. What relationship does the user have to that context?
+2. What engagement or activity (current or past) does the user have with that context?
 3. Can the user administer or change things in that context?
 
 Those answers can overlap, but they are not the same.
@@ -104,7 +121,7 @@ These already work or mostly work today:
 - Akrites shows the strongest discovery pattern: users can inspect packages and choose **Open for stewardship** from Me without starting in Foundation/Project context.
 - Lens access is already derived from writer grants, not persona alone (shipped, PR #1130), and the create picker is a lazy direct-grant tree with search (shipped, PR #1193).
 - A backend "what can I create, and where" API covering group/committee targets (LFXV2-2753) was rescoped after #1130 shipped and its ticket status is now Discarded — it is not in progress. There is no committed replacement work item for that API today.
-- The Executive Director fast path is still present in `writerGuard` (`writer.guard.ts`) and in `newsletter-access.guard.ts` on `main` — both grant **write** access unconditionally to ED persona, covering meetings, votes, surveys, mailing lists, newsletters, and documents. That is very likely a guard bug, not a permission the model grants: `executive_director` does not inherit project `writer`, so none of those general write actions are backed by any ED-inherited relation. The model does route two _intentional_ marketing permissions through `executive_director` — `marketing_auditor` (read) and `campaign_manager` (write, scoped to Campaigns) — which `PERMISSIONS.md`'s rendered Project table omits entirely, so it looks like ED grants nothing but reads even though the live model (`model.fga`) says otherwise. See Writer Actions and Model Asks below for how the app should check these.
+- The Executive Director fast path is still present in `writerGuard` (`writer.guard.ts`) and in `newsletter-access.guard.ts` on `main`: both skip their own permission check for ED persona and let the route open — for meetings, votes, surveys, mailing lists, newsletters, and document create/edit routes. That does not mean the write itself is granted; the UI is subordinate to the API's enforcement, and an ED cannot get project `writer` access just because a guard let the route render. It is very likely a guard bug (a misleading UI-only affordance that a downstream write would then reject) rather than a permission the model grants: `executive_director` does not inherit project `writer`, so none of those general write actions are backed by any ED-inherited relation. Whether this is purely a confusing dead-end (guard says yes, API says no) or an actual gap depends on whether the downstream API independently enforces `writer` for these routes — see the P0 verification ask below. The model does route two _intentional_ marketing permissions through `executive_director` — `marketing_auditor` (read) and `campaign_manager` (write, scoped to Campaigns) — which `PERMISSIONS.md`'s rendered Project table omits entirely, so it looks like ED grants nothing but reads even though the live model (`model.fga`) says otherwise. See Writer Actions and Model Asks below for how the app should check these.
 
 Current confusion:
 
@@ -201,7 +218,7 @@ This means ED is not a synonym for every privileged action, and Maintainer is no
 
 Do not introduce a separate Admin Mode for Foundation/Project create/manage authority. Admin Mode would imply that EDs, Board Members, Maintainers, or Contributors get a privileged write view because of persona alone, which conflicts with the target model.
 
-LF Staff Mode is different and may still be needed. LF Staff Mode should cover Linux Foundation operational workflows across contexts, such as support, troubleshooting, staff-only oversight, assisted workflows, and cross-foundation operations. It should not replace contextual writer permission for normal Foundation/Project create/manage actions.
+LF Staff Mode is a distinct, still-open product question, not a settled requirement. LF Staff already gets `auditor` on every project and foundation through LF Staff Team inheritance (see Model Asks below) — the same broad read access a privileged community member would get if explicitly granted `auditor` on a given foundation. That raises a real question this document does not yet answer: what would "LF Staff Mode" add beyond that? The only candidate that survives the question is write-side — assisted workflows where staff act _on behalf of_ a user or foundation for support/troubleshooting (e.g., fixing a broken meeting or mailing list), which no read relation grants and which a community member's `auditor` grant would not extend to at any scale. Until product defines what, if anything, LF Staff Mode adds, treat it as undefined rather than as a decided model requirement — and it should not replace contextual writer permission for normal Foundation/Project create/manage actions in the meantime.
 
 Keep create/manage actions inline where they belong:
 
@@ -239,7 +256,7 @@ None of these three needs a new capability invented for it — the permissions a
 
 Whether the `executive_director` relation itself stays in the model, is renamed, or is bundled differently is the platform team's call, not the app's (see Model Asks below) — the app checks `marketing_auditor` and `campaign_manager` directly and does not care which relations feed them. Create/edit/manage routes should not use ED as an authorization shortcut unless the user also has writer permission for the selected target context.
 
-LF Staff Mode should have its own explicit staff eligibility and audit expectations. It should not be inferred from ED, Board Member, Maintainer, Contributor, or writer permission.
+If LF Staff Mode ends up needing to exist as a distinct concept (see the open question above), it should have its own explicit staff eligibility and audit expectations, and should not be inferred from ED, Board Member, Maintainer, Contributor, or writer permission.
 
 ### Discovery
 
@@ -450,38 +467,28 @@ Discovery action = explicit request/registration/subscription/workflow
 
 ## Model Asks (Platform Team)
 
-Two open questions in the FGA model, not the UI, that this document depends on:
+1. **Permission bundling for ED-derived capabilities — resolved: keep
+   `executive_director` as an FGA relation.** The app checks `auditor`,
+   `writer`, `marketing_auditor`, and `campaign_manager` directly and never
+   branches on the `executive_director` relation itself (see Writer Actions
+   above). Per Eric Searcy's review, the relation stays in the model rather
+   than being removed or replaced — it remains the bundle that carries
+   `auditor`, `marketing_auditor`, and `campaign_manager` for EDs, including
+   the one non-staff ED for whom `marketing_auditor`/`campaign_manager`
+   aren't available through any other path.
 
-1. **Permission bundling for ED-derived capabilities.** The app checks
-   `auditor`, `writer`, `marketing_auditor`, and `campaign_manager` directly
-   and never branches on the `executive_director` relation itself (see
-   Writer Actions above). Today the model bundles all of those permissions
-   into `executive_director` for most EDs — `auditor` (also redundant with
-   LF-staff-inherited auditor for staff EDs), plus `marketing_auditor` and
-   `campaign_manager` (not redundant with anything else for the one
-   non-staff ED).
+2. **Org lens for LF staff — tracked as LFXV2-2936, not a dangling ask.**
+   LF staff should get org-lens switching the same way they get
+   project/foundation access today — through team inheritance, not
+   impersonation. `PERMISSIONS.md` shows Project's Auditor relation already
+   inherits from the global LF Staff Team; the B2B Organization section does
+   not have the equivalent inheritance. [LFXV2-2936](https://linuxfoundation.atlassian.net/browse/LFXV2-2936)
+   tracks adding an LF Staff Team → B2B Organization auditor inheritance to
+   the model — a model change, not a UI workaround.
 
-   Whether `executive_director` stays in the model, is renamed, or is
-   replaced by direct grants and team inheritance is the platform team's
-   bundling decision — a role is a named bundle of permissions, and this
-   document does not argue for keeping or removing it. The only requirement
-   is that every user who should hold `auditor`, `marketing_auditor`, or
-   `campaign_manager` continues to receive them through _some_ bundle after
-   any model change: the one project with a non-staff ED (today's sole
-   exception on the `auditor` side), and the marketing permission edges for
-   _every_ ED, not just that one project.
+## Contract Summary
 
-2. **Org lens for LF staff.** LF staff should get org-lens switching the same
-   way they get project/foundation access today — through team inheritance,
-   not impersonation. `PERMISSIONS.md` shows Project's Auditor relation
-   already inherits from the global LF Staff Team; the B2B Organization
-   section does not have the equivalent inheritance. This needs an LF Staff
-   Team → B2B Organization auditor inheritance added to the model — a model
-   change, not a UI workaround.
-
-## Meeting Ask
-
-Can we agree on this contract?
+This is the contract this document proposes. Review/approval on the PR is the agreement mechanism.
 
 ```text
 Authoritative role/permission model -> selector eligibility and defaulting
@@ -493,6 +500,6 @@ Health Metrics -> stays ED-gated by design, pending an LF Staff answer (LFXV2-27
 Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
 No separate Admin Mode for Foundation/Project create/manage authority
-LF Staff Mode may still be needed for LF operational workflows
+LF Staff Mode -> open product question, not a decided requirement (LF Staff already has broad auditor via team inheritance)
 No-grant contexts -> Browse/Discovery only, never default selection
 ```

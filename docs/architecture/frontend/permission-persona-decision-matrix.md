@@ -11,10 +11,10 @@ Authoritative role/permission model -> selector eligibility and defaulting
 Context selector eligibility -> auditor or explicit role grant
 Data/page visibility -> permission (auditor/explicit role or named capability)
 Layout, emphasis, copy, ordering -> persona (presentation only)
-Create/manage authority -> resolved target context + writer permission
-Me-originated actions -> carry target context before writer checks
+Create/manage authority -> resolved target object + the action-specific relation it requires (often writer, not always)
+Me-originated actions -> carry target object before permission checks
 Discovery -> explicit browse/join/request workflows
-LF Staff Mode -> explicit staff eligibility for LF operational workflows
+LF Staff Mode -> open product question, not a decided requirement (see preread)
 No-grant contexts -> Browse/Discovery only, never default selection
 ```
 
@@ -194,14 +194,11 @@ terms (auditor grant, writer grant, named capability).
   auditor/explicit role grant on the project never sees it in the Project
   selector and is never defaulted into it.
 
-### LF Staff Mode
+### LF Staff Mode (Open Question)
 
-- **Context:** Staff operational mode, not a Foundation/Project presentation.
-- **Presentation:** LF Staff.
-- **Required permission:** Explicit staff eligibility (LF Staff Team inheritance).
-- **Visible experience:** Staff support, troubleshooting, oversight, assisted workflows, and cross-foundation operations.
-- **Allowed actions:** Staff-only operations defined for LF workflows.
-- **Denied actions:** Do not use LF Staff Mode as a substitute for normal Foundation/Project writer permission unless the workflow is explicitly staff-owned and audited.
+- **Context:** Not a decided scenario — see the preread's Writer Actions section. LF Staff already holds `auditor` on every project/foundation via LF Staff Team inheritance, the same read access a community member gets with an explicit `auditor` grant. What "LF Staff Mode" would add beyond that read access is undefined.
+- **Candidate answer:** if this ends up being built, the only thing that would actually distinguish it is write-side assisted-workflow capability (acting on behalf of a user/foundation for support), which no read relation grants.
+- **Denied actions:** Do not use "LF Staff Mode" as a substitute for normal Foundation/Project writer permission, and do not build it against an undefined requirement.
 
 ## Feature Decisions
 
