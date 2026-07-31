@@ -278,7 +278,6 @@ export class CommitteeViewComponent {
     // banner is an interactive surface and the list is per-user.
     if (isPlatformBrowser(this.platformId)) {
       this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
-      this.joinApplicationSession.hydrateFromStorage();
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
@@ -779,9 +778,9 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          // Only managers can see pending invites — gate the fetch (not just the display) so
-          // non-managers never request invitee emails and we don't rely on upstream authz to reject.
-          if (!committee?.uid || !canManageCommitteeMembers(committee) || committee.join_mode === 'closed') {
+          // Writers need pending invites for direct-add stale-invite cleanup even in closed mode;
+          // the Pending Invitations card is hidden separately in committee-members.
+          if (!committee?.uid || !canManageCommitteeMembers(committee)) {
             this.invitesLoading.set(false);
             return of([] as CommitteeInvite[]);
           }
