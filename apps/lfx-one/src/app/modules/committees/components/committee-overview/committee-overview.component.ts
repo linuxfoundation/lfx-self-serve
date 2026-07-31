@@ -285,9 +285,10 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'external-url':
-        // buildActivityFeed only emits this action for urls that pass isValidUrl, but re-check at
-        // this sink rather than trusting that comment-enforced invariant — the union is shared
-        // shape LFXV2-1707's server-fed activity items will also construct.
+        // mapActivityEventsToFeedItems only emits this action for urls that pass isValidUrl, but
+        // re-check at this sink rather than trusting that comment-enforced invariant — the action
+        // is constructed client-side from a server-fed ActivityEvent, not a value this component
+        // controls end-to-end.
         if (isValidUrl(action.url)) {
           window.open(action.url, '_blank', 'noopener,noreferrer');
         }
@@ -296,8 +297,8 @@ export class CommitteeOverviewComponent {
         this.navigateToTab(action.tab);
         break;
       default:
-        // assertNeverSilent: this runs inside a DOM click handler, and LFXV2-1707 will feed
-        // server-constructed actions into this same union, so an unrecognized future `kind` (e.g. a
+        // assertNeverSilent: this runs inside a DOM click handler, and this action is constructed
+        // from a server-fed ActivityEvent (LFXV2-1707), so an unrecognized future `kind` (e.g. a
         // version-skewed client) should no-op rather than throw uncaught from a click. The
         // compile-time guarantee is unchanged — a new unhandled kind still fails to compile, since
         // the call below only type-checks if `action` has narrowed to `never`. console.error (not
@@ -573,8 +574,11 @@ export class CommitteeOverviewComponent {
             // CommitteeService.getCommitteeActivity already falls back to of([]) on failure, so this
             // catchError is a belt-and-suspenders guard against that coupling changing underneath
             // this component — without it, an error here would kill this toSignal source permanently
-            // and pin activityFeedLoading() on its skeleton for the rest of the session.
-            catchError(() => {
+            // and pin activityFeedLoading() on its skeleton for the rest of the session. Logs (unlike
+            // the service's own silent fallback) specifically because reaching this handler at all
+            // would mean that upstream guarantee broke — worth knowing about, not just surviving.
+            catchError((error) => {
+              console.error('Failed to map committee activity feed:', error);
               this.activityFeedLoading.set(false);
               return of<ActivityFeedItem[]>([]);
             })

@@ -96,10 +96,21 @@ describe('mapActivityEventsToFeedItems', () => {
       { votingEnabled: true }
     );
     const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
-    expect(byKey['document-d-file'].label).toBe('Document: A');
-    expect(byKey['document-d-link'].label).toBe('Link: B');
-    expect(byKey['document-d-folder'].label).toBe('Folder: C');
-    expect(byKey['document-d-folder'].icon).toContain('folder');
+    expect(byKey['document-file-d-file'].label).toBe('Document: A');
+    expect(byKey['document-link-d-link'].label).toBe('Link: B');
+    expect(byKey['document-folder-d-folder'].label).toBe('Folder: C');
+    expect(byKey['document-folder-d-folder'].icon).toContain('folder');
+  });
+
+  it('keys a folder and a file that share a uid distinctly — document_type discriminates the @for tracking key', () => {
+    const items = mapActivityEventsToFeedItems(
+      [
+        documentUploaded({ document_uid: 'shared-uid', document_type: 'folder', name: 'Folder' }, '2026-01-02T00:00:00Z'),
+        documentUploaded({ document_uid: 'shared-uid', document_type: 'file', name: 'File' }, '2026-01-01T00:00:00Z'),
+      ],
+      { votingEnabled: true }
+    );
+    expect(new Set(items.map((i) => i.key)).size).toBe(2);
   });
 
   it('maps vote status through POLL_STATUS_LABELS instead of leaking the raw enum value', () => {

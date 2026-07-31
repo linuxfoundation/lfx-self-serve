@@ -87,7 +87,12 @@ function compareEventsDesc(a: { occurred_at: string; key: string }, b: { occurre
   const aTime = timestampValue(a.occurred_at);
   const bTime = timestampValue(b.occurred_at);
   if (aTime !== bTime) return bTime > aTime ? 1 : -1;
-  return b.key.localeCompare(a.key);
+  // Codepoint comparison, not localeCompare — locale-aware collation is ICU-build-dependent, so
+  // two server instances on different Node builds could tiebreak two same-timestamp events in a
+  // different order, which would let a cursor issued by one instance skip or repeat an item when
+  // the next page is served by the other.
+  if (b.key === a.key) return 0;
+  return b.key > a.key ? 1 : -1;
 }
 
 /**
@@ -150,11 +155,18 @@ export class CommitteeActivityService {
 
   public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
     const { since, cursor, limit } = options;
-    // Fetching `limit + 1` from EACH source (not just `limit`) guarantees the true global
-    // top-(limit+1) merged-by-occurred_at result is present in the fetched pool, even in the
-    // worst case where a single source contributes every one of the top items — a smaller
+    // Fetching `limit + 1` from EACH source (not just `limit`) is what makes the true global
+    // top-(limit+1) merged-by-occurred_at result likely to be present in the fetched pool, even in
+    // the worst case where a single source contributes every one of the top items — a smaller
     // per-source fetch could silently under-represent a dominant source. ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE
-    // keeps small `limit` values (e.g. 1) from starving that guarantee.
+    // keeps small `limit` values (e.g. 1) from starving that. This is NOT an airtight guarantee for
+    // every leg, though: it only holds if each source's upstream page already contains its own true
+    // top-(limit+1) by occurred_at — true for meetings (NAME_DESC ≈ start_time) and surveys/files
+    // (sorted by the same field occurred_at derives from), but NOT for votes, which sort by
+    // `updated_desc` while occurred_at derives from end_time/early_end_time/creation_time — a
+    // closed vote with a recent end_time but a stale last_modified_time could fall outside the
+    // fetched page. Same class of approximation as the per-leg date_field caveats below, just in
+    // the sort dimension instead of the filter dimension.
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
     // Sent to every leg as an inclusive upstream `date_to` (query-service's date_to is documented
     // inclusive), ceiled to the next whole second — see ceilToWholeSecond's doc comment for why:
@@ -196,10 +208,9 @@ export class CommitteeActivityService {
       }),
     ]);
 
-    // Committee lookup failure defaults to voting excluded (conservative) rather than included —
-    // we can't confirm enable_voting, and showing vote activity for a committee we couldn't
-    // verify is worse than briefly under-showing it.
-    const votingEnabled = committee?.enable_voting ?? false;
+    // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
+    // doc comment) — by this line `committee` is always a resolved Committee.
+    const votingEnabled = committee.enable_voting;
     const sources: ActivityEvent[][] = [pastMeetingEvents, votingEnabled ? voteEvents : [], surveyEvents, documentEvents];
 
     // Single pass: attach each event's sort key once, apply since/cursor, sort desc by
@@ -208,18 +219,28 @@ export class CommitteeActivityService {
     // would only make this LESS "time-ordered", not more correct.
     const keyed = sources.flat().map((event) => ({ event, key: eventKey(event) }));
     const windowed = keyed.filter(
-      ({ event, key }) => isAtOrAfterSince(event.occurred_at, since) && isAfterCursor({ occurred_at: event.occurred_at, key }, cursor)
+      ({ event, key }) =>
+        // Drop events with no usable timestamp entirely, rather than keeping them sorted last — an
+        // event that can't be placed in time carries no signal for a feed literally named "Recent
+        // Activity", and worse, isAfterCursor rejects an unparseable occurred_at unconditionally
+        // (correctly — it can't be placed relative to any cursor), so once pagination is in play
+        // such an event would be visible on an unfilled page 1 and then permanently unreachable on
+        // every later page. Dropping it up front means "included" is a stable property, not one
+        // that depends on how many pages the caller has already fetched.
+        timestampValue(event.occurred_at) !== -Infinity &&
+        isAtOrAfterSince(event.occurred_at, since) &&
+        isAfterCursor({ occurred_at: event.occurred_at, key }, cursor)
     );
     windowed.sort((a, b) => compareEventsDesc({ occurred_at: a.event.occurred_at, key: a.key }, { occurred_at: b.event.occurred_at, key: b.key }));
 
     const hasMore = windowed.length > limit;
     const page = windowed.slice(0, limit);
     const data = page.map(({ event }) => event);
-    // Cursor from the last item with a real (parseable) timestamp, not necessarily page's last
-    // entry — an event with no usable timestamp sorts last but would produce a page_token this
-    // server can't decode on the very next request (isParseableTimestamp would reject it).
-    const cursorSource = [...page].reverse().find(({ event }) => timestampValue(event.occurred_at) !== -Infinity);
-    const pageToken = hasMore && cursorSource ? encodeActivityPageToken({ before: cursorSource.event.occurred_at, key: cursorSource.key }) : undefined;
+    // Every item in `page` now has a real timestamp (windowed already dropped the ones that
+    // don't), so the last page item is always a valid cursor position — no need to search backward
+    // for one.
+    const lastPageItem = page.at(-1);
+    const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
     logger.debug(req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
@@ -237,11 +258,20 @@ export class CommitteeActivityService {
 
   // ─── Committee (for enable_voting) ─────────────────────────────────────────
 
-  private async fetchCommittee(req: Request, committeeUid: string): Promise<Committee | null> {
-    return this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeUid}`, 'GET').catch((err) => {
-      logger.warning(req, 'get_committee_activity', 'Failed to fetch committee; defaulting votes to excluded', { committee_uid: committeeUid, err });
-      return null;
-    });
+  /**
+   * Unlike every other leg, a failure here is NOT caught-and-degraded by the caller — it's allowed
+   * to reject `getCommitteeActivity`'s `Promise.all` and propagate to the controller's `next(error)`.
+   * `GET /committees/:uid` is the one leg in this fan-out backed by committee-service's real
+   * per-request FGA enforcement (the four `/query/resources` legs instead filter per-resource,
+   * never 403 the whole request — see the controller's docblock); catching a 403/404 here the same
+   * way as the other legs would silently downgrade "caller isn't authorized for this committee at
+   * all" into "votes excluded, everything else renders", which is a materially different, and
+   * wrong, outcome for that case. A transient failure (5xx/network) fails the whole request too —
+   * matching `committee-engagement`'s `assertCommitteeRead`, which fails closed on both a resolved
+   * `false` and a thrown upstream error, rather than treating "couldn't verify" as "verified false".
+   */
+  private async fetchCommittee(req: Request, committeeUid: string): Promise<Committee> {
+    return this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}`, 'GET');
   }
 
   // ─── Past Meetings → meeting_held ──────────────────────────────────────────
@@ -276,7 +306,15 @@ export class CommitteeActivityService {
     };
 
     // access=false — the activity row only needs title/start_time, not per-meeting writer flags,
-    // so skip the access-check call getMeetings otherwise makes for every returned meeting.
+    // so skip the access-check call getMeetings otherwise makes for every returned meeting. Unlike
+    // the survey/file legs below, this one still goes through the full MeetingService.getMeetings
+    // rather than a raw proxyRequest — getMeetings unconditionally enriches with project name and
+    // committee name (packages this leg discards), a known, accepted v1 inefficiency: reimplementing
+    // this leg as a raw query-service call would need to independently reproduce
+    // getPastMeetingStartTimeMs's scheduled_start_time/start_time fallback and the v1_past_meeting
+    // id-normalization getMeetings already does, and it wasn't confirmed those fields survive a raw
+    // (non-normalized) response — not worth that regression risk for a bounded (not per-event),
+    // O(1)-extra-calls efficiency gain.
     // Cast to PastMeeting[] — getMeetings' return type is generic Meeting[], but the actual shape
     // is PastMeeting for meetingType 'v1_past_meeting' (same cast PastMeetingController itself uses).
     const { data: meetings } = (await this.meetingService.getMeetings(req, query, 'v1_past_meeting', false)) as { data: PastMeeting[] };
@@ -394,14 +432,18 @@ export class CommitteeActivityService {
     const hasWindow = !!since || !!before;
 
     const [folders, links, files] = await Promise.all([
-      this.microserviceProxy.proxyRequest<CommitteeActivityFolder[]>(req, 'LFX_V2_SERVICE', `/committees/${committeeUid}/folders`, 'GET').catch((err) => {
-        logger.warning(req, 'get_committee_activity', 'Failed to fetch committee folders, continuing without them', { committee_uid: committeeUid, err });
-        return [] as CommitteeActivityFolder[];
-      }),
-      this.microserviceProxy.proxyRequest<CommitteeActivityLink[]>(req, 'LFX_V2_SERVICE', `/committees/${committeeUid}/links`, 'GET').catch((err) => {
-        logger.warning(req, 'get_committee_activity', 'Failed to fetch committee links, continuing without them', { committee_uid: committeeUid, err });
-        return [] as CommitteeActivityLink[];
-      }),
+      this.microserviceProxy
+        .proxyRequest<CommitteeActivityFolder[]>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/folders`, 'GET')
+        .catch((err) => {
+          logger.warning(req, 'get_committee_activity', 'Failed to fetch committee folders, continuing without them', { committee_uid: committeeUid, err });
+          return [] as CommitteeActivityFolder[];
+        }),
+      this.microserviceProxy
+        .proxyRequest<CommitteeActivityLink[]>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/links`, 'GET')
+        .catch((err) => {
+          logger.warning(req, 'get_committee_activity', 'Failed to fetch committee links, continuing without them', { committee_uid: committeeUid, err });
+          return [] as CommitteeActivityLink[];
+        }),
       // Single bounded page, not CommitteeService.getCommitteeDocuments's fetchAllQueryResources
       // drain — this endpoint must stay bounded (no per-event follow-ups), so a page_size-limited
       // page is enough for a "recent activity" feed even though it isn't the complete file list.

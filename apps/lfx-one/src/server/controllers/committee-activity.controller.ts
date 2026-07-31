@@ -40,7 +40,7 @@ export class CommitteeActivityController {
       logger.success(req, operation, startTime, { committee_uid: committeeUid, returned: response.data.length, has_more: !!response.page_token });
       res.json(response);
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 }

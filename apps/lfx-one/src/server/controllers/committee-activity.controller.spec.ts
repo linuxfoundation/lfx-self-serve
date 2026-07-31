@@ -42,7 +42,7 @@ describe('CommitteeActivityController.getActivity', () => {
     controller = new CommitteeActivityController();
     next = vi.fn();
     validateUidParameter.mockReturnValue(true);
-    parseCommitteeActivityQuery.mockReturnValue({ since: undefined, before: undefined, limit: 8 });
+    parseCommitteeActivityQuery.mockReturnValue({ since: undefined, cursor: undefined, limit: 8 });
   });
 
   it('validates the uid, parses the query, and calls the service — in that order', async () => {
@@ -54,7 +54,7 @@ describe('CommitteeActivityController.getActivity', () => {
 
     expect(validateUidParameter).toHaveBeenCalledWith(COMMITTEE_UID, expect.anything(), next, expect.objectContaining({ operation: 'get_committee_activity' }));
     expect(parseCommitteeActivityQuery).toHaveBeenCalledWith(expect.anything(), 'get_committee_activity');
-    expect(getCommitteeActivity).toHaveBeenCalledWith(expect.anything(), COMMITTEE_UID, { since: undefined, before: undefined, limit: 8 });
+    expect(getCommitteeActivity).toHaveBeenCalledWith(expect.anything(), COMMITTEE_UID, { since: undefined, cursor: undefined, limit: 8 });
 
     const validateOrder = validateUidParameter.mock.invocationCallOrder[0];
     const parseOrder = parseCommitteeActivityQuery.mock.invocationCallOrder[0];

@@ -159,7 +159,7 @@ describe('CommitteeActivityService', () => {
     expect(result.data.map((e) => e.type)).toEqual(['document_uploaded', 'vote_closed', 'survey_published', 'meeting_held']);
   });
 
-  it('sorts an unparseable vote timestamp as the oldest item instead of throwing', async () => {
+  it('drops a vote with an unparseable timestamp instead of throwing or including it unordered', async () => {
     getVotes.mockResolvedValue({ data: [vote({ creation_time: 'not-a-timestamp', last_modified_time: undefined })] });
     proxyRequest.mockImplementation((r, s, path, m, query) => {
       if (path === '/query/resources' && query?.['type'] === 'survey') {
@@ -169,7 +169,7 @@ describe('CommitteeActivityService', () => {
     });
 
     const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-    expect(result.data.map((e) => e.type)).toEqual(['survey_published', 'vote_opened']);
+    expect(result.data.map((e) => e.type)).toEqual(['survey_published']);
   });
 
   it('sorts past meetings by name_desc (start_time-ordered), not updated_desc (index-update-time-ordered)', async () => {
@@ -379,29 +379,21 @@ describe('CommitteeActivityService', () => {
       expect(combinedUids).toEqual(['v-a', 'v-b']);
     });
 
-    it('sorts two events that both have no valid timestamp by key, independent of source-fetch order', async () => {
-      // Regression guard: timestampValue(a) - timestampValue(b) on two -Infinity values is NaN,
-      // which is `!== 0` and would skip the key tiebreak — falling through to whatever order the
-      // comparator's NaN result happens to preserve, i.e. fetch/insertion order, not the intended
-      // key order. Asserting a single fixed input isn't a real guard (stable sort reproduces the
-      // same output for the same input either way) — feeding the pair in BOTH orders and requiring
-      // the same key-derived output regardless is what actually distinguishes "sorted by key" from
-      // "preserved fetch order".
+    it('drops both events when neither has a valid timestamp, regardless of source-fetch order', async () => {
+      // Events with no valid timestamp are dropped entirely (see the windowed filter's comment) —
+      // this also means the NaN-tiebreak hazard compareEventsDesc guards against (timestampValue(a)
+      // - timestampValue(b) on two -Infinity values is NaN) is now structurally unreachable through
+      // the merge for genuinely-invalid timestamps: they never reach the sort. The tiebreak itself
+      // is still exercised by real, valid, tied timestamps — see the two-page round trip test above.
       const voteX = vote({ uid: 'v-x', creation_time: undefined, last_modified_time: undefined });
       const voteY = vote({ uid: 'v-y', creation_time: undefined, last_modified_time: undefined });
       const uidsOf = (r: Awaited<ReturnType<typeof service.getCommitteeActivity>>) => r.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null));
 
       getVotes.mockResolvedValue({ data: [voteX, voteY] });
-      const forwardOrder = uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }));
+      expect(uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }))).toEqual([]);
 
       getVotes.mockResolvedValue({ data: [voteY, voteX] });
-      const reversedOrder = uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }));
-
-      // 'vote:v-y' sorts before 'vote:v-x' under compareEventsDesc's descending key tiebreak
-      // (b.key.localeCompare(a.key)) — asserting the concrete order, not just forward/reversed
-      // agreement, pins down THAT the tiebreak is key-descending, not merely that it's stable.
-      expect(forwardOrder).toEqual(['v-y', 'v-x']);
-      expect(reversedOrder).toEqual(['v-y', 'v-x']);
+      expect(uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }))).toEqual([]);
     });
 
     it('keeps a folder and a file that share a uid across a page boundary — document_type discrimination prevents the cursor from dropping one', async () => {
@@ -431,13 +423,10 @@ describe('CommitteeActivityService', () => {
       expect(combinedTypes).toEqual(['file', 'folder']);
     });
 
-    it('falls back to the last item with a real timestamp for the cursor, when the returned page is short on valid timestamps', async () => {
-      // Only 2 votes have a real timestamp; 2 more have none. Sorted desc, invalid-timestamp items
-      // sort last (timestampValue('') === -Infinity) and tiebreak deterministically on key
-      // ('vote:v4' sorts before 'vote:v3' in the descending key order), so with limit=3 the
-      // returned page is [v1, v2, v4] — v4 (the tail) has no valid timestamp, while a 4th
-      // candidate (v3) still exists beyond the page, so hasMore is true and a page_token must
-      // still be issued, falling back past v4 to v2's timestamp.
+    it('excludes invalid-timestamp votes from both the page and the hasMore/page_token calculation', async () => {
+      // 2 votes have a real timestamp; 2 more have none and are dropped entirely (see the windowed
+      // filter). With limit=3, the 2 remaining valid candidates fit on one page — no page_token,
+      // even though 4 rows were fetched from the source.
       getVotes.mockResolvedValue({
         data: [
           vote({ uid: 'v1', creation_time: '2026-01-05T00:00:00Z' }),
@@ -448,10 +437,8 @@ describe('CommitteeActivityService', () => {
       });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 3 });
-      expect(result.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null))).toEqual(['v1', 'v2', 'v4']);
-      // v4 (the tail of the returned page) has no valid timestamp — the cursor must fall back to v2's.
-      expect(encodeActivityPageToken).toHaveBeenCalledWith({ before: '2026-01-04T00:00:00Z', key: 'vote:v2' });
-      expect(result.page_token).toBe('token(2026-01-04T00:00:00Z|vote:v2)');
+      expect(result.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null))).toEqual(['v1', 'v2']);
+      expect(result.page_token).toBeUndefined();
     });
   });
 
@@ -509,15 +496,18 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).toHaveBeenCalled();
     });
 
-    it('defaults votes to excluded when the committee lookup itself fails', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+    it('rejects the whole request when the committee lookup fails, rather than degrading to votes-excluded', async () => {
+      // GET /committees/:uid is committee-service's real per-request FGA gate (unlike the
+      // /query/resources legs, which filter per-resource and never reject the whole request) — a
+      // failure here (a real 403, or a transient 5xx) must propagate, not silently downgrade into
+      // "votes excluded, everything else renders" for what could be an unauthorized caller.
+      const upstreamError = new Error('upstream down');
       proxyRequest.mockImplementation((r, s, path, m, query) => {
-        if (/^\/committees\/[^/]+$/.test(path)) return Promise.reject(new Error('upstream down'));
+        if (/^\/committees\/[^/]+$/.test(path)) return Promise.reject(upstreamError);
         return defaultProxyRequest(r, s, path, m, query);
       });
 
-      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-      expect(result.data).toEqual([]);
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 })).rejects.toThrow(upstreamError);
     });
   });
 

@@ -31,7 +31,13 @@ export interface CommitteeActivityQuery {
    * on for correctness. See the per-leg comments in `committee-activity.service.ts`.
    */
   since?: string;
-  /** Decoded from an incoming `page_token`. Undefined on page 1. */
+  /**
+   * Decoded from an incoming `page_token`. Undefined on page 1. `since` is NOT encoded into the
+   * cursor — a client that paginates through several pages without resending the same `since` on
+   * every request can silently widen the window mid-feed. Not exercised today (the client only
+   * ever fetches page 1), but a caller relying on `since` across multiple pages must resend it
+   * explicitly on every request.
+   */
   cursor?: ActivityPageCursor;
   limit: number;
 }

@@ -72,7 +72,11 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
       const { document_uid, name, document_type, url } = event.payload;
       return {
         type: 'document',
-        key: `document-${document_uid}`,
+        // document_type in the key, not just document_uid — folders, links, and files are three
+        // distinct upstream uid namespaces (matches eventKey's identical reasoning server-side in
+        // committee-activity.service.ts); a folder and a file coincidentally sharing a uid would
+        // otherwise collide on this @for tracking key (NG0955).
+        key: `document-${document_type}-${document_uid}`,
         label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[document_type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${name}`,
         timestamp: event.occurred_at,
         icon: COMMITTEE_DOCUMENT_TYPE_ICONS[document_type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
@@ -95,8 +99,10 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
  * Maps a committee's server-fed `ActivityEvent[]` to `ActivityFeedItem[]` for the Overview
  * "Recent Activity" widget. `votingEnabled` mirrors the old stop-gap's behavior: vote events are
  * excluded entirely (not just hidden) when the committee has voting disabled, matching the Votes
- * tab itself being hidden in that state — still a UI-only concern, so it's applied here rather
- * than by the server.
+ * tab itself being hidden in that state. Applied at BOTH layers, not just here: the server
+ * (`CommitteeActivityService.getCommitteeActivity`) already excludes vote events from the response
+ * when `committee.enable_voting` is false, so this filter is defense-in-depth against a client
+ * that has a stale/different view of `committee()` than what the server resolved — not the sole gate.
  */
 export function mapActivityEventsToFeedItems(events: ActivityEvent[], opts: { votingEnabled: boolean }): ActivityFeedItem[] {
   return events

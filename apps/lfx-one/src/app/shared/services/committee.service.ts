@@ -192,7 +192,7 @@ export class CommitteeService {
    * this service — a feed failure must not break the rest of the page.
    */
   public getCommitteeActivity(committeeId: string): Observable<ActivityEvent[]> {
-    return this.http.get<PaginatedResponse<ActivityEvent>>(`/api/committees/${committeeId}/activity`).pipe(
+    return this.http.get<PaginatedResponse<ActivityEvent>>(`/api/committees/${encodeURIComponent(committeeId)}/activity`).pipe(
       map((response) => response.data),
       catchError((error) => {
         console.error('Failed to load committee activity feed:', error);
