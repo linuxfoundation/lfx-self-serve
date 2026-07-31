@@ -333,34 +333,37 @@ export class AddMemberDialogComponent {
         summary: 'Members Added',
         detail: succeeded.length === 1 ? `Added ${succeeded[0].email}.` : `Added ${succeeded.length} people to the group.`,
       });
-      if (cleanupFailed.length > 0) {
-        this.messageService.add({
-          severity: 'warn',
-          summary: 'Invite Cleanup Failed',
-          detail:
-            cleanupFailed.length === 1
-              ? `Added ${cleanupFailed[0].email}, but could not remove their stale invitation.`
-              : `Added ${cleanupFailed.length} people, but could not remove stale invitations for: ${cleanupFailed.map((r) => r.email).join(', ')}.`,
-          life: 8000,
-        });
-      }
-      return;
-    }
-
-    if (succeeded.length === 0) {
+    } else if (succeeded.length === 0) {
       this.messageService.add({
         severity: 'error',
         summary: 'Unable to Add',
         detail: failed.length === 1 ? `Could not add ${failed[0].email}: ${failed[0].reason}.` : `None of the ${failed.length} members could be added.`,
         life: 6000,
       });
+    } else {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Some Adds Failed',
+        detail: `Added ${succeeded.length} of ${results.length}. Could not add: ${failed.map((f) => f.email).join(', ')}.`,
+        life: 8000,
+      });
+    }
+
+    this.warnInviteCleanupFailures(cleanupFailed);
+  }
+
+  private warnInviteCleanupFailures(cleanupFailed: DirectAddResult[]): void {
+    if (cleanupFailed.length === 0) {
       return;
     }
 
     this.messageService.add({
       severity: 'warn',
-      summary: 'Some Adds Failed',
-      detail: `Added ${succeeded.length} of ${results.length}. Could not add: ${failed.map((f) => f.email).join(', ')}.`,
+      summary: 'Invite Cleanup Failed',
+      detail:
+        cleanupFailed.length === 1
+          ? `Added ${cleanupFailed[0].email}, but could not remove their stale invitation.`
+          : `Added ${cleanupFailed.length} people, but could not remove stale invitations for: ${cleanupFailed.map((r) => r.email).join(', ')}.`,
       life: 8000,
     });
   }

@@ -156,7 +156,7 @@ export class CommitteeViewComponent {
   public readonly inviteToastKey = INVITE_TOAST_KEY;
   public pendingInvitation: Signal<PendingInvitation | null> = computed(() => {
     const committee = this.committee();
-    if (!committee?.uid || !this.isVisitor() || committee.join_mode === 'closed') {
+    if (!committee?.uid || !this.isVisitor() || committee.join_mode !== 'invite_only') {
       return null;
     }
     return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
@@ -580,6 +580,12 @@ export class CommitteeViewComponent {
   }
 
   private openApplicationDialog(committeeUid: string, committeeName: string): void {
+    if (this.joiningOrLeaving()) {
+      return;
+    }
+
+    this.joiningOrLeaving.set(true);
+
     const ref = this.dialogService.open(JoinApplicationDialogComponent, {
       header: 'Request to Join',
       width: '520px',
@@ -590,9 +596,11 @@ export class CommitteeViewComponent {
     }) as DynamicDialogRef;
 
     ref.onClose.pipe(take(1)).subscribe((result: JoinApplicationDialogResult | null) => {
-      if (!result) return;
+      if (!result) {
+        this.joiningOrLeaving.set(false);
+        return;
+      }
 
-      this.joiningOrLeaving.set(true);
       this.committeeService
         .submitApplication(committeeUid, result.message)
         .pipe(finalize(() => this.joiningOrLeaving.set(false)))
