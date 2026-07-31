@@ -62,7 +62,7 @@ const MOCK_SPEND_BREAKDOWN = {
   byRole: [{ label: 'Participant', pct: 100, count: 2000 }],
 };
 
-function mockInfluenceRow(project: string, projectSlug: string): unknown {
+function mockInfluenceRow(project: string, projectSlug: string, deltaLabel = '+6%', deltaDirection = 'up'): unknown {
   return {
     project,
     projectSlug,
@@ -70,8 +70,8 @@ function mockInfluenceRow(project: string, projectSlug: string): unknown {
     band: 'leading',
     rankLabel: '#3 of 210',
     fromAttendancePct: 15,
-    deltaLabel: '+6% YoY',
-    deltaDirection: 'up',
+    deltaLabel,
+    deltaDirection,
     breakdown: [
       { label: 'Collaboration Activity', pct: 30 },
       { label: 'Meeting Attendance', pct: 15 },
@@ -180,6 +180,8 @@ test.describe('Org Meetings insights (6a redesign)', () => {
 
     const influence = page.getByTestId('org-meetings-influence');
     await expect(influence).toBeVisible();
+    await expect(influence).toContainText('+6%');
+    await expect(influence).not.toContainText('YoY');
 
     // All rows start collapsed, so no detail rows are rendered.
     await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
@@ -198,6 +200,18 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     // Collapsing Kubernetes via its caret removes the detail row.
     await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
     await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
+  });
+
+  test('renders no-change influence deltas without the YoY suffix', async ({ page }) => {
+    await stubOrgLensContext(page, {
+      influence: [mockInfluenceRow('Kubernetes', 'kubernetes', 'No change', 'flat')],
+    });
+    await gotoOrgMeetingsPage(page);
+
+    const influence = page.getByTestId('org-meetings-influence');
+    await expect(influence).toBeVisible();
+    await expect(influence).toContainText('No change');
+    await expect(influence).not.toContainText('YoY');
   });
 
   test('switching time range refetches with the selected window', async ({ page }) => {

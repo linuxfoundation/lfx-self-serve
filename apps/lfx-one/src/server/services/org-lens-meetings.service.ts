@@ -29,7 +29,7 @@ const INFLUENCE_BANDS: readonly OrgLensProjectBand[] = ['silent', 'participating
 const TREND_DIRECTIONS: readonly OrgMeetingsDeltaDirection[] = ['up', 'down', 'flat'];
 
 const KPI_NO_CHANGE_LABEL = 'No change vs. prior period';
-const INFLUENCE_NO_CHANGE_LABEL = 'No change YoY';
+const INFLUENCE_NO_CHANGE_LABEL = 'No change';
 const NEW_LABEL = 'New';
 
 /**
@@ -149,10 +149,10 @@ export class OrgLensMeetingsService {
   public async getInfluenceRows(req: Request, accountId: string): Promise<OrgInfluenceRow[]> {
     return withOrgCache(
       accountId,
-      // `v2`: same reason as the KPI key — the Δ-YoY column shares the delta formatter, so cached
+      // `v3`: same reason as the KPI key — the Δ-YoY column shares the delta formatter, so cached
       // rows can carry the retired label. `meetings-spend` is deliberately left at v1; it has no
       // delta labels, so evicting it would discard warm entries for no behaviour change.
-      'meetings-influence:v2',
+      'meetings-influence:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         logger.debug(req, 'get_org_lens_meetings_influence', 'Cache miss; querying Snowflake', { account_id: accountId });
@@ -307,7 +307,7 @@ export class OrgLensMeetingsService {
     }
 
     const pct = this.round1(row.DELTA_PCT);
-    const delta = this.formatDelta(pct, '% YoY', INFLUENCE_NO_CHANGE_LABEL);
+    const delta = this.formatDelta(pct, '%', INFLUENCE_NO_CHANGE_LABEL);
     // The direction is the warehouse's own `trend_direction` rather than the sign of `pct` (DR-011),
     // but only where an actual percentage was rendered.
     return delta.kind === 'pct'
