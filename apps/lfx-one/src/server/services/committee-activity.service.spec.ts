@@ -245,18 +245,30 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }));
     });
 
-    it('omits upstream date_to (rather than throwing) when cursor.before is unparseable', async () => {
+    it('resolves an empty, logged feed (rather than throwing) when cursor.before is unparseable', async () => {
       // getCommitteeActivity is a public method — the controller always validates cursor.before via
       // decodePageToken first, but a future non-HTTP caller could invoke this directly with a bad
-      // value. Widening the fetch (no date_to) is safe, same direction as ceiling itself; 500ing
-      // the whole feed over one bad boundary would not be.
-      await service.getCommitteeActivity(req, COMMITTEE_UID, {
+      // value. The net result isn't "widened fetch, trimmed correctly" — isAfterCursor still
+      // compares every event against the original unparseable cursor.before, which resolves to
+      // -Infinity, so every real event is filtered out regardless of what the (wider) upstream
+      // fetch returned. That's still the right call over throwing (empty + logged beats a 500), but
+      // the test should pin the actual behavior, not just the outbound query shape.
+      getVotes.mockResolvedValue({ data: [vote({ uid: 'v1' })] });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, {
         cursor: { before: 'not-a-timestamp', key: 'vote:unrelated' },
         limit: 8,
       });
 
       const votesQuery = getVotes.mock.calls[0][1];
       expect(votesQuery).not.toHaveProperty('date_to');
+      expect(result.data).toEqual([]);
+      expect(warning).toHaveBeenCalledWith(
+        req,
+        'get_committee_activity',
+        expect.stringContaining('Unparseable cursor.before'),
+        expect.objectContaining({ committee_uid: COMMITTEE_UID })
+      );
     });
 
     it('requests page_size = max(limit + 1, 25) from every source', async () => {

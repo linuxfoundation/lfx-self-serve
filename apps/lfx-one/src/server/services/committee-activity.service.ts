@@ -106,9 +106,14 @@ function compareEventsDesc(a: { occurred_at: string; key: string }, b: { occurre
  * timestamp helper in this file (`timestampValue`, `isAtOrAfterSince`, `isAfterCursor`) treating an
  * invalid timestamp as "can't reason about this" rather than a fatal error. Currently unreachable
  * through the HTTP path (`decodePageToken` validates `cursor.before` before this ever runs), but
- * `getCommitteeActivity` is a public method a future non-HTTP caller could invoke directly — a
- * missing upstream date_to just widens the fetch (over-fetch, trimmed in-memory), which is the
- * same safe direction ceiling itself takes, rather than 500ing the entire feed.
+ * `getCommitteeActivity` is a public method a future non-HTTP caller could invoke directly.
+ *
+ * The net result for that caller is an EMPTY feed, not a widened one: dropping `date_to` only
+ * widens what gets *fetched upstream*, but `isAfterCursor` still compares every event against the
+ * original (unparseable) `cursor.before`, which `timestampValue` resolves to `-Infinity` — no real
+ * event can sort "after" that, so every event is filtered out downstream regardless of what came
+ * back from the fetch. An empty page (with `logger.warning` at the call site) is still the correct
+ * choice over throwing: the caller gets a clearly-wrong-looking-but-safe answer instead of a 500.
  */
 function ceilToWholeSecond(iso: string): string | undefined {
   const ms = Date.parse(iso);
@@ -164,6 +169,14 @@ export class CommitteeActivityService {
     // exact, un-ceiled cursor.before) is what actually enforces the boundary; the ceiled value here
     // only bounds what gets fetched, so a wider upstream window is always safe, a narrower one isn't.
     const before = cursor ? ceilToWholeSecond(cursor.before) : undefined;
+    if (cursor && !before) {
+      // Matches every other graceful-degradation path in this method (each leg's .catch() below,
+      // fetchCommittee) in logging before falling back — otherwise this is the one degraded path
+      // with no production signal. See ceilToWholeSecond's doc comment for the (still-safe) outcome.
+      logger.warning(req, 'get_committee_activity', 'Unparseable cursor.before; feed will resolve empty for this request', {
+        committee_uid: committeeUid,
+      });
+    }
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentEvents] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
