@@ -247,7 +247,14 @@ export class WeeklyBriefCardComponent {
     this.saving.set(true);
     this.weeklyBriefService
       .saveWeeklyBrief(committeeUid, { brief_text: text, revision: current.revision })
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        take(1),
+        // Same guard as onGenerate's POST pipe: a save started on committee A whose response
+        // arrives after the user has already navigated to committee B must not clear B's
+        // saving/editMode or trigger an unwanted refresh$ on B's card (dealako review, round 3).
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: () => {
           this.saving.set(false);
@@ -321,10 +328,12 @@ export class WeeklyBriefCardComponent {
     // Committee reuse (RouteReuseStrategy) means this instance survives a navigation
     // between committees — without an explicit reset, a stale `editMode`/`editForm`
     // (edited text from the previous committee, rendered against the new committee's
-    // brief) or a leftover `generating` flag from a generate call cut off mid-flight
-    // (see the takeUntil guard in onGenerate) would bleed onto the new committee's card.
+    // brief), a leftover `generating` flag from a generate call cut off mid-flight (see
+    // the takeUntil guard in onGenerate), or a leftover `saving` flag from a save cut off
+    // mid-flight (see the same guard in onSave) would bleed onto the new committee's card.
     committeeUid$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.generating.set(false);
+      this.saving.set(false);
       this.editMode.set(false);
       this.editForm.reset({ briefText: '' });
     });
@@ -353,17 +362,12 @@ export class WeeklyBriefCardComponent {
         // Covers a page reload, navigating back to this committee, or a co-chair's
         // generation already in flight — not just this tab's own onGenerate() call.
         // Without this, a card that *loads* into the generating state never polls and
-        // is stuck on the spinner with no way to reach a terminal state.
-        //
-        // isPlatformBrowser guard: zoneless change detection doesn't block SSR stability on
-        // a bare RxJS timer() the way it does HttpClient calls, so without this the server
-        // would start (and never stop) a real poll loop on every SSR render that lands on a
-        // generating brief — up to WEEKLY_BRIEF_MAX_POLL_ATTEMPTS unnecessary server-side GETs
-        // per request (CodeRabbit review). The template already renders the generating state
-        // correctly from `brief()?.state` alone; the client re-runs this same subscribe on
-        // hydration and starts the real poll there.
+        // is stuck on the spinner with no way to reach a terminal state. (SSR: this can fire
+        // during a server render too — pollUntilTerminal itself is the isPlatformBrowser choke
+        // point, not this call site; see its docstring. The template still renders the
+        // generating state correctly here from `brief()?.state` alone.)
         const uid = this.committee()?.uid;
-        if (uid && response?.brief?.state === 'generating' && isPlatformBrowser(this.platformId)) {
+        if (uid && response?.brief?.state === 'generating') {
           this.pollUntilTerminal(uid);
         }
       });
@@ -380,7 +384,11 @@ export class WeeklyBriefCardComponent {
   // otherwise treat that as "done," silently completing while the real regeneration is
   // still running and the quota has already been spent.
   private pollUntilTerminal(committeeUid: string, priorRevision?: number): void {
-    if (this.pollActive) return;
+    // Defense-in-depth alongside the isPlatformBrowser guard on this method's load-time
+    // caller: zoneless change detection doesn't block SSR stability on a bare timer() the way
+    // it does HttpClient calls, so this is the single choke point that must never start the
+    // poll loop server-side, regardless of which call site reaches it (dealako review, round 3).
+    if (!isPlatformBrowser(this.platformId) || this.pollActive) return;
     this.pollActive = true;
     this.generating.set(true);
     this.pollTimedOut.set(false);
