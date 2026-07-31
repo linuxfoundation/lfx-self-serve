@@ -480,14 +480,20 @@ Discovery action = explicit request/registration/subscription/workflow
    the one non-staff ED for whom `marketing_auditor`/`campaign_manager`
    aren't available through any other path.
 
-2. **Org lens for LF staff — tracked as LFXV2-2936, not a dangling ask.**
-   LF staff should get org-lens switching the same way they get
-   project/foundation access today — through team inheritance, not
-   impersonation. `PERMISSIONS.md` shows Project's Auditor relation already
-   inherits from the global LF Staff Team; the B2B Organization section does
-   not have the equivalent inheritance. [LFXV2-2936](https://linuxfoundation.atlassian.net/browse/LFXV2-2936)
-   tracks adding an LF Staff Team → B2B Organization auditor inheritance to
-   the model — a model change, not a UI workaround.
+2. **Org lens for LF staff — outcome tracked as LFXV2-2936; implementation
+   proposal is [LFXV2-2937](https://linuxfoundation.atlassian.net/browse/LFXV2-2937).**
+   What the app needs is an outcome, not a mechanism: LF staff resolve
+   `auditor` (and the support team resolves writer-level access, where
+   applicable) on each B2B Organization through the normal access check.
+   Unlike projects, B2B orgs have no common root/ancestor, so the
+   project-style root-cascade inheritance does not apply. Per OpenFGA's
+   system-hierarchy guidance, globally-applied org access is modeled as
+   per-object grants from a non-recursive system hierarchy, with distinct
+   relations for global auditors (all LF staff) and global writers
+   (support team) — Eric Searcy's LFXV2-2937, which supersedes 2936's
+   suggested mechanism (same objective, different implementation). Either
+   way: a model change, not a UI workaround, and app code is unaffected —
+   it only ever checks the relation on the org object.
 
 ## Contract Summary
 

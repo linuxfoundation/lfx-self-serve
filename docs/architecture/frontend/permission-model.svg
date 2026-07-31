@@ -4,7 +4,7 @@
 <svg viewBox="0 -70 1200 1010" width="1200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
       <rect x="-40" y="-70" width="1280" height="1080" fill="#FFFFFF"/>
   <text x="20" y="-38" font-size="21" font-weight="700" fill="#0F172B">LFX SS — Permission-Based Access Model</text>
-  <text x="20" y="-14" font-size="13" fill="#62748E">The app checks permissions, never roles or personas. Roles are bundles of permissions in OpenFGA; personas shape presentation only.</text>
+  <text x="20" y="-16" font-size="12.5" fill="#62748E">The app checks permissions, never roles or personas. Roles and teams are grant bundles in OpenFGA's relation graph; permissions are enforced as RuleSets on API routes.</text>
   <defs>
       <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
         <path d="M0,0 L8,4.5 L0,9 z" fill="#62748E"/>
@@ -139,6 +139,6 @@
     <text x="1113" y="836" text-anchor="middle" font-size="11.5" font-weight="700" fill="#DC2626">never gates access</text>
 
     <!-- footer -->
-    <text x="600" y="898" text-anchor="middle" font-size="12.5" fill="#62748E">Keep, rename, or remove any bundle (ED relation, teams) — the platform team's call. The requirement: everyone who should hold a</text>
-    <text x="600" y="916" text-anchor="middle" font-size="12.5" fill="#62748E">permission keeps receiving it through some bundle. App code is unaffected either way, because it only ever checks permissions.</text>
+    <text x="600" y="898" text-anchor="middle" font-size="12.5" fill="#62748E">Bundling is the platform team's domain — resolved per review: executive_director stays as an FGA relation, feeding marketing_auditor and campaign_manager.</text>
+    <text x="600" y="916" text-anchor="middle" font-size="12.5" fill="#62748E">App code is unaffected by any future bundling change, because it only ever checks permissions.</text>
   </svg>
