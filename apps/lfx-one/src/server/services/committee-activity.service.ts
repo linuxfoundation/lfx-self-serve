@@ -177,17 +177,18 @@ export class CommitteeActivityService {
     // Meetings: `sort: NAME_DESC` resolves to query-service's `sort_name`, which the meeting-service
     // indexer populates from `start_time` (`meeting.constants.ts`'s `PAST_MEETING_SORT` doc comment;
     // upstream `PastMeetingEventData.SortName()` confirms — its own doc comment calls `StartTime`
-    // "the scheduled start time"). occurred_at (getPastMeetingStartTimeMs) prefers
-    // `scheduled_start_time`, falling back to `start_time` when it's absent — `sort_name` and
-    // occurred_at coincide exactly whenever that fallback fires, and can diverge on any row where
-    // `scheduled_start_time` is present and different from `start_time`. How often each case occurs
-    // on the indexed `v1_past_meeting` projection this leg actually reads depends on which upstream
-    // sync path wrote a given row (verified at least one path — the legacy v1-to-v2 migration
-    // handler — populates `start_time` FROM the v1 record's own scheduled time, making the two
-    // identical for rows synced that way; not confirmed for meetings created natively in v2).
-    // Meetings is still the best-behaved of the four legs regardless — sort and occurred_at track
-    // the same underlying event (this meeting's own start) at worst, unlike the categorically
-    // different mismatch on the other three legs below.
+    // "the scheduled start time"). occurred_at (getPastMeetingStartTimeMs, via
+    // firstValidTimestampMs/isRealTimestamp) prefers `scheduled_start_time`, falling back to
+    // `start_time`. The indexed `v1_past_meeting` type this leg reads is sourced exclusively from
+    // ITX/Zoom past-meeting-completion events (`docs/event-processing.md`'s `itx-zoom-past-meetings.`
+    // stream — a "past meeting" is a derived record generated when an occurrence completes, not
+    // something created directly); its source struct `PastMeetingEventData` has no
+    // `scheduled_start_time` JSON field at all (`internal/domain/models/event_models.go`), and the
+    // one handler that builds it populates `StartTime` FROM the raw record's own `ScheduledStartTime`
+    // (`past_meeting_event_handler.go`). So `scheduled_start_time` is never present on a row this leg
+    // can read, the fallback always fires, and `sort_name`/occurred_at are always built from the
+    // identical value — meetings is exact, not merely the best-behaved approximation, unlike the
+    // other three legs below.
     //
     // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
     // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
@@ -418,14 +419,16 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<ActivityEvent[]> {
-    // date_field: 'start_time' is best-effort narrowing, not a correctness guarantee — occurred_at
-    // is actually derived via getPastMeetingStartTimeMs, which prefers scheduled_start_time and
-    // falls back to start_time, so a row whose in-window value lives on scheduled_start_time while
-    // start_time is a Go zero-date could be excluded upstream before this leg ever sees it. Sending
-    // no upstream narrowing at all traded this rare miss for hard truncation at fetchSize on every
-    // page instead (a strictly worse failure mode) — every leg in this service carries some version
-    // of this same single-field-vs-fallback-derivation approximation; the in-memory since/cursor
-    // pass in getCommitteeActivity is the correctness backstop against over-inclusion, not under-inclusion.
+    // date_field: 'start_time' — unlike every other leg's date_field narrowing (all best-effort, see
+    // their own comments), this one IS a correctness guarantee, not just an approximation: occurred_at
+    // (getPastMeetingStartTimeMs) prefers scheduled_start_time, falling back to start_time — but the
+    // indexed v1_past_meeting projection this leg reads never carries scheduled_start_time at all
+    // (see the "Meetings" paragraph in getCommitteeActivity's fetchSize comment for the verified
+    // source), so that fallback always fires and occurred_at is always built from the same start_time
+    // field this date_field narrows on. The in-memory since/cursor pass in getCommitteeActivity is
+    // still the one place that enforces the exact boundary (this narrowing only bounds what's
+    // fetched), but for this leg specifically it can't under-fetch relative to occurred_at the way
+    // the other legs' single-field-vs-fallback-derivation approximations can.
     const hasWindow = !!since || !!before;
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
