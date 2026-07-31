@@ -189,9 +189,10 @@ export class DocumentFormComponent {
       }
 
       existingNames.add(file.name);
-      // Pre-fill from the basename (sans extension); user can edit inline before submit.
-      const baseName = file.name.replace(/\.[^/.]+$/, '');
-      const nameForm = new FormGroup({ name: new FormControl(baseName, [Validators.required, Validators.maxLength(500)]) });
+      // Pre-fill with the full filename (extension included) so two files that share a basename
+      // (e.g. report.pdf, report.docx) don't pre-fill to the same display name and collide at
+      // submit — file.name uniqueness is already enforced by the duplicate check above.
+      const nameForm = new FormGroup({ name: new FormControl(file.name, [Validators.required, Validators.maxLength(500)]) });
       newItems.push({ id: crypto.randomUUID(), file, status: 'pending', nameForm });
     });
 
