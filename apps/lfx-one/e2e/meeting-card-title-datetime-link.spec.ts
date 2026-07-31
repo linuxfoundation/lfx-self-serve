@@ -67,7 +67,13 @@ async function stubMeLensContext(page: Page): Promise<void> {
   await page.route('**/api/past-meetings/**', (route) => route.fulfill({ status: 404, body: '{}' }));
 }
 
-function upcomingMeeting(id: string, title: string, createdBy: { name: string; username: string; email: string }, extra: Record<string, unknown> = {}) {
+interface MeetingCreator {
+  name: string;
+  username: string;
+  email: string;
+}
+
+function upcomingMeeting(id: string, title: string, createdBy: MeetingCreator, extra: Record<string, unknown> = {}) {
   return {
     id,
     uid: id,
@@ -90,7 +96,7 @@ function upcomingMeeting(id: string, title: string, createdBy: { name: string; u
   };
 }
 
-function pastMeeting(id: string, title: string, createdBy: { name: string; username: string; email: string }, extra: Record<string, unknown> = {}) {
+function pastMeeting(id: string, title: string, createdBy: MeetingCreator, extra: Record<string, unknown> = {}) {
   return {
     ...upcomingMeeting(id, title, createdBy, extra),
     start_time: PAST_START,
@@ -133,7 +139,7 @@ const pastTab = (page: Page) => page.getByTestId('time-filter-tabs').getByTestId
 const card = (page: Page, id: string) => page.locator(`#meeting-${id}`);
 
 test.describe('Meeting card — clickable title and date/time chip', () => {
-  test('upcoming card: title and date chip are real anchors that open the meeting page in a new tab', async ({ page }) => {
+  test('upcoming card: title and date chip are real anchors that open the meeting page in a new tab', async ({ page, context }) => {
     await gotoMyMeetings(page);
 
     const upcomingCard = card(page, 'link-up-1');
@@ -149,6 +155,17 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     await expect(chip).toHaveJSProperty('tagName', 'A');
     await expect(chip).toHaveAttribute('href', '/meetings/link-up-1');
     await expect(chip).toHaveAttribute('target', '_blank');
+
+    // Activate both anchors — proves they're functional links, not just correctly-attributed markup.
+    // The destination page is real and unmocked, so we only assert a tab actually opened (not its
+    // final URL/content, which could redirect for a fixture id the downstream page doesn't know about).
+    const [titlePopup] = await Promise.all([context.waitForEvent('page'), title.click()]);
+    expect(titlePopup).toBeTruthy();
+    await titlePopup.close();
+
+    const [chipPopup] = await Promise.all([context.waitForEvent('page'), chip.click()]);
+    expect(chipPopup).toBeTruthy();
+    await chipPopup.close();
   });
 
   test('past card: title and date chip navigate in-app (routerLink), not a new tab', async ({ page }) => {
@@ -168,18 +185,31 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     await expect(chip).toHaveJSProperty('tagName', 'A');
     await expect(chip).toHaveAttribute('href', '/meetings/link-past-1');
     await expect(chip).not.toHaveAttribute('target', '_blank');
+
+    // Activate the title anchor — same-tab SPA nav, so only one of the two anchors is clicked here
+    // (clicking both would require navigating back and re-deriving the past-tab state in between).
+    // Chip's routerLink is already proven equivalent via the identical href assertion above.
+    await title.click();
+    await page.waitForURL((url) => !/^\/meetings\/?$/.test(url.pathname));
+    expect(page.url()).toContain('/meetings/link-past-1');
   });
 
-  test('clicking inner card actions does not trigger a details navigation', async ({ page }) => {
+  test('clicking inner card actions does not trigger a details navigation or open a new tab', async ({ page, context }) => {
     await gotoMyMeetings(page);
 
     const upcomingCard = card(page, 'link-up-1');
     await expect(upcomingCard).toBeVisible();
 
+    const expectNoPopup = () => context.waitForEvent('page', { timeout: 500 }).catch(() => null);
+
+    const copyPopup = expectNoPopup();
     await upcomingCard.getByTestId('copy-meeting-button').click();
+    expect(await copyPopup).toBeNull();
     await expect(page).toHaveURL(/\/meetings(\?.*)?$/);
 
+    const deletePopup = expectNoPopup();
     await upcomingCard.getByTestId('delete-meeting-button').click();
+    expect(await deletePopup).toBeNull();
     await expect(page).toHaveURL(/\/meetings(\?.*)?$/);
   });
 });
