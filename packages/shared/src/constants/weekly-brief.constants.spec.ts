@@ -18,7 +18,7 @@ describe('WEEKLY_BRIEF_TEXT_MAX_LENGTH', () => {
 });
 
 describe('WEEKLY_BRIEF_DEFAULT_THROTTLE', () => {
-  it('matches the documented policy of 2 fresh generates and 3 regenerations per rolling week', () => {
+  it('matches the documented policy of 2 fresh generates and 3 regenerations per fixed calendar week', () => {
     expect(WEEKLY_BRIEF_DEFAULT_THROTTLE).toEqual({
       generates_used: 0,
       generates_limit: 2,

@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertCommitteeRead } from '../helpers/committee-read-access.helper';
+import { assertCommitteeWrite } from '../helpers/committee-write-access.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { WeeklyBriefService } from '../services/weekly-brief.service';
@@ -121,6 +122,9 @@ export class WeeklyBriefController {
 
   /**
    * POST /api/committees/:committeeId/weekly-briefs/generate
+   *
+   * Gated by `assertCommitteeWrite` (committee#writer) — same missing-authorization gap as
+   * getCurrentBrief, but for a quota-consuming write action. (LFXV2-2175/2176 review.)
    */
   public async generateBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { committeeId } = req.params;
@@ -150,6 +154,8 @@ export class WeeklyBriefController {
       }
       const body = validation.value;
 
+      await assertCommitteeWrite(req, committeeId, 'generate_weekly_brief');
+
       const { status, data } = await this.weeklyBriefService.generateBrief(req, committeeId, body);
 
       // Upstream marks no attribute of the generate result Required — guard every
@@ -177,6 +183,9 @@ export class WeeklyBriefController {
 
   /**
    * PUT /api/committees/:committeeId/weekly-briefs/current
+   *
+   * Gated by `assertCommitteeWrite` (committee#writer) — same missing-authorization gap as
+   * getCurrentBrief, but for overwriting the brief's content. (LFXV2-2175/2176 review.)
    */
   public async saveBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { committeeId } = req.params;
@@ -205,6 +214,8 @@ export class WeeklyBriefController {
         );
       }
       const body = validation.value;
+
+      await assertCommitteeWrite(req, committeeId, 'save_weekly_brief');
 
       const result = await this.weeklyBriefService.saveBrief(req, committeeId, body);
 

@@ -5,16 +5,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const COMMITTEE_ID = 'a0000000-0000-0000-0000-000000000001';
 
-const { weeklyBriefSvc, assertCommitteeRead } = vi.hoisted(() => ({
+const { weeklyBriefSvc, assertCommitteeRead, assertCommitteeWrite } = vi.hoisted(() => ({
   weeklyBriefSvc: {
     getCurrentBrief: vi.fn(),
     generateBrief: vi.fn(),
     saveBrief: vi.fn(),
   },
   assertCommitteeRead: vi.fn(),
+  assertCommitteeWrite: vi.fn(),
 }));
 
 vi.mock('../helpers/committee-read-access.helper', () => ({ assertCommitteeRead }));
+vi.mock('../helpers/committee-write-access.helper', () => ({ assertCommitteeWrite }));
 
 // The `@lfx-one/shared/*` alias isn't wired into the server-side vitest config —
 // mocked defensively even though this controller's usage is type-only (matches
@@ -63,6 +65,7 @@ describe('WeeklyBriefController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     assertCommitteeRead.mockResolvedValue(undefined);
+    assertCommitteeWrite.mockResolvedValue(undefined);
     controller = new WeeklyBriefController();
   });
 
@@ -113,6 +116,30 @@ describe('WeeklyBriefController', () => {
 
       expect(res.status).toHaveBeenCalledWith(202);
       expect(res.json).toHaveBeenCalledWith(data);
+    });
+  });
+
+  describe('generateBrief — write access gate', () => {
+    it('checks committee write access before generating (dealako review: generate had no server-side authz)', async () => {
+      weeklyBriefSvc.generateBrief.mockResolvedValue({ status: 202, data: {} });
+
+      await controller.generateBrief(buildReq({}), buildRes(), vi.fn());
+
+      expect(assertCommitteeWrite).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'generate_weekly_brief');
+      const accessOrder = assertCommitteeWrite.mock.invocationCallOrder[0];
+      const generateOrder = weeklyBriefSvc.generateBrief.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(generateOrder);
+    });
+
+    it('propagates a 403 from assertCommitteeWrite via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeWrite.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.generateBrief(buildReq({}), buildRes(), next);
+
+      expect(weeklyBriefSvc.generateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
     });
   });
 
@@ -169,6 +196,30 @@ describe('WeeklyBriefController', () => {
 
       expect(weeklyBriefSvc.saveBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('saveBrief — write access gate', () => {
+    it('checks committee write access before saving (dealako review: save had no server-side authz)', async () => {
+      weeklyBriefSvc.saveBrief.mockResolvedValue({ uid: 'b1', revision: 2, state: 'edited' });
+
+      await controller.saveBrief(buildReq({ brief_text: 'updated', revision: 1 }), buildRes(), vi.fn());
+
+      expect(assertCommitteeWrite).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'save_weekly_brief');
+      const accessOrder = assertCommitteeWrite.mock.invocationCallOrder[0];
+      const saveOrder = weeklyBriefSvc.saveBrief.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(saveOrder);
+    });
+
+    it('propagates a 403 from assertCommitteeWrite via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeWrite.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.saveBrief(buildReq({ brief_text: 'updated', revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.saveBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
     });
   });
 
