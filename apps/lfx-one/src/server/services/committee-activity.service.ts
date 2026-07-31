@@ -478,29 +478,39 @@ export class CommitteeActivityService {
     // is PastMeeting for meetingType 'v1_past_meeting' (same cast PastMeetingController itself uses).
     const { data: meetings } = (await this.meetingService.getMeetings(req, query, 'v1_past_meeting', false)) as { data: PastMeeting[] };
 
-    return meetings.map((meeting) => {
+    // Tripwire for the "meetings is exact" claim in getCommitteeActivity's fetchSize comment — a
+    // documented-but-silent regression is worse than no documentation, so make it observable: if a
+    // real scheduled_start_time (not absent/zero-date/unparseable) ever shows up on a row and
+    // differs from start_time, the upstream contract this leg's date_field narrowing relies on has
+    // changed. Counted across the page and logged once, not once per row — the scenario this
+    // catches is upstream flipping a field on every future row of an entire resource type, so a
+    // per-row warning would mean up to `fetchSize` near-identical log lines per request, on every
+    // request, indefinitely, the moment it happened — noise that would bury the one signal it exists
+    // to surface, not amplify it.
+    let contractBreachCount = 0;
+    const events = meetings.map((meeting) => {
       const startMs = getPastMeetingStartTimeMs(meeting);
       const occurredAt = startMs !== null ? new Date(startMs).toISOString() : '';
-      // Tripwire for the "meetings is exact" claim in getCommitteeActivity's fetchSize comment —
-      // a documented-but-silent regression is worse than no documentation, so make it observable: if
-      // a real scheduled_start_time (not absent/zero-date/unparseable) ever shows up and differs from
-      // start_time, the upstream contract this leg's date_field narrowing relies on has changed.
       const scheduledStartTime = firstValidTimestamp(meeting.scheduled_start_time);
       if (scheduledStartTime && Date.parse(scheduledStartTime) !== Date.parse(meeting.start_time)) {
-        logger.warning(
-          req,
-          'get_committee_activity',
-          'v1_past_meeting row carries a real scheduled_start_time differing from start_time — date_field narrowing on start_time may no longer be exact for this leg',
-          { committee_uid: committeeUid, meeting_id: meeting.id }
-        );
+        contractBreachCount++;
       }
       return {
-        type: 'meeting_held',
+        type: 'meeting_held' as const,
         occurred_at: occurredAt,
         committee_uid: committeeUid,
         payload: { meeting_id: meeting.id, meeting_occurrence_id: getPastMeetingResourceId(meeting), title: meeting.title },
       };
     });
+    if (contractBreachCount > 0) {
+      logger.warning(
+        req,
+        'get_committee_activity',
+        'One or more v1_past_meeting rows carry a real scheduled_start_time differing from start_time — date_field narrowing on start_time may no longer be exact for this leg',
+        { committee_uid: committeeUid, affected_row_count: contractBreachCount, total_rows: meetings.length }
+      );
+    }
+    return events;
   }
 
   // ─── Votes → vote_opened | vote_closed ─────────────────────────────────────

@@ -213,15 +213,19 @@ describe('CommitteeActivityService', () => {
       expect.anything(),
       'get_committee_activity',
       expect.stringContaining('scheduled_start_time'),
-      expect.objectContaining({ committee_uid: COMMITTEE_UID })
+      expect.objectContaining({ committee_uid: COMMITTEE_UID, affected_row_count: 1, total_rows: 1 })
     );
   });
 
   it('does not fire the scheduled_start_time tripwire for an ordinary meeting with no scheduled_start_time', async () => {
     getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '2026-01-05T00:00:00Z', scheduled_start_time: '' })] });
 
-    await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+    const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
 
+    // Positive control — without this, the assertion below would pass identically if the meetings
+    // leg failed and never ran at all (a bare "not called" doesn't prove the tripwire code path was
+    // exercised, only that nothing called it, which a leg failure would also produce).
+    expect(result.data.map((e) => e.type)).toEqual(['meeting_held']);
     expect(warning).not.toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('scheduled_start_time'), expect.anything());
   });
 
