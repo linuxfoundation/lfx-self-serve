@@ -12,6 +12,7 @@ const committeeController = new CommitteeController();
 // Committee CRUD routes - using new controller pattern
 router.get('/', (req, res, next) => committeeController.getCommittees(req, res, next));
 router.get('/count', (req, res, next) => committeeController.getCommitteesCount(req, res, next));
+router.get('/engagement-stats', (req, res, next) => committeeController.getGroupsEngagementStats(req, res, next));
 router.get('/my-committees', (req, res, next) => committeeController.getMyCommittees(req, res, next));
 router.get('/my-committee-uids', (req, res, next) => committeeController.getMyCommitteeUids(req, res, next));
 router.get('/:id', (req, res, next) => committeeController.getCommitteeById(req, res, next));
