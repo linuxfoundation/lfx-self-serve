@@ -29,14 +29,17 @@
           <div class="flex flex-col gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50" data-testid="document-form-pending-file">
             <div class="flex items-center gap-2">
               <i class="fa-light fa-file-lines text-blue-500 flex-shrink-0"></i>
-              <input
-                type="text"
-                class="flex-1 min-w-0 text-sm text-gray-700 bg-transparent border-0 focus:outline-none focus:ring-0 truncate"
-                [value]="item.name"
-                [disabled]="item.status === 'uploading'"
-                (input)="updatePendingFileName(item.id, $any($event.target).value)"
-                [attr.aria-label]="'Document name for ' + item.file.name"
-                data-testid="document-form-pending-file-name" />
+              <div class="flex-1 min-w-0">
+                <label class="sr-only" [attr.for]="'pending-file-name-' + item.id">Document name for {{ item.file.name }}</label>
+                <lfx-input-text
+                  size="small"
+                  [id]="'pending-file-name-' + item.id"
+                  [form]="getNameForm(item.id)"
+                  control="name"
+                  placeholder="Document name"
+                  styleClass="w-full"
+                  [dataTest]="'document-form-pending-file-name'"></lfx-input-text>
+              </div>
               @if (item.status === 'uploading') {
                 <i class="fa-light fa-spinner-third fa-spin text-gray-400 flex-shrink-0"></i>
               } @else {
@@ -51,9 +54,12 @@
                 </button>
               }
             </div>
-            <span class="text-xs text-gray-400 truncate">{{ item.file.name }}</span>
+            @if (getNameForm(item.id).get('name')?.errors?.['required'] && getNameForm(item.id).get('name')?.touched) {
+              <p class="text-xs text-red-600 pl-6">Name is required</p>
+            }
+            <span class="text-xs text-gray-400 truncate pl-6">{{ item.file.name }}</span>
             @if (item.status === 'error' && item.errorMessage) {
-              <p class="text-xs text-red-600">{{ item.errorMessage }}</p>
+              <p class="text-xs text-red-600 pl-6">{{ item.errorMessage }}</p>
             }
           </div>
         }

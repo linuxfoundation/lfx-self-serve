@@ -64,6 +64,13 @@ export class DocumentFormComponent {
   public readonly defaultParentUid: string | null;
 
   public form: FormGroup;
+  /**
+   * One `name` FormGroup per pending file, keyed by `PendingDocumentFile.id`. Kept out of
+   * `PendingDocumentFile` itself (that interface lives in `@lfx-one/shared`, which has no
+   * Angular Forms dependency) but wired in lockstep with `pendingFiles` so `lfx-input-text`
+   * has a real `[form]`/`control` pair to bind each row's editable name to.
+   */
+  private nameForms = new Map<string, FormGroup>();
 
   // Derived signals
   public isLink: Signal<boolean> = this.initIsLink();
@@ -103,7 +110,8 @@ export class DocumentFormComponent {
         this.fileError.set('Please select at least one file to upload.');
         return;
       }
-      if (itemsToUpload.some((item) => !item.name.trim())) {
+      if (itemsToUpload.some((item) => !this.getPendingFileName(item.id))) {
+        itemsToUpload.forEach((item) => this.nameForms.get(item.id)?.markAllAsTouched());
         this.fileError.set('Every file needs a name before uploading.');
         return;
       }
@@ -179,13 +187,11 @@ export class DocumentFormComponent {
       }
 
       existingNames.add(file.name);
-      newItems.push({
-        id: crypto.randomUUID(),
-        file,
-        // Pre-fill from the basename (sans extension); user can edit inline before submit.
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        status: 'pending',
-      });
+      const id = crypto.randomUUID();
+      // Pre-fill from the basename (sans extension); user can edit inline before submit.
+      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      this.nameForms.set(id, new FormGroup({ name: new FormControl(baseName, [Validators.required]) }));
+      newItems.push({ id, file, status: 'pending' });
     });
 
     if (newItems.length === 0) return;
@@ -194,11 +200,13 @@ export class DocumentFormComponent {
     this.pendingFiles.update((items) => [...items, ...newItems]);
   }
 
-  public updatePendingFileName(id: string, name: string): void {
-    this.pendingFiles.update((items) => items.map((item) => (item.id === id ? { ...item, name } : item)));
+  /** FormGroup backing a pending file's editable name input — see `nameForms`. */
+  public getNameForm(id: string): FormGroup {
+    return this.nameForms.get(id) ?? new FormGroup({ name: new FormControl('') });
   }
 
   public removePendingFile(id: string): void {
+    this.nameForms.delete(id);
     this.pendingFiles.update((items) => items.filter((item) => item.id !== id));
   }
 
@@ -247,6 +255,11 @@ export class DocumentFormComponent {
     });
   }
 
+  /** Trimmed current value of a pending file's editable name control. */
+  private getPendingFileName(id: string): string {
+    return ((this.nameForms.get(id)?.get('name')?.value as string | null) ?? '').trim();
+  }
+
   /**
    * Uploads every given pending file in parallel (RxJS `mergeMap`, unbounded concurrency).
    * Each call is individually `catchError`'d so one failure doesn't abort the others —
@@ -256,6 +269,7 @@ export class DocumentFormComponent {
   private uploadPendingFiles(items: PendingDocumentFile[], description: string | undefined, folderUid: string | undefined): void {
     this.submitting.set(true);
     const uploadingIds = new Set(items.map((item) => item.id));
+    uploadingIds.forEach((id) => this.nameForms.get(id)?.disable());
     this.pendingFiles.update((current) =>
       current.map((item) => (uploadingIds.has(item.id) ? { ...item, status: 'uploading' as const, errorMessage: undefined } : item))
     );
@@ -263,7 +277,8 @@ export class DocumentFormComponent {
     from(items)
       .pipe(
         mergeMap((item) => {
-          const metadata = { name: item.name, description, folder_uid: folderUid };
+          const name = this.getPendingFileName(item.id);
+          const metadata = { name, description, folder_uid: folderUid };
           const upload$: Observable<unknown> =
             this.entityType === 'project'
               ? this.projectService.uploadProjectDocument(this.entityId, item.file, metadata)
@@ -272,7 +287,7 @@ export class DocumentFormComponent {
           return upload$.pipe(
             map(() => ({ id: item.id, ok: true as const })),
             catchError((err: HttpErrorResponse) =>
-              of({ id: item.id, ok: false as const, message: this.extractErrorMessage(err, `Failed to upload "${item.name}"`) })
+              of({ id: item.id, ok: false as const, message: this.extractErrorMessage(err, `Failed to upload "${name}"`) })
             )
           );
         }),
@@ -285,6 +300,8 @@ export class DocumentFormComponent {
         const failures = new Map(
           results.filter((result): result is { id: string; ok: false; message: string } => !result.ok).map((result) => [result.id, result.message])
         );
+        succeededIds.forEach((id) => this.nameForms.delete(id));
+        failures.forEach((_message, id) => this.nameForms.get(id)?.enable());
 
         this.pendingFiles.update((current) =>
           current
