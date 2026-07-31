@@ -53,6 +53,9 @@ export function classifyCommitteeEngagement(input: CommitteeEngagementClassifica
   if (invited <= 0) return joinedWithinWindow ? 'High' : 'Inactive';
 
   const rate = rawCommitteeEngagementRate(attended, invited);
+  // `<=`, not `===`: defensive against `rawCommitteeEngagementRate`'s internal clamp ever being
+  // weakened, not because a negative rate is reachable today — by this point `invited > 0` (line
+  // 53) and `attended` is clamped to `[0, invited]`, so `rate` is always in `[0, 1]`.
   if (rate <= 0) return 'Inactive';
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.high) return 'High';
   if (rate >= COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS.medium) return 'Medium';

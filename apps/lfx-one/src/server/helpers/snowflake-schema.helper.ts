@@ -5,12 +5,18 @@ import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA } from '@lfx-one/shared/constants';
 
 /**
  * Guards `LFX_ONE_PLATINUM_SCHEMA` before it's interpolated into a SQL identifier: only
- * `WORD(.WORD){1,2}`-shaped values pass, everything else (including anything with a stray quote,
- * space, or SQL keyword) is rejected in favor of the default schema.
+ * `WORD.WORD`-shaped (exactly two segments) values pass, everything else — a stray quote, space,
+ * SQL keyword, single segment, or a three-plus-segment value — is rejected in favor of the
+ * default schema. Restricted to exactly two segments (not `{1,2}`) because every call site
+ * appends a table name unconditionally (e.g. `engagementTable()`:
+ * `` `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE` ``) — a 3-segment
+ * override would produce an invalid 4-part Snowflake identifier (`database.schema.object` is the
+ * max), silently breaking the query for exactly the operator input this override is documented to
+ * accept.
  */
 function snowflakeQualifier(value: string | undefined): string | null {
   const trimmed = value?.trim();
-  return trimmed && /^[A-Z0-9_]+(\.[A-Z0-9_]+){1,2}$/i.test(trimmed) ? trimmed.toUpperCase() : null;
+  return trimmed && /^[A-Z0-9_]+\.[A-Z0-9_]+$/i.test(trimmed) ? trimmed.toUpperCase() : null;
 }
 
 /**

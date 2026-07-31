@@ -54,8 +54,13 @@ export class CommitteeEngagementService {
       const rows = generateMockEngagementRows(committeeUid, members);
       // The ops-side signal that a response is fabricated — `data_source: 'mock'` on the response
       // body (below) is the in-band one any consumer must check; this is the log-side counterpart
-      // for anyone watching production logs rather than inspecting individual responses.
-      logger.warning(req, 'get_committee_engagement', 'ENGAGEMENT_BACKEND=mock — returning deterministic mock rows, not real data', {
+      // for anyone watching production logs rather than inspecting individual responses. INFO, not
+      // WARN: mock mode is a deliberate, explicit opt-in (ENGAGEMENT_BACKEND=mock, additionally
+      // hard-blocked in production) rather than a degradation or fallback — logging-patterns.md
+      // reserves WARN for those, and INFO for significant business operations worth surfacing in
+      // production. WARN-per-request here would also compete for attention with genuine
+      // degradation warnings (e.g. the missing-object case below) in the same log stream.
+      logger.info(req, 'get_committee_engagement', 'ENGAGEMENT_BACKEND=mock — returning deterministic mock rows, not real data', {
         committee_uid: committeeUid,
         window,
         roster_size: members.length,
@@ -288,13 +293,24 @@ export class CommitteeEngagementService {
     };
   }
 
+  /**
+   * Clamps every field to non-negative — `attended` is separately clamped to `[0, invited]` by
+   * the caller, but `invited`/`committeeMeetings` themselves had no floor, so a warehouse
+   * data-quality issue (e.g. a negative `INVITED_COUNT`) could otherwise flow unclamped into
+   * `computeCommitteeEngagementRate` and the response. Defense-in-depth, matching the same clamp's
+   * posture one line up in `buildResponse` — not a reachable case today (Snowflake is a trusted
+   * internal source, and the live path currently always degrades to an empty row set).
+   */
   private countsForWindow(
     row: CommitteeEngagementWarehouseRow,
     window: CommitteeEngagementWindow
   ): { invited: number; attended: number; committeeMeetings: number } {
-    if (window === '30d') return { invited: row.INVITED_COUNT_30D, attended: row.ATTENDED_COUNT_30D, committeeMeetings: row.COMMITTEE_MEETINGS_30D };
-    if (window === '90d') return { invited: row.INVITED_COUNT_90D, attended: row.ATTENDED_COUNT_90D, committeeMeetings: row.COMMITTEE_MEETINGS_90D };
-    return { invited: row.INVITED_COUNT_YTD, attended: row.ATTENDED_COUNT_YTD, committeeMeetings: row.COMMITTEE_MEETINGS_YTD };
+    const clamp = (value: number): number => Math.max(value, 0);
+    if (window === '30d')
+      return { invited: clamp(row.INVITED_COUNT_30D), attended: clamp(row.ATTENDED_COUNT_30D), committeeMeetings: clamp(row.COMMITTEE_MEETINGS_30D) };
+    if (window === '90d')
+      return { invited: clamp(row.INVITED_COUNT_90D), attended: clamp(row.ATTENDED_COUNT_90D), committeeMeetings: clamp(row.COMMITTEE_MEETINGS_90D) };
+    return { invited: clamp(row.INVITED_COUNT_YTD), attended: clamp(row.ATTENDED_COUNT_YTD), committeeMeetings: clamp(row.COMMITTEE_MEETINGS_YTD) };
   }
 
   /** Start of the requested window, for tenure clipping — `ytd` is calendar-year-to-date, `30d`/`90d` are rolling. */

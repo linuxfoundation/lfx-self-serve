@@ -42,9 +42,9 @@ describe('resolveLfxOnePlatinumSchema', () => {
     expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.CUSTOM_SCHEMA');
   });
 
-  it('accepts a well-formed three-segment override', () => {
+  it('rejects a three-segment override and falls back to the default — every call site appends a table name unconditionally, so a 3-segment schema would produce an invalid 4-part identifier', () => {
     process.env[ENV_KEY] = 'DB.SCHEMA.SUBSCHEMA';
-    expect(resolveLfxOnePlatinumSchema()).toBe('DB.SCHEMA.SUBSCHEMA');
+    expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
 
   it('rejects a value with a stray quote and falls back to the default', () => {

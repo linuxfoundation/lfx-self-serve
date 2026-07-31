@@ -9,11 +9,12 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // from their real implementation (not hand-copied) so a decision-table change there fails this
 // suite too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.utils.spec.ts.
-const { execute, getCommitteeMembers, generateMockEngagementRows, warning, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
+const { execute, getCommitteeMembers, generateMockEngagementRows, warning, info, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
   generateMockEngagementRows: vi.fn(),
   warning: vi.fn(),
+  info: vi.fn(),
   debug: vi.fn(),
   // Returns null by default (cache bypassed → direct fetch) so live-mode tests exercise the
   // Snowflake fetch path directly unless a test overrides it.
@@ -61,7 +62,7 @@ vi.mock('./snowflake.service', async () => {
 });
 vi.mock('./valkey.service', () => ({ buildCommitteeCacheKey, valkeyService: { getJson, setJson } }));
 vi.mock('./logger.service', () => ({
-  logger: { warning, debug },
+  logger: { warning, info, debug },
 }));
 
 import { CommitteeEngagementService } from './committee-engagement.service';
@@ -106,6 +107,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     getCommitteeMembers.mockReset();
     generateMockEngagementRows.mockReset();
     warning.mockReset();
+    info.mockReset();
     debug.mockReset();
     buildCommitteeCacheKey.mockReset().mockReturnValue(null);
     getJson.mockReset();
@@ -140,14 +142,14 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.computed_at).toBeNull();
     });
 
-    it('marks the response data_source: mock and warns, so a consumer or operator can tell it apart from a real read', async () => {
+    it('marks the response data_source: mock and logs at INFO, so a consumer or operator can tell it apart from a real read', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1' })]);
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.data_source).toBe('mock');
-      expect(warning).toHaveBeenCalledWith(
+      expect(info).toHaveBeenCalledWith(
         req,
         'get_committee_engagement',
         'ENGAGEMENT_BACKEND=mock — returning deterministic mock rows, not real data',
@@ -308,6 +310,17 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       expect(result30d.members[0]).toMatchObject({ attended: 5, invited: 5 });
       expect(result90d.members[0]).toMatchObject({ attended: 10, invited: 15 });
+    });
+
+    it('clamps negative warehouse counts to zero (defense-in-depth against a data-quality issue)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: -5, ATTENDED_COUNT_30D: -1, COMMITTEE_MEETINGS_30D: -10 }),
+      ]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ invited: 0, attended: 0, committee_meetings: 0 });
     });
   });
 
