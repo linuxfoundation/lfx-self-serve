@@ -663,6 +663,24 @@ describe('CommitteeActivityService', () => {
         path: `/committees/${COMMITTEE_UID}`,
       });
     });
+
+    it('encodes the committee uid in the 404 path so it matches the path actually requested', async () => {
+      // COMMITTEE_UID ('committee-1') contains nothing encodeURIComponent transforms, so the
+      // toMatchObject assertion above can't tell an encoded path from an unencoded one — it stayed
+      // green when the encoding fix was mutated away. This uid needs real encoding to exercise it.
+      // The expected path is a hard-coded literal, not re-derived with encodeURIComponent — deriving
+      // it the same way the production code does would let a bug in which encoder is used cancel
+      // out on both sides of the assertion.
+      const uidNeedingEncoding = 'committee 1';
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (/^\/committees\/[^/]+$/.test(path)) return Promise.resolve(null);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      await expect(service.getCommitteeActivity(req, uidNeedingEncoding, { limit: 8 })).rejects.toMatchObject({
+        path: '/committees/committee%201',
+      });
+    });
   });
 
   describe('one-event-per-row mapping', () => {
