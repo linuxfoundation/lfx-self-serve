@@ -11,7 +11,13 @@
         <p-skeleton width="90%" height="1rem" />
       </div>
     </lfx-card>
-  } @else if (generating() || brief()?.state === 'generating') {
+  } @else if (generating() || brief()?.state === 'generating' || pollTimedOut()) {
+    <!-- pollTimedOut in the outer condition: once the poll's attempt cap trips, its last tick may
+         have written a non-terminal brief() (e.g. a read-lag null/'empty' response) into
+         briefResponse — without checking pollTimedOut() here directly, the card would fall
+         through to the empty/error/renderableBrief branches below and silently drop the
+         "still generating, quota already spent" state instead of showing the Refresh escape
+         hatch (dealako review: LFXV2-2176 round 2). -->
     <lfx-card>
       <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-generating-state">
         <i class="fa-light fa-sparkles text-2xl text-blue-500 animate-pulse"></i>
