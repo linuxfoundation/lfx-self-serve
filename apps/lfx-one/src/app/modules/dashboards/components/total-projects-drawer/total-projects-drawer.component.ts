@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
@@ -18,7 +18,7 @@ import {
   lfxColors,
   TOTAL_PROJECTS_DRAWER_ITEMS_PER_PAGE,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, buildVisiblePages, hexToRgba } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl, buildVisiblePages, computePeriodDelta, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -40,7 +40,6 @@ import type {
     DrawerModule,
     ChartComponent,
     SelectComponent,
-    SelectButtonComponent,
     InputTextComponent,
     ButtonComponent,
     ReactiveFormsModule,
@@ -48,6 +47,7 @@ import type {
     NgClass,
     InsightsHandoffSectionComponent,
     TooltipModule,
+    MetricDeltaComponent,
   ],
   templateUrl: './total-projects-drawer.component.html',
 })
@@ -59,18 +59,10 @@ export class TotalProjectsDrawerComponent {
 
   // === Static Options ===
   protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
-  protected readonly viewOptions = [
-    { label: 'Chart', value: 'chart' },
-    { label: 'Table', value: 'table' },
-  ];
 
   // === Forms ===
   protected readonly headerForm: FormGroup = this.fb.group({
     timeRange: [{ value: 'last-12-months', disabled: true }],
-  });
-
-  protected readonly viewForm: FormGroup = this.fb.group({
-    primaryView: ['chart'],
   });
 
   protected readonly searchForm: FormGroup = this.fb.group({
@@ -93,7 +85,6 @@ export class TotalProjectsDrawerComponent {
   protected readonly LifecycleStage = LifecycleStage;
 
   // === WritableSignals ===
-  protected readonly primaryView = signal<'chart' | 'table'>('chart');
   protected readonly primaryPage = signal(1);
   protected readonly drawerLoading = signal(false);
 
@@ -103,6 +94,8 @@ export class TotalProjectsDrawerComponent {
   );
 
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.data().monthlyData));
   protected readonly primarySearch: Signal<string> = this.initPrimarySearch();
   private readonly drawerData = this.initDrawerData();
   protected readonly projectsDetailData: Signal<FoundationProjectsDetailResponse> = computed(() => this.drawerData().projects);
@@ -195,17 +188,19 @@ export class TotalProjectsDrawerComponent {
     this.visible.set(false);
   }
 
-  protected onPrimaryViewChange(event: { value: 'chart' | 'table' }): void {
-    if (event.value) {
-      this.primaryView.set(event.value);
-    }
-  }
-
   protected goToPrimaryPage(page: number): void {
     this.primaryPage.set(page);
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    // Guarded by hasData() (monthlyData non-empty) in the template, so the last month is always present.
+    return computed(() => {
+      const m = this.data().monthlyData;
+      return m[m.length - 1].toLocaleString('en-US');
+    });
+  }
+
   private initPrimarySearch(): Signal<string> {
     return toSignal(this.searchForm.get('query')!.valueChanges.pipe(tap(() => this.primaryPage.set(1))), { initialValue: '' });
   }

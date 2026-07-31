@@ -128,10 +128,14 @@ export class CommitteeDocumentsComponent {
 
   public openUploadFileDialog(): void {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentFormComponent, {
-      header: 'Upload File',
+      header: 'Upload Files',
       width: '560px',
       modal: true,
-      closable: true,
+      // File mode can partially succeed mid-batch; the header close icon bypasses the form's
+      // own success-aware close result, so route dismissal only through Cancel/Done.
+      // closeOnEscape defaults to true independently of closable — must be disabled too.
+      closable: false,
+      closeOnEscape: false,
       data: {
         mode: 'file',
         entityType: 'committee',

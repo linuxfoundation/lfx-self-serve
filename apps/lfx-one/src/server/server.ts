@@ -56,9 +56,11 @@ import enrollmentRouter from './routes/enrollment.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
+import userNewslettersRouter from './routes/user-newsletters.route';
 import votesRouter from './routes/votes.route';
 import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
+import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -307,6 +309,7 @@ app.use('/public/api/projects', publicProjectsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/create-picker', createPickerRouter);
+app.use('/api/committees', weeklyBriefRouter);
 app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);
@@ -333,6 +336,9 @@ app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/crowdfunding', crowdfundingRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
+// User-scoped newsletter feed (Me lens). Mounted alongside the project-scoped
+// manager router below — different prefixes, no overlap.
+app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).

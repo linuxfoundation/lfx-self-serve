@@ -7,6 +7,7 @@ import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
+  MyNewsletter,
   Newsletter,
   NewsletterAnalytics,
   NewsletterListParams,
@@ -19,7 +20,7 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { Observable, take } from 'rxjs';
+import { catchError, Observable, of, take } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -83,6 +84,15 @@ export class NewsletterService {
 
   public getNewsletter(projectUid: string, newsletterUid: string): Observable<Newsletter> {
     return this.http.get<Newsletter>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}`).pipe(take(1));
+  }
+
+  /**
+   * Me-lens feed: sent newsletters reachable through the user's current
+   * committee memberships, deduped and enriched server-side. Not
+   * project-scoped. Errors degrade to an empty list (matches getMyVotes).
+   */
+  public getMyNewsletters(): Observable<MyNewsletter[]> {
+    return this.http.get<MyNewsletter[]>('/api/newsletters/my-newsletters').pipe(catchError(() => of([] as MyNewsletter[])));
   }
 
   public updateNewsletter(projectUid: string, newsletterUid: string, version: number, payload: UpdateNewsletterRequest): Observable<Newsletter> {

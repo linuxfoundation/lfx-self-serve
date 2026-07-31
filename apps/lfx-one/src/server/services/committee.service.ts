@@ -13,6 +13,7 @@ import {
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
+  AuditUserProfile,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
@@ -35,7 +36,7 @@ import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
-import { cleanUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -46,8 +47,8 @@ interface CommitteeFolder {
   uid: string;
   committee_uid?: string;
   name: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -61,8 +62,8 @@ interface CommitteeLink {
   url?: string;
   description?: string;
   folder_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -79,6 +80,8 @@ interface CommitteeDocumentUpstreamResponse {
   committee_uid?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   uploaded_by_username?: string;
 }
 
@@ -109,6 +112,8 @@ interface CommitteeDocumentQueryResult {
   folder_uid?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   uploaded_by_username?: string;
 }
 
@@ -1148,8 +1153,7 @@ export class CommitteeService {
       name: f.name,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      created_by: f.created_by_uid,
-      uploaded_by: cleanUserDisplayName(f.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
       committee_uid: f.committee_uid,
     }));
 
@@ -1162,8 +1166,7 @@ export class CommitteeService {
       description: l.description,
       created_at: l.created_at,
       updated_at: l.updated_at,
-      created_by: l.created_by_uid,
-      uploaded_by: cleanUserDisplayName(l.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
       parent_uid: l.folder_uid,
       committee_uid: l.committee_uid,
     }));
@@ -1178,7 +1181,7 @@ export class CommitteeService {
       mime_type: f.content_type,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      uploaded_by: cleanUserDisplayName(f.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       parent_uid: f.folder_uid,
       committee_uid: f.committee_uid,
     }));
@@ -1204,7 +1207,6 @@ export class CommitteeService {
         {},
         {
           name: data.name,
-          created_by_name: data.created_by_name,
         }
       );
 
@@ -1219,8 +1221,7 @@ export class CommitteeService {
         name: folder.name,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
-        created_by: folder.created_by_uid,
-        uploaded_by: cleanUserDisplayName(folder.created_by_username),
+        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
         committee_uid: folder.committee_uid,
       };
     }
@@ -1237,7 +1238,6 @@ export class CommitteeService {
         url: data.url,
         description: data.description,
         folder_uid: data.parent_uid,
-        created_by_name: data.created_by_name,
       }
     );
 
@@ -1254,8 +1254,7 @@ export class CommitteeService {
       description: link.description,
       created_at: link.created_at,
       updated_at: link.updated_at,
-      created_by: link.created_by_uid,
-      uploaded_by: cleanUserDisplayName(link.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
       parent_uid: link.folder_uid,
       committee_uid: link.committee_uid,
     };
@@ -1342,7 +1341,7 @@ export class CommitteeService {
       mime_type: result.content_type,
       created_at: result.created_at,
       updated_at: result.updated_at,
-      uploaded_by: cleanUserDisplayName(result.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(result.created_by, result.uploaded_by_username),
       committee_uid: result.committee_uid,
     };
   }

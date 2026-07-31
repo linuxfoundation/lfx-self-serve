@@ -16,6 +16,7 @@ import {
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberOptions,
   CreateCommitteeMemberRequest,
+  GroupsEngagementStats,
   MyCommittee,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
@@ -31,6 +32,21 @@ export class CommitteeService {
 
   public getCommittees(params?: HttpParams): Observable<Committee[]> {
     return this.http.get<Committee[]>('/api/committees', { params }).pipe(catchError(() => of([])));
+  }
+
+  /**
+   * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's
+   * visible set. Mocked pending the LFXV2-1705 dbt model. Resolves to `null` on error — logged here
+   * (the single error-handling site, matching `getMyCommittees` below) — so the caller can degrade
+   * gracefully (see `buildEngagementStatCards`) rather than let a failure block the groups list.
+   */
+  public getGroupsEngagementStats(): Observable<GroupsEngagementStats | null> {
+    return this.http.get<GroupsEngagementStats>('/api/committees/engagement-stats').pipe(
+      catchError((error) => {
+        console.error('Failed to load groups engagement stats:', error);
+        return of(null);
+      })
+    );
   }
 
   public getCommitteesByProject(uid: string): Observable<Committee[]> {
