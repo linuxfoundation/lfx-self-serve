@@ -179,8 +179,8 @@ export class CommitteeActivityService {
     // fetched page. Same class of approximation as the per-leg date_field caveats below, just in
     // the sort dimension instead of the filter dimension.
     //
-    // Known v1 limitation (accepted, not solved — see the wire-contract plan's "known edge case"):
-    // meetings/votes/surveys/files are each bounded to a single upstream page of `fetchSize` rows.
+    // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
+    // are each bounded to a single upstream page of `fetchSize` rows.
     // If more than `fetchSize` rows on one of those legs share the exact same occurred_at second,
     // rows beyond the upstream page are simply never fetched, on any page — unlike folders/links
     // (which have no upstream bound at all and are paginated correctly via the in-memory cursor
@@ -241,6 +241,13 @@ export class CommitteeActivityService {
     // means that stays true even if the guard above is ever relaxed, instead of the two silently
     // diverging on which falsy values count as "no since" vs. "invalid since".
     const since = rawSince !== undefined ? normalizeTimestamp(rawSince) : undefined;
+
+    // INFO, not DEBUG — matches DocumentService.getMyDocuments's "N-stage aggregation" logging
+    // (the closest precedent in this repo: a comparable multi-source read aggregation), not the
+    // single-source enrichment services that stay at DEBUG throughout. A merge across 4
+    // independently-paginated upstream sources with cursor/saturation logic is exactly the
+    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
+    logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
@@ -317,7 +324,7 @@ export class CommitteeActivityService {
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
-    logger.debug(req, 'get_committee_activity', 'Completed committee activity aggregation', {
+    logger.info(req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
       meeting_count: pastMeetingEvents.length,
       vote_count: voteEvents.length,

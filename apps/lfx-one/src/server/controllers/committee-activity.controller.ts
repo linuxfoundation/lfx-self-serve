@@ -38,6 +38,10 @@ export class CommitteeActivityController {
       const response = await this.service.getCommitteeActivity(req, committeeUid, query);
 
       logger.success(req, operation, startTime, { committee_uid: committeeUid, returned: response.data.length, has_more: !!response.page_token });
+      // Per-user, FGA-filtered activity (meeting titles, vote/survey names, document names/URLs) —
+      // must not sit in a shared or intermediary cache, same rationale as the sibling
+      // CommitteeEngagementController.
+      res.setHeader('Cache-Control', 'no-store');
       res.json(response);
     } catch (error) {
       return next(error);

@@ -30,7 +30,7 @@ function buildReq(query: Record<string, unknown> = {}): Request {
 }
 
 function buildRes(): Response {
-  return { json: vi.fn() } as unknown as Response;
+  return { json: vi.fn(), setHeader: vi.fn() } as unknown as Response;
 }
 
 describe('CommitteeActivityController.getActivity', () => {
@@ -62,6 +62,7 @@ describe('CommitteeActivityController.getActivity', () => {
     expect(validateOrder).toBeLessThan(parseOrder);
     expect(parseOrder).toBeLessThan(serviceOrder);
 
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith(response);
     expect(next).not.toHaveBeenCalled();
   });

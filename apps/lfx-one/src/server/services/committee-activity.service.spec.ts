@@ -10,13 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // `@lfx-one/shared/*` isn't wired into this app's vitest config (same issue documented in
 // committee-engagement-window.helper.spec.ts) — enums/utils need stubs; the interfaces import in
 // the service under test is `import type`, so it's erased and needs no mock at all.
-const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, debug } = vi.hoisted(() => ({
+const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
   getVotes: vi.fn(),
   encodeActivityPageToken: vi.fn((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`),
   warning: vi.fn(),
-  debug: vi.fn(),
+  info: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -61,7 +61,7 @@ vi.mock('../helpers/committee-activity-query.helper', async (importOriginal) => 
   ...(await importOriginal<typeof import('../helpers/committee-activity-query.helper')>()),
   encodeActivityPageToken,
 }));
-vi.mock('./logger.service', () => ({ logger: { debug, warning, info: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning, info, startOperation: vi.fn(), success: vi.fn() } }));
 vi.mock('./meeting.service', () => ({
   MeetingService: class {
     getMeetings = getMeetings;
@@ -419,8 +419,10 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0]).toMatchObject({ payload: { document_uid: 'f-29' } });
       // fetchSize = max(8+1, 25) = 25 — assert the leg itself was bounded before merging (not just
       // that the final top-8 slice happens to look right regardless of whether bounding occurred).
-      const debugMetadata = debug.mock.calls.at(-1)?.[3] as { document_count: number };
-      expect(debugMetadata.document_count).toBe(25);
+      // .at(-1) is the "Completed" log — "Starting" fires first each call, so this is still the
+      // last of the two `info` calls this invocation makes.
+      const completionMetadata = info.mock.calls.at(-1)?.[3] as { document_count: number };
+      expect(completionMetadata.document_count).toBe(25);
     });
 
     it('surfaces folders older than fetchSize once pagination reaches them — the window must be applied before bounding, not after', async () => {

@@ -10,18 +10,13 @@ import type { CommitteeDocumentType } from './committee.interface';
  * no upstream source exists yet (no document-delete tombstone — hard delete, unindexed; no
  * committee-membership history tracking; no notes feature). The union stays complete now so the
  * wire contract doesn't grow a breaking change when a real event log starts emitting them.
+ *
+ * Derived from `ActivityEvent['type']` (declared below — TypeScript allows forward references
+ * between type aliases in the same module) rather than hand-restated, so adding, removing, or
+ * renaming a variant in the `ActivityEvent` union can't silently drift out of sync with this type —
+ * a hand-written duplicate would still compile even if the two fell out of step.
  */
-export type ActivityEventType =
-  | 'meeting_held'
-  | 'vote_opened'
-  | 'vote_closed'
-  | 'survey_published'
-  | 'survey_closed'
-  | 'document_uploaded'
-  | 'document_deleted'
-  | 'member_joined'
-  | 'member_left'
-  | 'notes_added';
+export type ActivityEventType = ActivityEvent['type'];
 
 interface BaseActivityEvent {
   /** ISO timestamp this event happened at — the feed's sort key. */
