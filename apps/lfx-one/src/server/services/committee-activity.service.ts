@@ -167,6 +167,20 @@ export class CommitteeActivityService {
     // closed vote with a recent end_time but a stale last_modified_time could fall outside the
     // fetched page. Same class of approximation as the per-leg date_field caveats below, just in
     // the sort dimension instead of the filter dimension.
+    //
+    // Known v1 limitation (accepted, not solved — see the wire-contract plan's "known edge case"):
+    // meetings/votes/surveys/files are each bounded to a single upstream page of `fetchSize` rows.
+    // If more than `fetchSize` rows on one of those legs share the exact same occurred_at second,
+    // rows beyond the upstream page are simply never fetched, on any page — unlike folders/links
+    // (which have no upstream bound at all and are paginated correctly via the in-memory cursor
+    // pre-filter below), fixing this for a page_size-bounded leg would mean looping that leg's own
+    // upstream query-service/meeting-service/vote-service call across multiple pages until the tie
+    // is exhausted, i.e. per-leg N+1 upstream calls — which the ticket's "bounded calls, no
+    // per-event follow-ups" requirement rules out for v1. Negligible in practice at committee scale
+    // (tens of items, not thousands sharing one second); resolved for real once the upstream event
+    // log (this endpoint's eventual replacement) makes every event independently, chronologically
+    // paginable at the source.
+
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
     // Sent to every leg as an inclusive upstream `date_to` (query-service's date_to is documented
     // inclusive), ceiled to the next whole second — see ceilToWholeSecond's doc comment for why:
@@ -405,11 +419,13 @@ export class CommitteeActivityService {
     // Deliberately not SurveyService.getSurveys — that always fully drains every page via
     // fetchAllQueryResources and does an extra per-user "responded" join, neither of which this
     // bounded, presentation-only fetch needs.
-    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
+    //
+    // The `| null` generic (not just an optimistic non-null type) is deliberate: proxyRequest
+    // returns the upstream body verbatim, and a 204/empty response comes through as a null body,
+    // not `{ resources: null }` — `response?.resources ?? []` is a real runtime guard against a
+    // real return value, not defensive noise the compiler should otherwise be flagging as dead.
+    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
 
-    // response?. (not just resources ??) — a 204/empty upstream body comes through as a null
-    // response itself (MicroserviceProxyService.proxyRequest returns the body verbatim), which
-    // would otherwise throw destructuring `resources` off a null response before `?? []` ever runs.
     return (response?.resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
   }
 
@@ -436,14 +452,17 @@ export class CommitteeActivityService {
     const hasWindow = !!since || !!before;
 
     const [folders, links, files] = await Promise.all([
+      // `| null`, not an optimistic non-null array type — proxyRequest returns the upstream body
+      // verbatim, and a 204/empty response comes through as a null body. `folders ?? []` below is a
+      // real runtime guard, not defensive noise.
       this.microserviceProxy
-        .proxyRequest<CommitteeActivityFolder[]>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/folders`, 'GET')
+        .proxyRequest<CommitteeActivityFolder[] | null>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/folders`, 'GET')
         .catch((err) => {
           logger.warning(req, 'get_committee_activity', 'Failed to fetch committee folders, continuing without them', { committee_uid: committeeUid, err });
           return [] as CommitteeActivityFolder[];
         }),
       this.microserviceProxy
-        .proxyRequest<CommitteeActivityLink[]>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/links`, 'GET')
+        .proxyRequest<CommitteeActivityLink[] | null>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/links`, 'GET')
         .catch((err) => {
           logger.warning(req, 'get_committee_activity', 'Failed to fetch committee links, continuing without them', { committee_uid: committeeUid, err });
           return [] as CommitteeActivityLink[];
@@ -452,7 +471,7 @@ export class CommitteeActivityService {
       // drain — this endpoint must stay bounded (no per-event follow-ups), so a page_size-limited
       // page is enough for a "recent activity" feed even though it isn't the complete file list.
       this.microserviceProxy
-        .proxyRequest<QueryServiceResponse<CommitteeActivityDocumentFile>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        .proxyRequest<QueryServiceResponse<CommitteeActivityDocumentFile> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'committee_document',
           tags: `committee_uid:${committeeUid}`,
           page_size: fetchSize,
@@ -471,7 +490,8 @@ export class CommitteeActivityService {
     ]);
 
     // GET /committees/:id/folders and /links accept no page_size/date param at all and return
-    // every folder/link on the committee unconditionally. Filter each to the since/before/cursor
+    // every folder/link on the committee unconditionally — unlike every other leg, which is at
+    // least bounded to one upstream page of fetchSize. Filter each to the since/before/cursor
     // window FIRST, then bound to fetchSize — bounding before filtering would keep only the newest
     // fetchSize folders/links by recency regardless of the window, silently and permanently
     // excluding older-but-in-window items once a caller pages deep enough that they'd otherwise
@@ -484,6 +504,11 @@ export class CommitteeActivityService {
     // pre-filtering with it here can only narrow the pool toward what the central pass would keep
     // anyway, never past it. The exact/final since+cursor enforcement still happens once,
     // centrally, in getCommitteeActivity — this pre-filter only needs to be a superset of that.
+    // This fully closes the tie-truncation failure for folders/links specifically, because nothing
+    // upstream ever caps what this leg can re-fetch. The sibling meetings/votes/surveys/files legs
+    // are each capped to one upstream page of fetchSize and can still hit the same failure if more
+    // than fetchSize of their own rows share one exact timestamp — see the caveat on `fetchSize`'s
+    // own comment above, in getCommitteeActivity.
     const folderEvents = boundedSortDesc(
       (folders ?? [])
         .map((folder) => this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at)))
@@ -544,8 +569,11 @@ function boundedSortDesc<T extends ActivityEvent>(events: T[], limit: number): T
  * Inclusive since/before window check for legs with no upstream date filtering (folders/links) —
  * must run BEFORE `boundedSortDesc` on those legs, not after. `since`/`before` mirror the same
  * inclusive bounds sent upstream to every other leg's `date_from`/`date_to`; an event with no
- * parseable `occurred_at` is let through so the central `getCommitteeActivity` pass (which already
- * drops unparseable timestamps deliberately, see its comment) is the single place that decides.
+ * parseable `occurred_at` is let through here, since this check alone isn't the whole gate — the
+ * call site also `&&`s in `isAfterCursor`, which does reject an unparseable timestamp outright once
+ * a cursor is present. Either way, the central `getCommitteeActivity` pass applies the same
+ * unparseable-timestamp drop independently, so the final "included or not" outcome is identical
+ * regardless of which layer catches it first.
  */
 function isWithinFetchWindow(occurredAt: string, since: string | undefined, before: string | undefined): boolean {
   const ms = Date.parse(occurredAt);

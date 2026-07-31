@@ -412,6 +412,29 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0]).toMatchObject({ type: 'document_uploaded', payload: { document_uid: 'link-1', document_type: 'link' } });
     });
 
+    it('treats a null /query/resources body as empty for the survey leg instead of throwing on destructure', async () => {
+      // `const { resources } = await proxyRequest(...)` throws a TypeError if the whole response
+      // body is null (not just its resources field) — a real possible upstream shape, same as the
+      // folders/links case above, just for a `/query/resources` leg instead of a REST array leg.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') return Promise.resolve(null);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toEqual([]);
+    });
+
+    it('treats a null /query/resources body as empty for the files leg instead of throwing on property access', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'committee_document') return Promise.resolve(null);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toEqual([]);
+    });
+
     it('excludes an out-of-window vote purely via the in-memory since/cursor filter — votes get no upstream date narrowing to rely on', async () => {
       getVotes.mockResolvedValue({ data: [vote({ uid: 'v-out', creation_time: '2025-01-01T00:00:00Z', end_time: '2025-01-02T00:00:00Z' })] });
 
