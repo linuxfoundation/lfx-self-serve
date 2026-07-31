@@ -388,8 +388,8 @@ export class ProfileController {
         );
       }
 
-      const buffer = req.body as Buffer;
-      if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      const rawBody: unknown = req.body;
+      if (Array.isArray(rawBody) || typeof rawBody === 'string' || !Buffer.isBuffer(rawBody) || rawBody.length === 0) {
         return next(
           ServiceValidationError.forField('body', 'Request body must contain image data', {
             operation: 'upload_profile_picture',
@@ -398,6 +398,7 @@ export class ProfileController {
           })
         );
       }
+      const buffer = rawBody;
 
       // Determine which token to use for the auth-service — same selection as updateUserMetadata.
       const issuerBaseUrl = process.env['M2M_AUTH_ISSUER_BASE_URL'] || '';
