@@ -196,29 +196,29 @@ describe('CommitteeActivityService', () => {
   });
 
   describe('since/cursor/limit handling', () => {
-    it('sends since/date_to only to the surveys and documents legs — meetings and votes get no upstream date filter', async () => {
-      // Meetings' and votes' occurred_at is derived from a field-fallback (scheduled_start_time ??
-      // start_time; end_time/early_end_time/last_modified_time/creation_time depending on status)
-      // that a single upstream date_field can't represent — sending one anyway can silently exclude
-      // a row whose in-window value lives on a field NOT selected, with no way to recover it
-      // in-memory once upstream never returns it. Surveys/documents' primary derivation field IS
-      // what's filtered on, so upstream narrowing there is safe.
+    it('sends since as date_from and cursor.before as date_to to every source, as best-effort narrowing', async () => {
+      // Every leg's occurred_at is derived from a field-fallback a single upstream date_field can't
+      // fully represent (see the comments in fetchPastMeetingEvents/fetchVoteEvents/etc.) — the
+      // upstream date params are best-effort narrowing to keep the fetched volume small, not a
+      // correctness guarantee. The in-memory since/cursor filter in getCommitteeActivity is what
+      // actually enforces the window; dropping the upstream narrowing entirely (an earlier version
+      // of this fix) traded that rare miss for hard truncation at fetchSize on every page instead.
       await service.getCommitteeActivity(req, COMMITTEE_UID, {
         since: '2026-01-01T00:00:00Z',
         cursor: { before: '2026-02-01T00:00:00Z', key: 'vote:unrelated' },
         limit: 8,
       });
 
-      const meetingsQuery = getMeetings.mock.calls[0][1];
-      expect(meetingsQuery).not.toHaveProperty('date_field');
-      expect(meetingsQuery).not.toHaveProperty('date_from');
-      expect(meetingsQuery).not.toHaveProperty('date_to');
-
-      const votesQuery = getVotes.mock.calls[0][1];
-      expect(votesQuery).not.toHaveProperty('date_field');
-      expect(votesQuery).not.toHaveProperty('date_from');
-      expect(votesQuery).not.toHaveProperty('date_to');
-
+      expect(getMeetings).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00Z' }),
+        'v1_past_meeting',
+        false
+      );
+      expect(getVotes).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00Z' })
+      );
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
@@ -344,11 +344,48 @@ describe('CommitteeActivityService', () => {
       expect(combinedUids).toEqual(['v-a', 'v-b']);
     });
 
+    it('sorts two events that both have no valid timestamp deterministically, not NaN-implementation-defined order', async () => {
+      // Regression guard: timestampValue(a) - timestampValue(b) on two -Infinity values is NaN,
+      // which would skip the key tiebreak and leave the pair's relative order (and therefore
+      // which one a slice() cuts off) non-deterministic. Run twice to catch an order that only
+      // sometimes flips.
+      getVotes.mockResolvedValue({
+        data: [
+          vote({ uid: 'v-x', creation_time: undefined, last_modified_time: undefined }),
+          vote({ uid: 'v-y', creation_time: undefined, last_modified_time: undefined }),
+        ],
+      });
+
+      const first = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      const second = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      const uidsOf = (r: typeof first) => r.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null));
+      expect(uidsOf(first)).toEqual(uidsOf(second));
+    });
+
+    it('does not drop a folder and a file that happen to share the same uid — document keys are discriminated by type', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path.endsWith('/folders')) return Promise.resolve([{ uid: 'shared-uid', name: 'Folder', updated_at: '2026-01-05T00:00:00Z' }]);
+        if (path === '/query/resources' && query?.['type'] === 'committee_document') {
+          return Promise.resolve({
+            resources: [{ type: 'committee_document', id: 'shared-uid', data: { uid: 'shared-uid', name: 'File', updated_at: '2026-01-05T00:00:00Z' } }],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(2);
+      const types = result.data.map((e) => (e.type === 'document_uploaded' ? e.payload.document_type : null)).sort();
+      expect(types).toEqual(['file', 'folder']);
+    });
+
     it('falls back to the last item with a real timestamp for the cursor, when the returned page is short on valid timestamps', async () => {
-      // Only 2 votes have a real timestamp; 2 more have none. Sorted desc, invalid-timestamp
-      // items sort last (timestampValue('') === -Infinity), so with limit=3 the returned page is
-      // [v1, v2, v3] — v3 (the tail) has no valid timestamp, while a 4th candidate (v4) still
-      // exists beyond the page, so hasMore is true and a page_token must still be issued.
+      // Only 2 votes have a real timestamp; 2 more have none. Sorted desc, invalid-timestamp items
+      // sort last (timestampValue('') === -Infinity) and tiebreak deterministically on key
+      // ('vote:v4' sorts before 'vote:v3' in the descending key order), so with limit=3 the
+      // returned page is [v1, v2, v4] — v4 (the tail) has no valid timestamp, while a 4th
+      // candidate (v3) still exists beyond the page, so hasMore is true and a page_token must
+      // still be issued, falling back past v4 to v2's timestamp.
       getVotes.mockResolvedValue({
         data: [
           vote({ uid: 'v1', creation_time: '2026-01-05T00:00:00Z' }),
@@ -359,8 +396,8 @@ describe('CommitteeActivityService', () => {
       });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 3 });
-      expect(result.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null))).toEqual(['v1', 'v2', 'v3']);
-      // v3 (the tail of the returned page) has no valid timestamp — the cursor must fall back to v2's.
+      expect(result.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null))).toEqual(['v1', 'v2', 'v4']);
+      // v4 (the tail of the returned page) has no valid timestamp — the cursor must fall back to v2's.
       expect(encodeActivityPageToken).toHaveBeenCalledWith({ before: '2026-01-04T00:00:00Z', key: 'vote:v2' });
       expect(result.page_token).toBe('token(2026-01-04T00:00:00Z|vote:v2)');
     });
