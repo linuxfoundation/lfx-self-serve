@@ -4,10 +4,12 @@
 import type { CommitteeDocumentType } from './committee.interface';
 
 /**
- * Full target lifecycle-event vocabulary for a committee's activity feed (LFXV2-1707). Only the
- * first six are actually emitted in v1 (aggregation-derived from existing sources: past meetings,
- * votes, surveys, documents — see `committee-activity.service.ts`). The last four are deferred:
- * no upstream source exists yet (no document-delete tombstone — hard delete, unindexed; no
+ * Full target lifecycle-event vocabulary for a committee's activity feed (LFXV2-1707). Only
+ * `meeting_held`, `vote_opened`/`vote_closed`, `survey_published`/`survey_closed`, and
+ * `document_uploaded` are actually emitted in v1 (aggregation-derived from existing sources: past
+ * meetings, votes, surveys, documents — see `committee-activity.service.ts`). `document_deleted`,
+ * `member_joined`, `member_left`, and `notes_added` (see `DeferredActivityEvent`) are deferred: no
+ * upstream source exists yet (no document-delete tombstone — hard delete, unindexed; no
  * committee-membership history tracking; no notes feature). The union stays complete now so the
  * wire contract doesn't grow a breaking change when a real event log starts emitting them.
  *
