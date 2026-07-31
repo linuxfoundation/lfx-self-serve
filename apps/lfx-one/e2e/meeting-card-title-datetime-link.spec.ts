@@ -211,5 +211,11 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     await upcomingCard.getByTestId('delete-meeting-button').click();
     expect(await deletePopup).toBeNull();
     await expect(page).toHaveURL(/\/meetings(\?.*)?$/);
+
+    // Delete opens a confirmation dialog rather than deleting outright — assert that's the actual
+    // side effect (not just "nothing navigated"), then dismiss it so the test doesn't leave it open.
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });

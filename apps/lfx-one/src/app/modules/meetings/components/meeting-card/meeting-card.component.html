@@ -87,15 +87,12 @@
       @if (meetingTitle()) {
         <h3 class="text-base font-medium leading-tight tracking-tight">
           @if (pastMeeting()) {
-            <a
-              class="text-gray-900 hover:text-blue-600 hover:underline transition-colors cursor-pointer"
-              data-testid="meeting-title"
-              [routerLink]="meetingDetailUrl()">
+            <a class="text-gray-900 hover:text-blue-600 hover:underline transition-colors" data-testid="meeting-title" [routerLink]="meetingDetailUrl()">
               {{ meetingTitle() }}
             </a>
           } @else {
             <a
-              class="text-gray-900 hover:text-blue-600 hover:underline transition-colors cursor-pointer"
+              class="text-gray-900 hover:text-blue-600 hover:underline transition-colors"
               data-testid="meeting-title"
               [href]="meetingDetailUrl()"
               target="_blank"
@@ -111,7 +108,7 @@
     <div class="flex flex-wrap gap-1 mb-2" data-testid="feature-badges">
       @if (meetingStartTime()) {
         @if (pastMeeting()) {
-          <a class="hover:opacity-80 transition-opacity cursor-pointer" data-testid="meeting-datetime" [routerLink]="meetingDetailUrl()">
+          <a class="hover:opacity-80 transition-opacity" data-testid="meeting-datetime" [routerLink]="meetingDetailUrl()">
             <lfx-tag
               [value]="
                 (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
@@ -120,12 +117,7 @@
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
         } @else {
-          <a
-            class="hover:opacity-80 transition-opacity cursor-pointer"
-            data-testid="meeting-datetime"
-            [href]="meetingDetailUrl()"
-            target="_blank"
-            rel="noopener noreferrer">
+          <a class="hover:opacity-80 transition-opacity" data-testid="meeting-datetime" [href]="meetingDetailUrl()" target="_blank" rel="noopener noreferrer">
             <lfx-tag
               [value]="
                 (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
