@@ -1,14 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeDocument } from './committee.interface';
-import type { PastMeeting } from './meeting.interface';
-import type { Vote } from './poll.interface';
-import type { Survey } from './survey.interface';
-
 /**
  * Source kind backing an `ActivityFeedItem`.
- * @description Drives icon + tab-navigation choice in the group Overview activity feed stop-gap.
+ * @description Drives icon + tab-navigation choice in the committee Overview "Recent Activity" widget.
  */
 export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey' | 'document';
 
@@ -18,7 +13,7 @@ export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey
  * (navigate a route, open a drawer, open an external link) depending on `type`. Semantic variants
  * (`past-meeting`, not a baked `{ kind: 'route'; path: string }`) so `packages/shared` doesn't carry
  * app route strings — the component maps each kind to wherever that surface actually lives, which
- * survives route refactors and LFXV2-1707's server-fed activity items.
+ * survives route refactors independent of this contract.
  */
 export interface PastMeetingActivityFeedAction {
   kind: 'past-meeting';
@@ -53,11 +48,10 @@ export type ActivityFeedAction =
   | TabActivityFeedAction;
 
 /**
- * A single row in the group Overview activity feed stop-gap.
- * @description Normalized shape merged from past meetings, votes, surveys, and documents — sorted by
- * `timestamp` desc. Upcoming meetings ('meeting') are a reserved variant, not currently emitted: they're
- * future-dated and already covered by the "Next Meeting" card. Replaced by the real activity stream in
- * LFXV2-1707.
+ * A single row in the committee Overview "Recent Activity" widget — the UI view-model produced by
+ * `mapActivityEventsToFeedItems` (`../utils/activity-feed.utils`) from the server's `ActivityEvent[]`
+ * (`GET /api/committees/:uid/activity`, LFXV2-1707). Upcoming meetings ('meeting') are a reserved
+ * variant, not currently emitted: they're future-dated and already covered by the "Next Meeting" card.
  */
 export interface ActivityFeedItem {
   /** Source kind, drives the icon and default styling */
@@ -72,20 +66,4 @@ export interface ActivityFeedItem {
   icon: string;
   /** What clicking this row does — see `ActivityFeedAction` */
   action: ActivityFeedAction;
-}
-
-export interface BuildActivityFeedInput {
-  pastMeetings: PastMeeting[];
-  votes: Vote[];
-  surveys: Survey[];
-  documents: CommitteeDocument[];
-  /**
-   * Vote items are excluded entirely when false, so the feed doesn't surface vote activity for a
-   * committee that has voting disabled — matching the Votes tab itself being hidden in that state.
-   * (A clicked vote row opens VoteResultsDrawer in place, not the Votes tab, so this is a content
-   * decision rather than a dead-end-navigation guard.) This only affects the activity feed itself;
-   * the committee-overview "My Pending Actions" / "Active Votes" surfaces read `votes()` independently
-   * and are unaffected by this flag — see committee-overview.component.ts.
-   */
-  votingEnabled: boolean;
 }

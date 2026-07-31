@@ -19,7 +19,6 @@ import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/e
 import {
   ActivityFeedItem,
   Committee,
-  CommitteeDocument,
   CommitteeMember,
   CommitteePendingActionRow,
   Meeting,
@@ -28,7 +27,7 @@ import {
   Survey,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { assertNeverSilent, buildActivityFeed, countVotingReps, getSurveyDisplayStatus, isValidUrl } from '@lfx-one/shared/utils';
+import { assertNeverSilent, countVotingReps, getSurveyDisplayStatus, isValidUrl, mapActivityEventsToFeedItems } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -38,7 +37,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, of, switchMap, take, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
@@ -113,10 +112,13 @@ export class CommitteeOverviewComponent {
   public meetingsLoading = signal(true);
   public votesLoading = signal(true);
   public surveysLoading = signal(true);
-  public documentsLoading = signal(true);
 
   // Loading state for past meetings (upcoming meetings loading comes in as the input above)
   public pastMeetingsLoading = signal(true);
+
+  // Activity feed loading — own dedicated signal (LFXV2-1707): the feed is now a single
+  // server-merged fetch, no longer derived from four separate source-loading signals.
+  public activityFeedLoading = signal(true);
 
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
   // isSectionHidden removes the section from the DOM once the last vote/survey is resolved.
@@ -158,26 +160,14 @@ export class CommitteeOverviewComponent {
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
-  // Documents aren't otherwise loaded on Overview — fetched here solely to seed the activity feed
-  // (which shows at most 5 document rows). Not cheap: getCommitteeDocuments fans out server-side to
-  // /folders, /links, and an unbounded fetchAllQueryResources page-token loop over every
-  // committee_document (committee.service.ts), repeated on every silent refresh and again when the
-  // user opens the Documents tab (no shared cache). Accepted as a stop-gap for this ticket's scope —
-  // lifting the fetch to committee-view.component.ts to share across tabs, or bounding it with a
-  // page_size/order param, is real follow-up work, not a change this branch makes.
-  public documents: Signal<CommitteeDocument[]> = this.initDocuments();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
 
   public openSurveysCount: Signal<number> = computed(() => this.surveys().filter((s) => getSurveyDisplayStatus(s) === SurveyStatus.OPEN).length);
 
-  // Activity feed stop-gap: merges the latest items across past meetings, votes, surveys, and
-  // documents into one time-ordered list. Replaced by the real activity stream in LFXV2-1707.
-  public activityFeedLoading: Signal<boolean> = computed(
-    () => this.pastMeetingsLoading() || this.votesLoading() || this.surveysLoading() || this.documentsLoading()
-  );
-
+  // Server-merged "Recent Activity" feed (LFXV2-1707): fetched as one call, mapped to the UI
+  // view-model client-side. See mapActivityEventsToFeedItems for the label/icon/action mapping.
   public activityItems: Signal<ActivityFeedItem[]> = this.initActivityItems();
 
   // Feature flag: WG Weekly Brief AI Assistant card
@@ -553,64 +543,45 @@ export class CommitteeOverviewComponent {
     );
   }
 
-  private initDocuments(): Signal<CommitteeDocument[]> {
-    // Documents only seed the activity feed, which the template never renders for a visitor
-    // (behind !isVisitor()) — skip the fetch rather than issue a GET nothing will display.
-    // Derived from one combined computed (not combineLatest over three separate toObservable()
-    // sources) so committee/myRoleLoading/isVisitor — all recomputed together in the same signal
-    // flush — can't glitch through an inconsistent intermediate tick that fires then immediately
-    // cancels a request. distinctUntilChanged on (uid, roleLoading, visitor) only dedupes a
-    // same-tuple re-emission (e.g. an unrelated field on committee() changing identity without
-    // affecting uid/roleLoading/visitor) — it does NOT suppress a silent refresh: myRoleLoading is
-    // `loading() || committeeRefreshing()` (committee-view.component.ts), so a refresh flips
-    // roleLoading true then false, which — like pastMeetings/votes/surveys, none of which have any
-    // guard here — legitimately cancels and re-issues the documents fetch and flips
-    // activityFeedLoading() back to true for the duration.
+  private initActivityItems(): Signal<ActivityFeedItem[]> {
+    // Skip-for-visitor + distinctUntilChanged shape mirrors this component's other committee-scoped
+    // fetches: the feed (and everything else in the enclosing !isVisitor() block) never renders for
+    // a visitor, so this fetch should never fire for one either. Derived from one combined computed
+    // (not combineLatest over separate toObservable() sources) so committee/myRoleLoading/isVisitor —
+    // all recomputed together in the same signal flush — can't glitch through an inconsistent
+    // intermediate tick that fires then immediately cancels a request.
     return toSignal(
       toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
         distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
         switchMap(({ committee, roleLoading, visitor }) => {
           if (roleLoading) {
-            // Role still resolving (e.g. mid silent-refresh) — hold both the documents list and
-            // documentsLoading exactly as they are (no signal write here). Safe because the fetch
-            // branch below clears documentsLoading with tap (fires only on emission), not finalize
-            // (also fires on switchMap-driven cancellation) — so cancelling an in-flight fetch to
-            // enter this branch can't have already cleared it out from under us.
+            // Role still resolving (e.g. mid silent-refresh) — hold state as-is; the fetch branch
+            // below clears activityFeedLoading with tap (fires only on emission), not finalize (also
+            // fires on switchMap-driven cancellation), so cancelling in-flight to enter this branch
+            // can't have already cleared it out from under us.
             return EMPTY;
           }
           if (visitor) {
-            this.documentsLoading.set(false);
-            return of<CommitteeDocument[]>([]);
+            this.activityFeedLoading.set(false);
+            return of<ActivityFeedItem[]>([]);
           }
-          this.documentsLoading.set(true);
-          // CommitteeService.getCommitteeDocuments already falls back to of([]) on failure today, so
-          // this catchError is a belt-and-suspenders guard against that coupling changing underneath
-          // this component (e.g. a future interceptor rethrow) — without it, an error here would
-          // propagate past a next-only tap, kill this toSignal source permanently, and pin
-          // activityFeedLoading() on its skeleton for the rest of the session.
-          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(
-            tap(() => this.documentsLoading.set(false)),
+          this.activityFeedLoading.set(true);
+          return this.committeeService.getCommitteeActivity(committee.uid).pipe(
+            map((events) => mapActivityEventsToFeedItems(events, { votingEnabled: !!committee.enable_voting })),
+            tap(() => this.activityFeedLoading.set(false)),
+            // CommitteeService.getCommitteeActivity already falls back to of([]) on failure, so this
+            // catchError is a belt-and-suspenders guard against that coupling changing underneath
+            // this component — without it, an error here would kill this toSignal source permanently
+            // and pin activityFeedLoading() on its skeleton for the rest of the session.
             catchError(() => {
-              this.documentsLoading.set(false);
-              return of<CommitteeDocument[]>([]);
+              this.activityFeedLoading.set(false);
+              return of<ActivityFeedItem[]>([]);
             })
           );
         })
       ),
       { initialValue: [] }
-    );
-  }
-
-  private initActivityItems(): Signal<ActivityFeedItem[]> {
-    return computed(() =>
-      buildActivityFeed({
-        pastMeetings: this.pastMeetings(),
-        votes: this.votes(),
-        surveys: this.surveys(),
-        documents: this.documents(),
-        votingEnabled: !!this.committee().enable_voting,
-      })
     );
   }
 }
