@@ -59,6 +59,8 @@ copy renders (layout, emphasis, copy, ordering) — but never an access
 decision. A presentation choice is not an access decision, so persona
 driving presentation is not an exception to the rule above.
 
+![LFX SS permission-based access model: FGA grant bundles resolve to permissions; the app asks check(user, action, object); product gates consume permissions; personas shape presentation only](./permission-model.svg)
+
 ## Terminology: Viewer vs Auditor
 
 The FGA model already distinguishes two different kinds of read access, and

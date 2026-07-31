@@ -2,6 +2,8 @@
 
 Companion matrix for the [Permission, Persona, and Navigation Model](./permission-persona-navigation-model-preread.md). This document states the target model; for the code-verified current state of every guard, sidebar condition, and write path, see [`persona-content-matrix.md`](./persona-content-matrix.md).
 
+See the [model diagram](./permission-model.svg) for the full picture.
+
 Use this document to verify how LFX Self Serve should route users, shape pages, and allow actions across Me, Foundation, Project, and Discovery flows.
 
 ## Decision Rules
