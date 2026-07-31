@@ -368,6 +368,34 @@ describe('CommitteeActivityService', () => {
       expect(uids).toEqual(Array.from({ length: manyFolders.length }, (_, i) => `f-${manyFolders.length - 1 - i}`));
     });
 
+    it('reaches every folder even when all of them share one exact timestamp — the per-leg pre-filter needs the cursor key tiebreak too', async () => {
+      // Same failure class as the previous test, one dimension over: there occurred_at alone gave
+      // too wide a window; here occurred_at alone can't distinguish these items at all. If more
+      // than fetchSize folders share one exact occurred_at second, an occurred_at-only pre-filter
+      // (isWithinFetchWindow) and an occurred_at-only bound (boundedSortDesc) would never actually
+      // shrink the pool across pages — the 25 that survive each call would depend on upstream
+      // response order, not the (occurred_at, key) order the cursor itself uses, permanently
+      // hiding whichever folders don't happen to sort first upstream.
+      const tiedFolders = Array.from({ length: 30 }, (_, i) => ({ uid: `f-${i}`, name: `Folder ${i}`, updated_at: '2026-01-01T00:00:00Z' }));
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path.endsWith('/folders')) return Promise.resolve(tiedFolders);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      let cursor: ActivityPageCursor | undefined;
+      const uids = new Set<string>();
+      for (let i = 0; i < tiedFolders.length; i++) {
+        const page = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
+        if (page.data.length === 0) break;
+        const event = page.data[0];
+        uids.add(event.type === 'document_uploaded' ? event.payload.document_uid : 'unexpected');
+        if (!page.page_token) break;
+        cursor = encodeActivityPageToken.mock.calls.at(-1)?.[0] as ActivityPageCursor;
+      }
+
+      expect(uids.size).toBe(tiedFolders.length);
+    });
+
     it('treats a null folders response as empty without discarding sibling links in the same leg', async () => {
       // MicroserviceProxyService.proxyRequest returns the upstream body verbatim — a 204/empty
       // response comes through as null, not []. Without a null guard, `folders.map(...)` throws

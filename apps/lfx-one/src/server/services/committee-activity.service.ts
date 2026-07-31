@@ -202,7 +202,7 @@ export class CommitteeActivityService {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch survey activity, continuing without it', { committee_uid: committeeUid, err });
         return [];
       }),
-      this.fetchDocumentEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
+      this.fetchDocumentEvents(req, committeeUid, since, before, fetchSize, cursor).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
         return [];
       }),
@@ -405,9 +405,12 @@ export class CommitteeActivityService {
     // Deliberately not SurveyService.getSurveys — that always fully drains every page via
     // fetchAllQueryResources and does an extra per-user "responded" join, neither of which this
     // bounded, presentation-only fetch needs.
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
+    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
 
-    return (resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
+    // response?. (not just resources ??) — a 204/empty upstream body comes through as a null
+    // response itself (MicroserviceProxyService.proxyRequest returns the body verbatim), which
+    // would otherwise throw destructuring `resources` off a null response before `?? []` ever runs.
+    return (response?.resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
   }
 
   private mapSurveyToEvent(survey: Survey, committeeUid: string): SurveyPublishedActivityEvent | SurveyClosedActivityEvent {
@@ -427,7 +430,8 @@ export class CommitteeActivityService {
     committeeUid: string,
     since: string | undefined,
     before: string | undefined,
-    fetchSize: number
+    fetchSize: number,
+    cursor: ActivityPageCursor | undefined
   ): Promise<DocumentUploadedActivityEvent[]> {
     const hasWindow = !!since || !!before;
 
@@ -459,7 +463,7 @@ export class CommitteeActivityService {
           ...(since && { date_from: since }),
           ...(before && { date_to: before }),
         })
-        .then((response) => (response.resources ?? []).map((resource) => resource.data))
+        .then((response) => (response?.resources ?? []).map((resource) => resource.data))
         .catch((err) => {
           logger.warning(req, 'get_committee_activity', 'Failed to fetch committee files, continuing without them', { committee_uid: committeeUid, err });
           return [] as CommitteeActivityDocumentFile[];
@@ -467,24 +471,33 @@ export class CommitteeActivityService {
     ]);
 
     // GET /committees/:id/folders and /links accept no page_size/date param at all and return
-    // every folder/link on the committee unconditionally. Filter each to the since/before window
-    // FIRST, then bound to fetchSize — bounding before filtering would keep only the newest
+    // every folder/link on the committee unconditionally. Filter each to the since/before/cursor
+    // window FIRST, then bound to fetchSize — bounding before filtering would keep only the newest
     // fetchSize folders/links by recency regardless of the window, silently and permanently
     // excluding older-but-in-window items once a caller pages deep enough that they'd otherwise
     // surface (boundedSortDesc always keeps the same newest slice, no matter which page is asked
-    // for). The exact/final since+cursor enforcement still happens once, centrally, in
-    // getCommitteeActivity — this pre-filter only needs to be a superset of that, using the same
-    // inclusive since/before bounds already sent upstream to every other leg.
+    // for). isAfterCursor (not just isWithinFetchWindow) is included here too — since/before alone
+    // only narrow by timestamp, so a pool where more than fetchSize items share one exact
+    // occurred_at second (e.g. a bulk folder import) would never actually shrink across pages: the
+    // upstream response order, not (occurred_at, key), would silently decide which items are
+    // reachable at all. isAfterCursor is exactly the predicate the central pass applies, so
+    // pre-filtering with it here can only narrow the pool toward what the central pass would keep
+    // anyway, never past it. The exact/final since+cursor enforcement still happens once,
+    // centrally, in getCommitteeActivity — this pre-filter only needs to be a superset of that.
     const folderEvents = boundedSortDesc(
       (folders ?? [])
         .map((folder) => this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at)))
-        .filter((event) => isWithinFetchWindow(event.occurred_at, since, before)),
+        .filter(
+          (event) => isWithinFetchWindow(event.occurred_at, since, before) && isAfterCursor({ occurred_at: event.occurred_at, key: eventKey(event) }, cursor)
+        ),
       fetchSize
     );
     const linkEvents = boundedSortDesc(
       (links ?? [])
         .map((link) => this.buildDocumentEvent(committeeUid, link.uid, link.name, 'link', firstValidTimestamp(link.updated_at, link.created_at), link.url))
-        .filter((event) => isWithinFetchWindow(event.occurred_at, since, before)),
+        .filter(
+          (event) => isWithinFetchWindow(event.occurred_at, since, before) && isAfterCursor({ occurred_at: event.occurred_at, key: eventKey(event) }, cursor)
+        ),
       fetchSize
     );
     const fileEvents = files.map((file) =>
@@ -512,21 +525,18 @@ export class CommitteeActivityService {
 }
 
 /**
- * Pre-merge bound for a leg with no upstream page_size (folders/links) — sorts by occurred_at desc
- * and keeps the newest `limit`. Compares the two numeric timestamps explicitly rather than
- * subtracting them, same reasoning as `compareEventsDesc`: `a - b` on two `-Infinity` values
- * (both items have an unparseable/absent occurred_at) is `NaN`, not `0`, which would make the
- * relative order of same-invalid-timestamp items — and therefore which ones survive the slice —
- * implementation-defined instead of deterministic.
+ * Pre-merge bound for a leg with no upstream page_size (folders/links) — sorts by the same
+ * `(occurred_at, key)` order the cursor itself uses (via `compareEventsDesc`/`eventKey`) and keeps
+ * the newest `limit`. A plain occurred_at-only sort would tie-break same-timestamp events by
+ * whatever order the upstream array happened to return them in — harmless for a single unpaginated
+ * call, but if more than `limit` items share one exact timestamp (e.g. a bulk folder import), an
+ * occurred_at-only tie would let the survivors of each call vary independently of the cursor,
+ * reintroducing the exact permanent-omission failure this function's `since`/`before`/cursor
+ * pre-filtering exists to prevent — see the comment at its call site.
  */
-function boundedSortDesc<T extends { occurred_at: string }>(events: T[], limit: number): T[] {
+function boundedSortDesc<T extends ActivityEvent>(events: T[], limit: number): T[] {
   return [...events]
-    .sort((a, b) => {
-      const aTime = timestampValue(a.occurred_at);
-      const bTime = timestampValue(b.occurred_at);
-      if (aTime === bTime) return 0;
-      return bTime > aTime ? 1 : -1;
-    })
+    .sort((a, b) => compareEventsDesc({ occurred_at: a.occurred_at, key: eventKey(a) }, { occurred_at: b.occurred_at, key: eventKey(b) }))
     .slice(0, limit);
 }
 
