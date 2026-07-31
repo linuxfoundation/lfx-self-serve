@@ -28,8 +28,8 @@ function mockRequest(query: Record<string, string> = {}): Request {
 const OPERATION = 'get_committee_activity';
 
 describe('parseCommitteeActivityQuery', () => {
-  it('defaults limit to 8 and leaves since/before undefined when omitted', () => {
-    expect(parseCommitteeActivityQuery(mockRequest(), OPERATION)).toEqual({ since: undefined, before: undefined, limit: 8 });
+  it('defaults limit to 8 and leaves since/cursor undefined when omitted', () => {
+    expect(parseCommitteeActivityQuery(mockRequest(), OPERATION)).toEqual({ since: undefined, cursor: undefined, limit: 8 });
   });
 
   it('passes through a valid ISO since value', () => {
@@ -53,10 +53,10 @@ describe('parseCommitteeActivityQuery', () => {
     expect(parseCommitteeActivityQuery(mockRequest({ page_size: '50' }), OPERATION).limit).toBe(50);
   });
 
-  it('round-trips a page_token produced by encodeActivityPageToken back to the same before value', () => {
-    const token = encodeActivityPageToken('2026-01-05T00:00:00Z');
+  it('round-trips a page_token produced by encodeActivityPageToken back to the same cursor', () => {
+    const token = encodeActivityPageToken({ before: '2026-01-05T00:00:00Z', key: 'vote:vote-1' });
     const result = parseCommitteeActivityQuery(mockRequest({ page_token: token }), OPERATION);
-    expect(result.before).toBe('2026-01-05T00:00:00Z');
+    expect(result.cursor).toEqual({ before: '2026-01-05T00:00:00Z', key: 'vote:vote-1' });
   });
 
   it('rejects a malformed page_token instead of silently restarting the feed', () => {
@@ -64,12 +64,20 @@ describe('parseCommitteeActivityQuery', () => {
   });
 
   it('rejects a page_token that decodes to valid JSON but the wrong shape', () => {
-    const badToken = Buffer.from(JSON.stringify({ before: 12345 }), 'utf8').toString('base64url');
+    const badToken = Buffer.from(JSON.stringify({ before: 12345, key: 'x' }), 'utf8').toString('base64url');
     expect(() => parseCommitteeActivityQuery(mockRequest({ page_token: badToken }), OPERATION)).toThrow(ServiceValidationError);
   });
 
   it('rejects a page_token whose before value is not a valid timestamp', () => {
-    const badToken = Buffer.from(JSON.stringify({ before: 'not-a-timestamp' }), 'utf8').toString('base64url');
+    const badToken = Buffer.from(JSON.stringify({ before: 'not-a-timestamp', key: 'x' }), 'utf8').toString('base64url');
     expect(() => parseCommitteeActivityQuery(mockRequest({ page_token: badToken }), OPERATION)).toThrow(ServiceValidationError);
+  });
+
+  it('rejects a page_token with a missing or empty key', () => {
+    const missingKey = Buffer.from(JSON.stringify({ before: '2026-01-05T00:00:00Z' }), 'utf8').toString('base64url');
+    expect(() => parseCommitteeActivityQuery(mockRequest({ page_token: missingKey }), OPERATION)).toThrow(ServiceValidationError);
+
+    const emptyKey = Buffer.from(JSON.stringify({ before: '2026-01-05T00:00:00Z', key: '' }), 'utf8').toString('base64url');
+    expect(() => parseCommitteeActivityQuery(mockRequest({ page_token: emptyKey }), OPERATION)).toThrow(ServiceValidationError);
   });
 });

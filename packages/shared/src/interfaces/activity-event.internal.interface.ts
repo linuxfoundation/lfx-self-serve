@@ -8,18 +8,26 @@
  * `committee-engagement.internal.interface.ts`'s precedent for the sibling LFXV2-1705 endpoint.
  */
 
+/**
+ * Keyset pagination position: the `occurred_at` of the last item on the previous page, plus a
+ * stable per-event tiebreaker key (see `eventKey` in `committee-activity.service.ts`) for when
+ * multiple events share that exact timestamp — e.g. a batch of documents uploaded in one request
+ * all sharing `created_at` to the second. A bare-timestamp cursor would either re-return or
+ * permanently drop the other tied events; comparing `(occurred_at, key)` as a compound position
+ * does neither.
+ */
+export interface ActivityPageCursor {
+  before: string;
+  key: string;
+}
+
 /** Parsed, validated query for `GET /api/committees/:uid/activity`, and the options threaded into the service. */
 export interface CommitteeActivityQuery {
   /** Inclusive lower bound on `occurred_at`, applied as `date_from` on every source that supports it. */
   since?: string;
-  /** Exclusive upper bound on `occurred_at`, decoded from an incoming `page_token`. Undefined on page 1. */
-  before?: string;
+  /** Decoded from an incoming `page_token`. Undefined on page 1. */
+  cursor?: ActivityPageCursor;
   limit: number;
-}
-
-/** Shape encoded into the opaque `page_token` string — see `encodeActivityPageToken` in `committee-activity-query.helper.ts`. */
-export interface ActivityPageTokenPayload {
-  before: string;
 }
 
 /** Upstream response shape for a committee folder (`GET /committees/:id/folders`). */

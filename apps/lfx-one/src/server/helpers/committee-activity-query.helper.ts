@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ACTIVITY_FEED_DEFAULT_PAGE_SIZE, ACTIVITY_FEED_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
-import type { ActivityPageTokenPayload, CommitteeActivityQuery } from '@lfx-one/shared/interfaces';
+import type { ActivityPageCursor, CommitteeActivityQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -23,13 +23,15 @@ function isParseableTimestamp(value: string): boolean {
 }
 
 /**
- * Encodes the cursor for "the next page starts strictly before this timestamp" as an opaque
- * base64url string. Timestamp-based, not offset-based — matches the house cursor-pagination
- * pattern (`docs/architecture/backend/pagination.md`) while working across a merge of 4
- * independently-paginated upstream sources, which a single shared `page_token` per source could not.
+ * Encodes a keyset pagination position as an opaque base64url string. `(before, key)` compound —
+ * not a bare timestamp — matches the house cursor-pagination pattern
+ * (`docs/architecture/backend/pagination.md`) while staying correct across a merge of 4
+ * independently-paginated upstream sources: a bare timestamp cursor can't distinguish between
+ * multiple events sharing the exact same `occurred_at` (e.g. a batch of documents uploaded in one
+ * request), so `key` (see `eventKey` in `committee-activity.service.ts`) breaks the tie.
  */
-export function encodeActivityPageToken(before: string): string {
-  return Buffer.from(JSON.stringify({ before } satisfies ActivityPageTokenPayload), 'utf8').toString('base64url');
+export function encodeActivityPageToken(cursor: ActivityPageCursor): string {
+  return Buffer.from(JSON.stringify(cursor satisfies ActivityPageCursor), 'utf8').toString('base64url');
 }
 
 /**
@@ -38,18 +40,18 @@ export function encodeActivityPageToken(before: string): string {
  * "never a silent fallback for a bad explicit value" rule), since silently ignoring a bad token would
  * quietly restart the feed from the newest page instead of surfacing the client's stale/corrupt cursor.
  */
-function decodePageToken(raw: string, operation: string): string {
+function decodePageToken(raw: string, operation: string): ActivityPageCursor {
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
   } catch {
     throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation });
   }
-  const before = (parsed as Partial<ActivityPageTokenPayload> | null)?.before;
-  if (typeof before !== 'string' || !isParseableTimestamp(before)) {
+  const candidate = parsed as Partial<ActivityPageCursor> | null;
+  if (typeof candidate?.before !== 'string' || !isParseableTimestamp(candidate.before) || typeof candidate.key !== 'string' || candidate.key === '') {
     throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation });
   }
-  return before;
+  return { before: candidate.before, key: candidate.key };
 }
 
 /**
@@ -80,7 +82,7 @@ export function parseCommitteeActivityQuery(req: Request, operation: string): Co
   }
 
   const rawPageToken = getStringQueryParam(req, 'page_token');
-  const before = rawPageToken !== undefined ? decodePageToken(rawPageToken, operation) : undefined;
+  const cursor = rawPageToken !== undefined ? decodePageToken(rawPageToken, operation) : undefined;
 
-  return { since, before, limit };
+  return { since, cursor, limit };
 }

@@ -7,6 +7,7 @@ import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 // one needs no vi.mock in the spec (same reasoning as activity-feed.utils.ts's own interfaces import).
 import type {
   ActivityEvent,
+  ActivityPageCursor,
   Committee,
   CommitteeActivityDocumentFile,
   CommitteeActivityFolder,
@@ -37,31 +38,57 @@ function timestampValue(timestamp: string): number {
   return Number.isNaN(parsed) ? -Infinity : parsed;
 }
 
-function sortDescByOccurredAt<T extends { occurred_at: string }>(events: T[]): T[] {
-  return [...events].sort((a, b) => timestampValue(b.occurred_at) - timestampValue(a.occurred_at));
+/**
+ * Stable per-event identifier for sort tiebreaking and cursor keying — NOT part of the
+ * `ActivityEvent` wire contract, purely a server-internal sort/pagination detail. Each source's
+ * own natural uid, prefixed by source so ids from different sources can never collide.
+ */
+function eventKey(event: ActivityEvent): string {
+  switch (event.type) {
+    case 'meeting_held':
+      return `meeting:${event.payload.meeting_occurrence_id}`;
+    case 'vote_opened':
+    case 'vote_closed':
+      return `vote:${event.payload.vote_uid}`;
+    case 'survey_published':
+    case 'survey_closed':
+      return `survey:${event.payload.survey_uid}`;
+    case 'document_uploaded':
+      return `document:${event.payload.document_uid}`;
+    default:
+      // Deferred types are never constructed in v1 (see activity-event.interface.ts) — occurred_at
+      // is the least-bad fallback key if one ever were.
+      return `deferred:${event.occurred_at}`;
+  }
 }
 
 /**
- * True when `occurredAt` falls within `[since, before)` — the single source of truth for window
- * membership, applied to the full merged pool in `getCommitteeActivity` (not per-source). Per-leg
- * upstream `date_from`/`date_to` are best-effort narrowing only: query-service's `date_to` is
- * documented *inclusive*, while this endpoint's cursor contract is exclusive, and two legs
- * (committee folders/links) accept no date param at all — relying on any single leg's upstream
- * filtering for correctness would both re-return a page's boundary item forever (the inclusive/
- * exclusive mismatch) and miss folders/links entirely. Applying this filter once, centrally, after
- * every source has computed its real `occurred_at`, is correct regardless of what each leg's
- * upstream filtering did or didn't narrow. An unparseable/missing timestamp is excluded whenever a
- * window is active — it can't be verified to belong in the window — but kept when there's no
- * window (matches the old client-side feed, which sorted an invalid timestamp to the bottom rather
- * than dropping it).
+ * Sorts descending by `(occurred_at, key)` — occurred_at first, key as a deterministic tiebreak
+ * when two events share the exact same timestamp (e.g. a batch of documents uploaded in one
+ * request, all sharing `created_at` to the second). Without a tiebreak, which of several
+ * same-timestamp events is "first" would depend on source-fetch order, making the cursor
+ * (`isAfterCursor` below) unable to draw a stable line between "already returned" and "not yet
+ * returned" among them.
  */
-function isWithinWindow(occurredAt: string, since: string | undefined, before: string | undefined): boolean {
-  if (!since && !before) return true;
+function compareEventsDesc(a: { occurred_at: string; key: string }, b: { occurred_at: string; key: string }): number {
+  const byTime = timestampValue(b.occurred_at) - timestampValue(a.occurred_at);
+  if (byTime !== 0) return byTime;
+  return b.key.localeCompare(a.key);
+}
+
+function isAtOrAfterSince(occurredAt: string, since: string | undefined): boolean {
+  if (!since) return true;
   const ms = Date.parse(occurredAt);
   if (Number.isNaN(ms)) return false;
-  if (since && ms < Date.parse(since)) return false;
-  if (before && ms >= Date.parse(before)) return false;
-  return true;
+  return ms >= Date.parse(since);
+}
+
+/** True when `event` sorts strictly after `cursor` in `compareEventsDesc` order — i.e. belongs on the next page. */
+function isAfterCursor(event: { occurred_at: string; key: string }, cursor: ActivityPageCursor | undefined): boolean {
+  if (!cursor) return true;
+  const ms = Date.parse(event.occurred_at);
+  if (Number.isNaN(ms)) return false;
+  return compareEventsDesc(event, { occurred_at: cursor.before, key: cursor.key }) > 0;
 }
 
 /**
@@ -83,21 +110,22 @@ export class CommitteeActivityService {
   }
 
   public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
-    const { since, before, limit } = options;
+    const { since, cursor, limit } = options;
     // Fetching `limit + 1` from EACH source (not just `limit`) guarantees the true global
     // top-(limit+1) merged-by-occurred_at result is present in the fetched pool, even in the
     // worst case where a single source contributes every one of the top items — a smaller
     // per-source fetch could silently under-represent a dominant source. ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE
     // keeps small `limit` values (e.g. 1) from starving that guarantee.
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
+    const before = cursor?.before;
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentEvents] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
-      this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
+      this.fetchPastMeetingEvents(req, committeeUid, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
         return [];
       }),
-      this.fetchVoteEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
+      this.fetchVoteEvents(req, committeeUid, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch vote activity, continuing without it', { committee_uid: committeeUid, err });
         return [];
       }),
@@ -117,23 +145,24 @@ export class CommitteeActivityService {
     const votingEnabled = committee?.enable_voting ?? false;
     const sources: ActivityEvent[][] = [pastMeetingEvents, votingEnabled ? voteEvents : [], surveyEvents, documentEvents];
 
-    // Pure chronological merge — no per-source pre-cap. Each source already carries at most
-    // fetchSize items (bounded above), and a global sort+slice already picks the true top `limit`
-    // by time regardless of which source they came from; an artificial per-source quota would only
-    // make this LESS "time-ordered", not more correct. The window filter runs here, once, against
-    // every source's computed occurred_at — see isWithinWindow's doc comment for why per-leg
-    // upstream filtering alone isn't sufficient.
-    const windowed = sources.flat().filter((event) => isWithinWindow(event.occurred_at, since, before));
-    const merged = sortDescByOccurredAt(windowed);
+    // Single pass: attach each event's sort key once, apply since/cursor, sort desc by
+    // (occurred_at, key). No per-source pre-cap — a global sort+slice already picks the true top
+    // `limit` by time regardless of which source they came from; an artificial per-source quota
+    // would only make this LESS "time-ordered", not more correct.
+    const keyed = sources.flat().map((event) => ({ event, key: eventKey(event) }));
+    const windowed = keyed.filter(
+      ({ event, key }) => isAtOrAfterSince(event.occurred_at, since) && isAfterCursor({ occurred_at: event.occurred_at, key }, cursor)
+    );
+    windowed.sort((a, b) => compareEventsDesc({ occurred_at: a.event.occurred_at, key: a.key }, { occurred_at: b.event.occurred_at, key: b.key }));
 
-    const hasMore = merged.length > limit;
-    const data = merged.slice(0, limit);
-    // Cursor from the last item with a real timestamp, not necessarily data[data.length - 1] —
-    // an event with no usable timestamp sorts last (timestampValue('') === -Infinity) but would
-    // produce a page_token that fails isParseableTimestamp on the very next request. Omitting the
-    // token entirely in that case is safer than a token the server itself can't decode.
-    const cursorTimestamp = [...data].reverse().find((event) => event.occurred_at)?.occurred_at;
-    const pageToken = hasMore && cursorTimestamp ? encodeActivityPageToken(cursorTimestamp) : undefined;
+    const hasMore = windowed.length > limit;
+    const page = windowed.slice(0, limit);
+    const data = page.map(({ event }) => event);
+    // Cursor from the last item with a real (parseable) timestamp, not necessarily page's last
+    // entry — an event with no usable timestamp sorts last but would produce a page_token this
+    // server can't decode on the very next request (isParseableTimestamp would reject it).
+    const cursorSource = [...page].reverse().find(({ event }) => timestampValue(event.occurred_at) !== -Infinity);
+    const pageToken = hasMore && cursorSource ? encodeActivityPageToken({ before: cursorSource.event.occurred_at, key: cursorSource.key }) : undefined;
 
     logger.debug(req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
@@ -160,14 +189,14 @@ export class CommitteeActivityService {
 
   // ─── Past Meetings → meeting_held ──────────────────────────────────────────
 
-  private async fetchPastMeetingEvents(
-    req: Request,
-    committeeUid: string,
-    since: string | undefined,
-    before: string | undefined,
-    fetchSize: number
-  ): Promise<ActivityEvent[]> {
-    const hasWindow = !!since || !!before;
+  private async fetchPastMeetingEvents(req: Request, committeeUid: string, fetchSize: number): Promise<ActivityEvent[]> {
+    // No date_field/date_from/date_to on this leg — occurred_at is derived via
+    // getPastMeetingStartTimeMs, which prefers scheduled_start_time and falls back to start_time,
+    // so a single upstream date_field can't represent that fallback and would silently exclude a
+    // row whose in-window value lives on the field NOT selected (this leg has no in-memory
+    // recovery path once upstream never returns the row at all). NAME_DESC already sorts by
+    // start_time (see the sort comment below), and fetchSize + the since/cursor filter in
+    // getCommitteeActivity bound and narrow the result correctly without it.
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
@@ -176,13 +205,6 @@ export class CommitteeActivityService {
       // start_time-ordered sort this leg actually needs; UPDATED_DESC sorts by index update time,
       // unrelated to occurred_at.
       sort: PAST_MEETING_SORT.NAME_DESC,
-      // Best-effort narrowing only — occurred_at is actually derived via getPastMeetingStartTimeMs
-      // (prefers scheduled_start_time, falls back to start_time), so filtering upstream on
-      // start_time alone can miss a row whose scheduled_start_time is the real, in-window value.
-      // The isWithinWindow pass in getCommitteeActivity is the correctness backstop.
-      ...(hasWindow && { date_field: 'start_time' }),
-      ...(since && { date_from: since }),
-      ...(before && { date_to: before }),
     };
 
     // access=false — the activity row only needs title/start_time, not per-meeting writer flags,
@@ -205,24 +227,15 @@ export class CommitteeActivityService {
 
   // ─── Votes → vote_opened | vote_closed ─────────────────────────────────────
 
-  private async fetchVoteEvents(
-    req: Request,
-    committeeUid: string,
-    since: string | undefined,
-    before: string | undefined,
-    fetchSize: number
-  ): Promise<(VoteOpenedActivityEvent | VoteClosedActivityEvent)[]> {
-    const hasWindow = !!since || !!before;
+  private async fetchVoteEvents(req: Request, committeeUid: string, fetchSize: number): Promise<(VoteOpenedActivityEvent | VoteClosedActivityEvent)[]> {
+    // No date_field/date_from/date_to on this leg, same rationale as fetchPastMeetingEvents — a
+    // vote's occurred_at is end_time/early_end_time/last_modified_time/creation_time depending on
+    // status, not a single field a `date_field` param can represent. sort: 'updated_desc' + the
+    // since/cursor filter in getCommitteeActivity bound and narrow the result correctly instead.
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
-      // Best-effort narrowing only (see fetchPastMeetingEvents) — a vote's occurred_at is derived
-      // from end_time/early_end_time when closed, creation_time when open, not always
-      // last_modified_time. The isWithinWindow pass in getCommitteeActivity is the backstop.
-      ...(hasWindow && { date_field: 'last_modified_time' }),
-      ...(since && { date_from: since }),
-      ...(before && { date_to: before }),
     };
 
     const { data: votes } = await this.voteService.getVotes(req, query);
@@ -263,6 +276,9 @@ export class CommitteeActivityService {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
+      // Unlike meetings/votes, last_modified_at genuinely is occurred_at's primary field here
+      // (firstValidTimestamp(survey.last_modified_at, survey.created_at)) — no fallback-field
+      // mismatch, so upstream narrowing on it is safe, not just best-effort.
       ...(hasWindow && { date_field: 'last_modified_at' }),
       ...(since && { date_from: since }),
       ...(before && { date_to: before }),
@@ -326,14 +342,19 @@ export class CommitteeActivityService {
         }),
     ]);
 
-    // Folders/links have no upstream date param at all (confirmed gap — neither REST endpoint
-    // accepts one), so their window filtering happens entirely in getCommitteeActivity's
-    // isWithinWindow pass, same as every other source.
-    const folderEvents = folders.map((folder) =>
-      this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at))
+    // GET /committees/:id/folders and /links accept no page_size/date param at all and return
+    // every folder/link on the committee unconditionally — bound each to fetchSize here (sorted
+    // by its own occurred_at desc) so this leg can't return an unbounded candidate pool. The
+    // since/cursor window itself is applied once, centrally, in getCommitteeActivity.
+    const folderEvents = boundedSortDesc(
+      folders.map((folder) =>
+        this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at))
+      ),
+      fetchSize
     );
-    const linkEvents = links.map((link) =>
-      this.buildDocumentEvent(committeeUid, link.uid, link.name, 'link', firstValidTimestamp(link.updated_at, link.created_at), link.url)
+    const linkEvents = boundedSortDesc(
+      links.map((link) => this.buildDocumentEvent(committeeUid, link.uid, link.name, 'link', firstValidTimestamp(link.updated_at, link.created_at), link.url)),
+      fetchSize
     );
     const fileEvents = files.map((file) =>
       this.buildDocumentEvent(committeeUid, file.uid, file.name, 'file', firstValidTimestamp(file.updated_at, file.created_at))
@@ -357,4 +378,8 @@ export class CommitteeActivityService {
       payload: { document_uid: documentUid, name, document_type: documentType, url },
     };
   }
+}
+
+function boundedSortDesc<T extends { occurred_at: string }>(events: T[], limit: number): T[] {
+  return [...events].sort((a, b) => timestampValue(b.occurred_at) - timestampValue(a.occurred_at)).slice(0, limit);
 }
