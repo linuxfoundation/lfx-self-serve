@@ -172,12 +172,20 @@ export class CommitteeActivityService {
     // per-source fetch could silently under-represent a dominant source. ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE
     // keeps small `limit` values (e.g. 1) from starving that. This is NOT an airtight guarantee for
     // every leg, though: it only holds if each source's upstream page already contains its own true
-    // top-(limit+1) by occurred_at — true for meetings (NAME_DESC ≈ start_time) and surveys/files
-    // (sorted by the same field occurred_at derives from), but NOT for votes, which sort by
-    // `updated_desc` while occurred_at derives from end_time/early_end_time/creation_time — a
-    // closed vote with a recent end_time but a stale last_modified_time could fall outside the
-    // fetched page. Same class of approximation as the per-leg date_field caveats below, just in
-    // the sort dimension instead of the filter dimension.
+    // top-(limit+1) by occurred_at — true only for meetings (`sort: NAME_DESC` resolves to
+    // query-service's `sort_name`, which the meeting-service indexer populates from `start_time`,
+    // the same field `occurred_at` derives from). Votes, surveys, AND files are all in the opposite
+    // bucket: query-service's `sort=updated_desc` resolves to the INDEX's own root-level `updated_at`
+    // (verified against `cmd/service/converters.go` — `SortBy = "updated_at"`, no `data.` prefix),
+    // which the indexer contract documents as index-write/audit metadata, NOT a copy of any `data.*`
+    // domain field — completely distinct from the `date_field` values these same three legs filter
+    // on (`data.last_modified_at` / `data.updated_at` / vote's `data.last_modified_time`, each
+    // auto-prefixed with `data.` by query-service, unlike `sort`). So "sorted by the same field
+    // occurred_at derives from" was never true for surveys/files either — all three non-meeting legs
+    // share the identical sort-vs-filter mismatch, just via a coincidentally-matching field NAME for
+    // surveys/files (`updated_at`/`last_modified_at`) that resolves to a completely different actual
+    // field once query-service applies its `data.` prefixing rule. Same class of approximation as the
+    // per-leg date_field caveats below, just in the sort dimension instead of the filter dimension.
     //
     // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
     // are each bounded to a single upstream page of `fetchSize` rows.

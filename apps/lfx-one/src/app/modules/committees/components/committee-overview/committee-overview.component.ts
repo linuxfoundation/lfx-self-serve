@@ -267,20 +267,29 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'vote-drawer': {
+        // this.votes() and the activity feed are two independent server fetches (the former
+        // page_size=100 by updated_at, the latter the 25 most recent by occurred_at) — a vote
+        // recent enough to appear in the feed isn't guaranteed to be within the former's window,
+        // so this lookup can miss. Surface that rather than a dead click with zero feedback.
         const vote = this.votes().find((v) => v.uid === action.voteUid);
         if (vote) {
           this.selectedVoteId.set(vote.uid);
           this.selectedVote.set(vote);
           this.voteDrawerVisible.set(true);
+        } else {
+          this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
         }
         break;
       }
       case 'survey-drawer': {
+        // Same independent-fetch mismatch as the vote-drawer case above.
         const survey = this.surveys().find((s) => s.uid === action.surveyUid);
         if (survey) {
           this.selectedSurveyId.set(survey.uid);
           this.selectedSurvey.set(survey);
           this.surveyDrawerVisible.set(true);
+        } else {
+          this.messageService.add({ severity: 'warn', summary: 'Survey unavailable', detail: 'This survey could not be found. Try the Surveys tab instead.' });
         }
         break;
       }
