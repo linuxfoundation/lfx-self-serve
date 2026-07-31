@@ -287,35 +287,57 @@ export class DocumentFormComponent {
         }, DOCUMENT_UPLOAD_CONCURRENCY),
         toArray()
       )
-      .subscribe((results) => {
-        this.submitting.set(false);
+      .subscribe({
+        next: (results) => {
+          this.submitting.set(false);
 
-        const successCount = results.filter((result) => result.ok).length;
-        const failureCount = results.length - successCount;
-        if (successCount > 0) {
-          this.anyUploadSucceeded.set(true);
-        }
+          const successCount = results.filter((result) => result.ok).length;
+          const failureCount = results.length - successCount;
+          if (successCount > 0) {
+            this.anyUploadSucceeded.set(true);
+          }
 
-        if (failureCount === 0) {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: successCount === 1 ? 'File uploaded successfully' : `${successCount} files uploaded successfully`,
-          });
-          this.dialogRef.close(true);
-        } else if (successCount > 0) {
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Partial Upload',
-            detail: `${successCount} of ${successCount + failureCount} files uploaded. Fix the errors below and try again.`,
-          });
-        } else {
+          if (failureCount === 0) {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: successCount === 1 ? 'File uploaded successfully' : `${successCount} files uploaded successfully`,
+            });
+            this.dialogRef.close(true);
+          } else if (successCount > 0) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Partial Upload',
+              detail: `${successCount} of ${successCount + failureCount} files uploaded. Fix the errors below and try again.`,
+            });
+          } else {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: failureCount === 1 ? 'Failed to upload file. Please try again.' : 'Failed to upload files. Please try again.',
+            });
+          }
+        },
+        // Every per-item HTTP failure is already caught inside the mergeMap via catchError, so
+        // this only fires on a genuinely unexpected stream failure (e.g. a bug in a downstream
+        // operator). Without this, `submitting` would stay true forever with no way to dismiss
+        // the dialog — Cancel and the file picker are both disabled while submitting, and
+        // file-mode dialogs disable closable/closeOnEscape too.
+        error: () => {
+          this.submitting.set(false);
+          this.pendingFiles.update((current) =>
+            current.map((item) => {
+              if (item.status !== 'uploading') return item;
+              item.nameForm.enable();
+              return { ...item, status: 'error' as const, errorMessage: 'Upload did not complete. Please try again.' };
+            })
+          );
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: failureCount === 1 ? 'Failed to upload file. Please try again.' : 'Failed to upload files. Please try again.',
+            detail: 'Something went wrong uploading these files. Please try again.',
           });
-        }
+        },
       });
   }
 
