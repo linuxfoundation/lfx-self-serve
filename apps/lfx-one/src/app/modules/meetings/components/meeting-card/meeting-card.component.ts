@@ -19,6 +19,7 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 
 import {
   MeetingDeleteConfirmationComponent,
@@ -88,6 +89,7 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
   selector: 'lfx-meeting-card',
   imports: [
     NgClass,
+    RouterLink,
     ButtonComponent,
     TagComponent,
     MeetingTimePipe,
