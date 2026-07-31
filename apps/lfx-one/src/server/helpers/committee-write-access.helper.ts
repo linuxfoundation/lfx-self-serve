@@ -3,11 +3,7 @@
 
 import type { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
-import { AccessCheckService } from '../services/access-check.service';
-import { logger } from '../services/logger.service';
-
-const accessCheckService = new AccessCheckService();
+import { assertCommitteeAccess } from './committee-access.internal.helper';
 
 /**
  * Write gate for committee-scoped mutations that proxy straight through to committee-service
@@ -32,35 +28,9 @@ const accessCheckService = new AccessCheckService();
  * caller can't write to — deliberate, avoids a separate existence check.
  *
  * Must run before any proxy call so an ungranted caller's request never reaches upstream.
+ * (Mechanics — forbidden/unavailable construction, checkSingleAccessStrict handling — live in the
+ * shared `assertCommitteeAccess`; this function only owns the relation choice above.)
  */
 export async function assertCommitteeWrite(req: Request, committeeUid: string, operation: string): Promise<void> {
-  const forbidden = (): MicroserviceError =>
-    new MicroserviceError('You do not have access to this committee.', 403, 'FORBIDDEN', {
-      operation,
-      service: 'LFX_V2_SERVICE',
-      path: '/access-check',
-    });
-
-  const unavailable = (error?: unknown): MicroserviceError =>
-    new MicroserviceError("Couldn't verify your access to this committee right now. Please try again.", 503, 'ACCESS_CHECK_UNAVAILABLE', {
-      operation,
-      service: 'LFX_V2_SERVICE',
-      path: '/access-check',
-      originalError: error instanceof Error ? error : undefined,
-    });
-
-  let hasAccess: boolean;
-  try {
-    hasAccess = await accessCheckService.checkSingleAccessStrict(req, { resource: 'committee', id: committeeUid, access: 'writer' });
-  } catch (error) {
-    logger.warning(req, operation, 'Access-check lookup failed; cannot verify committee write access', {
-      committee_uid: committeeUid,
-      err: error,
-    });
-    throw unavailable(error);
-  }
-
-  if (!hasAccess) {
-    throw forbidden();
-  }
+  return assertCommitteeAccess(req, committeeUid, operation, 'writer', 'write');
 }
