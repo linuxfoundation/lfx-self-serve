@@ -24,6 +24,9 @@ export class ObjectStoreService {
    */
   public async ensureBucket(): Promise<void> {
     if (!this.ensureBucketPromise) {
+      // Reset only happens here, inside the settled .catch — so concurrent callers made while a
+      // check is in flight all share this same pending promise and see the same outcome, and a
+      // retry is only possible on the next call after this one has already rejected.
       this.ensureBucketPromise = this.doEnsureBucket().catch((error) => {
         this.ensureBucketPromise = null;
         throw error;
