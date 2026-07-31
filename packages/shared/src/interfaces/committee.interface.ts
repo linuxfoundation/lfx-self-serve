@@ -772,6 +772,29 @@ export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 export type DocumentFormEntityType = 'committee' | 'project';
 
 /**
+ * Upload status of a single file staged in the document form dialog's multi-file file-mode flow.
+ * No `'success'` state — a successfully uploaded file is removed from the pending list entirely
+ * rather than rendered with a terminal status.
+ */
+export type PendingDocumentFileStatus = 'pending' | 'uploading' | 'error';
+
+/**
+ * A file staged for upload in the document form dialog, tracked independently through parallel
+ * upload. The editable display name is not modeled here — it lives in a per-item Angular
+ * `FormGroup` on the component (this package has no Angular Forms dependency, and is consumed
+ * by the Express BFF too).
+ */
+export interface PendingDocumentFile {
+  /** Client-generated identifier — not a server UID, used for list tracking before upload. */
+  id: string;
+  /** The actual File object to be uploaded. */
+  file: File;
+  status: PendingDocumentFileStatus;
+  /** Set when status is 'error' — surfaced inline under this file's row. */
+  errorMessage?: string;
+}
+
+/**
  * A document or resource link associated with a committee.
  */
 export interface CommitteeDocument {

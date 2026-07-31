@@ -98,3 +98,11 @@ export const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
  * <p>Maximum file size: {MAX_FILE_SIZE_MB}MB</p>
  */
 export const MAX_FILE_SIZE_MB = MAX_FILE_SIZE_BYTES / (1024 * 1024);
+
+/**
+ * Max number of files uploaded concurrently in a multi-file batch (e.g. the document form dialog).
+ * @description Caps `mergeMap` concurrency so large batches upload in waves instead of all at
+ * once — each upload's request body is buffered fully in memory server-side, so unbounded
+ * concurrency compounds memory pressure on the BFF for large selections.
+ */
+export const DOCUMENT_UPLOAD_CONCURRENCY = 3;
