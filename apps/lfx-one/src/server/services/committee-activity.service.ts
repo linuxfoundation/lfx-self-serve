@@ -179,21 +179,21 @@ export class CommitteeActivityService {
     // upstream `PastMeetingEventData.SortName()` confirms — its own doc comment calls `StartTime`
     // "the scheduled start time"). occurred_at (getPastMeetingStartTimeMs) prefers
     // `scheduled_start_time`, falling back to `start_time` — but the indexed `v1_past_meeting`
-    // projection this leg actually reads has no `scheduled_start_time` field at all
-    // (`PastMeetingEventData` upstream carries only `StartTime`), so that fallback almost always
-    // fires and resolves to the identical value `sort_name` was built from (see the existing
-    // `fetchPastMeetingEvents` comment below, and `meeting.service.ts`'s "frequently omits
-    // scheduled_start_time" note on the same projection). Meetings is effectively exact, not merely
-    // "closest" — the one residual is the rare row where `scheduled_start_time` IS present and
-    // diverges from `start_time`, which per that same "frequently omits" framing is the exception,
+    // projection this leg actually reads frequently omits `scheduled_start_time`, carrying only
+    // `start_time` (see the existing `fetchPastMeetingEvents` comment below, and
+    // `meeting.service.ts`'s identical "frequently omits scheduled_start_time" note on the same
+    // projection), so that fallback usually resolves to the identical value `sort_name` was built
+    // from. Meetings is the closest of the four legs to exact, not merely approximate like the
+    // other three — the residual is the row where `scheduled_start_time` IS present and diverges
+    // from `start_time`, which per that same "frequently omits" framing is the less common case,
     // not the rule.
     //
     // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
     // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
     // converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer contract
     // documents as index-write/audit metadata, not a copy of any `data.*` domain field — distinct
-    // from the `date_field` values these three legs filter on (`data.last_modified_at` /
-    // `data.updated_at` / `data.last_modified_time`, each auto-prefixed with `data.` by
+    // from the `date_field` values these three legs filter on: votes' `data.last_modified_time`,
+    // surveys' `data.last_modified_at`, files' `data.updated_at` (each auto-prefixed with `data.` by
     // query-service, unlike `sort`). Files happens to share a field NAME with the sort target
     // (`updated_at` == `updated_at`) despite resolving to a different actual field once `data.`
     // prefixing is applied; surveys' and votes' date_field names don't even coincide with `updated_at`.

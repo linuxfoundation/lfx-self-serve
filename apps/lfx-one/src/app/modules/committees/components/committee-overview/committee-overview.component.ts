@@ -290,13 +290,16 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'survey-drawer': {
-        // Same class of independent-fetch mismatch as the vote-drawer case above — this.surveys()
-        // and the activity feed are two separate server fetches with different windows (unlike
-        // votes, getSurveysByCommittee sets no page_size or order at all, so its own window is
-        // whatever the underlying endpoint defaults to, not a pinned page_size=100) — and the same
-        // recoverable-in-principle/toast-instead trade-off: SurveyResultsDrawerComponent's own
-        // initSurvey() has the identical startWith/re-fetch shape and the identical missing `@else`
-        // on its template's `@if` as VoteResultsDrawerComponent.
+        // Different failure mode than the vote-drawer case above, same toast-instead remedy.
+        // Unlike votes (a genuine window-size mismatch — getVotesByCommittee pins page_size=100),
+        // the server's SurveyService.getSurveys drains every page via fetchAllQueryResources, so
+        // this.surveys() is the committee's complete survey set, not a windowed slice — the only
+        // realistic way this lookup misses is staleness between this fetch and the activity feed's
+        // independent one (a survey created/updated in the gap between the two requests), not a
+        // bounded-window gap. Same recoverable-in-principle/toast-instead trade-off regardless:
+        // SurveyResultsDrawerComponent's own initSurvey() has the identical startWith/re-fetch
+        // shape and the identical missing `@else` on its template's `@if` as
+        // VoteResultsDrawerComponent.
         const survey = this.surveys().find((s) => s.uid === action.surveyUid);
         if (survey) {
           this.selectedSurveyId.set(survey.uid);
