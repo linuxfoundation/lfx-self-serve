@@ -381,7 +381,11 @@ export class DocumentFormComponent {
 
   private initSubmitLabel(): Signal<string> {
     return computed(() => {
-      if (this.isFile()) return 'Upload File';
+      if (this.isFile()) {
+        const count = this.pendingFiles().length;
+        if (count === 0) return 'Upload Files';
+        return count === 1 ? 'Upload 1 File' : `Upload ${count} Files`;
+      }
       if (this.isLink()) return 'Add Link';
       return 'Create Folder';
     });

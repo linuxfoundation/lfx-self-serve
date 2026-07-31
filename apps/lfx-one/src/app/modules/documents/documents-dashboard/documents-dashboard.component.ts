@@ -175,7 +175,7 @@ export class DocumentsDashboardComponent {
   }
 
   protected openUploadFileDialog(): void {
-    this.openDocumentDialog('file', 'Upload File');
+    this.openDocumentDialog('file', 'Upload Files');
   }
 
   protected openNewFolderDialog(): void {

@@ -128,7 +128,7 @@ export class CommitteeDocumentsComponent {
 
   public openUploadFileDialog(): void {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentFormComponent, {
-      header: 'Upload File',
+      header: 'Upload Files',
       width: '560px',
       modal: true,
       closable: true,
