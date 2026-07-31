@@ -6,6 +6,7 @@ import { GenerateWeeklyBriefRequest, SaveWeeklyBriefRequest } from '@lfx-one/sha
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { assertCommitteeRead } from '../helpers/committee-read-access.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { WeeklyBriefService } from '../services/weekly-brief.service';
@@ -79,6 +80,11 @@ export class WeeklyBriefController {
 
   /**
    * GET /api/committees/:committeeId/weekly-briefs/current
+   *
+   * Gated by `assertCommitteeRead` (committee#auditor) — the service layer proxies
+   * straight through to committee-service in live mode with no authorization of its
+   * own, so without this gate any authenticated caller who knows a committee UID
+   * could read draft/edited brief text. (LFXV2-2175 review.)
    */
   public async getCurrentBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { committeeId } = req.params;
@@ -95,6 +101,8 @@ export class WeeklyBriefController {
       ) {
         return;
       }
+
+      await assertCommitteeRead(req, committeeId, 'get_weekly_brief_current');
 
       const result = await this.weeklyBriefService.getCurrentBrief(req, committeeId);
 

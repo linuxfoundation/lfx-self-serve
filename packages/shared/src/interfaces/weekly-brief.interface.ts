@@ -6,13 +6,17 @@ export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' |
 /**
  * Matches upstream's `GroupWeeklyBriefSourceRef` exactly — `kind` is an open
  * string (not an enum; documented values include "meeting", "mailing-list",
- * "doc"), not the invented `source_type` shape this used to have.
+ * "doc"), not the invented `source_type` shape this used to have. Upstream
+ * marks nothing Required on this type, and the committee-service converter
+ * omits `title`/`excerpt` when empty — the BFF forwards this object
+ * unchanged, so both stay optional here rather than promising a string that
+ * may not be present on the wire.
  */
 export interface WeeklyBriefSourceRef {
-  excerpt: string;
+  excerpt?: string;
   id: string;
   kind: string;
-  title: string;
+  title?: string;
 }
 
 export interface WeeklyBrief {

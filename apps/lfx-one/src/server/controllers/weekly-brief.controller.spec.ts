@@ -5,13 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const COMMITTEE_ID = 'a0000000-0000-0000-0000-000000000001';
 
-const { weeklyBriefSvc } = vi.hoisted(() => ({
+const { weeklyBriefSvc, assertCommitteeRead } = vi.hoisted(() => ({
   weeklyBriefSvc: {
     getCurrentBrief: vi.fn(),
     generateBrief: vi.fn(),
     saveBrief: vi.fn(),
   },
+  assertCommitteeRead: vi.fn(),
 }));
+
+vi.mock('../helpers/committee-read-access.helper', () => ({ assertCommitteeRead }));
 
 // The `@lfx-one/shared/*` alias isn't wired into the server-side vitest config —
 // mocked defensively even though this controller's usage is type-only (matches
@@ -59,6 +62,7 @@ describe('WeeklyBriefController', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    assertCommitteeRead.mockResolvedValue(undefined);
     controller = new WeeklyBriefController();
   });
 
@@ -177,6 +181,28 @@ describe('WeeklyBriefController', () => {
       await controller.getCurrentBrief(buildReq(), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(upstreamError);
+    });
+
+    it('checks committee read access before fetching the brief (LFXV2-2175 review: GET had no server-side authz)', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq(), buildRes(), vi.fn());
+
+      expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'get_weekly_brief_current');
+      const accessOrder = assertCommitteeRead.mock.invocationCallOrder[0];
+      const fetchOrder = weeklyBriefSvc.getCurrentBrief.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(fetchOrder);
+    });
+
+    it('propagates a 403 from assertCommitteeRead via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeRead.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.getCurrentBrief(buildReq(), buildRes(), next);
+
+      expect(weeklyBriefSvc.getCurrentBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
     });
   });
 });
