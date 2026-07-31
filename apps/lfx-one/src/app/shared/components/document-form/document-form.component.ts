@@ -55,8 +55,8 @@ export class DocumentFormComponent {
    */
   public pendingFiles = signal<(PendingDocumentFile & { nameForm: FormGroup })[]>([]);
   public fileError = signal<string | null>(null);
-  /** Set once at least one file in this dialog session has uploaded successfully — drives the Cancel/Done label and close-on-cancel behavior. */
-  public anyUploadSucceeded = signal<boolean>(false);
+  /** Set once at least one file in this dialog session has uploaded successfully — drives the Cancel/Done label and close-on-cancel behavior. Not read in the template, so kept private. */
+  private anyUploadSucceeded = signal<boolean>(false);
 
   // Config-based properties
   /** Resource type this dialog targets — drives service dispatch + uniqueness scope copy. */
@@ -93,10 +93,12 @@ export class DocumentFormComponent {
   }
 
   public onCancel(): void {
+    if (this.submitting()) return;
     this.dialogRef.close(this.anyUploadSucceeded() || undefined);
   }
 
   public onSubmit(): void {
+    if (this.submitting()) return;
     if (!this.form.valid) {
       this.form.markAllAsTouched();
       return;
@@ -391,7 +393,7 @@ export class DocumentFormComponent {
 
   private initDescriptionPlaceholder(): Signal<string> {
     return computed(() => {
-      if (this.isFile()) return 'Brief description of this document';
+      if (this.isFile()) return 'Brief description of these documents';
       if (this.isLink()) return 'Brief description';
       return 'Brief description of what this folder contains';
     });

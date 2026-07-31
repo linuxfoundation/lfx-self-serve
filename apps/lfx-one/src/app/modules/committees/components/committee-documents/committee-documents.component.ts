@@ -133,7 +133,9 @@ export class CommitteeDocumentsComponent {
       modal: true,
       // File mode can partially succeed mid-batch; the header close icon bypasses the form's
       // own success-aware close result, so route dismissal only through Cancel/Done.
+      // closeOnEscape defaults to true independently of closable — must be disabled too.
       closable: false,
+      closeOnEscape: false,
       data: {
         mode: 'file',
         entityType: 'committee',

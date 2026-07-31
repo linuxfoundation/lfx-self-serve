@@ -39,7 +39,7 @@
                   control="name"
                   placeholder="Document name"
                   styleClass="w-full"
-                  [dataTest]="'document-form-pending-file-name'"></lfx-input-text>
+                  [dataTest]="'document-form-pending-file-name-' + item.id"></lfx-input-text>
               </div>
               @if (item.status === 'uploading') {
                 <i class="fa-light fa-spinner-third fa-spin text-gray-400 flex-shrink-0"></i>
@@ -47,7 +47,7 @@
                 <button
                   type="button"
                   class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
-                  aria-label="Remove file"
+                  aria-label="Remove file {{ item.file.name }}"
                   title="Remove file"
                   (click)="removePendingFile(item.id)"
                   data-testid="document-form-remove-file">

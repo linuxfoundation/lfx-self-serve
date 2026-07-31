@@ -771,8 +771,12 @@ export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 /** Which resource type the shared document form dialog operates against. Drives service dispatch + copy. */
 export type DocumentFormEntityType = 'committee' | 'project';
 
-/** Upload status of a single file staged in the document form dialog's multi-file file-mode flow. */
-export type PendingDocumentFileStatus = 'pending' | 'uploading' | 'success' | 'error';
+/**
+ * Upload status of a single file staged in the document form dialog's multi-file file-mode flow.
+ * No `'success'` state — a successfully uploaded file is removed from the pending list entirely
+ * rather than rendered with a terminal status.
+ */
+export type PendingDocumentFileStatus = 'pending' | 'uploading' | 'error';
 
 /**
  * A file staged for upload in the document form dialog, tracked independently through parallel
