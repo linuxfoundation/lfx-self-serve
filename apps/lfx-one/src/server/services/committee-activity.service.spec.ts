@@ -5,7 +5,7 @@
 // identities — never real user data.
 
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `@lfx-one/shared/*` isn't wired into this app's vitest config (same issue documented in
 // committee-engagement-window.helper.spec.ts) — enums/utils need stubs; the interfaces import in
@@ -26,11 +26,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const meeting = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/meeting.constants')>(
     '../../../../../packages/shared/src/constants/meeting.constants'
   );
-  return {
-    ACTIVITY_FEED_MAX_PAGE_SIZE: activityEvent.ACTIVITY_FEED_MAX_PAGE_SIZE,
-    ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE: activityEvent.ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE,
-    PAST_MEETING_SORT: meeting.PAST_MEETING_SORT,
-  };
+  // Spread the real module rather than hand-listing exports — since committee-activity-query.helper.ts
+  // is now mocked via importOriginal (see below), the whole real helper module (including
+  // parseCommitteeActivityQuery, which reads ACTIVITY_FEED_DEFAULT_PAGE_SIZE) is reachable from
+  // this spec; hand-listing only the constants this file's own tests happen to need would leave a
+  // confusing "no export defined on the mock" trap for the next test that reaches further into it.
+  return { ...activityEvent, PAST_MEETING_SORT: meeting.PAST_MEETING_SORT };
 });
 vi.mock('@lfx-one/shared/enums', () => ({
   PollStatus: { ACTIVE: 'active', DISABLED: 'disabled', ENDED: 'ended' },
@@ -135,12 +136,15 @@ describe('CommitteeActivityService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.unstubAllEnvs();
     proxyRequest.mockImplementation(defaultProxyRequest);
     getMeetings.mockResolvedValue({ data: [] });
     getVotes.mockResolvedValue({ data: [] });
     encodeActivityPageToken.mockImplementation((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`);
     service = new CommitteeActivityService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('returns an empty feed when every source is empty', async () => {
@@ -222,8 +226,9 @@ describe('CommitteeActivityService', () => {
       // ceiling test below) — an already-whole-second cursor still round-trips through
       // Date.toISOString(), which always emits milliseconds, hence the trailing `.000Z`. `since`
       // round-trips through the same normalizeTimestamp/Date.toISOString() call on the way in, so
-      // it picks up the identical `.000Z` — these three assertions are the normalization coverage,
-      // there's no separate dedicated test for it.
+      // it picks up the identical `.000Z` — these three assertions cover that round-trip shape for
+      // an already-well-formed `since`; the dedicated "normalizes a zone-less since" test below
+      // covers the actual reformatting case (a value Date.parse accepts but isn't RFC3339 yet).
       expect(getMeetings).toHaveBeenCalledWith(
         req,
         expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' }),
@@ -280,6 +285,17 @@ describe('CommitteeActivityService', () => {
       // Without this check, isAtOrAfterSince's `ms >= Date.parse(since)` is `ms >= NaN` for every
       // event, so an unparseable since would silently degrade to an empty feed instead of rejecting.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: 'not-a-timestamp', limit: 8 })).rejects.toThrow(ServiceValidationError);
+
+      expect(getVotes).not.toHaveBeenCalled();
+    });
+
+    it('rejects an empty-string since rather than silently treating it as "no since"', async () => {
+      // `''` is neither undefined (skip validation) nor a valid timestamp (Number.isNaN(Date.parse('')))
+      // is true), so it's rejected the same way any other unparseable value is — not treated as
+      // an omitted `since`, which the earlier truthiness-based check (`rawSince ? ... : undefined`)
+      // used to do implicitly. Pins that the validation guard and the normalization call below it
+      // now agree on the same `!== undefined` predicate.
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: '', limit: 8 })).rejects.toThrow(ServiceValidationError);
 
       expect(getVotes).not.toHaveBeenCalled();
     });

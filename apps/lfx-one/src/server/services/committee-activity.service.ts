@@ -235,7 +235,12 @@ export class CommitteeActivityService {
     // otherwise be swallowed into an empty leg by each leg's own .catch — a passably-formatted but
     // non-normalized `since` would silently thin the feed rather than error, on this direct-caller
     // path specifically (the HTTP path already normalizes before this method ever sees `since`).
-    const since = rawSince ? normalizeTimestamp(rawSince) : undefined;
+    // `!== undefined`, matching the guard above (not truthiness) — the guard above already rejects
+    // `since: ''` (an empty string fails `Number.isNaN(Date.parse(''))`), so by this line the only
+    // way to reach here with a falsy-but-defined `since` is already closed off; matching predicates
+    // means that stays true even if the guard above is ever relaxed, instead of the two silently
+    // diverging on which falsy values count as "no since" vs. "invalid since".
+    const since = rawSince !== undefined ? normalizeTimestamp(rawSince) : undefined;
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
