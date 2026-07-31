@@ -1,0 +1,11 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+// About Me bio textarea — match the v2 prototype: a fixed-height box the user can
+// drag to resize vertically. Overrides the shared wrapper's default content
+// auto-sizing (field-sizing: content) for this instance only.
+::ng-deep .about-me-textarea.p-textarea {
+  field-sizing: fixed;
+  min-height: 80px;
+  resize: vertical;
+}

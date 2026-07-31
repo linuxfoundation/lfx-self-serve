@@ -31,6 +31,7 @@ import { ProfileEditDrawerService } from './profile-edit-drawer.service';
   selector: 'lfx-profile-edit-drawer',
   imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ButtonComponent],
   templateUrl: './profile-edit-drawer.component.html',
+  styleUrl: './profile-edit-drawer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileEditDrawerComponent {
