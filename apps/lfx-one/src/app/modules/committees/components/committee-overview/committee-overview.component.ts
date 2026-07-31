@@ -30,6 +30,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { assertNeverSilent, buildActivityFeed, countVotingReps, getSurveyDisplayStatus, isValidUrl } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
@@ -44,6 +45,7 @@ import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
+import { WeeklyBriefCardComponent } from '../weekly-brief-card/weekly-brief-card.component';
 
 @Component({
   selector: 'lfx-committee-overview',
@@ -56,6 +58,7 @@ import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.componen
     SurveyResultsDrawerComponent,
     TagComponent,
     VoteResultsDrawerComponent,
+    WeeklyBriefCardComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
@@ -73,6 +76,7 @@ export class CommitteeOverviewComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -175,6 +179,9 @@ export class CommitteeOverviewComponent {
   );
 
   public activityItems: Signal<ActivityFeedItem[]> = this.initActivityItems();
+
+  // Feature flag: WG Weekly Brief AI Assistant card
+  public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
