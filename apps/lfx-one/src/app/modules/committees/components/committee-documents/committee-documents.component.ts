@@ -131,7 +131,9 @@ export class CommitteeDocumentsComponent {
       header: 'Upload Files',
       width: '560px',
       modal: true,
-      closable: true,
+      // File mode can partially succeed mid-batch; the header close icon bypasses the form's
+      // own success-aware close result, so route dismissal only through Cancel/Done.
+      closable: false,
       data: {
         mode: 'file',
         entityType: 'committee',

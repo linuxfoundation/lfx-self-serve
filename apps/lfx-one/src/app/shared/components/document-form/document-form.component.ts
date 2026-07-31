@@ -9,7 +9,7 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, DOCUMENT_UPLOAD_CONCURRENCY, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
 import {
   CreateCommitteeDocumentRequest,
   CreateCommitteeDocumentType,
@@ -22,7 +22,7 @@ import {
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, from, map, mergeMap, Observable, of, toArray } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, of, tap, toArray } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -46,7 +46,14 @@ export class DocumentFormComponent {
 
   // === Writable Signals ===
   public submitting = signal<boolean>(false);
-  public pendingFiles = signal<PendingDocumentFile[]>([]);
+  /**
+   * Each pending file carries its own `nameForm` directly (rather than a side Map keyed by id)
+   * so the template can bind `item.nameForm` — a plain property read — instead of calling a
+   * component method per change-detection pass (see `docs/reviews/frontend-checklist.md`'s "no
+   * template functions" rule). `PendingDocumentFile` itself stays in `@lfx-one/shared`, which has
+   * no Angular Forms dependency, so the FormGroup is only ever attached here, not on that type.
+   */
+  public pendingFiles = signal<(PendingDocumentFile & { nameForm: FormGroup })[]>([]);
   public fileError = signal<string | null>(null);
   /** Set once at least one file in this dialog session has uploaded successfully — drives the Cancel/Done label and close-on-cancel behavior. */
   public anyUploadSucceeded = signal<boolean>(false);
@@ -64,13 +71,6 @@ export class DocumentFormComponent {
   public readonly defaultParentUid: string | null;
 
   public form: FormGroup;
-  /**
-   * One `name` FormGroup per pending file, keyed by `PendingDocumentFile.id`. Kept out of
-   * `PendingDocumentFile` itself (that interface lives in `@lfx-one/shared`, which has no
-   * Angular Forms dependency) but wired in lockstep with `pendingFiles` so `lfx-input-text`
-   * has a real `[form]`/`control` pair to bind each row's editable name to.
-   */
-  private nameForms = new Map<string, FormGroup>();
 
   // Derived signals
   public isLink: Signal<boolean> = this.initIsLink();
@@ -110,8 +110,8 @@ export class DocumentFormComponent {
         this.fileError.set('Please select at least one file to upload.');
         return;
       }
-      if (itemsToUpload.some((item) => !this.getPendingFileName(item.id))) {
-        itemsToUpload.forEach((item) => this.nameForms.get(item.id)?.markAllAsTouched());
+      if (itemsToUpload.some((item) => item.nameForm.invalid)) {
+        itemsToUpload.forEach((item) => item.nameForm.markAllAsTouched());
         this.fileError.set('Every file needs a name before uploading.');
         return;
       }
@@ -168,7 +168,7 @@ export class DocumentFormComponent {
     if (files.length === 0) return;
 
     const existingNames = new Set(this.pendingFiles().map((item) => item.file.name));
-    const newItems: PendingDocumentFile[] = [];
+    const newItems: (PendingDocumentFile & { nameForm: FormGroup })[] = [];
 
     files.forEach((file) => {
       const error = this.validateFile(file);
@@ -187,11 +187,10 @@ export class DocumentFormComponent {
       }
 
       existingNames.add(file.name);
-      const id = crypto.randomUUID();
       // Pre-fill from the basename (sans extension); user can edit inline before submit.
       const baseName = file.name.replace(/\.[^/.]+$/, '');
-      this.nameForms.set(id, new FormGroup({ name: new FormControl(baseName, [Validators.required]) }));
-      newItems.push({ id, file, status: 'pending' });
+      const nameForm = new FormGroup({ name: new FormControl(baseName, [Validators.required, Validators.maxLength(500)]) });
+      newItems.push({ id: crypto.randomUUID(), file, status: 'pending', nameForm });
     });
 
     if (newItems.length === 0) return;
@@ -200,13 +199,7 @@ export class DocumentFormComponent {
     this.pendingFiles.update((items) => [...items, ...newItems]);
   }
 
-  /** FormGroup backing a pending file's editable name input — see `nameForms`. */
-  public getNameForm(id: string): FormGroup {
-    return this.nameForms.get(id) ?? new FormGroup({ name: new FormControl('') });
-  }
-
   public removePendingFile(id: string): void {
-    this.nameForms.delete(id);
     this.pendingFiles.update((items) => items.filter((item) => item.id !== id));
   }
 
@@ -255,21 +248,19 @@ export class DocumentFormComponent {
     });
   }
 
-  /** Trimmed current value of a pending file's editable name control. */
-  private getPendingFileName(id: string): string {
-    return ((this.nameForms.get(id)?.get('name')?.value as string | null) ?? '').trim();
-  }
-
   /**
-   * Uploads every given pending file in parallel (RxJS `mergeMap`, unbounded concurrency).
-   * Each call is individually `catchError`'d so one failure doesn't abort the others —
-   * successes are never rolled back on partial failure. Per-file status is updated as each
-   * settles (not just aggregated at the end) so the template can render live per-file state.
+   * Uploads every given pending file in parallel, capped at `DOCUMENT_UPLOAD_CONCURRENCY`
+   * concurrent requests — each upload's body is buffered fully in memory server-side, so
+   * unbounded concurrency would compound memory pressure on the BFF for large batches. Each
+   * call is individually `catchError`'d so one failure doesn't abort the others — successes
+   * are never rolled back on partial failure. Per-file status is applied via `tap` the moment
+   * each request settles, not just aggregated at the end, so the template reflects live
+   * per-file state; `toArray()` is used only for the final batch-level toast/close decision.
    */
-  private uploadPendingFiles(items: PendingDocumentFile[], description: string | undefined, folderUid: string | undefined): void {
+  private uploadPendingFiles(items: (PendingDocumentFile & { nameForm: FormGroup })[], description: string | undefined, folderUid: string | undefined): void {
     this.submitting.set(true);
     const uploadingIds = new Set(items.map((item) => item.id));
-    uploadingIds.forEach((id) => this.nameForms.get(id)?.disable());
+    items.forEach((item) => item.nameForm.disable());
     this.pendingFiles.update((current) =>
       current.map((item) => (uploadingIds.has(item.id) ? { ...item, status: 'uploading' as const, errorMessage: undefined } : item))
     );
@@ -277,7 +268,7 @@ export class DocumentFormComponent {
     from(items)
       .pipe(
         mergeMap((item) => {
-          const name = this.getPendingFileName(item.id);
+          const name = ((item.nameForm.get('name')?.value as string | null) ?? '').trim();
           const metadata = { name, description, folder_uid: folderUid };
           const upload$: Observable<unknown> =
             this.entityType === 'project'
@@ -288,29 +279,17 @@ export class DocumentFormComponent {
             map(() => ({ id: item.id, ok: true as const })),
             catchError((err: HttpErrorResponse) =>
               of({ id: item.id, ok: false as const, message: this.extractErrorMessage(err, `Failed to upload "${name}"`) })
-            )
+            ),
+            tap((result) => this.applyUploadResult(item, result))
           );
-        }),
+        }, DOCUMENT_UPLOAD_CONCURRENCY),
         toArray()
       )
       .subscribe((results) => {
         this.submitting.set(false);
 
-        const succeededIds = new Set(results.filter((result) => result.ok).map((result) => result.id));
-        const failures = new Map(
-          results.filter((result): result is { id: string; ok: false; message: string } => !result.ok).map((result) => [result.id, result.message])
-        );
-        succeededIds.forEach((id) => this.nameForms.delete(id));
-        failures.forEach((_message, id) => this.nameForms.get(id)?.enable());
-
-        this.pendingFiles.update((current) =>
-          current
-            .filter((item) => !succeededIds.has(item.id))
-            .map((item) => (failures.has(item.id) ? { ...item, status: 'error' as const, errorMessage: failures.get(item.id) } : item))
-        );
-
-        const successCount = succeededIds.size;
-        const failureCount = failures.size;
+        const successCount = results.filter((result) => result.ok).length;
+        const failureCount = results.length - successCount;
         if (successCount > 0) {
           this.anyUploadSucceeded.set(true);
         }
@@ -336,6 +315,21 @@ export class DocumentFormComponent {
           });
         }
       });
+  }
+
+  /** Applies one file's settled upload result to `pendingFiles` immediately — success removes the row, failure marks it for retry. */
+  private applyUploadResult(
+    target: PendingDocumentFile & { nameForm: FormGroup },
+    result: { id: string; ok: true } | { id: string; ok: false; message: string }
+  ): void {
+    if (result.ok) {
+      this.pendingFiles.update((current) => current.filter((item) => item.id !== result.id));
+      return;
+    }
+    target.nameForm.enable();
+    this.pendingFiles.update((current) =>
+      current.map((item) => (item.id === result.id ? { ...item, status: 'error' as const, errorMessage: result.message } : item))
+    );
   }
 
   private validateFile(file: File): string | null {

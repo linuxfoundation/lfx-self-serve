@@ -14,6 +14,7 @@
         [customUpload]="true"
         [showUploadButton]="false"
         [showCancelButton]="false"
+        [disabled]="submitting()"
         chooseLabel="Click to upload files or drag and drop"
         dataTest="document-form-file-upload">
       </lfx-file-upload>
@@ -34,7 +35,7 @@
                 <lfx-input-text
                   size="small"
                   [id]="'pending-file-name-' + item.id"
-                  [form]="getNameForm(item.id)"
+                  [form]="item.nameForm"
                   control="name"
                   placeholder="Document name"
                   styleClass="w-full"
@@ -54,8 +55,10 @@
                 </button>
               }
             </div>
-            @if (getNameForm(item.id).get('name')?.errors?.['required'] && getNameForm(item.id).get('name')?.touched) {
+            @if (item.nameForm.get('name')?.errors?.['required'] && item.nameForm.get('name')?.touched) {
               <p class="text-xs text-red-600 pl-6">Name is required</p>
+            } @else if (item.nameForm.get('name')?.errors?.['maxlength'] && item.nameForm.get('name')?.touched) {
+              <p class="text-xs text-red-600 pl-6">Name must be 500 characters or less</p>
             }
             <span class="text-xs text-gray-400 truncate pl-6">{{ item.file.name }}</span>
             @if (item.status === 'error' && item.errorMessage) {
@@ -166,7 +169,14 @@
 
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-4 border-t">
-    <lfx-button [label]="cancelLabel()" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>
+    <lfx-button
+      [label]="cancelLabel()"
+      severity="secondary"
+      [outlined]="true"
+      [disabled]="submitting()"
+      (onClick)="onCancel()"
+      size="small"
+      type="button"></lfx-button>
     <lfx-button [label]="submitLabel()" [loading]="submitting()" [disabled]="submitting()" type="submit" size="small"></lfx-button>
   </div>
 </form>
