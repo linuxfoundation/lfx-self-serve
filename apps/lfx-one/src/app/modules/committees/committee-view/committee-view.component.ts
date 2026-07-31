@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -278,16 +278,21 @@ export class CommitteeViewComponent {
     // banner is an interactive surface and the list is per-user.
     if (isPlatformBrowser(this.platformId)) {
       this.invitationService.loadPendingInvitations().pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe();
+      this.joinApplicationSession.hydrateFromStorage();
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
 
-    effect(() => {
-      const committee = this.committee();
-      if (committee?.uid && committee.my_role) {
-        this.joinApplicationSession.clearPending(committee.uid);
-      }
-    });
+    toObservable(this.committee)
+      .pipe(
+        filter((committee): committee is Committee => !!committee?.uid && !!committee.my_role),
+        map((committee) => committee.uid),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((committeeUid) => {
+        this.joinApplicationSession.clearPending(committeeUid);
+      });
 
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {

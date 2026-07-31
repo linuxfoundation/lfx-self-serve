@@ -15,7 +15,15 @@ const PENDING_APPLICATIONS_STORAGE_KEY = 'lfx-pending-committee-applications';
   providedIn: 'root',
 })
 export class CommitteeJoinApplicationSessionService {
-  public readonly pendingCommitteeUids: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(this.loadFromStorage());
+  /** Empty at construction so SSR and the hydration pass agree; call {@link hydrateFromStorage} in the browser. */
+  public readonly pendingCommitteeUids: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(new Set());
+
+  public hydrateFromStorage(): void {
+    const stored = this.loadFromStorage();
+    if (stored.size > 0) {
+      this.pendingCommitteeUids.set(stored);
+    }
+  }
 
   public hasPending(committeeUid: string): boolean {
     return this.pendingCommitteeUids().has(committeeUid);
