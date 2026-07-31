@@ -136,6 +136,13 @@ describe('ObjectStoreService', () => {
 
       expect(url).toBeNull();
     });
+
+    it('propagates the error when PutObject fails', async () => {
+      const putError = new Error('put failed');
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(putError);
+
+      await expect(service.uploadProfilePicture(buildReq(), 'user1', Buffer.from('img'), 'image/png')).rejects.toThrow('put failed');
+    });
   });
 
   describe('client construction', () => {

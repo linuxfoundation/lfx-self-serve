@@ -195,4 +195,36 @@ describe('ProfileController.uploadProfilePicture', () => {
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'INTERNAL_ERROR', statusCode: 500 }));
   });
+
+  it('responds 403 management_token_required when Flow C is configured but no management token is in session', async () => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.uploadProfilePicture(buildReq(), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'management_token_required',
+      message: 'Profile authorization required',
+      authorize_url: '/api/profile/auth/start?returnTo=/profile',
+    });
+    expect(objectStoreSvc.uploadProfilePicture).not.toHaveBeenCalled();
+    expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates an object-store upload failure via next(error)', async () => {
+    const uploadError = new Error('put failed');
+    objectStoreSvc.uploadProfilePicture.mockRejectedValue(uploadError);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.uploadProfilePicture(buildReq(), res, next);
+
+    expect(next).toHaveBeenCalledWith(uploadError);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
+  });
 });
