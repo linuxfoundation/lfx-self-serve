@@ -192,8 +192,9 @@ export class CommitteeActivityService {
     // the contract as verified today, not as a law of nature: if `lfx-v2-meeting-service` ever adds
     // `scheduled_start_time` to that struct, `getPastMeetingStartTimeMs` would start preferring it
     // while `date_field: 'start_time'` (in fetchPastMeetingEvents below) keeps narrowing on the old
-    // field — a silent upstream-side regression with no test failure, since nothing here would
-    // observe the new field being added. `date_field` would need to change alongside it.
+    // field — an upstream-side regression that would otherwise be silent. fetchPastMeetingEvents has
+    // a runtime tripwire for exactly this: a warning log if a real, differing scheduled_start_time
+    // ever shows up on a returned row, rather than relying on this comment alone to catch it.
     //
     // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
     // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
@@ -204,14 +205,16 @@ export class CommitteeActivityService {
     // query-service, unlike `sort`). Files happens to share a field NAME with the sort target
     // (`updated_at` == `updated_at`) despite resolving to a different actual field once `data.`
     // prefixing is applied; surveys' and votes' date_field names don't even coincide with `updated_at`.
-    // Same class of approximation as the per-leg date_field caveats below, just in the sort dimension
-    // instead of the filter dimension: votes/surveys/files each filter on a single upstream
-    // `date_field` that only approximates their own multi-field occurred_at derivation (see each
-    // leg's own comment for which field and why) — sending that imperfect narrowing upstream still
-    // beats sending none at all, which was tried and reverted earlier in this file's history: it
-    // traded the rare filter-mismatch miss for hard truncation at `fetchSize` on every page instead,
-    // a strictly worse failure mode. The in-memory since/cursor pass in getCommitteeActivity is the
-    // correctness backstop against over-inclusion for all three legs, not under-inclusion — an
+    // Same class of approximation as the per-leg date_field (filter-dimension) caveats discussed
+    // next, just in the sort dimension instead.
+    //
+    // Filter dimension: votes/surveys/files each filter on a single upstream `date_field` that only
+    // approximates their own multi-field occurred_at derivation (see each leg's own comment for
+    // which field and why) — sending that imperfect narrowing upstream still beats sending none at
+    // all, which was tried and reverted earlier in this file's history: it traded the rare
+    // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
+    // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
+    // backstop against over-inclusion for all three legs, not under-inclusion — an
     // imperfectly-narrowed leg can still exclude a real in-window row upstream before that pass ever
     // sees it.
     //
@@ -478,6 +481,19 @@ export class CommitteeActivityService {
     return meetings.map((meeting) => {
       const startMs = getPastMeetingStartTimeMs(meeting);
       const occurredAt = startMs !== null ? new Date(startMs).toISOString() : '';
+      // Tripwire for the "meetings is exact" claim in getCommitteeActivity's fetchSize comment —
+      // a documented-but-silent regression is worse than no documentation, so make it observable: if
+      // a real scheduled_start_time (not absent/zero-date/unparseable) ever shows up and differs from
+      // start_time, the upstream contract this leg's date_field narrowing relies on has changed.
+      const scheduledStartTime = firstValidTimestamp(meeting.scheduled_start_time);
+      if (scheduledStartTime && Date.parse(scheduledStartTime) !== Date.parse(meeting.start_time)) {
+        logger.warning(
+          req,
+          'get_committee_activity',
+          'v1_past_meeting row carries a real scheduled_start_time differing from start_time — date_field narrowing on start_time may no longer be exact for this leg',
+          { committee_uid: committeeUid, meeting_id: meeting.id }
+        );
+      }
       return {
         type: 'meeting_held',
         occurred_at: occurredAt,

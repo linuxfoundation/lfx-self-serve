@@ -206,6 +206,23 @@ describe('CommitteeActivityService', () => {
 
     const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
     expect(result.data.map((e) => e.type)).toEqual(['meeting_held', 'survey_published']);
+    // Also the tripwire case: a real, differing scheduled_start_time on a returned row should fire
+    // the contract-change warning documented in getCommitteeActivity's fetchSize comment — this
+    // fixture's scheduled_start_time (2026-01-05) genuinely differs from its start_time (zero-date).
+    expect(warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'get_committee_activity',
+      expect.stringContaining('scheduled_start_time'),
+      expect.objectContaining({ committee_uid: COMMITTEE_UID })
+    );
+  });
+
+  it('does not fire the scheduled_start_time tripwire for an ordinary meeting with no scheduled_start_time', async () => {
+    getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '2026-01-05T00:00:00Z', scheduled_start_time: '' })] });
+
+    await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+
+    expect(warning).not.toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('scheduled_start_time'), expect.anything());
   });
 
   describe('since/cursor/limit handling', () => {
