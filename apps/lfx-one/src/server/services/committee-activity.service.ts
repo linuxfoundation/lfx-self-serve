@@ -305,7 +305,10 @@ export class CommitteeActivityService {
       throw new ResourceNotFoundError('Committee', committeeUid, {
         operation: 'get_committee_activity',
         service: 'committee_service',
-        path: `/committees/${committeeUid}`,
+        // encodeURIComponent — matches the request path above. BaseApiError.toResponse() spreads
+        // `path` into the 404 body, so an unencoded value here would diverge from what was actually
+        // requested in a field the client can see, not just in a log.
+        path: `/committees/${encodeURIComponent(committeeUid)}`,
       });
     }
     return committee;

@@ -580,9 +580,14 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['meeting_held']);
+      // Positive control for the null-body survey test's negative `not.toHaveBeenCalledWith(...)`
+      // assertion above — pins that the 'survey activity' substring is the real, current message a
+      // survey-leg failure logs, so a future rename of that message would fail loudly here instead
+      // of just letting the negative assertion pass for the wrong reason.
+      expect(warning).toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('survey activity'), expect.anything());
     });
 
-    it('renders the other three sources when documents fail', async () => {
+    it('renders the other three sources when documents (folders) fail', async () => {
       getMeetings.mockResolvedValue({ data: [pastMeeting()] });
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path.endsWith('/folders')) return Promise.reject(new Error('upstream down'));
@@ -591,6 +596,21 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['meeting_held']);
+    });
+
+    it('renders the other three sources when documents (files) fail', async () => {
+      getMeetings.mockResolvedValue({ data: [pastMeeting()] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'committee_document') return Promise.reject(new Error('upstream down'));
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data.map((e) => e.type)).toEqual(['meeting_held']);
+      // Positive control for the null-body files test's negative assertion — pins 'committee files'
+      // as the real, current message; the pre-existing folders-failure test above never exercised
+      // this leg's own message, so this substring was previously pinned nowhere in the suite.
+      expect(warning).toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('committee files'), expect.anything());
     });
   });
 
@@ -624,15 +644,24 @@ describe('CommitteeActivityService', () => {
     it('rejects with a typed ResourceNotFoundError when the committee body is null, rather than an untyped TypeError', async () => {
       // Same fail-closed contract as the test above, for the other real shape a committee lookup
       // can return: an empty-bodied 200 (proxyRequest parses that to null), not just a rejected
-      // promise. Asserting the specific error class matters here — an unguarded `.enable_voting`
-      // read off a null committee also rejects the whole request (via an untyped TypeError), so a
-      // bare `rejects.toThrow()` would pass identically whether the guard exists or not.
+      // promise. Asserting the specific error class (and its operation/service/path context, which
+      // BaseApiError.toResponse() surfaces in the actual HTTP response) matters here — an unguarded
+      // `.enable_voting` read off a null committee also rejects the whole request via an untyped
+      // TypeError, so a bare `rejects.toThrow()` would pass identically whether the guard exists or
+      // not, and asserting only the class would leave the context fields this same commit added
+      // just as untested as the guard itself was before this round.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (/^\/committees\/[^/]+$/.test(path)) return Promise.resolve(null);
         return defaultProxyRequest(r, s, path, m, query);
       });
 
-      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 })).rejects.toThrow(ResourceNotFoundError);
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 })).rejects.toBeInstanceOf(ResourceNotFoundError);
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 })).rejects.toMatchObject({
+        statusCode: 404,
+        operation: 'get_committee_activity',
+        service: 'committee_service',
+        path: `/committees/${COMMITTEE_UID}`,
+      });
     });
   });
 
