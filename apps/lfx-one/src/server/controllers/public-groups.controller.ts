@@ -1,9 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberRole, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { CommitteeMember, PublicGroupContext, PublicGroupDetail, PublicGroupLinks, PublicGroupMeeting, PublicGroupMember } from '@lfx-one/shared/interfaces';
-import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
+import {
+  CommitteeMember,
+  GroupsIOMailingList,
+  PublicGroupContext,
+  PublicGroupDetail,
+  PublicGroupLinks,
+  PublicGroupMeeting,
+  PublicGroupMember,
+  QueryServiceResponse,
+} from '@lfx-one/shared/interfaces';
+import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -11,6 +20,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
+import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -20,6 +30,7 @@ const CHAIR_ROLES = new Set<string>([CommitteeMemberRole.CHAIR, CommitteeMemberR
 export class PublicGroupsController {
   private committeeService: CommitteeService = new CommitteeService();
   private meetingService: MeetingService = new MeetingService();
+  private microserviceProxy: MicroserviceProxyService = new MicroserviceProxyService();
   private projectService: ProjectService = new ProjectService();
 
   public async getPublicGroupById(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -47,11 +58,19 @@ export class PublicGroupsController {
         });
       }
 
-      const [members, project, meetingsResponse] = await Promise.all([
+      const [members, project, meetingsResponse, mailingListsResponse] = await Promise.all([
         this.committeeService.getCommitteeMembers(req, id),
         this.projectService.getProjectById(req, committee.project_uid, false),
         this.meetingService.getMeetings(req, { tags: `committee_uid:${id}` }, 'v1_meeting', false),
+        this.microserviceProxy
+          .proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_mailing_list',
+            tags: `committee_uid:${id}`,
+          })
+          .catch(() => ({ resources: [] })),
       ]);
+
+      const hasPublicMailingList = mailingListsResponse.resources.some((r) => r.data.public);
 
       const chairs =
         committee.member_visibility === CommitteeMemberVisibility.HIDDEN
@@ -98,14 +117,19 @@ export class PublicGroupsController {
         }),
       };
 
-      const mailingList = committee.mailing_list;
-      const normalizedMailingList = mailingList && !mailingList.startsWith('http') && mailingList.includes('@') ? `mailto:${mailingList}` : mailingList;
+      let mailingListLink: string | undefined;
+      if (hasPublicMailingList && committee.mailing_list) {
+        const ml = committee.mailing_list;
+        mailingListLink = !ml.startsWith('http') && ml.includes('@') ? `mailto:${ml}` : ml;
+      }
 
       const links: PublicGroupLinks = {
         website: committee.website,
-        mailing_list: normalizedMailingList,
+        mailing_list: mailingListLink,
         calendar: committee.calendar?.public ? `/public/api/committees/${id}/calendar.ics` : undefined,
       };
+
+      const cadence = buildCommitteeCadenceSummary(meetingsResponse.data);
 
       const detail: PublicGroupDetail = {
         uid: committee.uid,
@@ -118,6 +142,7 @@ export class PublicGroupsController {
         chairs,
         links,
         upcoming_meetings: upcomingMeetings,
+        cadence: cadence !== 'No recurring meetings scheduled' ? cadence : undefined,
         calendar_url: links.calendar ?? undefined,
         member_visibility: committee.member_visibility!,
       };

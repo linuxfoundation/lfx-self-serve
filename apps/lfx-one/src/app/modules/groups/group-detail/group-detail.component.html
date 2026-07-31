@@ -55,6 +55,12 @@
               <span class="text-sm text-gray-500">{{ group.total_members }} {{ group.total_members === 1 ? 'member' : 'members' }}</span>
             }
           </div>
+          @if (group.cadence) {
+            <div class="flex items-center gap-1.5 text-sm text-gray-500" data-testid="group-cadence">
+              <i class="fa-light fa-calendar-clock text-gray-400"></i>
+              <span>{{ group.cadence }}</span>
+            </div>
+          }
         </div>
 
         <!-- Member status banner (authenticated members) -->
