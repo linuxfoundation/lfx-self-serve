@@ -109,12 +109,29 @@
               severity="secondary"
               [outlined]="true"
               [disabled]="!canRegenerate()"
-              [tooltip]="canRegenerate() ? '' : 'Weekly regeneration limit reached'"
               (onClick)="onGenerate()"
               data-testid="weekly-brief-card-regenerate-button" />
             <lfx-button label="Edit" severity="secondary" (onClick)="onEdit()" data-testid="weekly-brief-card-edit-button" />
             <lfx-button label="Copy & Share" severity="info" icon="fa-light fa-copy" (onClick)="onCopyAndShare()" data-testid="weekly-brief-card-copy-button" />
+            <lfx-button
+              label="Share to Mailing List"
+              severity="info"
+              icon="fa-light fa-paper-plane"
+              [loading]="sharing()"
+              [disabled]="!committee().has_mailing_list"
+              (onClick)="onShareToMailingList()"
+              data-testid="weekly-brief-card-share-button" />
           </div>
+          <!-- Visible hints rather than tooltips on these disabled buttons: a
+               disabled native <button> never receives focus/hover, so a
+               tooltip-only explanation would be unreachable by keyboard and
+               screen-reader users. -->
+          @if (!canRegenerate()) {
+            <span class="text-xs text-gray-500" data-testid="weekly-brief-card-regenerate-disabled-hint">Weekly regeneration limit reached</span>
+          }
+          @if (!committee().has_mailing_list) {
+            <span class="text-xs text-gray-500" data-testid="weekly-brief-card-share-disabled-hint">No mailing list configured for this committee</span>
+          }
         }
 
         @if (throttle(); as t) {
@@ -149,4 +166,6 @@
       </div>
     </lfx-card>
   }
+
+  <p-confirmDialog />
 }

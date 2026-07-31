@@ -75,3 +75,15 @@ export interface SaveWeeklyBriefRequest {
   brief_text: string;
   revision: number;
 }
+
+/**
+ * `total_recipients` is a recipient-count snapshot taken at send-acceptance
+ * time — the underlying newsletter send is asynchronous (202 Accepted; fan-out
+ * completes in a detached background job), so there is no synchronous
+ * sent/failed count to report here. The zero-recipient case settles
+ * synchronously with `total_recipients: 0` and no email dispatched.
+ */
+export interface ShareWeeklyBriefResult {
+  committee_name: string;
+  total_recipients: number;
+}

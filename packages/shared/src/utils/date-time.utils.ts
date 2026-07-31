@@ -30,6 +30,21 @@ export const formatDateToISOString = (date: Date | null | undefined): string | u
 };
 
 /**
+ * Formats a UTC ISO datetime range as a short human-readable label, e.g.
+ * "May 17 – May 23, 2026". Pins `timeZone: 'UTC'` so callers in negative
+ * offsets don't see the start shift to the prior day — used for windows that
+ * are already UTC day boundaries (e.g. the WG Weekly Brief's Sunday–Saturday
+ * window), not for user-local display.
+ */
+export const formatUtcDateRangeLabel = (startIso: string, endIso: string): string => {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  return `${startLabel} – ${endLabel}`;
+};
+
+/**
  * Converts a Date object or parseable date string to a full ISO 8601 UTC datetime string
  * (e.g. "2019-02-28T11:49:27.000Z").
  * Use this when an API requires a complete datetime string rather than a date-only string.
