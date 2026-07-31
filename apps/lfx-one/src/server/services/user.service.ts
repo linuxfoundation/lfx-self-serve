@@ -253,6 +253,11 @@ export class UserService {
       throw new Error('Job title is too long');
     }
 
+    // Validate bio if provided (basic length check)
+    if (metadata?.bio && metadata.bio.length > 2000) {
+      throw new Error('Bio is too long (max 2000 characters)');
+    }
+
     return true;
   }
 
