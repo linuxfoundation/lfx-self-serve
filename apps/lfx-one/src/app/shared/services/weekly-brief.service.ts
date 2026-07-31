@@ -57,8 +57,13 @@ export class WeeklyBriefService {
     return this.http.put<WeeklyBrief>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`, body).pipe(take(1));
   }
 
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/share
+   *
+   * No `catchError` — the caller handles 404 (no brief) / 409 (no mailing list / stale
+   * revision) states by classifying the error itself.
+   */
   public shareWeeklyBrief(committeeId: string, revision: number): Observable<ShareWeeklyBriefResult> {
-    return this.http.post<ShareWeeklyBriefResult>(`/api/committees/${committeeId}/weekly-briefs/share`, { revision });
-    // No catchError — caller handles 404 (no brief) / 409 (no mailing list / stale revision) states
+    return this.http.post<ShareWeeklyBriefResult>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share`, { revision }).pipe(take(1));
   }
 }

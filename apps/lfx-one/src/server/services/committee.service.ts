@@ -1435,6 +1435,21 @@ export class CommitteeService {
   }
 
   /**
+   * Strict single-committee mailing-list check — unlike {@link getMailingListCountByCommittee}
+   * (fail-open-to-false via the batch/Promise.allSettled path, acceptable for a cosmetic list
+   * badge), this propagates a query-service failure instead of silently reporting "no mailing
+   * list". Used by `shareBrief`, where a false negative would misattribute a transient outage
+   * as a real precondition failure (409 NO_MAILING_LIST) instead of a retryable error.
+   */
+  public async hasMailingListStrict(req: Request, committeeId: string): Promise<boolean> {
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
+      type: 'groupsio_mailing_list',
+      tags: `committee_uid:${committeeId}`,
+    });
+    return count > 0;
+  }
+
+  /**
    * Batch-fetches committee resources by UID from the query service.
    * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
    * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
@@ -1798,6 +1813,12 @@ export class CommitteeService {
    * result rather than the batch method's `Set`. `/committees/{uid}` does not reliably
    * populate `has_mailing_list` itself (verified false against real, populated
    * committees — LFXV2-2914), so this recomputes it the same way the list endpoints do.
+   *
+   * Inherits `getCommitteesWithMailingList`'s fail-open-to-false behavior on a transient
+   * query-service failure — acceptable here since this only feeds a cosmetic list/detail
+   * badge. Callers with a real precondition riding on the answer (e.g. `shareBrief`, which
+   * would otherwise misreport an outage as "no mailing list configured") should use
+   * {@link hasMailingListStrict} instead.
    */
   private async getMailingListCountByCommittee(req: Request, committeeId: string): Promise<number> {
     const found = await this.getCommitteesWithMailingList(req, [committeeId]);

@@ -638,6 +638,32 @@ test.describe('WG Weekly Brief card — Share to Mailing List (flag ON)', () => 
     expect(shareCalled).toBe(true);
     await expect(page.getByText(/Brief queued for delivery to 4 recipients/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
+
+  test('a 200 response with zero recipients shows a warning toast, not a success toast', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true, mailing_list: 'wg-tsc@lists.example.org' });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`, async (route) => {
+      const result: ShareWeeklyBriefResult = { committee_name: 'Weekly Brief Test WG', total_recipients: 0 };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(result) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-share-button').click();
+    await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
+
+    const sharePromise = page.waitForRequest(
+      (req) => req.method() === 'POST' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
+    await sharePromise;
+
+    await expect(page.getByText(/No recipients were found for this committee/i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText(/Brief queued for delivery/i)).toHaveCount(0);
+  });
 });
 
 test.describe('WG Weekly Brief card — Share disabled (no mailing list)', () => {

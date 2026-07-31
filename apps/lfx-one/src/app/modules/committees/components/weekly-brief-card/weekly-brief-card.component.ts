@@ -283,13 +283,22 @@ export class WeeklyBriefCardComponent {
     // The Share action only renders outside edit mode (see the template's
     // @if (editMode()) branch), so there is never an unsaved-edit case to
     // guard here — the brief is always whatever was last saved.
+    //
+    // Captured here, not re-read in performShare at accept-time: the dialog's message
+    // names a specific committee/audience, so the request that follows Send must target
+    // that same snapshot — not whatever committee()/brief() happen to be current if the
+    // signals changed while the dialog was open (component reuse across a committee
+    // navigation, or a background poll landing mid-dialog).
+    const committeeUid = this.committee()?.uid;
+    const revision = this.brief()?.revision;
+    if (!committeeUid || revision === undefined) return;
     this.confirmationService.confirm({
       header: 'Share to Mailing List',
       message: `Send the current brief by email to ${this.shareAudienceLabel()}?`,
       icon: 'fa-light fa-paper-plane',
       acceptLabel: 'Send',
       rejectLabel: 'Cancel',
-      accept: () => this.performShare(),
+      accept: () => this.performShare(committeeUid, revision),
     });
   }
 
@@ -344,11 +353,14 @@ export class WeeklyBriefCardComponent {
     // between committees — without an explicit reset, a stale `editMode`/`editForm`
     // (edited text from the previous committee, rendered against the new committee's
     // brief), a leftover `generating` flag from a generate call cut off mid-flight (see
-    // the takeUntil guard in onGenerate), or a leftover `saving` flag from a save cut off
-    // mid-flight (see the same guard in onSave) would bleed onto the new committee's card.
+    // the takeUntil guard in onGenerate), a leftover `saving` flag from a save cut off
+    // mid-flight (see the same guard in onSave), or a leftover `sharing` flag from a
+    // share cut off mid-flight (see the same guard in performShare) would bleed onto
+    // the new committee's card.
     committeeUid$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.generating.set(false);
       this.saving.set(false);
+      this.sharing.set(false);
       this.editMode.set(false);
       this.editForm.reset({ briefText: '' });
     });
@@ -498,15 +510,17 @@ export class WeeklyBriefCardComponent {
   }
 
   // Other private helpers
-  private performShare(): void {
-    const committeeUid = this.committee()?.uid;
-    const revision = this.brief()?.revision;
-    if (!committeeUid || revision === undefined) return;
+  private performShare(committeeUid: string, revision: number): void {
     this.sharing.set(true);
     this.weeklyBriefService
       .shareWeeklyBrief(committeeUid, revision)
       .pipe(
         take(1),
+        // Same guard as onGenerate/onSave: a share started on committee A whose response
+        // arrives after the user has already navigated to committee B must not clear B's
+        // sharing flag or trigger an unwanted refresh$ on B's card (dealako review).
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntilDestroyed(this.destroyRef),
         finalize(() => this.sharing.set(false))
       )
       .subscribe({

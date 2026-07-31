@@ -344,7 +344,7 @@ export class WeeklyBriefService {
       });
     }
 
-    const committee = await this.committeeService.getCommitteeById(req, committeeId, { includeMailingListStatus: true });
+    const committee = await this.committeeService.getCommitteeById(req, committeeId);
     // committee.writer is a superset of what we need here — per committee.interface.ts's
     // own doc comment, it's true for both a direct committee-level grant AND an inherited
     // project writer, but the newsletter service (which this repurposes for delivery)
@@ -354,7 +354,15 @@ export class WeeklyBriefService {
     // misattributing the send (the newsletter service resolves the sender's display name
     // from the signed JWT principal; an M2M token has none). Check the actual boundary
     // directly instead, with the caller's own bearer token.
-    const isProjectWriter = await this.accessCheckService.checkSingleAccess(req, {
+    //
+    // checkSingleAccessStrict, not checkSingleAccess — the non-strict variant degrades a
+    // transient access-check outage to "no access", which would surface here as a
+    // misleading 403 NOT_PROJECT_WRITER instead of a retryable error. Sharing is a
+    // deliberate, low-frequency action (unlike a list-view access annotation, where
+    // fail-closed-to-false is an acceptable trade-off), so misattributing an outage as a
+    // permission denial is worse here — same rationale as committee-access.internal.helper.ts's
+    // existing use of the strict variant.
+    const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
       resource: 'project',
       id: committee.project_uid,
       access: 'writer',
@@ -366,7 +374,12 @@ export class WeeklyBriefService {
         code: 'NOT_PROJECT_WRITER',
       });
     }
-    if (!committee.has_mailing_list) {
+    // hasMailingListStrict, not the fail-open-to-false `has_mailing_list` field
+    // getCommitteeById's includeMailingListStatus would otherwise compute — a transient
+    // query-service failure here must not be misreported as "no mailing list configured"
+    // (409 NO_MAILING_LIST is a real, actionable precondition failure; an outage isn't).
+    const hasMailingList = await this.committeeService.hasMailingListStrict(req, committeeId);
+    if (!hasMailingList) {
       throw new ConflictError('Committee has no mailing list configured', 'NO_MAILING_LIST', {
         operation: 'share_weekly_brief',
         service: 'weekly_brief_service',
