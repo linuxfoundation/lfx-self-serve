@@ -73,7 +73,7 @@ vi.mock('./microservice-proxy.service', () => ({
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import type { ActivityPageCursor, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CommitteeActivityService } from './committee-activity.service';
 
 const req = {} as unknown as Request;
@@ -413,14 +413,16 @@ describe('CommitteeActivityService', () => {
     });
 
     it('treats a null /query/resources body as a graceful empty survey leg, not an error-path degrade', async () => {
-      // Both the survey and files legs already sit inside their own per-leg `.catch()` in
-      // getCommitteeActivity, so `result.data` alone can't tell a guarded null response apart from
-      // an unguarded one — either way the leg contributes []. The `warning` log is what actually
-      // discriminates: without the `response?.resources ?? []` guard, the TypeError thrown reading
-      // `.resources` off a null response is caught by that outer per-leg `.catch()`, which DOES log
-      // a warning; the guard means this leg never throws at all, so no warning fires. Asserting only
-      // `result.data` here would pass identically whether the guard exists or not — proven by
-      // mutation testing the guard away and re-running this test.
+      // The survey leg already sits inside its own per-leg `.catch()` in getCommitteeActivity, so
+      // `result.data` alone can't tell a guarded null response apart from an unguarded one — either
+      // way the leg contributes []. The `warning` log is what actually discriminates: without the
+      // `response?.resources ?? []` guard, the TypeError thrown reading `.resources` off a null
+      // response propagates out of fetchSurveyEvents and is caught by that outer per-leg `.catch()`,
+      // which DOES log a warning; the guard means fetchSurveyEvents never throws at all, so no
+      // warning fires. Asserting only `result.data` here would pass identically whether the guard
+      // exists or not — proven by mutation testing the guard away and re-running this test. Scoped
+      // to the survey leg's own message (not `not.toHaveBeenCalled()` at all) so an unrelated
+      // warning from another leg can't make this assertion pass for the wrong reason.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'survey') return Promise.resolve(null);
         return defaultProxyRequest(r, s, path, m, query);
@@ -428,20 +430,22 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toEqual([]);
-      expect(warning).not.toHaveBeenCalled();
+      expect(warning).not.toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('survey activity'), expect.anything());
     });
 
     it('treats a null /query/resources body as a graceful empty files leg, not an error-path degrade', async () => {
-      // See the survey test above for why `warning` (not just result.data) is the assertion that
-      // actually discriminates a guarded null response from an unguarded one.
+      // Same mechanism as the survey test above, one layer earlier: the files leg's TypeError is
+      // caught by the `.catch()` chained directly onto its own proxyRequest call inside
+      // fetchDocumentEvents (not the outer per-leg catch in getCommitteeActivity), but the
+      // observable signal is identical — a warning fires only on the unguarded path.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'committee_document') return Promise.resolve(null);
         return defaultProxyRequest(r, s, path, m, query);
       });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-      expect(warning).not.toHaveBeenCalled();
       expect(result.data).toEqual([]);
+      expect(warning).not.toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('committee files'), expect.anything());
     });
 
     it('excludes an out-of-window vote purely via the in-memory since/cursor filter — votes get no upstream date narrowing to rely on', async () => {
@@ -615,6 +619,20 @@ describe('CommitteeActivityService', () => {
       });
 
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 })).rejects.toThrow(upstreamError);
+    });
+
+    it('rejects with a typed ResourceNotFoundError when the committee body is null, rather than an untyped TypeError', async () => {
+      // Same fail-closed contract as the test above, for the other real shape a committee lookup
+      // can return: an empty-bodied 200 (proxyRequest parses that to null), not just a rejected
+      // promise. Asserting the specific error class matters here — an unguarded `.enable_voting`
+      // read off a null committee also rejects the whole request (via an untyped TypeError), so a
+      // bare `rejects.toThrow()` would pass identically whether the guard exists or not.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (/^\/committees\/[^/]+$/.test(path)) return Promise.resolve(null);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 })).rejects.toThrow(ResourceNotFoundError);
     });
   });
 

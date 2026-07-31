@@ -287,14 +287,14 @@ export class CommitteeActivityService {
   private async fetchCommittee(req: Request, committeeUid: string): Promise<Committee> {
     // `| null`, not an optimistic non-null type — MicroserviceProxyService.proxyRequest returns the
     // upstream body verbatim (api-client.service.ts parses an empty body to `null`), so a null
-    // response is a real, if rare, return value this service has already hit more than once (every
-    // `| null` generic in this file exists for the same reason — see the other call sites in
+    // response is a real return value this file guards at four other call sites too (see
     // fetchSurveyEvents/fetchDocumentEvents). `proxyRequest`'s own declared type doesn't reflect
-    // this repo-wide (every other caller still assumes non-null); annotating it per call site here
-    // is a local, in-scope fix, not a claim that the hazard is closed elsewhere. A null committee
-    // here would otherwise throw an untyped TypeError reading `.enable_voting` off it in
-    // getCommitteeActivity; throwing explicitly here keeps this leg's fail-closed behavior (see the
-    // docblock above) meaningful and typed rather than an accidental side effect of a property read.
+    // this repo-wide — every other caller still *declares* it non-null, though several (e.g.
+    // project.service.ts, survey.service.ts) already runtime-guard the same way this does, which is
+    // the established repo pattern this follows. A null committee here would otherwise throw an
+    // untyped TypeError reading `.enable_voting` off it in getCommitteeActivity; throwing explicitly
+    // here keeps this leg's fail-closed behavior (see the docblock above) meaningful and typed
+    // rather than an accidental side effect of a property read.
     const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
       req,
       'LFX_V2_SERVICE',
@@ -302,7 +302,11 @@ export class CommitteeActivityService {
       'GET'
     );
     if (!committee) {
-      throw new ResourceNotFoundError('Committee', committeeUid, { operation: 'get_committee_activity' });
+      throw new ResourceNotFoundError('Committee', committeeUid, {
+        operation: 'get_committee_activity',
+        service: 'committee_service',
+        path: `/committees/${committeeUid}`,
+      });
     }
     return committee;
   }
