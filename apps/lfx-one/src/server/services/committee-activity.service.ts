@@ -159,7 +159,8 @@ export class CommitteeActivityService {
     // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
     // public and reachable directly. An out-of-range `limit` here degrades silently instead of
     // rejecting — `limit: 0` yields `windowed.slice(0, 0)`, an empty feed with no error; a negative
-    // `limit` (`slice(0, -1)`) silently drops the newest item while still emitting a page_token.
+    // `limit` (`slice(0, -1)`) silently drops the OLDEST item (windowed is sorted descending by
+    // (occurred_at, key), so index 0 is newest and -1 is oldest) while still emitting a page_token.
     if (!Number.isInteger(limit) || limit < 1 || limit > ACTIVITY_FEED_MAX_PAGE_SIZE) {
       throw ServiceValidationError.forField('limit', `limit must be an integer between 1 and ${ACTIVITY_FEED_MAX_PAGE_SIZE}`, {
         operation: 'get_committee_activity',
@@ -218,7 +219,14 @@ export class CommitteeActivityService {
     // then rejects every surviving event too (`ms >= Date.parse(since)` is `ms >= NaN`, always
     // false) — a silent empty feed, not the clean rejection this method's cursor handling already
     // guarantees for the equivalent bad-input case.
-    if (rawSince && Number.isNaN(Date.parse(rawSince))) {
+    //
+    // `typeof rawSince !== 'string'`, not just parseability — `CommitteeActivityQuery.since` is
+    // typed `string | undefined`, but this method is reachable by an untyped/direct caller that
+    // bypasses that guarantee, and Date.parse(x) coerces its argument via ToString before parsing
+    // while normalizeTimestamp's `new Date(x)` does not (a Number is instead read as epoch-ms) —
+    // so a non-string `since` could pass Date.parse's parseability check here and then normalize to
+    // a completely different instant below, silently corrupting the window instead of rejecting.
+    if (rawSince !== undefined && (typeof rawSince !== 'string' || Number.isNaN(Date.parse(rawSince)))) {
       throw ServiceValidationError.forField('since', 'since must be a valid ISO 8601 timestamp', { operation: 'get_committee_activity' });
     }
     // normalizeTimestamp — same reason as parseCommitteeActivityQuery's own use of it (see that

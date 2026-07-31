@@ -10,12 +10,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // `@lfx-one/shared/*` isn't wired into this app's vitest config (same issue documented in
 // committee-engagement-window.helper.spec.ts) — enums/utils need stubs; the interfaces import in
 // the service under test is `import type`, so it's erased and needs no mock at all.
-const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, normalizeTimestamp, warning, debug } = vi.hoisted(() => ({
+const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, debug } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
   getVotes: vi.fn(),
   encodeActivityPageToken: vi.fn((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`),
-  normalizeTimestamp: vi.fn((value: string) => new Date(value).toISOString()),
   warning: vi.fn(),
   debug: vi.fn(),
 }));
@@ -54,7 +53,13 @@ vi.mock('@lfx-one/shared/utils', async () => {
     getSurveyDisplayStatus: surveyUtils.getSurveyDisplayStatus,
   };
 });
-vi.mock('../helpers/committee-activity-query.helper', () => ({ encodeActivityPageToken, normalizeTimestamp }));
+// Real normalizeTimestamp (not a hand-copied stub) — its exact Date.parse/new Date().toISOString()
+// behavior is precisely what the service's since-normalization tests below need to exercise; a
+// stub that merely mimics the same expression would validate the stub, not the shipped helper.
+vi.mock('../helpers/committee-activity-query.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/committee-activity-query.helper')>()),
+  encodeActivityPageToken,
+}));
 vi.mock('./logger.service', () => ({ logger: { debug, warning, info: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
 vi.mock('./meeting.service', () => ({
   MeetingService: class {
@@ -130,6 +135,7 @@ describe('CommitteeActivityService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
     proxyRequest.mockImplementation(defaultProxyRequest);
     getMeetings.mockResolvedValue({ data: [] });
     getVotes.mockResolvedValue({ data: [] });
@@ -215,8 +221,9 @@ describe('CommitteeActivityService', () => {
       // date_to is ceiled to the next whole second before being sent upstream (see the dedicated
       // ceiling test below) — an already-whole-second cursor still round-trips through
       // Date.toISOString(), which always emits milliseconds, hence the trailing `.000Z`. `since`
-      // round-trips through the same normalizeTimestamp/Date.toISOString() call on the way in
-      // (see the dedicated since-normalization test below), so it picks up the identical `.000Z`.
+      // round-trips through the same normalizeTimestamp/Date.toISOString() call on the way in, so
+      // it picks up the identical `.000Z` — these three assertions are the normalization coverage,
+      // there's no separate dedicated test for it.
       expect(getMeetings).toHaveBeenCalledWith(
         req,
         expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' }),
@@ -277,6 +284,19 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).not.toHaveBeenCalled();
     });
 
+    it('normalizes a zone-less since to RFC3339 before sending it upstream as date_from', async () => {
+      // Date.parse accepts a zone-less `2026-01-05T00:00:00` (parsed in the server's local
+      // timezone), but query-service's stricter RFC3339 parser 400s it — without normalization this
+      // would pass the parseability check above and then silently thin the feed once every leg's
+      // upstream call rejects it. Pinned against a literal, not `new Date(x).toISOString()` (which
+      // would just restate the implementation), with TZ stubbed explicitly since a zone-less string
+      // is parsed in the server's local timezone — the exact behavior this test needs to pin down.
+      vi.stubEnv('TZ', 'UTC');
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-05T00:00:00', limit: 8 });
+
+      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_from: '2026-01-05T00:00:00.000Z' }));
+    });
+
     it.each([
       ['zero', 0],
       ['negative', -1],
@@ -285,8 +305,9 @@ describe('CommitteeActivityService', () => {
     ])('rejects a limit that is %s instead of silently degrading to a wrong result', async (_label, limit) => {
       // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
       // public and reachable directly. Without this check: limit=0 -> windowed.slice(0, 0) -> an
-      // empty feed with no error; a negative limit -> slice(0, -1) silently drops the newest item
-      // while still emitting a page_token; either way, a wrong result with no signal anything's off.
+      // empty feed with no error; a negative limit -> slice(0, -1) silently drops the OLDEST item
+      // (windowed is sorted newest-first) while still emitting a page_token; either way, a wrong
+      // result with no signal anything's off.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit })).rejects.toThrow(ServiceValidationError);
 
       expect(getVotes).not.toHaveBeenCalled();
