@@ -497,22 +497,22 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
     // poll call covered this state, leaving a load-time generating brief a permanent
     // spinner with no recovery (LFXV2-2176 review).
     //
-    // Keyed off a one-way toggle, not a raw GET count: once any read observes the
-    // terminal brief, every read after it (including an extra initial-load GET from,
-    // say, LaunchDarkly re-evaluating and remounting the card) stays terminal too —
-    // a fixed "call N is terminal" index would desync on exactly that kind of extra call.
-    let terminalObserved = false;
+    // Keyed off an explicit flag flipped only after the generating state is confirmed on
+    // screen, not a raw GET count — a fixed "call N is terminal" threshold can desync when an
+    // extra initial GET fires (e.g. LaunchDarkly re-evaluating and remounting the card) before
+    // this test's own assertion runs, letting the remount's first read already observe the
+    // terminal brief and skip rendering the generating state at all (Cursor Bugbot: this same
+    // count-gate pattern was already replaced with a flag elsewhere in this file for the
+    // identical reason — this test hadn't been updated to match).
     let getCount = 0;
+    let showTerminal = false;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;
       }
       getCount += 1;
-      if (getCount > 1) {
-        terminalObserved = true;
-      }
-      const body: WeeklyBriefCurrentResponse = terminalObserved
+      const body: WeeklyBriefCurrentResponse = showTerminal
         ? { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE }
         : { brief: GENERATING_BRIEF, throttle: DEFAULT_THROTTLE };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -522,13 +522,17 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // First read already generating — no click happened, so this proves the load
-    // pipeline itself started the poll.
+    // First read(s) already generating — no click happened, so this proves the load pipeline
+    // itself started the poll. Any number of incidental extra reads before this point (e.g. a
+    // remount) still return 'generating', so this can't skip past the state it's asserting.
     await expect(page.getByTestId('weekly-brief-card-generating-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const countAtGenerating = getCount;
 
-    // The poll's own tick (not a user action) carries it to the terminal brief.
+    // Only now let the poll's own next tick observe the terminal brief — proves the poll
+    // itself (not this flip) carries the card to done, since getCount must have advanced.
+    showTerminal = true;
     await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
-    expect(getCount).toBeGreaterThanOrEqual(2);
+    expect(getCount).toBeGreaterThan(countAtGenerating);
   });
 });
 

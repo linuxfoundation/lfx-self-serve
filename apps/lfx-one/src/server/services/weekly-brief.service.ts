@@ -49,34 +49,39 @@ export function briefWindow(): { window_start: string; window_end: string } {
 }
 
 /**
- * Mock-only, in-memory revision tracker keyed by committee. Mock mode is otherwise stateless
- * (no persistence, resets on server restart — see `WeeklyBriefService`'s class doc), but the
- * client's poll-until-terminal guard (`pollUntilTerminal`'s `priorRevision` check, LFXV2-2176
- * round 2) rejects a terminal tick whose revision still matches the pre-regenerate brief. Without
- * tracking the bump `generateBrief`'s mock branch already promises in its own 202 response, every
- * subsequent mock `getCurrentBrief` GET would report the same hardcoded revision the pre-regenerate
- * read did, and a mock regenerate would never satisfy that guard — hanging until the poll's attempt
- * cap trips instead of completing (Cursor Bugbot finding).
+ * Mock-only, in-memory brief store keyed by committee. Mock mode is otherwise stateless (no
+ * persistence, resets on server restart — see `WeeklyBriefService`'s class doc), but two real
+ * gaps came from treating it as fully stateless:
+ *
+ * 1. The client's poll-until-terminal guard (`pollUntilTerminal`'s `priorRevision` check,
+ *    LFXV2-2176 round 2) rejects a terminal tick whose revision still matches the pre-regenerate
+ *    brief. Without persisting the bump `generateBrief` promises in its own 202 response, every
+ *    subsequent `getCurrentBrief` GET reported the same hardcoded revision — a mock regenerate
+ *    could never satisfy that guard and hung until the poll's attempt cap (Cursor Bugbot).
+ * 2. Persisting *only* the revision (round 3) still discarded everything else a save or
+ *    regenerate produced — `brief_text`, `state`, `regeneration_count` all reverted to
+ *    `buildMockBrief`'s canned defaults on the very next GET, so a successful save appeared to
+ *    silently revert in local/mock dev, and a regenerate's `regeneration_count` reset to 0 on
+ *    the next poll tick (Copilot review). Storing the full `WeeklyBrief` closes both at once.
  */
-const mockRevisionByCommittee = new Map<string, number>();
+const mockBriefByCommittee = new Map<string, WeeklyBrief>();
 
-function currentMockRevision(committeeId: string): number {
-  return mockRevisionByCommittee.get(committeeId) ?? 1;
+function currentMockBrief(committeeId: string): WeeklyBrief {
+  return mockBriefByCommittee.get(committeeId) ?? buildMockBrief(committeeId);
 }
 
-function bumpMockRevision(committeeId: string): number {
-  const next = currentMockRevision(committeeId) + 1;
-  mockRevisionByCommittee.set(committeeId, next);
-  return next;
+function storeMockBrief(committeeId: string, brief: WeeklyBrief): WeeklyBrief {
+  mockBriefByCommittee.set(committeeId, brief);
+  return brief;
 }
 
 /**
- * Test-only: clear the mock revision tracker so tests reusing the same committeeId across
- * `it()` blocks (this module's own spec included) don't leak a bumped revision from one test
- * into the next. Not exported from the package's public surface.
+ * Test-only: clear the mock brief store so tests reusing the same committeeId across `it()`
+ * blocks (this module's own spec included) don't leak state from one test into the next.
+ * Not exported from the package's public surface.
  */
-export function __resetMockRevisionsForTesting(): void {
-  mockRevisionByCommittee.clear();
+export function __resetMockBriefStateForTesting(): void {
+  mockBriefByCommittee.clear();
 }
 
 function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
@@ -127,11 +132,13 @@ export class WeeklyBriefService {
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
     if (!this.isLive(req)) {
+      const brief = currentMockBrief(committeeId);
       return {
-        brief: buildMockBrief(committeeId, { revision: currentMockRevision(committeeId) }),
+        brief,
         throttle: {
           ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
           generates_used: 1,
+          regenerations_used: brief.regeneration_count,
           window_resets_at: nextSundayIso(),
         },
       };
@@ -163,19 +170,29 @@ export class WeeklyBriefService {
     body: GenerateWeeklyBriefRequest
   ): Promise<{ status: number; data: GenerateWeeklyBriefResponse }> {
     if (!this.isLive(req)) {
-      // A regeneration_count of 0 means "the fresh (non-forced) generate for this
-      // window" — upstream only increments it on subsequent force:true calls.
-      const regenerationCount = body?.force ? 1 : 0;
+      const tracked = currentMockBrief(committeeId);
+      // A regeneration_count of 0 means "the fresh (non-forced) generate for this window" —
+      // upstream only increments it on subsequent force:true calls. Cumulative across
+      // successive regenerates (not reset to a flat 1 each time), matching how revision
+      // already accumulates below.
+      const regenerationCount = body?.force ? tracked.regeneration_count + 1 : 0;
       // Only a regenerate (force:true) needs a genuinely new revision — that's the only path
       // the client's priorRevision poll guard applies to. A fresh generate keeps the current
-      // (default 1) revision, unchanged from prior behavior.
-      const revision = body?.force ? bumpMockRevision(committeeId) : currentMockRevision(committeeId);
+      // revision unchanged.
+      const revision = body?.force ? tracked.revision + 1 : tracked.revision;
+      // Mock mode completes synchronously (no background job to model the real async delay
+      // against) — the STORED brief is already 'generated' so a single follow-up GET
+      // /current naturally "completes" the poll, same as before this store existed. The 202
+      // response body below still reports 'generating' to mimic the real envelope shape.
+      const completed = storeMockBrief(committeeId, {
+        ...tracked,
+        state: 'generated',
+        regeneration_count: regenerationCount,
+        revision,
+        updated_at: new Date().toISOString(),
+      });
       const data: GenerateWeeklyBriefResponse = {
-        brief: buildMockBrief(committeeId, {
-          state: 'generating',
-          regeneration_count: regenerationCount,
-          revision,
-        }),
+        brief: { ...completed, state: 'generating' },
         throttle: {
           ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
           generates_used: 1,
@@ -183,11 +200,6 @@ export class WeeklyBriefService {
           window_resets_at: nextSundayIso(),
         },
       };
-      // Mock mode completes synchronously (no background job to model the real
-      // async delay against), but still returns the real 202/generating envelope
-      // so the client's poll-until-terminal path runs the same in mock and live —
-      // getCurrentBrief's mock branch always answers with a 'generated' brief, so
-      // a single follow-up GET /current naturally "completes" the poll.
       return { status: 202, data };
     }
 
@@ -215,14 +227,24 @@ export class WeeklyBriefService {
    */
   public async saveBrief(req: Request, committeeId: string, body: SaveWeeklyBriefRequest): Promise<WeeklyBrief> {
     if (!this.isLive(req)) {
-      // Keep the mock revision tracker in sync with the save, same as a regenerate does —
-      // otherwise a subsequent getCurrentBrief would report a stale (pre-save) revision.
-      const revision = body.revision + 1;
-      mockRevisionByCommittee.set(committeeId, revision);
-      return buildMockBrief(committeeId, {
+      const tracked = currentMockBrief(committeeId);
+      // Mirror the live backend's optimistic-concurrency contract: reject a stale revision
+      // (409) instead of silently accepting the write, which could move the tracked revision
+      // backward or out of sync with a newer save/regenerate that already landed (CodeRabbit
+      // review — mock mode must enforce the same conflict contract the live path does).
+      if (body.revision !== tracked.revision) {
+        throw new MicroserviceError('Someone else updated this brief. Reload to see the latest version before retrying.', 409, 'REVISION_CONFLICT', {
+          operation: 'save_weekly_brief',
+          service: 'weekly_brief_service',
+          errorBody: { details: { code: 'revision_conflict', revision: tracked.revision } },
+        });
+      }
+      return storeMockBrief(committeeId, {
+        ...tracked,
         state: 'edited',
         brief_text: body.brief_text,
-        revision,
+        revision: tracked.revision + 1,
+        updated_at: new Date().toISOString(),
       });
     }
 

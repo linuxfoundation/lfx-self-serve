@@ -36,7 +36,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 
-import { __resetMockRevisionsForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
+import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
 
@@ -77,7 +77,7 @@ describe('WeeklyBriefService', () => {
     proxyRequestWithResponse.mockReset();
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
-    __resetMockRevisionsForTesting();
+    __resetMockBriefStateForTesting();
   });
 
   afterEach(() => {
@@ -158,6 +158,42 @@ describe('WeeklyBriefService', () => {
       const after = await service.getCurrentBrief(req, 'committee-1');
 
       expect(after.brief?.revision).toBe(2);
+    });
+
+    it('saveBrief persists the saved brief_text — a subsequent getCurrentBrief does not revert to the canned default (Copilot review)', async () => {
+      await service.saveBrief(req, 'committee-1', { brief_text: 'my custom edited text', revision: 1 });
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(after.brief?.brief_text).toBe('my custom edited text');
+      expect(after.brief?.state).toBe('edited');
+    });
+
+    it('saveBrief rejects a stale revision with a 409 instead of silently accepting it (CodeRabbit review)', async () => {
+      // Advance the tracked revision to 2 via a regenerate, then attempt a save still holding
+      // the pre-regenerate revision (1).
+      await service.generateBrief(req, 'committee-1', { force: true });
+
+      try {
+        await service.saveBrief(req, 'committee-1', { brief_text: 'stale write', revision: 1 });
+        expect.fail('expected saveBrief to throw on a stale revision');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MicroserviceError);
+        const wrapped = error as MicroserviceError;
+        expect(wrapped.statusCode).toBe(409);
+        expect(wrapped.code).toBe('REVISION_CONFLICT');
+      }
+
+      // The rejected save must not have mutated the tracked state.
+      const after = await service.getCurrentBrief(req, 'committee-1');
+      expect(after.brief?.brief_text).not.toBe('stale write');
+    });
+
+    it('generateBrief (force: true) persists regeneration_count — a subsequent getCurrentBrief does not reset it to 0 (Copilot review)', async () => {
+      await service.generateBrief(req, 'committee-1', { force: true });
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(after.brief?.regeneration_count).toBe(1);
+      expect(after.throttle?.regenerations_used).toBe(1);
     });
 
     it('refuses to serve mock data when NODE_ENV=production (LFXV2-2175 review: no auth in mock mode)', async () => {
