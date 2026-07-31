@@ -359,7 +359,22 @@ export class ProfileEditDrawerComponent {
           this.combinedProfile.update((profile) => (profile ? { ...profile, profile: { ...(profile.profile ?? {}), picture: url } } : profile));
           this.saved.emit({ picture: url });
         },
-        error: () => {
+        error: (error: HttpErrorResponse) => {
+          // Flow C: Management token required — redirect to authorize. Unlike onSubmit, the selected
+          // File can't be persisted across the full-page redirect (sessionStorage can't hold a File),
+          // so the user re-selects and re-uploads after authorizing rather than an auto-resumed upload.
+          if (error.status === 403 && error.error?.error === 'management_token_required') {
+            if (isPlatformBrowser(this.platformId)) {
+              this.messageService.add({
+                severity: 'info',
+                summary: 'Authorization required',
+                detail: 'Please authorize profile changes, then re-select your image to upload it.',
+              });
+              window.location.href = error.error.authorize_url;
+            }
+            return;
+          }
+
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to upload profile picture. Please try again.' });
         },
       });
