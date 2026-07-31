@@ -156,7 +156,7 @@ export class CommitteeViewComponent {
   public readonly inviteToastKey = INVITE_TOAST_KEY;
   public pendingInvitation: Signal<PendingInvitation | null> = computed(() => {
     const committee = this.committee();
-    if (!committee?.uid || !this.isVisitor()) {
+    if (!committee?.uid || !this.isVisitor() || committee.join_mode === 'closed') {
       return null;
     }
     return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
@@ -183,7 +183,7 @@ export class CommitteeViewComponent {
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
   public canSendMemberInvites: Signal<boolean> = computed(() => {
     const committee = this.committee();
-    if (!committee || this.canEdit() || this.isVisitor()) return false;
+    if (!committee || this.canEdit() || this.isVisitor() || this.myRoleLoading()) return false;
     return committee.join_mode === 'invite_only';
   });
 

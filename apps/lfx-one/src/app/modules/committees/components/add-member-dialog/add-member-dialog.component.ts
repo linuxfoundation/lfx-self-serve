@@ -38,6 +38,13 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, take, tap, toArray } from 'rxjs';
 
+interface DirectAddResult {
+  email: string;
+  success: boolean;
+  reason?: string;
+  inviteCleanupFailed?: boolean;
+}
+
 /**
  * Add people to a committee by email — single or bulk.
  *
@@ -257,7 +264,7 @@ export class AddMemberDialogComponent {
 
     from(emails)
       .pipe(
-        mergeMap((email): Observable<CommitteeInviteResult> => {
+        mergeMap((email): Observable<DirectAddResult> => {
           const memberData: CreateCommitteeMemberRequest = { email };
           if (role) {
             memberData.role = { name: role as CommitteeMemberRole };
@@ -269,15 +276,15 @@ export class AddMemberDialogComponent {
             switchMap(() => {
               const inviteUid = this.pendingInviteUidByEmail.get(email.toLowerCase());
               if (!inviteUid) {
-                return of({ email, success: true as const });
+                return of({ email, success: true, inviteCleanupFailed: false } satisfies DirectAddResult);
               }
               // Reconcile stale pending invite so the roster does not show member + invite.
               return this.committeeService.revokeCommitteeInvite(committeeId, inviteUid).pipe(
-                map(() => ({ email, success: true as const })),
-                catchError(() => of({ email, success: true as const }))
+                map(() => ({ email, success: true, inviteCleanupFailed: false }) satisfies DirectAddResult),
+                catchError(() => of({ email, success: true, inviteCleanupFailed: true } satisfies DirectAddResult))
               );
             }),
-            catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.directAddFailureReason(err) }))
+            catchError((err: HttpErrorResponse) => of({ email, success: false, reason: this.directAddFailureReason(err) } satisfies DirectAddResult))
           );
         }, COMMITTEE_INVITE_CONCURRENCY),
         toArray(),
@@ -315,9 +322,10 @@ export class AddMemberDialogComponent {
       });
   }
 
-  private summarizeDirectAdd(results: CommitteeInviteResult[]): void {
+  private summarizeDirectAdd(results: DirectAddResult[]): void {
     const succeeded = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
+    const cleanupFailed = succeeded.filter((r) => r.inviteCleanupFailed);
 
     if (failed.length === 0) {
       this.messageService.add({
@@ -325,6 +333,17 @@ export class AddMemberDialogComponent {
         summary: 'Members Added',
         detail: succeeded.length === 1 ? `Added ${succeeded[0].email}.` : `Added ${succeeded.length} people to the group.`,
       });
+      if (cleanupFailed.length > 0) {
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Invite Cleanup Failed',
+          detail:
+            cleanupFailed.length === 1
+              ? `Added ${cleanupFailed[0].email}, but could not remove their stale invitation.`
+              : `Added ${cleanupFailed.length} people, but could not remove stale invitations for: ${cleanupFailed.map((r) => r.email).join(', ')}.`,
+          life: 8000,
+        });
+      }
       return;
     }
 

@@ -251,6 +251,8 @@ export class CommitteeMembersComponent implements OnInit {
       acceptButtonStyleClass: 'p-button-success p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => {
+        if (this.processingApplicationUid()) return;
+
         this.processingApplicationUid.set(application.uid);
         this.committeeService.approveApplication(committee.uid, application.uid).subscribe({
           next: () => {
@@ -288,6 +290,7 @@ export class CommitteeMembersComponent implements OnInit {
 
     dialogRef?.onClose.pipe(take(1)).subscribe((reviewerNotes: string | null | undefined) => {
       if (reviewerNotes === undefined) return;
+      if (this.processingApplicationUid()) return;
 
       this.processingApplicationUid.set(application.uid);
       this.committeeService.rejectApplication(committee.uid, application.uid, reviewerNotes || undefined).subscribe({
@@ -506,7 +509,7 @@ export class CommitteeMembersComponent implements OnInit {
           releaseReviewLock();
         },
         complete: () => {
-          if (!pollSucceeded) {
+          if (!pollSucceeded && !this.destroyRef.destroyed) {
             this.refreshMembers();
           }
           releaseReviewLock();
