@@ -320,7 +320,8 @@ export class MeetingService {
 
     // The indexed v1_past_meeting projection never carries scheduled_start_time — its source
     // struct (upstream PastMeetingEventData) has no such field, only start_time (verified against
-    // event_models.go and past_meeting_event_handler.go; see the "Meetings" paragraph in
+    // `lfx-v2-meeting-service`'s internal/domain/models/event_models.go and
+    // cmd/meeting-api/eventing/past_meeting_event_handler.go; see the "Meetings" paragraph in
     // committee-activity.service.ts's fetchSize comment) — but this code still accepts either,
     // matching sortPastMeetingsDescending's defensive shape rather than assuming the verified
     // absence holds forever.

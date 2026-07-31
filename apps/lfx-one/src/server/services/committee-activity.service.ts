@@ -180,15 +180,20 @@ export class CommitteeActivityService {
     // "the scheduled start time"). occurred_at (getPastMeetingStartTimeMs, via
     // firstValidTimestampMs/isRealTimestamp) prefers `scheduled_start_time`, falling back to
     // `start_time`. The indexed `v1_past_meeting` type this leg reads is sourced exclusively from
-    // ITX/Zoom past-meeting-completion events (`docs/event-processing.md`'s `itx-zoom-past-meetings.`
-    // stream — a "past meeting" is a derived record generated when an occurrence completes, not
-    // something created directly); its source struct `PastMeetingEventData` has no
-    // `scheduled_start_time` JSON field at all (`internal/domain/models/event_models.go`), and the
-    // one handler that builds it populates `StartTime` FROM the raw record's own `ScheduledStartTime`
-    // (`past_meeting_event_handler.go`). So `scheduled_start_time` is never present on a row this leg
-    // can read, the fallback always fires, and `sort_name`/occurred_at are always built from the
-    // identical value — meetings is exact, not merely the best-behaved approximation, unlike the
-    // other three legs below.
+    // ITX/Zoom past-meeting-completion events, not created directly — verified in the
+    // `lfx-v2-meeting-service` repo: `docs/event-processing.md`'s `itx-zoom-past-meetings.` stream is
+    // the sole source; the source struct `PastMeetingEventData`
+    // (`internal/domain/models/event_models.go`) has no `scheduled_start_time` JSON field at all; and
+    // the one handler that builds it (`cmd/meeting-api/eventing/past_meeting_event_handler.go`)
+    // populates `StartTime` FROM the raw record's own `ScheduledStartTime`. So `scheduled_start_time`
+    // is never present on a row this leg can read, the fallback always fires, and
+    // `sort_name`/occurred_at are always built from the identical value — meetings is exact, not
+    // merely the best-behaved approximation, unlike the other three legs below. This holds against
+    // the contract as verified today, not as a law of nature: if `lfx-v2-meeting-service` ever adds
+    // `scheduled_start_time` to that struct, `getPastMeetingStartTimeMs` would start preferring it
+    // while `date_field: 'start_time'` (in fetchPastMeetingEvents below) keeps narrowing on the old
+    // field — a silent upstream-side regression with no test failure, since nothing here would
+    // observe the new field being added. `date_field` would need to change alongside it.
     //
     // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
     // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
@@ -200,7 +205,15 @@ export class CommitteeActivityService {
     // (`updated_at` == `updated_at`) despite resolving to a different actual field once `data.`
     // prefixing is applied; surveys' and votes' date_field names don't even coincide with `updated_at`.
     // Same class of approximation as the per-leg date_field caveats below, just in the sort dimension
-    // instead of the filter dimension.
+    // instead of the filter dimension: votes/surveys/files each filter on a single upstream
+    // `date_field` that only approximates their own multi-field occurred_at derivation (see each
+    // leg's own comment for which field and why) — sending that imperfect narrowing upstream still
+    // beats sending none at all, which was tried and reverted earlier in this file's history: it
+    // traded the rare filter-mismatch miss for hard truncation at `fetchSize` on every page instead,
+    // a strictly worse failure mode. The in-memory since/cursor pass in getCommitteeActivity is the
+    // correctness backstop against over-inclusion for all three legs, not under-inclusion — an
+    // imperfectly-narrowed leg can still exclude a real in-window row upstream before that pass ever
+    // sees it.
     //
     // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
     // are each bounded to a single upstream page of `fetchSize` rows.
@@ -419,16 +432,21 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<ActivityEvent[]> {
-    // date_field: 'start_time' — unlike every other leg's date_field narrowing (all best-effort, see
-    // their own comments), this one IS a correctness guarantee, not just an approximation: occurred_at
-    // (getPastMeetingStartTimeMs) prefers scheduled_start_time, falling back to start_time — but the
-    // indexed v1_past_meeting projection this leg reads never carries scheduled_start_time at all
-    // (see the "Meetings" paragraph in getCommitteeActivity's fetchSize comment for the verified
-    // source), so that fallback always fires and occurred_at is always built from the same start_time
-    // field this date_field narrows on. The in-memory since/cursor pass in getCommitteeActivity is
-    // still the one place that enforces the exact boundary (this narrowing only bounds what's
-    // fetched), but for this leg specifically it can't under-fetch relative to occurred_at the way
-    // the other legs' single-field-vs-fallback-derivation approximations can.
+    // date_field: 'start_time' — unlike every other leg's date_field narrowing (best-effort; see the
+    // shared rationale at the top of getCommitteeActivity), this one is a correctness guarantee for
+    // the upstream contract as verified: occurred_at (getPastMeetingStartTimeMs) prefers
+    // scheduled_start_time, falling back to start_time — and the indexed v1_past_meeting projection
+    // this leg reads never carries scheduled_start_time at all (see the "Meetings" paragraph in
+    // getCommitteeActivity's fetchSize comment for the verified source), so that fallback always
+    // fires and occurred_at is always built from the same start_time field this date_field narrows
+    // on. "As verified" is doing real work in that sentence, not hedge-speak: getPastMeetingStartTimeMs
+    // and this leg's own test suite (committee-activity.service.spec.ts's "does not sort a past
+    // meeting as ancient when start_time is a Go zero-date" case) still handle a present-and-differing
+    // scheduled_start_time defensively, matching meeting.service.ts's identical posture — the code
+    // doesn't assume the verified-absent case stays absent forever, even though the correctness
+    // conclusion above holds against the contract as it exists today. The in-memory since/cursor
+    // pass in getCommitteeActivity is still the one place that enforces the exact boundary (this
+    // narrowing only bounds what's fetched).
     const hasWindow = !!since || !!before;
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
@@ -478,11 +496,11 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<(VoteOpenedActivityEvent | VoteClosedActivityEvent)[]> {
-    // date_field: 'last_modified_time' is best-effort narrowing, same caveat as
-    // fetchPastMeetingEvents — a vote's occurred_at is actually
+    // date_field: 'last_modified_time' is best-effort narrowing (see the filter-dimension paragraph
+    // in getCommitteeActivity's fetchSize comment for why narrowing imperfectly still beats not
+    // narrowing at all) — a vote's occurred_at is actually
     // end_time/early_end_time/last_modified_time/creation_time depending on status, not always
-    // last_modified_time. See fetchPastMeetingEvents's comment for why narrowing (imperfectly) beats
-    // not narrowing at all.
+    // last_modified_time.
     const hasWindow = !!since || !!before;
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
@@ -531,10 +549,11 @@ export class CommitteeActivityService {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
-      // Best-effort narrowing, same caveat as fetchPastMeetingEvents — occurred_at is
-      // firstValidTimestamp(survey.last_modified_at, survey.created_at), so a never-modified
-      // survey (last_modified_at is the Go zero-date, created_at is the real value) could be
-      // excluded upstream on this field before the in-memory backstop ever sees it.
+      // Best-effort narrowing (see the filter-dimension paragraph in getCommitteeActivity's
+      // fetchSize comment) — occurred_at is firstValidTimestamp(survey.last_modified_at,
+      // survey.created_at), so a never-modified survey (last_modified_at is the Go zero-date,
+      // created_at is the real value) could be excluded upstream on this field before the
+      // in-memory backstop ever sees it.
       ...(hasWindow && { date_field: 'last_modified_at' }),
       ...(since && { date_from: since }),
       ...(before && { date_to: before }),
