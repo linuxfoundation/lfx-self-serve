@@ -172,29 +172,33 @@ export class CommitteeActivityService {
     // per-source fetch could silently under-represent a dominant source. ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE
     // keeps small `limit` values (e.g. 1) from starving that. This is NOT an airtight guarantee for
     // every leg, though: it only holds if each source's upstream page already contains its own true
-    // top-(limit+1) by occurred_at — closest to true for meetings, not exact even there:
-    // `sort: NAME_DESC` resolves to query-service's `sort_name`, which the meeting-service indexer
-    // populates from `start_time` only, while occurred_at (getPastMeetingStartTimeMs) prefers
-    // scheduled_start_time and falls back to start_time — upstream documents these as genuinely
-    // different values (scheduled vs. actual Zoom start), so a meeting that started late/early
-    // relative to its schedule sorts slightly off from its true occurred_at position. Meetings is
-    // still the best-behaved leg here because sort and occurred_at at least track the same
-    // underlying event (this meeting's own start), off by at most the schedule-vs-actual skew,
-    // unlike the other three legs. Votes, surveys, AND files are all in a categorically worse
-    // bucket: query-service's `sort=updated_desc` resolves to the INDEX's own root-level `updated_at`
-    // (verified against `cmd/service/converters.go` — `SortBy = "updated_at"`, no `data.` prefix),
-    // which the indexer contract documents as index-write/audit metadata, NOT a copy of any `data.*`
-    // domain field — completely distinct from the `date_field` values these same three legs filter
-    // on (`data.last_modified_at` / `data.updated_at` / vote's `data.last_modified_time`, each
-    // auto-prefixed with `data.` by query-service, unlike `sort`). So "sorted by the same field
-    // occurred_at derives from" was never true for surveys/files either — all three non-meeting legs
-    // share the identical sort-vs-filter mismatch. The old claim's plausible-looking half is files
-    // only, via a coincidentally-matching field NAME (`updated_at` == `updated_at`) that resolves to
-    // a completely different actual field once query-service's `data.` prefixing is applied; for
-    // surveys the field names never matched in the first place (`last_modified_at` vs. `updated_at`),
-    // so that leg's claim was unfounded from the start, not merely misled by a name coincidence.
-    // Same class of approximation as the per-leg date_field caveats below, just in the sort
-    // dimension instead of the filter dimension.
+    // top-(limit+1) by occurred_at.
+    //
+    // Meetings: `sort: NAME_DESC` resolves to query-service's `sort_name`, which the meeting-service
+    // indexer populates from `start_time` (`meeting.constants.ts`'s `PAST_MEETING_SORT` doc comment;
+    // upstream `PastMeetingEventData.SortName()` confirms — its own doc comment calls `StartTime`
+    // "the scheduled start time"). occurred_at (getPastMeetingStartTimeMs) prefers
+    // `scheduled_start_time`, falling back to `start_time` — but the indexed `v1_past_meeting`
+    // projection this leg actually reads has no `scheduled_start_time` field at all
+    // (`PastMeetingEventData` upstream carries only `StartTime`), so that fallback almost always
+    // fires and resolves to the identical value `sort_name` was built from (see the existing
+    // `fetchPastMeetingEvents` comment below, and `meeting.service.ts`'s "frequently omits
+    // scheduled_start_time" note on the same projection). Meetings is effectively exact, not merely
+    // "closest" — the one residual is the rare row where `scheduled_start_time` IS present and
+    // diverges from `start_time`, which per that same "frequently omits" framing is the exception,
+    // not the rule.
+    //
+    // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
+    // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
+    // converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer contract
+    // documents as index-write/audit metadata, not a copy of any `data.*` domain field — distinct
+    // from the `date_field` values these three legs filter on (`data.last_modified_at` /
+    // `data.updated_at` / `data.last_modified_time`, each auto-prefixed with `data.` by
+    // query-service, unlike `sort`). Files happens to share a field NAME with the sort target
+    // (`updated_at` == `updated_at`) despite resolving to a different actual field once `data.`
+    // prefixing is applied; surveys' and votes' date_field names don't even coincide with `updated_at`.
+    // Same class of approximation as the per-leg date_field caveats below, just in the sort dimension
+    // instead of the filter dimension.
     //
     // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
     // are each bounded to a single upstream page of `fetchSize` rows.
