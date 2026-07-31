@@ -1,6 +1,6 @@
 # Permission and Persona Decision Matrix
 
-Companion matrix for the [Permission, Persona, and Navigation Model](./permission-persona-navigation-model-preread.md).
+Companion matrix for the [Permission, Persona, and Navigation Model](./permission-persona-navigation-model-preread.md). This document states the target model; for the code-verified current state of every guard, sidebar condition, and write path, see [`persona-content-matrix.md`](./persona-content-matrix.md).
 
 Use this document to verify how LFX Self Serve should route users, shape pages, and allow actions across Me, Foundation, Project, and Discovery flows.
 
@@ -87,7 +87,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 
 - **Read examples:** View meeting details, view vote results, view survey results, open document, view sent newsletter.
 - **Write examples:** Edit a meeting, manage agenda, update survey, manage document, edit newsletter draft.
-- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific grant on the item's resolved target object for write actions — writer permission for a Foundation/Project target, or committee writer / meeting coordinator when the target resolves to a committee or group.
+- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific grant on the item's resolved target object for write actions: writer permission for Foundation/Project targets; `committee.writer` for committee/group targets; and `project.meeting_coordinator` only for meeting actions.
 - **Destination:** Stay in Me or open the item detail/drawer with target context attached.
 - **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when writer permission passes.
 - **Denied actions:** If writer permission fails, keep eligible view/read actions only.
@@ -206,7 +206,7 @@ terms (auditor grant, writer grant, named capability).
 
 - **Me:** Show cross-context meetings and personal meeting actions.
 - **Foundation/Project:** Show context-scoped meetings.
-- **Create/manage:** Requires the organizer-granting relation for the target — Project/Foundation Writer, Project Meeting Coordinator (meetings only), or Committee Writer when the target is a committee/group — per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer).
+- **Create/manage:** Requires the organizer-granting relation for the target — Project/Foundation Writer, Project Meeting Coordinator (meetings only), or Committee Writer when the target is a committee/group — per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer). This is the target state; `writerGuard` on `main` still has an unconditional ED-persona fast path ahead of this check (documented in [`persona-content-matrix.md`](./persona-content-matrix.md#meetings-write-paths), tracked for removal per Current UI Facts in the preread).
 - **Read-only:** User can view/join/RSVP where eligible, but cannot edit, delete, invite as manager, or manage resources.
 
 ### Groups

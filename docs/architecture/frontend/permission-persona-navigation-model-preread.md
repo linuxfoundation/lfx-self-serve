@@ -1,6 +1,6 @@
 # Permission, Persona, and Navigation Model
 
-Working spec for aligning how the LFX Self Serve experience in this repo decides where users can go, what they see, and what they can do.
+Working spec for aligning how the LFX Self Serve experience in this repo decides where users can go, what they see, and what they can do. This document states the target model; for the code-verified current state of every guard, sidebar condition, and write path, see [`persona-content-matrix.md`](./persona-content-matrix.md).
 
 ## TL;DR
 
@@ -310,9 +310,10 @@ Group/WG writer scope = explicit model, not foundation-wide fallback
 No-grant default count = zero
 ```
 
-Verify with the platform team that downstream APIs enforce write permission
-for affected routes (enforcement lives at the API gateway, external to the
-UI, since those APIs serve consumers other than the app); then change
+Downstream API write enforcement per managed domain is tracked in
+[LFXV2-1662](https://linuxfoundation.atlassian.net/browse/LFXV2-1662)
+(enforcement lives at the API gateway, external to the UI, since those APIs
+serve consumers other than the app); resolve that before changing
 `writerGuard` semantics. `writerGuard` is UI degradation, not the security
 boundary — it should not be treated as a blocking gate on its own.
 
@@ -461,7 +462,7 @@ Discovery action = explicit request/registration/subscription/workflow
 ## Open Follow-Ups
 
 - Decide whether the left rail should keep separate Foundation and Project buttons or move to one context switcher with grouped context types.
-- Align the persona content matrix so ED/Board/Maintainer/Contributor differences remain product experience rules, not authorization shortcuts.
+- `persona-content-matrix.md` (cross-linked above) already documents the current-state guard/sidebar behavior in detail, including the `writerGuard` ED fast path this document flags for removal — once that fast path is actually removed, update `persona-content-matrix.md`'s guard table to match.
 - Add regression tests for read-only users who can view a context but cannot see create/manage affordances.
 - Add regression tests for working group chairs who can manage group-level meetings/documents without receiving foundation-wide admin affordances.
 
