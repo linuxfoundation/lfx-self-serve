@@ -36,8 +36,12 @@ function isParseableTimestamp(value: string): boolean {
  * timezone, per `Date.parse`/`new Date()` semantics — this is a silent assumption on the caller's
  * behalf, not just a format change, since the same string normalizes to a different instant
  * depending on `TZ`. Callers that care about exact instants should always include a zone designator.
+ *
+ * Exported (not just used internally by `parseCommitteeActivityQuery`) so `CommitteeActivityService`
+ * can apply the identical normalization to `since` on its own validation path, for a caller that
+ * invokes the service directly and skips this file's HTTP-layer parsing.
  */
-function normalizeTimestamp(value: string): string {
+export function normalizeTimestamp(value: string): string {
   return new Date(value).toISOString();
 }
 

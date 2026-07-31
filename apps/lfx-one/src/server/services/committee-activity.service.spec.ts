@@ -10,11 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // `@lfx-one/shared/*` isn't wired into this app's vitest config (same issue documented in
 // committee-engagement-window.helper.spec.ts) — enums/utils need stubs; the interfaces import in
 // the service under test is `import type`, so it's erased and needs no mock at all.
-const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, debug } = vi.hoisted(() => ({
+const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, normalizeTimestamp, warning, debug } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
   getVotes: vi.fn(),
   encodeActivityPageToken: vi.fn((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`),
+  normalizeTimestamp: vi.fn((value: string) => new Date(value).toISOString()),
   warning: vi.fn(),
   debug: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     '../../../../../packages/shared/src/constants/meeting.constants'
   );
   return {
+    ACTIVITY_FEED_MAX_PAGE_SIZE: activityEvent.ACTIVITY_FEED_MAX_PAGE_SIZE,
     ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE: activityEvent.ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE,
     PAST_MEETING_SORT: meeting.PAST_MEETING_SORT,
   };
@@ -52,7 +54,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     getSurveyDisplayStatus: surveyUtils.getSurveyDisplayStatus,
   };
 });
-vi.mock('../helpers/committee-activity-query.helper', () => ({ encodeActivityPageToken }));
+vi.mock('../helpers/committee-activity-query.helper', () => ({ encodeActivityPageToken, normalizeTimestamp }));
 vi.mock('./logger.service', () => ({ logger: { debug, warning, info: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
 vi.mock('./meeting.service', () => ({
   MeetingService: class {
@@ -212,23 +214,25 @@ describe('CommitteeActivityService', () => {
 
       // date_to is ceiled to the next whole second before being sent upstream (see the dedicated
       // ceiling test below) — an already-whole-second cursor still round-trips through
-      // Date.toISOString(), which always emits milliseconds, hence the trailing `.000Z`.
+      // Date.toISOString(), which always emits milliseconds, hence the trailing `.000Z`. `since`
+      // round-trips through the same normalizeTimestamp/Date.toISOString() call on the way in
+      // (see the dedicated since-normalization test below), so it picks up the identical `.000Z`.
       expect(getMeetings).toHaveBeenCalledWith(
         req,
-        expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00.000Z' }),
+        expect.objectContaining({ date_field: 'start_time', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' }),
         'v1_past_meeting',
         false
       );
       expect(getVotes).toHaveBeenCalledWith(
         req,
-        expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00.000Z' })
+        expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' })
       );
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
         '/query/resources',
         'GET',
-        expect.objectContaining({ type: 'survey', date_field: 'last_modified_at', date_from: '2026-01-01T00:00:00Z', date_to: '2026-02-01T00:00:00.000Z' })
+        expect.objectContaining({ type: 'survey', date_field: 'last_modified_at', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' })
       );
     });
 
@@ -269,6 +273,21 @@ describe('CommitteeActivityService', () => {
       // Without this check, isAtOrAfterSince's `ms >= Date.parse(since)` is `ms >= NaN` for every
       // event, so an unparseable since would silently degrade to an empty feed instead of rejecting.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: 'not-a-timestamp', limit: 8 })).rejects.toThrow(ServiceValidationError);
+
+      expect(getVotes).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['zero', 0],
+      ['negative', -1],
+      ['non-integer', 1.5],
+      ['above the max', 51],
+    ])('rejects a limit that is %s instead of silently degrading to a wrong result', async (_label, limit) => {
+      // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
+      // public and reachable directly. Without this check: limit=0 -> windowed.slice(0, 0) -> an
+      // empty feed with no error; a negative limit -> slice(0, -1) silently drops the newest item
+      // while still emitting a page_token; either way, a wrong result with no signal anything's off.
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit })).rejects.toThrow(ServiceValidationError);
 
       expect(getVotes).not.toHaveBeenCalled();
     });

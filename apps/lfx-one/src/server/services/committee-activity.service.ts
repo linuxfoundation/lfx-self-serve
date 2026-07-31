@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { ACTIVITY_FEED_MAX_PAGE_SIZE, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 // import type — erased entirely at compile time, so unlike the enums/utils imports below, this
 // one needs no vi.mock in the spec (same reasoning as activity-feed.utils.ts's own interfaces import).
@@ -28,7 +28,7 @@ import { firstValidTimestamp, getPastMeetingResourceId, getPastMeetingStartTimeM
 import { Request } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { encodeActivityPageToken } from '../helpers/committee-activity-query.helper';
+import { encodeActivityPageToken, normalizeTimestamp } from '../helpers/committee-activity-query.helper';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -154,7 +154,17 @@ export class CommitteeActivityService {
   }
 
   public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
-    const { since, cursor, limit } = options;
+    const { since: rawSince, cursor, limit } = options;
+    // Same reject-not-degrade policy as the cursor/since checks below, for the same reason:
+    // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
+    // public and reachable directly. An out-of-range `limit` here degrades silently instead of
+    // rejecting — `limit: 0` yields `windowed.slice(0, 0)`, an empty feed with no error; a negative
+    // `limit` (`slice(0, -1)`) silently drops the newest item while still emitting a page_token.
+    if (!Number.isInteger(limit) || limit < 1 || limit > ACTIVITY_FEED_MAX_PAGE_SIZE) {
+      throw ServiceValidationError.forField('limit', `limit must be an integer between 1 and ${ACTIVITY_FEED_MAX_PAGE_SIZE}`, {
+        operation: 'get_committee_activity',
+      });
+    }
     // Fetching `limit + 1` from EACH source (not just `limit`) is what makes the true global
     // top-(limit+1) merged-by-occurred_at result likely to be present in the fetched pool, even in
     // the worst case where a single source contributes every one of the top items — a smaller
@@ -208,9 +218,16 @@ export class CommitteeActivityService {
     // then rejects every surviving event too (`ms >= Date.parse(since)` is `ms >= NaN`, always
     // false) — a silent empty feed, not the clean rejection this method's cursor handling already
     // guarantees for the equivalent bad-input case.
-    if (since && Number.isNaN(Date.parse(since))) {
+    if (rawSince && Number.isNaN(Date.parse(rawSince))) {
       throw ServiceValidationError.forField('since', 'since must be a valid ISO 8601 timestamp', { operation: 'get_committee_activity' });
     }
+    // normalizeTimestamp — same reason as parseCommitteeActivityQuery's own use of it (see that
+    // function's doc comment): `Date.parse` accepts formats (e.g. a zone-less
+    // `2026-01-05T00:00:00`) that query-service's stricter RFC3339 parser 400s, and that 400 would
+    // otherwise be swallowed into an empty leg by each leg's own .catch — a passably-formatted but
+    // non-normalized `since` would silently thin the feed rather than error, on this direct-caller
+    // path specifically (the HTTP path already normalizes before this method ever sees `since`).
+    const since = rawSince ? normalizeTimestamp(rawSince) : undefined;
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
@@ -296,6 +313,11 @@ export class CommitteeActivityService {
       voting_enabled: votingEnabled,
       returned: data.length,
       has_more: hasMore,
+      // Without these two, a line reading `returned: 1, has_more: true` is unexplainable from the
+      // log alone — has_more can now be true without windowed.length exceeding limit, and a leg
+      // count only signals saturation when compared against fetch_size (also not logged elsewhere).
+      any_leg_saturated: anyLegSaturated,
+      fetch_size: fetchSize,
     });
 
     return { data, page_token: pageToken };
