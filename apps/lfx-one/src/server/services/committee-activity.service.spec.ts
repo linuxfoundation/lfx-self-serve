@@ -73,6 +73,7 @@ vi.mock('./microservice-proxy.service', () => ({
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import type { ActivityPageCursor, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 
+import { ServiceValidationError } from '../errors';
 import { CommitteeActivityService } from './committee-activity.service';
 
 const req = {} as unknown as Request;
@@ -245,30 +246,21 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }));
     });
 
-    it('resolves an empty, logged feed (rather than throwing) when cursor.before is unparseable', async () => {
+    it('rejects an unparseable cursor.before instead of silently degrading to an empty feed', async () => {
       // getCommitteeActivity is a public method — the controller always validates cursor.before via
       // decodePageToken first, but a future non-HTTP caller could invoke this directly with a bad
-      // value. The net result isn't "widened fetch, trimmed correctly" — isAfterCursor still
-      // compares every event against the original unparseable cursor.before, which resolves to
-      // -Infinity, so every real event is filtered out regardless of what the (wider) upstream
-      // fetch returned. That's still the right call over throwing (empty + logged beats a 500), but
-      // the test should pin the actual behavior, not just the outbound query shape.
-      getVotes.mockResolvedValue({ data: [vote({ uid: 'v1' })] });
+      // value. Matches decodePageToken's own policy for the identical input (a bad explicit cursor
+      // is a 400, not a silently-ignored value) rather than doing the full upstream fan-out for a
+      // result that isAfterCursor would filter to [] anyway (every event compares as before an
+      // unparseable, -Infinity-valued cursor position).
+      await expect(
+        service.getCommitteeActivity(req, COMMITTEE_UID, {
+          cursor: { before: 'not-a-timestamp', key: 'vote:unrelated' },
+          limit: 8,
+        })
+      ).rejects.toThrow(ServiceValidationError);
 
-      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, {
-        cursor: { before: 'not-a-timestamp', key: 'vote:unrelated' },
-        limit: 8,
-      });
-
-      const votesQuery = getVotes.mock.calls[0][1];
-      expect(votesQuery).not.toHaveProperty('date_to');
-      expect(result.data).toEqual([]);
-      expect(warning).toHaveBeenCalledWith(
-        req,
-        'get_committee_activity',
-        expect.stringContaining('Unparseable cursor.before'),
-        expect.objectContaining({ committee_uid: COMMITTEE_UID })
-      );
+      expect(getVotes).not.toHaveBeenCalled();
     });
 
     it('requests page_size = max(limit + 1, 25) from every source', async () => {

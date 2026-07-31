@@ -27,6 +27,7 @@ import type {
 import { firstValidTimestamp, getPastMeetingResourceId, getPastMeetingStartTimeMs, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { encodeActivityPageToken } from '../helpers/committee-activity-query.helper';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
@@ -104,16 +105,9 @@ function compareEventsDesc(a: { occurred_at: string; key: string }, b: { occurre
  *
  * Returns `undefined` for an unparseable `iso` rather than throwing — matches every other
  * timestamp helper in this file (`timestampValue`, `isAtOrAfterSince`, `isAfterCursor`) treating an
- * invalid timestamp as "can't reason about this" rather than a fatal error. Currently unreachable
- * through the HTTP path (`decodePageToken` validates `cursor.before` before this ever runs), but
- * `getCommitteeActivity` is a public method a future non-HTTP caller could invoke directly.
- *
- * The net result for that caller is an EMPTY feed, not a widened one: dropping `date_to` only
- * widens what gets *fetched upstream*, but `isAfterCursor` still compares every event against the
- * original (unparseable) `cursor.before`, which `timestampValue` resolves to `-Infinity` — no real
- * event can sort "after" that, so every event is filtered out downstream regardless of what came
- * back from the fetch. An empty page (with `logger.warning` at the call site) is still the correct
- * choice over throwing: the caller gets a clearly-wrong-looking-but-safe answer instead of a 500.
+ * invalid timestamp as "can't reason about this" rather than a fatal error itself. The caller
+ * (`getCommitteeActivity`) is the one that decides what an unparseable `cursor.before` means for
+ * the request as a whole — see the comment there.
  */
 function ceilToWholeSecond(iso: string): string | undefined {
   const ms = Date.parse(iso);
@@ -170,11 +164,15 @@ export class CommitteeActivityService {
     // only bounds what gets fetched, so a wider upstream window is always safe, a narrower one isn't.
     const before = cursor ? ceilToWholeSecond(cursor.before) : undefined;
     if (cursor && !before) {
-      // Matches every other graceful-degradation path in this method (each leg's .catch() below,
-      // fetchCommittee) in logging before falling back — otherwise this is the one degraded path
-      // with no production signal. See ceilToWholeSecond's doc comment for the (still-safe) outcome.
-      logger.warning(req, 'get_committee_activity', 'Unparseable cursor.before; feed will resolve empty for this request', {
-        committee_uid: committeeUid,
+      // Reject rather than degrade — matches decodePageToken's own policy for the identical input
+      // (committee-activity-query.helper.ts: a bad explicit cursor is a 400, not a silently-ignored
+      // value). This method is public and reachable directly by a future non-HTTP caller that
+      // skips that validation; degrading here would (a) diverge from the HTTP path's policy for the
+      // same bad input and (b) still do the full 7-call upstream fan-out below for a result that's
+      // provably empty anyway (isAfterCursor can't place any real event "after" an unparseable
+      // cursor position), which is pure waste. Failing fast avoids both.
+      throw ServiceValidationError.forField('cursor.before', 'cursor.before must be a valid ISO 8601 timestamp', {
+        operation: 'get_committee_activity',
       });
     }
 
