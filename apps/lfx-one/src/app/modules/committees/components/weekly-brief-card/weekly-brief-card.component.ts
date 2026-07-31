@@ -354,8 +354,16 @@ export class WeeklyBriefCardComponent {
         // generation already in flight — not just this tab's own onGenerate() call.
         // Without this, a card that *loads* into the generating state never polls and
         // is stuck on the spinner with no way to reach a terminal state.
+        //
+        // isPlatformBrowser guard: zoneless change detection doesn't block SSR stability on
+        // a bare RxJS timer() the way it does HttpClient calls, so without this the server
+        // would start (and never stop) a real poll loop on every SSR render that lands on a
+        // generating brief — up to WEEKLY_BRIEF_MAX_POLL_ATTEMPTS unnecessary server-side GETs
+        // per request (CodeRabbit review). The template already renders the generating state
+        // correctly from `brief()?.state` alone; the client re-runs this same subscribe on
+        // hydration and starts the real poll there.
         const uid = this.committee()?.uid;
-        if (uid && response?.brief?.state === 'generating') {
+        if (uid && response?.brief?.state === 'generating' && isPlatformBrowser(this.platformId)) {
           this.pollUntilTerminal(uid);
         }
       });

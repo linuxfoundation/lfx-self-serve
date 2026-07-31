@@ -48,6 +48,37 @@ export function briefWindow(): { window_start: string; window_end: string } {
   };
 }
 
+/**
+ * Mock-only, in-memory revision tracker keyed by committee. Mock mode is otherwise stateless
+ * (no persistence, resets on server restart — see `WeeklyBriefService`'s class doc), but the
+ * client's poll-until-terminal guard (`pollUntilTerminal`'s `priorRevision` check, LFXV2-2176
+ * round 2) rejects a terminal tick whose revision still matches the pre-regenerate brief. Without
+ * tracking the bump `generateBrief`'s mock branch already promises in its own 202 response, every
+ * subsequent mock `getCurrentBrief` GET would report the same hardcoded revision the pre-regenerate
+ * read did, and a mock regenerate would never satisfy that guard — hanging until the poll's attempt
+ * cap trips instead of completing (Cursor Bugbot finding).
+ */
+const mockRevisionByCommittee = new Map<string, number>();
+
+function currentMockRevision(committeeId: string): number {
+  return mockRevisionByCommittee.get(committeeId) ?? 1;
+}
+
+function bumpMockRevision(committeeId: string): number {
+  const next = currentMockRevision(committeeId) + 1;
+  mockRevisionByCommittee.set(committeeId, next);
+  return next;
+}
+
+/**
+ * Test-only: clear the mock revision tracker so tests reusing the same committeeId across
+ * `it()` blocks (this module's own spec included) don't leak a bumped revision from one test
+ * into the next. Not exported from the package's public surface.
+ */
+export function __resetMockRevisionsForTesting(): void {
+  mockRevisionByCommittee.clear();
+}
+
 function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
   const nowIso = new Date().toISOString();
   const { window_start, window_end } = briefWindow();
@@ -97,7 +128,7 @@ export class WeeklyBriefService {
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
     if (!this.isLive(req)) {
       return {
-        brief: buildMockBrief(committeeId),
+        brief: buildMockBrief(committeeId, { revision: currentMockRevision(committeeId) }),
         throttle: {
           ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
           generates_used: 1,
@@ -135,11 +166,15 @@ export class WeeklyBriefService {
       // A regeneration_count of 0 means "the fresh (non-forced) generate for this
       // window" — upstream only increments it on subsequent force:true calls.
       const regenerationCount = body?.force ? 1 : 0;
+      // Only a regenerate (force:true) needs a genuinely new revision — that's the only path
+      // the client's priorRevision poll guard applies to. A fresh generate keeps the current
+      // (default 1) revision, unchanged from prior behavior.
+      const revision = body?.force ? bumpMockRevision(committeeId) : currentMockRevision(committeeId);
       const data: GenerateWeeklyBriefResponse = {
         brief: buildMockBrief(committeeId, {
           state: 'generating',
           regeneration_count: regenerationCount,
-          revision: regenerationCount + 1,
+          revision,
         }),
         throttle: {
           ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
@@ -180,10 +215,14 @@ export class WeeklyBriefService {
    */
   public async saveBrief(req: Request, committeeId: string, body: SaveWeeklyBriefRequest): Promise<WeeklyBrief> {
     if (!this.isLive(req)) {
+      // Keep the mock revision tracker in sync with the save, same as a regenerate does —
+      // otherwise a subsequent getCurrentBrief would report a stale (pre-save) revision.
+      const revision = body.revision + 1;
+      mockRevisionByCommittee.set(committeeId, revision);
       return buildMockBrief(committeeId, {
         state: 'edited',
         brief_text: body.brief_text,
-        revision: body.revision + 1,
+        revision,
       });
     }
 

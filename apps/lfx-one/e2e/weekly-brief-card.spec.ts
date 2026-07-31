@@ -539,10 +539,17 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
     // First read fails (e.g. upstream 503 "bucket not initialized"); the retry
     // succeeds with an empty envelope. Verifies a failed read renders the
     // distinct unavailable state instead of masquerading as "no brief yet".
-    let calls = 0;
+    //
+    // Gated on the `retried` flag, not a raw call index (`calls === 1`) — same rationale as
+    // the "loads directly into the generating state" test above: LaunchDarkly can remount the
+    // card and fire an extra initial GET, which would consume a fixed "first call fails" slot
+    // before this test's own assertions run and let the remount observe success early,
+    // flaking the unavailable-state assertion below (Cursor Bugbot review). Every GET fails
+    // until the test itself flips `retried` right before the explicit Retry click, so any
+    // number of incidental remount GETs still land on the failure branch.
+    let retried = false;
     await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
-      calls += 1;
-      if (calls === 1) {
+      if (!retried) {
         await route.fulfill({
           status: 503,
           contentType: 'application/json',
@@ -570,10 +577,9 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toHaveCount(0);
 
     // Retry re-fetches; the now-succeeding read swaps to the empty state.
+    retried = true;
     await page.getByTestId('weekly-brief-card-unavailable-retry-button').click();
     await expect(page.getByTestId('weekly-brief-card-empty-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('weekly-brief-card-unavailable-state')).toHaveCount(0);
   });
 });
-
-// Generated with [Claude Code](https://claude.ai/code)
