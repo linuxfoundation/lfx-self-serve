@@ -27,7 +27,7 @@ import type {
 import { firstValidTimestamp, getPastMeetingResourceId, getPastMeetingStartTimeMs, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { encodeActivityPageToken } from '../helpers/committee-activity-query.helper';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
@@ -285,7 +285,26 @@ export class CommitteeActivityService {
    * `false` and a thrown upstream error, rather than treating "couldn't verify" as "verified false".
    */
   private async fetchCommittee(req: Request, committeeUid: string): Promise<Committee> {
-    return this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}`, 'GET');
+    // `| null`, not an optimistic non-null type — MicroserviceProxyService.proxyRequest returns the
+    // upstream body verbatim (api-client.service.ts parses an empty body to `null`), so a null
+    // response is a real, if rare, return value this service has already hit more than once (every
+    // `| null` generic in this file exists for the same reason — see the other call sites in
+    // fetchSurveyEvents/fetchDocumentEvents). `proxyRequest`'s own declared type doesn't reflect
+    // this repo-wide (every other caller still assumes non-null); annotating it per call site here
+    // is a local, in-scope fix, not a claim that the hazard is closed elsewhere. A null committee
+    // here would otherwise throw an untyped TypeError reading `.enable_voting` off it in
+    // getCommitteeActivity; throwing explicitly here keeps this leg's fail-closed behavior (see the
+    // docblock above) meaningful and typed rather than an accidental side effect of a property read.
+    const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${encodeURIComponent(committeeUid)}`,
+      'GET'
+    );
+    if (!committee) {
+      throw new ResourceNotFoundError('Committee', committeeUid, { operation: 'get_committee_activity' });
+    }
+    return committee;
   }
 
   // ─── Past Meetings → meeting_held ──────────────────────────────────────────
@@ -420,10 +439,7 @@ export class CommitteeActivityService {
     // fetchAllQueryResources and does an extra per-user "responded" join, neither of which this
     // bounded, presentation-only fetch needs.
     //
-    // The `| null` generic (not just an optimistic non-null type) is deliberate: proxyRequest
-    // returns the upstream body verbatim, and a 204/empty response comes through as a null body,
-    // not `{ resources: null }` — `response?.resources ?? []` is a real runtime guard against a
-    // real return value, not defensive noise the compiler should otherwise be flagging as dead.
+    // `| null` — see fetchCommittee's note above on why this file annotates it per call site.
     const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
 
     return (response?.resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
@@ -452,9 +468,8 @@ export class CommitteeActivityService {
     const hasWindow = !!since || !!before;
 
     const [folders, links, files] = await Promise.all([
-      // `| null`, not an optimistic non-null array type — proxyRequest returns the upstream body
-      // verbatim, and a 204/empty response comes through as a null body. `folders ?? []` below is a
-      // real runtime guard, not defensive noise.
+      // `| null` on folders/links/files below — see fetchCommittee's note on why this file
+      // annotates it per call site.
       this.microserviceProxy
         .proxyRequest<CommitteeActivityFolder[] | null>(req, 'LFX_V2_SERVICE', `/committees/${encodeURIComponent(committeeUid)}/folders`, 'GET')
         .catch((err) => {

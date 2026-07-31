@@ -412,10 +412,15 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0]).toMatchObject({ type: 'document_uploaded', payload: { document_uid: 'link-1', document_type: 'link' } });
     });
 
-    it('treats a null /query/resources body as empty for the survey leg instead of throwing on destructure', async () => {
-      // `const { resources } = await proxyRequest(...)` throws a TypeError if the whole response
-      // body is null (not just its resources field) — a real possible upstream shape, same as the
-      // folders/links case above, just for a `/query/resources` leg instead of a REST array leg.
+    it('treats a null /query/resources body as a graceful empty survey leg, not an error-path degrade', async () => {
+      // Both the survey and files legs already sit inside their own per-leg `.catch()` in
+      // getCommitteeActivity, so `result.data` alone can't tell a guarded null response apart from
+      // an unguarded one — either way the leg contributes []. The `warning` log is what actually
+      // discriminates: without the `response?.resources ?? []` guard, the TypeError thrown reading
+      // `.resources` off a null response is caught by that outer per-leg `.catch()`, which DOES log
+      // a warning; the guard means this leg never throws at all, so no warning fires. Asserting only
+      // `result.data` here would pass identically whether the guard exists or not — proven by
+      // mutation testing the guard away and re-running this test.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'survey') return Promise.resolve(null);
         return defaultProxyRequest(r, s, path, m, query);
@@ -423,15 +428,19 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toEqual([]);
+      expect(warning).not.toHaveBeenCalled();
     });
 
-    it('treats a null /query/resources body as empty for the files leg instead of throwing on property access', async () => {
+    it('treats a null /query/resources body as a graceful empty files leg, not an error-path degrade', async () => {
+      // See the survey test above for why `warning` (not just result.data) is the assertion that
+      // actually discriminates a guarded null response from an unguarded one.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'committee_document') return Promise.resolve(null);
         return defaultProxyRequest(r, s, path, m, query);
       });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(warning).not.toHaveBeenCalled();
       expect(result.data).toEqual([]);
     });
 
