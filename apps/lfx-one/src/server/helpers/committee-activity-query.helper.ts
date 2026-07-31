@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACTIVITY_FEED_DEFAULT_LIMIT, ACTIVITY_FEED_MAX_LIMIT } from '@lfx-one/shared/constants';
+import { ACTIVITY_FEED_DEFAULT_PAGE_SIZE, ACTIVITY_FEED_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
+import type { ActivityPageTokenPayload, CommitteeActivityQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -15,20 +16,6 @@ import { ServiceValidationError } from '../errors';
 function getStringQueryParam(req: Request, name: string): string | undefined {
   const value = req.query[name];
   return typeof value === 'string' ? value : undefined;
-}
-
-/** Parsed, validated query for `GET /api/committees/:uid/activity`. */
-export interface CommitteeActivityQuery {
-  /** Inclusive lower bound on `occurred_at`, applied as `date_from` on every source that supports it. */
-  since?: string;
-  /** Exclusive upper bound on `occurred_at`, decoded from an incoming `page_token`. Undefined on page 1. */
-  before?: string;
-  limit: number;
-}
-
-/** Shape encoded into the opaque `page_token` string — see `encodeActivityPageToken`. */
-interface ActivityPageTokenPayload {
-  before: string;
 }
 
 function isParseableTimestamp(value: string): boolean {
@@ -66,9 +53,11 @@ function decodePageToken(raw: string, operation: string): string {
 }
 
 /**
- * Parses and validates `since`, `limit`, and `page_token` for the committee activity feed endpoint.
- * An omitted `since`/`limit` takes its default silently; an explicit-but-invalid value is a 400 —
- * answering a bad `?limit=abc` with the default would silently mask the caller's mistake.
+ * Parses and validates `since`, `page_size`, and `page_token` for the committee activity feed
+ * endpoint (`page_size`, not `limit` — matches the house pagination convention documented in
+ * `docs/architecture/backend/pagination.md`). An omitted `since`/`page_size` takes its default
+ * silently; an explicit-but-invalid value is a 400 — answering a bad `?page_size=abc` with the
+ * default would silently mask the caller's mistake.
  */
 export function parseCommitteeActivityQuery(req: Request, operation: string): CommitteeActivityQuery {
   const rawSince = getStringQueryParam(req, 'since');
@@ -80,14 +69,14 @@ export function parseCommitteeActivityQuery(req: Request, operation: string): Co
     since = rawSince;
   }
 
-  const rawLimit = getStringQueryParam(req, 'limit');
-  let limit = ACTIVITY_FEED_DEFAULT_LIMIT;
-  if (rawLimit !== undefined) {
-    const parsedLimit = Number(rawLimit);
-    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > ACTIVITY_FEED_MAX_LIMIT) {
-      throw ServiceValidationError.forField('limit', `limit must be an integer between 1 and ${ACTIVITY_FEED_MAX_LIMIT}`, { operation });
+  const rawPageSize = getStringQueryParam(req, 'page_size');
+  let limit = ACTIVITY_FEED_DEFAULT_PAGE_SIZE;
+  if (rawPageSize !== undefined) {
+    const parsedPageSize = Number(rawPageSize);
+    if (!Number.isInteger(parsedPageSize) || parsedPageSize < 1 || parsedPageSize > ACTIVITY_FEED_MAX_PAGE_SIZE) {
+      throw ServiceValidationError.forField('page_size', `page_size must be an integer between 1 and ${ACTIVITY_FEED_MAX_PAGE_SIZE}`, { operation });
     }
-    limit = parsedLimit;
+    limit = parsedPageSize;
   }
 
   const rawPageToken = getStringQueryParam(req, 'page_token');

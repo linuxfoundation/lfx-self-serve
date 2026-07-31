@@ -29,7 +29,10 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
     case 'meeting_held':
       return {
         type: 'past_meeting',
-        key: `past_meeting-${event.payload.meeting_id}`,
+        // meeting_occurrence_id, not meeting_id — a recurring meeting's occurrences share one
+        // meeting_id but need distinct @for tracking keys; meetingId (below) is still the
+        // navigation id, matching the "Past Meeting" card's own link.
+        key: `past_meeting-${event.payload.meeting_occurrence_id}`,
         label: `Meeting held: ${event.payload.title}`,
         timestamp: event.occurred_at,
         icon: 'fa-light fa-clock-rotate-left',

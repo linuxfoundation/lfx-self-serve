@@ -5,11 +5,11 @@ import type { CommitteeDocumentType } from './committee.interface';
 
 /**
  * Full target lifecycle-event vocabulary for a committee's activity feed (LFXV2-1707). Only the
- * first six are actually emitted in v1 — see `ACTIVITY_EVENT_TYPES_V1_EMITTED` /
- * `ACTIVITY_EVENT_TYPES_DEFERRED` in `../constants/activity-event.constants` for the split and why
- * each deferred type has no upstream source yet (no document-delete tombstone, no membership-history
- * tracking, no notes feature). The union stays complete now so the wire contract doesn't grow a
- * breaking change when a real event log starts emitting the deferred types.
+ * first six are actually emitted in v1 (aggregation-derived from existing sources: past meetings,
+ * votes, surveys, documents — see `committee-activity.service.ts`). The last four are deferred:
+ * no upstream source exists yet (no document-delete tombstone — hard delete, unindexed; no
+ * committee-membership history tracking; no notes feature). The union stays complete now so the
+ * wire contract doesn't grow a breaking change when a real event log starts emitting them.
  */
 export type ActivityEventType =
   | 'meeting_held'
@@ -31,10 +31,20 @@ interface BaseActivityEvent {
 
 export interface MeetingHeldActivityEvent extends BaseActivityEvent {
   type: 'meeting_held';
-  // No `password`: the client's click handler re-hydrates the full PastMeeting (including
-  // password) from its own already-fetched pastMeetings() signal via meeting_id, matching how
-  // ActivityFeedAction's `past-meeting` variant already carries only `meetingId`, not a password.
-  payload: { meeting_id: string; title: string };
+  payload: {
+    /** Navigation id — matches PastMeeting.id, same field the click action routes to `/meetings/:id` with. */
+    meeting_id: string;
+    /**
+     * `getPastMeetingResourceId(meeting)` (`meeting_and_occurrence_id ?? id`) — distinct from
+     * `meeting_id` because a recurring meeting's occurrences share one `meeting_id` but need
+     * distinct `@for` tracking keys client-side; using `meeting_id` alone would collide.
+     */
+    meeting_occurrence_id: string;
+    title: string;
+    // No `password`: the client's click handler re-hydrates the full PastMeeting (including
+    // password) from its own already-fetched pastMeetings() signal via meeting_id, matching how
+    // ActivityFeedAction's `past-meeting` variant already carries only `meetingId`, not a password.
+  };
 }
 
 /**

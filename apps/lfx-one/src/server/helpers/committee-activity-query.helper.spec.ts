@@ -11,8 +11,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
     '../../../../../packages/shared/src/constants/activity-event.constants'
   );
   return {
-    ACTIVITY_FEED_DEFAULT_LIMIT: actual.ACTIVITY_FEED_DEFAULT_LIMIT,
-    ACTIVITY_FEED_MAX_LIMIT: actual.ACTIVITY_FEED_MAX_LIMIT,
+    ACTIVITY_FEED_DEFAULT_PAGE_SIZE: actual.ACTIVITY_FEED_DEFAULT_PAGE_SIZE,
+    ACTIVITY_FEED_MAX_PAGE_SIZE: actual.ACTIVITY_FEED_MAX_PAGE_SIZE,
   };
 });
 
@@ -41,16 +41,16 @@ describe('parseCommitteeActivityQuery', () => {
     expect(() => parseCommitteeActivityQuery(mockRequest({ since: 'not-a-timestamp' }), OPERATION)).toThrow(ServiceValidationError);
   });
 
-  it('accepts a limit within bounds', () => {
-    expect(parseCommitteeActivityQuery(mockRequest({ limit: '25' }), OPERATION).limit).toBe(25);
+  it('accepts a page_size within bounds', () => {
+    expect(parseCommitteeActivityQuery(mockRequest({ page_size: '25' }), OPERATION).limit).toBe(25);
   });
 
-  it.each(['0', '51', 'abc', '3.5'])('rejects an out-of-range or non-integer limit value %s', (limit) => {
-    expect(() => parseCommitteeActivityQuery(mockRequest({ limit }), OPERATION)).toThrow(ServiceValidationError);
+  it.each(['0', '51', 'abc', '3.5'])('rejects an out-of-range or non-integer page_size value %s', (pageSize) => {
+    expect(() => parseCommitteeActivityQuery(mockRequest({ page_size: pageSize }), OPERATION)).toThrow(ServiceValidationError);
   });
 
-  it('accepts limit at the upper bound (50)', () => {
-    expect(parseCommitteeActivityQuery(mockRequest({ limit: '50' }), OPERATION).limit).toBe(50);
+  it('accepts page_size at the upper bound (50)', () => {
+    expect(parseCommitteeActivityQuery(mockRequest({ page_size: '50' }), OPERATION).limit).toBe(50);
   });
 
   it('round-trips a page_token produced by encodeActivityPageToken back to the same before value', () => {

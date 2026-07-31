@@ -17,7 +17,7 @@ function meetingHeld(overrides: Partial<Extract<ActivityEvent, { type: 'meeting_
     type: 'meeting_held',
     occurred_at: occurredAt,
     committee_uid: COMMITTEE_UID,
-    payload: { meeting_id: 'pm-1', title: 'Weekly Sync', ...overrides },
+    payload: { meeting_id: 'pm-1', meeting_occurrence_id: 'pm-1-occ-1', title: 'Weekly Sync', ...overrides },
   };
 }
 
@@ -152,9 +152,15 @@ describe('mapActivityEventsToFeedItems', () => {
 
   describe('action', () => {
     it('routes a meeting_held item to its meeting_id', () => {
-      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42' })], { votingEnabled: true });
+      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-1' })], { votingEnabled: true });
       expect(items[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42' });
-      expect(items[0].key).toBe('past_meeting-pm-42');
+    });
+
+    it('keys a meeting_held item on meeting_occurrence_id, not meeting_id — so two occurrences of the same recurring meeting get distinct @for tracking keys', () => {
+      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-1' }, '2026-01-01T00:00:00Z')], {
+        votingEnabled: true,
+      });
+      expect(items[0].key).toBe('past_meeting-pm-42-occ-1');
     });
 
     it('opens the vote drawer for a vote event', () => {

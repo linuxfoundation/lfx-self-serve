@@ -1,12 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 // import type — erased entirely at compile time, so unlike the enums/utils imports below, this
 // one needs no vi.mock in the spec (same reasoning as activity-feed.utils.ts's own interfaces import).
 import type {
   ActivityEvent,
   Committee,
+  CommitteeActivityDocumentFile,
+  CommitteeActivityFolder,
+  CommitteeActivityLink,
+  CommitteeActivityQuery,
   DocumentUploadedActivityEvent,
   PaginatedResponse,
   PastMeeting,
@@ -18,7 +23,7 @@ import type {
   VoteClosedActivityEvent,
   VoteOpenedActivityEvent,
 } from '@lfx-one/shared/interfaces';
-import { firstValidTimestamp, getPastMeetingStartTimeMs, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { firstValidTimestamp, getPastMeetingResourceId, getPastMeetingStartTimeMs, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { encodeActivityPageToken } from '../helpers/committee-activity-query.helper';
@@ -26,45 +31,6 @@ import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { VoteService } from './vote.service';
-
-/** Options resolved by `parseCommitteeActivityQuery` and passed straight through. */
-export interface CommitteeActivityOptions {
-  since?: string;
-  before?: string;
-  limit: number;
-}
-
-/**
- * Lower bound on the per-source `page_size` requested from each upstream leg — independent of
- * `limit` so a small `limit` (e.g. 1) still gives the k-way merge (see `getCommitteeActivity`)
- * enough candidates per source to be correct, not just fast.
- */
-const MIN_SOURCE_FETCH_SIZE = 25;
-
-/** Upstream response shape for a committee folder (mirrors CommitteeService's own local interface — not exported from there). */
-interface CommitteeActivityFolder {
-  uid: string;
-  name: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-/** Upstream response shape for a committee link. */
-interface CommitteeActivityLink {
-  uid: string;
-  name: string;
-  url?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-/** Query-service shape for an indexed `committee_document` (file) resource. */
-interface CommitteeActivityDocumentFile {
-  uid: string;
-  name: string;
-  created_at?: string;
-  updated_at?: string;
-}
 
 function timestampValue(timestamp: string): number {
   const parsed = Date.parse(timestamp);
@@ -76,11 +42,18 @@ function sortDescByOccurredAt<T extends { occurred_at: string }>(events: T[]): T
 }
 
 /**
- * True when `occurredAt` falls within `[since, before)`. Used to apply the activity window
- * in-memory for the two committee-document legs (folders/links) that have no upstream date
- * param. An unparseable/missing timestamp is excluded whenever a window is active — it can't be
- * verified to belong in the window — but kept when there's no window (matches the old client-side
- * feed, which sorted an invalid timestamp to the bottom rather than dropping it).
+ * True when `occurredAt` falls within `[since, before)` — the single source of truth for window
+ * membership, applied to the full merged pool in `getCommitteeActivity` (not per-source). Per-leg
+ * upstream `date_from`/`date_to` are best-effort narrowing only: query-service's `date_to` is
+ * documented *inclusive*, while this endpoint's cursor contract is exclusive, and two legs
+ * (committee folders/links) accept no date param at all — relying on any single leg's upstream
+ * filtering for correctness would both re-return a page's boundary item forever (the inclusive/
+ * exclusive mismatch) and miss folders/links entirely. Applying this filter once, centrally, after
+ * every source has computed its real `occurred_at`, is correct regardless of what each leg's
+ * upstream filtering did or didn't narrow. An unparseable/missing timestamp is excluded whenever a
+ * window is active — it can't be verified to belong in the window — but kept when there's no
+ * window (matches the old client-side feed, which sorted an invalid timestamp to the bottom rather
+ * than dropping it).
  */
 function isWithinWindow(occurredAt: string, since: string | undefined, before: string | undefined): boolean {
   if (!since && !before) return true;
@@ -109,14 +82,14 @@ export class CommitteeActivityService {
     this.voteService = new VoteService();
   }
 
-  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityOptions): Promise<PaginatedResponse<ActivityEvent>> {
+  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
     const { since, before, limit } = options;
     // Fetching `limit + 1` from EACH source (not just `limit`) guarantees the true global
     // top-(limit+1) merged-by-occurred_at result is present in the fetched pool, even in the
     // worst case where a single source contributes every one of the top items — a smaller
-    // per-source fetch could silently under-represent a dominant source. MIN_SOURCE_FETCH_SIZE
+    // per-source fetch could silently under-represent a dominant source. ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE
     // keeps small `limit` values (e.g. 1) from starving that guarantee.
-    const fetchSize = Math.max(limit + 1, MIN_SOURCE_FETCH_SIZE);
+    const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentEvents] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
@@ -147,12 +120,20 @@ export class CommitteeActivityService {
     // Pure chronological merge — no per-source pre-cap. Each source already carries at most
     // fetchSize items (bounded above), and a global sort+slice already picks the true top `limit`
     // by time regardless of which source they came from; an artificial per-source quota would only
-    // make this LESS "time-ordered", not more correct.
-    const merged = sortDescByOccurredAt(sources.flat());
+    // make this LESS "time-ordered", not more correct. The window filter runs here, once, against
+    // every source's computed occurred_at — see isWithinWindow's doc comment for why per-leg
+    // upstream filtering alone isn't sufficient.
+    const windowed = sources.flat().filter((event) => isWithinWindow(event.occurred_at, since, before));
+    const merged = sortDescByOccurredAt(windowed);
 
     const hasMore = merged.length > limit;
     const data = merged.slice(0, limit);
-    const pageToken = hasMore ? encodeActivityPageToken(data[data.length - 1].occurred_at) : undefined;
+    // Cursor from the last item with a real timestamp, not necessarily data[data.length - 1] —
+    // an event with no usable timestamp sorts last (timestampValue('') === -Infinity) but would
+    // produce a page_token that fails isParseableTimestamp on the very next request. Omitting the
+    // token entirely in that case is safer than a token the server itself can't decode.
+    const cursorTimestamp = [...data].reverse().find((event) => event.occurred_at)?.occurred_at;
+    const pageToken = hasMore && cursorTimestamp ? encodeActivityPageToken(cursorTimestamp) : undefined;
 
     logger.debug(req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
@@ -190,7 +171,15 @@ export class CommitteeActivityService {
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
-      sort: 'updated_desc',
+      // NAME_DESC, not UPDATED_DESC — the meeting-service indexer populates sort_name from
+      // start_time (packages/shared/src/constants/meeting.constants.ts), so NAME_DESC is the
+      // start_time-ordered sort this leg actually needs; UPDATED_DESC sorts by index update time,
+      // unrelated to occurred_at.
+      sort: PAST_MEETING_SORT.NAME_DESC,
+      // Best-effort narrowing only — occurred_at is actually derived via getPastMeetingStartTimeMs
+      // (prefers scheduled_start_time, falls back to start_time), so filtering upstream on
+      // start_time alone can miss a row whose scheduled_start_time is the real, in-window value.
+      // The isWithinWindow pass in getCommitteeActivity is the correctness backstop.
       ...(hasWindow && { date_field: 'start_time' }),
       ...(since && { date_from: since }),
       ...(before && { date_to: before }),
@@ -209,7 +198,7 @@ export class CommitteeActivityService {
         type: 'meeting_held',
         occurred_at: occurredAt,
         committee_uid: committeeUid,
-        payload: { meeting_id: meeting.id, title: meeting.title },
+        payload: { meeting_id: meeting.id, meeting_occurrence_id: getPastMeetingResourceId(meeting), title: meeting.title },
       };
     });
   }
@@ -228,8 +217,9 @@ export class CommitteeActivityService {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
-      // last_modified_time, not creation_time — a vote closed recently but created long ago
-      // must still fall inside a "recent activity" window; creation_time would wrongly exclude it.
+      // Best-effort narrowing only (see fetchPastMeetingEvents) — a vote's occurred_at is derived
+      // from end_time/early_end_time when closed, creation_time when open, not always
+      // last_modified_time. The isWithinWindow pass in getCommitteeActivity is the backstop.
       ...(hasWindow && { date_field: 'last_modified_time' }),
       ...(since && { date_from: since }),
       ...(before && { date_to: before }),
@@ -336,6 +326,9 @@ export class CommitteeActivityService {
         }),
     ]);
 
+    // Folders/links have no upstream date param at all (confirmed gap — neither REST endpoint
+    // accepts one), so their window filtering happens entirely in getCommitteeActivity's
+    // isWithinWindow pass, same as every other source.
     const folderEvents = folders.map((folder) =>
       this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at))
     );
@@ -346,11 +339,7 @@ export class CommitteeActivityService {
       this.buildDocumentEvent(committeeUid, file.uid, file.name, 'file', firstValidTimestamp(file.updated_at, file.created_at))
     );
 
-    // Folders/links have no upstream date param (confirmed gap — neither REST endpoint accepts
-    // one) — the window is applied here instead. Harmless no-op for the files leg, already
-    // upstream-filtered.
-    const merged = [...folderEvents, ...linkEvents, ...fileEvents];
-    return hasWindow ? merged.filter((event) => isWithinWindow(event.occurred_at, since, before)) : merged;
+    return [...folderEvents, ...linkEvents, ...fileEvents];
   }
 
   private buildDocumentEvent(

@@ -19,6 +19,18 @@ const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, d
   debug: vi.fn(),
 }));
 
+vi.mock('@lfx-one/shared/constants', async () => {
+  const activityEvent = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/activity-event.constants')>(
+    '../../../../../packages/shared/src/constants/activity-event.constants'
+  );
+  const meeting = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/meeting.constants')>(
+    '../../../../../packages/shared/src/constants/meeting.constants'
+  );
+  return {
+    ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE: activityEvent.ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE,
+    PAST_MEETING_SORT: meeting.PAST_MEETING_SORT,
+  };
+});
 vi.mock('@lfx-one/shared/enums', () => ({
   PollStatus: { ACTIVE: 'active', DISABLED: 'disabled', ENDED: 'ended' },
   SurveyStatus: { OPEN: 'open', CLOSED: 'closed', SCHEDULED: 'scheduled', DRAFT: 'draft', SENT: 'sent' },
@@ -36,6 +48,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return {
     firstValidTimestamp: iso.firstValidTimestamp,
     getPastMeetingStartTimeMs: pastMeetingUtils.getPastMeetingStartTimeMs,
+    getPastMeetingResourceId: pastMeetingUtils.getPastMeetingResourceId,
     getSurveyDisplayStatus: surveyUtils.getSurveyDisplayStatus,
   };
 });
@@ -66,7 +79,14 @@ const req = {} as unknown as Request;
 const COMMITTEE_UID = 'committee-1';
 
 function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
-  return { id: 'pm-1', title: 'Weekly Sync', start_time: '2026-01-01T10:00:00Z', scheduled_start_time: '', ...overrides } as PastMeeting;
+  return {
+    id: 'pm-1',
+    meeting_and_occurrence_id: 'pm-1-occ-1',
+    title: 'Weekly Sync',
+    start_time: '2026-01-01T10:00:00Z',
+    scheduled_start_time: '',
+    ...overrides,
+  } as PastMeeting;
 }
 
 function vote(overrides: Partial<Vote> = {}): Vote {
@@ -151,6 +171,17 @@ describe('CommitteeActivityService', () => {
     expect(result.data.map((e) => e.type)).toEqual(['survey_published', 'vote_opened']);
   });
 
+  it('sorts past meetings by name_desc (start_time-ordered), not updated_desc (index-update-time-ordered)', async () => {
+    await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+    expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ sort: 'name_desc' }), 'v1_past_meeting', false);
+  });
+
+  it('keys a meeting_held event on meeting_and_occurrence_id, not just meeting_id', async () => {
+    getMeetings.mockResolvedValue({ data: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] });
+    const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+    expect(result.data[0]).toMatchObject({ type: 'meeting_held', payload: { meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-9' } });
+  });
+
   it('does not sort a past meeting as ancient when start_time is a Go zero-date', async () => {
     getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '0001-01-01T00:00:00Z', scheduled_start_time: '2026-01-05T00:00:00Z' })] });
     proxyRequest.mockImplementation((r, s, path, m, query) => {
@@ -232,6 +263,46 @@ describe('CommitteeActivityService', () => {
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', before: '2026-02-01T00:00:00Z', limit: 8 });
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toMatchObject({ type: 'document_uploaded', payload: { document_uid: 'f-in' } });
+    });
+
+    it('applies the same in-memory window backstop to a query-service-backed leg, in case upstream date filtering under- or over-narrows it', async () => {
+      // Simulates the upstream date_field mismatch (e.g. a vote's real occurred_at falls outside
+      // the window even though the upstream date_field pre-filter returned it) — the merge itself
+      // must still exclude it, not just trust whatever each leg's upstream call narrowed to.
+      getVotes.mockResolvedValue({ data: [vote({ uid: 'v-out', creation_time: '2025-01-01T00:00:00Z', end_time: '2025-01-02T00:00:00Z' })] });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', before: '2026-02-01T00:00:00Z', limit: 8 });
+      expect(result.data).toEqual([]);
+    });
+
+    it('excludes the previous page boundary item instead of re-returning it — the before cursor is strictly exclusive', async () => {
+      // Regression guard for the inclusive/exclusive mismatch against upstream's date_to
+      // semantics: the merge's own isWithinWindow pass must exclude occurred_at === before
+      // regardless of what date_to did upstream.
+      getVotes.mockResolvedValue({ data: [vote({ uid: 'v-boundary', creation_time: '2026-01-04T00:00:00Z' })] });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { before: '2026-01-04T00:00:00Z', limit: 8 });
+      expect(result.data).toEqual([]);
+    });
+
+    it('falls back to the last item with a real timestamp for the cursor, when the returned page is short on valid timestamps', async () => {
+      // Only 2 votes have a real timestamp; 2 more have none. Sorted desc, invalid-timestamp
+      // items sort last (timestampValue('') === -Infinity), so with limit=3 the returned page is
+      // [v1, v2, v3] — v3 (the tail) has no valid timestamp, while a 4th candidate (v4) still
+      // exists beyond the page, so hasMore is true and a page_token must still be issued.
+      getVotes.mockResolvedValue({
+        data: [
+          vote({ uid: 'v1', creation_time: '2026-01-05T00:00:00Z' }),
+          vote({ uid: 'v2', creation_time: '2026-01-04T00:00:00Z' }),
+          vote({ uid: 'v3', creation_time: undefined, last_modified_time: undefined }),
+          vote({ uid: 'v4', creation_time: undefined, last_modified_time: undefined }),
+        ],
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 3 });
+      expect(result.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null))).toEqual(['v1', 'v2', 'v3']);
+      // v3 (the tail of the returned page) has no valid timestamp — the cursor must fall back to v2's.
+      expect(result.page_token).toBe('token(2026-01-04T00:00:00Z)');
     });
   });
 

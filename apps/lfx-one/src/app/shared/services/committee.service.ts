@@ -194,7 +194,10 @@ export class CommitteeService {
   public getCommitteeActivity(committeeId: string): Observable<ActivityEvent[]> {
     return this.http.get<PaginatedResponse<ActivityEvent>>(`/api/committees/${committeeId}/activity`).pipe(
       map((response) => response.data),
-      catchError(() => of([]))
+      catchError((error) => {
+        console.error('Failed to load committee activity feed:', error);
+        return of([]);
+      })
     );
   }
 

@@ -33,9 +33,9 @@ export class CommitteeActivityController {
       if (!validateUidParameter(committeeUid, req, next, { operation, service: 'committee_activity_controller' })) {
         return;
       }
-      const { since, before, limit } = parseCommitteeActivityQuery(req, operation);
+      const query = parseCommitteeActivityQuery(req, operation);
 
-      const response = await this.service.getCommitteeActivity(req, committeeUid, { since, before, limit });
+      const response = await this.service.getCommitteeActivity(req, committeeUid, query);
 
       logger.success(req, operation, startTime, { committee_uid: committeeUid, returned: response.data.length, has_more: !!response.page_token });
       res.json(response);
