@@ -344,25 +344,32 @@ describe('CommitteeActivityService', () => {
       expect(combinedUids).toEqual(['v-a', 'v-b']);
     });
 
-    it('sorts two events that both have no valid timestamp deterministically, not NaN-implementation-defined order', async () => {
+    it('sorts two events that both have no valid timestamp by key, independent of source-fetch order', async () => {
       // Regression guard: timestampValue(a) - timestampValue(b) on two -Infinity values is NaN,
-      // which would skip the key tiebreak and leave the pair's relative order (and therefore
-      // which one a slice() cuts off) non-deterministic. Run twice to catch an order that only
-      // sometimes flips.
-      getVotes.mockResolvedValue({
-        data: [
-          vote({ uid: 'v-x', creation_time: undefined, last_modified_time: undefined }),
-          vote({ uid: 'v-y', creation_time: undefined, last_modified_time: undefined }),
-        ],
-      });
+      // which is `!== 0` and would skip the key tiebreak — falling through to whatever order the
+      // comparator's NaN result happens to preserve, i.e. fetch/insertion order, not the intended
+      // key order. Asserting a single fixed input isn't a real guard (stable sort reproduces the
+      // same output for the same input either way) — feeding the pair in BOTH orders and requiring
+      // the same key-derived output regardless is what actually distinguishes "sorted by key" from
+      // "preserved fetch order".
+      const voteX = vote({ uid: 'v-x', creation_time: undefined, last_modified_time: undefined });
+      const voteY = vote({ uid: 'v-y', creation_time: undefined, last_modified_time: undefined });
+      const uidsOf = (r: Awaited<ReturnType<typeof service.getCommitteeActivity>>) => r.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null));
 
-      const first = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-      const second = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-      const uidsOf = (r: typeof first) => r.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null));
-      expect(uidsOf(first)).toEqual(uidsOf(second));
+      getVotes.mockResolvedValue({ data: [voteX, voteY] });
+      const forwardOrder = uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }));
+
+      getVotes.mockResolvedValue({ data: [voteY, voteX] });
+      const reversedOrder = uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }));
+
+      expect(forwardOrder).toEqual(reversedOrder);
     });
 
-    it('does not drop a folder and a file that happen to share the same uid — document keys are discriminated by type', async () => {
+    it('drops the sibling of a colliding-key event at a page boundary — the risk document_type-discrimination guards against', async () => {
+      // eventKey collisions matter specifically at the cursor boundary: compareEventsDesc treats
+      // two same-timestamp, same-key events as equal, so isAfterCursor excludes both once one has
+      // been returned. Paginating (not just checking both survive an unpaginated merge) is what
+      // actually exercises that path.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path.endsWith('/folders')) return Promise.resolve([{ uid: 'shared-uid', name: 'Folder', updated_at: '2026-01-05T00:00:00Z' }]);
         if (path === '/query/resources' && query?.['type'] === 'committee_document') {
@@ -373,10 +380,16 @@ describe('CommitteeActivityService', () => {
         return defaultProxyRequest(r, s, path, m, query);
       });
 
-      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-      expect(result.data).toHaveLength(2);
-      const types = result.data.map((e) => (e.type === 'document_uploaded' ? e.payload.document_type : null)).sort();
-      expect(types).toEqual(['file', 'folder']);
+      const page1 = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 1 });
+      expect(page1.data).toHaveLength(1);
+      expect(page1.page_token).toBeDefined();
+
+      const cursor = encodeActivityPageToken.mock.calls.at(-1)?.[0] as { before: string; key: string };
+      const page2 = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
+
+      expect(page2.data).toHaveLength(1);
+      const combinedTypes = [page1.data[0], page2.data[0]].map((e) => (e.type === 'document_uploaded' ? e.payload.document_type : null)).sort();
+      expect(combinedTypes).toEqual(['file', 'folder']);
     });
 
     it('falls back to the last item with a real timestamp for the cursor, when the returned page is short on valid timestamps', async () => {

@@ -24,10 +24,11 @@ export interface ActivityPageCursor {
 /** Parsed, validated query for `GET /api/committees/:uid/activity`, and the options threaded into the service. */
 export interface CommitteeActivityQuery {
   /**
-   * Inclusive lower bound on `occurred_at`. Applied in-memory to the merged pool on every source;
-   * additionally pushed upstream as `date_from` only on the surveys and documents legs, whose
-   * derivation field is unambiguous (the past-meetings and votes legs get no upstream date filter
-   * at all — see `committee-activity.service.ts`).
+   * Inclusive lower bound on `occurred_at`. Enforced in-memory against the merged pool (the
+   * correctness guarantee); additionally pushed upstream as `date_from` on all four legs as
+   * best-effort narrowing only — each leg's upstream `date_field` approximates a multi-field
+   * fallback derivation it can't fully represent, so it narrows fetched volume but isn't relied
+   * on for correctness. See the per-leg comments in `committee-activity.service.ts`.
    */
   since?: string;
   /** Decoded from an incoming `page_token`. Undefined on page 1. */

@@ -44,7 +44,11 @@ function timestampValue(timestamp: string): number {
  * own natural uid, prefixed by source so ids from different sources can never collide. Documents
  * additionally discriminate by document_type — folders, links, and files are three distinct
  * upstream uid namespaces, so `document_uid` alone could collide across them (e.g. a folder and a
- * file coincidentally sharing a uid), which would silently drop one from the merge under a shared key.
+ * file coincidentally sharing a uid). A collision doesn't drop anything from a single unpaginated
+ * merge (nothing here dedups by key) — the real risk is at the cursor boundary:
+ * `compareEventsDesc` would treat two same-timestamp, same-key events as equal, so once one of
+ * them is returned, `isAfterCursor` excludes both on the next page, permanently dropping the
+ * other. See the paginated collision test in the spec.
  */
 function eventKey(event: ActivityEvent): string {
   switch (event.type) {
@@ -126,6 +130,11 @@ export class CommitteeActivityService {
     // per-source fetch could silently under-represent a dominant source. ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE
     // keeps small `limit` values (e.g. 1) from starving that guarantee.
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
+    // Sent to every leg as an inclusive upstream `date_to` (query-service's date_to is documented
+    // inclusive) — this can over-fetch items exactly at the boundary timestamp, which is fine: the
+    // in-memory isAfterCursor pass below applies the real exclusive-compound-cursor comparison, so
+    // upstream over-inclusion just means a few extra rows get fetched and correctly trimmed, not a
+    // correctness gap.
     const before = cursor?.before;
 
     const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentEvents] = await Promise.all([

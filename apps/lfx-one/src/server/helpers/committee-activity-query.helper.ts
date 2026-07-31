@@ -23,6 +23,20 @@ function isParseableTimestamp(value: string): boolean {
 }
 
 /**
+ * Normalizes an already-validated (`isParseableTimestamp`) timestamp to RFC3339. `Date.parse`
+ * accepts formats upstream doesn't — e.g. `2026-01-05T00:00:00` with no zone designator, or
+ * `2026/01/05` — and query-service's `date_from`/`date_to` require strict RFC3339 or date-only,
+ * rejecting anything else with a 400. Since every leg's `.catch()` degrades that 400 into an
+ * empty result for its source (LFXV2-1707's graceful-degradation-per-leg design), an unnormalized
+ * value wouldn't surface as an error at all — it would silently return a thinner feed. Normalizing
+ * once here, rather than validating against the stricter upstream grammar, keeps any
+ * currently-working caller working.
+ */
+function normalizeTimestamp(value: string): string {
+  return new Date(value).toISOString();
+}
+
+/**
  * Encodes a keyset pagination position as an opaque base64url string. `(before, key)` compound —
  * not a bare timestamp — matches the house cursor-pagination pattern
  * (`docs/architecture/backend/pagination.md`) while staying correct across a merge of 4
@@ -51,7 +65,7 @@ function decodePageToken(raw: string, operation: string): ActivityPageCursor {
   if (typeof candidate?.before !== 'string' || !isParseableTimestamp(candidate.before) || typeof candidate.key !== 'string' || candidate.key === '') {
     throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation });
   }
-  return { before: candidate.before, key: candidate.key };
+  return { before: normalizeTimestamp(candidate.before), key: candidate.key };
 }
 
 /**
@@ -68,7 +82,7 @@ export function parseCommitteeActivityQuery(req: Request, operation: string): Co
     if (!isParseableTimestamp(rawSince)) {
       throw ServiceValidationError.forField('since', 'since must be a valid ISO 8601 timestamp', { operation });
     }
-    since = rawSince;
+    since = normalizeTimestamp(rawSince);
   }
 
   const rawPageSize = getStringQueryParam(req, 'page_size');

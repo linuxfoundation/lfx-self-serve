@@ -32,9 +32,18 @@ describe('parseCommitteeActivityQuery', () => {
     expect(parseCommitteeActivityQuery(mockRequest(), OPERATION)).toEqual({ since: undefined, cursor: undefined, limit: 8 });
   });
 
-  it('passes through a valid ISO since value', () => {
+  it('passes through a valid ISO since value, normalized to RFC3339 with milliseconds', () => {
     const result = parseCommitteeActivityQuery(mockRequest({ since: '2026-01-01T00:00:00Z' }), OPERATION);
-    expect(result.since).toBe('2026-01-01T00:00:00Z');
+    expect(result.since).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('normalizes a since value Date.parse accepts but upstream RFC3339 validation would reject', () => {
+    // Upstream (query-service) only accepts strict RFC3339 or date-only; Date.parse is more
+    // permissive (no zone designator, slash-separated, etc.) — an unnormalized value forwarded
+    // as-is would 400 upstream on every leg and silently degrade to an empty feed instead.
+    const result = parseCommitteeActivityQuery(mockRequest({ since: '2026-01-01T00:00:00' }), OPERATION);
+    expect(result.since).toBe(new Date('2026-01-01T00:00:00').toISOString());
+    expect(result.since).toMatch(/Z$/);
   });
 
   it('rejects an unparseable since value instead of silently ignoring it', () => {
@@ -53,10 +62,16 @@ describe('parseCommitteeActivityQuery', () => {
     expect(parseCommitteeActivityQuery(mockRequest({ page_size: '50' }), OPERATION).limit).toBe(50);
   });
 
-  it('round-trips a page_token produced by encodeActivityPageToken back to the same cursor', () => {
+  it('round-trips a page_token produced by encodeActivityPageToken back to the same cursor, normalized', () => {
     const token = encodeActivityPageToken({ before: '2026-01-05T00:00:00Z', key: 'vote:vote-1' });
     const result = parseCommitteeActivityQuery(mockRequest({ page_token: token }), OPERATION);
-    expect(result.cursor).toEqual({ before: '2026-01-05T00:00:00Z', key: 'vote:vote-1' });
+    expect(result.cursor).toEqual({ before: '2026-01-05T00:00:00.000Z', key: 'vote:vote-1' });
+  });
+
+  it('normalizes a decoded page_token before value the same way as since', () => {
+    const badToken = Buffer.from(JSON.stringify({ before: '2026-01-05T00:00:00', key: 'vote:vote-1' }), 'utf8').toString('base64url');
+    const result = parseCommitteeActivityQuery(mockRequest({ page_token: badToken }), OPERATION);
+    expect(result.cursor?.before).toBe(new Date('2026-01-05T00:00:00').toISOString());
   });
 
   it('rejects a malformed page_token instead of silently restarting the feed', () => {
