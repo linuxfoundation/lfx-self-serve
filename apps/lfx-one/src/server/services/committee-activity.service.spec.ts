@@ -263,6 +263,35 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).not.toHaveBeenCalled();
     });
 
+    it('rejects an unparseable since instead of silently degrading to an empty feed', async () => {
+      // Same policy, same reason, as the cursor.before test above — parseCommitteeActivityQuery
+      // validates `since` on the HTTP path, but this method is public and reachable directly.
+      // Without this check, isAtOrAfterSince's `ms >= Date.parse(since)` is `ms >= NaN` for every
+      // event, so an unparseable since would silently degrade to an empty feed instead of rejecting.
+      await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: 'not-a-timestamp', limit: 8 })).rejects.toThrow(ServiceValidationError);
+
+      expect(getVotes).not.toHaveBeenCalled();
+    });
+
+    it('sets hasMore when a page_size-bounded leg is saturated, even though the merged pool itself is not over limit', async () => {
+      // Regression for a false negative traced in the full-branch review: `windowed.length > limit`
+      // alone can't see "more data exists" when a single dominant, page_size-bounded source (votes,
+      // here) returns exactly fetchSize rows and the in-memory since filter then drops all but one
+      // of them — the merged pool ends up at or under `limit`, but there could easily be more
+      // matching rows upstream that this page's fetch never reached. fetchSize = max(1+1, 25) = 25,
+      // so 25 votes here means the leg genuinely hit its upstream page bound.
+      const fetchSize = 25;
+      const votes = Array.from({ length: fetchSize }, (_, i) =>
+        vote({ uid: `v-${i}`, creation_time: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
+      );
+      getVotes.mockResolvedValue({ data: votes });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 1 });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.page_token).toBeDefined();
+    });
+
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 2 });
       expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), 'v1_past_meeting', false);

@@ -201,8 +201,18 @@ export class CommitteeActivityService {
         operation: 'get_committee_activity',
       });
     }
+    // Same reject-not-degrade policy, same reason, for `since` — this method is public and
+    // reachable by a caller that skips parseCommitteeActivityQuery's own since validation. Without
+    // this check, an unparseable `since` does the full upstream fan-out, 400s every query-service
+    // leg's date_from (each swallowed into an empty leg by its own .catch), and isAtOrAfterSince
+    // then rejects every surviving event too (`ms >= Date.parse(since)` is `ms >= NaN`, always
+    // false) — a silent empty feed, not the clean rejection this method's cursor handling already
+    // guarantees for the equivalent bad-input case.
+    if (since && Number.isNaN(Date.parse(since))) {
+      throw ServiceValidationError.forField('since', 'since must be a valid ISO 8601 timestamp', { operation: 'get_committee_activity' });
+    }
 
-    const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentEvents] = await Promise.all([
+    const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
@@ -218,14 +228,14 @@ export class CommitteeActivityService {
       }),
       this.fetchDocumentEvents(req, committeeUid, since, before, fetchSize, cursor).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
-        return [];
+        return { events: [], saturated: false };
       }),
     ]);
 
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
     // doc comment) — by this line `committee` is always a resolved Committee.
     const votingEnabled = committee.enable_voting;
-    const sources: ActivityEvent[][] = [pastMeetingEvents, votingEnabled ? voteEvents : [], surveyEvents, documentEvents];
+    const sources: ActivityEvent[][] = [pastMeetingEvents, votingEnabled ? voteEvents : [], surveyEvents, documentResult.events];
 
     // Single pass: attach each event's sort key once, apply since/cursor, sort desc by
     // (occurred_at, key). No per-source pre-cap — a global sort+slice already picks the true top
@@ -247,13 +257,34 @@ export class CommitteeActivityService {
     );
     windowed.sort((a, b) => compareEventsDesc({ occurred_at: a.event.occurred_at, key: a.key }, { occurred_at: b.event.occurred_at, key: b.key }));
 
-    const hasMore = windowed.length > limit;
+    // `windowed.length > limit` alone under-detects "more data exists": each of
+    // meetings/votes/surveys/files is bounded to a single upstream page of `fetchSize` rows (see
+    // the caveat above), so once a page's fetch actually hits that bound, there could be more rows
+    // upstream than made it into `windowed` even though the merged pool itself isn't over `limit` —
+    // e.g. a single dominant source returning exactly `fetchSize` rows, several of which get
+    // dropped by the in-memory since/cursor/invalid-timestamp filters, can leave `windowed.length`
+    // at or under `limit` while real, unfetched rows remain beyond this page's upstream cutoff.
+    // Folders/links are excluded from this saturation check — they have no upstream page bound at
+    // all (fetched in full every call) and are already filtered+bounded correctly against the exact
+    // cursor inside fetchDocumentEvents, so a fetched length at `fetchSize` there reflects this
+    // leg's own internal cap, not an upstream truncation signal.
+    const anyLegSaturated =
+      pastMeetingEvents.length >= fetchSize ||
+      (votingEnabled && voteEvents.length >= fetchSize) ||
+      surveyEvents.length >= fetchSize ||
+      documentResult.saturated;
+
     const page = windowed.slice(0, limit);
     const data = page.map(({ event }) => event);
     // Every item in `page` now has a real timestamp (windowed already dropped the ones that
     // don't), so the last page item is always a valid cursor position — no need to search backward
-    // for one.
+    // for one. `hasMore` still requires a real `lastPageItem` to anchor a cursor on — if saturation
+    // is detected but this page came back empty (every fetched row got filtered out), there is no
+    // position left to resume from, so this degrades to the same "nothing more to report" outcome
+    // as before; an over-fetch this narrow (an entire upstream page filtered to zero matches) is
+    // accepted as a known residual rather than solved by a second round-trip within this call.
     const lastPageItem = page.at(-1);
+    const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
     logger.debug(req, 'get_committee_activity', 'Completed committee activity aggregation', {
@@ -261,7 +292,7 @@ export class CommitteeActivityService {
       meeting_count: pastMeetingEvents.length,
       vote_count: voteEvents.length,
       survey_count: surveyEvents.length,
-      document_count: documentEvents.length,
+      document_count: documentResult.events.length,
       voting_enabled: votingEnabled,
       returned: data.length,
       has_more: hasMore,
@@ -471,7 +502,7 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number,
     cursor: ActivityPageCursor | undefined
-  ): Promise<DocumentUploadedActivityEvent[]> {
+  ): Promise<{ events: DocumentUploadedActivityEvent[]; saturated: boolean }> {
     const hasWindow = !!since || !!before;
 
     const [folders, links, files] = await Promise.all([
@@ -551,7 +582,13 @@ export class CommitteeActivityService {
       this.buildDocumentEvent(committeeUid, file.uid, file.name, 'file', firstValidTimestamp(file.updated_at, file.created_at))
     );
 
-    return [...folderEvents, ...linkEvents, ...fileEvents];
+    // Only the files leg feeds `saturated` — it's the one document sub-leg bounded by an upstream
+    // page_size (like meetings/votes/surveys), so a fetched length at fetchSize is a real signal
+    // there could be more upstream. Folders/links are deliberately excluded: they have no upstream
+    // bound at all (fetched in full, every call) and are already filtered+bounded against the exact
+    // cursor above, so hitting fetchSize there reflects this leg's own correct internal cap, not an
+    // under-fetch.
+    return { events: [...folderEvents, ...linkEvents, ...fileEvents], saturated: files.length >= fetchSize };
   }
 
   private buildDocumentEvent(
