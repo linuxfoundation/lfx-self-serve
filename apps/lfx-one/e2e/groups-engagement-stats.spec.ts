@@ -178,10 +178,12 @@ function skipWhenAuthMissing(): void {
  * read `false` before the async flag client resolves, even when the card appears moments later.
  */
 async function cardAppears(locator: Locator, timeout: number): Promise<boolean> {
-  return locator
-    .waitFor({ state: 'visible', timeout })
-    .then(() => true)
-    .catch(() => false);
+  try {
+    await locator.waitFor({ state: 'visible', timeout });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function gotoMyGroups(page: Page): Promise<void> {
