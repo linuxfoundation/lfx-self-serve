@@ -23,7 +23,7 @@
 
 import type { Committee, MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
 
@@ -170,6 +170,20 @@ function skipWhenAuthMissing(): void {
   }
 }
 
+/**
+ * Whether `locator` becomes visible within `timeout` — used to detect the LaunchDarkly flag's
+ * resolved state. `Locator.isVisible()`'s `timeout` option is deprecated and ignored (Playwright
+ * always returns immediately from `isVisible()`, regardless of any timeout passed), so checking
+ * "did the flag turn out on?" requires actually waiting via `waitFor()` — an immediate check can
+ * read `false` before the async flag client resolves, even when the card appears moments later.
+ */
+async function cardAppears(locator: Locator, timeout: number): Promise<boolean> {
+  return locator
+    .waitFor({ state: 'visible', timeout })
+    .then(() => true)
+    .catch(() => false);
+}
+
 async function gotoMyGroups(page: Page): Promise<void> {
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -213,7 +227,7 @@ test.describe('Groups dashboard — engagement stats (LFXV2-1711)', () => {
       await expect(grid.getByTestId('stat-card-Voting Enabled Groups')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
       const activeMembersCard = grid.getByTestId('stat-card-Active Members');
-      const flagAppearsOn = await activeMembersCard.isVisible().catch(() => false);
+      const flagAppearsOn = await cardAppears(activeMembersCard, ELEMENT_TIMEOUT);
       test.skip(flagAppearsOn, 'wg-engagement-metrics flag appears ON for this test user — covered by the flag-on test below instead');
 
       await expect(activeMembersCard).toHaveCount(0);
@@ -228,7 +242,7 @@ test.describe('Groups dashboard — engagement stats (LFXV2-1711)', () => {
       const grid = page.getByTestId('committees-me-stats');
       const activeMembersCard = grid.getByTestId('stat-card-Active Members');
 
-      const flagAppearsOn = await activeMembersCard.isVisible({ timeout: ELEMENT_TIMEOUT }).catch(() => false);
+      const flagAppearsOn = await cardAppears(activeMembersCard, ELEMENT_TIMEOUT);
       test.skip(!flagAppearsOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
 
       await expect(activeMembersCard).toContainText('7', { timeout: ELEMENT_TIMEOUT });

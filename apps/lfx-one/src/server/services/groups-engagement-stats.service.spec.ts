@@ -162,6 +162,24 @@ describe('GroupsEngagementStatsService', () => {
       expect(typeof result.computed_at).toBe('string');
       expect(result.active_members).not.toBeNull();
     });
+
+    it('does not serve a stale mock-sourced entry once the backend switches to live (production hard-block cannot be bypassed by a cache hit)', async () => {
+      const mockResult = await service.getEngagementStats(buildReq());
+      expect(mockResult.source).toBe('mock');
+      expect(fetcherCalls.count).toBe(1);
+
+      // Simulate the config correction the reviewer's scenario describes: ENGAGEMENT_BACKEND
+      // stays 'mock' (or gets unset — either way), but NODE_ENV flips to production. Without the
+      // backend-aware accept validator, this would return the still-cached `source: 'mock'` entry.
+      process.env['NODE_ENV'] = 'production';
+
+      const liveResult = await service.getEngagementStats(buildReq());
+
+      expect(liveResult.source).toBe('live');
+      expect(liveResult.active_members).toBeNull();
+      expect(liveResult.meetings_this_month).toBeNull();
+      expect(fetcherCalls.count).toBe(2);
+    });
   });
 
   describe('live mode', () => {

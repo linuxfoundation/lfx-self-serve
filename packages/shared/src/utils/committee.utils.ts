@@ -379,7 +379,7 @@ export function buildEngagementStatCards(stats: GroupsEngagementStats | null, lo
   // than a subtle provenance flag, since the whole point is that a fabricated fixture number must
   // never be mistaken for live data during manual validation (including against synced prod data,
   // where NODE_ENV isn't 'production' but a stray ENGAGEMENT_BACKEND=mock could still be set).
-  const subLineForValue = stats && stats.source === 'mock' ? 'Sample data' : stats ? `Updated ${formatRelativeTime(new Date(stats.computed_at))}` : undefined;
+  const subLineForValue = resolveEngagementSubLine(stats);
 
   // Each card degrades independently: active_members and meetings_this_month are separate
   // aggregates (trailing-30-day attendance vs. current-month occurrences), so a partially-deployed
@@ -389,4 +389,11 @@ export function buildEngagementStatCards(stats: GroupsEngagementStats | null, lo
     value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine: subLineForValue };
 
   return [resolveCard(activeMembersCard, stats?.active_members ?? null), resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null)];
+}
+
+/** Extracted to avoid nesting a ternary inside another ternary's branch (`stats && source === 'mock' ? … : stats ? … : …`). */
+function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string | undefined {
+  if (!stats) return undefined;
+  if (stats.source === 'mock') return 'Sample data';
+  return `Updated ${formatRelativeTime(new Date(stats.computed_at))}`;
 }

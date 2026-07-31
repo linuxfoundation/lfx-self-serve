@@ -9,7 +9,15 @@ import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { withUserCache } from './valkey.service';
 
-function isGroupsEngagementStats(value: unknown): boolean {
+/**
+ * `expectedSource` must match the backend resolved for *this* request — not just any valid
+ * `source` value — so a cached entry from a since-changed `ENGAGEMENT_BACKEND`/`NODE_ENV`
+ * config is treated as a miss and recomputed immediately, rather than being served as a false
+ * hit for up to `GROUPS_ENGAGEMENT_TTL_SECONDS`. Without this, a stray `mock` entry cached
+ * before a switch to `live`/production would keep answering "Sample data" for up to 60s after
+ * the switch, undermining the production hard-block's guarantee.
+ */
+function isGroupsEngagementStats(value: unknown, expectedSource: 'mock' | 'live'): boolean {
   const v = value as Partial<GroupsEngagementStats>;
   return (
     !!value &&
@@ -17,8 +25,17 @@ function isGroupsEngagementStats(value: unknown): boolean {
     (v.active_members === null || typeof v.active_members === 'number') &&
     (v.meetings_this_month === null || typeof v.meetings_this_month === 'number') &&
     typeof v.computed_at === 'string' &&
-    (v.source === 'mock' || v.source === 'live')
+    v.source === expectedSource
   );
+}
+
+/** Mock is opt-in and additionally hard-blocked in production, so a stray `ENGAGEMENT_BACKEND=mock`
+ * left in a prod-like environment's config can't silently serve fabricated numbers as real data.
+ * Resolved once per request, before the cache lookup, so the cache-key validator above can reject
+ * a cached entry from a different backend instead of serving it stale.
+ */
+function resolveBackend(): 'mock' | 'live' {
+  return process.env['ENGAGEMENT_BACKEND'] === 'mock' && process.env['NODE_ENV'] !== 'production' ? 'mock' : 'live';
 }
 
 // Per-process guard: the `live` no-dbt-path branch is the *expected steady state* in every
@@ -46,20 +63,18 @@ export class GroupsEngagementStatsService {
    */
   public async getEngagementStats(req: Request): Promise<GroupsEngagementStats> {
     const username = getEffectiveUsername(req) ?? '';
+    const backend = resolveBackend();
 
     return withUserCache(
       VALKEY_CACHE.GROUPS_ENGAGEMENT_NAMESPACE,
       username,
       VALKEY_CACHE.GROUPS_ENGAGEMENT_TTL_SECONDS,
-      () => this.computeEngagementStats(req, username),
-      isGroupsEngagementStats
+      () => this.computeEngagementStats(req, username, backend),
+      (value) => isGroupsEngagementStats(value, backend)
     );
   }
 
-  private async computeEngagementStats(req: Request, username: string): Promise<GroupsEngagementStats> {
-    // Mock is opt-in and additionally hard-blocked in production, so a stray `ENGAGEMENT_BACKEND=mock`
-    // left in a prod-like environment's config can't silently serve fabricated numbers as real data.
-    const backend = process.env['ENGAGEMENT_BACKEND'] === 'mock' && process.env['NODE_ENV'] !== 'production' ? 'mock' : 'live';
+  private async computeEngagementStats(req: Request, username: string, backend: 'mock' | 'live'): Promise<GroupsEngagementStats> {
     const computedAt = new Date().toISOString();
 
     if (backend === 'live') {
