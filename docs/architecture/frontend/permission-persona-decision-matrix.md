@@ -39,10 +39,10 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Write Candidate
 
 - **Input:** User attempts create/edit/delete/manage/send/publish.
-- **Required permission:** Resolved target context plus server-enforced writer permission.
+- **Required permission:** Resolved target context plus the action-specific relation the API requires on that target object (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner) — never a blanket `writer` check.
 - **Destination:** Write flow only after UI and API permission checks agree.
-- **Allowed actions:** Continue when contextual writer permission passes.
-- **Denied actions:** Fail closed if the target context is missing, stale, no-grant, or not writer-permitted.
+- **Allowed actions:** Continue when the required action-specific relation passes.
+- **Denied actions:** Fail closed if the target context is missing, stale, no-grant, or the required action-specific relation is absent.
 
 ## Context Entry
 
@@ -53,7 +53,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 - **Destination:** Me Dashboard.
 - **Visible experience:** Cross-context personal workspace.
 - **Allowed actions:** View personal tasks, meetings, events, groups, mailing lists, newsletters, votes, surveys, documents, and discovery entry points.
-- **Create/manage rule:** Allowed only after the action resolves or asks for a target Foundation/Project context and writer permission passes.
+- **Create/manage rule:** Allowed only after the action resolves or asks for a target Foundation/Project context and the action-specific relation the API requires on that target passes (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner).
 
 ### User Opens Foundation Without A Selected Foundation
 
@@ -87,10 +87,10 @@ No-grant contexts -> Browse/Discovery only, never default selection
 
 - **Read examples:** View meeting details, view vote results, view survey results, open document, view sent newsletter.
 - **Write examples:** Edit a meeting, manage agenda, update survey, manage document, edit newsletter draft.
-- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific grant on the item's resolved target object for write actions: writer permission for Foundation/Project targets; `committee.writer` for committee/group targets; and `project.meeting_coordinator` only for meeting actions.
+- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific relation the API requires on the item's resolved target object for write actions — e.g. `writer` for Foundation/Project targets, `committee.writer` for committee/group targets, `project.meeting_coordinator` for meeting actions without project writer, or response-owner for author-only edits (e.g. poll/survey/vote responses).
 - **Destination:** Stay in Me or open the item detail/drawer with target context attached.
-- **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when writer permission passes.
-- **Denied actions:** If writer permission fails, keep eligible view/read actions only.
+- **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when the required action-specific relation passes.
+- **Denied actions:** If the required action-specific relation is absent, keep eligible view/read actions only.
 
 ### Create Action From Me
 
@@ -103,7 +103,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Pending Action From Me
 
 - **Example:** Review agenda, review materials, respond to governance action.
-- **Required permission:** Viewer/discoverable eligibility for the pending item. Writer permission only for actions that modify the target context.
+- **Required permission:** Viewer/discoverable eligibility for the pending item. For actions that modify the target context, the action-specific relation the API requires — e.g. `writer` for context-management actions, or response-owner for a personal response to a governance action (voting/polling), which needs no writer grant at all.
 - **Destination:** Pending action detail or target context.
 - **Allowed actions:** View/complete personal response actions when eligible. Manage shared resources only with writer permission.
 - **Denied actions:** Do not expose target-context management controls when writer permission is absent.
@@ -355,10 +355,10 @@ terms (auditor grant, writer grant, named capability).
 ### Direct Create/Edit URL
 
 - **Input:** User opens a create/edit/admin route directly.
-- **Required permission:** Resolved target context plus writer permission.
-- **Destination:** Requested route only if writer check passes.
+- **Required permission:** Resolved target context plus the action-specific relation the API requires on that target object (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner).
+- **Destination:** Requested route only if the required action-specific relation check passes.
 - **Allowed actions:** Continue if authorized.
-- **Denied actions:** Redirect or fail closed if target context is missing or writer permission fails.
+- **Denied actions:** Redirect or fail closed if target context is missing or the required action-specific relation is absent.
 
 ## Operational Metrics
 
