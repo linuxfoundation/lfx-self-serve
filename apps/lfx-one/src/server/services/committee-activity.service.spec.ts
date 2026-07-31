@@ -245,6 +245,20 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }));
     });
 
+    it('omits upstream date_to (rather than throwing) when cursor.before is unparseable', async () => {
+      // getCommitteeActivity is a public method — the controller always validates cursor.before via
+      // decodePageToken first, but a future non-HTTP caller could invoke this directly with a bad
+      // value. Widening the fetch (no date_to) is safe, same direction as ceiling itself; 500ing
+      // the whole feed over one bad boundary would not be.
+      await service.getCommitteeActivity(req, COMMITTEE_UID, {
+        cursor: { before: 'not-a-timestamp', key: 'vote:unrelated' },
+        limit: 8,
+      });
+
+      const votesQuery = getVotes.mock.calls[0][1];
+      expect(votesQuery).not.toHaveProperty('date_to');
+    });
+
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 2 });
       expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), 'v1_past_meeting', false);

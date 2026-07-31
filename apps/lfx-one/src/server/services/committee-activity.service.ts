@@ -101,9 +101,18 @@ function compareEventsDesc(a: { occurred_at: string; key: string }, b: { occurre
  * layer upstream). Ceiling instead of truncating guarantees the upstream boundary is never tighter
  * than the true one; the in-memory pass still applies the exact `(occurred_at, key)` comparison, so
  * the resulting over-fetch (at most ~1 second of extra rows) is trimmed correctly, not a correctness gap.
+ *
+ * Returns `undefined` for an unparseable `iso` rather than throwing — matches every other
+ * timestamp helper in this file (`timestampValue`, `isAtOrAfterSince`, `isAfterCursor`) treating an
+ * invalid timestamp as "can't reason about this" rather than a fatal error. Currently unreachable
+ * through the HTTP path (`decodePageToken` validates `cursor.before` before this ever runs), but
+ * `getCommitteeActivity` is a public method a future non-HTTP caller could invoke directly — a
+ * missing upstream date_to just widens the fetch (over-fetch, trimmed in-memory), which is the
+ * same safe direction ceiling itself takes, rather than 500ing the entire feed.
  */
-function ceilToWholeSecond(iso: string): string {
+function ceilToWholeSecond(iso: string): string | undefined {
   const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return undefined;
   return new Date(Math.ceil(ms / 1000) * 1000).toISOString();
 }
 
