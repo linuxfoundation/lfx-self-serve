@@ -171,6 +171,32 @@ describe('ObjectStoreService', () => {
 
       await expect(service.uploadProfilePicture(buildReq(), 'user1', Buffer.from('img'), 'image/png')).rejects.toThrow('put failed');
     });
+
+    it('escapes "/" in the username into the key instead of erroring, and the URL round-trips back to the exact stored key with a single decode', async () => {
+      process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/';
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+
+      const { url } = await service.uploadProfilePicture(buildReq(), 'a/b', Buffer.from('img'), 'image/png');
+
+      const putCommand = sendMock.mock.calls[1][0];
+      expect(putCommand.input.Key).toBe('avatars/a%2Fb');
+      expect(decodeURIComponent(new URL(url!).pathname)).toBe('/avatars/a%2Fb');
+    });
+
+    it('escapes a literal "%" so it cannot be mistaken for the "/" escape sequence (collision-free)', async () => {
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+      // 'a/b' and the literal text 'a%2fb' must not sanitize to the same key.
+      await service.uploadProfilePicture(buildReq(), 'a/b', Buffer.from('img'), 'image/png');
+      const firstKey = sendMock.mock.calls[1][0].input.Key;
+
+      sendMock.mockResolvedValueOnce({});
+      await service.uploadProfilePicture(buildReq(), 'a%2fb', Buffer.from('img'), 'image/png');
+      const secondKey = sendMock.mock.calls[2][0].input.Key;
+
+      expect(firstKey).toBe('avatars/a%2Fb');
+      expect(secondKey).toBe('avatars/a%252fb');
+      expect(firstKey).not.toBe(secondKey);
+    });
   });
 
   describe('client construction', () => {
