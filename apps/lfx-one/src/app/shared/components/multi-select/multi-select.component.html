@@ -38,6 +38,20 @@
         </div>
       </ng-template>
     }
+    <!-- Render the caller's empty messages verbatim. PrimeNG treats a FALSY emptyMessage/emptyFilterMessage as
+         "use my built-in translation" and shows "No results found" — so during an in-flight search (blank message +
+         a "Searching…" footer) the body would flash a contradictory "No results found". These custom templates emit
+         exactly what the caller passed (blank stays blank), so the footer status is the single source of truth. -->
+    <ng-template #empty>
+      @if (emptyMessage()) {
+        <div class="px-3 py-2 text-center text-sm text-gray-500">{{ emptyMessage() }}</div>
+      }
+    </ng-template>
+    <ng-template #emptyfilter>
+      @if (emptyFilterMessage()) {
+        <div class="px-3 py-2 text-center text-sm text-gray-500">{{ emptyFilterMessage() }}</div>
+      }
+    </ng-template>
     @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">
         <div class="flex items-center gap-2">

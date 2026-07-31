@@ -524,15 +524,18 @@ export class OrgProjectsComponent {
       return;
     }
     const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
-    const body = rows.map((p) => [
-      p.name,
-      HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
-      p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
-      p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
-      p.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : p.trend.deltaPct,
-      p.contributors.length,
-      p.participants.length,
-    ]);
+    const body = rows.map((p) => {
+      const orgMetricsUnavailable = p.metricsState !== 'full';
+      return [
+        p.name,
+        HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
+        orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
+        orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
+        orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : p.trend.deltaPct,
+        p.contributors.length,
+        p.participants.length,
+      ];
+    });
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const slug = this.response()?.orgSlug ?? 'org';
     downloadCsv(`org-lens-projects-${slug}-${date}.csv`, [header, ...body]);
@@ -784,32 +787,38 @@ export class OrgProjectsComponent {
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
   private initRows(): Signal<OrgProjectsTableRow[]> {
     return computed(() =>
-      this.sortedProjects().map((project) => ({
-        ...project,
-        insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
-        // No-activity rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather
-        // than mapProject's active-row fallbacks, which would misreport "Silent" / "Non-LF Project".
-        technicalBars: project.noActivityYet ? [] : this.bandBars(project.technicalInfluence),
-        ecosystemBars: project.noActivityYet ? [] : this.bandBars(project.ecosystemInfluence),
-        technicalBandLabel: project.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.technicalInfluence],
-        ecosystemBandLabel: project.noActivityYet ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
-        healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
-        healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
-        sparklineDataset: {
-          labels: project.trend.series.map((_, i) => String(i)),
-          datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
-        },
-        trendTooltipHtml: this.trendTooltip(project),
-        trendAriaLabel: this.trendAriaLabel(project),
-        trendDeltaLabel: this.formatTrendDeltaPct(project.trend.deltaPct),
-        showTrendArrow: Math.abs(project.trend.deltaPct) > 1,
-        trendArrowIcon: INFLUENCE_TREND_ARROW_ICON[project.trend.direction],
-        trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
-        trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
-        healthAriaLabel: this.healthAriaLabel(project),
-        contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
-        participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
-      }))
+      this.sortedProjects().map((project) => {
+        // Fallback rows (org has no metrics row for the project) render org-relative metrics as "Unavailable".
+        // A `full` row — including a participating project with no code activity — renders every metric for real.
+        const orgMetricsUnavailable = project.metricsState !== 'full';
+        return {
+          ...project,
+          orgMetricsUnavailable,
+          insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
+          // Fallback rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather
+          // than mapProject's active-row fallbacks, which would misreport "Silent" / "Non-LF Project".
+          technicalBars: orgMetricsUnavailable ? [] : this.bandBars(project.technicalInfluence),
+          ecosystemBars: orgMetricsUnavailable ? [] : this.bandBars(project.ecosystemInfluence),
+          technicalBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.technicalInfluence],
+          ecosystemBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
+          healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
+          healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
+          sparklineDataset: {
+            labels: project.trend.series.map((_, i) => String(i)),
+            datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
+          },
+          trendTooltipHtml: this.trendTooltip(project),
+          trendAriaLabel: this.trendAriaLabel(project),
+          trendDeltaLabel: this.formatTrendDeltaPct(project.trend.deltaPct),
+          showTrendArrow: Math.abs(project.trend.deltaPct) > 1,
+          trendArrowIcon: INFLUENCE_TREND_ARROW_ICON[project.trend.direction],
+          trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
+          trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
+          healthAriaLabel: this.healthAriaLabel(project),
+          contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
+          participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
+        };
+      })
     );
   }
 
@@ -1021,11 +1030,11 @@ export class OrgProjectsComponent {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
-  // No-activity rows have no measured influence or trend (both shown as "Unavailable"); keep them after
-  // measured rows regardless of sort direction, mirroring how health availability sinks unavailable rows.
+  // Fallback rows (`metricsState` !== `full`, influence/trend "Unavailable") always sort after measured rows, both
+  // directions — mirroring how health availability sinks unavailable rows. Participating no-activity rows are `full`.
   private compareInfluenceAvailability(a: OrgLensProject, b: OrgLensProject): number {
-    const aUnavailable = a.noActivityYet ?? false;
-    const bUnavailable = b.noActivityYet ?? false;
+    const aUnavailable = a.metricsState !== 'full';
+    const bUnavailable = b.metricsState !== 'full';
     if (aUnavailable === bUnavailable) {
       return 0;
     }

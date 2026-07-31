@@ -50,7 +50,8 @@ function project(slug: string, name: string) {
   };
 }
 
-function noActivityProject(slug: string, name: string) {
+// Fallback row with NO org-scoped metrics AND no project-global health — everything reads "Unavailable".
+function unavailableProject(slug: string, name: string) {
   return {
     ...project(slug, name),
     health: 'unavailable',
@@ -58,7 +59,41 @@ function noActivityProject(slug: string, name: string) {
     contributors: [],
     participants: [],
     healthMetrics: [],
-    noActivityYet: true,
+    metricsState: 'unavailable',
+  };
+}
+
+// Fallback row with NO org-scoped influence/trend but WITH real project-global health — health shows a real band,
+// influence and trend read "Unavailable" (US2 sub-case A).
+function healthOnlyProject(slug: string, name: string) {
+  return {
+    ...project(slug, name),
+    health: 'excellent',
+    trend: { deltaPct: 0, technicalDeltaPct: 0, ecosystemDeltaPct: 0, direction: 'flat', series: [0, 0, 0, 0] },
+    contributors: [],
+    participants: [],
+    healthMetrics: [
+      { label: 'Contributors', value: 90 },
+      { label: 'Popularity', value: 80 },
+      { label: 'Development', value: 85 },
+      { label: 'Security', value: 75 },
+    ],
+    metricsState: 'health-only',
+  };
+}
+
+// Ecosystem-only participation: a project the org participates in through non-code channels (no trailing-24-month
+// code activity) but which the org dashboard still lists with real bands/health/trend. metricsState stays `full`
+// (org-dashboard parity), so the row renders as a real, linkable project — NOT an Unavailable fallback (US3).
+function ecosystemOnlyProject(slug: string, name: string) {
+  return {
+    ...project(slug, name),
+    technicalInfluence: 'silent',
+    ecosystemInfluence: 'contributing',
+    trend: { deltaPct: -5, technicalDeltaPct: 0, ecosystemDeltaPct: -5, direction: 'down', series: [50, 48, 46, 44] },
+    contributors: [],
+    participants: [{ id: 'person-2', name: 'Grace Hopper', avatarUrl: '' }],
+    metricsState: 'full',
   };
 }
 
@@ -351,11 +386,11 @@ test.describe('Org Projects', () => {
     await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
   });
 
-  test('renders no-activity rows as non-links with unavailable metrics', async ({ page }) => {
+  test('renders fully-unavailable fallback rows as non-links with unavailable metrics', async ({ page }) => {
     await stubOrgContext(page);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
-      return fulfillJson(route, projectsResponse([noActivityProject('kubernetes', 'Kubernetes')]));
+      return fulfillJson(route, projectsResponse([unavailableProject('kubernetes', 'Kubernetes')]));
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -372,12 +407,70 @@ test.describe('Org Projects', () => {
     // The "No activity yet" pill is shown and the project name is plain text (the detail page would 404).
     await expect(page.getByTestId('org-projects-no-activity-kubernetes')).toBeVisible();
     await expect(row.getByRole('link')).toHaveCount(0);
-    // Influence and trend read "Unavailable" instead of the misleading measured-looking fallbacks.
+    // Health, influence, and trend all read "Unavailable" — no org-scoped metrics and no project-global health.
     await expect(page.getByTestId('org-projects-trend-kubernetes')).toHaveText('Unavailable');
     await expect(row.getByText('Unavailable').first()).toBeVisible();
+    await expect(page.getByTestId('org-projects-health-kubernetes')).toHaveAttribute('aria-label', /Health: Unavailable/);
     // Contributor / participant counts are plain text (0), not links to the detail page.
     await expect(page.getByTestId('org-projects-contributors-kubernetes')).toHaveText('0');
     await expect(page.getByTestId('org-projects-participants-kubernetes')).toHaveText('0');
+  });
+
+  test('renders ecosystem-only participation rows with real bands (org-dashboard default-list parity)', async ({ page }) => {
+    // US3: the default list includes projects the org participates in only through ecosystem channels (no code
+    // activity). These are `full` rows — real bands/trend, a working detail link — not "Unavailable" fallbacks.
+    await stubOrgContext(page);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, projectsResponse([ecosystemOnlyProject('flowwave', 'Flowwave')]));
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+
+    const row = page.getByTestId('org-projects-row-flowwave');
+    await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Real row: name links to the detail page and there is NO "No activity yet" pill.
+    await expect(page.getByTestId('org-projects-no-activity-flowwave')).toHaveCount(0);
+    await expect(row.getByRole('link').first()).toBeVisible();
+    // Real bands and trend render — never "Unavailable".
+    await expect(page.getByTestId('org-projects-health-flowwave')).toHaveAttribute('aria-label', /Health: Excellent/);
+    await expect(page.getByTestId('org-projects-trend-flowwave')).not.toHaveText('Unavailable');
+    await expect(row.getByText('Unavailable')).toHaveCount(0);
+    await expect(row.getByText('Contributing').first()).toBeVisible();
+  });
+
+  test('renders health-only fallback rows with a real health band but unavailable influence/trend', async ({ page }) => {
+    await stubOrgContext(page);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, projectsResponse([healthOnlyProject('kubernetes', 'Kubernetes')]));
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+
+    const row = page.getByTestId('org-projects-row-kubernetes');
+    await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // No org-scoped row exists, so the name is plain text and the "No activity yet" pill shows.
+    await expect(page.getByTestId('org-projects-no-activity-kubernetes')).toBeVisible();
+    await expect(row.getByRole('link')).toHaveCount(0);
+    // Project-global health renders a REAL band even though org-scoped influence/trend are unavailable.
+    await expect(page.getByTestId('org-projects-health-kubernetes')).toHaveAttribute('aria-label', /Health: Excellent/);
+    await expect(page.getByTestId('org-projects-trend-kubernetes')).toHaveText('Unavailable');
+    await expect(row.getByText('Unavailable').first()).toBeVisible();
   });
 
   test('shows the already-in-workspace empty state when a search matches only existing projects', async ({ page }) => {
@@ -430,6 +523,46 @@ test.describe('Org Projects', () => {
     await filter.fill('k');
     await expect(page.getByTestId('multi-select-panel-status')).toHaveText('Type at least 2 characters to search projects.');
     await expect(page.getByLabel('Option List').getByText('Kubernetes')).toBeVisible();
+  });
+
+  test('shows only "Searching…" in-flight, never "No results found" (US4)', async ({ page }) => {
+    await gotoOrgProjectsPage(page, {
+      workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
+      url: `${ORG_PROJECTS_URL}?workspace=custom`,
+    });
+    await page.unroute(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/search(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const query = new URL(route.request().url()).searchParams.get('q') ?? '';
+      // On-open empty-query preload resolves instantly so the panel opens without waiting.
+      if (!query) return fulfillJson(route, { results: [] });
+      // The real query is deliberately SLOW so the assertions run while the request is genuinely in flight.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return fulfillJson(route, {
+        results: [{ slug: 'kubernetes', name: 'Kubernetes', logoUrl: '', foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' } }],
+      });
+    });
+
+    await expect(page.getByTestId('org-projects-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-projects-add-project').click();
+    await expect(page.getByRole('dialog', { name: 'Add project(s)' })).toBeVisible();
+    await page.getByTestId('org-projects-add-projects-select').click();
+
+    const filter = page.getByRole('searchbox', { name: 'Search and select projects' });
+    await expect(filter).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Fire the slow search (past the 300ms debounce so it actually dispatches).
+    await filter.fill('kube');
+    await page.waitForTimeout(400);
+
+    // MID-REQUEST: the panel footer shows "Searching…" and the contradictory built-in "No results found" NEVER appears.
+    await expect(page.getByTestId('multi-select-panel-status')).toHaveText('Searching projects…');
+    await expect(page.getByText('No results found')).toHaveCount(0);
+
+    // AFTER completion: results render and the searching status clears.
+    const optionList = page.getByLabel('Option List');
+    await expect(optionList.getByText('Kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText('Searching projects…')).toHaveCount(0);
+    await expect(page.getByText('No results found')).toHaveCount(0);
   });
 
   test('reloads the project table after adding projects to a workspace', async ({ page }) => {
