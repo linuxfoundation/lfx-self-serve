@@ -337,6 +337,53 @@ describe('CommitteeActivityService', () => {
       expect(debugMetadata.document_count).toBe(25);
     });
 
+    it('surfaces folders older than fetchSize once pagination reaches them — the window must be applied before bounding, not after', async () => {
+      // Regression guard: folders/links have no upstream page_size, so this leg always refetches
+      // every folder on every call and must bound locally. Bounding to fetchSize BEFORE applying
+      // the since/before window would recompute the same newest-25 slice on every page regardless
+      // of cursor, permanently hiding the 5 oldest of these 30 folders no matter how far pagination
+      // walked. Filtering first, then bounding, means each page's window narrows the candidate pool
+      // before the cap is applied, so the older folders become reachable once the cursor passes them.
+      const manyFolders = Array.from({ length: 30 }, (_, i) => ({
+        uid: `f-${i}`,
+        name: `Folder ${i}`,
+        updated_at: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+      }));
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path.endsWith('/folders')) return Promise.resolve(manyFolders);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      let cursor: ActivityPageCursor | undefined;
+      const uids: string[] = [];
+      for (let i = 0; i < manyFolders.length; i++) {
+        const page = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
+        if (page.data.length === 0) break;
+        const event = page.data[0];
+        uids.push(event.type === 'document_uploaded' ? event.payload.document_uid : 'unexpected');
+        if (!page.page_token) break;
+        cursor = encodeActivityPageToken.mock.calls.at(-1)?.[0] as ActivityPageCursor;
+      }
+
+      expect(uids).toEqual(Array.from({ length: manyFolders.length }, (_, i) => `f-${manyFolders.length - 1 - i}`));
+    });
+
+    it('treats a null folders response as empty without discarding sibling links in the same leg', async () => {
+      // MicroserviceProxyService.proxyRequest returns the upstream body verbatim — a 204/empty
+      // response comes through as null, not []. Without a null guard, `folders.map(...)` throws
+      // before `links.map(...)` ever runs, so the outer per-leg `.catch()` in getCommitteeActivity
+      // discards the ENTIRE document leg (links and files included), not just the null folders source.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path.endsWith('/folders')) return Promise.resolve(null);
+        if (path.endsWith('/links')) return Promise.resolve([{ uid: 'link-1', name: 'Spec doc', updated_at: '2026-01-05T00:00:00Z' }]);
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({ type: 'document_uploaded', payload: { document_uid: 'link-1', document_type: 'link' } });
+    });
+
     it('excludes an out-of-window vote purely via the in-memory since/cursor filter — votes get no upstream date narrowing to rely on', async () => {
       getVotes.mockResolvedValue({ data: [vote({ uid: 'v-out', creation_time: '2025-01-01T00:00:00Z', end_time: '2025-01-02T00:00:00Z' })] });
 

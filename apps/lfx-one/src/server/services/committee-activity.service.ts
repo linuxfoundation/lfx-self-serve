@@ -407,7 +407,7 @@ export class CommitteeActivityService {
     // bounded, presentation-only fetch needs.
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
 
-    return resources.map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
+    return (resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
   }
 
   private mapSurveyToEvent(survey: Survey, committeeUid: string): SurveyPublishedActivityEvent | SurveyClosedActivityEvent {
@@ -459,7 +459,7 @@ export class CommitteeActivityService {
           ...(since && { date_from: since }),
           ...(before && { date_to: before }),
         })
-        .then((response) => response.resources.map((resource) => resource.data))
+        .then((response) => (response.resources ?? []).map((resource) => resource.data))
         .catch((err) => {
           logger.warning(req, 'get_committee_activity', 'Failed to fetch committee files, continuing without them', { committee_uid: committeeUid, err });
           return [] as CommitteeActivityDocumentFile[];
@@ -467,17 +467,24 @@ export class CommitteeActivityService {
     ]);
 
     // GET /committees/:id/folders and /links accept no page_size/date param at all and return
-    // every folder/link on the committee unconditionally — bound each to fetchSize here (sorted
-    // by its own occurred_at desc) so this leg can't return an unbounded candidate pool. The
-    // since/cursor window itself is applied once, centrally, in getCommitteeActivity.
+    // every folder/link on the committee unconditionally. Filter each to the since/before window
+    // FIRST, then bound to fetchSize — bounding before filtering would keep only the newest
+    // fetchSize folders/links by recency regardless of the window, silently and permanently
+    // excluding older-but-in-window items once a caller pages deep enough that they'd otherwise
+    // surface (boundedSortDesc always keeps the same newest slice, no matter which page is asked
+    // for). The exact/final since+cursor enforcement still happens once, centrally, in
+    // getCommitteeActivity — this pre-filter only needs to be a superset of that, using the same
+    // inclusive since/before bounds already sent upstream to every other leg.
     const folderEvents = boundedSortDesc(
-      folders.map((folder) =>
-        this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at))
-      ),
+      (folders ?? [])
+        .map((folder) => this.buildDocumentEvent(committeeUid, folder.uid, folder.name, 'folder', firstValidTimestamp(folder.updated_at, folder.created_at)))
+        .filter((event) => isWithinFetchWindow(event.occurred_at, since, before)),
       fetchSize
     );
     const linkEvents = boundedSortDesc(
-      links.map((link) => this.buildDocumentEvent(committeeUid, link.uid, link.name, 'link', firstValidTimestamp(link.updated_at, link.created_at), link.url)),
+      (links ?? [])
+        .map((link) => this.buildDocumentEvent(committeeUid, link.uid, link.name, 'link', firstValidTimestamp(link.updated_at, link.created_at), link.url))
+        .filter((event) => isWithinFetchWindow(event.occurred_at, since, before)),
       fetchSize
     );
     const fileEvents = files.map((file) =>
@@ -521,4 +528,19 @@ function boundedSortDesc<T extends { occurred_at: string }>(events: T[], limit: 
       return bTime > aTime ? 1 : -1;
     })
     .slice(0, limit);
+}
+
+/**
+ * Inclusive since/before window check for legs with no upstream date filtering (folders/links) —
+ * must run BEFORE `boundedSortDesc` on those legs, not after. `since`/`before` mirror the same
+ * inclusive bounds sent upstream to every other leg's `date_from`/`date_to`; an event with no
+ * parseable `occurred_at` is let through so the central `getCommitteeActivity` pass (which already
+ * drops unparseable timestamps deliberately, see its comment) is the single place that decides.
+ */
+function isWithinFetchWindow(occurredAt: string, since: string | undefined, before: string | undefined): boolean {
+  const ms = Date.parse(occurredAt);
+  if (Number.isNaN(ms)) return true;
+  if (since && ms < Date.parse(since)) return false;
+  if (before && ms > Date.parse(before)) return false;
+  return true;
 }

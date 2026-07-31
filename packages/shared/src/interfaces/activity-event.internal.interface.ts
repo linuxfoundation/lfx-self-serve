@@ -42,7 +42,14 @@ export interface CommitteeActivityQuery {
   limit: number;
 }
 
-/** Upstream response shape for a committee folder (`GET /committees/:id/folders`). */
+/**
+ * Upstream response shape for a committee folder (`GET /committees/:id/folders`) — deliberately a
+ * narrower duplicate of `committee.service.ts`'s pre-existing local `CommitteeFolder` (this leg
+ * only needs `uid`/`name`/`created_at`/`updated_at` to build an activity row). Consolidating the
+ * two into one shared type, and fixing that file's own pre-existing local-interface convention
+ * violation, is out of scope for this endpoint — accepted as a known duplication risk rather than
+ * expanding this change into an unrelated refactor.
+ */
 export interface CommitteeActivityFolder {
   uid: string;
   name: string;

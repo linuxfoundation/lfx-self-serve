@@ -574,9 +574,9 @@ export class CommitteeOverviewComponent {
             // CommitteeService.getCommitteeActivity already falls back to of([]) on failure, so this
             // catchError is a belt-and-suspenders guard against that coupling changing underneath
             // this component — without it, an error here would kill this toSignal source permanently
-            // and pin activityFeedLoading() on its skeleton for the rest of the session. Logs (unlike
-            // the service's own silent fallback) specifically because reaching this handler at all
-            // would mean that upstream guarantee broke — worth knowing about, not just surviving.
+            // and pin activityFeedLoading() on its skeleton for the rest of the session. Reaching this
+            // handler at all means the mapping step itself threw (not the upstream fetch, which the
+            // service already logs and degrades on its own) — worth its own log line, not just surviving.
             catchError((error) => {
               console.error('Failed to map committee activity feed:', error);
               this.activityFeedLoading.set(false);
