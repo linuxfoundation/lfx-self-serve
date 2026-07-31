@@ -293,10 +293,14 @@ export class CommitteeOverviewComponent {
         // Different failure mode than the vote-drawer case above, same toast-instead remedy.
         // Unlike votes (a genuine window-size mismatch — getVotesByCommittee pins page_size=100),
         // the server's SurveyService.getSurveys drains every page via fetchAllQueryResources, so
-        // this.surveys() is the committee's complete survey set, not a windowed slice — the only
-        // realistic way this lookup misses is staleness between this fetch and the activity feed's
-        // independent one (a survey created/updated in the gap between the two requests), not a
-        // bounded-window gap. Same recoverable-in-principle/toast-instead trade-off regardless:
+        // this.surveys() is not a windowed slice — but "drains every page" isn't "always complete":
+        // fetchAllQueryResources defaults to failOnPartial=false (this call site doesn't override
+        // it), so a later page failing after retries returns what was fetched so far rather than
+        // throwing, and initSurveys' own catchError(() => of([])) yields an empty array on a
+        // failed/in-flight fetch regardless of drain completeness. So a miss here is normally
+        // fetch-timing staleness against the activity feed's independent request (the common case,
+        // since surveys() usually is complete) rather than a bounded-window gap like votes — but
+        // isn't guaranteed to be. Same recoverable-in-principle/toast-instead trade-off regardless:
         // SurveyResultsDrawerComponent's own initSurvey() has the identical startWith/re-fetch
         // shape and the identical missing `@else` on its template's `@if` as
         // VoteResultsDrawerComponent.

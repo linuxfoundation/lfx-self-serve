@@ -178,15 +178,16 @@ export class CommitteeActivityService {
     // indexer populates from `start_time` (`meeting.constants.ts`'s `PAST_MEETING_SORT` doc comment;
     // upstream `PastMeetingEventData.SortName()` confirms — its own doc comment calls `StartTime`
     // "the scheduled start time"). occurred_at (getPastMeetingStartTimeMs) prefers
-    // `scheduled_start_time`, falling back to `start_time` — but the indexed `v1_past_meeting`
-    // projection this leg actually reads frequently omits `scheduled_start_time`, carrying only
-    // `start_time` (see the existing `fetchPastMeetingEvents` comment below, and
-    // `meeting.service.ts`'s identical "frequently omits scheduled_start_time" note on the same
-    // projection), so that fallback usually resolves to the identical value `sort_name` was built
-    // from. Meetings is the closest of the four legs to exact, not merely approximate like the
-    // other three — the residual is the row where `scheduled_start_time` IS present and diverges
-    // from `start_time`, which per that same "frequently omits" framing is the less common case,
-    // not the rule.
+    // `scheduled_start_time`, falling back to `start_time` when it's absent — `sort_name` and
+    // occurred_at coincide exactly whenever that fallback fires, and can diverge on any row where
+    // `scheduled_start_time` is present and different from `start_time`. How often each case occurs
+    // on the indexed `v1_past_meeting` projection this leg actually reads depends on which upstream
+    // sync path wrote a given row (verified at least one path — the legacy v1-to-v2 migration
+    // handler — populates `start_time` FROM the v1 record's own scheduled time, making the two
+    // identical for rows synced that way; not confirmed for meetings created natively in v2).
+    // Meetings is still the best-behaved of the four legs regardless — sort and occurred_at track
+    // the same underlying event (this meeting's own start) at worst, unlike the categorically
+    // different mismatch on the other three legs below.
     //
     // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
     // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
