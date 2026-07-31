@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -28,6 +28,7 @@ import { GroupsIOMailingList, Meeting, PendingInvitation, ProjectContext, TabCon
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import { canManageCommitteeMembers, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
@@ -106,6 +107,7 @@ export class CommitteeViewComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly invitationService = inject(InvitationService);
+  private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -131,8 +133,6 @@ export class CommitteeViewComponent {
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
-  /** Committee UIDs where this session submitted a join application (visitor apply flow). */
-  private readonly pendingApplicationCommitteeUids = signal<ReadonlySet<string>>(new Set());
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -154,7 +154,7 @@ export class CommitteeViewComponent {
   /** True when the visitor submitted an application for the current committee this session. */
   public hasPendingApplication: Signal<boolean> = computed(() => {
     const uid = this.committee()?.uid;
-    return !!uid && this.pendingApplicationCommitteeUids().has(uid);
+    return !!uid && this.joinApplicationSession.pendingCommitteeUids().has(uid);
   });
 
   // Pending invitation for THIS committee, surfaced from the shared cross-surface cache so a user
@@ -281,6 +281,13 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+
+    effect(() => {
+      const committee = this.committee();
+      if (committee?.uid && committee.my_role) {
+        this.joinApplicationSession.clearPending(committee.uid);
+      }
+    });
 
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
@@ -616,7 +623,7 @@ export class CommitteeViewComponent {
         .pipe(finalize(() => this.joiningOrLeaving.set(false)))
         .subscribe({
           next: () => {
-            this.markPendingApplication(committeeUid);
+            this.joinApplicationSession.markPending(committeeUid);
             this.messageService.add({
               severity: 'success',
               summary: 'Application Submitted',
@@ -628,7 +635,7 @@ export class CommitteeViewComponent {
             const upstream = err.error?.message as string | undefined;
             let detail: string;
             if (err.status === 409) {
-              this.markPendingApplication(committeeUid);
+              this.joinApplicationSession.markPending(committeeUid);
               detail = 'You already have a pending application for this group.';
             } else {
               detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
@@ -640,10 +647,6 @@ export class CommitteeViewComponent {
   }
 
   // -- Private initializer functions --
-  private markPendingApplication(committeeUid: string): void {
-    this.pendingApplicationCommitteeUids.update((uids) => new Set([...uids, committeeUid]));
-  }
-
   private initPendingInvitationFromRoute(): Signal<PendingInvitation | null> {
     return computed(() => {
       if (this.errorType() !== 'access-denied') {
