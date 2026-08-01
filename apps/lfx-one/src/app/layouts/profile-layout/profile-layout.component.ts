@@ -227,18 +227,37 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
-    // authorization isn't silently replayed by a later, unrelated profile-auth return.
-    let formData: Partial<UserMetadata>;
+    // Stored as { savedAt, form?, avatarPending? }. Discard if older than the TTL so an abandoned
+    // profile-edit authorization isn't silently replayed by a later, unrelated profile-auth return.
+    let envelope: { savedAt?: unknown; form?: Partial<UserMetadata>; avatarPending?: boolean };
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
-      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
-        return;
-      }
-      formData = envelope.form;
+      envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata>; avatarPending?: boolean };
     } catch {
       return;
     }
+    if (
+      typeof envelope.savedAt !== 'number' ||
+      (!envelope.form && !envelope.avatarPending) ||
+      Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs
+    ) {
+      return;
+    }
+
+    // The selected File can't survive the redirect (sessionStorage can't hold one), so this is the
+    // earliest reliable point to tell the user to re-select their image — a toast shown right before
+    // `window.location.href` in the drawer is wiped by the same-tick navigation before it can be read.
+    if (envelope.avatarPending) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Authorization complete',
+        detail: 'Please re-select your image to upload it.',
+      });
+    }
+
+    if (!envelope.form) {
+      return;
+    }
+    const formData = envelope.form;
     const userMetadata: Partial<UserMetadata> = {
       given_name: formData.given_name || undefined,
       family_name: formData.family_name || undefined,
