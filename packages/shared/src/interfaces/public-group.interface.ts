@@ -53,7 +53,7 @@ export interface PublicGroupDetail {
   upcoming_meetings: PublicGroupMeeting[];
   cadence?: string;
   calendar_url?: string;
-  member_visibility: CommitteeMemberVisibility;
+  member_visibility?: CommitteeMemberVisibility;
   is_member?: boolean;
   my_role?: string;
 }

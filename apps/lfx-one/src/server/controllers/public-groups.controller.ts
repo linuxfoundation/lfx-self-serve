@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberRole, CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CHAIR_ROLES } from '@lfx-one/shared/constants';
+import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   CommitteeMember,
   GroupsIOMailingList,
@@ -24,8 +25,6 @@ import { MicroserviceProxyService } from '../services/microservice-proxy.service
 import { ProjectService } from '../services/project.service';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
-
-const CHAIR_ROLES = new Set<string>([CommitteeMemberRole.CHAIR, CommitteeMemberRole.VICE_CHAIR]);
 
 export class PublicGroupsController {
   private committeeService: CommitteeService = new CommitteeService();
@@ -73,8 +72,9 @@ export class PublicGroupsController {
 
       const hasPublicMailingList = mailingListsResponse.resources.some((r) => r.data.public);
 
+      const visibility = committee.member_visibility || CommitteeMemberVisibility.HIDDEN;
       const chairs =
-        committee.member_visibility === CommitteeMemberVisibility.HIDDEN
+        visibility === CommitteeMemberVisibility.HIDDEN
           ? []
           : members
               .filter((m: CommitteeMember) => m.role?.name && CHAIR_ROLES.has(m.role.name))
@@ -123,7 +123,7 @@ export class PublicGroupsController {
       let mailingListLink: string | undefined;
       if (hasPublicMailingList && committee.mailing_list) {
         const ml = committee.mailing_list;
-        mailingListLink = !ml.startsWith('http') && ml.includes('@') ? `mailto:${ml}` : ml;
+        mailingListLink = !ml.startsWith('http') && !ml.startsWith('mailto:') && ml.includes('@') ? `mailto:${ml}` : ml;
       }
 
       const links: PublicGroupLinks = {
@@ -132,7 +132,8 @@ export class PublicGroupsController {
         calendar: committee.calendar?.public ? `/public/api/committees/${id}/calendar.ics` : undefined,
       };
 
-      const cadence = buildCommitteeCadenceSummary(meetingsResponse.data);
+      const publicMeetings = meetingsResponse.data.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      const cadence = buildCommitteeCadenceSummary(publicMeetings);
 
       const detail: PublicGroupDetail = {
         uid: committee.uid,
@@ -140,14 +141,14 @@ export class PublicGroupsController {
         description: committee.description ?? undefined,
         category: committee.category,
         join_mode: committee.join_mode,
-        total_members: committee.total_members ?? members.length,
+        total_members: committee.total_members,
         context,
         chairs,
         links,
         upcoming_meetings: upcomingMeetings,
         cadence: cadence !== 'No recurring meetings scheduled' ? cadence : undefined,
         calendar_url: links.calendar ?? undefined,
-        member_visibility: committee.member_visibility!,
+        member_visibility: visibility,
       };
 
       const isAuthenticated = req.oidc?.isAuthenticated();

@@ -42,7 +42,7 @@ export class GroupDetailComponent {
   private readonly router = inject(Router);
   private readonly groupService = inject(GroupService);
   private readonly dialogService = inject(DialogService);
-  protected readonly userService = inject(UserService);
+  private readonly userService = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly authenticated = this.userService.authenticated;
@@ -138,7 +138,9 @@ export class GroupDetailComponent {
           );
         }),
         map((group) => {
-          this.loading.set(false);
+          if (group) {
+            this.loading.set(false);
+          }
           return group;
         })
       ),

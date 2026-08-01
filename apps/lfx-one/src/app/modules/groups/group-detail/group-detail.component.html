@@ -46,7 +46,7 @@
           <div class="flex items-center gap-2 flex-wrap mb-4">
             <lfx-tag [value]="group.category" severity="secondary" styleClass="tag-category" data-testid="group-badge-category"></lfx-tag>
             @if (joinModeLabel(); as label) {
-              <lfx-tag [value]="label" severity="secondary" [icon]="joinModeIcon()!" data-testid="group-badge-join-mode"></lfx-tag>
+              <lfx-tag [value]="label" severity="secondary" [icon]="joinModeIcon() || ''" data-testid="group-badge-join-mode"></lfx-tag>
             }
             @if (group.cadence) {
               <lfx-tag [value]="group.cadence" severity="secondary" icon="fa-light fa-repeat" data-testid="group-badge-cadence"></lfx-tag>
