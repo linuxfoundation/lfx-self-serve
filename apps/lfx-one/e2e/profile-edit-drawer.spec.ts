@@ -171,4 +171,40 @@ test.describe('Profile edit drawer', () => {
     // racing the navigation's own lifecycle.
     await expect.poll(() => authorizeRequested, { timeout: ELEMENT_TIMEOUT }).toBe(true);
   });
+
+  test('S5: About Me saves, the drawer closes, and the panel reflects the bio', async ({ page }) => {
+    // Stub the write so the real profile is never mutated — assert on drawer-close + optimistic update,
+    // and lock in that the bio rides inside the user_metadata envelope.
+    let patchBody: { user_metadata?: { bio?: string } } | null = null;
+    await page.route('**/api/profile', async (route) => {
+      if (route.request().method() === 'PATCH') {
+        patchBody = route.request().postDataJSON();
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const bio = page.getByTestId('profile-edit-drawer-about-me').locator('textarea');
+    const uniqueBio = `E2E bio ${Date.now()}`;
+    await bio.fill(uniqueBio);
+
+    const saveButton = page.getByTestId('profile-edit-drawer-save-button').locator('button');
+    await expect(saveButton, 'Save enables once the form is dirty').toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+    await saveButton.click();
+
+    await expect(drawer, 'drawer should close after a successful save').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    // Optimistic update: bio maps to the panel's About Me block without a refetch.
+    await expect(page.getByTestId('profile-panel-about'), 'panel should reflect the edited bio optimistically').toContainText(uniqueBio, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    // The drawer must send the bio inside the user_metadata envelope.
+    expect(patchBody?.user_metadata?.bio).toBe(uniqueBio);
+  });
 });

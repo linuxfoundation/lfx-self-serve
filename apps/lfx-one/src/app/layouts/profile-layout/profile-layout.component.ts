@@ -108,6 +108,8 @@ export class ProfileLayoutComponent {
 
   public readonly jobTitle = computed(() => this.profileData()?.jobTitle || '');
 
+  public readonly aboutMe = computed(() => this.profileData()?.aboutMe || '');
+
   public readonly organization = computed(() => this.profileData()?.organization || '');
 
   public readonly emailInfo = computed(() => this.profileData()?.email || '');
@@ -249,6 +251,7 @@ export class ProfileLayoutComponent {
       postal_code: formData.postal_code || undefined,
       phone_number: formData.phone_number || undefined,
       t_shirt_size: formData.t_shirt_size || undefined,
+      bio: formData.bio || undefined,
     };
 
     const updateData: ProfileUpdateRequest = {
@@ -357,6 +360,7 @@ export class ProfileLayoutComponent {
       postalCode: profile.profile?.postal_code || '',
       phoneNumber: profile.profile?.phone_number || '',
       tshirtSize: normalizeTShirtSize(profile.profile?.t_shirt_size),
+      aboutMe: profile.profile?.bio || '',
       avatarUrl: profile.profile?.picture || '',
     };
   }

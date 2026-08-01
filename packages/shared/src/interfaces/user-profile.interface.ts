@@ -100,6 +100,7 @@ export interface UserMetadata {
   postal_code?: string;
   phone_number?: string;
   t_shirt_size?: string;
+  bio?: string;
   picture?: string;
   zoneinfo?: string;
 }

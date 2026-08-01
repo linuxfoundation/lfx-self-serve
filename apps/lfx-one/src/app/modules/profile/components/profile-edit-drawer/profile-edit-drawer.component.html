@@ -77,6 +77,21 @@
         <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-personal-heading">Personal Information</h3>
 
         <div class="flex flex-col gap-4">
+          <!-- About Me — free-text bio, first field per the v2 prototype (LFXV2-2933) -->
+          <div>
+            <label for="drawer-edit-about-me" class="block text-sm text-slate-900 mb-2">About Me</label>
+            <lfx-textarea
+              [form]="profileForm"
+              control="bio"
+              id="drawer-edit-about-me"
+              [rows]="4"
+              [maxlength]="bioMaxLength"
+              placeholder="Tell the community a bit about yourself"
+              styleClass="w-full about-me-textarea"
+              data-testid="profile-edit-drawer-about-me">
+            </lfx-textarea>
+          </div>
+
           <!-- First & Last name — two-up on md+ (matches the retired dialog's layout) -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
