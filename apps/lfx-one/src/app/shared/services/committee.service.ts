@@ -62,7 +62,11 @@ export class CommitteeService {
     const params = new HttpParams().set('window', window);
     return this.http.get<CommitteeEngagementResponse>(`/api/committees/${encodeURIComponent(committeeUid)}/engagement`, { params }).pipe(
       catchError((error) => {
-        console.error('Failed to load committee engagement:', error);
+        // 403 is the expected outcome for every non-auditor caller — logging it as an error would
+        // spam the console (and Datadog RUM error tracking) once per window switch for most users.
+        if ((error as { status?: number })?.status !== 403) {
+          console.error('Failed to load committee engagement:', error);
+        }
         return of(null);
       })
     );

@@ -121,7 +121,7 @@
         <lfx-committee-engagement-summary
           [engagement]="engagement()"
           [loading]="engagementLoading()"
-          [window]="engagementWindow()"
+          [engagementWindow]="engagementWindow()"
           (windowChange)="engagementWindowChange.emit($event)"
           data-testid="committee-overview-engagement-summary" />
       }
