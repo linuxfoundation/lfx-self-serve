@@ -11,6 +11,7 @@
  * independent of the server's ENGAGEMENT_BACKEND mode.
  */
 
+import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import type { CommitteeEngagementResponse, CommitteeEngagementWindow } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
@@ -185,7 +186,7 @@ export async function mockEngagementApi(
   await page.route(`**${ENGAGEMENT_PATH}*`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     const url = new URL(route.request().url());
-    const window = (url.searchParams.get('window') ?? '30d') as CommitteeEngagementWindow;
+    const window = (url.searchParams.get('window') ?? COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW) as CommitteeEngagementWindow;
     windows.push(window);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(responseFor(window)) });
   });
