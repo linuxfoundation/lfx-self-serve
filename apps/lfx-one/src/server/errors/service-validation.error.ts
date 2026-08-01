@@ -94,3 +94,21 @@ export class ResourceNotFoundError extends BaseApiError {
     super(message, 404, 'NOT_FOUND', options);
   }
 }
+
+/**
+ * Error class for precondition-failed scenarios (e.g. an action requires
+ * some dependent resource/configuration that doesn't exist yet).
+ */
+export class ConflictError extends BaseApiError {
+  public constructor(
+    message: string,
+    code: string,
+    options: {
+      operation?: string;
+      service?: string;
+      path?: string;
+    } = {}
+  ) {
+    super(message, 409, code, options);
+  }
+}

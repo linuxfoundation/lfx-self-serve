@@ -337,6 +337,12 @@ environment:
   LFX_V2_SERVICE:
     value:
 
+  # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
+  # The BFF refuses to serve mock brief data when NODE_ENV=production and this
+  # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.
+  WEEKLY_BRIEF_BACKEND:
+    value: "live"
+
   NATS_URL:
     value:
 
