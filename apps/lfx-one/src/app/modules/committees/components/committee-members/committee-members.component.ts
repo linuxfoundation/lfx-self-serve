@@ -9,17 +9,27 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY,
+  COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS,
+  COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
+  COMMITTEE_LABEL,
+} from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
+  CommitteeEngagementResponse,
+  CommitteeEngagementWindow,
   CommitteeInvite,
   CommitteeMember,
+  CommitteeMemberEngagement,
   CommitteeMemberFilterChip,
   CommitteeMemberFilterChipConfig,
   CommitteeMemberPermissionInfo,
@@ -27,12 +37,21 @@ import {
   CommitteeUser,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
-import { canManageCommitteeMembers, countVotingReps, isVotingRep, resolveCommitteeMemberPermission } from '@lfx-one/shared/utils';
+import {
+  canManageCommitteeMembers,
+  countVotingReps,
+  formatCommitteeEngagementFreshness,
+  formatCommitteeEngagementMeetings,
+  isCommitteeEngagementRowAtRisk,
+  isVotingRep,
+  resolveCommitteeMemberPermission,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, of, startWith, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
@@ -45,6 +64,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
+    FilterPillsComponent,
     FullNamePipe,
     MenuComponent,
     ButtonComponent,
@@ -55,6 +75,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     ConfirmDialogModule,
     DynamicDialogModule,
     Skeleton,
+    TooltipModule,
   ],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-members.component.html',
@@ -73,8 +94,15 @@ export class CommitteeMembersComponent implements OnInit {
   public membersLoading = input<boolean>(true);
   public invites = input<CommitteeInvite[]>([]);
   public invitesLoading = input<boolean>(false);
+  // Engagement rollup (LFXV2-1705, behind wg-engagement-metrics). Fetched once at the page level
+  // (committee-view) and shared with the Overview summary; flag off = no engagement UI at all.
+  public engagementEnabled = input<boolean>(false);
+  public engagement = input<CommitteeEngagementResponse | null>(null);
+  public engagementLoading = input<boolean>(false);
+  public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
 
   public readonly refresh = output<void>();
+  public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
 
   // Simple writable signals
   public selectedMember = signal<CommitteeMember | null>(null);
@@ -85,6 +113,7 @@ export class CommitteeMembersComponent implements OnInit {
   public committeeLabel = COMMITTEE_LABEL;
   // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
   public readonly noRoleSentinel = CommitteeMemberRole.NONE;
+  public readonly engagementWindowOptions = COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS;
 
   // Computed signals — inline per component-organization.md
   // Driven by the API's effective `writer` flag, which already reflects access inherited
@@ -107,10 +136,43 @@ export class CommitteeMembersComponent implements OnInit {
   public readonly chairCount: Signal<number> = computed(
     () => this.members().filter((m) => m.role?.name === CommitteeMemberRole.CHAIR || m.role?.name === CommitteeMemberRole.VICE_CHAIR).length
   );
+  // True only when a real (non-degraded) engagement response is present — the "no data" states key
+  // off this, never off all-zero counts (a degraded response is roster-complete with zeroed rows).
+  public readonly engagementDataAvailable: Signal<boolean> = computed(() => this.engagement()?.data_available === true);
+  // Deterministically fabricated numbers (ENGAGEMENT_BACKEND=mock, blocked in production) — the
+  // interface contract requires surfacing this to the user whenever mock numbers could render.
+  public readonly isMockEngagement: Signal<boolean> = computed(() => this.engagement()?.data_source === 'mock');
+  public readonly engagementFreshnessLabel: Signal<string> = computed(() => formatCommitteeEngagementFreshness(this.engagement()?.computed_at ?? null));
+  public readonly engagementByUid: Signal<Map<string, CommitteeMemberEngagement>> = computed(() => {
+    const map = new Map<string, CommitteeMemberEngagement>();
+    for (const row of this.engagement()?.members ?? []) {
+      map.set(row.uid, row);
+    }
+    return map;
+  });
+  public readonly atRiskCount: Signal<number> = computed(() => {
+    const byUid = this.engagementByUid();
+    return this.members().filter((m) => {
+      const row = byUid.get(m.uid);
+      return row ? isCommitteeEngagementRowAtRisk(row) : false;
+    }).length;
+  });
 
   // Complex computed signals — use private init functions
   public readonly chipConfig: Signal<CommitteeMemberFilterChipConfig[]> = this.initChipConfig();
   private readonly chipFilteredMembers: Signal<CommitteeMember[]> = this.initChipFilteredMembers();
+  // Both empty-state rows must span every rendered column: 5 base, +2 when the voting columns
+  // render, +2 when the flag-gated engagement columns render.
+  public readonly emptyStateColspan: Signal<number> = computed(() => {
+    let count = 5;
+    if (this.committee()?.enable_voting) {
+      count += 2;
+    }
+    if (this.engagementEnabled()) {
+      count += 2;
+    }
+    return count;
+  });
 
   // Filter-related variables
   public filterForm: FormGroup;
@@ -174,6 +236,41 @@ export class CommitteeMembersComponent implements OnInit {
   public selectChip(chip: CommitteeMemberFilterChip): void {
     this.memberFilterChip.set(chip);
     this.filterForm.patchValue({ role: null, votingStatus: null, organization: null });
+  }
+
+  public onEngagementWindowChange(windowId: string): void {
+    // filter-pills emits a plain string id — only forward values the endpoint actually accepts.
+    const window = COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS.find((w) => w === windowId);
+    if (window) {
+      this.engagementWindowChange.emit(window);
+    }
+  }
+
+  public getMemberEngagement(member: CommitteeMember): CommitteeMemberEngagement | null {
+    return this.engagementByUid().get(member.uid) ?? null;
+  }
+
+  public getEngagementMeetingsLabel(member: CommitteeMember): string {
+    return formatCommitteeEngagementMeetings(this.getMemberEngagement(member), this.engagementDataAvailable());
+  }
+
+  public getEngagementSeverity(row: CommitteeMemberEngagement): TagSeverity {
+    return COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY[row.classification];
+  }
+
+  /**
+   * Tooltip context for the engagement chip. Emeritus gets the honorific explainer (it renders as
+   * a neutral state, never at-risk styling); Chair / Vice Chair / LF Staff seats are called out so
+   * their attendance reads with role context. Empty string disables the PrimeNG tooltip.
+   */
+  public getEngagementContext(row: CommitteeMemberEngagement): string {
+    if (row.voting_status === CommitteeMemberVotingStatus.EMERITUS) {
+      return 'Emeritus seat — honorific status; attendance expectations do not apply';
+    }
+    if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {
+      return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;
+    }
+    return '';
   }
 
   public openAddMemberDialog(): void {
@@ -514,12 +611,20 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   private initChipConfig(): Signal<CommitteeMemberFilterChipConfig[]> {
-    return computed(() => [
-      { key: 'all', label: 'All', count: this.members().length },
-      { key: 'voting', label: 'Voting Reps', count: this.votingRepCount() },
-      { key: 'observers', label: 'Observers', count: this.observerCount() },
-      { key: 'chairs', label: 'Chairs', count: this.chairCount() },
-    ]);
+    return computed(() => {
+      const chips: CommitteeMemberFilterChipConfig[] = [
+        { key: 'all', label: 'All', count: this.members().length },
+        { key: 'voting', label: 'Voting Reps', count: this.votingRepCount() },
+        { key: 'observers', label: 'Observers', count: this.observerCount() },
+        { key: 'chairs', label: 'Chairs', count: this.chairCount() },
+      ];
+      // At Risk only makes sense against a real (non-degraded) engagement response — a degraded
+      // response zeroes every row, so the chip would be a permanent "(0)".
+      if (this.engagementEnabled() && this.engagementDataAvailable()) {
+        chips.push({ key: 'atRisk', label: 'At Risk', count: this.atRiskCount() });
+      }
+      return chips;
+    });
   }
 
   private initChipFilteredMembers(): Signal<CommitteeMember[]> {
@@ -533,6 +638,19 @@ export class CommitteeMembersComponent implements OnInit {
           return members.filter((m) => m.voting?.status === CommitteeMemberVotingStatus.OBSERVER);
         case 'chairs':
           return members.filter((m) => m.role?.name === CommitteeMemberRole.CHAIR || m.role?.name === CommitteeMemberRole.VICE_CHAIR);
+        case 'atRisk': {
+          // If the chip was selected and the data then degraded (window switch, fetch failure),
+          // the chip itself disappears from chipConfig — fall back to the full roster rather than
+          // silently filtering everything out against zeroed rows.
+          if (!this.engagementDataAvailable()) {
+            return members;
+          }
+          const byUid = this.engagementByUid();
+          return members.filter((m) => {
+            const row = byUid.get(m.uid);
+            return row ? isCommitteeEngagementRowAtRisk(row) : false;
+          });
+        }
         default:
           return members;
       }

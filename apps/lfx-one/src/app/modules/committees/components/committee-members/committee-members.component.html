@@ -10,18 +10,31 @@
     @if (!isMembersVisible()) {
       <div class="text-sm text-gray-500 text-center py-6" data-testid="members-hidden-placeholder">Member list is not publicly visible for this group.</div>
     } @else {
-      <!-- Quick Filter Chips -->
-      <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="members-filter-chips">
-        @for (chip of chipConfig(); track chip.key) {
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-            [attr.aria-pressed]="memberFilterChip() === chip.key"
-            [class]="memberFilterChip() === chip.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-            (click)="selectChip(chip.key)"
-            [attr.data-testid]="'members-chip-' + chip.key">
-            {{ chip.label }} ({{ chip.count }})
-          </button>
+      <!-- Quick Filter Chips + engagement window controls -->
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div class="flex flex-wrap items-center gap-2" data-testid="members-filter-chips">
+          @for (chip of chipConfig(); track chip.key) {
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              [attr.aria-pressed]="memberFilterChip() === chip.key"
+              [class]="memberFilterChip() === chip.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              (click)="selectChip(chip.key)"
+              [attr.data-testid]="'members-chip-' + chip.key">
+              {{ chip.label }} ({{ chip.count }})
+            </button>
+          }
+        </div>
+        @if (engagementEnabled()) {
+          <div class="flex flex-wrap items-center gap-3" data-testid="members-engagement-controls">
+            @if (isMockEngagement()) {
+              <lfx-tag value="Sample data" severity="warn" data-testid="members-engagement-mock-tag" />
+            }
+            @if (engagementDataAvailable()) {
+              <span class="text-xs text-gray-400" data-testid="members-engagement-freshness">{{ engagementFreshnessLabel() }}</span>
+            }
+            <lfx-filter-pills [options]="engagementWindowOptions" [selectedFilter]="engagementWindow()" (filterChange)="onEngagementWindowChange($event)" />
+          </div>
         }
       </div>
 
@@ -107,6 +120,14 @@
                 <span class="text-sm font-inter text-gray-500">Voting Status</span>
               </th>
             }
+            @if (engagementEnabled()) {
+              <th>
+                <span class="text-sm font-inter text-gray-500">Meetings</span>
+              </th>
+              <th>
+                <span class="text-sm font-inter text-gray-500">Engagement</span>
+              </th>
+            }
             <th>
               <span class="text-sm font-inter text-gray-500">Permission</span>
             </th>
@@ -149,6 +170,34 @@
                 <span class="text-sm font-inter text-gray-500">{{ member.voting?.status || 'None' }}</span>
               </td>
             }
+            @if (engagementEnabled()) {
+              <td>
+                @if (engagementLoading()) {
+                  <p-skeleton width="2.5rem" height="0.875rem" />
+                } @else {
+                  <span class="text-sm font-inter text-gray-900" [attr.data-testid]="'members-engagement-meetings-' + member.uid">
+                    {{ getEngagementMeetingsLabel(member) }}
+                  </span>
+                }
+              </td>
+              <td>
+                @if (engagementLoading()) {
+                  <p-skeleton width="4rem" height="1.25rem" borderRadius="1rem" />
+                } @else {
+                  @let engagementRow = getMemberEngagement(member);
+                  @if (engagementRow && engagementDataAvailable()) {
+                    <span [pTooltip]="getEngagementContext(engagementRow)" tooltipPosition="top">
+                      <lfx-tag
+                        [value]="engagementRow.classification"
+                        [severity]="getEngagementSeverity(engagementRow)"
+                        [attr.data-testid]="'members-engagement-chip-' + member.uid" />
+                    </span>
+                  } @else {
+                    <span class="text-sm font-inter text-gray-400" [attr.data-testid]="'members-engagement-chip-' + member.uid">—</span>
+                  }
+                }
+              </td>
+            }
             <td>
               @let permission = getMemberPermissionInfo(member);
               <lfx-tag [value]="getMemberPermissionLabel(permission.level, permission.inherited)" [severity]="getMemberPermissionSeverity(permission.level)">
@@ -184,7 +233,7 @@
         <ng-template #emptymessage>
           @if (membersLoading()) {
             <tr>
-              <td [attr.colspan]="committee()?.enable_voting ? 7 : 5" class="text-center py-8">
+              <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
                 <div class="flex flex-col gap-4 px-4">
                   @for (_ of [1, 2, 3]; track _) {
                     <div class="flex items-center gap-4">
@@ -199,7 +248,7 @@
             </tr>
           } @else {
             <tr>
-              <td [attr.colspan]="committee()?.enable_voting ? 7 : 5" class="text-center py-8">
+              <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
                 <div class="text-center">
                   <i class="fa-light fa-users text-3xl text-gray-300 mb-2"></i>
                   <p class="text-sm font-medium text-gray-600">No members found</p>

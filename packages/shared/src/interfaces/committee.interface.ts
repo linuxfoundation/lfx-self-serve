@@ -586,8 +586,12 @@ export interface CommitteeSettingsData {
 /** Status of an open vote */
 export type CommitteeVoteStatus = 'open' | 'closed' | 'cancelled';
 
-/** Quick-filter chip keys for the committee Members tab; `'all'` is the default. */
-export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs';
+/**
+ * Quick-filter chip keys for the committee Members tab; `'all'` is the default. `'atRisk'` is only
+ * offered when the engagement rollup is available (LFXV2-1705, behind `wg-engagement-metrics`) —
+ * it filters on the per-member engagement classification, not on roster fields.
+ */
+export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs' | 'atRisk';
 
 /** A single chip entry in the committee Members quick-filter row. */
 export interface CommitteeMemberFilterChipConfig {

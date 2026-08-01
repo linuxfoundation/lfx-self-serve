@@ -7,6 +7,8 @@ import {
   Committee,
   CommitteeDocument,
   CommitteeDocumentType,
+  CommitteeEngagementResponse,
+  CommitteeEngagementWindow,
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
@@ -44,6 +46,23 @@ export class CommitteeService {
     return this.http.get<GroupsEngagementStats>('/api/committees/engagement-stats').pipe(
       catchError((error) => {
         console.error('Failed to load groups engagement stats:', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Per-member meeting-attendance rollup for one committee + window (LFXV2-1705). Resolves to
+   * `null` on any error — logged here, the single error-handling site (matching
+   * `getGroupsEngagementStats`) — so callers degrade to an "attendance unavailable" state without
+   * affecting the roster. A 403 is expected for non-auditor callers (the endpoint is
+   * `committee#auditor`-gated, stricter than roster visibility) and degrades the same way.
+   */
+  public getCommitteeEngagement(committeeUid: string, window: CommitteeEngagementWindow): Observable<CommitteeEngagementResponse | null> {
+    const params = new HttpParams().set('window', window);
+    return this.http.get<CommitteeEngagementResponse>(`/api/committees/${encodeURIComponent(committeeUid)}/engagement`, { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load committee engagement:', error);
         return of(null);
       })
     );
