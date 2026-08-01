@@ -387,14 +387,18 @@ export class CommitteeActivityService {
   /**
    * Unlike every other leg, a failure here is NOT caught-and-degraded by the caller — it's allowed
    * to reject `getCommitteeActivity`'s `Promise.all` and propagate to the controller's `next(error)`.
-   * `GET /committees/:uid` is the one leg in this fan-out backed by committee-service's real
-   * per-request FGA enforcement (the four `/query/resources` legs instead filter per-resource,
-   * never 403 the whole request — see the controller's docblock); catching a 403/404 here the same
-   * way as the other legs would silently downgrade "caller isn't authorized for this committee at
-   * all" into "votes excluded, everything else renders", which is a materially different, and
-   * wrong, outcome for that case. A transient failure (5xx/network) fails the whole request too —
-   * matching `committee-engagement`'s `assertCommitteeRead`, which fails closed on both a resolved
-   * `false` and a thrown upstream error, rather than treating "couldn't verify" as "verified false".
+   * `GET /committees/:uid` is the one leg in this 7-call fan-out (committee + 4 `/query/resources`
+   * legs — meetings, votes, surveys, files — + committee-service's folders/links legs) whose
+   * committee-service FGA rejection is allowed to fail the whole request. The 4 `/query/resources`
+   * legs filter per-resource and never 403 the whole request (see the controller's docblock); the
+   * folders/links legs are also committee-service-FGA-backed but are deliberately caught-and-degraded
+   * in fetchDocumentEvents rather than propagated, since a single missing/inaccessible committee's
+   * folders or links shouldn't sink the whole feed the way a genuine "not authorized for this
+   * committee at all" should. Catching a 403/404 here the same way as the other legs would silently
+   * downgrade that case into "votes excluded, everything else renders", which is materially
+   * different, and wrong. A transient failure (5xx/network) fails the whole request too — matching
+   * `committee-engagement`'s `assertCommitteeRead`, which fails closed on both a resolved `false`
+   * and a thrown upstream error, rather than treating "couldn't verify" as "verified false".
    */
   private async fetchCommittee(req: Request, committeeUid: string): Promise<Committee> {
     // `| null`, not an optimistic non-null type — MicroserviceProxyService.proxyRequest returns the

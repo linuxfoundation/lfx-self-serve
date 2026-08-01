@@ -12,11 +12,14 @@ import { logger } from '../services/logger.service';
  * HTTP boundary for `GET /api/committees/:uid/activity` (LFXV2-1707).
  *
  * No explicit access-check call, unlike `CommitteeEngagementController` — every leg this endpoint
- * aggregates (past meetings, votes, surveys, documents) already goes through the same
- * FGA-enforced `MicroserviceProxyService.proxyRequest` the four source endpoints being merged use
- * on their own, forwarding `req.bearerToken` on every call. `committee-engagement` bypasses that
- * proxy to hit Snowflake directly, which is why it needs its own `assertCommitteeRead` gate; this
- * endpoint bypasses nothing, so the permission check is identical to the four reads it aggregates.
+ * aggregates (past meetings, votes, surveys, and documents — the last of which is itself 3 upstream
+ * calls: folders, links, files) already goes through the same FGA-enforced
+ * `MicroserviceProxyService.proxyRequest` the underlying source endpoints being merged use on their
+ * own, forwarding `req.bearerToken` on every call. `committee-engagement` bypasses that proxy to
+ * hit Snowflake directly, which is why it needs its own `assertCommitteeRead` gate; this endpoint
+ * bypasses nothing, so the permission check is identical to what the reads it aggregates already do
+ * on their own (see `CommitteeActivityService.fetchCommittee`'s docblock for exactly which of those
+ * calls this endpoint additionally treats as fail-closed).
  */
 export class CommitteeActivityController {
   private readonly service: CommitteeActivityService;
