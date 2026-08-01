@@ -787,9 +787,12 @@ export class CommitteeViewComponent {
     // One combined computed (not combineLatest over separate toObservable() sources) so the fields
     // — recomputed in the same signal flush — can't glitch through an inconsistent intermediate
     // tick that fires then immediately cancels a request (same reasoning as
-    // committee-overview.component.ts's initDocuments). distinctUntilChanged dedupes identity-only
-    // committee re-emissions (silent refreshes) — the endpoint is Valkey-cached but no-store on the
-    // browser side, so every emission is a real round trip. membersRefresh is in the tuple so a
+    // committee-overview.component.ts's initDocuments). distinctUntilChanged only dedupes a
+    // same-tuple re-emission — it does NOT suppress a silent refresh: like initDocuments, a
+    // committee refresh flips roleLoading true then false through the tuple, which intentionally
+    // cancels-and-refetches engagement (every refreshCommittee caller is membership/role-affecting,
+    // so fresh rollups are wanted). The endpoint is Valkey-cached server-side but no-store on the
+    // browser, so each such emission is a real round trip. membersRefresh is in the tuple so a
     // roster mutation (member added/removed) refetches engagement too — otherwise the members-tab
     // At-Risk count (client-joined against the fresh roster) and the overview card's server
     // summary could diverge until the next window switch.
