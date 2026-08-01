@@ -379,6 +379,12 @@ export class ProfileEditDrawerComponent {
           // so the user re-selects and re-uploads after authorizing rather than an auto-resumed upload.
           if (error.status === 403 && error.error?.error === 'management_token_required') {
             if (isPlatformBrowser(this.platformId)) {
+              // Preserve any unsaved text-field edits the same way onSubmit does — the full-page
+              // redirect would otherwise silently discard a dirty form the user hasn't saved yet.
+              // The File itself still can't survive the redirect (sessionStorage can't hold one).
+              if (this.profileForm.dirty) {
+                sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
+              }
               this.messageService.add({
                 severity: 'info',
                 summary: 'Authorization required',
