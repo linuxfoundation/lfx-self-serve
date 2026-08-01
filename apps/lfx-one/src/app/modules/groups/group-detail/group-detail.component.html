@@ -9,13 +9,10 @@
       @if (loading()) {
         <!-- Skeleton loading state -->
         <div class="flex flex-col gap-4">
-          <p-skeleton width="200px" height="16px" />
-          <p-skeleton width="300px" height="28px" />
-          <div class="flex gap-2">
-            <p-skeleton width="100px" height="24px" borderRadius="6px" />
-            <p-skeleton width="120px" height="24px" borderRadius="6px" />
+          <div class="flex items-center justify-center mb-6">
+            <p-skeleton width="120px" height="56px" />
           </div>
-          <p-skeleton width="100%" height="200px" borderRadius="12px" />
+          <p-skeleton width="100%" height="400px" borderRadius="12px" />
         </div>
       } @else if (error()) {
         <!-- Error state for unexpected failures -->
@@ -31,174 +28,200 @@
           </div>
         </lfx-card>
       } @else if (group(); as group) {
-        <!-- Breadcrumb -->
-        <nav class="flex items-center gap-1.5 text-sm text-gray-500 mb-4" data-testid="group-breadcrumb">
-          @if (group.context.project_name) {
-            <span class="text-gray-500">{{ group.context.project_name }}</span>
-            <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
+        <!-- Project Logo (fallback to LFX logo) -->
+        <div class="flex items-center justify-center mb-6">
+          @if (projectLogoUrl(); as logoUrl) {
+            <img [src]="logoUrl" [alt]="group.context.project_name || group.context.foundation_name" class="w-auto h-10 md:h-14" />
           } @else {
-            <span class="text-gray-500">{{ group.context.foundation_name }}</span>
-            <i class="fa-light fa-chevron-right text-xs text-gray-400"></i>
+            <img src="/images/logo_lfx.svg" alt="LFX Logo" class="w-auto h-10 md:h-14" />
           }
-          <span class="text-gray-700 font-medium">{{ group.name }}</span>
-        </nav>
+        </div>
 
-        <!-- Page Header -->
-        <div class="flex flex-col gap-2 mb-5" data-testid="group-header">
-          <div class="flex items-center gap-3">
-            @if (projectLogoUrl(); as logoUrl) {
-              <img
-                [src]="logoUrl"
-                [alt]="group.context.project_name || group.context.foundation_name"
-                class="w-10 h-10 rounded-lg object-contain flex-shrink-0"
-                data-testid="group-project-logo" />
-            }
-            <h1 class="text-xl font-semibold text-gray-900">{{ group.name }}</h1>
-          </div>
-          <div class="flex items-center gap-2 flex-wrap">
+        <!-- Main Group Card -->
+        <lfx-card class="rounded-[12.75px] mb-6" data-testid="group-info-card">
+          <!-- Badges Row -->
+          <div class="flex items-center gap-2 flex-wrap mb-4">
             <lfx-tag [value]="group.category" severity="secondary" styleClass="tag-category" data-testid="group-badge-category"></lfx-tag>
             @if (joinModeLabel(); as label) {
               <lfx-tag [value]="label" severity="secondary" [icon]="joinModeIcon()!" data-testid="group-badge-join-mode"></lfx-tag>
             }
-            @if (group.total_members > 0) {
-              <span class="text-sm text-gray-500">{{ group.total_members }} {{ group.total_members === 1 ? 'member' : 'members' }}</span>
+            @if (group.cadence) {
+              <lfx-tag [value]="group.cadence" severity="secondary" icon="fa-light fa-repeat" data-testid="group-badge-cadence"></lfx-tag>
             }
           </div>
-          @if (group.cadence) {
-            <div class="flex items-center gap-1.5 text-sm text-gray-500" data-testid="group-cadence">
-              <i class="fa-light fa-calendar-clock text-gray-400"></i>
-              <span>{{ group.cadence }}</span>
+
+          <!-- Group Title -->
+          <h1 class="mb-4" data-testid="group-title">{{ group.name }}</h1>
+
+          <!-- Context Chips (Foundation / Project) -->
+          <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="group-context">
+            <lfx-tag
+              [value]="group.context.foundation_name"
+              severity="secondary"
+              icon="fa-light fa-landmark"
+              data-testid="group-context-foundation"></lfx-tag>
+            @if (group.context.project_name) {
+              <lfx-tag
+                [value]="group.context.project_name"
+                severity="secondary"
+                icon="fa-light fa-cube"
+                styleClass="!text-teal-700 !bg-teal-50 !border-teal-200"
+                data-testid="group-context-project"></lfx-tag>
+            }
+          </div>
+
+          <!-- Member Count -->
+          @if (group.total_members > 0) {
+            <div class="flex items-center gap-1.5 text-sm text-gray-500 mb-4" data-testid="group-member-count">
+              <i class="fa-light fa-users text-gray-400"></i>
+              <span>{{ group.total_members }} {{ group.total_members === 1 ? 'member' : 'members' }}</span>
             </div>
           }
-        </div>
 
-        <!-- Member status banner (authenticated members) -->
-        @if (group.is_member) {
-          <div
-            class="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 mb-4 flex items-center gap-2.5 text-sm text-emerald-800"
-            data-testid="member-status-banner">
-            <i class="fa-light fa-circle-check"></i>
-            <span>You are {{ memberRoleLabel() }} of this group.</span>
-          </div>
-        }
-
-        <!-- Visitor hero banner (unauthenticated) -->
-        @if (!authenticated()) {
-          <div class="bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-200 rounded-xl py-7 px-6 mb-5 text-center" data-testid="visitor-hero-banner">
-            <h2 class="text-lg font-semibold text-gray-900 mb-2">Join {{ group.name }}</h2>
-            <p class="text-sm text-gray-600 mb-4 max-w-lg mx-auto">
-              Sign in with your LFX account to join this group, subscribe to updates, and participate in meetings.
-            </p>
-            <lfx-button label="Sign In to Join" icon="fa-light fa-right-to-bracket" (onClick)="navigateToLogin()" data-testid="visitor-join-cta"></lfx-button>
-          </div>
-        }
-
-        <!-- Group info card (only when at least one section has content) -->
-        @if (hasInfoContent()) {
-          <lfx-card data-testid="group-info-card">
-            <div class="flex flex-col gap-5">
-              <!-- About / Description -->
-              @if (group.description) {
-                <div data-testid="group-about-section">
-                  <h3 class="text-sm font-semibold text-gray-900 mb-3">About</h3>
-                  <lfx-expandable-text [maxHeight]="200">{{ group.description }}</lfx-expandable-text>
-                </div>
-              }
-
-              <!-- Leadership -->
-              @if (group.chairs.length > 0) {
-                @if (group.description) {
-                  <hr class="border-gray-200" />
-                }
-                <div data-testid="group-leadership-section">
-                  <h3 class="text-sm font-semibold text-gray-900 mb-3">Leadership</h3>
-                  <div class="flex flex-col gap-3">
-                    @for (chair of group.chairs; track chair.name) {
-                      <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                          <span class="text-xs font-medium text-gray-600">{{ chair.name | slice: 0 : 2 | uppercase }}</span>
-                        </div>
-                        <div class="flex flex-col min-w-0">
-                          <span class="text-sm font-medium text-gray-900 truncate">{{ chair.name }}</span>
-                          <span class="text-xs text-gray-500 truncate">
-                            {{ chair.role }}
-                            @if (chair.organization) {
-                              <span> · {{ chair.organization }}</span>
-                            }
-                          </span>
-                        </div>
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
-
-              <!-- Links -->
-              @if (hasLinks()) {
-                @if (group.description || group.chairs.length > 0) {
-                  <hr class="border-gray-200" />
-                }
-                <div data-testid="group-links-section">
-                  <h3 class="text-sm font-semibold text-gray-900 mb-3">Links</h3>
-                  <div class="flex flex-col gap-2">
-                    @if (group.links.website) {
-                      <a
-                        [href]="group.links.website"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                        <i class="fa-light fa-globe w-4 text-center text-gray-400"></i>
-                        <span>Website</span>
-                      </a>
-                    }
-                    @if (group.links.mailing_list) {
-                      <a
-                        [href]="group.links.mailing_list"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                        <i class="fa-light fa-envelope w-4 text-center text-gray-400"></i>
-                        <span>Mailing List</span>
-                      </a>
-                    }
-                    @if (group.links.calendar) {
-                      <button
-                        type="button"
-                        (click)="openCalendarSubscribe()"
-                        class="flex items-center gap-2 text-sm text-blue-500 hover:underline cursor-pointer bg-transparent border-none p-0">
-                        <i class="fa-light fa-calendar w-4 text-center text-gray-400"></i>
-                        <span>Subscribe to Calendar</span>
-                      </button>
-                    }
-                  </div>
-                </div>
-              }
+          <!-- Member status banner (authenticated members) -->
+          @if (group.is_member) {
+            <div
+              class="bg-emerald-50 border border-emerald-200 rounded px-3 py-2 mb-4 flex items-center gap-2.5 text-sm text-emerald-800"
+              data-testid="member-status-banner">
+              <i class="fa-light fa-circle-check"></i>
+              <span>You are {{ memberRoleLabel() }} of this group.</span>
             </div>
-          </lfx-card>
-        }
+          }
 
-        <!-- Upcoming Meetings -->
-        @if (hasUpcomingMeetings()) {
-          <lfx-card data-testid="group-meetings-card">
-            <h3 class="text-sm font-semibold text-gray-900 mb-3">Upcoming Meetings</h3>
-            <div class="flex flex-col gap-3">
-              @for (meeting of group.upcoming_meetings; track meeting.uid) {
-                <a
-                  [routerLink]="[meeting.url]"
-                  class="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group/meeting"
-                  [attr.data-testid]="'meeting-' + meeting.uid">
-                  <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <i class="fa-light fa-video text-blue-500 text-sm"></i>
-                  </div>
-                  <div class="flex flex-col gap-0.5 min-w-0">
-                    <span class="text-sm font-medium text-gray-900 group-hover/meeting:text-blue-600 truncate">{{ meeting.title }}</span>
-                    <span class="text-xs text-gray-500">{{ meeting.starts_at | meetingTime: 0 : 'compact' : meeting.timezone }}</span>
-                  </div>
-                </a>
-              }
+          <!-- About / Description -->
+          @if (group.description) {
+            <hr class="border-gray-200 my-4" />
+            <div data-testid="group-about-section">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fa-light fa-info-circle text-gray-500 text-xs"></i>
+                <h3 class="text-gray-600 text-sm font-normal">About</h3>
+              </div>
+              <lfx-expandable-text [maxHeight]="200">{{ group.description }}</lfx-expandable-text>
             </div>
-          </lfx-card>
-        }
+          }
+
+          <!-- Leadership -->
+          @if (group.chairs.length > 0) {
+            <hr class="border-gray-200 my-4" />
+            <div data-testid="group-leadership-section">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fa-light fa-user-crown text-gray-500 text-xs"></i>
+                <h3 class="text-gray-600 text-sm font-normal">Leadership</h3>
+              </div>
+              <div class="flex flex-col gap-3">
+                @for (chair of group.chairs; track chair.name) {
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <span class="text-xs font-medium text-gray-600">{{ chair.name | slice: 0 : 2 | uppercase }}</span>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                      <span class="text-sm font-medium text-gray-900 truncate">{{ chair.name }}</span>
+                      <span class="text-xs text-gray-500 truncate">
+                        {{ chair.role }}
+                        @if (chair.organization) {
+                          <span> · {{ chair.organization }}</span>
+                        }
+                      </span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Links -->
+          @if (hasLinks()) {
+            <hr class="border-gray-200 my-4" />
+            <div data-testid="group-links-section">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fa-light fa-link text-gray-500 text-xs"></i>
+                <h3 class="text-gray-600 text-sm font-normal">Links</h3>
+              </div>
+              <div class="flex flex-col gap-2">
+                @if (group.links.website) {
+                  <a
+                    [href]="group.links.website"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                    <i class="fa-light fa-globe w-4 text-center text-gray-400"></i>
+                    <span>Website</span>
+                  </a>
+                }
+                @if (group.links.mailing_list) {
+                  <a
+                    [href]="group.links.mailing_list"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+                    <i class="fa-light fa-envelope w-4 text-center text-gray-400"></i>
+                    <span>Mailing List</span>
+                  </a>
+                }
+                @if (group.links.calendar) {
+                  <button
+                    type="button"
+                    (click)="openCalendarSubscribe()"
+                    class="flex items-center gap-2 text-sm text-blue-500 hover:underline cursor-pointer bg-transparent border-none p-0">
+                    <i class="fa-light fa-calendar w-4 text-center text-gray-400"></i>
+                    <span>Subscribe to Calendar</span>
+                  </button>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Upcoming Meetings -->
+          @if (hasUpcomingMeetings()) {
+            <hr class="border-gray-200 my-4" />
+            <div data-testid="group-meetings-section">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fa-light fa-calendar text-gray-500 text-xs"></i>
+                <h3 class="text-gray-600 text-sm font-normal">Upcoming Meetings</h3>
+              </div>
+              <div class="flex flex-col gap-3">
+                @for (meeting of group.upcoming_meetings; track meeting.uid) {
+                  <a
+                    [routerLink]="[meeting.url]"
+                    class="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group/meeting"
+                    [attr.data-testid]="'meeting-' + meeting.uid">
+                    <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <i class="fa-light fa-video text-blue-500 text-sm"></i>
+                    </div>
+                    <div class="flex flex-col gap-0.5 min-w-0">
+                      <span class="text-sm font-medium text-gray-900 group-hover/meeting:text-blue-600 truncate">{{ meeting.title }}</span>
+                      <span class="text-xs text-gray-500">{{ meeting.starts_at | meetingTime: 0 : 'compact' : meeting.timezone }}</span>
+                    </div>
+                  </a>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Sign In Section (unauthenticated visitors) -->
+          @if (!authenticated()) {
+            <hr class="border-gray-200 my-4" />
+
+            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex flex-wrap items-center justify-between gap-3" data-testid="visitor-sign-in-banner">
+              <div class="flex items-center gap-3">
+                <i class="fa-light fa-arrow-right-to-bracket text-blue-600 text-2xl"></i>
+                <div>
+                  <p class="font-semibold text-sm text-blue-900">Sign in with your LFX account</p>
+                  <p class="text-xs text-gray-600">Join this group, subscribe to updates, and participate in meetings</p>
+                </div>
+              </div>
+              <lfx-button
+                class="w-full md:w-auto"
+                styleClass="w-full md:w-auto"
+                size="small"
+                label="Sign In"
+                icon="fa-light fa-arrow-right-to-bracket"
+                severity="info"
+                (onClick)="navigateToLogin()"
+                data-testid="visitor-sign-in-cta"></lfx-button>
+            </div>
+          }
+        </lfx-card>
       }
     </div>
   </div>
