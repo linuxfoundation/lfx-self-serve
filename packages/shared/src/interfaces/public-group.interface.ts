@@ -33,9 +33,11 @@ export interface PublicGroupContext {
   foundation_uid: string;
   foundation_name: string;
   foundation_slug: string;
+  foundation_logo_url?: string;
   project_uid?: string;
   project_name?: string;
   project_slug?: string;
+  project_logo_url?: string;
 }
 
 export interface PublicGroupDetail {

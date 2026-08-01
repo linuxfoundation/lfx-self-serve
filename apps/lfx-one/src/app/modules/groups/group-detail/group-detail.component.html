@@ -45,7 +45,16 @@
 
         <!-- Page Header -->
         <div class="flex flex-col gap-2 mb-5" data-testid="group-header">
-          <h1 class="text-xl font-semibold text-gray-900">{{ group.name }}</h1>
+          <div class="flex items-center gap-3">
+            @if (projectLogoUrl(); as logoUrl) {
+              <img
+                [src]="logoUrl"
+                [alt]="group.context.project_name || group.context.foundation_name"
+                class="w-10 h-10 rounded-lg object-contain flex-shrink-0"
+                data-testid="group-project-logo" />
+            }
+            <h1 class="text-xl font-semibold text-gray-900">{{ group.name }}</h1>
+          </div>
           <div class="flex items-center gap-2 flex-wrap">
             <lfx-tag [value]="group.category" severity="secondary" styleClass="tag-category" data-testid="group-badge-category"></lfx-tag>
             @if (joinModeLabel(); as label) {

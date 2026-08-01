@@ -15,7 +15,7 @@ import {
 import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
@@ -51,10 +51,11 @@ export class PublicGroupsController {
       const committee = await this.committeeService.getCommitteeById(req, id);
 
       if (!committee.public) {
-        throw new ResourceNotFoundError('Group', id, {
+        throw new AuthorizationError('This group is private', {
           operation: 'get_public_group_by_id',
           service: 'public_groups_controller',
           path: `/committees/${id}`,
+          code: 'GROUP_PRIVATE',
         });
       }
 
@@ -110,10 +111,12 @@ export class PublicGroupsController {
         foundation_uid: parentProject?.uid || project?.uid || committee.project_uid,
         foundation_name: parentProject?.name || project?.name || '',
         foundation_slug: parentProject?.slug || project?.slug || '',
+        foundation_logo_url: parentProject?.logo_url || project?.logo_url || undefined,
         ...(project?.parent_uid && {
           project_uid: project.uid,
           project_name: project.name,
           project_slug: project.slug,
+          project_logo_url: project.logo_url || undefined,
         }),
       };
 

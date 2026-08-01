@@ -8,14 +8,14 @@
         <div class="text-center py-12">
           <div class="flex justify-center mb-6">
             <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center">
-              <i class="fa-light fa-users-slash text-4xl text-gray-400"></i>
+              <i [class]="icon() + ' text-4xl text-gray-400'"></i>
             </div>
           </div>
 
-          <h1 class="mb-3" data-testid="error-title">Group Not Found</h1>
+          <h1 class="mb-3" data-testid="error-title">{{ title() }}</h1>
 
           <p class="text-gray-600 mb-6 max-w-lg mx-auto" data-testid="error-description">
-            We couldn't find the group you're looking for. It may have been removed or the link may be incorrect.
+            {{ description() }}
           </p>
 
           <div class="flex sm:items-center flex-col sm:flex-row gap-6 justify-center">

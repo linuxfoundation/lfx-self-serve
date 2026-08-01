@@ -84,6 +84,11 @@ export class GroupDetailComponent {
     return !!(g?.description || g?.chairs.length || this.hasLinks());
   });
 
+  protected readonly projectLogoUrl = computed(() => {
+    const ctx = this.group()?.context;
+    return ctx?.project_logo_url || ctx?.foundation_logo_url || null;
+  });
+
   protected readonly memberRoleLabel = computed(() => {
     const role = this.group()?.my_role;
     if (role === 'Chair' || role === 'Vice Chair') {
@@ -125,7 +130,9 @@ export class GroupDetailComponent {
           this.error.set(false);
           return this.groupService.getPublicGroup(id).pipe(
             catchError((err) => {
-              if ([400, 403, 404].includes(err.status)) {
+              if (err.status === 403) {
+                this.router.navigate(['/groups/not-found'], { queryParams: { reason: 'private' } });
+              } else if ([400, 404].includes(err.status)) {
                 this.router.navigate(['/groups/not-found']);
               } else {
                 this.error.set(true);
