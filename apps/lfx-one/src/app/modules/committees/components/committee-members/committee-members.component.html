@@ -186,7 +186,13 @@
                 } @else {
                   @let engagementRow = getMemberEngagement(member);
                   @if (engagementRow && engagementDataAvailable()) {
-                    <span [pTooltip]="getEngagementContext(engagementRow)" tooltipPosition="top">
+                    @let engagementContext = getEngagementContext(engagementRow);
+                    <span
+                      class="inline-flex items-center"
+                      [pTooltip]="engagementContext"
+                      tooltipPosition="top"
+                      [attr.tabindex]="engagementContext ? 0 : null"
+                      [attr.aria-label]="engagementContext || null">
                       <lfx-tag
                         [value]="engagementRow.classification"
                         [severity]="getEngagementSeverity(engagementRow)"

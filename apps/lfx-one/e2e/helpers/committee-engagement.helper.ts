@@ -170,7 +170,6 @@ export function buildDegradedEngagementResponse(window: CommitteeEngagementWindo
 }
 
 export interface EngagementMockHandle {
-  requestCount: () => number;
   requestedWindows: () => string[];
 }
 
@@ -190,18 +189,30 @@ export async function mockEngagementApi(
     windows.push(window);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(responseFor(window)) });
   });
-  return { requestCount: () => windows.length, requestedWindows: () => [...windows] };
+  return { requestedWindows: () => [...windows] };
+}
+
+/**
+ * Mock the engagement endpoint as a hard failure (e.g. the expected 403 for non-auditor callers —
+ * the endpoint is `committee#auditor`-gated, stricter than roster visibility). The service maps
+ * any error to `null`, so the UI must degrade to its "unavailable" states with the roster intact.
+ */
+export async function mockEngagementFailure(page: Page, status: number): Promise<void> {
+  await page.route(`**${ENGAGEMENT_PATH}*`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: 'forbidden' }) });
+  });
 }
 
 /** Mock every non-engagement API the committee detail page touches, deterministically. */
 export async function mockCommitteeShell(page: Page): Promise<void> {
   const uid = ENGAGEMENT_COMMITTEE_UID;
-  await page.route(`**/api/committees/${uid}`, (route) => {
+  await page.route(`**/api/committees/${uid}*`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildEngagementCommittee()) });
   });
   await page.route(`**/api/committees/${uid}/children`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  await page.route(`**/api/committees/${uid}/members`, (route) =>
+  await page.route(`**/api/committees/${uid}/members*`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildRoster()) })
   );
   await page.route(`**/api/committees/${uid}/invites*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));

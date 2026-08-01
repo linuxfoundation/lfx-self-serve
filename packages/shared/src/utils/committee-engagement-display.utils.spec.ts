@@ -4,7 +4,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CommitteeMemberEngagement } from '../interfaces/committee-engagement.interface';
-import { formatCommitteeEngagementMeetings, formatCommitteeEngagementRatePercent, isCommitteeEngagementRowAtRisk } from './committee-engagement-display.utils';
+import {
+  formatCommitteeEngagementMeetings,
+  formatCommitteeEngagementRatePercent,
+  isCommitteeEngagementRowAtRisk,
+  toCommitteeEngagementWindow,
+} from './committee-engagement-display.utils';
 
 function buildRow(overrides: Partial<CommitteeMemberEngagement> = {}): CommitteeMemberEngagement {
   return {
@@ -65,6 +70,20 @@ describe('formatCommitteeEngagementMeetings', () => {
   it('renders an em-dash when the member has no engagement row', () => {
     expect(formatCommitteeEngagementMeetings(null, true)).toBe('—');
     expect(formatCommitteeEngagementMeetings(undefined, true)).toBe('—');
+  });
+});
+
+describe('toCommitteeEngagementWindow', () => {
+  it('narrows every supported window id', () => {
+    expect(toCommitteeEngagementWindow('30d')).toBe('30d');
+    expect(toCommitteeEngagementWindow('90d')).toBe('90d');
+    expect(toCommitteeEngagementWindow('ytd')).toBe('ytd');
+  });
+
+  it('rejects anything the endpoint would 400 on', () => {
+    expect(toCommitteeEngagementWindow('7d')).toBeNull();
+    expect(toCommitteeEngagementWindow('YTD')).toBeNull();
+    expect(toCommitteeEngagementWindow('')).toBeNull();
   });
 });
 

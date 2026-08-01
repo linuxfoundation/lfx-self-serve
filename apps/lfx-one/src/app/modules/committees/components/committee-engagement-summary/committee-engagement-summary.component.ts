@@ -5,9 +5,9 @@ import { Component, computed, input, output, Signal } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS, COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS } from '@lfx-one/shared/constants';
+import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS } from '@lfx-one/shared/constants';
 import { CommitteeEngagementResponse, CommitteeEngagementWindow } from '@lfx-one/shared/interfaces';
-import { formatCommitteeEngagementFreshness, formatCommitteeEngagementRatePercent } from '@lfx-one/shared/utils';
+import { formatCommitteeEngagementFreshness, formatCommitteeEngagementRatePercent, toCommitteeEngagementWindow } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -27,7 +27,8 @@ export class CommitteeEngagementSummaryComponent {
   // Inputs
   public engagement = input<CommitteeEngagementResponse | null>(null);
   public loading = input<boolean>(false);
-  public window = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
+  // Named to avoid shadowing the global `window` in class/template scope.
+  public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
 
   // Outputs
   public readonly windowChange = output<CommitteeEngagementWindow>();
@@ -39,8 +40,8 @@ export class CommitteeEngagementSummaryComponent {
   public readonly isMock: Signal<boolean> = computed(() => this.engagement()?.data_source === 'mock');
   public readonly freshnessLabel: Signal<string> = computed(() => formatCommitteeEngagementFreshness(this.engagement()?.computed_at ?? null));
   public readonly windowLabel: Signal<string> = computed(() => {
-    const option = COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS.find((o) => o.id === this.window());
-    return option?.fullLabel ?? option?.label ?? this.window();
+    const option = COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS.find((o) => o.id === this.engagementWindow());
+    return option?.fullLabel ?? option?.label ?? this.engagementWindow();
   });
   public readonly attendanceRateLabel: Signal<string> = computed(() => {
     const summary = this.engagement()?.summary;
@@ -54,7 +55,7 @@ export class CommitteeEngagementSummaryComponent {
 
   public onWindowChange(windowId: string): void {
     // filter-pills emits a plain string id — only forward values the endpoint actually accepts.
-    const window = COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS.find((w) => w === windowId);
+    const window = toCommitteeEngagementWindow(windowId);
     if (window) {
       this.windowChange.emit(window);
     }

@@ -3,7 +3,7 @@
 
 // Type-only imports — erased at compile time, so the interface file's own runtime import of
 // COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS from this file cannot form a circular dependency.
-import type { CommitteeEngagementClassification } from '../interfaces/committee-engagement.interface';
+import type { CommitteeEngagementClassification, CommitteeEngagementWindow } from '../interfaces/committee-engagement.interface';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 
@@ -33,14 +33,25 @@ export const COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS = {
 } as const;
 
 /**
+ * Display labels per supported window. `Record<CommitteeEngagementWindow, ...>` is
+ * exhaustiveness-checked, so adding a window to `COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS` fails to
+ * compile until a label is added here — the pill list below derives from the supported constant
+ * rather than duplicating the ids.
+ */
+const COMMITTEE_ENGAGEMENT_WINDOW_LABELS: Record<CommitteeEngagementWindow, { label: string; fullLabel: string }> = {
+  '30d': { label: '30d', fullLabel: 'Last 30 days' },
+  '90d': { label: '90d', fullLabel: 'Last 90 days' },
+  ytd: { label: 'YTD', fullLabel: 'Year to date' },
+};
+
+/**
  * Window-selector pill options for the engagement UI (members table + overview summary). Ids are
  * the exact `?window=` values the endpoint accepts (`COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS`).
  */
-export const COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS: FilterPillOption[] = [
-  { id: '30d', label: '30d', fullLabel: 'Last 30 days' },
-  { id: '90d', label: '90d', fullLabel: 'Last 90 days' },
-  { id: 'ytd', label: 'YTD', fullLabel: 'Year to date' },
-];
+export const COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS: FilterPillOption[] = COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS.map((window) => ({
+  id: window,
+  ...COMMITTEE_ENGAGEMENT_WINDOW_LABELS[window],
+}));
 
 /**
  * Tag severity per engagement classification for the members-table chip. `Emeritus` is

@@ -34,6 +34,7 @@ import {
   gotoEngagementCommitteeTab,
   mockCommitteeShell,
   mockEngagementApi,
+  mockEngagementFailure,
   PAGE_LOAD_TIMEOUT,
 } from './helpers/committee-engagement.helper';
 
@@ -157,6 +158,28 @@ test.describe('Committee engagement — members table (flag on)', () => {
     test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
 
     await expect(page.getByTestId('members-engagement-mock-tag')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('fetch failure (403): em-dashes and the calm unavailable state, roster intact', async ({ page }) => {
+    // The endpoint is committee#auditor-gated, so a 403 is the expected outcome for most roster
+    // viewers — the most likely production branch, and it must never read as an error.
+    await mockCommitteeShell(page);
+    await mockEngagementFailure(page, 403);
+    await gotoEngagementCommitteeTab(page, 'members');
+
+    const flagOn = await appearsWithin(page.getByTestId('members-engagement-controls'), ELEMENT_TIMEOUT);
+    test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
+
+    await expect(page.getByTestId('members-engagement-meetings-m-high')).toHaveText('—', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('members-engagement-chip-m-high')).toHaveText('—');
+    await expect(page.getByTestId('members-chip-atRisk')).toHaveCount(0);
+    // The roster stays fully functional.
+    await expect(page.getByText('Harper Chairwood')).toBeVisible();
+
+    await gotoEngagementCommitteeTab(page, 'overview');
+    const summary = page.getByTestId('committee-overview-engagement-summary');
+    await expect(summary.getByTestId('committee-engagement-summary-unavailable-state')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(summary.getByTestId('committee-engagement-summary-unavailable-state')).toContainText('Attendance data unavailable');
   });
 });
 

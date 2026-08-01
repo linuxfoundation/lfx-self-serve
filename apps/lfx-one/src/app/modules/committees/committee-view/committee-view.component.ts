@@ -784,24 +784,55 @@ export class CommitteeViewComponent {
   }
 
   private initEngagement(): Signal<CommitteeEngagementResponse | null> {
-    // One combined computed (not combineLatest over three toObservable() sources) so uid/window/
-    // enabled — recomputed in the same signal flush — can't glitch through an inconsistent
-    // intermediate tick that fires then immediately cancels a request (same reasoning as
+    // One combined computed (not combineLatest over separate toObservable() sources) so the fields
+    // — recomputed in the same signal flush — can't glitch through an inconsistent intermediate
+    // tick that fires then immediately cancels a request (same reasoning as
     // committee-overview.component.ts's initDocuments). distinctUntilChanged dedupes identity-only
     // committee re-emissions (silent refreshes) — the endpoint is Valkey-cached but no-store on the
-    // browser side, so every emission is a real round trip.
+    // browser side, so every emission is a real round trip. membersRefresh is in the tuple so a
+    // roster mutation (member added/removed) refetches engagement too — otherwise the members-tab
+    // At-Risk count (client-joined against the fresh roster) and the overview card's server
+    // summary could diverge until the next window switch.
+    const engagementKey = computed(() => ({
+      uid: this.committee()?.uid ?? null,
+      window: this.engagementWindow(),
+      enabled: this.engagementMetricsEnabled(),
+      roleLoading: this.myRoleLoading(),
+      visitor: this.isVisitor(),
+      refresh: this.membersRefresh(),
+    }));
     return toSignal(
-      toObservable(computed(() => ({ uid: this.committee()?.uid ?? null, window: this.engagementWindow(), enabled: this.engagementMetricsEnabled() }))).pipe(
-        distinctUntilChanged((a, b) => a.uid === b.uid && a.window === b.window && a.enabled === b.enabled),
-        switchMap(({ uid, window, enabled }) => {
+      toObservable(engagementKey).pipe(
+        distinctUntilChanged(
+          (a, b) =>
+            a.uid === b.uid &&
+            a.window === b.window &&
+            a.enabled === b.enabled &&
+            a.roleLoading === b.roleLoading &&
+            a.visitor === b.visitor &&
+            a.refresh === b.refresh
+        ),
+        switchMap(({ uid, window, enabled, roleLoading, visitor }) => {
           // Flag off (or SSR, where the flag fails closed to its default) means zero engagement
           // fetches — the gated UI renders nothing, so a request would be pure waste.
           if (!enabled || !uid || !isPlatformBrowser(this.platformId)) {
             this.engagementLoading.set(false);
             return of(null);
           }
+          // Role still resolving (e.g. mid silent-refresh) — hold current state rather than fire a
+          // request that the visitor check below might immediately invalidate.
+          if (roleLoading) {
+            return EMPTY;
+          }
+          // Visitors never see either engagement surface (overview gates on !isVisitor; the
+          // Members tab isn't visible to them at all) — skip the guaranteed-403 fetch entirely,
+          // matching initDocuments' "don't issue a GET nothing will display" precedent.
+          if (visitor) {
+            this.engagementLoading.set(false);
+            return of(null);
+          }
           this.engagementLoading.set(true);
-          // Errors (including the expected 403 for non-auditor callers) resolve to null inside the
+          // Errors (including the expected 403 for non-auditor members) resolve to null inside the
           // service — the tabs degrade to their "attendance unavailable" states, roster unaffected.
           return this.committeeService.getCommitteeEngagement(uid, window).pipe(finalize(() => this.engagementLoading.set(false)));
         })

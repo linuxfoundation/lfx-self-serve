@@ -3,7 +3,7 @@
 
 import { TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, OnInit, output, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -18,7 +18,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY,
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
-  COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS,
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
   COMMITTEE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -45,6 +44,7 @@ import {
   isCommitteeEngagementRowAtRisk,
   isVotingRep,
   resolveCommitteeMemberPermission,
+  toCommitteeEngagementWindow,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -108,7 +108,19 @@ export class CommitteeMembersComponent implements OnInit {
   public selectedMember = signal<CommitteeMember | null>(null);
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
-  public memberFilterChip = signal<CommitteeMemberFilterChip>('all');
+  // linkedSignal, not signal: the At Risk chip is only offered while a real engagement response is
+  // present, so if it's selected when the data degrades (window switch, fetch failure) the
+  // selection resets to 'all' — otherwise no chip would render as pressed and the at-risk filter
+  // would silently re-apply when data returned.
+  public memberFilterChip = linkedSignal<boolean, CommitteeMemberFilterChip>({
+    source: () => this.engagementEnabled() && this.engagement()?.data_available === true,
+    computation: (atRiskOffered, previous) => {
+      if (previous && (previous.value !== 'atRisk' || atRiskOffered)) {
+        return previous.value;
+      }
+      return 'all';
+    },
+  });
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
   // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
@@ -240,7 +252,7 @@ export class CommitteeMembersComponent implements OnInit {
 
   public onEngagementWindowChange(windowId: string): void {
     // filter-pills emits a plain string id — only forward values the endpoint actually accepts.
-    const window = COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS.find((w) => w === windowId);
+    const window = toCommitteeEngagementWindow(windowId);
     if (window) {
       this.engagementWindowChange.emit(window);
     }
@@ -255,7 +267,10 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public getEngagementSeverity(row: CommitteeMemberEngagement): TagSeverity {
-    return COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY[row.classification];
+    // `classification` is a server passthrough — a tier added server-side before this UI updates
+    // isn't representable in the type, so degrade to neutral rather than an undefined severity.
+    const severity = COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY[row.classification] as TagSeverity | undefined;
+    return severity ?? 'secondary';
   }
 
   /**
