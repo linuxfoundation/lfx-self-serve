@@ -39,6 +39,9 @@
 
         <!-- Main Group Card -->
         <lfx-card class="rounded-[12.75px] mb-6" data-testid="group-info-card">
+          <!-- Group Title -->
+          <h1 class="mb-4" data-testid="group-title">{{ group.name }}</h1>
+
           <!-- Badges Row -->
           <div class="flex items-center gap-2 flex-wrap mb-4">
             <lfx-tag [value]="group.category" severity="secondary" styleClass="tag-category" data-testid="group-badge-category"></lfx-tag>
@@ -50,12 +53,15 @@
             }
           </div>
 
-          <!-- Group Title -->
-          <h1 class="mb-4" data-testid="group-title">{{ group.name }}</h1>
-
           <!-- Context Chips (Foundation / Project) -->
           <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="group-context">
-            <lfx-tag [value]="group.context.foundation_name" severity="secondary" icon="fa-light fa-landmark" data-testid="group-context-foundation"></lfx-tag>
+            @if (group.context.foundation_name && group.context.foundation_name !== 'ROOT') {
+              <lfx-tag
+                [value]="group.context.foundation_name"
+                severity="secondary"
+                icon="fa-light fa-landmark"
+                data-testid="group-context-foundation"></lfx-tag>
+            }
             @if (group.context.project_name) {
               <lfx-tag
                 [value]="group.context.project_name"
