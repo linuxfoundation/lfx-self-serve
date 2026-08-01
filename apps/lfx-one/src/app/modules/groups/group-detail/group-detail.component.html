@@ -55,11 +55,7 @@
 
           <!-- Context Chips (Foundation / Project) -->
           <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="group-context">
-            <lfx-tag
-              [value]="group.context.foundation_name"
-              severity="secondary"
-              icon="fa-light fa-landmark"
-              data-testid="group-context-foundation"></lfx-tag>
+            <lfx-tag [value]="group.context.foundation_name" severity="secondary" icon="fa-light fa-landmark" data-testid="group-context-foundation"></lfx-tag>
             @if (group.context.project_name) {
               <lfx-tag
                 [value]="group.context.project_name"
@@ -202,7 +198,9 @@
           @if (!authenticated()) {
             <hr class="border-gray-200 my-4" />
 
-            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex flex-wrap items-center justify-between gap-3" data-testid="visitor-sign-in-banner">
+            <div
+              class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex flex-wrap items-center justify-between gap-3"
+              data-testid="visitor-sign-in-banner">
               <div class="flex items-center gap-3">
                 <i class="fa-light fa-arrow-right-to-bracket text-blue-600 text-2xl"></i>
                 <div>
