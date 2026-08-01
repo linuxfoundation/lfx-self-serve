@@ -191,7 +191,9 @@
                       class="inline-flex items-center"
                       [pTooltip]="engagementContext"
                       tooltipPosition="top"
+                      tooltipEvent="both"
                       [attr.tabindex]="engagementContext ? 0 : null"
+                      [attr.role]="engagementContext ? 'note' : null"
                       [attr.aria-label]="engagementContext || null">
                       <lfx-tag
                         [value]="engagementRow.classification"
