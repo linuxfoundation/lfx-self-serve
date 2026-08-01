@@ -1,0 +1,74 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card data-testid="committee-engagement-summary">
+  <div class="flex flex-col gap-3">
+    <!-- Header: title + window selector -->
+    <div class="flex items-center justify-between gap-2">
+      <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Engagement</p>
+      <lfx-filter-pills [options]="windowOptions" [selectedFilter]="window()" (filterChange)="onWindowChange($event)" />
+    </div>
+
+    @if (loading()) {
+      <!-- Loading -->
+      <div class="flex flex-col gap-3" data-testid="committee-engagement-summary-loading-state">
+        @for (_ of [1, 2, 3]; track _) {
+          <div class="flex items-center gap-3">
+            <p-skeleton shape="circle" size="1.5rem" />
+            <p-skeleton width="60%" height="0.875rem" />
+            <p-skeleton width="2rem" height="0.875rem" styleClass="ml-auto" />
+          </div>
+        }
+      </div>
+    } @else if (!engagement()) {
+      <!-- Fetch failed / not authorized: calm unavailable state, not an error -->
+      <div class="flex flex-col items-center py-4 text-center" data-testid="committee-engagement-summary-unavailable-state">
+        <i class="fa-light fa-chart-line text-2xl text-gray-300 mb-2" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-500">Attendance data unavailable</p>
+        <p class="text-xs text-gray-400 mt-1">Engagement metrics can't be shown right now.</p>
+      </div>
+    } @else if (!dataAvailable()) {
+      <!-- Live read degraded (model not deployed yet): calm coming-soon state, not an error -->
+      <div class="flex flex-col items-center py-4 text-center" data-testid="committee-engagement-summary-coming-soon-state">
+        <i class="fa-light fa-chart-line text-2xl text-gray-300 mb-2" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-500">Attendance data coming soon</p>
+        <p class="text-xs text-gray-400 mt-1">Meeting attendance rollups for this group aren't available yet.</p>
+      </div>
+    } @else {
+      <!-- Stats -->
+      <div class="flex flex-col divide-y divide-gray-100">
+        <div
+          class="flex items-center gap-3 py-2.5"
+          pTooltip="Personal attendance across all invited roster members, including Emeritus seats"
+          tooltipPosition="top"
+          data-testid="committee-engagement-summary-attendance-rate">
+          <i class="fa-light fa-chart-line text-gray-400 w-4 text-center flex-shrink-0" aria-hidden="true"></i>
+          <span class="text-sm text-gray-700 flex-1">Attendance Rate</span>
+          <span class="text-sm font-semibold text-gray-900">{{ attendanceRateLabel() }}</span>
+        </div>
+        <div
+          class="flex items-center gap-3 py-2.5"
+          pTooltip="Members with attendance this window or who joined within it; Emeritus seats excluded"
+          tooltipPosition="top"
+          data-testid="committee-engagement-summary-active-members">
+          <i class="fa-light fa-user-check text-gray-400 w-4 text-center flex-shrink-0" aria-hidden="true"></i>
+          <span class="text-sm text-gray-700 flex-1">Active Members ({{ windowLabel() }})</span>
+          <span class="text-sm font-semibold text-gray-900">{{ activeMembersLabel() }}</span>
+        </div>
+        <div class="flex items-center gap-3 py-2.5" data-testid="committee-engagement-summary-at-risk">
+          <i class="fa-light fa-triangle-exclamation text-gray-400 w-4 text-center flex-shrink-0" aria-hidden="true"></i>
+          <span class="text-sm text-gray-700 flex-1">At Risk</span>
+          <span class="text-sm font-semibold text-gray-900">{{ atRiskCount() }}</span>
+        </div>
+      </div>
+
+      <!-- Freshness + mock marker -->
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-gray-400" data-testid="committee-engagement-summary-freshness">{{ freshnessLabel() }}</span>
+        @if (isMock()) {
+          <lfx-tag value="Sample data" severity="warn" data-testid="committee-engagement-summary-mock-tag" />
+        }
+      </div>
+    }
+  </div>
+</lfx-card>

@@ -24,10 +24,19 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList, Meeting, PendingInvitation, ProjectContext, TabConfigEntry } from '@lfx-one/shared/interfaces';
-import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
+import {
+  CommitteeEngagementResponse,
+  CommitteeEngagementWindow,
+  GroupsIOMailingList,
+  Meeting,
+  PendingInvitation,
+  ProjectContext,
+  TabConfigEntry,
+} from '@lfx-one/shared/interfaces';
+import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import { canManageCommitteeMembers, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
@@ -107,6 +116,7 @@ export class CommitteeViewComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly invitationService = inject(InvitationService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -130,12 +140,20 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
+  // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
+  // summary stay in sync across tab switches (tab panels unmount in the @switch below).
+  public engagementWindow = signal<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
+  public engagementLoading = signal<boolean>(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
   // Pending invites share the members refresh trigger so adding/revoking refreshes both.
   public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
+  // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
+  // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
+  public readonly engagementMetricsEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
+  public engagement: Signal<CommitteeEngagementResponse | null> = this.initEngagement();
 
   // Membership identity comes from server-enriched fields on the committee record,
   // resolved via the username-tagged membership query so visibility doesn't depend
@@ -295,6 +313,10 @@ export class CommitteeViewComponent {
 
   public onMembersRefreshed(): void {
     this.refreshMembers();
+  }
+
+  public onEngagementWindowChange(window: CommitteeEngagementWindow): void {
+    this.engagementWindow.set(window);
   }
 
   public handleTabNavigation(tabWithContext: string): void {
@@ -758,6 +780,33 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] as CommitteeInvite[] }
+    );
+  }
+
+  private initEngagement(): Signal<CommitteeEngagementResponse | null> {
+    // One combined computed (not combineLatest over three toObservable() sources) so uid/window/
+    // enabled — recomputed in the same signal flush — can't glitch through an inconsistent
+    // intermediate tick that fires then immediately cancels a request (same reasoning as
+    // committee-overview.component.ts's initDocuments). distinctUntilChanged dedupes identity-only
+    // committee re-emissions (silent refreshes) — the endpoint is Valkey-cached but no-store on the
+    // browser side, so every emission is a real round trip.
+    return toSignal(
+      toObservable(computed(() => ({ uid: this.committee()?.uid ?? null, window: this.engagementWindow(), enabled: this.engagementMetricsEnabled() }))).pipe(
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.window === b.window && a.enabled === b.enabled),
+        switchMap(({ uid, window, enabled }) => {
+          // Flag off (or SSR, where the flag fails closed to its default) means zero engagement
+          // fetches — the gated UI renders nothing, so a request would be pure waste.
+          if (!enabled || !uid || !isPlatformBrowser(this.platformId)) {
+            this.engagementLoading.set(false);
+            return of(null);
+          }
+          this.engagementLoading.set(true);
+          // Errors (including the expected 403 for non-auditor callers) resolve to null inside the
+          // service — the tabs degrade to their "attendance unavailable" states, roster unaffected.
+          return this.committeeService.getCommitteeEngagement(uid, window).pipe(finalize(() => this.engagementLoading.set(false)));
+        })
+      ),
+      { initialValue: null }
     );
   }
 
