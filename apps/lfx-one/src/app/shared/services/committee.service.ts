@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   ActivityEvent,
@@ -194,8 +194,8 @@ export class CommitteeService {
   public getCommitteeActivity(committeeId: string): Observable<ActivityEvent[]> {
     return this.http.get<PaginatedResponse<ActivityEvent>>(`/api/committees/${encodeURIComponent(committeeId)}/activity`).pipe(
       map((response) => response.data),
-      catchError((error) => {
-        console.error('Failed to load committee activity feed:', error);
+      catchError((error: HttpErrorResponse) => {
+        console.error('Failed to load committee activity feed:', { status: error.status, message: error.message });
         return of([]);
       })
     );

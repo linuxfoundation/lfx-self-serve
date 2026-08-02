@@ -613,8 +613,11 @@ export class CommitteeOverviewComponent {
             // and pin activityFeedLoading() on its skeleton for the rest of the session. Reaching this
             // handler at all means the mapping step itself threw (not the upstream fetch, which the
             // service already logs and degrades on its own) — worth its own log line, not just surviving.
-            catchError((error) => {
-              console.error('Failed to map committee activity feed:', error);
+            catchError((error: unknown) => {
+              // A safe subset, not the raw error object — this is a synchronous mapping failure
+              // (not an HTTP error, so no HttpErrorResponse.status here), and the underlying
+              // upstream fetch failure (if any) is already logged server-side with more structure.
+              console.error('Failed to map committee activity feed:', { message: error instanceof Error ? error.message : String(error) });
               this.activityFeedLoading.set(false);
               return of<ActivityFeedItem[]>([]);
             })
