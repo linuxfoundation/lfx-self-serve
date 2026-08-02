@@ -155,7 +155,13 @@ export class CommitteeViewComponent {
       return COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW;
     },
   });
-  public engagementLoading = signal<boolean>(false);
+  // Starts true, not false: toObservable's effect that drives initEngagement's pipeline runs
+  // asynchronously, so a false initial value would let the first render (and any render during a
+  // committee-navigation gap) fall through the loading check and either show the "unavailable"
+  // state or a stale previous committee's engagement() before the pipeline's first tick sets this.
+  // Matches every sibling loader in this file/committee-overview.component.ts (membersLoading,
+  // documentsLoading, etc.), all of which start true for the same reason (Cursor Bugbot, LFXV2-1705).
+  public engagementLoading = signal<boolean>(true);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
