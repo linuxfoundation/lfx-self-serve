@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_FOUNDATION_MAINTAINERS,
@@ -13,7 +14,7 @@ import {
   DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY,
   lfxColors,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, hexToRgba } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl, computePeriodDelta, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -29,7 +30,7 @@ import type {
 
 @Component({
   selector: 'lfx-maintainers-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent, TooltipModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent, TooltipModule, MetricDeltaComponent],
   templateUrl: './maintainers-drawer.component.html',
 })
 export class MaintainersDrawerComponent {
@@ -149,7 +150,8 @@ export class MaintainersDrawerComponent {
     })
   );
 
-  protected readonly metricValue: Signal<string> = computed(() => this.data().currentMaintainers.toLocaleString());
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.monthlyData().monthlyData));
   protected readonly hasData: Signal<boolean> = computed(() => this.data().asOfDate !== null);
 
   private readonly drawerData = this.initDrawerData();
@@ -166,6 +168,10 @@ export class MaintainersDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    return computed(() => this.data().currentMaintainers.toLocaleString('en-US'));
+  }
+
   private initDrawerData(): Signal<{ distribution: FoundationMaintainersDistributionResponse }> {
     const defaultValue = { distribution: DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION };
     return toSignal(

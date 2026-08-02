@@ -23,6 +23,7 @@ import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
+import { GroupsEngagementStatsService } from '../services/groups-engagement-stats.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from '../services/committee.service';
@@ -37,6 +38,7 @@ const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 export class CommitteeController {
   private committeeService: CommitteeService = new CommitteeService();
   private meetingService: MeetingService = new MeetingService();
+  private groupsEngagementStatsService: GroupsEngagementStatsService = new GroupsEngagementStatsService();
 
   /**
    * GET /committees
@@ -75,6 +77,28 @@ export class CommitteeController {
       });
 
       res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/engagement-stats
+   * Groups dashboard rollup for the caller's visible set (Active Members, Meetings This Month).
+   * Mocked pending the LFXV2-1705 dbt engagement model — see GroupsEngagementStatsService.
+   */
+  public async getGroupsEngagementStats(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_groups_engagement_stats', {});
+
+    try {
+      const stats = await this.groupsEngagementStatsService.getEngagementStats(req);
+
+      logger.success(req, 'get_groups_engagement_stats', startTime, {
+        active_members: stats.active_members,
+        meetings_this_month: stats.meetings_this_month,
+      });
+
+      res.json(stats);
     } catch (error) {
       next(error);
     }
@@ -147,12 +171,15 @@ export class CommitteeController {
       // Get the committee by ID — include caller membership so the UI can render
       // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
-      // -> project_slug for navigation, and include inherited (parent-project) permissions
-      // so the members roster can label foundation-level managers correctly (LFXV2-2059).
+      // -> project_slug for navigation, include inherited (parent-project) permissions
+      // so the members roster can label foundation-level managers correctly (LFXV2-2059),
+      // and include mailing-list status (upstream does not reliably populate
+      // has_mailing_list on this endpoint — LFXV2-2914).
       const committee = await this.committeeService.getCommitteeById(req, id, {
         includeMembership: true,
         includeProjectMetadata: true,
         includeInheritedPermissions: true,
+        includeMailingListStatus: true,
       });
 
       // Log the success
@@ -909,9 +936,6 @@ export class CommitteeController {
       }
 
       const data: CreateCommitteeDocumentRequest = req.body;
-
-      // Always override created_by_name from OIDC session — never trust client-provided values
-      data.created_by_name = (req.oidc?.user?.['name'] as string) || (req.oidc?.user?.['nickname'] as string) || '';
 
       // Validate required fields
       const validDocTypes = ['link', 'folder'];

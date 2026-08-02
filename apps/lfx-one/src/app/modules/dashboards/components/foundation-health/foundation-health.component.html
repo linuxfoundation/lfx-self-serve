@@ -49,7 +49,11 @@
   } @else {
     <!-- Carousel Container -->
     <div class="relative overflow-hidden">
-      <div lfxScrollShadow [scrollDistance]="320" class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="foundation-health-carousel">
+      <div
+        lfxScrollShadow
+        [scrollDistance]="320"
+        class="flex gap-4 items-start overflow-x-auto hide-scrollbar scroll-smooth"
+        data-testid="foundation-health-carousel">
         @for (card of metricCards(); track card.testId) {
           @switch (card.customContentType) {
             <!-- Bar Chart - Use shared metric card -->
@@ -61,8 +65,8 @@
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
                 [chartOptions]="card.chartOptions || barChartOptions"
-                [chartHeightClass]="'flex-1 min-h-16'"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
+                [chartHeightClass]="'h-24'"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
@@ -79,7 +83,7 @@
                 [icon]="card.icon"
                 [testId]="card.testId"
                 [chartType]="card.chartType"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [loading]="card.loading"
@@ -108,7 +112,7 @@
                 [icon]="card.icon"
                 [testId]="card.testId"
                 [chartType]="card.chartType"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [loading]="card.loading"
@@ -116,7 +120,7 @@
                 (cardClick)="handleCardClick(card.drawerType!)">
                 <ng-template #customContent>
                   @if (card.busFactor) {
-                    <div class="h-16 flex flex-col justify-end mt-3">
+                    <div class="h-24 flex flex-col justify-end mt-3">
                       <div class="flex gap-0">
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs font-medium text-gray-700">
@@ -144,7 +148,8 @@
                 [chartType]="card.chartType"
                 [chartData]="card.chartData"
                 [chartOptions]="card.chartOptions"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80 min-h-64'"
+                [chartHeightClass]="'h-24'"
+                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
                 [trend]="card.trend"
@@ -189,7 +194,8 @@
 <lfx-total-members-drawer
   [visible]="activeDrawer() === DashboardDrawerType.TotalMembers"
   (visibleChange)="handleDrawerClose()"
-  [data]="totalMembersData()"></lfx-total-members-drawer>
+  [data]="totalMembersData()"
+  [dataLoading]="totalMembersLoading()"></lfx-total-members-drawer>
 
 <lfx-active-contributors-drawer
   [visible]="activeDrawer() === DashboardDrawerType.ActiveContributors"

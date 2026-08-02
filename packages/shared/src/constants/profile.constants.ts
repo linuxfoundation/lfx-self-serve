@@ -13,6 +13,13 @@ import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab }
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 
 /**
+ * Maximum length of the free-text "About Me" (bio) profile field. Shared across
+ * the BFF validator, the reactive-form validator, and the textarea's maxlength
+ * so the client and server enforce a single contract.
+ */
+export const PROFILE_BIO_MAX_LENGTH = 2000;
+
+/**
  * Profile tab configuration
  */
 export const PROFILE_TABS: ProfileTab[] = [

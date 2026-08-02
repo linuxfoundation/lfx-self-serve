@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NEWSLETTER_RAW_CONTENT_MAX_LENGTH, NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  NEWSLETTER_BODY_MAX_LENGTH,
+  NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
+  NEWSLETTER_SUBJECT_MAX_LENGTH,
+  NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
@@ -19,8 +24,6 @@ import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterService } from '../services/newsletter.service';
 
-const SUBJECT_MAX_LENGTH = 200;
-const BODY_MAX_LENGTH = 100_000;
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
 
@@ -96,6 +99,26 @@ export class NewsletterController {
       // PII (recipient email) intentionally omitted from log metadata.
       logger.success(req, 'newsletter_test_send', startTime, {});
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/newsletters/my-newsletters
+   *
+   * Not project-scoped: the Me-lens feed of sent newsletters reachable via the
+   * user's current committee memberships. Authorization happens per upstream
+   * call — the gateway FGA-checks `committee:{uid}#member` for every committee
+   * the service fans out to.
+   */
+  public async getMyNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_newsletters', {});
+
+    try {
+      const newsletters = await this.newsletterService.getMyNewsletters(req);
+      logger.success(req, 'get_my_newsletters', startTime, { count: newsletters.length });
+      res.json(newsletters);
     } catch (error) {
       next(error);
     }
@@ -416,14 +439,14 @@ export class NewsletterController {
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
       fieldErrors['subject'] = 'Subject is required';
-    } else if (payload.subject.length > SUBJECT_MAX_LENGTH) {
-      fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
+    } else if (payload.subject.length > NEWSLETTER_SUBJECT_MAX_LENGTH) {
+      fieldErrors['subject'] = `Subject must be ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
     if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
       fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
-      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
+      fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -444,14 +467,14 @@ export class NewsletterController {
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
       fieldErrors['subject'] = 'Subject is required';
-    } else if (payload.subject.length > SUBJECT_MAX_LENGTH) {
-      fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
+    } else if (payload.subject.length > NEWSLETTER_SUBJECT_MAX_LENGTH) {
+      fieldErrors['subject'] = `Subject must be ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
     if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
       fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > BODY_MAX_LENGTH) {
-      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+    } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
+      fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
     }
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {

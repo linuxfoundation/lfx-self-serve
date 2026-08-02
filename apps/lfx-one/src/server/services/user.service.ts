@@ -6,6 +6,7 @@ import {
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
   PENDING_ACTION_SEVERITY,
+  PROFILE_BIO_MAX_LENGTH,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
@@ -40,6 +41,7 @@ import {
   hasMeetingEnded,
   normalizeIndexedMeetingAiSummary,
   parseToInt,
+  resolveRsvpOccurrenceId,
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -250,6 +252,11 @@ export class UserService {
     // Validate job title if provided (basic length check)
     if (metadata?.job_title && metadata.job_title.length > 200) {
       throw new Error('Job title is too long');
+    }
+
+    // Validate bio if provided (basic length check)
+    if (metadata?.bio && metadata.bio.length > PROFILE_BIO_MAX_LENGTH) {
+      throw new Error(`Bio is too long (max ${PROFILE_BIO_MAX_LENGTH} characters)`);
     }
 
     return true;
@@ -537,8 +544,7 @@ export class UserService {
               meeting.my_rsvp = null;
               continue;
             }
-            const occurrence = getCurrentOrNextOccurrence(meeting);
-            const applicable = selectApplicableRsvp(occurrence?.occurrence_id, meetingRsvps);
+            const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), meetingRsvps);
             meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
           }
         } catch (error) {

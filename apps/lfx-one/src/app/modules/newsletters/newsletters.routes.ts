@@ -24,6 +24,15 @@ export const NEWSLETTER_ROUTES: Routes = [
     data: { preload: false },
   },
   {
+    // Me-lens member feed: sent newsletters reachable via the user's committee
+    // memberships. authGuard only — newsletterAccessGuard is the manager
+    // (ED/project-writer) gate and must not block regular committee members.
+    path: 'my',
+    canActivate: [authGuard],
+    loadComponent: () => import('./my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
+    data: { preload: false },
+  },
+  {
     // projectUid is in the URL so edit/analytics survive a foundation-vs-project
     // context switch — the owning project travels with the link rather than being
     // re-derived from whatever context happens to be active when the route loads.
