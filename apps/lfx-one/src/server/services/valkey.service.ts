@@ -289,10 +289,22 @@ export function buildOrgCacheKey(accountId: string, subResource: string): string
   return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${accountId}:${subResource}`;
 }
 
+/** Per-committee Snowflake-namespace cache key (committee uid + caller-chosen sub-resource); null (fail-closed → direct fetch) when the uid isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildCommitteeCacheKey(committeeUid: string, subResource: string): string | null {
+  if (!isFilterSafeIdentifier(committeeUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.COMMITTEE_ENGAGEMENT_NAMESPACE}:${committeeUid}:${subResource}`;
+}
+
 /** Per-user cache key (caller username + org uid under a caller-chosen namespace); null (fail-closed → direct fetch) when the username or org uid isn't filter-safe, keeping cache identity aligned with the authz principal and the `:`-delimited key uncorruptible. */
 export function buildPerUserOrgKey(namespace: string, username: string, orgUid: string): string | null {
   if (!isFilterSafeUsername(username) || !isFilterSafeIdentifier(orgUid)) return null;
   return `${keyPrefix()}:${namespace}:${username}:${orgUid}`;
+}
+
+/** Per-user cache key with no org scoping (caller username only, under a caller-chosen namespace); null (fail-closed → direct fetch) when the username isn't filter-safe. For "mine semantics" data that isn't scoped to any org/project. */
+export function buildUserCacheKey(namespace: string, username: string): string | null {
+  if (!isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${namespace}:${username}`;
 }
 
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
@@ -321,6 +333,17 @@ export function withPerUserCache<T>(
   accept?: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept);
+}
+
+/** Read-through helper for a per-user, org-independent namespace; a null key (unsafe username) fetches directly. */
+export function withUserCache<T>(
+  namespace: string,
+  username: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildUserCacheKey(namespace, username), ttlSeconds, fetcher, accept);
 }
 
 /** Shared accessor — forwards to the current singleton so resetInstance() is always honored (no stale binding). */

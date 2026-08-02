@@ -171,6 +171,22 @@ export class MeetingController {
       // stripped for everyone else. Runs on the authenticated user's token (active on this route).
       await applyHostKeyVisibility(req, this.accessCheckService, meetingWithInvitedStatus);
 
+      // host_key is no longer on the v2 meeting API response — fetch it from the separately
+      // indexed v1_meeting_host_credentials object (FGA-gated by host relation on v1_meeting).
+      if (meetingWithInvitedStatus.can_view_host_key) {
+        try {
+          const hostKey = await this.meetingService.getMeetingHostKey(req, uid);
+          if (hostKey) {
+            meetingWithInvitedStatus.host_key = hostKey;
+          }
+        } catch (error) {
+          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
+            meeting_id: uid,
+            err: error,
+          });
+        }
+      }
+
       // The ITX detail payload omits created_by — join back to the live v1_meeting index so
       // the organizer name can be shown. Single meeting keyed on its own UID.
       const [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meetingWithInvitedStatus], (m) => m.id);
@@ -355,12 +371,14 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp } = req.query;
+    const { include_rsvp, occurrence_id } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
+      occurrence_id: occurrenceId,
     });
 
     try {
@@ -375,7 +393,7 @@ export class MeetingController {
       }
 
       // Get the meeting registrants
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp);
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
 
       logger.success(req, 'get_meeting_registrants', startTime, {
         meeting_id: uid,
@@ -398,12 +416,14 @@ export class MeetingController {
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp } = req.query;
+    const { include_rsvp, occurrence_id } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_my_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
+      occurrence_id: occurrenceId,
     });
 
     try {
@@ -519,7 +539,7 @@ export class MeetingController {
         has_m2m_token: !!m2mToken,
       });
 
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp);
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,

@@ -3,19 +3,38 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { MEETING_ORGANIZER_SKIP_IDENTIFIERS, RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
 import {
+  CANCELLED_COLOR,
+  MEETING_ORGANIZER_SKIP_IDENTIFIERS,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  PAST_SURVEY_CALENDAR_COLOR,
+  PAST_VOTE_CALENDAR_COLOR,
+  RECURRENCE_DAYS_OF_WEEK,
+  RECURRENCE_WEEKLY_ORDINALS,
+  SURVEY_COLOR,
+  VOTE_COLOR,
+} from '../constants';
+import { lfxColors } from '../constants/colors.constants';
+import { RecurrenceType } from '../enums';
+import { PollStatus } from '../enums/poll.enum';
+import {
+  BuildMeetingOccurrenceRouteOptions,
+  CalendarColor,
   CustomRecurrencePattern,
   Meeting,
   MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOccurrenceRoute,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
   MeetingUserInfo,
+  OccurrenceNavItem,
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
+  PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
   SummaryData,
@@ -23,7 +42,9 @@ import {
   User,
   V1PastMeetingSummary,
   V1SummaryDetail,
+  Vote,
 } from '../interfaces';
+import { normalizePollStatus } from './poll.utils';
 
 const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
 const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
@@ -157,7 +178,7 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     case 'date': {
       if (pattern.end_date_time) {
         const endDate = new Date(pattern.end_date_time);
-        endDescription = `until ${endDate.toLocaleDateString()}`;
+        endDescription = `until ${endDate.toLocaleDateString('en-US')}`;
       }
       break;
     }
@@ -178,6 +199,75 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     endDescription,
     fullSummary,
   };
+}
+
+/**
+ * Convert a raw API `MeetingRecurrence` (numeric `type`, 1-based `weekly_days` string) into the
+ * `CustomRecurrencePattern` shape `buildRecurrenceSummary` expects, for read-only display contexts
+ * (as opposed to the create/edit form, which builds `CustomRecurrencePattern` from form state directly).
+ */
+export function convertRecurrenceToPattern(recurrence: MeetingRecurrence): CustomRecurrencePattern {
+  const type = recurrence.type ?? RecurrenceType.WEEKLY;
+  const monthlyDay = recurrence.monthly_day;
+  const monthlyWeek = recurrence.monthly_week;
+  const monthlyWeekDay = recurrence.monthly_week_day;
+  const endTimes = recurrence.end_times;
+  const repeatInterval = recurrence.repeat_interval ?? 1;
+
+  let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
+  if (type === RecurrenceType.DAILY) patternType = 'daily';
+  else if (type === RecurrenceType.WEEKLY) patternType = 'weekly';
+  else if (type === RecurrenceType.MONTHLY) patternType = 'monthly';
+
+  let monthlyType: 'dayOfMonth' | 'dayOfWeek' = 'dayOfMonth';
+  if (monthlyDay !== undefined) monthlyType = 'dayOfMonth';
+  else if (monthlyWeek !== undefined && monthlyWeekDay !== undefined) monthlyType = 'dayOfWeek';
+
+  let endType: 'never' | 'date' | 'occurrences' = 'never';
+  if (recurrence.end_date_time && !isRecurrenceNeverEndSentinel(recurrence.end_date_time)) endType = 'date';
+  else if ((endTimes ?? 0) > 0) endType = 'occurrences';
+
+  let weeklyDaysArray: number[] = [];
+  if (recurrence.weekly_days) {
+    weeklyDaysArray = recurrence.weekly_days.split(',').map((d) => parseInt(d.trim()) - 1);
+  }
+
+  return {
+    ...recurrence,
+    type,
+    monthly_day: monthlyDay,
+    monthly_week: monthlyWeek,
+    monthly_week_day: monthlyWeekDay,
+    end_times: endTimes,
+    repeat_interval: repeatInterval,
+    patternType,
+    monthlyType,
+    endType,
+    weeklyDaysArray,
+  };
+}
+
+/**
+ * Picks the meeting that represents a committee's "meeting cadence" from its upcoming meetings:
+ * the first meeting with a truthy `recurrence` (an actually-recurring series), falling back to
+ * the first upcoming meeting of any kind (e.g. a genuine one-off), and to `null` when empty.
+ */
+export function selectCommitteeCadenceMeeting(meetings: Meeting[]): Meeting | null {
+  if (meetings.length === 0) return null;
+  return meetings.find((m) => !!m.recurrence) ?? meetings[0];
+}
+
+/**
+ * Builds the About-tab "Meeting Cadence" display string, e.g. "Every 2 weeks on Thursday · 60 min · Zoom".
+ */
+export function buildCommitteeCadenceSummary(meetings: Meeting[]): string {
+  const meeting = selectCommitteeCadenceMeeting(meetings);
+  if (!meeting) {
+    return 'No recurring meetings scheduled';
+  }
+  const recurrenceLabel = meeting.recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(meeting.recurrence)).fullSummary : 'One-time meeting';
+  const durationLabel = meeting.duration ? `${meeting.duration} min` : null;
+  return [recurrenceLabel, durationLabel, meeting.platform].filter(Boolean).join(' · ');
 }
 
 /**
@@ -202,17 +292,16 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
  * @param cancelledOccurrences Cancelled occurrence IDs (10-digit Unix-second timestamp keys)
  * @returns Array of active (non-cancelled) occurrences
  */
-export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
-  const cancelledIds = new Set(cancelledOccurrences ?? []);
-  return occurrences.filter((occurrence) => {
-    if (occurrence.status === 'cancel') {
-      return false;
-    }
-    if (cancelledIds.size > 0 && cancelledIds.has(occurrence.occurrence_id)) {
-      return false;
-    }
+export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, cancelledOccurrences?: string[] | null): boolean {
+  if (occurrence.status === 'cancel') {
     return true;
-  });
+  }
+  const cancelledIds = cancelledOccurrences ?? [];
+  return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
+}
+
+export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
+  return occurrences.filter((occurrence) => !isMeetingOccurrenceCancelled(occurrence, cancelledOccurrences));
 }
 
 /**
@@ -255,6 +344,98 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Resolves the series UID for a meeting payload without casting: past-meeting
+ * payloads carry the originating series UID in `meeting_id` while their `id` is
+ * the composite occurrence id (`{uid}-{ms-timestamp}`); live payloads use `id`.
+ */
+export function getMeetingSeriesUid(meeting: Meeting): string {
+  if ('meeting_id' in meeting && typeof meeting.meeting_id === 'string' && meeting.meeting_id) {
+    return meeting.meeting_id;
+  }
+  return meeting.id;
+}
+
+/**
+ * Merges a meeting's live occurrences with the series timeline from the public
+ * occurrences endpoint into one ascending navigation list.
+ *
+ * Entries are deduped by their Unix-millisecond start instant with priority
+ * live > endpoint future > past record, so an in-progress occurrence whose
+ * v1_past_meeting record is already forming keeps its joinable live entry.
+ * `cancelled_occurrences` filtering applies to future entries only — a cancelled
+ * occurrence never runs, so no v1_past_meeting record exists to filter.
+ * Past entries derive their canonical instant from the composite
+ * `meeting_and_occurrence_id` suffix (authoritative for past-meeting URLs),
+ * not from `scheduled_start_time`.
+ *
+ * @param liveOccurrences Active (non-cancelled) occurrences from the live meeting payload
+ * @param series Timeline from the public occurrences endpoint
+ * @param fallbackDuration Duration (minutes) for past entries lacking an end time
+ * @returns Merged occurrence list sorted ascending by start instant
+ */
+export function buildOccurrenceNavTimeline(
+  liveOccurrences: MeetingOccurrence[],
+  series: PublicMeetingOccurrencesResponse,
+  fallbackDuration?: number
+): OccurrenceNavItem[] {
+  const byInstant = new Map<number, OccurrenceNavItem>();
+
+  const addIfAbsent = (instant: number, item: OccurrenceNavItem): void => {
+    if (!Number.isFinite(instant) || byInstant.has(instant)) {
+      return;
+    }
+    byInstant.set(instant, item);
+  };
+
+  for (const occurrence of liveOccurrences) {
+    addIfAbsent(new Date(occurrence.start_time).getTime(), occurrence);
+  }
+
+  for (const occurrence of getActiveOccurrences(series.future, series.cancelled_occurrences)) {
+    addIfAbsent(new Date(occurrence.start_time).getTime(), occurrence);
+  }
+
+  for (const past of series.past) {
+    const suffix = past.meeting_and_occurrence_id.split('-').pop() ?? '';
+    const instant = /^\d{13}$/.test(suffix) ? parseInt(suffix, 10) : NaN;
+    if (!Number.isFinite(instant)) {
+      continue;
+    }
+    const scheduledDuration =
+      past.scheduled_end_time && past.scheduled_start_time
+        ? Math.round((new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000)
+        : 0;
+    addIfAbsent(instant, {
+      meeting_and_occurrence_id: past.meeting_and_occurrence_id,
+      occurrence_id: String(Math.floor(instant / 1000)),
+      start_time: new Date(instant).toISOString(),
+      duration: scheduledDuration > 0 ? scheduledDuration : (fallbackDuration ?? 0),
+    });
+  }
+
+  return [...byInstant.values()].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+}
+
+/**
+ * Occurrence id to pass to RSVP BFF endpoints (`getMeetingRegistrants`,
+ * `getMyMeetingRegistrants`, `getMeetingRsvpForCurrentUser`).
+ *
+ * Non-recurring meetings return `undefined` (newest / aggregate RSVP semantics).
+ * Recurring meetings prefer an explicit occurrence or id; when neither is supplied,
+ * fall back to {@link getCurrentOrNextOccurrence} so list/card surfaces that only
+ * hold the meeting payload still resolve against the current/next slot.
+ */
+export function resolveRsvpOccurrenceId(
+  meeting: Meeting,
+  options?: { occurrence?: MeetingOccurrence | null; occurrenceId?: string | null }
+): string | undefined {
+  if (!meeting.recurrence) return undefined;
+  const explicitId = options?.occurrenceId || options?.occurrence?.occurrence_id;
+  if (explicitId) return explicitId;
+  return getCurrentOrNextOccurrence(meeting)?.occurrence_id;
 }
 
 /**
@@ -371,6 +552,110 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   const startTime = new Date(meeting.start_time);
   const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
   return now > endTime;
+}
+
+/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
+export const MEETING_END_BUFFER_MS = 40 * 60_000;
+
+/**
+ * Returns true when an occurrence's end time plus buffer has passed.
+ * Used for calendar click routing without relying on a partial Meeting cast.
+ */
+export function isOccurrencePast(startTime: string, durationMinutes: number, now = new Date()): boolean {
+  const endTime = new Date(new Date(startTime).getTime() + durationMinutes * 60_000 + MEETING_END_BUFFER_MS);
+  return now.getTime() > endTime.getTime();
+}
+
+/**
+ * Resolves FullCalendar hex colors for a meeting occurrence.
+ * Active meetings use the default blue; past use a lighter blue; cancelled use cancelled grey.
+ */
+export function resolveMeetingCalendarColors(isCancelled: boolean, isPast = false): CalendarColor {
+  if (isCancelled) {
+    return CANCELLED_COLOR;
+  }
+  if (isPast) {
+    return PAST_MEETING_CALENDAR_COLOR;
+  }
+  return { ...MEETING_TYPE_COLORS['default'], text: lfxColors.white };
+}
+
+/** Returns true when a calendar deadline timestamp is invalid or already passed. */
+export function isCalendarDeadlinePast(deadlineIso: string | null | undefined, now = new Date()): boolean {
+  if (!deadlineIso) {
+    return false;
+  }
+  const ms = new Date(deadlineIso).getTime();
+  if (Number.isNaN(ms)) {
+    return true;
+  }
+  return now.getTime() >= ms;
+}
+
+/** Resolves FullCalendar hex colors for a vote deadline event. */
+export function resolveVoteCalendarColors(isPast = false): CalendarColor {
+  return isPast ? PAST_VOTE_CALENDAR_COLOR : VOTE_COLOR;
+}
+
+/** Resolves FullCalendar hex colors for a survey cutoff event. */
+export function resolveSurveyCalendarColors(isPast = false): CalendarColor {
+  return isPast ? PAST_SURVEY_CALENDAR_COLOR : SURVEY_COLOR;
+}
+
+/** Returns true when a vote deadline event should render with past calendar styling. */
+export function isVoteCalendarEventPast(vote: Pick<Vote, 'end_time' | 'status' | 'early_end_time'>, now = new Date()): boolean {
+  if (normalizePollStatus(vote.status) === PollStatus.ENDED) {
+    return true;
+  }
+  return isCalendarDeadlinePast(vote.early_end_time ?? vote.end_time, now);
+}
+
+/** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */
+export const PAST_MEETING_COMPOSITE_ID = /^\d+-\d{13}$/;
+
+/** Returns true when the id matches the past-meeting composite URL shape. */
+export function isPastMeetingCompositeId(id: string): boolean {
+  return PAST_MEETING_COMPOSITE_ID.test(id);
+}
+
+/**
+ * Builds an Angular router command for a specific meeting occurrence, mirroring the join page URL
+ * contract (`?occurrence=` for upcoming, `/meetings/{id}-{timestamp}` for past).
+ */
+export function buildMeetingOccurrenceRoute(
+  meetingId: string,
+  startTime: string,
+  durationMinutes: number,
+  options?: BuildMeetingOccurrenceRouteOptions
+): MeetingOccurrenceRoute {
+  const queryParams: Record<string, string> = {};
+  if (options?.password) {
+    queryParams['password'] = options.password;
+  }
+
+  const pastResourceId = options?.pastMeetingResourceId ?? (isPastMeetingCompositeId(meetingId) ? meetingId : undefined);
+  if (pastResourceId) {
+    return {
+      path: ['/meetings', pastResourceId],
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    };
+  }
+
+  const timestamp = new Date(startTime).getTime();
+  const isPast = isOccurrencePast(startTime, durationMinutes);
+
+  if (isPast) {
+    return {
+      path: ['/meetings', `${meetingId}-${timestamp}`],
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    };
+  }
+
+  queryParams['occurrence'] = timestamp.toString();
+  return {
+    path: ['/meetings', meetingId],
+    queryParams,
+  };
 }
 
 /**

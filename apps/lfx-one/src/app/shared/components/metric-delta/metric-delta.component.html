@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (delta(); as delta) {
+  <span
+    class="text-sm font-medium"
+    [class.text-emerald-600]="delta.direction === 'up'"
+    [class.text-red-600]="delta.direction === 'down'"
+    [class.text-gray-500]="delta.direction === 'neutral'"
+    [attr.data-testid]="testid()">
+    @if (delta.direction === 'up') {
+      <span aria-hidden="true">▲ </span>
+      <span class="sr-only">Increased </span>
+    } @else if (delta.direction === 'down') {
+      <span aria-hidden="true">▼ </span>
+      <span class="sr-only">Decreased </span>
+    } @else {
+      <span class="sr-only">No change </span>
+    }
+    {{ delta.deltaLabel }}% {{ delta.periodLabel }}
+  </span>
+}

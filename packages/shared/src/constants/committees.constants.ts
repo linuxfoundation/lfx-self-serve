@@ -21,7 +21,7 @@ export {
 /**
  * Valid tab keys for committee view navigation
  */
-export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
+export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 /**
  * Configurable labels for committees displayed throughout the UI
@@ -608,3 +608,27 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
 
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;
+
+/** localStorage key persisting the My Groups list↔card view toggle. Browser-only: written behind isPlatformBrowser (persistViewMode), read from afterNextRender post-hydration (restoreViewMode) — both in committee-dashboard.component.ts. */
+export const GROUPS_VIEW_MODE_STORAGE_KEY = 'lfx:groups-view-mode';
+
+/** Fallback label for a foundation-level bucket in All Groups foundation-grouping, used only if a foundation-owned committee has neither project_name nor foundation_name populated. */
+export const FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL = 'Foundation';
+
+/** Catch-all bucket label for committees that resolve to no usable project/foundation label at all. Always sorts last. */
+export const OTHER_GROUPS_LABEL = 'Other Groups';
+
+/** Cards revealed per "Show more" click on the My Groups card grid — a grid-friendly count (divisible by 1/2/3/4 columns). */
+export const GROUPS_CARD_GRID_PAGE_SIZE = 12;
+
+/**
+ * Icon-tile tints for the Groups dashboard engagement stat cards (LFXV2-1711). A dedicated constant
+ * rather than reusing `ORG_MEETINGS_KPI_ICON_CLASS`'s coincidentally-identical values: this package's
+ * classes aren't scanned by `apps/lfx-one/tailwind.config.js`'s `content` glob, so they must be
+ * spread into its `safelist` explicitly (see the Tailwind config comment) — coupling to an unrelated
+ * constant's values would silently break if that constant ever changed.
+ */
+export const GROUPS_ENGAGEMENT_ICON_CLASS = {
+  activeMembers: 'bg-violet-100 text-violet-600',
+  meetingsThisMonth: 'bg-amber-100 text-amber-600',
+} as const;

@@ -52,6 +52,26 @@ export class ProjectController {
   }
 
   /**
+   * GET /projects/writer-summary
+   */
+  public async getWriterSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_writer_summary');
+
+    try {
+      const summary = await this.projectService.getWriterSummary(req);
+
+      logger.success(req, 'get_writer_summary', startTime, {
+        has_writer_foundation: summary.hasWriterFoundation,
+        has_writer_project: summary.hasWriterProject,
+      });
+
+      res.json(summary);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /projects/search
    */
   public async searchProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -522,9 +542,7 @@ export class ProjectController {
         return;
       }
 
-      // Reject null / array / primitive bodies before mutating — otherwise the
-      // `data.created_by_name = ...` assignment below would 500 instead of returning a
-      // typed validation error.
+      // Reject null / array / primitive bodies before building the request payload.
       if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body)) {
         next(
           ServiceValidationError.forField('body', 'Request body must be a JSON object', {
@@ -536,12 +554,7 @@ export class ProjectController {
         return;
       }
 
-      // Build a fresh object so we don't mutate `req.body`. Always override
-      // `created_by_name` from the OIDC session — never trust client-provided values.
-      const data: CreateProjectDocumentRequest = {
-        ...(req.body as CreateProjectDocumentRequest),
-        created_by_name: (req.oidc?.user?.['name'] as string) || (req.oidc?.user?.['nickname'] as string) || '',
-      };
+      const data: CreateProjectDocumentRequest = req.body as CreateProjectDocumentRequest;
 
       const validDocTypes = ['link', 'folder'];
       const fieldErrors: Record<string, string> = {};

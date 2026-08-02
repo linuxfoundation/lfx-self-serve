@@ -1,9 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Committee, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
-import { CATEGORY_BEHAVIORAL_CLASS } from '../constants/committees.constants';
+import { BadgeSeverity } from '../interfaces/components.interface';
+import { StatCardItem } from '../interfaces/stat-card.interface';
+import {
+  CATEGORY_BEHAVIORAL_CLASS,
+  FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
+  GROUPS_ENGAGEMENT_ICON_CLASS,
+  OTHER_GROUPS_LABEL,
+} from '../constants/committees.constants';
+import { formatRelativeTime } from './date-time.utils';
+import { slugify } from './string.utils';
 
 /**
  * Determine the behavioral class for a given committee category.
@@ -169,4 +180,220 @@ export function resolveCommitteeMemberPermission(committee: Committee | null | u
  */
 export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
   return !!committee?.writer;
+}
+
+/** Whether a member has an active "Voting Rep" status (excludes Alternate Voting Rep). */
+export function isVotingRep(member: CommitteeMember): boolean {
+  return member.voting?.status === CommitteeMemberVotingStatus.VOTING_REP;
+}
+
+/** Count of members with an active "Voting Rep" status (excludes Alternate Voting Rep). */
+export function countVotingReps(members: CommitteeMember[]): number {
+  return members.filter(isVotingRep).length;
+}
+
+// ── My Groups card grid (LFXV2-1715) ────────────────────────────────────────
+
+/**
+ * Maps a caller's committee role to the badge severity used on the My Groups card grid. Extracted
+ * from `MyGroupsCardGridComponent` (no Angular component-test runner exists in this repo — see
+ * `apps/lfx-one/vitest.config.ts`) so the 4-branch mapping is unit-tested here instead.
+ */
+export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Member' | undefined): BadgeSeverity {
+  switch (role) {
+    case CommitteeMemberRole.CHAIR:
+      return 'info';
+    case CommitteeMemberRole.VICE_CHAIR:
+      return 'success';
+    case CommitteeMemberRole.LF_STAFF:
+      return 'contrast';
+    default:
+      return 'secondary';
+  }
+}
+
+// ── All Groups foundation-grouping (LFXV2-1715) ─────────────────────────────
+
+/**
+ * Groups an already-filtered All Groups list by resolved label, keyed by `project_uid` when a
+ * committee is "named" — both `project_name` **and** `project_uid` resolved (a falsy `project_uid`
+ * alongside a populated `project_name` is treated as degraded, not named, so it can't silently key on
+ * an empty string and collapse into whichever other committee got there first) — so two genuinely
+ * distinct sub-projects that happen to share a display name still render as two buckets (disambiguated
+ * by testid slug), never silently merged. A degraded committee (no usable `project_name`/`project_uid`
+ * pair) is keyed by its resolved label text instead, whether that label is its own `project_name`,
+ * `foundation_name`, or a fallback constant. It merges into an existing named bucket only when the
+ * label unambiguously belongs to exactly one named project (e.g. a project literally named "CNCF" and
+ * a committee that degrades to `foundation_name: 'CNCF'`); if two distinct named projects share that
+ * label, which one the committee "really" belongs to can't be determined, so it falls back to its own
+ * label-keyed bucket instead of merging into an arbitrary one.
+ *
+ * The two source values share one string namespace — a `project_uid` and a resolved label are both
+ * arbitrary strings, so a degraded committee's label could otherwise be byte-identical to some other
+ * committee's `project_uid` and silently merge into that unrelated bucket. `uidKey`/`labelKey` prefix
+ * each domain (`uid:…` / `label:…`) so the two can never collide; `.key` is an internal identifier
+ * (expansion-state map key, `@for` track identity) that no caller parses, so the prefix is invisible
+ * outside this function.
+ *
+ * Pure and side-effect-free: callers gate whether grouping applies at all (e.g. only in foundation
+ * scope) and decide the input list (e.g. already search/filter-narrowed).
+ */
+export function groupCommitteesByFoundation(committees: Committee[]): CommitteeFoundationGroup[] {
+  const uidKey = (uid: string): string => `uid:${uid}`;
+  const labelKey = (label: string): string => `label:${label}`;
+
+  const buckets = new Map<string, CommitteeFoundationGroup>();
+  const namedKeysByLabel = new Map<string, Set<string>>();
+
+  const addTo = (key: string, label: string, committee: Committee): void => {
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, label, testIdSlug: '', isFoundationLevel: false, committees: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.isFoundationLevel = bucket.isFoundationLevel || !!committee.is_foundation;
+    bucket.committees.push(committee);
+  };
+
+  // A committee only counts as "named" when both project_name and project_uid resolved — a falsy
+  // project_uid (upstream enrichment can leave it '' alongside a populated passthrough project_name,
+  // the same failure mode the truthiness guards in committee-dashboard.component.ts already defend
+  // against for this field) would otherwise key on the empty string, silently collapsing unrelated
+  // committees into one bucket.
+  const isNamed = (committee: Committee): committee is Committee & { project_name: string; project_uid: string } =>
+    !!committee.project_name && !!committee.project_uid;
+
+  // First pass: named projects get their own project_uid-keyed bucket. Track every distinct named
+  // key seen under each label, so a degraded committee (second pass) only merges into a named bucket
+  // when the label unambiguously identifies exactly one of them.
+  for (const committee of committees) {
+    if (!isNamed(committee)) continue;
+    addTo(uidKey(committee.project_uid), committee.project_name, committee);
+    const keys = namedKeysByLabel.get(committee.project_name) ?? new Set<string>();
+    keys.add(committee.project_uid);
+    namedKeysByLabel.set(committee.project_name, keys);
+  }
+
+  // Second pass: degraded committees (no project_name, or a project_name with no usable project_uid)
+  // resolve to foundation_name or a fallback constant, merging into the unique named bucket sharing
+  // that label when there is exactly one; otherwise every committee that degrades to the same text
+  // shares one label-keyed bucket.
+  for (const committee of committees) {
+    if (isNamed(committee)) continue;
+    const label = committee.project_name || committee.foundation_name || (committee.is_foundation ? FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL : OTHER_GROUPS_LABEL);
+    const namedKeys = namedKeysByLabel.get(label);
+    const key = namedKeys?.size === 1 ? uidKey([...namedKeys][0]) : labelKey(label);
+    addTo(key, label, committee);
+  }
+
+  // Assign testid slugs in a key-ordered pass — deterministic and locale-independent (`compareCodeUnits`,
+  // not `localeCompare`) — decoupled entirely from display order below. Two *different* labels can
+  // collide on the same base slug (e.g. "CNCF" and "CNCF®" both slugify to "cncf"), so numbering by
+  // display-sort position would route the '-2' suffix through a locale-aware label comparison; a
+  // server/client ICU collation difference could then flip which bucket gets which testid between the
+  // SSR HTML and the hydrated DOM. Keys are already unique, and this ordering depends only on them —
+  // never on the labels or the display sort below.
+  // Track slugs actually emitted (not per-base-slug occurrence counts) — a naive counter can still
+  // collide when one bucket's base slug matches another's already-disambiguated suffix, e.g. labels
+  // "Alpha Project", "Alpha Project", "Alpha Project 2" would otherwise emit alpha-project,
+  // alpha-project-2, alpha-project-2 (duplicate). Walking candidates until one is free is unique by
+  // construction regardless of input.
+  const slugByKey = new Map<string, string>();
+  const usedSlugs = new Set<string>();
+  for (const bucket of [...buckets.values()].sort((a, b) => compareCodeUnits(a.key, b.key))) {
+    const baseSlug = slugify(bucket.label) || 'group';
+    let candidate = baseSlug;
+    let suffix = 1;
+    while (usedSlugs.has(candidate)) {
+      suffix += 1;
+      candidate = `${baseSlug}-${suffix}`;
+    }
+    usedSlugs.add(candidate);
+    slugByKey.set(bucket.key, candidate);
+  }
+
+  const groups = [...buckets.values()].sort((a, b) => {
+    if (a.isFoundationLevel !== b.isFoundationLevel) return a.isFoundationLevel ? -1 : 1;
+    // Equal labels happen between distinct named buckets sharing a display name (the deliberate
+    // non-merge case), and between those and the label-keyed bucket an ambiguous degraded lookup
+    // produces. Break the tie by key — a code-unit comparison, not localeCompare, since keys are
+    // opaque identifiers (a project_uid or raw label text) rather than human-readable text.
+    if (a.label === b.label) return compareCodeUnits(a.key, b.key);
+    if (a.label === OTHER_GROUPS_LABEL) return 1;
+    if (b.label === OTHER_GROUPS_LABEL) return -1;
+    // Display order is intentionally locale-aware, for correct human reading order — but pinned to a
+    // fixed locale ('en') rather than each runtime's default, so this SSR-rendered @for produces the
+    // same DOM order on the server and in the browser instead of depending on Node's vs. the browser's
+    // default ICU collation. The testid a group gets is assigned above and never depends on this sort.
+    return a.label.localeCompare(b.label, 'en');
+  });
+
+  // Every bucket key was assigned a slug in the pass above (same `buckets` map, no filtering between
+  // the two), so this fallback is unreachable in practice — kept explicit rather than a `!` assertion
+  // so a future refactor that breaks the invariant degrades to the raw key instead of throwing.
+  return groups.map((group) => ({ ...group, testIdSlug: slugByKey.get(group.key) ?? group.key }));
+}
+
+/**
+ * Deterministic, locale-independent ordering for opaque identifier strings (not human-readable
+ * text — use `localeCompare` for that). Compares UTF-16 code units, not Unicode code points, so
+ * astral-plane characters don't sort in true code-point order — irrelevant here since the only
+ * requirement is a stable, environment-independent order, not a "correct" one.
+ */
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+// ── Groups dashboard engagement stat cards (LFXV2-1711) ─────────────────────
+
+/**
+ * Builds the Active Members / Meetings This Month stat cards from the engagement-stats rollup.
+ * Extracted as a pure function (no Angular component-test runner exists in this repo — see
+ * `resolveGroupsCardRoleSeverity` above) so all four render states are unit-tested directly:
+ * loading (em-dash, no sub-line), populated (value + relative-time freshness label), mock-sourced
+ * (value + a "Sample data" marker instead of a freshness label, so fabricated fixture numbers can
+ * never be mistaken for live ones), and degraded (fetch failed, or the `live` backend hasn't got a
+ * dbt read path yet — em-dash + "Unavailable", never throws, never blocks the rest of the dashboard).
+ */
+export function buildEngagementStatCards(stats: GroupsEngagementStats | null, loading: boolean): StatCardItem[] {
+  const activeMembersCard: StatCardItem = {
+    label: 'Active Members',
+    icon: 'fa-light fa-user-group',
+    iconContainerClass: GROUPS_ENGAGEMENT_ICON_CLASS.activeMembers,
+    value: '—',
+  };
+  const meetingsThisMonthCard: StatCardItem = {
+    label: 'Meetings This Month',
+    icon: 'fa-light fa-calendar-check',
+    iconContainerClass: GROUPS_ENGAGEMENT_ICON_CLASS.meetingsThisMonth,
+    value: '—',
+  };
+
+  if (loading) {
+    return [activeMembersCard, meetingsThisMonthCard];
+  }
+
+  // Mock-sourced values get "Sample data" instead of a freshness label — deliberately more visible
+  // than a subtle provenance flag, since the whole point is that a fabricated fixture number must
+  // never be mistaken for live data during manual validation (including against synced prod data,
+  // where NODE_ENV isn't 'production' but a stray ENGAGEMENT_BACKEND=mock could still be set).
+  const subLineForValue = resolveEngagementSubLine(stats);
+
+  // Each card degrades independently: active_members and meetings_this_month are separate
+  // aggregates (trailing-30-day attendance vs. current-month occurrences), so a partially-deployed
+  // dbt model could plausibly resolve one without the other — neither field's availability implies
+  // the other's.
+  const resolveCard = (base: StatCardItem, value: number | null): StatCardItem =>
+    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine: subLineForValue };
+
+  return [resolveCard(activeMembersCard, stats?.active_members ?? null), resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null)];
+}
+
+/** Extracted to avoid nesting a ternary inside another ternary's branch (`stats && source === 'mock' ? … : stats ? … : …`). */
+function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string | undefined {
+  if (!stats) return undefined;
+  if (stats.source === 'mock') return 'Sample data';
+  return `Updated ${formatRelativeTime(new Date(stats.computed_at))}`;
 }

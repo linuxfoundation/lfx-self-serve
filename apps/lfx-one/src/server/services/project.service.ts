@@ -60,6 +60,7 @@ import {
   FoundationProjectsLifecycleDistributionRow,
   FoundationSoftwareValueResponse,
   FoundationTopProjectBySoftwareValueRow,
+  FoundationTotalMembersMonthlyRow,
   FoundationTotalMembersResponse,
   FoundationTotalProjectsMonthlyRow,
   FoundationTotalProjectsResponse,
@@ -82,7 +83,6 @@ import {
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
   MembershipChurnTierRow,
-  MonthlyMemberCountWithFoundation,
   MultiFoundationSummaryResponse,
   NorthStarMonthlyDataPoint,
   NpsSummaryResponse,
@@ -121,18 +121,19 @@ import {
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
   UploadProjectDocumentRequest,
+  AuditUserProfile,
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
-import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange } from '@lfx-one/shared/utils';
+import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
+import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange, summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { cleanUserDisplayName } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
@@ -157,8 +158,8 @@ interface ProjectFolder {
   uid: string;
   project_uid?: string;
   name: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -172,8 +173,8 @@ interface ProjectLink {
   url?: string;
   description?: string;
   folder_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -188,8 +189,8 @@ interface ProjectFolderQueryResult {
   uid: string;
   name: string;
   project_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, indexed from the upstream domain model. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -206,8 +207,8 @@ interface ProjectLinkQueryResult {
   description?: string;
   folder_uid?: string;
   project_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, indexed from the upstream domain model. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -381,6 +382,29 @@ export class ProjectService {
     );
     const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
     return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+  }
+
+  /**
+   * Boolean writer-grant summary for `WriterGrantsService`'s bootstrap fast path (LFXV2-2857).
+   * Reduces `getDirectGrantProjects` (direct-tuple-only, cheap — see its docstring) instead of
+   * `getProjects`'s unscoped sweep + batch access-check, via the shared `summarizeWriterGrants`
+   * reducer (also used by `WriterGrantsService`'s deferred sweep, so both runtimes agree on what
+   * counts as a writer-held foundation/project — and `summarizeWriterGrants` filters to
+   * `writer === true` itself, so this stays correct even if `getDirectGrantProjects`'s
+   * `includeMeetingCoordinator` default ever changes). Not short-circuited: `getDirectGrantProjects`
+   * always fully paginates and access-checks every direct grant, even once a foundation and a
+   * non-foundation row have both already been seen — bounded by the caller's own direct-grant
+   * count, which is normally small, but not by anything this method enforces.
+   */
+  public async getWriterSummary(req: Request): Promise<WriterSummary> {
+    const projects = await this.getDirectGrantProjects(req);
+    const summary = summarizeWriterGrants(projects);
+
+    logger.debug(req, 'get_writer_summary', 'Reduced direct-grant projects to writer summary', {
+      direct_grant_count: projects.length,
+    });
+
+    return summary;
   }
 
   /**
@@ -1314,84 +1338,72 @@ export class ProjectService {
   }
 
   /**
-   * Get total members count for a foundation from Snowflake
-   * Queries MEMBER_DASHBOARD_MEMBERSHIP_TIER table with monthly cumulative aggregation
-   * Counts distinct member organizations over time
-   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
-   * @returns Foundation total members response with cumulative monthly data and metadata
+   * Get total members count for a foundation from Snowflake.
+   * Reads the dbt model ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
+   * (built under LFXV2-2689), which emits point-in-time active-during-month member
+   * counts per foundation; the 'tlf' umbrella row is emitted by the model itself,
+   * so per-foundation and umbrella reads share one query path. Returns the trailing
+   * 12 months for the chart and the latest month's count as the headline total.
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'ccc')
+   * @returns Foundation total members response with monthly trend and headline count
    */
   public async getFoundationTotalMembers(foundationSlug: string): Promise<FoundationTotalMembersResponse> {
-    const isUmbrella = foundationSlug === 'tlf';
-    const slugParams = isUmbrella ? [] : [foundationSlug];
-
-    const query = isUmbrella
-      ? `
-      WITH monthly_counts AS (
-        SELECT
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        GROUP BY DATE_TRUNC('MONTH', START_DATE)
-      ),
-      cumulative AS (
-        SELECT
-          MONTH_START,
-          SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
-        FROM monthly_counts
+    // Densify to a 12-month spine so a missing month in the dbt model can't
+    // make computePeriodChange compare non-adjacent periods; mirrors the
+    // sibling getFoundationMaintainersMonthly read.
+    const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
       )
       SELECT
-        NULL AS PROJECT_ID,
-        'The Linux Foundation' AS PROJECT_NAME,
-        'tlf' AS PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
-    `
-      : `
-      WITH monthly_counts AS (
-        SELECT
-          PROJECT_ID,
-          PROJECT_NAME,
-          PROJECT_SLUG,
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE PROJECT_SLUG = ?
-        GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
-      ),
-      cumulative AS (
-        SELECT
-          PROJECT_ID,
-          PROJECT_NAME,
-          PROJECT_SLUG,
-          MONTH_START,
-          SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
-        FROM monthly_counts
-      )
-      SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        MONTH_START,
-        MEMBER_COUNT
-      FROM cumulative
-      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY MONTH_START ASC
+        COALESCE(m.FOUNDATION_SLUG, ?) AS FOUNDATION_SLUG,
+        s.MONTH_START_DATE,
+        COALESCE(m.MONTHLY_TOTAL_MEMBERS, 0) AS MONTHLY_TOTAL_MEMBERS
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY m
+        ON m.MONTH_START_DATE = s.MONTH_START_DATE
+        AND m.FOUNDATION_SLUG = ?
+      ORDER BY s.MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [...slugParams]);
+    let result: SnowflakeQueryResult<FoundationTotalMembersMonthlyRow>;
+    try {
+      result = await this.snowflakeService.execute<FoundationTotalMembersMonthlyRow>(query, [foundationSlug, foundationSlug], {
+        expectMissingObject: true,
+      });
+    } catch (error) {
+      // Pre-dbt-deploy the monthly table is absent; degrade to the empty
+      // response the drawer expects instead of 5xx per dashboard load.
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(undefined, 'get_foundation_total_members', 'Total members monthly table not deployed yet; returning empty response', {
+        foundation_slug: foundationSlug,
+      });
+      return { totalMembers: 0, monthlyData: [], monthlyLabels: [] };
+    }
 
-    // Convert monthly data to arrays of counts and labels
-    const monthlyData = result.rows.map((row) => row.MEMBER_COUNT);
-    const monthlyLabels = result.rows.map((row) => {
-      const date = new Date(row.MONTH_START);
-      return date.toLocaleDateString('en-US', { month: 'short' });
+    logger.debug(undefined, 'get_foundation_total_members', 'Fetched total members monthly', {
+      foundation_slug: foundationSlug,
+      row_count: result.rows.length,
     });
 
-    // Total members is the last cumulative count
-    const totalMembers = result.rows.length > 0 ? result.rows[result.rows.length - 1].MEMBER_COUNT : 0;
+    // Drop future-materialized rows so a row dated past the current month can't
+    // become the headline or skew the chart; mirrors the UTC handling in the
+    // active-contributors sibling read.
+    const now = new Date();
+    const currentMonthOrdinal = now.getUTCFullYear() * 12 + now.getUTCMonth();
+    const rows = result.rows.filter((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.getUTCFullYear() * 12 + date.getUTCMonth() <= currentMonthOrdinal;
+    });
+
+    const monthlyData = rows.map((row) => row.MONTHLY_TOTAL_MEMBERS ?? 0);
+    const monthlyLabels = rows.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    });
+
+    const totalMembers = rows.length > 0 ? (rows[rows.length - 1].MONTHLY_TOTAL_MEMBERS ?? 0) : 0;
 
     return {
       totalMembers,
@@ -1701,14 +1713,19 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_maintainers_monthly', 'Fetching monthly maintainers', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('month', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('month', -1, DATE_TRUNC('MONTH', CURRENT_DATE()))) AS METRIC_MONTH
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      )
       SELECT
-        METRIC_MONTH,
-        ACTIVE_MAINTAINERS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY
-      WHERE FOUNDATION_SLUG = ?
-        AND REPOSITORY_SCOPE = 'all_repos'
-        AND METRIC_MONTH >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
-      ORDER BY METRIC_MONTH ASC
+        s.METRIC_MONTH,
+        COALESCE(m.ACTIVE_MAINTAINERS, 0) AS ACTIVE_MAINTAINERS
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY m
+        ON m.METRIC_MONTH = s.METRIC_MONTH
+        AND m.FOUNDATION_SLUG = ?
+        AND m.REPOSITORY_SCOPE = 'all_repos'
+      ORDER BY s.METRIC_MONTH ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationMaintainersMonthlyRow>(query, [foundationSlug]);
@@ -1768,13 +1785,18 @@ export class ProjectService {
     logger.debug(undefined, 'get_foundation_events_quarterly', 'Fetching quarterly events', { foundation_slug: foundationSlug });
 
     const query = `
+      WITH spine AS (
+        SELECT DATEADD('quarter', -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATEADD('quarter', -1, DATE_TRUNC('QUARTER', CURRENT_DATE()))) AS QUARTER_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 8))
+      )
       SELECT
-        QUARTER_START_DATE,
-        EVENT_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY
-      WHERE FOUNDATION_SLUG = ?
-        AND QUARTER_START_DATE >= DATEADD('quarter', -7, DATE_TRUNC('QUARTER', CURRENT_DATE()))
-      ORDER BY QUARTER_START_DATE ASC
+        s.QUARTER_START_DATE,
+        COALESCE(e.EVENT_COUNT, 0) AS EVENT_COUNT
+      FROM spine s
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY e
+        ON e.QUARTER_START_DATE = s.QUARTER_START_DATE
+        AND e.FOUNDATION_SLUG = ?
+      ORDER BY s.QUARTER_START_DATE ASC
     `;
 
     const result = await this.snowflakeService.execute<FoundationEventsQuarterlyRow>(query, [foundationSlug]);
@@ -6438,8 +6460,7 @@ export class ProjectService {
       name: f.name,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      created_by: f.created_by_uid,
-      uploaded_by: cleanUserDisplayName(f.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
       project_uid: f.project_uid,
     }));
 
@@ -6451,8 +6472,7 @@ export class ProjectService {
       description: l.description,
       created_at: l.created_at,
       updated_at: l.updated_at,
-      created_by: l.created_by_uid,
-      uploaded_by: cleanUserDisplayName(l.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
       parent_uid: l.folder_uid,
       project_uid: l.project_uid,
     }));
@@ -6466,7 +6486,7 @@ export class ProjectService {
       mime_type: f.content_type,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      uploaded_by: cleanUserDisplayName(f.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       parent_uid: f.folder_uid,
       project_uid: f.project_uid,
     }));
@@ -6496,7 +6516,6 @@ export class ProjectService {
         undefined,
         {
           name: data.name,
-          created_by_name: data.created_by_name,
         },
         { 'X-Sync': 'true' }
       );
@@ -6535,8 +6554,7 @@ export class ProjectService {
         name: folder.name,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
-        created_by: folder.created_by_uid,
-        uploaded_by: cleanUserDisplayName(folder.created_by_username),
+        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
         project_uid: folder.project_uid,
       };
     }
@@ -6553,7 +6571,6 @@ export class ProjectService {
         url: data.url,
         description: data.description,
         folder_uid: data.parent_uid,
-        created_by_name: data.created_by_name,
       },
       { 'X-Sync': 'true' }
     );
@@ -6592,8 +6609,7 @@ export class ProjectService {
       description: link.description,
       created_at: link.created_at,
       updated_at: link.updated_at,
-      created_by: link.created_by_uid,
-      uploaded_by: cleanUserDisplayName(link.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
       parent_uid: link.folder_uid,
       project_uid: link.project_uid,
     };
@@ -6675,7 +6691,7 @@ export class ProjectService {
       mime_type: result.content_type,
       created_at: result.created_at,
       updated_at: result.updated_at,
-      uploaded_by: cleanUserDisplayName(result.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(result.created_by, result.uploaded_by_username),
       project_uid: result.project_uid,
     };
   }
@@ -6965,18 +6981,14 @@ export class ProjectService {
     `;
 
     const totalMembersQuery = `
-      WITH monthly_counts AS (
-        SELECT
-          PROJECT_SLUG AS FOUNDATION_SLUG,
-          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
-          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
-        WHERE PROJECT_SLUG IN (${placeholders})
-        GROUP BY PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
-      )
-      SELECT FOUNDATION_SLUG, SUM(MONTHLY_COUNT) AS TOTAL_MEMBERS
-      FROM monthly_counts
-      GROUP BY FOUNDATION_SLUG
+      SELECT
+        FOUNDATION_SLUG,
+        MONTHLY_TOTAL_MEMBERS AS TOTAL_MEMBERS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_MEMBERS_MONTHLY
+      WHERE FOUNDATION_SLUG IN (${placeholders})
+        AND MONTH_START_DATE >= DATEADD('month', -11, DATE_TRUNC('month', CURRENT_DATE()))
+        AND MONTH_START_DATE <= DATE_TRUNC('month', CURRENT_DATE())
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY MONTH_START_DATE DESC) = 1
     `;
 
     const valueConcentrationQuery = `
@@ -7012,7 +7024,15 @@ export class ProjectService {
 
     const [totalProjectsResult, totalMembersResult, valueConcentrationResult, healthScoreResult] = await Promise.all([
       this.snowflakeService.execute<TotalProjectsRow>(totalProjectsQuery, filteredSlugs),
-      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs),
+      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs).catch((error) => {
+        // Pre-dbt-deploy the monthly table is absent; degrade this one query to
+        // empty rows so projects, value, and health scores still resolve.
+        if (!SnowflakeService.isMissingObjectError(error)) throw error;
+        logger.warning(req, 'get_multi_foundation_summary_batch', 'Total members monthly table not deployed yet; returning empty', {
+          slug_count: filteredSlugs.length,
+        });
+        return { rows: [], metadata: [] } as SnowflakeQueryResult<TotalMembersRow>;
+      }),
       this.snowflakeService.execute<ValueConcentrationRow>(valueConcentrationQuery, filteredSlugs),
       this.snowflakeService.execute<HealthScoreRow>(healthScoreQuery, filteredSlugs),
     ]);
@@ -7139,6 +7159,6 @@ export class ProjectService {
 
     const coordinatorChecks: AccessCheckRequest[] = nonWriters.map((p) => ({ resource: 'project', id: p.uid, access: 'meeting_coordinator' }));
     const coordinatorResults = await this.accessCheckService.checkAccess(req, coordinatorChecks);
-    return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(p.uid) === true);
+    return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(`${p.uid}#meeting_coordinator`) === true);
   }
 }

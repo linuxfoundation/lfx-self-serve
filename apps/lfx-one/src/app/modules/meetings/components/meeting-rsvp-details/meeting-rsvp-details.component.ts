@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ButtonComponent } from '@components/button/button.component';
 import {
   calculateRsvpCounts,
+  countRegistrantAttendance,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -16,6 +17,7 @@ import {
   Project,
   RsvpCounts,
 } from '@lfx-one/shared';
+import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
@@ -92,7 +94,11 @@ export class MeetingRsvpDetailsComponent {
           }
           // Me lens (backend counts not populated) — one call for both registrants + RSVPs inline.
           if (!this.hasBackendRegistrantCounts(meeting)) {
-            return this.meetingService.getMeetingRegistrants(meeting.id, true).pipe(
+            // Resolve RSVPs against the target occurrence so a `single` decline for a
+            // future date doesn't overwrite the current occurrence's per-registrant
+            // chip (LFXV2-2864).
+            const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
+            return this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
               map((registrants) => ({
                 registrants,
                 rsvps: registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null),
@@ -151,10 +157,22 @@ export class MeetingRsvpDetailsComponent {
 
   private initializeRsvpCounts(): Signal<RsvpCounts> {
     return computed(() => {
+      // Me lens: registrants are already hydrated with their occurrence-applicable
+      // RSVP by the BFF. Tally via the registrant-aware counter so
+      // `invite_accepted` (series-level Google Calendar invite state) falls back
+      // in the same cases the guest chip does — keeps "N of M attending" in sync
+      // with the drawer's per-registrant chips (LFXV2-2864).
+      const registrants = this.registrants();
+      if (registrants.length > 0) {
+        return countRegistrantAttendance(registrants);
+      }
+      // Non-Me lens: no registrant array available (detail page — counts come off
+      // meeting.individual_registrants_count). Fall back to RSVP-only tallying;
+      // `invite_accepted` fallback is unreachable without registrants but the
+      // typical detail-page case has explicit RSVPs anyway.
       const rsvps = this.rsvps();
       const occurrence = this.currentOccurrence();
-      const meeting = this.meeting();
-      return calculateRsvpCounts(occurrence, rsvps, meeting.start_time);
+      return calculateRsvpCounts(occurrence, rsvps);
     });
   }
 

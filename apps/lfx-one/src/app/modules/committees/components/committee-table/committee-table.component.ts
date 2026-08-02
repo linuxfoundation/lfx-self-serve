@@ -3,13 +3,11 @@
 
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, output } from '@angular/core';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
@@ -18,20 +16,19 @@ import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { PersonaService } from '@services/persona.service';
 
 import { TooltipModule } from 'primeng/tooltip';
+import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
 @Component({
   selector: 'lfx-committee-table',
   imports: [
     DatePipe,
     DecimalPipe,
-    ReactiveFormsModule,
     RouterLink,
     CardComponent,
     ButtonComponent,
     TableComponent,
     TagComponent,
-    InputTextComponent,
-    SelectComponent,
+    CommitteeFilterBarComponent,
     TooltipModule,
     PlatformIconPipe,
     PlatformLabelPipe,
@@ -56,6 +53,10 @@ export class CommitteeTableComponent {
   public showProjectFilter = input<boolean>(false);
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
   public projectOptions = input<{ label: string; value: string | null }[]>([]);
+  /** When false, suppresses the built-in search/voting-status filter bar. Used by the All Groups foundation-grouped view, which renders one shared filter bar above N per-group `<lfx-committee-table>` instances instead of duplicating it per group. Defaults to true — every existing caller is unaffected. */
+  public showFilterBar = input<boolean>(true);
+  /** `data-testid` for the internal `<lfx-table>`. Defaults to the pre-existing fixed id — every caller that renders a single instance is unaffected. The foundation-grouped view renders one `<lfx-committee-table>` per group, so it must pass a per-group value to keep each table's testid unique (a fixed id would repeat once per group and turn `getByTestId` into a Playwright strict-mode violation). */
+  public tableTestId = input<string>('committee-dashboard-table');
 
   // Outputs
   public readonly refresh = output<void>();

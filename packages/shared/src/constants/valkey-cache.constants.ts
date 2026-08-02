@@ -15,6 +15,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
 
+  /** Domain + schema-version segment for the per-committee Snowflake-backed engagement cache (shared across callers). `v2`: the cached row shape changed from an email-keyed, single-window row to a uid-keyed row carrying all three windows — bumped so no entry written under the old shape can be read back as the new one. */
+  COMMITTEE_ENGAGEMENT_NAMESPACE: 'committee-engagement-sf:v2',
+
   /** Domain + schema-version segment for the per-user org seats cache. */
   ORG_SEATS_NAMESPACE: 'org-seats:v1',
 
@@ -30,14 +33,23 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
 
+  /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
+  GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
   /** Freshness window for the per-org Snowflake-backed Org Lens cache (1 hour). */
   ORG_LENS_SNOWFLAKE_TTL_SECONDS: 3600,
 
+  /** Freshness window for the per-committee Snowflake-backed engagement cache (1 hour, matching the Org Lens TTL). */
+  COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600,
+
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
+
+  /** Freshness window for the Groups dashboard engagement-stats cache — absorbs repeated dashboard refreshes. */
+  GROUPS_ENGAGEMENT_TTL_SECONDS: 60,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

@@ -3,8 +3,30 @@
 
 ::ng-deep {
   .p-multiselect-overlay.org-projects-add-projects-select-panel {
+    // The panel width is pinned to the trigger at runtime by MultiSelectComponent (matchTriggerWidth),
+    // because PrimeNG 20 does not size a body-appended overlay to its trigger. This just caps it to the
+    // viewport as a safety net and truncates long option labels so they can't spill past that width.
+    max-width: calc(100vw - 2rem);
+
     .p-multiselect-list-container {
       height: 16rem;
+    }
+
+    // Truncate a long option label to a single ellipsised line rather than overflowing the pinned width.
+    .p-multiselect-option {
+      overflow: hidden;
+
+      // The custom item template nests flex containers; let each level shrink so the text can ellipsis.
+      .flex {
+        min-width: 0;
+      }
+
+      span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
     }
   }
 }

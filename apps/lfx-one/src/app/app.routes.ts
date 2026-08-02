@@ -170,7 +170,12 @@ export const routes: Routes = [
           },
           {
             path: 'meetings',
-            data: { lens: 'org', title: 'Meetings', description: 'Meetings your organization is participating in — coming soon.', icon: 'fa-light fa-video' },
+            data: {
+              lens: 'org',
+              title: 'Meetings',
+              description: "How your organization's employees engage across Linux Foundation projects.",
+              icon: 'fa-light fa-video',
+            },
             loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
           },
           {
@@ -338,7 +343,12 @@ export const routes: Routes = [
       },
       {
         path: 'newsletters',
-        canActivate: [lensRedirectGuard, newsletterAccessGuard, projectQueryParamGuard],
+        // No newsletterAccessGuard at the mount: the Me-lens member feed
+        // (/newsletters/my) must be reachable by regular committee members.
+        // Every manager child route (list/create/edit/analytics) applies the
+        // guard itself in newsletters.routes.ts, and the /foundation and
+        // /project mounts above keep it — so manager surfaces stay gated.
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {

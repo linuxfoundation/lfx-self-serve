@@ -5,24 +5,22 @@ import { Component, computed, inject, input, model, signal, Signal } from '@angu
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION, DEFAULT_FOUNDATION_EVENTS_QUARTERLY, lfxColors } from '@lfx-one/shared/constants';
+import { computePeriodDelta } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, map, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type {
-  FoundationEventsAttendanceDistributionResponse,
-  FoundationEventsQuarterlyResponse,
-  HealthEventsMonthlyResponse,
-} from '@lfx-one/shared/interfaces';
+import type { FoundationEventsAttendanceDistributionResponse, FoundationEventsQuarterlyResponse, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-events-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, TooltipModule, MetricDeltaComponent],
   templateUrl: './events-drawer.component.html',
 })
 export class EventsDrawerComponent {
@@ -122,7 +120,15 @@ export class EventsDrawerComponent {
   });
 
   // === Inputs ===
-  public readonly data = input<HealthEventsMonthlyResponse>({ data: [], totalEvents: 0, totalMonths: 0 });
+  // Quarterly events data is already fetched eagerly by the parent for the card's
+  // sparkline; reuse it so the quarterly chart renders instantly on click instead of
+  // re-fetching on visibility.
+  public readonly data = input<FoundationEventsQuarterlyResponse>(DEFAULT_FOUNDATION_EVENTS_QUARTERLY);
+
+  // True while the parent's eager quarterly fetch is in flight, so the quarterly chart
+  // shows a spinner during a foundation switch while the drawer is open rather than
+  // flashing the prior foundation's bars.
+  public readonly dataLoading = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -131,14 +137,14 @@ export class EventsDrawerComponent {
   protected readonly drawerLoading = signal(false);
 
   // === Computed Signals ===
-  protected readonly metricValue: Signal<string> = computed(() => this.data().totalEvents.toLocaleString());
-  protected readonly hasData: Signal<boolean> = computed(() => this.data().totalEvents > 0);
-
   private readonly drawerData = this.initDrawerData();
-  protected readonly quarterlyData: Signal<FoundationEventsQuarterlyResponse> = computed(() => this.drawerData().quarterly);
   protected readonly attendanceData: Signal<FoundationEventsAttendanceDistributionResponse> = computed(() => this.drawerData().attendance);
-  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.quarterlyData().quarterlyData.length > 0);
+  // Gate on presence, not positivity: an all-zero quarter series still renders gray
+  // zero-stub bars to match the foundation-health card (which always builds the chart).
+  protected readonly hasQuarterlyData: Signal<boolean> = computed(() => this.data().quarterlyData.length > 0);
   protected readonly hasAttendanceData: Signal<boolean> = computed(() => this.attendanceData().distribution.length > 0);
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.data().quarterlyData, 'vs last quarter'));
 
   protected readonly quarterlyChartData: Signal<ChartData<'bar'>> = this.initQuarterlyChartData();
   protected readonly attendanceChartData: Signal<ChartData<'bar'>> = this.initAttendanceChartData();
@@ -149,26 +155,26 @@ export class EventsDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<{ quarterly: FoundationEventsQuarterlyResponse; attendance: FoundationEventsAttendanceDistributionResponse }> {
-    const defaultValue = { quarterly: DEFAULT_FOUNDATION_EVENTS_QUARTERLY, attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
+  private initDrawerData(): Signal<{ attendance: FoundationEventsAttendanceDistributionResponse }> {
+    const defaultValue = { attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
-          return forkJoin({
-            quarterly: this.analyticsService.getFoundationEventsQuarterly(slug),
-            attendance: this.analyticsService.getFoundationEventsAttendanceDistribution(slug),
-          }).pipe(
+          return this.analyticsService.getFoundationEventsAttendanceDistribution(slug).pipe(
+            map((attendance) => ({ attendance })),
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -183,18 +189,30 @@ export class EventsDrawerComponent {
 
   private initQuarterlyChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { quarterlyData, quarterlyLabels } = this.quarterlyData();
+      const { quarterlyData, quarterlyLabels } = this.data();
       return {
         labels: quarterlyLabels,
         datasets: [
           {
             data: quarterlyData,
-            backgroundColor: lfxColors.blue[400],
+            backgroundColor: lfxColors.blue[500],
+            // Pin hover color to the bar's own fill so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: lfxColors.blue[500],
             borderRadius: 3,
             borderSkipped: 'start',
-          },
+            // Opt into the zero-bar stub plugin (registered by ChartComponent) so empty
+            // quarters render as a 4px gray stub instead of invisible zero-height bars.
+            zeroStub: true,
+          } as ZeroStubBarDataset,
         ],
       };
+    });
+  }
+
+  private initMetricValue(): Signal<string> {
+    return computed(() => {
+      const q = this.data().quarterlyData;
+      return q.length ? q[q.length - 1].toLocaleString('en-US') : '0';
     });
   }
 
@@ -211,12 +229,15 @@ export class EventsDrawerComponent {
         Medium: lfxColors.emerald[400],
         Small: lfxColors.violet[500],
       };
+      const barColors = distribution.map((d) => bucketColors[d.bucket] ?? lfxColors.gray[400]);
       return {
         labels: distribution.map((d) => bucketLabels[d.bucket] ?? d.bucket),
         datasets: [
           {
             data: distribution.map((d) => d.eventCount),
-            backgroundColor: distribution.map((d) => bucketColors[d.bucket] ?? lfxColors.gray[400]),
+            backgroundColor: barColors,
+            // Pin hover color to each bar's own fill so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: barColors,
             borderRadius: 3,
             borderSkipped: 'start',
           },

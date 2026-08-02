@@ -62,13 +62,16 @@
         </div>
 
         <!-- Metric Value -->
-        @if (hasData()) {
-          <span class="text-xl font-semibold text-gray-900" data-testid="maintainers-drawer-metric">{{ metricValue() }}</span>
+        @if (!monthlyDataLoading() && hasData()) {
+          <div class="flex items-baseline gap-2">
+            <span class="text-xl font-semibold text-gray-900" data-testid="maintainers-drawer-metric">{{ metricValue() }}</span>
+            <lfx-metric-delta [delta]="delta()" testid="maintainers-drawer-delta" />
+          </div>
         }
       </div>
 
       <!-- Chart -->
-      @if (drawerLoading()) {
+      @if (monthlyDataLoading()) {
         <div class="flex items-center justify-center py-12" data-testid="maintainers-drawer-trend-loading">
           <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
         </div>

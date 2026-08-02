@@ -177,6 +177,39 @@ export interface NewsletterListResponse {
   next_page_token?: string;
 }
 
+/**
+ * One row of the upstream committee-scoped list
+ * (GET /committees/{committee_uid}/newsletters). Member-facing reduced DTO:
+ * `body_html`, manager-only fields (ed_reply_email, group_id, created_by),
+ * and the `committee_uids` audience list (would let a single-committee member
+ * enumerate the newsletter's other committees) are deliberately absent — the
+ * rendered body is fetched on demand via the project-scoped single-newsletter
+ * endpoint.
+ */
+export interface CommitteeNewsletter {
+  id: string;
+  project_uid: string;
+  subject: string;
+  sent_at?: string;
+}
+
+export interface CommitteeNewsletterListResponse {
+  newsletters: CommitteeNewsletter[];
+  next_page_token?: string;
+}
+
+/**
+ * Row of GET /api/newsletters/my-newsletters: a sent newsletter reachable
+ * through one of the user's current committee memberships, enriched with
+ * project metadata for the Me-lens list (same enrichment fields as my-votes).
+ */
+export interface MyNewsletter extends CommitteeNewsletter {
+  project_name?: string;
+  project_slug?: string;
+  is_foundation?: boolean;
+  parent_project_uid?: string;
+}
+
 export interface NewsletterListParams {
   status?: NewsletterStatus;
   page_token?: string;

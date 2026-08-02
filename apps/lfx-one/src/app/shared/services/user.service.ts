@@ -11,6 +11,7 @@ import {
   ProjectAffiliationPatchBody,
   CombinedProfile,
   ClaimAliasRequest,
+  ClaimAliasResponse,
   CreateUserPermissionRequest,
   DeveloperTokenInfo,
   EmailManagementData,
@@ -148,8 +149,8 @@ export class UserService {
   /**
    * Claim a Linux.com alias and set its forwarding target.
    */
-  public claimLinuxAlias(body: ClaimAliasRequest): Observable<LinuxAliasData> {
-    return this.http.post<LinuxAliasData>('/api/profile/linux-email/claim', body).pipe(take(1));
+  public claimLinuxAlias(body: ClaimAliasRequest): Observable<ClaimAliasResponse> {
+    return this.http.post<ClaimAliasResponse>('/api/profile/linux-email/claim', body).pipe(take(1));
   }
 
   /**

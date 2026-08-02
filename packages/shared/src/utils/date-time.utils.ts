@@ -3,7 +3,14 @@
 
 import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
-import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, TIMEZONES, WEEKDAY_CODES } from '../constants';
+// Direct file imports (not the '../constants' barrel): the barrel transitively re-exports
+// dashboard-metrics.constants.ts, which imports the '../utils' barrel, which re-exports
+// meeting.utils.ts — which imports HttpParams from '@angular/common/http'. That chain needs the
+// Angular JIT compiler to load, which crashes any plain-Node Vitest run (e.g. this package's own
+// test suite) the moment something imports date-time.utils.ts. Importing the two underlying
+// constant files directly sidesteps that chain entirely — behaviorally identical re-exports.
+import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
+import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
 import { MeetingRecurrence, TimezoneOption } from '../interfaces';
 
@@ -20,6 +27,21 @@ export const formatDateToISOString = (date: Date | null | undefined): string | u
   }
 
   return new Date(date).toISOString().split('T')[0];
+};
+
+/**
+ * Formats a UTC ISO datetime range as a short human-readable label, e.g.
+ * "May 17 – May 23, 2026". Pins `timeZone: 'UTC'` so callers in negative
+ * offsets don't see the start shift to the prior day — used for windows that
+ * are already UTC day boundaries (e.g. the WG Weekly Brief's Sunday–Saturday
+ * window), not for user-local display.
+ */
+export const formatUtcDateRangeLabel = (startIso: string, endIso: string): string => {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  return `${startLabel} – ${endLabel}`;
 };
 
 /**
@@ -518,4 +540,9 @@ export function formatRelativeTime(date: Date): string {
   if (diffHr < 24) return `${diffHr} hr ago`;
   const diffDay = Math.floor(diffMs / 86_400_000);
   return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}
+
+/** Short date label for range previews, e.g. "Apr 18, 2026". */
+export function formatShortDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }

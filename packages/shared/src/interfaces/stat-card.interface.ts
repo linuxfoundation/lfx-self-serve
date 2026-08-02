@@ -1,6 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+/** Direction of a period-over-period delta on a stat card, drives arrow icon + color. */
+export type StatCardDeltaDirection = 'up' | 'down' | 'flat';
+
+/** Valid column counts for `lfx-stat-card-grid`'s `columns` input — keys `GRID_COLS_CLASS`/`GRID_DIVIDER_CLASS`. */
+export type StatCardGridColumns = 2 | 3 | 4 | 5;
+
+/** Optional period-over-period delta rendered below a stat card's value. */
+export interface StatCardDelta {
+  /** Text rendered next to the delta arrow (e.g., "+8% vs. prior period"). */
+  label: string;
+  direction: StatCardDeltaDirection;
+}
+
 /**
  * A single cell in an `lfx-stat-card-grid`.
  * @description Shared shape used by dashboards that surface a row of summary
@@ -17,4 +30,6 @@ export interface StatCardItem {
   icon: string;
   /** Tailwind class string applied to the icon's rounded container (bg + text color). */
   iconContainerClass: string;
+  /** Optional period-over-period delta (e.g., "+8% vs. prior period"). */
+  delta?: StatCardDelta;
 }

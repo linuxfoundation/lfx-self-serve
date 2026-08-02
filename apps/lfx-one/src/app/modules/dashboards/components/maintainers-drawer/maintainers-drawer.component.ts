@@ -6,14 +6,20 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
-import { DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION, DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY, lfxColors } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, hexToRgba } from '@lfx-one/shared/utils';
+import {
+  DEFAULT_FOUNDATION_MAINTAINERS,
+  DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION,
+  DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY,
+  lfxColors,
+} from '@lfx-one/shared/constants';
+import { buildLensAwareInsightsUrl, computePeriodDelta, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, map, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -24,7 +30,7 @@ import type {
 
 @Component({
   selector: 'lfx-maintainers-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent, TooltipModule],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent, TooltipModule, MetricDeltaComponent],
   templateUrl: './maintainers-drawer.component.html',
 })
 export class MaintainersDrawerComponent {
@@ -119,7 +125,16 @@ export class MaintainersDrawerComponent {
   });
 
   // === Inputs ===
-  public readonly data = input<FoundationMaintainersResponse>({ currentMaintainers: 0, asOfDate: null, trendData: [], trendLabels: [] });
+  public readonly data = input<FoundationMaintainersResponse>(DEFAULT_FOUNDATION_MAINTAINERS);
+
+  // Monthly maintainer counts are already fetched eagerly by the parent for the
+  // card's sparkline; reuse them so the trend chart renders instantly on click
+  // instead of re-fetching on visibility.
+  public readonly monthlyData = input<FoundationMaintainersMonthlyResponse>(DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY);
+
+  // True while the parent's eager monthly fetch is in flight, so the trend chart
+  // shows a spinner during a foundation switch while the drawer is open.
+  public readonly monthlyDataLoading = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -135,13 +150,13 @@ export class MaintainersDrawerComponent {
     })
   );
 
-  protected readonly metricValue: Signal<string> = computed(() => this.data().currentMaintainers.toLocaleString());
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.monthlyData().monthlyData));
   protected readonly hasData: Signal<boolean> = computed(() => this.data().asOfDate !== null);
 
   private readonly drawerData = this.initDrawerData();
-  protected readonly monthlyTrendData: Signal<FoundationMaintainersMonthlyResponse> = computed(() => this.drawerData().monthly);
   protected readonly distributionData: Signal<FoundationMaintainersDistributionResponse> = computed(() => this.drawerData().distribution);
-  protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
+  protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyData().monthlyData.length > 0);
   protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
 
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
@@ -153,26 +168,30 @@ export class MaintainersDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<{ monthly: FoundationMaintainersMonthlyResponse; distribution: FoundationMaintainersDistributionResponse }> {
-    const defaultValue = { monthly: DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY, distribution: DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION };
+  private initMetricValue(): Signal<string> {
+    return computed(() => this.data().currentMaintainers.toLocaleString('en-US'));
+  }
+
+  private initDrawerData(): Signal<{ distribution: FoundationMaintainersDistributionResponse }> {
+    const defaultValue = { distribution: DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
-          return forkJoin({
-            monthly: this.analyticsService.getFoundationMaintainersMonthly(slug),
-            distribution: this.analyticsService.getFoundationMaintainersDistribution(slug),
-          }).pipe(
+          return this.analyticsService.getFoundationMaintainersDistribution(slug).pipe(
+            map((distribution) => ({ distribution })),
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
@@ -187,7 +206,7 @@ export class MaintainersDrawerComponent {
 
   private initTrendChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
-      const { monthlyData, monthlyLabels } = this.monthlyTrendData();
+      const { monthlyData, monthlyLabels } = this.monthlyData();
       return {
         labels: monthlyLabels,
         datasets: [

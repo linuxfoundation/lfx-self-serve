@@ -27,6 +27,7 @@ import {
   PastMeetingSummary,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
+  PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
   QueryServiceCountResponse,
@@ -41,6 +42,7 @@ import {
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
+  selectApplicableRsvp,
   selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -222,6 +224,33 @@ export class MeetingService {
   }
 
   /**
+   * Fetches the host key for a meeting from the v1_meeting_host_credentials indexed object.
+   *
+   * The query service enforces FGA on this object type (access_check_relation: "host" on
+   * v1_meeting), so it only returns data when the caller holds the derived host relation —
+   * covering direct Zoom co-hosts (registrants with Host=true) as well as anyone with an
+   * organizer/writer/coordinator role (project writers, committee writers, meeting coordinators).
+   * Must be called with the user's bearer token active on req — NOT an M2M token.
+   *
+   * Returns the 6-digit host key string, or null when the user has no access or no credentials
+   * document has been indexed yet.
+   */
+  public async getMeetingHostKey(req: Request, meetingId: string): Promise<string | null> {
+    logger.debug(req, 'get_meeting_host_key', 'Fetching host key credentials', { meeting_id: meetingId });
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ host_key: string }>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { type: 'v1_meeting_host_credentials', tags: `meeting_id:${meetingId}` }
+    );
+
+    const hostKey = resources?.[0]?.data?.host_key;
+    return hostKey || null;
+  }
+
+  /**
    * Fetches a single past meeting by UID via ITX endpoint
    */
   public async getPastMeetingById(req: Request, pastMeetingUid: string): Promise<PastMeeting> {
@@ -259,6 +288,63 @@ export class MeetingService {
     });
 
     return meeting;
+  }
+
+  /**
+   * Fetches all past occurrences of a meeting series as a minimal timestamp projection.
+   *
+   * Each past occurrence is its own v1_past_meeting record keyed by the series UID
+   * (`meeting_id`). No `filter_grants` — callers run this in a public/M2M context and
+   * the projection carries timestamps only. Completeness is not guaranteed: a later-page
+   * fetch failure returns the pages already accumulated (acceptable for navigation).
+   */
+  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string): Promise<PastOccurrenceSummary[]> {
+    logger.debug(req, 'get_past_occurrences_for_meeting', 'Fetching past occurrences', {
+      meeting_id: meetingUid,
+    });
+
+    const records = await fetchAllQueryResources<PastMeeting>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'v1_past_meeting',
+        filters: [`meeting_id:${meetingUid}`],
+        page_size: 500,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    ).catch((error) => {
+      logger.warning(req, 'get_past_occurrences_for_meeting', 'Failed to fetch past occurrences, returning empty list', {
+        meeting_id: meetingUid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return [] as PastMeeting[];
+    });
+
+    // The indexed v1_past_meeting projection frequently omits scheduled_start_time and only
+    // carries start_time (same reality sortPastMeetingsDescending handles) — accept either.
+    const dropped = records.filter((r) => !r.meeting_and_occurrence_id || !(r.scheduled_start_time || r.start_time));
+    if (dropped.length > 0) {
+      logger.warning(req, 'get_past_occurrences_for_meeting', 'Dropping past occurrences missing composite id or start time', {
+        meeting_id: meetingUid,
+        dropped_count: dropped.length,
+      });
+    }
+
+    const summaries = records
+      .filter((r): r is PastMeeting & { meeting_and_occurrence_id: string } => !!r.meeting_and_occurrence_id && !!(r.scheduled_start_time || r.start_time))
+      .map(
+        (r): PastOccurrenceSummary => ({
+          meeting_and_occurrence_id: r.meeting_and_occurrence_id,
+          scheduled_start_time: r.scheduled_start_time || r.start_time,
+          scheduled_end_time: r.scheduled_end_time || undefined,
+        })
+      )
+      .sort((a, b) => new Date(a.scheduled_start_time).getTime() - new Date(b.scheduled_start_time).getTime());
+
+    logger.debug(req, 'get_past_occurrences_for_meeting', 'Completed past occurrences fetch', {
+      meeting_id: meetingUid,
+      count: summaries.length,
+    });
+
+    return summaries;
   }
 
   /**
@@ -465,10 +551,15 @@ export class MeetingService {
   }
 
   /**
-   * Fetches all registrants for a meeting
-   * @param includeRsvp - If true, includes RSVP status for each registrant
+   * Fetches all registrants for a meeting.
+   * @param includeRsvp - If true, includes RSVP status for each registrant.
+   * @param occurrenceId - Optional occurrence id (seconds or ms) whose RSVP each
+   *   registrant should be resolved against. Pass the id of the occurrence the
+   *   caller is rendering; when omitted, each registrant's most recent RSVP is
+   *   returned regardless of scope — correct only for non-recurring meetings or
+   *   aggregate views. See LFXV2-2864 for the seconds↔ms unit mismatch.
    */
-  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
@@ -485,12 +576,12 @@ export class MeetingService {
       })
     );
 
-    // If include_rsvp is true, fetch RSVP data and attach to registrants
+    // If include_rsvp is true, fetch RSVP data and attach to registrants.
     if (includeRsvp) {
       try {
         const rsvps = await this.getMeetingRsvps(req, meetingUid);
 
-        // Group RSVPs by registrant_id for lookup
+        // Group RSVPs by registrant_id for lookup.
         const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
         for (const rsvp of rsvps) {
           const key = rsvp.registrant_id;
@@ -500,21 +591,17 @@ export class MeetingService {
           rsvpsByRegistrant.get(key)!.push(rsvp);
         }
 
-        // Attach most recent RSVP to each registrant by uid
+        // Resolve the applicable RSVP per registrant against the caller's occurrence.
+        // Delegating to the shared resolver keeps this endpoint aligned with the
+        // detail-page BFF (`getMeetingRsvpForCurrentUser`) and the counts calculator
+        // (`calculateRsvpCounts`) — a newer `single` decline no longer shadows an
+        // older `all` accept on unrelated occurrences (LFXV2-2864).
         registrants = registrants.map((registrant) => {
           const registrantRsvps = rsvpsByRegistrant.get(registrant.uid);
           if (!registrantRsvps || registrantRsvps.length === 0) {
             return { ...registrant, rsvp: null };
           }
-
-          // Sort by most recent modification and pick the first
-          const sorted = [...registrantRsvps].sort((a, b) => {
-            const dateA = new Date(a.modified_at || a.created_at).getTime();
-            const dateB = new Date(b.modified_at || b.created_at).getTime();
-            return dateB - dateA;
-          });
-
-          return { ...registrant, rsvp: sorted[0] };
+          return { ...registrant, rsvp: selectApplicableRsvp(occurrenceId, registrantRsvps) };
         });
       } catch (error) {
         logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
@@ -1166,20 +1253,14 @@ export class MeetingService {
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
       const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
 
-      if (occurrenceId) {
-        // First try to find an occurrence-specific RSVP (takes precedence)
-        const occurrenceRsvp = userRsvps.find((rsvp) => rsvp.occurrence_id === occurrenceId);
-        if (occurrenceRsvp) {
-          return occurrenceRsvp;
-        }
-
-        // Fall back to meeting-level RSVP (no occurrence_id means RSVP for all occurrences)
-        const meetingRsvp = userRsvps.find((rsvp) => !rsvp.occurrence_id);
-        return meetingRsvp || null;
-      }
-
-      // No occurrence specified - return any RSVP for this user
-      return userRsvps[0] || null;
+      // Delegate to the shared scope resolver so this endpoint and
+      // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
+      // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
+      // returning the first one applicable to the target occurrence (see
+      // resolver docs) — replacing the previous strict-equality match which
+      // never fired for occurrence-scoped rows and the arbitrary
+      // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
+      return selectApplicableRsvp(occurrenceId, userRsvps);
     } catch (error) {
       logger.warning(req, 'get_meeting_rsvp_for_current_user', 'Failed to fetch user RSVP, returning null', {
         meeting_id: meetingUid,

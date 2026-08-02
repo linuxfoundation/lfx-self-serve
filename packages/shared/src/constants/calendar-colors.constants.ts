@@ -1,22 +1,59 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CalendarColor, CalendarColorPair } from '../interfaces/calendar.interface';
+
+import { lfxColors } from './colors.constants';
+
 /** Hex color config per meeting type for FullCalendar events (Tailwind classes don't apply inside FullCalendar). */
-export const MEETING_TYPE_COLORS: Record<string, { bg: string; border: string }> = {
-  technical: { bg: '#7c3aed', border: '#6d28d9' },
-  maintainers: { bg: '#2563eb', border: '#1d4ed8' },
-  board: { bg: '#dc2626', border: '#b91c1c' },
-  marketing: { bg: '#059669', border: '#047857' },
-  legal: { bg: '#d97706', border: '#b45309' },
-  other: { bg: '#4b5563', border: '#374151' },
-  default: { bg: '#3b82f6', border: '#2563eb' },
+export const MEETING_TYPE_COLORS: Record<string, CalendarColorPair> = {
+  technical: { bg: lfxColors.violet[600], border: lfxColors.violet[700] },
+  maintainers: { bg: lfxColors.blue[600], border: lfxColors.blue[700] },
+  board: { bg: lfxColors.red[600], border: lfxColors.red[700] },
+  marketing: { bg: lfxColors.emerald[600], border: lfxColors.emerald[700] },
+  legal: { bg: lfxColors.amber[600], border: lfxColors.amber[700] },
+  other: { bg: lfxColors.gray[600], border: lfxColors.gray[700] },
+  default: { bg: lfxColors.blue[500], border: lfxColors.blue[600] },
 };
 
 /** Calendar color for cancelled meeting occurrences. */
-export const CANCELLED_COLOR = { bg: '#9ca3af', border: '#6b7280' };
+export const CANCELLED_COLOR: CalendarColor = {
+  bg: lfxColors.gray[400],
+  border: lfxColors.gray[500],
+  text: lfxColors.white,
+};
+
+/** Calendar color for past (ended) meeting occurrences — light fill with dark text for WCAG contrast. */
+export const PAST_MEETING_CALENDAR_COLOR: CalendarColor = {
+  bg: lfxColors.blue[100],
+  border: lfxColors.blue[400],
+  text: lfxColors.blue[700],
+};
 
 /** Calendar color for vote deadline events. */
-export const VOTE_COLOR = { bg: '#f59e0b', border: '#d97706' };
+export const VOTE_COLOR: CalendarColor = {
+  bg: lfxColors.amber[500],
+  border: lfxColors.amber[600],
+  text: lfxColors.white,
+};
+
+/** Calendar color for past vote deadline events — light fill with dark text for WCAG contrast. */
+export const PAST_VOTE_CALENDAR_COLOR: CalendarColor = {
+  bg: lfxColors.amber[100],
+  border: lfxColors.amber[400],
+  text: lfxColors.amber[700],
+};
 
 /** Calendar color for survey cutoff events. */
-export const SURVEY_COLOR = { bg: '#a855f7', border: '#9333ea' };
+export const SURVEY_COLOR: CalendarColor = {
+  bg: lfxColors.violet[500],
+  border: lfxColors.violet[600],
+  text: lfxColors.white,
+};
+
+/** Calendar color for past survey cutoff events — light fill with dark text for WCAG contrast. */
+export const PAST_SURVEY_CALENDAR_COLOR: CalendarColor = {
+  bg: lfxColors.violet[100],
+  border: lfxColors.violet[400],
+  text: lfxColors.violet[700],
+};

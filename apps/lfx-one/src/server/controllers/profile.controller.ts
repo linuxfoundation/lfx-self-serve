@@ -16,6 +16,7 @@ import {
   CdpIdentity,
   CdpWorkExperienceRequest,
   ClaimAliasRequest,
+  ClaimAliasResponse,
   CombinedProfile,
   DeveloperTokenInfo,
   EmailManagementData,
@@ -425,6 +426,8 @@ export class ProfileController {
         this.emailVerificationService.listIdentitiesSafe(req, userSub),
       ]);
 
+      // sessionEmail is the target's email or undefined under impersonation (never the
+      // impersonator's), so a target with no primary correctly 400s instead of leaking it.
       const primaryEmail = freshEmails?.primary_email || sessionEmail;
 
       if (!primaryEmail) {
@@ -567,9 +570,8 @@ export class ProfileController {
         return;
       }
 
-      // Match GET /api/profile/emails (see getEmails): fall back to the session OIDC
-      // email when auth-service omits a primary, so accounts in that gap keep their
-      // primary forward option and claim-form default instead of seeing "no verified email".
+      // Match GET /api/profile/emails: fall back to the effective session email when auth-service
+      // omits a primary (null under impersonation — never the impersonator's, so stays null here).
       const sessionEmail = getEffectiveEmail(req) ?? undefined;
       const primaryEmail = emails.primary_email || sessionEmail || null;
 
@@ -726,11 +728,7 @@ export class ProfileController {
       }
 
       logger.success(req, 'claim_linux_alias', startTime, { domain });
-      // primaryEmail is null here: this handler doesn't read user_emails, and the client
-      // refetches via getLinuxAlias() after a successful claim rather than consuming this body.
-      res
-        .status(200)
-        .json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo, primaryEmail: null } satisfies LinuxAliasData);
+      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo } satisfies ClaimAliasResponse);
     } catch (error) {
       next(error);
     }

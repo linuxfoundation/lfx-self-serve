@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
+import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
@@ -18,12 +18,12 @@ import {
   lfxColors,
   TOTAL_PROJECTS_DRAWER_ITEMS_PER_PAGE,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, buildVisiblePages, hexToRgba } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl, buildVisiblePages, computePeriodDelta, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { LifecycleStage } from '@lfx-one/shared/interfaces';
@@ -40,7 +40,6 @@ import type {
     DrawerModule,
     ChartComponent,
     SelectComponent,
-    SelectButtonComponent,
     InputTextComponent,
     ButtonComponent,
     ReactiveFormsModule,
@@ -48,6 +47,7 @@ import type {
     NgClass,
     InsightsHandoffSectionComponent,
     TooltipModule,
+    MetricDeltaComponent,
   ],
   templateUrl: './total-projects-drawer.component.html',
 })
@@ -59,18 +59,10 @@ export class TotalProjectsDrawerComponent {
 
   // === Static Options ===
   protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
-  protected readonly viewOptions = [
-    { label: 'Chart', value: 'chart' },
-    { label: 'Table', value: 'table' },
-  ];
 
   // === Forms ===
   protected readonly headerForm: FormGroup = this.fb.group({
     timeRange: [{ value: 'last-12-months', disabled: true }],
-  });
-
-  protected readonly viewForm: FormGroup = this.fb.group({
-    primaryView: ['chart'],
   });
 
   protected readonly searchForm: FormGroup = this.fb.group({
@@ -83,11 +75,16 @@ export class TotalProjectsDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationTotalProjectsResponse>(DEFAULT_FOUNDATION_TOTAL_PROJECTS);
 
+  // True while the parent's foundation total-projects monthly request is in flight.
+  // The parent passes its own eager fetch's loading signal so the primary chart can
+  // render instantly on click (data already resolved) and only show a spinner during
+  // a foundation switch while the drawer is open.
+  public readonly dataLoading = input<boolean>(false);
+
   // === Enum exposure for template ===
   protected readonly LifecycleStage = LifecycleStage;
 
   // === WritableSignals ===
-  protected readonly primaryView = signal<'chart' | 'table'>('chart');
   protected readonly primaryPage = signal(1);
   protected readonly drawerLoading = signal(false);
 
@@ -97,6 +94,8 @@ export class TotalProjectsDrawerComponent {
   );
 
   protected readonly hasData: Signal<boolean> = computed(() => this.data().monthlyData.length > 0);
+  protected readonly metricValue: Signal<string> = this.initMetricValue();
+  protected readonly delta = computed(() => computePeriodDelta(this.data().monthlyData));
   protected readonly primarySearch: Signal<string> = this.initPrimarySearch();
   private readonly drawerData = this.initDrawerData();
   protected readonly projectsDetailData: Signal<FoundationProjectsDetailResponse> = computed(() => this.drawerData().projects);
@@ -189,17 +188,19 @@ export class TotalProjectsDrawerComponent {
     this.visible.set(false);
   }
 
-  protected onPrimaryViewChange(event: { value: 'chart' | 'table' }): void {
-    if (event.value) {
-      this.primaryView.set(event.value);
-    }
-  }
-
   protected goToPrimaryPage(page: number): void {
     this.primaryPage.set(page);
   }
 
   // === Private Initializers ===
+  private initMetricValue(): Signal<string> {
+    // Guarded by hasData() (monthlyData non-empty) in the template, so the last month is always present.
+    return computed(() => {
+      const m = this.data().monthlyData;
+      return m[m.length - 1].toLocaleString('en-US');
+    });
+  }
+
   private initPrimarySearch(): Signal<string> {
     return toSignal(this.searchForm.get('query')!.valueChanges.pipe(tap(() => this.primaryPage.set(1))), { initialValue: '' });
   }
@@ -207,19 +208,25 @@ export class TotalProjectsDrawerComponent {
   private initDrawerData(): Signal<{ projects: FoundationProjectsDetailResponse; lifecycle: FoundationProjectsLifecycleDistributionResponse }> {
     const defaultValue = { projects: DEFAULT_FOUNDATION_PROJECTS_DETAIL, lifecycle: DEFAULT_FOUNDATION_PROJECTS_LIFECYCLE };
     return toSignal(
-      toObservable(this.visible).pipe(
+      // React to visibility AND the selected foundation so the drawer reloads when
+      // an ED/Admin Mode user switches foundations while the drawer stays open.
+      combineLatest([toObservable(this.visible), toObservable(this.projectContextService.selectedFoundation)]).pipe(
         skip(1),
-        switchMap((isVisible) => {
+        switchMap(([isVisible, foundation]) => {
           if (!isVisible) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+          const slug = foundation?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
+          // Reset pagination + search so a stale query/page from the previous
+          // foundation can't hide or off-range the freshly loaded list.
+          this.primaryPage.set(1);
+          this.searchForm.get('query')!.setValue('');
           return forkJoin({
             projects: this.analyticsService.getFoundationProjectsDetail(slug),
             lifecycle: this.analyticsService.getFoundationProjectsLifecycleDistribution(slug),

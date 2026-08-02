@@ -74,3 +74,4 @@ design/
 
 # Playwright MCP snapshot/screenshot artifacts
 .playwright-mcp
+.claude/launch.json

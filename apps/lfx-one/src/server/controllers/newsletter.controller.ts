@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NEWSLETTER_RAW_CONTENT_MAX_LENGTH, NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  NEWSLETTER_BODY_LAYOUT_MAX_LENGTH,
+  NEWSLETTER_BODY_MAX_LENGTH,
+  NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
+  NEWSLETTER_SUBJECT_MAX_LENGTH,
+  NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
@@ -21,11 +27,6 @@ import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterService } from '../services/newsletter.service';
 
-const SUBJECT_MAX_LENGTH = 200;
-const BODY_MAX_LENGTH = 100_000;
-// Structured layout is JSON, so it runs larger than the rendered HTML; bound the
-// serialized size defensively (body_html has its own cap) to reject runaway payloads.
-const BODY_LAYOUT_MAX_LENGTH = 500_000;
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
 
@@ -101,6 +102,26 @@ export class NewsletterController {
       // PII (recipient email) intentionally omitted from log metadata.
       logger.success(req, 'newsletter_test_send', startTime, {});
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/newsletters/my-newsletters
+   *
+   * Not project-scoped: the Me-lens feed of sent newsletters reachable via the
+   * user's current committee memberships. Authorization happens per upstream
+   * call — the gateway FGA-checks `committee:{uid}#member` for every committee
+   * the service fans out to.
+   */
+  public async getMyNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_newsletters', {});
+
+    try {
+      const newsletters = await this.newsletterService.getMyNewsletters(req);
+      logger.success(req, 'get_my_newsletters', startTime, { count: newsletters.length });
+      res.json(newsletters);
     } catch (error) {
       next(error);
     }
@@ -483,8 +504,8 @@ export class NewsletterController {
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
       fieldErrors['subject'] = 'Subject is required';
-    } else if (payload.subject.length > SUBJECT_MAX_LENGTH) {
-      fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
+    } else if (payload.subject.length > NEWSLETTER_SUBJECT_MAX_LENGTH) {
+      fieldErrors['subject'] = `Subject must be ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
     // The body may arrive as raw HTML or as a structured block layout. The
@@ -507,16 +528,16 @@ export class NewsletterController {
     } else if (!hasBodyHtml && !layoutValid) {
       // Neither authored html nor a (blocks-mode) layout — nothing to persist.
       fieldErrors['body_html'] = 'Body is required';
-    } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > BODY_MAX_LENGTH) {
+    } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
       // Only cap authored body_html on the HTML-only path. In blocks mode the
       // upstream ignores request body_html and re-derives it from body_layout, so
       // capping the (server-rendered, echoed-back) body_html here would reject the
       // autosave of a large composed email the composer only means to WARN about
       // (the ~102 KB Gmail-clipping threshold). The layout has its own size cap.
-      fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+      fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
     }
-    if (layoutValid && JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
-      fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
+    if (layoutValid && JSON.stringify(payload.body_layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -537,8 +558,8 @@ export class NewsletterController {
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
       fieldErrors['subject'] = 'Subject is required';
-    } else if (payload.subject.length > SUBJECT_MAX_LENGTH) {
-      fieldErrors['subject'] = `Subject must be ${SUBJECT_MAX_LENGTH} characters or fewer`;
+    } else if (payload.subject.length > NEWSLETTER_SUBJECT_MAX_LENGTH) {
+      fieldErrors['subject'] = `Subject must be ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
     // A layout test send recompiles the email from body_layout upstream (the
@@ -551,11 +572,11 @@ export class NewsletterController {
     if (!layoutValid) {
       if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
         fieldErrors['body_html'] = 'Body is required';
-      } else if (payload.body_html.length > BODY_MAX_LENGTH) {
-        fieldErrors['body_html'] = `Body must be ${BODY_MAX_LENGTH} characters or fewer`;
+      } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
+        fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
       }
-    } else if (JSON.stringify(payload.body_layout).length > BODY_LAYOUT_MAX_LENGTH) {
-      fieldErrors['body_layout'] = `Layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
+    } else if (JSON.stringify(payload.body_layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
     }
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
@@ -585,8 +606,8 @@ export class NewsletterController {
     const layout = payload?.body_layout;
     if (!layout || typeof layout !== 'object' || !Array.isArray(layout.blocks)) {
       fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
-    } else if (JSON.stringify(layout).length > BODY_LAYOUT_MAX_LENGTH) {
-      fieldErrors['body_layout'] = `body_layout must be ${BODY_LAYOUT_MAX_LENGTH} characters or fewer`;
+    } else if (JSON.stringify(layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
+      fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer`;
     }
 
     if (Object.keys(fieldErrors).length > 0) {

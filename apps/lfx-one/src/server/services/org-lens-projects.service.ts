@@ -10,8 +10,9 @@ import {
   ORG_PROJECTS_MEMBER_SERVICE_BULK_ADD_CHUNK_SIZE,
   ORG_PROJECTS_OUTSIDE_LF_WAREHOUSE_SLUG,
   ORG_PROJECTS_OUTSIDE_LF_WIRE_SLUG,
-  ORG_PROJECTS_SEARCH_LIMIT,
+  ORG_PROJECTS_SEARCH_MAX_RESULTS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import { classifyHealthScore } from '@lfx-one/shared/utils';
@@ -37,6 +38,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
@@ -48,7 +50,9 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    const cacheKey = `projects:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v2` bump: entries cached before the no-activity hydration landed hold activity-only rows; versioning the
+    // sub-resource key drops them so freshly viewed workspaces don't omit no-activity rows for up to the TTL.
+    const cacheKey = `projects:v2:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
@@ -64,6 +68,9 @@ export class OrgLensProjectsService {
     return response;
   }
 
+  // NOTE: accountId is intentionally unused — this search spans the GLOBAL onboarded catalog (an admin can add any
+  // project), not the caller's org-scoped ORG_LENS_PROJECTS. It's retained in the signature for parity with the
+  // other service methods and as the hook for a future org-scoped authorization gate.
   public async searchProjects(accountId: string, query: string, excludeSlugs: readonly string[] = []): Promise<OrgLensProjectSearchResponse> {
     const trimmed = query.trim();
     if (trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
@@ -71,9 +78,59 @@ export class OrgLensProjectsService {
     }
 
     const excluded = [...new Set(excludeSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))];
-    const like = `%${trimmed}%`;
-    const searchFilter = trimmed.length ? 'AND (PROJECT_NAME ILIKE ? OR PROJECT_SLUG ILIKE ?)' : '';
-    const excludeFilter = excluded.length ? `AND PROJECT_SLUG NOT IN (${excluded.map(() => '?').join(', ')})` : '';
+    // Match on the raw query, not the trimmed one, so this predicate is identical to the PrimeNG
+    // multi-select's client-side substring filter (which matches the raw filter-box text). Trimming
+    // here while the client filters on the raw text would let the client hide rows this query returned
+    // for a stray leading/trailing space. `trimmed` still gates whether the filter applies at all.
+    // Escape LIKE metacharacters + ESCAPE '!' so a typed % or _ matches literally — this also keeps the
+    // predicate identical to the PrimeNG multi-select's client-side filter, which matches % and _
+    // literally (plain substring), so the client can't hide a row the server returned.
+    const like = `%${escapeSqlLikePattern(query)}%`;
+    // Global onboarded catalog (not org-scoped ORG_LENS_PROJECTS) so an admin can add any project. Already-added
+    // rows are marked via ALREADY_ADDED (bound first, positional) and dropped in code — not WHERE — so the UI can tell "already added" from a true no-match.
+    const binds: string[] = [];
+    let alreadyAddedExpr = '0';
+    if (excluded.length) {
+      alreadyAddedExpr = `CASE WHEN LOWER(PROJECT_SLUG) IN (${excluded.map(() => '?').join(', ')}) THEN 1 ELSE 0 END`;
+      binds.push(...excluded);
+    }
+    const conditions: string[] = [];
+    // Gate on raw query.length (not trimmed) so a whitespace-only filter like " " applies server-side too,
+    // matching the client's raw-text predicate; `trimmed` still drives the min-length rule and typed-result cap.
+    if (query.length) {
+      conditions.push("(PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!')");
+      binds.push(like, like);
+    }
+    const whereClause = conditions.length ? `WHERE ${conditions.join('\n        AND ')}` : '';
+    // Relevance ordering: addable first (ALREADY_ADDED asc), then the match-strength tier below (bound last, after
+    // SELECT/WHERE binds). Empty-query preload has no tier and falls back to catalog rank.
+    // PROJECT_SLUG is the unique final tiebreaker so the 50/500 LIMIT cap is deterministic across requests
+    // (rows tied on rank/name can't reshuffle in and out of the cap) — required for paginated ORDER BY/LIMIT.
+    // ONBOARDED_PROJECT_RANK is nullable: pin NULLS LAST so a session-level DEFAULT_NULL_ORDERING can't move
+    // null-rank rows in/out of the cap, and end on PROJECT_SLUG (unique) so the 50/500 LIMIT is deterministic.
+    let orderByClause = 'ORDER BY ALREADY_ADDED ASC, ONBOARDED_PROJECT_RANK ASC NULLS LAST, PROJECT_NAME ASC, PROJECT_SLUG ASC';
+    if (trimmed.length) {
+      const exactLike = escapeSqlLikePattern(trimmed);
+      const prefixLike = `${exactLike}%`;
+      // Tier by match strength so name matches beat slug-only matches: exact name/slug, then name-prefix, then
+      // slug-prefix, then contains. Without the split, "kub" ranks the many kubernetes-sigs-* slug siblings
+      // above the actual "Kubernetes" project (slug "k8s"); exact-slug still surfaces "k8s" at the very top.
+      orderByClause = `ORDER BY
+        ALREADY_ADDED ASC,
+        CASE
+          WHEN PROJECT_NAME ILIKE ? ESCAPE '!' OR PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 0
+          WHEN PROJECT_NAME ILIKE ? ESCAPE '!' THEN 1
+          WHEN PROJECT_SLUG ILIKE ? ESCAPE '!' THEN 2
+          ELSE 3
+        END ASC,
+        ONBOARDED_PROJECT_RANK ASC NULLS LAST,
+        PROJECT_NAME ASC,
+        PROJECT_SLUG ASC`;
+      binds.push(exactLike, exactLike, prefixLike, prefixLike);
+    }
+    // Preload keeps the initial panel light; a typed query returns up to the safety cap so the user
+    // can scroll the panel to the true end of the match list rather than hitting a hard 20-row wall.
+    const limit = trimmed.length ? ORG_PROJECTS_SEARCH_MAX_RESULTS : ORG_PROJECTS_SEARCH_PRELOAD_LIMIT;
     const sql = `
       SELECT
         PROJECT_SLUG,
@@ -81,24 +138,25 @@ export class OrgLensProjectsService {
         PROJECT_LOGO_URL,
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
-        FOUNDATION_LOGO_URL
-      FROM ${this.projectsTable()}
-      WHERE ACCOUNT_ID = ?
-        ${searchFilter}
-        ${excludeFilter}
-      ORDER BY ORG_PROJECT_RANK ASC, PROJECT_NAME ASC
-      LIMIT ${ORG_PROJECTS_SEARCH_LIMIT}
+        FOUNDATION_LOGO_URL,
+        ${alreadyAddedExpr} AS ALREADY_ADDED
+      FROM ${this.onboardedProjectsTable()}
+      ${whereClause}
+      ${orderByClause}
+      LIMIT ${limit}
     `;
 
-    const binds = trimmed.length ? [accountId, like, like, ...excluded] : [accountId, ...excluded];
-    const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, binds);
+    const result = await this.snowflakeService.execute<OrgLensProjectRow & { ALREADY_ADDED?: number | string }>(sql, binds);
+    const addable = result.rows.filter((row) => Number(row.ALREADY_ADDED) !== 1);
     return {
-      results: result.rows.map((row) => ({
+      results: addable.map((row) => ({
         slug: row.PROJECT_SLUG,
         name: row.PROJECT_NAME,
         logoUrl: row.PROJECT_LOGO_URL ?? '',
         foundation: this.mapFoundation(row),
       })),
+      // Any returned row we dropped means the query matched a project that's already in the workspace.
+      hasMatchesAlreadyInWorkspace: result.rows.length > addable.length,
     };
   }
 
@@ -308,14 +366,51 @@ export class OrgLensProjectsService {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
-    const peopleRows = projectSlugs.length ? await this.fetchPeopleRows(accountId, projectSlugs) : [];
+    // Both reads depend only on projectSlugs, so run them concurrently to avoid a second sequential Snowflake round trip.
+    // fetchNoActivityProjects: workspace slugs with no org-scoped row (no activity yet) → synthesize an identity-only
+    // "no activity yet" row from the onboarded catalog instead of dropping it. Only for requested slugs, not the preload.
+    const [peopleRows, noActivityProjects] = await Promise.all([
+      projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs) : Promise.resolve([]),
+      // No-activity hydration is a soft enhancement over the onboarded catalog (which may be mid-migration or
+      // absent); never let its failure fail the whole response — degrade to activity rows only, as before.
+      this.fetchNoActivityProjects(slugs, projectSlugs).catch((err) => {
+        logger.warning(undefined, 'fetch_no_activity_org_projects', 'No-activity org project hydration failed; returning activity rows only', { err });
+        return [] as OrgLensProject[];
+      }),
+    ]);
 
     return {
       orgSlug: this.slugify(orgName) || accountId,
       orgName: orgName || 'Your organization',
       dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-      projects: projectRows.map((row) => this.mapProject(row, peopleRows)),
+      projects: [...projectRows.map((row) => this.mapProject(row, peopleRows)), ...noActivityProjects],
     };
+  }
+
+  private async fetchNoActivityProjects(requestedSlugs: string[] | null, returnedSlugs: string[]): Promise<OrgLensProject[]> {
+    if (!requestedSlugs?.length) {
+      return [];
+    }
+    const returned = new Set(returnedSlugs.map((slug) => slug.toLowerCase()));
+    const missing = [...new Set(requestedSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))].filter((slug) => !returned.has(slug));
+    if (!missing.length) {
+      return [];
+    }
+    const sql = `
+      SELECT
+        PROJECT_SLUG,
+        PROJECT_NAME,
+        PROJECT_LOGO_URL,
+        FOUNDATION_SLUG,
+        FOUNDATION_NAME,
+        FOUNDATION_LOGO_URL
+      FROM ${this.onboardedProjectsTable()}
+      WHERE LOWER(PROJECT_SLUG) IN (${missing.map(() => '?').join(', ')})
+    `;
+    const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
+    // mapProject fills every metric field the identity query does not select with its missing-data
+    // placeholder (health 'unavailable', influence fallbacks, zeroed trend, empty people arrays).
+    return result.rows.map((row) => ({ ...this.mapProject(row, []), noActivityYet: true }));
   }
 
   private buildProjectsQuery(slugs: string[] | null): string {
@@ -387,6 +482,9 @@ export class OrgLensProjectsService {
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
       health: hasHealthScore ? this.mapHealthScore(healthScore) : 'unavailable',
+      // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
+      // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
+      // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.
       technicalInfluence: this.mapInfluence(row.TECHNICAL_INFLUENCE, 'silent'),
       ecosystemInfluence: this.mapInfluence(row.ECOSYSTEM_INFLUENCE, 'non-lf'),
       influenceScore: this.round1(row.INFLUENCE_SCORE ?? 0),
@@ -834,6 +932,10 @@ export class OrgLensProjectsService {
 
   private projectsTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECTS`;
+  }
+
+  private onboardedProjectsTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ONBOARDED_PROJECTS`;
   }
 
   private projectPeopleTable(): string {

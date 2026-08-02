@@ -11,11 +11,18 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, PAST_MEETING_SORT, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
-import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, getCurrentOrNextOccurrence, hasMeetingEnded, sortPastMeetingsDescending } from '@lfx-one/shared/utils';
+import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { Committee, Meeting, MeetingCalendarClickProps, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
+import {
+  getCurrentOrNextOccurrence,
+  hasMeetingEnded,
+  meetingToCalendarEvents,
+  resolveMeetingCalendarClickRoute,
+  sortPastMeetingsDescending,
+  surveyToCalendarEvent,
+  voteToCalendarEvent,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -25,7 +32,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
-import { IcalSubscribeDialogComponent } from '../ical-subscribe-dialog/ical-subscribe-dialog.component';
+import { openIcalSubscribeDialog } from '../../utils/ical-subscribe.util';
 
 @Component({
   selector: 'lfx-committee-meetings',
@@ -58,6 +65,10 @@ export class CommitteeMeetingsComponent {
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
   public initialTimeFilter = input<TimeFilter>('upcoming');
+  // Raw meetings list, fetched once by committee-view and shared with the Overview/About tabs —
+  // avoids this tab firing its own duplicate /api/meetings request.
+  public meetings = input<Meeting[]>([]);
+  public meetingsLoading = input<boolean>(true);
 
   // Filter state — linkedSignal tracks initialTimeFilter but allows local overrides
   public timeFilter = linkedSignal(() => this.initialTimeFilter());
@@ -93,12 +104,12 @@ export class CommitteeMeetingsComponent {
   ];
 
   // Loading state
-  public meetingsLoading = signal(true);
   public pastMeetingsLoading = signal(false);
   public calendarLoading = signal(false);
   public creating = signal(false);
 
-  // Data — upcoming meetings
+  // Data — upcoming meetings: active (non-ended, non-cancelled) meetings from the shared
+  // `meetings` input, sorted by soonest occurrence.
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
   // Data — past meetings, lazy-loaded reactively when filter switches to 'past'
@@ -153,30 +164,16 @@ export class CommitteeMeetingsComponent {
       console.warn('Subscribe clicked with no committee uid; aborting dialog open');
       return;
     }
-
-    const feedUrl = `${environment.urls.home}/public/api/committees/${committee.uid}/calendar.ics`;
-    const committeeName = committee.name ?? 'Committee';
-
-    this.dialogService.open(IcalSubscribeDialogComponent, {
-      header: `Subscribe — ${committeeName}`,
-      width: '480px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        feedUrl,
-        name: committeeName,
-      },
-    });
+    openIcalSubscribeDialog(this.dialogService, committee);
   }
 
   /** Handles FullCalendar event click — navigates to meeting detail. Cancelled occurrences are inert. */
   public onCalendarEventClick(arg: EventClickArg): void {
-    const props = arg.event.extendedProps as { type: string; meetingId?: string; cancelled?: boolean };
-    if (props.cancelled) return;
-    if (props.type === 'meeting' && props.meetingId) {
-      void this.router.navigate(['/meetings', props.meetingId]);
+    const route = resolveMeetingCalendarClickRoute(arg.event.extendedProps as MeetingCalendarClickProps, arg.event.start);
+    if (!route) {
+      return;
     }
+    void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
   /** Checks writer permission fresh before navigating — prevents a demoted member from reaching /meetings/create. */
@@ -221,38 +218,22 @@ export class CommitteeMeetingsComponent {
   }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
-    return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        tap(() => this.meetingsLoading.set(true)),
-        switchMap((c) =>
-          // NOTE: The query service does not support `order` — only `sort` with values
-          // name_asc/desc, updated_asc/desc. There is no start_time sort upstream.
-          // The `order=start_time.asc` param passed here is silently ignored;
-          // the client-side sort below (lines 178-185) is the actual sorting mechanism.
-          this.meetingService.getMeetingsByCommittee(c.uid, 'start_time.asc').pipe(
-            map((meetings) => {
-              const active = meetings.filter((m) => {
-                if (m.occurrences?.length) {
-                  return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
-                }
-                return !hasMeetingEnded(m);
-              });
-              return active.sort((a, b) => {
-                const oA = getCurrentOrNextOccurrence(a);
-                const oB = getCurrentOrNextOccurrence(b);
-                return (
-                  (oA ? new Date(oA.start_time).getTime() : new Date(a.start_time).getTime()) -
-                  (oB ? new Date(oB.start_time).getTime() : new Date(b.start_time).getTime())
-                );
-              });
-            }),
-            finalize(() => this.meetingsLoading.set(false))
-          )
-        )
-      ),
-      { initialValue: [] }
-    );
+    return computed(() => {
+      const active = this.meetings().filter((m) => {
+        if (m.occurrences?.length) {
+          return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+        }
+        return !hasMeetingEnded(m);
+      });
+      return active.sort((a, b) => {
+        const oA = getCurrentOrNextOccurrence(a);
+        const oB = getCurrentOrNextOccurrence(b);
+        return (
+          (oA ? new Date(oA.start_time).getTime() : new Date(a.start_time).getTime()) -
+          (oB ? new Date(oB.start_time).getTime() : new Date(b.start_time).getTime())
+        );
+      });
+    });
   }
 
   private initFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {
@@ -303,81 +284,13 @@ export class CommitteeMeetingsComponent {
       const allMeetings: (Meeting | PastMeeting)[] = [...this.upcomingMeetings(), ...externalData().pastMeetings];
       const { votes, surveys } = externalData();
 
-      const meetingEvents = allMeetings.flatMap((m) => this.meetingToEvents(m));
-      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => this.voteToEvent(v));
-      const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => this.surveyToEvent(s));
+      const meetingEvents = allMeetings.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
+      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => voteToCalendarEvent(v) as EventInput);
+      const surveyEvents = surveys
+        .filter((s): s is Survey & { survey_cutoff_date: string } => !!s.survey_cutoff_date)
+        .map((s) => surveyToCalendarEvent(s) as EventInput);
 
       return [...meetingEvents, ...voteEvents, ...surveyEvents];
     });
-  }
-
-  private meetingToEvents(meeting: Meeting | PastMeeting): EventInput[] {
-    const typeKey = (meeting.meeting_type ?? 'default').toLowerCase();
-    const colors = MEETING_TYPE_COLORS[typeKey] ?? MEETING_TYPE_COLORS['default'];
-
-    // Recurring meetings — expand each occurrence as a separate calendar event
-    if (meeting.occurrences && meeting.occurrences.length > 0) {
-      return meeting.occurrences.map((occ) => {
-        const isCancelled = occ.status === 'cancel';
-        const c = isCancelled ? CANCELLED_COLOR : colors;
-        return {
-          id: `${meeting.id}-${occ.occurrence_id}`,
-          title: occ.title || meeting.title,
-          start: occ.start_time,
-          end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
-          backgroundColor: c.bg,
-          borderColor: c.border,
-          textColor: '#ffffff',
-          display: 'block',
-          // meeting-event scopes the shared dimming/future-event styles; cursor-default disables the click affordance on cancelled occurrences.
-          classNames: isCancelled ? ['meeting-event', 'cursor-default'] : ['meeting-event'],
-          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
-        };
-      });
-    }
-
-    // Non-recurring — single event
-    return [
-      {
-        id: meeting.id,
-        title: meeting.title,
-        start: meeting.start_time,
-        end: addMinutesToDate(meeting.start_time, meeting.duration).toISOString(),
-        backgroundColor: colors.bg,
-        borderColor: colors.border,
-        textColor: '#ffffff',
-        display: 'block',
-        classNames: ['meeting-event'],
-        extendedProps: { type: 'meeting', meetingId: meeting.id },
-      },
-    ];
-  }
-
-  private voteToEvent(vote: Vote): EventInput {
-    return {
-      id: `vote-${vote.uid}`,
-      title: `Vote closes: ${vote.name}`,
-      start: vote.end_time,
-      allDay: true,
-      backgroundColor: VOTE_COLOR.bg,
-      borderColor: VOTE_COLOR.border,
-      textColor: '#ffffff',
-      classNames: ['cursor-default'],
-      extendedProps: { type: 'vote', voteId: vote.uid },
-    };
-  }
-
-  private surveyToEvent(survey: Survey): EventInput {
-    return {
-      id: `survey-${survey.uid}`,
-      title: `Survey: ${survey.survey_title}`,
-      start: survey.survey_cutoff_date ?? undefined,
-      allDay: true,
-      backgroundColor: SURVEY_COLOR.bg,
-      borderColor: SURVEY_COLOR.border,
-      textColor: '#ffffff',
-      classNames: ['cursor-default'],
-      extendedProps: { type: 'survey', surveyId: survey.uid },
-    };
   }
 }

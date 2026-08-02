@@ -88,6 +88,11 @@ export interface OrgLensProject {
   description: string;
   /** CHAOSS-style health sub-scores (0–100) shown in the health-detail popover. */
   healthMetrics: ProjectHealthMetric[];
+  /**
+   * True when the project is in the org's workspace but has no org activity yet — identity/foundation come from the
+   * onboarded catalog and every metric is a placeholder (health `unavailable`, zeroed trend, empty people). Drives the "no activity yet" row.
+   */
+  noActivityYet?: boolean;
 }
 
 /** A single CHAOSS health sub-score (0–100) shown in the health-detail popover. */
@@ -119,6 +124,11 @@ export interface OrgLensProjectSearchResult {
 
 export interface OrgLensProjectSearchResponse {
   results: OrgLensProjectSearchResult[];
+  /**
+   * True when the query matched onboarded projects omitted from `results` only because they're already in the workspace.
+   * Lets the UI distinguish "already added" from a genuine no-match so the empty panel isn't mislabelled "No projects match".
+   */
+  hasMatchesAlreadyInWorkspace?: boolean;
 }
 
 export interface AddableProjectOption {

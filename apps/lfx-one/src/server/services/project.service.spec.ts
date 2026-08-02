@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ProjectFunding } from '@lfx-one/shared/enums';
 import type { Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,12 +27,31 @@ vi.mock('@lfx-one/shared/constants', () => ({
   ROOT_PROJECT_SLUG: 'root',
 }));
 vi.mock('@lfx-one/shared/enums', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => ({
-  computeIsFoundation: vi.fn(),
-  getDefaultMarketingImpactMonth: vi.fn(),
-  nullifyEmptyStrings: vi.fn(),
-  resolvePeriodRange: vi.fn(),
-}));
+// computeIsFoundation and summarizeWriterGrants are pulled in from the REAL implementation
+// (not hand-copied) so foundation-classification drift — e.g. a change to computeIsFoundation's
+// Membership/stage rules — fails these tests too. summarizeWriterGrants's own `writer === true`
+// filter can't be exercised from here (getDirectGrantProjects has already applied it before
+// getWriterSummary ever calls summarizeWriterGrants); that's covered by
+// packages/shared/src/utils/project.utils.spec.ts. Other `@lfx-one/shared/utils` exports this
+// file doesn't touch stay stubbed.
+//
+// Deep-imports the single pure file rather than `vi.importActual('@lfx-one/shared/utils')`:
+// the barrel re-exports Angular-dependent utils that pull in `@angular/common`'s `PlatformLocation`,
+// which needs the Angular JIT compiler — unavailable under this plain-Node Vitest environment, so
+// importing the barrel here throws at module-load time. `project.utils.ts` itself has no such
+// dependency.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project.utils')>(
+    '../../../../../packages/shared/src/utils/project.utils'
+  );
+  return {
+    computeIsFoundation: actual.computeIsFoundation,
+    summarizeWriterGrants: actual.summarizeWriterGrants,
+    getDefaultMarketingImpactMonth: vi.fn(),
+    nullifyEmptyStrings: vi.fn(),
+    resolvePeriodRange: vi.fn(),
+  };
+});
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -114,7 +134,7 @@ describe('ProjectService — create picker methods', () => {
       addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
-      checkAccess.mockResolvedValueOnce(new Map([['b', true]]));
+      checkAccess.mockResolvedValueOnce(new Map([['b#meeting_coordinator', true]]));
 
       const result = await service.getDirectGrantProjects(req, true);
 
@@ -122,6 +142,59 @@ describe('ProjectService — create picker methods', () => {
       // Only the non-writer ('b') needed the extra round trip.
       expect(checkAccess).toHaveBeenCalledTimes(1);
       expect(checkAccess.mock.calls[0][1]).toEqual([{ resource: 'project', id: 'b', access: 'meeting_coordinator' }]);
+    });
+  });
+
+  // Membership-funded + Active + not an Internal Allocation, per the real computeIsFoundation.
+  function foundation(uid: string): Partial<Project> {
+    return { uid, slug: uid, stage: 'Active', legal_entity_type: '', funding: 'Funded' as ProjectFunding, funding_model: ['Membership'] };
+  }
+  // Missing the Membership funding model — the real computeIsFoundation returns false.
+  function nonFoundation(uid: string): Partial<Project> {
+    return { uid, slug: uid, stage: 'Active', legal_entity_type: '', funding: 'Funded' as ProjectFunding, funding_model: [] };
+  }
+
+  describe('getWriterSummary', () => {
+    it('returns {true, false} when the only direct-writer project is a foundation', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn')]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: true, hasWriterProject: false });
+    });
+
+    it('returns {false, true} when the only direct-writer project is non-foundation', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([nonFoundation('proj')]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: false, hasWriterProject: true });
+    });
+
+    it('returns {true, true} when direct-writer grants span both a foundation and a non-foundation project', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn'), nonFoundation('proj')]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: true, hasWriterProject: true });
+    });
+
+    it('returns {false, false} when the caller holds no direct writer grants', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([foundation('visible-only')]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+
+      const result = await service.getWriterSummary(req);
+
+      expect(result).toEqual({ hasWriterFoundation: false, hasWriterProject: false });
+    });
+
+    it('propagates upstream errors rather than resolving a fail-closed summary', async () => {
+      proxyRequest.mockRejectedValueOnce(new Error('upstream unavailable'));
+
+      await expect(service.getWriterSummary(req)).rejects.toThrow('upstream unavailable');
     });
   });
 

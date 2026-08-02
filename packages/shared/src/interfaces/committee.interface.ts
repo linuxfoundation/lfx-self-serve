@@ -3,6 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { BadgeSeverity } from './components.interface';
 import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
 import { UserSearchResult } from './search.interface';
@@ -195,6 +196,18 @@ export interface CreateCommitteeInviteRequest {
 export interface AcceptCommitteeInviteRequest {
   /** Organization the invitee confirms on acceptance */
   organization?: CommitteeOrganizationReference | null;
+  /**
+   * BFF-only signal — consumed by the BFF and never forwarded to the committee-service upstream.
+   *
+   * Set to true when the accept originates from the LFID invite flow where the invite UID was
+   * already known from the JWT, signalling the BFF to skip the FGA-gated pending-invite pre-check
+   * (which races against async FGA tuple propagation). Only the literal boolean true enables the
+   * skip; any other truthy value falls through to the standard check.
+   *
+   * The committee-service remains the authoritative security boundary for invite existence,
+   * invitee identity, and org requirements regardless of this flag.
+   */
+  from_lfid_invite?: boolean;
 }
 
 /** Raw organization form values shared by invite-create and invite-accept dialogs. */
@@ -215,6 +228,14 @@ export interface AcceptInviteOrganizationDialogResult {
   organization: CommitteeOrganizationReference;
 }
 
+/** Options passed to InvitationService.acceptInvitation on the client side. */
+export interface AcceptInvitationOptions {
+  /** Organization the invitee confirms on acceptance. */
+  organization?: CommitteeOrganizationReference;
+  /** True when the accept originates from the LFID invite flow — see {@link AcceptCommitteeInviteRequest.from_lfid_invite}. */
+  fromLfidInvite?: boolean;
+}
+
 /** Context needed to accept a committee invitation from any surface. */
 export interface InvitationAcceptContext {
   committeeUid: string;
@@ -225,6 +246,8 @@ export interface InvitationAcceptContext {
   enable_voting?: boolean;
   business_email_required?: boolean;
   inviteRequiresOrganization?: boolean;
+  /** True when the context was constructed from an LFID invite JWT — skips the FGA-gated BFF pre-check. */
+  fromLfidInvite?: boolean;
 }
 
 /**
@@ -348,8 +371,12 @@ export interface Committee {
   updated_at: string;
   /** Total number of committee members */
   total_members: number;
-  /** Total number of voting representatives (upstream field name is total_voting_repos) */
-  total_voting_repos: number;
+  /**
+   * Total number of repositories with voting permissions for this committee (per upstream
+   * lfx-v2-committee-service — despite the name, this is a repo count, not a person count).
+   * Optional: upstream only sets this when > 0; no production code path currently writes it.
+   */
+  total_voting_repos?: number;
   /** Associated project UID */
   project_uid: string;
   /** Associated project name (populated from project data) */
@@ -440,6 +467,42 @@ export interface MyCommittee extends Committee {
   my_role: CommitteeMemberRole | 'Member';
   /** User's member UID in this committee (needed for leave action) */
   my_member_uid?: string;
+}
+
+/** My Groups list↔card view toggle. Deliberately separate from the meetings-only `ViewMode` ('list'|'calendar') — different valid states. */
+export type GroupsViewMode = 'list' | 'card';
+
+/**
+ * One foundation/project bucket in the All Groups foundation-grouped view.
+ * Built entirely client-side from the already-filtered committees list — no new upstream shape.
+ */
+export interface CommitteeFoundationGroup {
+  /** Stable, opaque key for the expansion-state map — prefixed `uid:<project_uid>` when the committee is "named" (both `project_name` **and** `project_uid` resolved; two distinct sub-projects sharing a display name still render as two buckets, disambiguated by `testIdSlug`) or `label:<resolved label>` otherwise (`foundation_name` or a fallback constant), so a degraded committee's label can never collide with another bucket's raw `project_uid`. A degraded committee (no usable `project_name`/`project_uid` pair, including a populated `project_name` with a falsy `project_uid`) merges into an existing named bucket only when exactly one named project carries that label; if the label is ambiguous (two named projects share it), it keeps its own label-keyed bucket instead of merging into an arbitrary one. Never parsed by callers — treat as opaque. See {@link groupCommitteesByFoundation}. */
+  key: string;
+  /** Human-readable header text. */
+  label: string;
+  /** Kebab-case, testid-safe slug derived from `label`, disambiguated against sibling groups sharing the same label. */
+  testIdSlug: string;
+  /** True for a bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. Usually one bucket, but a foundation-owned committee that resolves to a *different* label than another (e.g. a named foundation project plus a separate `FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL` fallback bucket) can produce more than one; the sort tolerates any count. */
+  isFoundationLevel: boolean;
+  committees: Committee[];
+}
+
+/**
+ * One card's display data on the My Groups card grid. Built entirely client-side from a
+ * `MyCommittee` — no new upstream shape.
+ */
+export interface MyGroupsCardVm {
+  committee: MyCommittee;
+  roleBadgeSeverity: BadgeSeverity;
+  lastActivityLabel: string;
+  /**
+   * Full accessible name for the card `<a>`. `[attr.aria-label]` replaces the link's computed
+   * accessible name outright, so every visible field (class label, project/foundation name, role,
+   * member count, last-updated, privacy) must be folded in here — none of it is otherwise reachable
+   * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
+   */
+  ariaLabel: string;
 }
 
 /**
@@ -709,6 +772,29 @@ export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 export type DocumentFormEntityType = 'committee' | 'project';
 
 /**
+ * Upload status of a single file staged in the document form dialog's multi-file file-mode flow.
+ * No `'success'` state — a successfully uploaded file is removed from the pending list entirely
+ * rather than rendered with a terminal status.
+ */
+export type PendingDocumentFileStatus = 'pending' | 'uploading' | 'error';
+
+/**
+ * A file staged for upload in the document form dialog, tracked independently through parallel
+ * upload. The editable display name is not modeled here — it lives in a per-item Angular
+ * `FormGroup` on the component (this package has no Angular Forms dependency, and is consumed
+ * by the Express BFF too).
+ */
+export interface PendingDocumentFile {
+  /** Client-generated identifier — not a server UID, used for list tracking before upload. */
+  id: string;
+  /** The actual File object to be uploaded. */
+  file: File;
+  status: PendingDocumentFileStatus;
+  /** Set when status is 'error' — surfaced inline under this file's row. */
+  errorMessage?: string;
+}
+
+/**
  * A document or resource link associated with a committee.
  */
 export interface CommitteeDocument {
@@ -745,8 +831,6 @@ export interface CreateCommitteeDocumentRequest {
   description?: string;
   /** Parent folder UID (to place a link inside a folder) */
   parent_uid?: string;
-  /** Display name of the creator (populated by BFF from session) */
-  created_by_name?: string;
 }
 
 /**
@@ -922,7 +1006,7 @@ export interface EditChairsDialogData {
   currentViceChairUid: string | null;
 }
 
-export type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
+export type CommitteeTab = 'overview' | 'about' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
 
 /** Configuration entry for a committee view tab. Visibility and badge are closures so each consumer can wire its own signals/state. */
 export interface TabConfigEntry {

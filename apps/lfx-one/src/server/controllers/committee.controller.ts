@@ -23,6 +23,7 @@ import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
+import { GroupsEngagementStatsService } from '../services/groups-engagement-stats.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from '../services/committee.service';
@@ -37,6 +38,7 @@ const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 export class CommitteeController {
   private committeeService: CommitteeService = new CommitteeService();
   private meetingService: MeetingService = new MeetingService();
+  private groupsEngagementStatsService: GroupsEngagementStatsService = new GroupsEngagementStatsService();
 
   /**
    * GET /committees
@@ -75,6 +77,28 @@ export class CommitteeController {
       });
 
       res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/engagement-stats
+   * Groups dashboard rollup for the caller's visible set (Active Members, Meetings This Month).
+   * Mocked pending the LFXV2-1705 dbt engagement model — see GroupsEngagementStatsService.
+   */
+  public async getGroupsEngagementStats(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_groups_engagement_stats', {});
+
+    try {
+      const stats = await this.groupsEngagementStatsService.getEngagementStats(req);
+
+      logger.success(req, 'get_groups_engagement_stats', startTime, {
+        active_members: stats.active_members,
+        meetings_this_month: stats.meetings_this_month,
+      });
+
+      res.json(stats);
     } catch (error) {
       next(error);
     }
@@ -147,12 +171,15 @@ export class CommitteeController {
       // Get the committee by ID — include caller membership so the UI can render
       // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
-      // -> project_slug for navigation, and include inherited (parent-project) permissions
-      // so the members roster can label foundation-level managers correctly (LFXV2-2059).
+      // -> project_slug for navigation, include inherited (parent-project) permissions
+      // so the members roster can label foundation-level managers correctly (LFXV2-2059),
+      // and include mailing-list status (upstream does not reliably populate
+      // has_mailing_list on this endpoint — LFXV2-2914).
       const committee = await this.committeeService.getCommitteeById(req, id, {
         includeMembership: true,
         includeProjectMetadata: true,
         includeInheritedPermissions: true,
+        includeMailingListStatus: true,
       });
 
       // Log the success
@@ -715,34 +742,6 @@ export class CommitteeController {
         return;
       }
 
-      // Determine org-required using the invite's own organization_required field — accessible
-      // to the invitee via the email-scoped query index regardless of committee-viewer status.
-      // This replaces the previous getCommitteeById + getCommitteeSettings fetch which failed
-      // the access check for invitees who are not yet committee viewers (LFXV2-2453).
-      const userEmail = getEffectiveEmail(req);
-      if (!userEmail) {
-        next(
-          ServiceValidationError.forField('email', 'User email not found in authentication context', {
-            operation: 'accept_committee_invite',
-            service: 'committee_controller',
-            path: req.path,
-          })
-        );
-        return;
-      }
-
-      const pendingInvite = await this.committeeService.getPendingInviteForUser(req, userEmail, id, inviteId);
-      if (!pendingInvite) {
-        next(
-          ServiceValidationError.forField('inviteId', 'No matching pending invite found for this user', {
-            operation: 'accept_committee_invite',
-            service: 'committee_controller',
-            path: req.path,
-          })
-        );
-        return;
-      }
-
       // Build an explicit allowlist payload — never forward unknown client-supplied fields upstream.
       const acceptData: AcceptCommitteeInviteRequest = {};
 
@@ -753,18 +752,54 @@ export class CommitteeController {
       // Upstream accepts "organization id OR (organization name + domain)" — treat either as present.
       const hasOrg = !!(orgName || orgId);
 
-      // Only enforce org as required when organization_required is explicitly true. When it is
-      // null/undefined (invite pre-dates committee-service v1.1), skip the mandatory check and
-      // let the upstream accept endpoint be authoritative.
-      if (pendingInvite.organization_required === true && !hasOrg) {
-        next(
-          ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
-            operation: 'accept_committee_invite',
-            service: 'committee_controller',
-            path: req.path,
-          })
-        );
-        return;
+      // Skip the FGA-gated pending-invite lookup when the accept originates from the LFID invite
+      // flow — the invite UID was already known from the JWT, but the FGA invitee tuple may not
+      // have propagated yet. The committee-service is authoritative for invite existence, invitee
+      // identity, and org requirements regardless of this flag: an unauthorized accept (wrong
+      // invitee, nonexistent invite, missing org) is still rejected upstream. The BFF pre-check
+      // below is a defense-in-depth optimization for non-LFID paths, not the primary security
+      // gate. Only the literal boolean true enables this path — truthy strings or objects fall
+      // through to the standard check (LFXV2-2453).
+      if (body.from_lfid_invite !== true) {
+        // Determine org-required using the invite's own organization_required field — accessible
+        // to the invitee via the email-scoped query index regardless of committee-viewer status.
+        const userEmail = getEffectiveEmail(req);
+        if (!userEmail) {
+          next(
+            ServiceValidationError.forField('email', 'User email not found in authentication context', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const pendingInvite = await this.committeeService.getPendingInviteForUser(req, userEmail, id, inviteId);
+        if (!pendingInvite) {
+          next(
+            ServiceValidationError.forField('inviteId', 'No matching pending invite found for this user', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // BFF-side optimization only — committee-service independently enforces org requirements
+        // and is the authoritative security boundary. Only enforce early when organization_required
+        // is explicitly true; null/undefined (pre-v1.1 invites) defers to upstream.
+        if (pendingInvite.organization_required === true && !hasOrg) {
+          next(
+            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+              operation: 'accept_committee_invite',
+              service: 'committee_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
       }
 
       // Always forward the organization when the user supplied one — the upstream committee-service
@@ -901,9 +936,6 @@ export class CommitteeController {
       }
 
       const data: CreateCommitteeDocumentRequest = req.body;
-
-      // Always override created_by_name from OIDC session — never trust client-provided values
-      data.created_by_name = (req.oidc?.user?.['name'] as string) || (req.oidc?.user?.['nickname'] as string) || '';
 
       // Validate required fields
       const validDocTypes = ['link', 'folder'];

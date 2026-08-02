@@ -1,0 +1,33 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA } from '@lfx-one/shared/constants';
+
+/**
+ * Guards `LFX_ONE_PLATINUM_SCHEMA` before it's interpolated into a SQL identifier: only
+ * `WORD.WORD`-shaped (exactly two segments) values pass, everything else — a stray quote, space,
+ * SQL keyword, single segment, or a three-plus-segment value — is rejected in favor of the
+ * default schema. Restricted to exactly two segments (not `{1,2}`) because every call site
+ * appends a table name unconditionally (e.g. `engagementTable()`:
+ * `` `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE` ``) — a 3-segment
+ * override would produce an invalid 4-part Snowflake identifier (`database.schema.object` is the
+ * max), silently breaking the query for exactly the operator input this override is documented to
+ * accept.
+ */
+function snowflakeQualifier(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed && /^[A-Z0-9_]+\.[A-Z0-9_]+$/i.test(trimmed) ? trimmed.toUpperCase() : null;
+}
+
+/**
+ * Resolves the `ANALYTICS.PLATINUM_LFX_ONE`-style schema every dbt-backed Snowflake read in this
+ * app is qualified with, env-overridable via `LFX_ONE_PLATINUM_SCHEMA`.
+ *
+ * TODO(LFXV2-1705 follow-up): `org-lens-meetings.service.ts`, `org-lens-project-detail.service.ts`,
+ * and `org-lens-projects.service.ts` each still carry a byte-identical private copy of this
+ * qualifier/resolver pair predating this helper. Migrate them here so a future regex tightening
+ * doesn't silently miss three of the four call sites.
+ */
+export function resolveLfxOnePlatinumSchema(): string {
+  return snowflakeQualifier(process.env['LFX_ONE_PLATINUM_SCHEMA']) ?? DEFAULT_LFX_ONE_PLATINUM_SCHEMA;
+}

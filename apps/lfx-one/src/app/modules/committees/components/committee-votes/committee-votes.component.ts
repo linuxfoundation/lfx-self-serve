@@ -14,7 +14,7 @@ import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap } from 'rxjs';
+import { catchError, filter, finalize, map, merge, of, Subject, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
@@ -40,6 +40,10 @@ export class CommitteeVotesComponent {
   public resultsDrawerVisible = model<boolean>(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
+  // Refresh trigger for initVotes(), fired by votes-table's own refresh output (after a delete) —
+  // separate from the committee-change source it merges with below so a refresh can't double-emit
+  // against it (no startWith).
+  private readonly votesRefresh$ = new Subject<void>();
 
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
@@ -51,6 +55,11 @@ export class CommitteeVotesComponent {
     this.selectedVoteId.set(voteUid);
     this.selectedVote.set(vote);
     this.resultsDrawerVisible.set(true);
+  }
+
+  /** votes-table's refresh output, fired after a successful delete. */
+  public refreshVotes(): void {
+    this.votesRefresh$.next();
   }
 
   protected onCreateVote(): void {
@@ -83,7 +92,9 @@ export class CommitteeVotesComponent {
 
   private initVotes(): Signal<Vote[]> {
     return toSignal(
-      toObservable(this.committee).pipe(
+      // votesRefresh$ re-reads this.committee() rather than using startWith, so a refresh can't
+      // double-emit against the toObservable(this.committee) source alongside it.
+      merge(toObservable(this.committee), this.votesRefresh$.pipe(map(() => this.committee()))).pipe(
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.loading.set(true);

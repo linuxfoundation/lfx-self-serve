@@ -11,6 +11,19 @@ export function isUuid(value: string): boolean {
 }
 
 /**
+ * Converts arbitrary label text into a kebab-case, testid-safe slug (lowercase,
+ * alphanumerics only, words joined by single hyphens).
+ * @param text - The label text to slugify
+ * @returns A kebab-case slug, e.g. "Meetings Attended" -> "meetings-attended"
+ */
+export function slugify(text: string): string {
+  const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const start = slug.startsWith('-') ? 1 : 0;
+  const end = slug.endsWith('-') ? slug.length - 1 : slug.length;
+  return slug.slice(start, end);
+}
+
+/**
  * Wraps a text string into multiple lines, breaking on word boundaries.
  * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
  * @param text - The label text to wrap

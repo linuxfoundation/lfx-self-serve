@@ -51,6 +51,14 @@ export interface UserInfo {
   avatar?: string;
 }
 
+/** Partial user profile on upstream document audit-user fields (`created_by` / `updated_by`). */
+export interface AuditUserProfile {
+  name?: string;
+  email?: string;
+  username?: string;
+  avatar?: string;
+}
+
 export interface ProjectSettings {
   uid: string;
   announcement_date: string;
@@ -135,8 +143,6 @@ export interface CreateProjectDocumentRequest {
   description?: string;
   /** Parent folder UID (to place a link inside a folder) */
   parent_uid?: string;
-  /** Display name of the creator (populated by BFF from session) */
-  created_by_name?: string;
 }
 
 /**
@@ -177,6 +183,8 @@ export interface ProjectDocumentUpstreamResponse {
   project_uid?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   uploaded_by_username?: string;
 }
 
@@ -200,6 +208,8 @@ export interface ProjectDocumentQueryResult {
   folder_uid?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   uploaded_by_username?: string;
 }
 
@@ -226,4 +236,20 @@ export interface PendingSurveyRow {
   ORGANIZATION_NAME: string;
   RESPONSE_TYPE: string;
   SURVEY_LINK: string;
+}
+
+/**
+ * Reduced boolean summary of the caller's DIRECT `writer` grants — whether at least one
+ * directly-writable project satisfies `computeIsFoundation`, and whether at least one does not.
+ * Powers `WriterGrantsService`'s bootstrap fast path (LFXV2-2857): produced by
+ * `ProjectService.getWriterSummary`, which reduces `getDirectGrantProjects` (a
+ * `filter_grants=direct` query-service pull, cheap) instead of `getProjects`'s unscoped
+ * pagination + batch access-check (11-19s at scale). Direct-only under-reports a foundation
+ * writer's *inherited* access to non-foundation children — `WriterGrantsService`'s deferred
+ * background sweep of `getProjects()` independently OR-merges into these two booleans to
+ * restore that coverage without blocking bootstrap.
+ */
+export interface WriterSummary {
+  hasWriterFoundation: boolean;
+  hasWriterProject: boolean;
 }

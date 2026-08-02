@@ -23,7 +23,13 @@ import {
   PROJECT_HEALTH_STATUS_FILTER_OPTIONS,
   PROJECT_HEALTH_UNSCORED_BADGE,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, buildVisiblePages } from '@lfx-one/shared/utils';
+import {
+  buildLensAwareInsightsUrl,
+  buildVisiblePages,
+  computeHealthyOrBetterCount,
+  computeHealthyOrBetterPct,
+  computeScoredCount,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -37,6 +43,7 @@ import type {
   FoundationProjectsDetailResponse,
   HealthStatusFilterValue,
   ProjectTableRow,
+  ZeroStubBarDataset,
 } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -127,7 +134,15 @@ export class ProjectHealthScoresDrawerComponent {
   public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
   // True while the parent's foundation health-score distribution request is in flight.
-  // The parent zeroes `data`/`total` during this window, so without this gate the header badge and chart would render "no scores" while the independently-loaded projects table can already show scored badges.
+  // Gates only the parts of the drawer that depend on `data` (summary + chart). The header
+  // badge additionally waits on `totalProjectsLoading` via `distributionLoading`, because
+  // `scoredLabel` reads `total`.
+  public readonly healthScoresLoading = input<boolean>(false);
+
+  // True while either the health-score distribution OR the total-projects request is in flight.
+  // The parent zeroes `data`/`total` during this window, so without this gate the header badge
+  // would render "no scores" while the independently-loaded projects table can already show
+  // scored badges.
   public readonly distributionLoading = input<boolean>(false);
 
   // Total foundation projects (from FOUNDATION_TOTAL_PROJECTS_MONTHLY) — may exceed
@@ -148,6 +163,16 @@ export class ProjectHealthScoresDrawerComponent {
   protected readonly scoredProjects: Signal<number> = computed(() => this.initScoredProjects());
 
   protected readonly scoredLabel: Signal<string> = computed(() => this.initScoredLabel());
+
+  // Mirrors the foundation-health card's focal KPI so the card's `%` and the drawer's
+  // summary can never drift apart.
+  protected readonly healthyOrBetterCount: Signal<number> = computed(() => computeHealthyOrBetterCount(this.data()));
+
+  protected readonly healthyOrBetterPct: Signal<number> = computed(() => computeHealthyOrBetterPct(this.data()));
+
+  // Pre-formatted labels so the template stays a pure binding (no toLocaleString in markup).
+  protected readonly healthyOrBetterCountLabel: Signal<string> = computed(() => this.healthyOrBetterCount().toLocaleString('en-US'));
+  protected readonly scoredProjectsLabel: Signal<string> = computed(() => this.scoredProjects().toLocaleString('en-US'));
 
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
@@ -190,8 +215,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   // === Private Initializers ===
   private initScoredProjects(): number {
-    const d = this.data();
-    return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;
+    return computeScoredCount(this.data());
   }
 
   private initScoredLabel(): string {
@@ -203,15 +227,21 @@ export class ProjectHealthScoresDrawerComponent {
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const d = this.data();
+      const barColors = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]);
       return {
         labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
         datasets: [
           {
             data: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => d[category] ?? 0),
-            backgroundColor: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]),
+            backgroundColor: barColors,
+            // Pin hover color to the bar's own fill so the active bar doesn't darken and the rest don't read as ghosted.
+            hoverBackgroundColor: barColors,
             borderRadius: 4,
             borderSkipped: 'start',
-          },
+            // Opt into the zero-bar stub plugin (registered by ChartComponent) so empty
+            // buckets render as a 4px gray stub instead of invisible zero-height bars.
+            zeroStub: true,
+          } as ZeroStubBarDataset,
         ],
       };
     });
