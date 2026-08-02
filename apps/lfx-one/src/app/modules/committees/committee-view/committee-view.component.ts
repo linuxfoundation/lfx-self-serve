@@ -837,6 +837,14 @@ export class CommitteeViewComponent {
     }));
     return toSignal(
       toObservable(engagementKey).pipe(
+        // Suppress emissions entirely while there's no committee yet (matches initDocuments'
+        // identical filter-before-switchMap shape) — the pipeline must not touch engagementLoading
+        // at all during this phase, so it stays at its `true` initial value. Setting it `false` from
+        // inside switchMap's old `!uid` branch fired on this very first tick (before the committee
+        // fetch resolves), clearing the loading state prematurely and letting the unavailable/em-dash
+        // states flash once the page's own spinner drops but before the real engagement fetch had a
+        // chance to run (Cursor Bugbot).
+        filter((key): key is typeof key & { uid: string } => key.uid !== null),
         distinctUntilChanged(
           (a, b) =>
             a.uid === b.uid &&
@@ -847,9 +855,10 @@ export class CommitteeViewComponent {
             a.refresh === b.refresh
         ),
         switchMap(({ uid, window, enabled, roleLoading, notEligible }) => {
+          // uid is guaranteed non-null here (filtered above) — this only needs to check flag/SSR now.
           // Flag off (or SSR, where the flag fails closed to its default) means zero engagement
           // fetches — the gated UI renders nothing, so a request would be pure waste.
-          if (!enabled || !uid || !isPlatformBrowser(this.platformId)) {
+          if (!enabled || !isPlatformBrowser(this.platformId)) {
             this.engagementLoading.set(false);
             return of(null);
           }
