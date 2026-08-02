@@ -80,8 +80,13 @@ export class SidebarComponent {
   protected readonly isHybridPersona = this.lensService.isHybridPersona;
   protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.activeContext());
   // Carried on every nav item's routerLink so switching tabs (Meetings, Groups, Mailing Lists, ...)
-  // keeps ?project= in the URL instead of silently dropping it (LFXV2-2837).
+  // keeps ?project= in the URL instead of silently dropping it (LFXV2-2837). Gated on the route's
+  // declared lens rather than just checking selectedProject — activeContext() falls back to the
+  // cookie-restored selection on Me/Org lenses too, which would otherwise leak a foundation/project
+  // slug into unrelated Me/Org navigation (e.g. /meetings, /org/overview).
   protected readonly projectQueryParams: Signal<{ project?: string }> = computed(() => {
+    const kind = this.projectContextService.activeRouteLensKind();
+    if (kind !== 'foundation' && kind !== 'project') return {};
     const slug = this.selectedProject()?.slug;
     return slug ? { project: slug } : {};
   });

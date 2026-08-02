@@ -213,14 +213,26 @@ export class AppComponent {
         takeUntilDestroyed(destroyRef)
       )
       .subscribe(() => {
-        const parsed = router.parseUrl(router.url);
+        // Read the live browser URL rather than router.url — the access-denied listener above may
+        // have already stripped `_notice` via a direct Location.replaceState on this same
+        // NavigationEnd tick, and router.url does not reflect history changes made outside the
+        // Router. Reparsing router.url here would resurrect the stripped param.
+        const parsed = router.parseUrl(location.path(true));
         if ('project' in parsed.queryParams) return;
 
+        // Derived from this navigation's own snapshot rather than
+        // projectContextService.activeRouteLensKind() — that signal is updated by
+        // MainLayoutComponent on this same NavigationEnd, but AppComponent's subscription (registered
+        // at bootstrap) always runs first, so reading the signal here would see the previous route's
+        // stale kind for one tick on lens-less routes (e.g. /profile, /badges).
         let snapshot = router.routerState.snapshot.root;
-        while (snapshot.firstChild) snapshot = snapshot.firstChild;
+        let kind: 'foundation' | 'project' | null = null;
+        while (snapshot.firstChild) {
+          snapshot = snapshot.firstChild;
+          const declared = snapshot.data['lens'];
+          if (declared === 'foundation' || declared === 'project') kind = declared;
+        }
         if (Object.keys(snapshot.params).length > 0) return;
-
-        const kind = projectContextService.activeRouteLensKind();
         if (!kind) return;
 
         const context = kind === 'foundation' ? projectContextService.selectedFoundation() : projectContextService.selectedProject();
