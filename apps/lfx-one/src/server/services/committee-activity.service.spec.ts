@@ -280,13 +280,25 @@ describe('CommitteeActivityService', () => {
         req,
         expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' })
       );
-      expect(proxyRequest).toHaveBeenCalledWith(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        expect.objectContaining({ type: 'survey', date_field: 'last_modified_at', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' })
-      );
+    });
+
+    it('sends no date_field/date_from/date_to to the survey leg, even with since and cursor set', async () => {
+      // Surveys are the one leg deliberately excluded from upstream date narrowing — see
+      // fetchSurveyEvents's own comment for why (a cutoff-driven closure's occurred_at isn't
+      // bounded below by any field the survey row gets written to, so narrowing on last_modified_at
+      // would systematically exclude exactly the rows `since` is meant to include). Regression for
+      // the gap Copilot caught in the cutoff-driven-closure fix.
+      await service.getCommitteeActivity(req, COMMITTEE_UID, {
+        since: '2026-01-01T00:00:00Z',
+        cursor: { before: '2026-02-01T00:00:00Z', key: 'vote:unrelated' },
+        limit: 8,
+      });
+
+      const surveyCall = proxyRequest.mock.calls.find(([, , path, , query]) => path === '/query/resources' && query?.type === 'survey');
+      expect(surveyCall?.[4]).not.toHaveProperty('date_field');
+      expect(surveyCall?.[4]).not.toHaveProperty('date_from');
+      expect(surveyCall?.[4]).not.toHaveProperty('date_to');
+      expect(surveyCall?.[4]).toMatchObject({ page_size: 25, sort: 'updated_desc' });
     });
 
     it('ceils a sub-second cursor to the next whole second before sending it upstream as date_to', async () => {
@@ -894,6 +906,39 @@ describe('CommitteeActivityService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0].type).toBe('survey_closed');
       expect(result.data[0].occurred_at).toBe('2026-01-05T00:00:00Z');
+    });
+
+    it('includes a cutoff-driven survey closure when since falls between its last_modified_at and its real occurred_at', async () => {
+      // The exact gap Copilot caught: with upstream date_field narrowing on last_modified_at (the
+      // previous implementation), a survey last modified Jan 1 but closed by its Jan 5 cutoff would
+      // be excluded by an upstream `?since=Jan 4` filter, even though its emitted occurred_at (Jan
+      // 5) is inside that window. Now that the survey leg sends no upstream date narrowing at all
+      // (see fetchSurveyEvents), this must come through — the in-memory since pass is the only
+      // filter, applied against the corrected occurred_at, not last_modified_at.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-cutoff',
+                data: survey({
+                  uid: 'survey-cutoff',
+                  survey_status: SurveyStatus.SENT,
+                  survey_cutoff_date: '2026-01-05T00:00:00Z',
+                  last_modified_at: '2026-01-01T00:00:00Z',
+                  created_at: '2026-01-01T00:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-04T00:00:00Z', limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({ type: 'survey_closed', occurred_at: '2026-01-05T00:00:00Z' });
     });
 
     it('uses last_modified_at, not survey_cutoff_date, for an explicitly-closed survey status (not cutoff-driven)', async () => {

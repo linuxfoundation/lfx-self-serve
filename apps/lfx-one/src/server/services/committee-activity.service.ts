@@ -217,23 +217,28 @@ export class CommitteeActivityService {
     // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
     // converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer contract
     // documents as index-write/audit metadata, not a copy of any `data.*` domain field — distinct
-    // from the `date_field` values these three legs filter on: votes' `data.last_modified_time`,
-    // surveys' `data.last_modified_at`, files' `data.updated_at` (each auto-prefixed with `data.` by
-    // query-service, unlike `sort`). Files happens to share a field NAME with the sort target
-    // (`updated_at` == `updated_at`) despite resolving to a different actual field once `data.`
-    // prefixing is applied; surveys' and votes' date_field names don't even coincide with `updated_at`.
-    // Same class of approximation as the per-leg date_field (filter-dimension) caveats discussed
-    // next, just in the sort dimension instead.
+    // from the `date_field` values votes and files filter on: votes' `data.last_modified_time`,
+    // files' `data.updated_at` (each auto-prefixed with `data.` by query-service, unlike `sort`).
+    // Files happens to share a field NAME with the sort target (`updated_at` == `updated_at`)
+    // despite resolving to a different actual field once `data.` prefixing is applied; votes'
+    // date_field name doesn't even coincide with `updated_at`. Surveys is the exception here: it
+    // has no upstream date_field at all (see fetchSurveyEvents's own comment for why) — `sort:
+    // updated_desc` is the only upstream ordering this leg gets. Same class of approximation as the
+    // per-leg date_field (filter-dimension) caveats discussed next, just in the sort dimension
+    // instead.
     //
-    // Filter dimension: votes/surveys/files each filter on a single upstream `date_field` that only
+    // Filter dimension: votes/files each filter on a single upstream `date_field` that only
     // approximates their own multi-field occurred_at derivation (see each leg's own comment for
     // which field and why) — sending that imperfect narrowing upstream still beats sending none at
     // all, which was tried and reverted earlier in this file's history: it traded the rare
     // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
     // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
-    // backstop against over-inclusion for all three legs, not under-inclusion — an
-    // imperfectly-narrowed leg can still exclude a real in-window row upstream before that pass ever
-    // sees it.
+    // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
+    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys is
+    // the one exception where "sending none at all" IS the right call, not the failure mode this
+    // paragraph describes: unlike votes/files, a survey's cutoff-driven occurred_at isn't bounded
+    // below by any field the row gets written to, so date_field narrowing there would systematically
+    // (not rarely) exclude exactly the rows `since` is meant to include — see fetchSurveyEvents.
     //
     // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
     // are each bounded to a single upstream page of `fetchSize` rows.
@@ -611,20 +616,25 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<{ events: (SurveyPublishedActivityEvent | SurveyClosedActivityEvent)[]; saturated: boolean }> {
-    const hasWindow = !!since || !!before;
+    // No date_field/date_from/date_to on this leg — unlike votes/files, surveys have a mode of
+    // occurred_at (a cutoff-driven closure, see isCutoffDrivenClosure/mapSurveyToEvent below) that
+    // is NOT bounded below by last_modified_at: a SENT survey can sit with an old last_modified_at
+    // while its real occurred_at (survey_cutoff_date) is still in the future relative to that
+    // write, with no upstream write ever marking the transition. Narrowing on
+    // date_field: 'last_modified_at' (the previous approach) would upstream-exclude exactly that
+    // row whenever `since` falls between its last_modified_at and its cutoff-driven occurred_at —
+    // not a rare-edge best-effort miss like the votes/files legs' narrowing, but a systematic one
+    // for every cutoff-driven closure `since` is meant to include (Copilot caught this on this
+    // leg's initial cutoff fix). Dropping upstream date narrowing here entirely closes that: this
+    // leg falls back to the same "Known v1 limitation" already documented at the top of
+    // getCommitteeActivity for every page_size-bounded leg (a survey outside the top-fetchSize
+    // slice by `sort: updated_desc` can still be missed), which is an honest, pre-existing
+    // trade-off rather than a newly-introduced correctness gap.
     const query: Record<string, unknown> = {
       type: 'survey',
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
-      // Best-effort narrowing (see the filter-dimension paragraph in getCommitteeActivity's
-      // fetchSize comment) — occurred_at is firstValidTimestamp(survey.last_modified_at,
-      // survey.created_at), so a never-modified survey (last_modified_at is the Go zero-date,
-      // created_at is the real value) could be excluded upstream on this field before the
-      // in-memory backstop ever sees it.
-      ...(hasWindow && { date_field: 'last_modified_at' }),
-      ...(since && { date_from: since }),
-      ...(before && { date_to: before }),
     };
 
     // Deliberately not SurveyService.getSurveys — that always fully drains every page via
