@@ -12,10 +12,23 @@ import { ServiceValidationError } from '../errors';
  * `@lfx-one/shared/utils`, which pulls in Angular-only runtime code that Vitest can't resolve
  * outside an Angular context (same issue documented in `activity-feed.utils.ts`). Inlined locally
  * to keep this helper's unit test importable without mocking half of `validation.helper.ts`.
+ *
+ * Rejects (not silently discards) a defined-but-non-string value. Express's default `qs`-based
+ * query parser (`express.urlencoded({ extended: true })` in `server.ts`) turns a repeated param
+ * (`?page_token=a&page_token=b`) into an array, not a string — treating that the same as "absent"
+ * would silently restart pagination (`page_token`), ignore `since`, or fall back `page_size` to its
+ * default, with no error surfaced to the caller. CodeRabbit flagged this independently; confirmed
+ * against `server.ts`'s parser config.
  */
-function getStringQueryParam(req: Request, name: string): string | undefined {
+function getStringQueryParam(req: Request, name: string, operation: string): string | undefined {
   const value = req.query[name];
-  return typeof value === 'string' ? value : undefined;
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw ServiceValidationError.forField(name, `${name} must be provided once, as a single string value`, { operation });
+  }
+  return value;
 }
 
 function isParseableTimestamp(value: string): boolean {
@@ -85,7 +98,7 @@ function decodePageToken(raw: string, operation: string): ActivityPageCursor {
  * default would silently mask the caller's mistake.
  */
 export function parseCommitteeActivityQuery(req: Request, operation: string): CommitteeActivityQuery {
-  const rawSince = getStringQueryParam(req, 'since');
+  const rawSince = getStringQueryParam(req, 'since', operation);
   let since: string | undefined;
   if (rawSince !== undefined) {
     if (!isParseableTimestamp(rawSince)) {
@@ -94,7 +107,7 @@ export function parseCommitteeActivityQuery(req: Request, operation: string): Co
     since = normalizeTimestamp(rawSince);
   }
 
-  const rawPageSize = getStringQueryParam(req, 'page_size');
+  const rawPageSize = getStringQueryParam(req, 'page_size', operation);
   let limit = ACTIVITY_FEED_DEFAULT_PAGE_SIZE;
   if (rawPageSize !== undefined) {
     const parsedPageSize = Number(rawPageSize);
@@ -104,7 +117,7 @@ export function parseCommitteeActivityQuery(req: Request, operation: string): Co
     limit = parsedPageSize;
   }
 
-  const rawPageToken = getStringQueryParam(req, 'page_token');
+  const rawPageToken = getStringQueryParam(req, 'page_token', operation);
   const cursor = rawPageToken !== undefined ? decodePageToken(rawPageToken, operation) : undefined;
 
   return { since, cursor, limit };

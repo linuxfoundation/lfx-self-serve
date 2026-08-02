@@ -38,9 +38,14 @@ export interface MeetingHeldActivityEvent extends BaseActivityEvent {
      */
     meeting_occurrence_id: string;
     title: string;
-    // No `password`: the client's click handler re-hydrates the full PastMeeting (including
-    // password) from its own already-fetched pastMeetings() signal via meeting_id, matching how
-    // ActivityFeedAction's `past-meeting` variant already carries only `meetingId`, not a password.
+    /**
+     * Carried here (not re-hydrated client-side from a separate signal) because the activity feed
+     * is its own independent, differently-windowed fetch from the Overview page's own
+     * `pastMeetings()` signal — a password-protected meeting can appear in one without appearing in
+     * the other, which silently dropped the password on navigation (Copilot/Cursor Bugbot/dealako
+     * review on PR #1288).
+     */
+    password: string | null;
   };
 }
 

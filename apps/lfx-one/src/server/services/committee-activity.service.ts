@@ -24,7 +24,7 @@ import type {
   VoteClosedActivityEvent,
   VoteOpenedActivityEvent,
 } from '@lfx-one/shared/interfaces';
-import { firstValidTimestamp, getPastMeetingResourceId, getPastMeetingStartTimeMs, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { firstValidTimestamp, getPastMeetingResourceId, getPastMeetingStartTimeMs, getSurveyDisplayStatus, normalizePollStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -118,6 +118,23 @@ function ceilToWholeSecond(iso: string): string | undefined {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return undefined;
   return new Date(Math.ceil(ms / 1000) * 1000).toISOString();
+}
+
+/**
+ * True when `survey`'s CLOSED display status is driven purely by its cutoff date passing
+ * (`SurveyStatus.SENT` with `survey_cutoff_date` in the past — mirrors `getEffectiveSurveyStatus`'s
+ * own SENT/cutoff branch in `survey.utils.ts`), as opposed to an explicit "closed" `survey_status`
+ * or `response_status` write. Duplicated here rather than imported because
+ * `getSurveyDisplayStatus`/`getEffectiveSurveyStatus` only return the resulting status, not which
+ * branch produced it — this file needs that distinction to pick `occurred_at`.
+ */
+function isCutoffDrivenClosure(survey: Survey): boolean {
+  if (survey.survey_status?.toLowerCase() !== SurveyStatus.SENT) return false;
+  // Mirrors survey.utils.ts's private RESPONSE_STATUS_CLOSED_SENTINEL ('closed') — an explicit
+  // response_status closure isn't cutoff-driven even if the cutoff has also passed.
+  if (survey.response_status?.toLowerCase() === 'closed') return false;
+  const cutoffDate = survey.survey_cutoff_date ? new Date(survey.survey_cutoff_date) : null;
+  return cutoffDate !== null && !Number.isNaN(cutoffDate.getTime()) && new Date() >= cutoffDate;
 }
 
 function isAtOrAfterSince(occurredAt: string, since: string | undefined): boolean {
@@ -288,19 +305,19 @@ export class CommitteeActivityService {
     // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
     logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
 
-    const [committee, pastMeetingEvents, voteEvents, surveyEvents, documentResult] = await Promise.all([
+    const [committee, pastMeetingResult, voteResult, surveyResult, documentResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
-        return [];
+        return { events: [], saturated: false };
       }),
       this.fetchVoteEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch vote activity, continuing without it', { committee_uid: committeeUid, err });
-        return [];
+        return { events: [], saturated: false };
       }),
       this.fetchSurveyEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch survey activity, continuing without it', { committee_uid: committeeUid, err });
-        return [];
+        return { events: [], saturated: false };
       }),
       this.fetchDocumentEvents(req, committeeUid, since, before, fetchSize, cursor).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
@@ -311,7 +328,7 @@ export class CommitteeActivityService {
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
     // doc comment) — by this line `committee` is always a resolved Committee.
     const votingEnabled = committee.enable_voting;
-    const sources: ActivityEvent[][] = [pastMeetingEvents, votingEnabled ? voteEvents : [], surveyEvents, documentResult.events];
+    const sources: ActivityEvent[][] = [pastMeetingResult.events, votingEnabled ? voteResult.events : [], surveyResult.events, documentResult.events];
 
     // Single pass: attach each event's sort key once, apply since/cursor, sort desc by
     // (occurred_at, key). No per-source pre-cap — a global sort+slice already picks the true top
@@ -340,15 +357,16 @@ export class CommitteeActivityService {
     // e.g. a single dominant source returning exactly `fetchSize` rows, several of which get
     // dropped by the in-memory since/cursor/invalid-timestamp filters, can leave `windowed.length`
     // at or under `limit` while real, unfetched rows remain beyond this page's upstream cutoff.
-    // Folders/links are excluded from this saturation check — they have no upstream page bound at
-    // all (fetched in full every call) and are already filtered+bounded correctly against the exact
-    // cursor inside fetchDocumentEvents, so a fetched length at `fetchSize` there reflects this
-    // leg's own internal cap, not an upstream truncation signal.
-    const anyLegSaturated =
-      pastMeetingEvents.length >= fetchSize ||
-      (votingEnabled && voteEvents.length >= fetchSize) ||
-      surveyEvents.length >= fetchSize ||
-      documentResult.saturated;
+    // Each bounded leg's own `saturated` flag is derived from the upstream `page_token` it actually
+    // got back (see each fetch* method) — NOT from comparing its returned row count to `fetchSize`.
+    // A leg can return exactly `fetchSize` rows as a genuine final page with no further
+    // `page_token`; a row-count comparison alone would falsely flag that as saturated and hand back
+    // a cursor that only leads to an empty next page (independently flagged by Copilot and
+    // dealako). Folders/links are excluded from this saturation check — they have no upstream page
+    // bound at all (fetched in full every call) and are already filtered+bounded correctly against
+    // the exact cursor inside fetchDocumentEvents, so a fetched length at `fetchSize` there reflects
+    // this leg's own internal cap, not an upstream truncation signal.
+    const anyLegSaturated = pastMeetingResult.saturated || (votingEnabled && voteResult.saturated) || surveyResult.saturated || documentResult.saturated;
 
     const page = windowed.slice(0, limit);
     const data = page.map(({ event }) => event);
@@ -365,9 +383,9 @@ export class CommitteeActivityService {
 
     logger.info(req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
-      meeting_count: pastMeetingEvents.length,
-      vote_count: voteEvents.length,
-      survey_count: surveyEvents.length,
+      meeting_count: pastMeetingResult.events.length,
+      vote_count: voteResult.events.length,
+      survey_count: surveyResult.events.length,
       document_count: documentResult.events.length,
       voting_enabled: votingEnabled,
       returned: data.length,
@@ -438,7 +456,7 @@ export class CommitteeActivityService {
     since: string | undefined,
     before: string | undefined,
     fetchSize: number
-  ): Promise<ActivityEvent[]> {
+  ): Promise<{ events: ActivityEvent[]; saturated: boolean }> {
     // date_field: 'start_time' — unlike every other leg's date_field narrowing (best-effort; see the
     // shared rationale at the top of getCommitteeActivity), this one is a correctness guarantee for
     // the upstream contract as verified: occurred_at (getPastMeetingStartTimeMs) prefers
@@ -480,7 +498,13 @@ export class CommitteeActivityService {
     // O(1)-extra-calls efficiency gain.
     // Cast to PastMeeting[] — getMeetings' return type is generic Meeting[], but the actual shape
     // is PastMeeting for meetingType 'v1_past_meeting' (same cast PastMeetingController itself uses).
-    const { data: meetings } = (await this.meetingService.getMeetings(req, query, 'v1_past_meeting', false)) as { data: PastMeeting[] };
+    // page_token — getMeetings' own PaginatedResponse already carries the real upstream signal for
+    // "more data exists on this leg"; see the saturation comment in getCommitteeActivity for why
+    // this is preferred over comparing `meetings.length` to `fetchSize`.
+    const { data: meetings, page_token: pageToken } = (await this.meetingService.getMeetings(req, query, 'v1_past_meeting', false)) as {
+      data: PastMeeting[];
+      page_token?: string;
+    };
 
     // Tripwire for the "meetings is exact" claim in getCommitteeActivity's fetchSize comment — a
     // documented-but-silent regression is worse than no documentation, so make it observable: if a
@@ -503,7 +527,12 @@ export class CommitteeActivityService {
         type: 'meeting_held' as const,
         occurred_at: occurredAt,
         committee_uid: committeeUid,
-        payload: { meeting_id: meeting.id, meeting_occurrence_id: getPastMeetingResourceId(meeting), title: meeting.title },
+        payload: {
+          meeting_id: meeting.id,
+          meeting_occurrence_id: getPastMeetingResourceId(meeting),
+          title: meeting.title,
+          password: meeting.password,
+        },
       };
     });
     if (contractBreachCount > 0) {
@@ -514,7 +543,7 @@ export class CommitteeActivityService {
         { committee_uid: committeeUid, affected_row_count: contractBreachCount, total_rows: meetings.length }
       );
     }
-    return events;
+    return { events, saturated: !!pageToken };
   }
 
   // ─── Votes → vote_opened | vote_closed ─────────────────────────────────────
@@ -525,7 +554,7 @@ export class CommitteeActivityService {
     since: string | undefined,
     before: string | undefined,
     fetchSize: number
-  ): Promise<(VoteOpenedActivityEvent | VoteClosedActivityEvent)[]> {
+  ): Promise<{ events: (VoteOpenedActivityEvent | VoteClosedActivityEvent)[]; saturated: boolean }> {
     // date_field: 'last_modified_time' is best-effort narrowing (see the filter-dimension paragraph
     // in getCommitteeActivity's fetchSize comment for why narrowing imperfectly still beats not
     // narrowing at all) — a vote's occurred_at is actually
@@ -541,8 +570,10 @@ export class CommitteeActivityService {
       ...(before && { date_to: before }),
     };
 
-    const { data: votes } = await this.voteService.getVotes(req, query);
-    return votes.map((vote) => this.mapVoteToEvent(vote, committeeUid));
+    // page_token — see the saturation comment in getCommitteeActivity for why this is preferred
+    // over comparing `votes.length` to `fetchSize`.
+    const { data: votes, page_token: pageToken } = await this.voteService.getVotes(req, query);
+    return { events: votes.map((vote) => this.mapVoteToEvent(vote, committeeUid)), saturated: !!pageToken };
   }
 
   /**
@@ -552,7 +583,14 @@ export class CommitteeActivityService {
    * log would naturally emit both `vote_opened` and `vote_closed` as they occur.
    */
   private mapVoteToEvent(vote: Vote, committeeUid: string): VoteOpenedActivityEvent | VoteClosedActivityEvent {
-    const isClosed = vote.status === PollStatus.ENDED || !!vote.early_end_time;
+    // normalizePollStatus, not a raw comparison — Vote.status arrives with inconsistent casing
+    // (poll.utils.ts's normalizePollStatus doc comment; poll.utils.spec.ts exercises 'Ended'/'ACTIVE'
+    // mixed-case inputs), which is exactly why isVoteCalendarEventPast (meeting.utils.ts) goes
+    // through the same normalization for its own ended check rather than comparing vote.status
+    // directly. Skipping it here misclassified a non-canonical-case "ENDED" vote as vote_opened,
+    // stamped at creation time instead of close time — caught independently by Copilot and Cursor
+    // Bugbot, confirmed against current code.
+    const isClosed = normalizePollStatus(vote.status) === PollStatus.ENDED || !!vote.early_end_time;
     const occurredAt = isClosed
       ? firstValidTimestamp(vote.early_end_time, vote.end_time, vote.last_modified_time, vote.creation_time)
       : firstValidTimestamp(vote.creation_time, vote.last_modified_time);
@@ -572,7 +610,7 @@ export class CommitteeActivityService {
     since: string | undefined,
     before: string | undefined,
     fetchSize: number
-  ): Promise<(SurveyPublishedActivityEvent | SurveyClosedActivityEvent)[]> {
+  ): Promise<{ events: (SurveyPublishedActivityEvent | SurveyClosedActivityEvent)[]; saturated: boolean }> {
     const hasWindow = !!since || !!before;
     const query: Record<string, unknown> = {
       type: 'survey',
@@ -596,14 +634,32 @@ export class CommitteeActivityService {
     // `| null` — see fetchCommittee's note above on why this file annotates it per call site.
     const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
 
-    return (response?.resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid));
+    // response?.page_token — see the saturation comment in getCommitteeActivity for why this is
+    // preferred over comparing the mapped array's length to `fetchSize`.
+    return {
+      events: (response?.resources ?? []).map((resource) => this.mapSurveyToEvent(resource.data, committeeUid)),
+      saturated: !!response?.page_token,
+    };
   }
 
   private mapSurveyToEvent(survey: Survey, committeeUid: string): SurveyPublishedActivityEvent | SurveyClosedActivityEvent {
     const displayStatus = getSurveyDisplayStatus(survey);
+    // A cutoff-driven closure (SENT past its survey_cutoff_date — see isCutoffDrivenClosure's own
+    // doc comment) has no corresponding last_modified_at write: the survey just sits SENT while
+    // time passes. Falling back to last_modified_at/created_at in that case stamps survey_closed at
+    // the publish/update time instead of the real closure moment, which can misorder the feed or
+    // let `since` filtering drop a closure that genuinely happened inside the requested window.
+    // Confirmed by Copilot, matches dealako's review.
+    let occurredAt = firstValidTimestamp(survey.last_modified_at, survey.created_at);
+    if (displayStatus === SurveyStatus.CLOSED && isCutoffDrivenClosure(survey)) {
+      const cutoffTimestamp = firstValidTimestamp(survey.survey_cutoff_date ?? undefined);
+      if (cutoffTimestamp) {
+        occurredAt = cutoffTimestamp;
+      }
+    }
     return {
       type: displayStatus === SurveyStatus.CLOSED ? 'survey_closed' : 'survey_published',
-      occurred_at: firstValidTimestamp(survey.last_modified_at, survey.created_at),
+      occurred_at: occurredAt,
       committee_uid: committeeUid,
       payload: { survey_uid: survey.uid, title: survey.survey_title, status: displayStatus },
     };
@@ -621,7 +677,7 @@ export class CommitteeActivityService {
   ): Promise<{ events: DocumentUploadedActivityEvent[]; saturated: boolean }> {
     const hasWindow = !!since || !!before;
 
-    const [folders, links, files] = await Promise.all([
+    const [folders, links, filesResult] = await Promise.all([
       // `| null` on folders/links/files below — see fetchCommittee's note on why this file
       // annotates it per call site.
       this.microserviceProxy
@@ -651,10 +707,12 @@ export class CommitteeActivityService {
           ...(since && { date_from: since }),
           ...(before && { date_to: before }),
         })
-        .then((response) => (response?.resources ?? []).map((resource) => resource.data))
+        // page_token, not just the mapped array — see the saturation comment below for why this
+        // leg's real upstream signal is preferred over comparing the array's length to `fetchSize`.
+        .then((response) => ({ files: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
         .catch((err) => {
           logger.warning(req, 'get_committee_activity', 'Failed to fetch committee files, continuing without them', { committee_uid: committeeUid, err });
-          return [] as CommitteeActivityDocumentFile[];
+          return { files: [] as CommitteeActivityDocumentFile[], pageToken: undefined as string | undefined };
         }),
     ]);
 
@@ -694,17 +752,19 @@ export class CommitteeActivityService {
         ),
       fetchSize
     );
-    const fileEvents = files.map((file) =>
+    const fileEvents = filesResult.files.map((file) =>
       this.buildDocumentEvent(committeeUid, file.uid, file.name, 'file', firstValidTimestamp(file.updated_at, file.created_at))
     );
 
     // Only the files leg feeds `saturated` — it's the one document sub-leg bounded by an upstream
-    // page_size (like meetings/votes/surveys), so a fetched length at fetchSize is a real signal
-    // there could be more upstream. Folders/links are deliberately excluded: they have no upstream
-    // bound at all (fetched in full, every call) and are already filtered+bounded against the exact
-    // cursor above, so hitting fetchSize there reflects this leg's own correct internal cap, not an
-    // under-fetch.
-    return { events: [...folderEvents, ...linkEvents, ...fileEvents], saturated: files.length >= fetchSize };
+    // page_size (like meetings/votes/surveys), so its own upstream `page_token` is a real signal
+    // there could be more data upstream (not a comparison of the fetched array's length to
+    // `fetchSize` — a leg can return exactly `fetchSize` rows as a genuine final page with no
+    // further `page_token`; see the saturation comment in getCommitteeActivity). Folders/links are
+    // deliberately excluded: they have no upstream bound at all (fetched in full, every call) and
+    // are already filtered+bounded against the exact cursor above, so hitting fetchSize there
+    // reflects this leg's own correct internal cap, not an under-fetch.
+    return { events: [...folderEvents, ...linkEvents, ...fileEvents], saturated: !!filesResult.pageToken };
   }
 
   private buildDocumentEvent(

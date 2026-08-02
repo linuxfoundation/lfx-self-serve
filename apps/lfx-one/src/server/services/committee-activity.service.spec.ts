@@ -47,11 +47,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const surveyUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/survey.utils')>(
     '../../../../../packages/shared/src/utils/survey.utils'
   );
+  const pollUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/poll.utils')>(
+    '../../../../../packages/shared/src/utils/poll.utils'
+  );
   return {
     firstValidTimestamp: iso.firstValidTimestamp,
     getPastMeetingStartTimeMs: pastMeetingUtils.getPastMeetingStartTimeMs,
     getPastMeetingResourceId: pastMeetingUtils.getPastMeetingResourceId,
     getSurveyDisplayStatus: surveyUtils.getSurveyDisplayStatus,
+    normalizePollStatus: pollUtils.normalizePollStatus,
   };
 });
 // Real normalizeTimestamp (not a hand-copied stub) — its exact Date.parse/new Date().toISOString()
@@ -193,6 +197,22 @@ describe('CommitteeActivityService', () => {
     getMeetings.mockResolvedValue({ data: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] });
     const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
     expect(result.data[0]).toMatchObject({ type: 'meeting_held', payload: { meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-9' } });
+  });
+
+  it('carries the meeting password in the event payload, not just its own pastMeetings() signal', async () => {
+    // The activity feed is a separately-windowed fetch from the client's own pastMeetings()
+    // signal — a password-protected meeting recent enough for this feed isn't guaranteed to be
+    // in that signal's window, so the event needs its own password, not a client-side lookup.
+    // Regression for Copilot/Cursor Bugbot/dealako's PR #1288 review.
+    getMeetings.mockResolvedValue({ data: [pastMeeting({ password: 'sesame' })] });
+    const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+    expect(result.data[0]).toMatchObject({ type: 'meeting_held', payload: { password: 'sesame' } });
+  });
+
+  it('carries a null password when the meeting has none', async () => {
+    getMeetings.mockResolvedValue({ data: [pastMeeting({ password: null })] });
+    const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+    expect(result.data[0]).toMatchObject({ type: 'meeting_held', payload: { password: null } });
   });
 
   it('does not sort a past meeting as ancient when start_time is a Go zero-date', async () => {
@@ -351,13 +371,31 @@ describe('CommitteeActivityService', () => {
       expect(getVotes).not.toHaveBeenCalled();
     });
 
-    it('sets hasMore when a page_size-bounded leg is saturated, even though the merged pool itself is not over limit', async () => {
+    it("sets hasMore when a page_size-bounded leg's upstream page_token signals more data, even though the merged pool itself is not over limit", async () => {
       // Regression for a false negative traced in the full-branch review: `windowed.length > limit`
       // alone can't see "more data exists" when a single dominant, page_size-bounded source (votes,
-      // here) returns exactly fetchSize rows and the in-memory since filter then drops all but one
-      // of them — the merged pool ends up at or under `limit`, but there could easily be more
-      // matching rows upstream that this page's fetch never reached. fetchSize = max(1+1, 25) = 25,
-      // so 25 votes here means the leg genuinely hit its upstream page bound.
+      // here) has more rows upstream than fit in one page and the in-memory since filter then drops
+      // all but one of them — the merged pool ends up at or under `limit`, but there could easily be
+      // more matching rows upstream that this page's fetch never reached. Saturation is driven by
+      // the leg's own real upstream `page_token` (see the paired "does NOT set hasMore" test below
+      // for the false-positive this replaced — Copilot/dealako flagged the original bare
+      // `votes.length >= fetchSize` heuristic).
+      const fetchSize = 25;
+      const votes = Array.from({ length: fetchSize }, (_, i) =>
+        vote({ uid: `v-${i}`, creation_time: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
+      );
+      getVotes.mockResolvedValue({ data: votes, page_token: 'more-votes-upstream' });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 1 });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.page_token).toBeDefined();
+    });
+
+    it('does not set hasMore from row count alone when a leg returns a genuine final page with no upstream page_token', async () => {
+      // The exact false positive Copilot/dealako flagged: a leg can return exactly `fetchSize` rows
+      // as a real, final page — no further page_token means query-service has nothing more to give,
+      // so a row-count-only heuristic would wrongly hand back a cursor to an empty next page.
       const fetchSize = 25;
       const votes = Array.from({ length: fetchSize }, (_, i) =>
         vote({ uid: `v-${i}`, creation_time: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
@@ -367,7 +405,7 @@ describe('CommitteeActivityService', () => {
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 1 });
 
       expect(result.data).toHaveLength(1);
-      expect(result.page_token).toBeDefined();
+      expect(result.page_token).toBeUndefined();
     });
 
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
@@ -811,6 +849,80 @@ describe('CommitteeActivityService', () => {
       getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, early_end_time: '2026-01-09T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data[0].type).toBe('vote_closed');
+    });
+
+    it('maps a mixed-case ended vote status to vote_closed, not vote_opened (casing bug regression)', async () => {
+      // Vote.status arrives with inconsistent casing (poll.utils.ts's normalizePollStatus doc
+      // comment) — a raw `status === PollStatus.ENDED` comparison misclassifies this as
+      // vote_opened, stamped at creation time instead of close time. Independently flagged by
+      // Copilot and Cursor Bugbot, confirmed by dealako.
+      getVotes.mockResolvedValue({ data: [vote({ status: 'Ended' as PollStatus, end_time: '2026-01-10T00:00:00Z' })] });
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].type).toBe('vote_closed');
+      expect(result.data[0].occurred_at).toBe('2026-01-10T00:00:00Z');
+    });
+
+    it('stamps a cutoff-driven survey closure at survey_cutoff_date, not the stale last_modified_at', async () => {
+      // getSurveyDisplayStatus reports CLOSED for a SENT survey whose cutoff has passed even
+      // though last_modified_at never changed (getEffectiveSurveyStatus's SENT/cutoff branch,
+      // survey.utils.ts) — falling back to last_modified_at/created_at in that case stamps
+      // survey_closed at the publish time instead of the real closure moment. Flagged by
+      // Copilot, confirmed by dealako.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-cutoff',
+                data: survey({
+                  uid: 'survey-cutoff',
+                  survey_status: SurveyStatus.SENT,
+                  survey_cutoff_date: '2026-01-05T00:00:00Z',
+                  last_modified_at: '2026-01-01T00:00:00Z',
+                  created_at: '2026-01-01T00:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].type).toBe('survey_closed');
+      expect(result.data[0].occurred_at).toBe('2026-01-05T00:00:00Z');
+    });
+
+    it('uses last_modified_at, not survey_cutoff_date, for an explicitly-closed survey status (not cutoff-driven)', async () => {
+      // Negative control for the cutoff-driven test above: guards against a broader mutation of
+      // isCutoffDrivenClosure that would apply the cutoff timestamp to every CLOSED survey
+      // regardless of why it's closed.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-explicit-closed',
+                data: survey({
+                  uid: 'survey-explicit-closed',
+                  survey_status: SurveyStatus.CLOSED,
+                  survey_cutoff_date: '2020-01-01T00:00:00Z',
+                  last_modified_at: '2026-01-02T00:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0].type).toBe('survey_closed');
+      expect(result.data[0].occurred_at).toBe('2026-01-02T00:00:00Z');
     });
 
     it('maps a closed survey to survey_closed and an open survey to survey_published', async () => {

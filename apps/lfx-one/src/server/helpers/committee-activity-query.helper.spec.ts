@@ -21,7 +21,7 @@ import { Request } from 'express';
 import { ServiceValidationError } from '../errors';
 import { encodeActivityPageToken, parseCommitteeActivityQuery } from './committee-activity-query.helper';
 
-function mockRequest(query: Record<string, string> = {}): Request {
+function mockRequest(query: Record<string, string | string[]> = {}): Request {
   return { query } as unknown as Request;
 }
 
@@ -102,5 +102,13 @@ describe('parseCommitteeActivityQuery', () => {
 
     const emptyKey = Buffer.from(JSON.stringify({ before: '2026-01-05T00:00:00Z', key: '' }), 'utf8').toString('base64url');
     expect(() => parseCommitteeActivityQuery(mockRequest({ page_token: emptyKey }), OPERATION)).toThrow(ServiceValidationError);
+  });
+
+  // Express's default `qs`-based query parser turns a repeated param (`?since=a&since=b`) into an
+  // array, not a string. Silently treating that the same as "absent" would restart pagination
+  // (page_token), ignore since, or fall back page_size to its default with no error surfaced —
+  // CodeRabbit flagged this independently, confirmed by dealako.
+  it.each(['since', 'page_size', 'page_token'])('rejects a repeated (array-valued) %s instead of silently treating it as absent', (param) => {
+    expect(() => parseCommitteeActivityQuery(mockRequest({ [param]: ['a', 'b'] }), OPERATION)).toThrow(ServiceValidationError);
   });
 });

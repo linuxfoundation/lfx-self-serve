@@ -262,8 +262,14 @@ export class CommitteeOverviewComponent {
         // (`dashboard-meeting-card.component.ts`'s `initMeetingDetailQueryParams`) — a password-gated
         // committee meeting needs that param carried through, matching the established convention at
         // `meetings-dashboard.component.ts`'s `onCalendarEventClick`.
-        const meeting = this.pastMeetings().find((m) => m.id === action.meetingId);
-        void this.router.navigate(['/meetings', action.meetingId], meeting?.password ? { queryParams: { password: meeting.password } } : {});
+        //
+        // action.password comes from the source event's own payload, not a lookup against
+        // this.pastMeetings() — that signal is a separate, independently-windowed fetch, so a
+        // password-protected meeting recent enough to appear in the activity feed isn't guaranteed
+        // to be in pastMeetings()'s own window; a lookup-based password would silently be dropped on
+        // navigation for exactly the rows this matters most for (Copilot/Cursor Bugbot/dealako review
+        // on PR #1288).
+        void this.router.navigate(['/meetings', action.meetingId], action.password ? { queryParams: { password: action.password } } : {});
         break;
       }
       case 'vote-drawer': {

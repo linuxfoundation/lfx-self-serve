@@ -18,6 +18,8 @@ export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey
 export interface PastMeetingActivityFeedAction {
   kind: 'past-meeting';
   meetingId: string;
+  /** From the source event's own payload — see `MeetingHeldActivityEvent.payload.password`'s doc comment for why this isn't re-hydrated client-side. */
+  password: string | null;
 }
 
 export interface VoteDrawerActivityFeedAction {

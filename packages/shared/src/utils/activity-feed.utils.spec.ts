@@ -17,7 +17,7 @@ function meetingHeld(overrides: Partial<Extract<ActivityEvent, { type: 'meeting_
     type: 'meeting_held',
     occurred_at: occurredAt,
     committee_uid: COMMITTEE_UID,
-    payload: { meeting_id: 'pm-1', meeting_occurrence_id: 'pm-1-occ-1', title: 'Weekly Sync', ...overrides },
+    payload: { meeting_id: 'pm-1', meeting_occurrence_id: 'pm-1-occ-1', title: 'Weekly Sync', password: null, ...overrides },
   };
 }
 
@@ -164,7 +164,14 @@ describe('mapActivityEventsToFeedItems', () => {
   describe('action', () => {
     it('routes a meeting_held item to its meeting_id', () => {
       const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-1' })], { votingEnabled: true });
-      expect(items[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42' });
+      expect(items[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42', password: null });
+    });
+
+    it('carries the event payload password through to the action, not just meetingId', () => {
+      // Carried from the source event, not re-hydrated client-side from a separate signal — see
+      // MeetingHeldActivityEvent.payload.password's doc comment for why (PR #1288 review).
+      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', password: 'sesame' })], { votingEnabled: true });
+      expect(items[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42', password: 'sesame' });
     });
 
     it('keys a meeting_held item on meeting_occurrence_id, not meeting_id — so two occurrences of the same recurring meeting get distinct @for tracking keys', () => {

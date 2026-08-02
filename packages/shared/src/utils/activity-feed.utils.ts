@@ -36,7 +36,7 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
         label: `Meeting held: ${event.payload.title}`,
         timestamp: event.occurred_at,
         icon: 'fa-light fa-clock-rotate-left',
-        action: { kind: 'past-meeting', meetingId: event.payload.meeting_id },
+        action: { kind: 'past-meeting', meetingId: event.payload.meeting_id, password: event.payload.password },
       };
 
     case 'vote_opened':
