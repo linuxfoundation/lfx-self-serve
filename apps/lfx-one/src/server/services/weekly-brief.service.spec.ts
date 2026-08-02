@@ -19,8 +19,15 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() 
 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
+  WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
+  NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
+  NEWSLETTER_BODY_MAX_LENGTH: 100_000,
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// `formatUtcDateRangeLabel` lives in the same `@lfx-one/shared/utils` barrel as
+// form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
+// in the real barrel and hit the same JIT-compilation failure the mocks above avoid.
+vi.mock('@lfx-one/shared/utils', () => ({ formatUtcDateRangeLabel: vi.fn(() => 'Jan 1 – Jan 7, 2026') }));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -31,12 +38,18 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
+// shareBrief's collaborators — not exercised by this spec (no shareBrief tests here),
+// but WeeklyBriefService's constructor instantiates all three, so they must at least
+// be constructible without pulling in their own real import chains.
+vi.mock('./committee.service', () => ({ CommitteeService: class {} }));
+vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
+vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
 
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 
-import { briefWindow, WeeklyBriefService } from './weekly-brief.service';
+import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
 
@@ -77,6 +90,7 @@ describe('WeeklyBriefService', () => {
     proxyRequestWithResponse.mockReset();
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
+    __resetMockBriefStateForTesting();
   });
 
   afterEach(() => {
@@ -115,11 +129,84 @@ describe('WeeklyBriefService', () => {
       expect(data.throttle?.regenerations_used).toBe(1);
     });
 
+    it('generateBrief (force: true) bumps the revision, and a subsequent getCurrentBrief reflects it (Cursor Bugbot: mock regenerate poll never completed)', async () => {
+      const before = await service.getCurrentBrief(req, 'committee-1');
+      const { data } = await service.generateBrief(req, 'committee-1', { force: true });
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(data.brief?.revision).toBe((before.brief?.revision ?? 1) + 1);
+      // The poll's isNewTerminal guard needs this GET's revision to differ from the
+      // pre-regenerate read's — without the fix, this would still equal `before`'s revision.
+      expect(after.brief?.revision).not.toBe(before.brief?.revision);
+      expect(after.brief?.revision).toBe(data.brief?.revision);
+    });
+
+    it('a second regenerate bumps the revision again rather than resetting to a fixed value', async () => {
+      await service.generateBrief(req, 'committee-1', { force: true });
+      const firstRevision = (await service.getCurrentBrief(req, 'committee-1')).brief?.revision;
+
+      await service.generateBrief(req, 'committee-1', { force: true });
+      const secondRevision = (await service.getCurrentBrief(req, 'committee-1')).brief?.revision;
+
+      expect(secondRevision).toBe((firstRevision ?? 0) + 1);
+    });
+
+    it('generateBrief (fresh, no force) does not bump the revision', async () => {
+      const before = await service.getCurrentBrief(req, 'committee-1');
+      await service.generateBrief(req, 'committee-1', {});
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(after.brief?.revision).toBe(before.brief?.revision);
+    });
+
     it('saveBrief bumps the revision and marks the brief edited', async () => {
       const result = await service.saveBrief(req, 'committee-1', { brief_text: 'updated text', revision: 1 });
       expect(result.state).toBe('edited');
       expect(result.brief_text).toBe('updated text');
       expect(result.revision).toBe(2);
+    });
+
+    it('saveBrief keeps a subsequent getCurrentBrief in sync with the saved revision', async () => {
+      await service.saveBrief(req, 'committee-1', { brief_text: 'updated text', revision: 1 });
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(after.brief?.revision).toBe(2);
+    });
+
+    it('saveBrief persists the saved brief_text — a subsequent getCurrentBrief does not revert to the canned default (Copilot review)', async () => {
+      await service.saveBrief(req, 'committee-1', { brief_text: 'my custom edited text', revision: 1 });
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(after.brief?.brief_text).toBe('my custom edited text');
+      expect(after.brief?.state).toBe('edited');
+    });
+
+    it('saveBrief rejects a stale revision with a 409 instead of silently accepting it (CodeRabbit review)', async () => {
+      // Advance the tracked revision to 2 via a regenerate, then attempt a save still holding
+      // the pre-regenerate revision (1).
+      await service.generateBrief(req, 'committee-1', { force: true });
+
+      try {
+        await service.saveBrief(req, 'committee-1', { brief_text: 'stale write', revision: 1 });
+        expect.fail('expected saveBrief to throw on a stale revision');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MicroserviceError);
+        const wrapped = error as MicroserviceError;
+        expect(wrapped.statusCode).toBe(409);
+        expect(wrapped.code).toBe('REVISION_CONFLICT');
+      }
+
+      // The rejected save must not have mutated the tracked state.
+      const after = await service.getCurrentBrief(req, 'committee-1');
+      expect(after.brief?.brief_text).not.toBe('stale write');
+    });
+
+    it('generateBrief (force: true) persists regeneration_count — a subsequent getCurrentBrief does not reset it to 0 (Copilot review)', async () => {
+      await service.generateBrief(req, 'committee-1', { force: true });
+      const after = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(after.brief?.regeneration_count).toBe(1);
+      expect(after.throttle?.regenerations_used).toBe(1);
     });
 
     it('refuses to serve mock data when NODE_ENV=production (LFXV2-2175 review: no auth in mock mode)', async () => {

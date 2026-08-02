@@ -4,7 +4,7 @@
 export { BaseApiError } from './base.error';
 export { AuthenticationError, AuthorizationError } from './authentication.error';
 export { MicroserviceError } from './microservice.error';
-export { ServiceValidationError, ResourceNotFoundError } from './service-validation.error';
+export { ServiceValidationError, ResourceNotFoundError, ConflictError } from './service-validation.error';
 
 // Type guards for error identification
 import { AuthenticationError } from './authentication.error';
