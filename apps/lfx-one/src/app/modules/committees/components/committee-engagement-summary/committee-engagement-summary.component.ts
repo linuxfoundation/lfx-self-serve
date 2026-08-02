@@ -52,6 +52,15 @@ export class CommitteeEngagementSummaryComponent {
     return summary ? `${summary.active_count}/${summary.total_count}` : '—';
   });
   public readonly atRiskCount: Signal<number> = computed(() => this.engagement()?.summary?.at_risk_count ?? 0);
+  // Explicit aria-labels below embed the displayed value/window — a screen-reader user focusing
+  // the tooltip host must hear the metric itself, not just its explanation (LFXV2-1705 review).
+  public readonly attendanceRateAriaLabel: Signal<string> = computed(
+    () => `Attendance Rate: ${this.attendanceRateLabel()} — personal attendance across all invited roster members, including Emeritus seats`
+  );
+  public readonly activeMembersAriaLabel: Signal<string> = computed(
+    () =>
+      `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — members with attendance this window or who joined within it; Emeritus seats excluded`
+  );
 
   public onWindowChange(windowId: string): void {
     // filter-pills emits a plain string id — only forward values the endpoint actually accepts.

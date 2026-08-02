@@ -37,6 +37,17 @@ export class TagComponent {
   public readonly tooltip = input<TagProps['tooltip']>('');
   public readonly tooltipPosition = input<TagProps['tooltipPosition']>('top');
 
+  /**
+   * Combines the tag's own value with the tooltip explanation so focusing/hovering the tag
+   * doesn't replace its accessible name with only the tooltip text (e.g. a "High" chip must still
+   * announce "High", not just its Chair-attendance explainer). `null` disables aria-label entirely
+   * when there's no tooltip, leaving the tag's rendered text content as its accessible name.
+   */
+  protected readonly accessibleLabel = computed(() => {
+    const tooltipText = this.tooltip();
+    return tooltipText ? `${this.value()} — ${tooltipText}` : null;
+  });
+
   protected readonly dotBgClass = computed(() => {
     const map: Record<TagSeverity, string> = {
       success: 'bg-emerald-500',

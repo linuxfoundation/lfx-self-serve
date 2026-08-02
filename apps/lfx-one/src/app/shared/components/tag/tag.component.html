@@ -11,7 +11,7 @@
     [tooltipPosition]="tooltipPosition()"
     [attr.tabindex]="tooltip() ? 0 : null"
     [attr.role]="tooltip() ? 'note' : null"
-    [attr.aria-label]="tooltip() || null">
+    [attr.aria-label]="accessibleLabel()">
     @if (dot()) {
       <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full" [ngClass]="dotBgClass()" aria-hidden="true"></span>
     } @else if (icon()) {
@@ -31,7 +31,7 @@
     [tooltipPosition]="tooltipPosition()"
     [attr.tabindex]="tooltip() ? 0 : null"
     [attr.role]="tooltip() ? 'note' : null"
-    [attr.aria-label]="tooltip() || null">
+    [attr.aria-label]="accessibleLabel()">
     @if (dot()) {
       <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true"></span>
     }
