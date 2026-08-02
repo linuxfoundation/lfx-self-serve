@@ -197,6 +197,11 @@ export class CommitteeOverviewComponent {
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  // Mirrors committee-view.component.ts's own isMemberOrAdmin: a project-level editor who can edit
+  // this committee but isn't on its roster is NOT a visitor from the engagement card's perspective
+  // (the endpoint's committee#auditor gate is satisfied by writer access) — used only for the
+  // engagement summary card, not the broader member/visitor layout switch below (LFXV2-1705 review).
+  public isMemberOrAdmin: Signal<boolean> = computed(() => !this.isVisitor() || this.canEdit());
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>
