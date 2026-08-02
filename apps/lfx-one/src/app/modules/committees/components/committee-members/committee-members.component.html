@@ -171,12 +171,13 @@
               </td>
             }
             @if (engagementEnabled()) {
+              @let engagementView = memberEngagementRows().get(member.uid);
               <td>
                 @if (engagementLoading()) {
                   <p-skeleton width="2.5rem" height="0.875rem" />
                 } @else {
                   <span class="text-sm font-inter text-gray-900" [attr.data-testid]="'members-engagement-meetings-' + member.uid">
-                    {{ getEngagementMeetingsLabel(member) }}
+                    {{ engagementView?.meetingsLabel }}
                   </span>
                 }
               </td>
@@ -184,22 +185,12 @@
                 @if (engagementLoading()) {
                   <p-skeleton width="4rem" height="1.25rem" borderRadius="1rem" />
                 } @else {
-                  @let engagementRow = getMemberEngagement(member);
-                  @if (engagementRow && engagementDataAvailable()) {
-                    @let engagementContext = getEngagementContext(engagementRow);
-                    <span
-                      class="inline-flex items-center"
-                      [pTooltip]="engagementContext"
-                      tooltipPosition="top"
-                      tooltipEvent="both"
-                      [attr.tabindex]="engagementContext ? 0 : null"
-                      [attr.role]="engagementContext ? 'note' : null"
-                      [attr.aria-label]="engagementContext || null">
-                      <lfx-tag
-                        [value]="engagementRow.classification"
-                        [severity]="getEngagementSeverity(engagementRow)"
-                        [attr.data-testid]="'members-engagement-chip-' + member.uid" />
-                    </span>
+                  @if (engagementView && engagementView.row && engagementDataAvailable()) {
+                    <lfx-tag
+                      [value]="engagementView.row.classification"
+                      [severity]="engagementView.severity"
+                      [tooltip]="engagementView.context"
+                      [attr.data-testid]="'members-engagement-chip-' + member.uid" />
                   } @else {
                     <span class="text-sm font-inter text-gray-400" [attr.data-testid]="'members-engagement-chip-' + member.uid">—</span>
                   }

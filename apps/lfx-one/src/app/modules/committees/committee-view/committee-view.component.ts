@@ -50,7 +50,7 @@ import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, timer } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, tap, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -142,7 +142,19 @@ export class CommitteeViewComponent {
   public joiningOrLeaving = signal(false);
   // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
   // summary stay in sync across tab switches (tab panels unmount in the @switch below).
-  public engagementWindow = signal<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
+  // linkedSignal, not signal: resets to the default window whenever committeeId() changes, the same
+  // way the adjacent activeTab linkedSignal resets per-committee state — otherwise Angular's reuse
+  // of this component instance across /groups/:id navigations would carry the previous committee's
+  // window selection (e.g. 'ytd') into a different committee's first render.
+  public engagementWindow = linkedSignal<{ id: string | null }, CommitteeEngagementWindow>({
+    source: () => ({ id: this.committeeId() }),
+    computation: (source, previous) => {
+      if (previous && previous.source.id === source.id) {
+        return previous.value;
+      }
+      return COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW;
+    },
+  });
   public engagementLoading = signal<boolean>(false);
 
   // -- Computed / toSignal --
@@ -837,7 +849,12 @@ export class CommitteeViewComponent {
           this.engagementLoading.set(true);
           // Errors (including the expected 403 for non-auditor members) resolve to null inside the
           // service — the tabs degrade to their "attendance unavailable" states, roster unaffected.
-          return this.committeeService.getCommitteeEngagement(uid, window).pipe(finalize(() => this.engagementLoading.set(false)));
+          // tap on emission, not finalize: finalize also fires when switchMap cancels this in-flight
+          // request (e.g. roleLoading flips true mid-refresh), which would clear engagementLoading
+          // while engagement() still holds stale data — a visible flicker to the unavailable state on
+          // every silent role refresh. Mirrors initDocuments' identical reasoning in
+          // committee-overview.component.ts.
+          return this.committeeService.getCommitteeEngagement(uid, window).pipe(tap(() => this.engagementLoading.set(false)));
         })
       ),
       { initialValue: null }

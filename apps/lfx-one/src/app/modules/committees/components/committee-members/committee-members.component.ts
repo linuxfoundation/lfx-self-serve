@@ -29,6 +29,7 @@ import {
   CommitteeInvite,
   CommitteeMember,
   CommitteeMemberEngagement,
+  CommitteeMemberEngagementRowView,
   CommitteeMemberFilterChip,
   CommitteeMemberFilterChipConfig,
   CommitteeMemberPermissionInfo,
@@ -169,6 +170,9 @@ export class CommitteeMembersComponent implements OnInit {
       return row ? isCommitteeEngagementRowAtRisk(row) : false;
     }).length;
   });
+  // UID-keyed engagement row view for the Members table cells — precomputed here (not called as
+  // template methods) per docs/reviews/frontend-checklist.md rule 4, "no template functions".
+  public readonly memberEngagementRows: Signal<Map<string, CommitteeMemberEngagementRowView>> = this.initMemberEngagementRows();
 
   // Complex computed signals — use private init functions
   public readonly chipConfig: Signal<CommitteeMemberFilterChipConfig[]> = this.initChipConfig();
@@ -256,36 +260,6 @@ export class CommitteeMembersComponent implements OnInit {
     if (window) {
       this.engagementWindowChange.emit(window);
     }
-  }
-
-  public getMemberEngagement(member: CommitteeMember): CommitteeMemberEngagement | null {
-    return this.engagementByUid().get(member.uid) ?? null;
-  }
-
-  public getEngagementMeetingsLabel(member: CommitteeMember): string {
-    return formatCommitteeEngagementMeetings(this.getMemberEngagement(member), this.engagementDataAvailable());
-  }
-
-  public getEngagementSeverity(row: CommitteeMemberEngagement): TagSeverity {
-    // `classification` is a server passthrough — a tier added server-side before this UI updates
-    // isn't representable in the type, so degrade to neutral rather than an undefined severity.
-    const severity = COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY[row.classification] as TagSeverity | undefined;
-    return severity ?? 'secondary';
-  }
-
-  /**
-   * Tooltip context for the engagement chip. Emeritus gets the honorific explainer (it renders as
-   * a neutral state, never at-risk styling); Chair / Vice Chair / LF Staff seats are called out so
-   * their attendance reads with role context. Empty string disables the PrimeNG tooltip.
-   */
-  public getEngagementContext(row: CommitteeMemberEngagement): string {
-    if (row.voting_status === CommitteeMemberVotingStatus.EMERITUS) {
-      return 'Emeritus seat — honorific status; attendance expectations do not apply';
-    }
-    if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {
-      return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;
-    }
-    return '';
   }
 
   public openAddMemberDialog(): void {
@@ -670,5 +644,45 @@ export class CommitteeMembersComponent implements OnInit {
           return members;
       }
     });
+  }
+
+  private initMemberEngagementRows(): Signal<Map<string, CommitteeMemberEngagementRowView>> {
+    return computed(() => {
+      const byUid = this.engagementByUid();
+      const dataAvailable = this.engagementDataAvailable();
+      const rows = new Map<string, CommitteeMemberEngagementRowView>();
+      for (const member of this.members()) {
+        const row = byUid.get(member.uid) ?? null;
+        rows.set(member.uid, {
+          row,
+          meetingsLabel: formatCommitteeEngagementMeetings(row, dataAvailable),
+          context: row ? this.resolveEngagementContext(row) : '',
+          severity: row ? this.resolveEngagementSeverity(row) : 'secondary',
+        });
+      }
+      return rows;
+    });
+  }
+
+  private resolveEngagementSeverity(row: CommitteeMemberEngagement): TagSeverity {
+    // `classification` is a server passthrough — a tier added server-side before this UI updates
+    // isn't representable in the type, so degrade to neutral rather than an undefined severity.
+    const severity = COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY[row.classification] as TagSeverity | undefined;
+    return severity ?? 'secondary';
+  }
+
+  /**
+   * Tooltip context for the engagement chip. Emeritus gets the honorific explainer (it renders as
+   * a neutral state, never at-risk styling); Chair / Vice Chair / LF Staff seats are called out so
+   * their attendance reads with role context. Empty string disables the PrimeNG tooltip.
+   */
+  private resolveEngagementContext(row: CommitteeMemberEngagement): string {
+    if (row.voting_status === CommitteeMemberVotingStatus.EMERITUS) {
+      return 'Emeritus seat — honorific status; attendance expectations do not apply';
+    }
+    if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {
+      return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;
+    }
+    return '';
   }
 }
