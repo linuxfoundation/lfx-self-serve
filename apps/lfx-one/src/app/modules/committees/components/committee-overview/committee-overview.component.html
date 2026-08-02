@@ -117,7 +117,7 @@
         </div>
       </lfx-card>
 
-      @if (engagementEnabled() && isMemberOrAdmin()) {
+      @if (engagementEnabled() && engagementAccessible()) {
         <lfx-committee-engagement-summary
           [engagement]="engagement()"
           [loading]="engagementLoading()"

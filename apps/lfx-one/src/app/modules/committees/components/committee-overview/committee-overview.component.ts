@@ -104,6 +104,12 @@ export class CommitteeOverviewComponent {
   public engagement = input<CommitteeEngagementResponse | null>(null);
   public engagementLoading = input<boolean>(false);
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
+  // Whether this user is authorized to read committee engagement data — computed once in
+  // committee-view.component.ts (canAccessEngagement: roster member OR writer OR explicit
+  // committee-level auditor) and passed down here as the single source of truth, rather than this
+  // component reconstructing its own narrower version (a prior local isMemberOrAdmin here omitted
+  // canReview/auditors, incorrectly hiding the card from committee-level auditors — LFXV2-1705 review).
+  public engagementAccessible = input<boolean>(false);
 
   // Outputs
   public readonly committeeUpdated = output<void>();
@@ -197,11 +203,6 @@ export class CommitteeOverviewComponent {
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
-  // Mirrors committee-view.component.ts's own isMemberOrAdmin: a project-level editor who can edit
-  // this committee but isn't on its roster is NOT a visitor from the engagement card's perspective
-  // (the endpoint's committee#auditor gate is satisfied by writer access) — used only for the
-  // engagement summary card, not the broader member/visitor layout switch below (LFXV2-1705 review).
-  public isMemberOrAdmin: Signal<boolean> = computed(() => !this.isVisitor() || this.canEdit());
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>

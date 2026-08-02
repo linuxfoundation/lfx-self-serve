@@ -221,6 +221,16 @@ export class CommitteeViewComponent {
     return this.committee()?.auditors?.some((u) => u.email?.toLowerCase() === email) ?? false;
   });
 
+  // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
+  // by initEngagement's fetch gate below AND passed down to committee-overview for its card render
+  // gate — a duplicated reconstruction in the child previously omitted canReview (Copilot: a
+  // committee-scoped explicit auditor — on `committee.auditors[]`, neither a roster member nor a
+  // writer — is precisely what the endpoint's committee#auditor grant means, yet was still blocked).
+  // Still an incomplete proxy for the server's real ACL: a project-level auditor grant inherited
+  // without an explicit committee.auditors[] entry has no client-visible signal at all and remains
+  // unhandled — same known gap as canReview() itself, not newly introduced here.
+  public readonly canAccessEngagement: Signal<boolean> = computed(() => !this.isVisitor() || this.canEdit() || this.canReview());
+
   public myPermission: Signal<CommitteePermissionLevel> = computed(() => {
     if (this.canEdit()) return 'manage';
     if (this.canReview()) return 'review';
@@ -819,14 +829,10 @@ export class CommitteeViewComponent {
       window: this.engagementWindow(),
       enabled: this.engagementMetricsEnabled(),
       roleLoading: this.myRoleLoading(),
-      // NOT `isVisitor()`: that's `my_role === null`, i.e. "not a roster member" — but the
-      // endpoint's real gate is committee#auditor, which writer access (canEdit) satisfies too
-      // (this codebase's own hierarchy assumption: writer ⊇ auditor, e.g. canReview short-circuits
-      // to false once canEdit is true). A project-level admin who can edit this committee but isn't
-      // on its roster has isVisitor()=true yet is fully authorized — isMemberOrAdmin() is the
-      // condition already used to gate Members-tab visibility itself, so reusing it here keeps the
-      // fetch in sync with "can this user ever reach the tab that shows this data" (Cursor Bugbot).
-      notMemberOrAdmin: !this.isMemberOrAdmin(),
+      // canAccessEngagement (roster member OR writer OR explicit committee-level auditor) — not raw
+      // isVisitor(), which only means "not a roster member" and would wrongly block writers/auditors
+      // who satisfy the endpoint's real committee#auditor gate without being on the roster.
+      notEligible: !this.canAccessEngagement(),
       refresh: this.membersRefresh(),
     }));
     return toSignal(
@@ -837,10 +843,10 @@ export class CommitteeViewComponent {
             a.window === b.window &&
             a.enabled === b.enabled &&
             a.roleLoading === b.roleLoading &&
-            a.notMemberOrAdmin === b.notMemberOrAdmin &&
+            a.notEligible === b.notEligible &&
             a.refresh === b.refresh
         ),
-        switchMap(({ uid, window, enabled, roleLoading, notMemberOrAdmin }) => {
+        switchMap(({ uid, window, enabled, roleLoading, notEligible }) => {
           // Flag off (or SSR, where the flag fails closed to its default) means zero engagement
           // fetches — the gated UI renders nothing, so a request would be pure waste.
           if (!enabled || !uid || !isPlatformBrowser(this.platformId)) {
@@ -848,15 +854,15 @@ export class CommitteeViewComponent {
             return of(null);
           }
           // Role still resolving (e.g. mid silent-refresh) — hold current state rather than fire a
-          // request that the membership check below might immediately invalidate.
+          // request that the eligibility check below might immediately invalidate.
           if (roleLoading) {
             return EMPTY;
           }
-          // Neither a roster member nor an editor/reviewer: this user could never reach the Members
-          // tab (isMemberOrAdmin gates its visibility) and the Overview card is hidden for them too
-          // — skip the guaranteed-403 fetch entirely, matching initDocuments' "don't issue a GET
-          // nothing will display" precedent.
-          if (notMemberOrAdmin) {
+          // Not eligible per canAccessEngagement: skip the guaranteed-403 fetch entirely, matching
+          // initDocuments' "don't issue a GET nothing will display" precedent. The Overview card is
+          // gated on the same canAccessEngagement value (passed down as an input), so nothing would
+          // render this response anyway.
+          if (notEligible) {
             this.engagementLoading.set(false);
             return of(null);
           }
