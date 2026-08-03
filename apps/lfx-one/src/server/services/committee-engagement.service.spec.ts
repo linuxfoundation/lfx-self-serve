@@ -445,6 +445,30 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(2); // both members active: one via real attendance, one via tenure grace
     });
 
+    it('suppresses the roster created_at tenure-grace fallback on a total join-key mismatch — classifies Inactive, not High, even though data_available is true', async () => {
+      // Reproduces the live-production bug (LFXV2-1705 validation): MEMBER_USER_ID in the warehouse
+      // is a Salesforce/LFID-style id, not the v2 committee-member uid, so rows exist for this
+      // committee but none key to any roster member. Unlike the single-late-joiner case above,
+      // matchedCount is 0 for the WHOLE roster — the join itself is broken, not just incomplete, so
+      // member.created_at can't be trusted as a tenure signal here.
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin }), member('m2', { created_at: recentJoin })]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: '0034100000dh2VLAAY' }), row({ MEMBER_USER_ID: 'lfdVxdHAYKNNhX67DT' })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(true);
+      expect(result.members.find((m) => m.uid === 'm1')).toMatchObject({ classification: 'Inactive', invited: 0, attended: 0 });
+      expect(result.members.find((m) => m.uid === 'm2')).toMatchObject({ classification: 'Inactive', invited: 0, attended: 0 });
+      expect(result.summary.active_count).toBe(0);
+      expect(warning).toHaveBeenCalledWith(
+        req,
+        'get_committee_engagement',
+        expect.stringContaining('join key mismatch'),
+        expect.objectContaining({ committee_uid: 'committee-1', row_count: 2, roster_size: 2 })
+      );
+    });
+
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {
       getCommitteeMembers.mockResolvedValueOnce([]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
