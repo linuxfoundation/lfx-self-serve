@@ -9,7 +9,8 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared/constants';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_BIO_MAX_LENGTH, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -28,8 +29,9 @@ import { ProfileEditDrawerService } from './profile-edit-drawer.service';
  */
 @Component({
   selector: 'lfx-profile-edit-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent],
+  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ButtonComponent],
   templateUrl: './profile-edit-drawer.component.html',
+  styleUrl: './profile-edit-drawer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileEditDrawerComponent {
@@ -44,6 +46,9 @@ export class ProfileEditDrawerComponent {
   // Emits the saved metadata so the host layout can apply an optimistic profile update.
   public readonly saved = output<Partial<UserMetadata>>();
 
+  // Bio length cap, shared with the server validator so the template maxlength stays in sync.
+  protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
+
   // Profile edit form
   public profileForm: FormGroup = this.fb.group({
     given_name: ['', [Validators.maxLength(50)]],
@@ -56,6 +61,7 @@ export class ProfileEditDrawerComponent {
     postal_code: ['', [Validators.maxLength(20)]],
     phone_number: ['', [Validators.maxLength(20)]],
     t_shirt_size: [''],
+    bio: ['', [Validators.maxLength(PROFILE_BIO_MAX_LENGTH)]],
     job_title: ['', [Validators.maxLength(100)]],
     // Organization is selected from work-history orgs (a constrained list); the only remaining
     // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
@@ -213,6 +219,7 @@ export class ProfileEditDrawerComponent {
       postal_code: formValue.postal_code || undefined,
       phone_number: formValue.phone_number || undefined,
       t_shirt_size: formValue.t_shirt_size || undefined,
+      bio: formValue.bio || undefined,
     };
 
     const updateData: ProfileUpdateRequest = {
@@ -323,6 +330,7 @@ export class ProfileEditDrawerComponent {
         postal_code: profile.profile?.postal_code || '',
         phone_number: profile.profile?.phone_number || '',
         t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
+        bio: profile.profile?.bio || '',
         job_title: profile.profile?.job_title || '',
         // Trim so the form value matches the trimmed option values — otherwise a legacy saved
         // org with stray whitespace would fail to match any option and render an empty selection.

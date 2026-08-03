@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
+  ActivityEvent,
   Committee,
   CommitteeDocument,
   CommitteeDocumentType,
@@ -20,6 +21,7 @@ import {
   CreateCommitteeMemberRequest,
   GroupsEngagementStats,
   MyCommittee,
+  PaginatedResponse,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
@@ -208,6 +210,23 @@ export class CommitteeService {
         ...body,
       })
       .pipe(take(1));
+  }
+
+  // ── Activity Feed (LFXV2-1707) ──────────────────────────────────────────
+
+  /**
+   * Server-merged "Recent Activity" feed for the committee Overview widget (past meetings, votes,
+   * surveys, documents). Resolves to `[]` on error, matching every other Overview data source on
+   * this service — a feed failure must not break the rest of the page.
+   */
+  public getCommitteeActivity(committeeId: string): Observable<ActivityEvent[]> {
+    return this.http.get<PaginatedResponse<ActivityEvent>>(`/api/committees/${encodeURIComponent(committeeId)}/activity`).pipe(
+      map((response) => response.data),
+      catchError((error: HttpErrorResponse) => {
+        console.error('Failed to load committee activity feed:', { status: error.status, message: error.message });
+        return of([]);
+      })
+    );
   }
 
   // ── Committee Documents ─────────────────────────────────────────────────

@@ -241,6 +241,8 @@ export const MEMBER_ROLES = [
   { label: 'None', value: CommitteeMemberRole.NONE },
 ];
 
+export const CHAIR_ROLES = new Set<string>([CommitteeMemberRole.CHAIR, CommitteeMemberRole.VICE_CHAIR]);
+
 /**
  * Available voting status types for committee members
  * @description Defines the voting rights and status of committee members

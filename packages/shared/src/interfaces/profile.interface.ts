@@ -60,6 +60,7 @@ export interface ProfileHeaderData {
   postalCode?: string;
   phoneNumber?: string;
   tshirtSize?: string;
+  aboutMe?: string;
   avatarUrl?: string;
 }
 
