@@ -112,11 +112,13 @@ export interface CommitteeEngagementResponse {
    * this member. `role`/`voting_status` are roster passthroughs and stay populated regardless of
    * whether a warehouse row matched, in both cases.
    *
-   * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
-   * production); or a live query — fresh or a cache hit (the row cache is keyed on row count alone,
-   * under a much shorter TTL for the zero-row outcome, but the roster join itself always re-runs
-   * against a freshly-fetched roster on every request, cached rows included) — that returned >=1 row
-   * matching at least one roster member by uid.
+   * `true`: a mock-backend response for a non-empty roster (`ENGAGEMENT_BACKEND=mock`, explicit
+   * opt-in and blocked in production — a mock response for a committee with zero roster members is
+   * the one degenerate case that still reports `false`, since there's trivially no member to match);
+   * or a live query — fresh or a cache hit (the row cache is keyed on the committee uid; the cached
+   * array's length picks the TTL and derives this flag on a hit, so a hit never assumes `true` — but
+   * the roster join itself always re-runs against a freshly-fetched roster on every request, cached
+   * rows included) — that returned >=1 row matching at least one roster member by uid.
    *
    * The UI should key its "no data available" placeholder state off this flag rather than inferring
    * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`

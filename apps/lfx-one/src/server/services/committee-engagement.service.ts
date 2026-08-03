@@ -333,7 +333,11 @@ export class CommitteeEngagementService {
       committee_uid: committeeUid,
       roster_size: members.length,
       matched_count: matchedCount,
-      data_available: dataAvailable,
+      // Named distinctly: `data_available` here would collide with the *response* field of that
+      // name (which now reports `usableData`, not this raw query-level flag) while carrying a
+      // different value in exactly the broken-join case this field exists to help diagnose.
+      query_data_available: dataAvailable,
+      data_available: usableData,
     });
 
     return {
