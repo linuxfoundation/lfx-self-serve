@@ -24,6 +24,7 @@
       [addressLines]="fullAddress()"
       [phone]="phoneInfo()"
       [tshirtSize]="tshirtSizeLabel()"
+      [aboutMe]="aboutMe()"
       [githubHandle]="githubHandle()"
       (editRequested)="openEditDrawer()" />
   </div>
@@ -50,7 +51,7 @@
 
       <!-- Subtab navigation — horizontally scrollable on small screens -->
       <nav aria-label="Profile sections" class="flex gap-1 overflow-x-auto border-b border-slate-200" data-testid="profile-tabs-desktop">
-        @for (tab of tabs; track tab.id) {
+        @for (tab of tabs(); track tab.id) {
           <a
             [routerLink]="tab.route"
             routerLinkActive="!border-blue-600 !text-blue-600"

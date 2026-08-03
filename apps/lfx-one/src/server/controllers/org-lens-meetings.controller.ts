@@ -65,17 +65,17 @@ export class OrgLensMeetingsController {
     }
   }
 
-  /** No `range` parameter — the influence surface is range-independent by contract. */
   public async getInfluence(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_org_lens_meetings_influence';
     const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
     try {
       assertOrgUid(orgUid, operation);
+      const range = parseOrgMeetingsRange(req.query['range'], operation);
       await assertOrgLensRead(req, orgUid, operation);
 
-      const rows = await this.service.getInfluenceRows(req, orgUid);
-      logger.success(req, operation, startTime, { org_uid: orgUid, rows: rows.length });
+      const rows = await this.service.getInfluenceRows(req, orgUid, range);
+      logger.success(req, operation, startTime, { org_uid: orgUid, range, rows: rows.length });
       this.send(res, rows);
     } catch (error) {
       return next(error);

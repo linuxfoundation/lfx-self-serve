@@ -7,296 +7,212 @@
 import { describe, expect, it } from 'vitest';
 
 import { PollStatus, SurveyStatus } from '../enums';
-import { BuildActivityFeedInput, CommitteeDocument, PastMeeting, Survey, Vote } from '../interfaces';
-import { buildActivityFeed } from './activity-feed.utils';
+import { ActivityEvent, CommitteeDocumentType } from '../interfaces';
+import { mapActivityEventsToFeedItems } from './activity-feed.utils';
 
-/** Minimal past-meeting builder — only the fields buildActivityFeed reads. */
-function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
+const COMMITTEE_UID = 'committee-1';
+
+function meetingHeld(overrides: Partial<Extract<ActivityEvent, { type: 'meeting_held' }>['payload']> = {}, occurredAt = '2026-01-01T10:00:00Z'): ActivityEvent {
   return {
-    id: 'pm-1',
-    meeting_and_occurrence_id: 'pm-1-occ-1',
-    title: 'Weekly Sync',
-    start_time: '2026-01-01T10:00:00Z',
-    ...overrides,
-  } as PastMeeting;
+    type: 'meeting_held',
+    occurred_at: occurredAt,
+    committee_uid: COMMITTEE_UID,
+    payload: { meeting_id: 'pm-1', meeting_occurrence_id: 'pm-1-occ-1', title: 'Weekly Sync', password: null, ...overrides },
+  };
 }
 
-/** Minimal vote builder — only the fields buildActivityFeed reads. */
-function vote(overrides: Partial<Vote> = {}): Vote {
+function voteEvent(
+  type: 'vote_opened' | 'vote_closed',
+  overrides: Partial<Extract<ActivityEvent, { type: 'vote_opened' }>['payload']> = {},
+  occurredAt = '2026-01-02T10:00:00Z'
+): ActivityEvent {
   return {
-    uid: 'vote-1',
-    name: 'Q1 Budget',
-    status: PollStatus.ACTIVE,
-    last_modified_time: '2026-01-02T10:00:00Z',
-    ...overrides,
-  } as Vote;
+    type,
+    occurred_at: occurredAt,
+    committee_uid: COMMITTEE_UID,
+    payload: { vote_uid: 'vote-1', name: 'Q1 Budget', status: PollStatus.ACTIVE, ...overrides },
+  };
 }
 
-/** Minimal survey builder — only the fields buildActivityFeed (via getSurveyDisplayStatus) reads. */
-function survey(overrides: Partial<Survey> = {}): Survey {
+function surveyEvent(
+  type: 'survey_published' | 'survey_closed',
+  overrides: Partial<Extract<ActivityEvent, { type: 'survey_published' }>['payload']> = {},
+  occurredAt = '2026-01-03T10:00:00Z'
+): ActivityEvent {
   return {
-    uid: 'survey-1',
-    survey_title: 'Community Feedback',
-    survey_status: SurveyStatus.OPEN,
-    survey_cutoff_date: null,
-    last_modified_at: '2026-01-03T10:00:00Z',
-    ...overrides,
-  } as Survey;
+    type,
+    occurred_at: occurredAt,
+    committee_uid: COMMITTEE_UID,
+    payload: { survey_uid: 'survey-1', title: 'Community Feedback', status: SurveyStatus.OPEN, ...overrides },
+  };
 }
 
-/** Minimal document builder — only the fields buildActivityFeed reads. */
-function document(overrides: Partial<CommitteeDocument> = {}): CommitteeDocument {
+function documentUploaded(
+  overrides: Partial<Extract<ActivityEvent, { type: 'document_uploaded' }>['payload']> = {},
+  occurredAt = '2026-01-04T10:00:00Z'
+): ActivityEvent {
   return {
-    uid: 'doc-1',
-    type: 'file',
-    name: 'Charter.pdf',
-    updated_at: '2026-01-04T10:00:00Z',
-    ...overrides,
-  } as CommitteeDocument;
+    type: 'document_uploaded',
+    occurred_at: occurredAt,
+    committee_uid: COMMITTEE_UID,
+    payload: { document_uid: 'doc-1', name: 'Charter.pdf', document_type: 'file', ...overrides },
+  };
 }
 
-function emptyInput(overrides: Partial<BuildActivityFeedInput> = {}): BuildActivityFeedInput {
-  return { pastMeetings: [], votes: [], surveys: [], documents: [], votingEnabled: true, ...overrides };
-}
-
-describe('buildActivityFeed', () => {
-  it('returns an empty array when every source is empty', () => {
-    expect(buildActivityFeed(emptyInput())).toEqual([]);
+describe('mapActivityEventsToFeedItems', () => {
+  it('returns an empty array when given no events', () => {
+    expect(mapActivityEventsToFeedItems([], { votingEnabled: true })).toEqual([]);
   });
 
-  it('merges all four sources and sorts the result by timestamp descending', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        pastMeetings: [pastMeeting({ start_time: '2026-01-01T00:00:00Z' })],
-        votes: [vote({ last_modified_time: '2026-01-03T00:00:00Z' })],
-        surveys: [survey({ last_modified_at: '2026-01-02T00:00:00Z' })],
-        documents: [document({ updated_at: '2026-01-04T00:00:00Z' })],
-      })
-    );
+  it('preserves the server-provided order — no re-sorting or capping client-side', () => {
+    const items = mapActivityEventsToFeedItems([documentUploaded(), voteEvent('vote_closed'), surveyEvent('survey_published'), meetingHeld()], {
+      votingEnabled: true,
+    });
     expect(items.map((i) => i.type)).toEqual(['document', 'vote', 'survey', 'past_meeting']);
   });
 
-  it('sorts correctly across sources when timestamps use different UTC offset formats', () => {
-    // 2026-01-01T09:00:00+05:30 == 2026-01-01T03:30:00Z, so it should sort between the survey and
-    // the vote below despite being lexicographically smaller than both (localeCompare would get
-    // this wrong — it'd sort by the raw string, putting the offset form last).
-    const items = buildActivityFeed(
-      emptyInput({
-        votes: [vote({ last_modified_time: '2026-01-01T04:00:00Z' })],
-        surveys: [survey({ last_modified_at: '2026-01-01T03:00:00Z' })],
-        documents: [document({ updated_at: '2026-01-01T09:00:00+05:30' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['vote', 'document', 'survey']);
-  });
-
-  it('sorts an unparseable timestamp as the oldest item instead of throwing', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        votes: [vote({ last_modified_time: 'not-a-timestamp', creation_time: undefined })],
-        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['survey', 'vote']);
-  });
-
-  it('does not sort a past meeting as ancient when start_time is a Go zero-date', () => {
-    // Zoom/ITX past-meeting rows sometimes carry "0001-01-01T00:00:00Z" on start_time — a raw
-    // Date.parse would treat that as a real (~year 1) timestamp and sort it as the oldest item,
-    // even when scheduled_start_time has a real, recent value.
-    const items = buildActivityFeed(
-      emptyInput({
-        pastMeetings: [pastMeeting({ start_time: '0001-01-01T00:00:00Z', scheduled_start_time: '2026-01-05T00:00:00Z' })],
-        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['past_meeting', 'survey']);
-  });
-
-  it('sorts a past meeting as oldest when both start_time and scheduled_start_time are zero-dates', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        pastMeetings: [pastMeeting({ start_time: '0001-01-01T00:00:00Z', scheduled_start_time: '0001-01-01T00:00:00Z' })],
-        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['survey', 'past_meeting']);
-  });
-
-  it('does not sort a vote as ancient when last_modified_time is a Go zero-date', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        votes: [vote({ last_modified_time: '0001-01-01T00:00:00Z', creation_time: '2026-01-05T00:00:00Z' })],
-        surveys: [survey({ last_modified_at: '2026-01-01T00:00:00Z' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['vote', 'survey']);
-  });
-
-  it('does not sort a survey as ancient when last_modified_at is a Go zero-date', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        surveys: [survey({ last_modified_at: '0001-01-01T00:00:00Z', created_at: '2026-01-05T00:00:00Z' })],
-        votes: [vote({ last_modified_time: '2026-01-01T00:00:00Z' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['survey', 'vote']);
-  });
-
-  it('does not sort a document as ancient when updated_at is a Go zero-date', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        documents: [document({ updated_at: '0001-01-01T00:00:00Z', created_at: '2026-01-05T00:00:00Z' })],
-        votes: [vote({ last_modified_time: '2026-01-01T00:00:00Z' })],
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['document', 'vote']);
-  });
-
-  it('caps each source at 5 items before merging, keeping the most recent per source', () => {
-    const pastMeetings = Array.from({ length: 7 }, (_, i) =>
-      pastMeeting({ id: `pm-${i}`, meeting_and_occurrence_id: `pm-${i}-occ`, start_time: `2026-01-0${i + 1}T00:00:00Z` })
-    );
-    const items = buildActivityFeed(emptyInput({ pastMeetings }));
-    expect(items).toHaveLength(5);
-    // The 5 most recent (highest-dated) of the 7 survive the per-source cap.
-    expect(items.map((i) => i.key)).toEqual([
-      'past_meeting-pm-6-occ',
-      'past_meeting-pm-5-occ',
-      'past_meeting-pm-4-occ',
-      'past_meeting-pm-3-occ',
-      'past_meeting-pm-2-occ',
-    ]);
-  });
-
-  it('caps the final merged feed at 8 items even when every source is full', () => {
-    const many = (n: number) => Array.from({ length: n }, (_, i) => i);
-    const items = buildActivityFeed(
-      emptyInput({
-        pastMeetings: many(5).map((i) => pastMeeting({ id: `pm-${i}`, meeting_and_occurrence_id: `pm-${i}`, start_time: `2026-01-01T0${i}:00:00Z` })),
-        votes: many(5).map((i) => vote({ uid: `vote-${i}`, last_modified_time: `2026-01-02T0${i}:00:00Z` })),
-        surveys: many(5).map((i) => survey({ uid: `survey-${i}`, last_modified_at: `2026-01-03T0${i}:00:00Z` })),
-        documents: many(5).map((i) => document({ uid: `doc-${i}`, updated_at: `2026-01-04T0${i}:00:00Z` })),
-      })
-    );
-    expect(items).toHaveLength(8);
-  });
-
-  it('excludes vote items entirely when votingEnabled is false, but keeps the other sources', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        votes: [vote()],
-        surveys: [survey()],
-        votingEnabled: false,
-      })
-    );
-    expect(items.map((i) => i.type)).toEqual(['survey']);
-  });
-
-  it('falls back to created_at / creation_time when the modified/updated timestamp is absent', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        votes: [vote({ last_modified_time: undefined, creation_time: '2026-01-05T00:00:00Z' })],
-      })
-    );
+  it('carries occurred_at straight through as the item timestamp', () => {
+    const items = mapActivityEventsToFeedItems([meetingHeld({}, '2026-01-05T00:00:00Z')], { votingEnabled: true });
     expect(items[0].timestamp).toBe('2026-01-05T00:00:00Z');
   });
 
+  it('excludes vote events entirely when votingEnabled is false, but keeps the other sources', () => {
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_opened'), surveyEvent('survey_published')], { votingEnabled: false });
+    expect(items.map((i) => i.type)).toEqual(['survey']);
+  });
+
+  it('keeps vote_closed events excluded too when votingEnabled is false', () => {
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_closed')], { votingEnabled: false });
+    expect(items).toEqual([]);
+  });
+
   it('labels documents by type — file, link, and folder render distinct labels and icons', () => {
-    const items = buildActivityFeed(
-      emptyInput({
-        documents: [
-          document({ uid: 'd-file', type: 'file', name: 'A', updated_at: '2026-01-01T00:00:00Z' }),
-          document({ uid: 'd-link', type: 'link', name: 'B', updated_at: '2026-01-02T00:00:00Z' }),
-          document({ uid: 'd-folder', type: 'folder', name: 'C', updated_at: '2026-01-03T00:00:00Z' }),
-        ],
-      })
+    const items = mapActivityEventsToFeedItems(
+      [
+        documentUploaded({ document_uid: 'd-file', document_type: 'file', name: 'A' }),
+        documentUploaded({ document_uid: 'd-link', document_type: 'link', name: 'B' }),
+        documentUploaded({ document_uid: 'd-folder', document_type: 'folder', name: 'C' }),
+      ],
+      { votingEnabled: true }
     );
-    const byUid = Object.fromEntries(items.map((i) => [i.key, i]));
-    expect(byUid['document-d-file'].label).toBe('Document: A');
-    expect(byUid['document-d-link'].label).toBe('Link: B');
-    expect(byUid['document-d-folder'].label).toBe('Folder: C');
-    expect(byUid['document-d-folder'].icon).toContain('folder');
+    const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(byKey['document-file-d-file'].label).toBe('Document: A');
+    expect(byKey['document-link-d-link'].label).toBe('Link: B');
+    expect(byKey['document-folder-d-folder'].label).toBe('Folder: C');
+    expect(byKey['document-folder-d-folder'].icon).toContain('folder');
+  });
+
+  it('keys a folder and a file that share a uid distinctly — document_type discriminates the @for tracking key', () => {
+    const items = mapActivityEventsToFeedItems(
+      [
+        documentUploaded({ document_uid: 'shared-uid', document_type: 'folder', name: 'Folder' }, '2026-01-02T00:00:00Z'),
+        documentUploaded({ document_uid: 'shared-uid', document_type: 'file', name: 'File' }, '2026-01-01T00:00:00Z'),
+      ],
+      { votingEnabled: true }
+    );
+    expect(new Set(items.map((i) => i.key)).size).toBe(2);
   });
 
   it('maps vote status through POLL_STATUS_LABELS instead of leaking the raw enum value', () => {
-    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: PollStatus.ENDED })] }));
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_closed', { status: PollStatus.ENDED })], { votingEnabled: true });
     expect(items[0].label).toBe('Vote Ended: Q1 Budget');
   });
 
   it('normalizes an uppercase/mixed-case vote status before mapping through POLL_STATUS_LABELS', () => {
-    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: 'ACTIVE' as PollStatus })] }));
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_opened', { status: 'ACTIVE' })], { votingEnabled: true });
     expect(items[0].label).toBe('Vote Active: Q1 Budget');
   });
 
   it('falls back to the raw vote status when it has no POLL_STATUS_LABELS entry', () => {
-    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: 'archived' as PollStatus })] }));
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_opened', { status: 'archived' })], { votingEnabled: true });
     expect(items[0].label).toBe('Vote archived: Q1 Budget');
   });
 
   it('falls back to a generic label instead of "Vote undefined" when status is missing', () => {
-    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: undefined })] }));
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_opened', { status: undefined as unknown as string })], { votingEnabled: true });
     expect(items[0].label).toBe('Vote Updated: Q1 Budget');
   });
 
   it('falls back to a generic label instead of "Vote :" when status is an empty string', () => {
-    const items = buildActivityFeed(emptyInput({ votes: [vote({ status: '' as PollStatus })] }));
+    const items = mapActivityEventsToFeedItems([voteEvent('vote_opened', { status: '' })], { votingEnabled: true });
     expect(items[0].label).toBe('Vote Updated: Q1 Budget');
   });
 
+  it('renders the survey status label for both published and closed events', () => {
+    const published = mapActivityEventsToFeedItems([surveyEvent('survey_published', { status: SurveyStatus.DRAFT })], { votingEnabled: true });
+    expect(published[0].label).toBe('Survey Draft: Community Feedback');
+
+    const closed = mapActivityEventsToFeedItems([surveyEvent('survey_closed', { status: SurveyStatus.CLOSED })], { votingEnabled: true });
+    expect(closed[0].label).toBe('Survey Closed: Community Feedback');
+  });
+
   it('falls back to a generic label instead of "undefined:" when a document type is unrecognized', () => {
-    const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'unexpected' as CommitteeDocument['type'] })] }));
+    const items = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'unexpected' as CommitteeDocumentType })], {
+      votingEnabled: true,
+    });
     expect(items[0].label).toBe('Document: Charter.pdf');
     expect(items[0].icon).toContain('file');
   });
 
+  it('silently drops deferred event types instead of throwing', () => {
+    const deferred: ActivityEvent = { type: 'document_deleted', occurred_at: '2026-01-01T00:00:00Z', committee_uid: COMMITTEE_UID, payload: {} };
+    const items = mapActivityEventsToFeedItems([deferred, meetingHeld()], { votingEnabled: true });
+    expect(items).toHaveLength(1);
+    expect(items[0].type).toBe('past_meeting');
+  });
+
   describe('action', () => {
-    it("routes a past-meeting item to meeting.id — matching the Past Meeting card's own link — regardless of meeting_and_occurrence_id", () => {
-      const withComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
-      expect(withComposite[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42' });
-
-      const withoutComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: undefined })] }));
-      expect(withoutComposite[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42' });
+    it('routes a meeting_held item to its meeting_id', () => {
+      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-1' })], { votingEnabled: true });
+      expect(items[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42', password: null });
     });
 
-    it('still prefers the composite occurrence id for the @for tracking key, independent of the navigation id', () => {
-      const withComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: 'pm-42-occ-9' })] }));
-      expect(withComposite[0].key).toBe('past_meeting-pm-42-occ-9');
-
-      const withoutComposite = buildActivityFeed(emptyInput({ pastMeetings: [pastMeeting({ id: 'pm-42', meeting_and_occurrence_id: undefined })] }));
-      expect(withoutComposite[0].key).toBe('past_meeting-pm-42');
+    it('carries the event payload password through to the action, not just meetingId', () => {
+      // Carried from the source event, not re-hydrated client-side from a separate signal — see
+      // MeetingHeldActivityEvent.payload.password's doc comment for why (PR #1288 review).
+      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', password: 'sesame' })], { votingEnabled: true });
+      expect(items[0].action).toEqual({ kind: 'past-meeting', meetingId: 'pm-42', password: 'sesame' });
     });
 
-    it('opens the vote drawer for a vote item', () => {
-      const items = buildActivityFeed(emptyInput({ votes: [vote({ uid: 'vote-42' })] }));
+    it('keys a meeting_held item on meeting_occurrence_id, not meeting_id — so two occurrences of the same recurring meeting get distinct @for tracking keys', () => {
+      const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-1' }, '2026-01-01T00:00:00Z')], {
+        votingEnabled: true,
+      });
+      expect(items[0].key).toBe('past_meeting-pm-42-occ-1');
+    });
+
+    it('opens the vote drawer for a vote event', () => {
+      const items = mapActivityEventsToFeedItems([voteEvent('vote_opened', { vote_uid: 'vote-42' })], { votingEnabled: true });
       expect(items[0].action).toEqual({ kind: 'vote-drawer', voteUid: 'vote-42' });
     });
 
-    it('opens the survey drawer for a survey item', () => {
-      const items = buildActivityFeed(emptyInput({ surveys: [survey({ uid: 'survey-42' })] }));
+    it('opens the survey drawer for a survey event', () => {
+      const items = mapActivityEventsToFeedItems([surveyEvent('survey_published', { survey_uid: 'survey-42' })], { votingEnabled: true });
       expect(items[0].action).toEqual({ kind: 'survey-drawer', surveyUid: 'survey-42' });
     });
 
     it('opens a link document directly when it has a valid http(s) url', () => {
-      const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'link', url: 'https://example.com/notes' })] }));
+      const items = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'link', url: 'https://example.com/notes' })], { votingEnabled: true });
       expect(items[0].action).toEqual({ kind: 'external-url', url: 'https://example.com/notes' });
     });
 
     it('falls back to the documents tab for a link document with a missing or unsafe url', () => {
-      const missingUrl = buildActivityFeed(emptyInput({ documents: [document({ type: 'link', url: undefined })] }));
+      const missingUrl = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'link', url: undefined })], { votingEnabled: true });
       expect(missingUrl[0].action).toEqual({ kind: 'tab', tab: 'documents' });
 
-      const unsafeUrl = buildActivityFeed(emptyInput({ documents: [document({ type: 'link', url: 'javascript:alert(1)' })] }));
+      const unsafeUrl = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'link', url: 'javascript:alert(1)' })], { votingEnabled: true });
       expect(unsafeUrl[0].action).toEqual({ kind: 'tab', tab: 'documents' });
     });
 
     it('falls back to the documents tab for a file document even when a url is present', () => {
-      const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'file', url: 'https://example.com/storage/charter.pdf' })] }));
+      const items = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'file', url: 'https://example.com/storage/charter.pdf' })], {
+        votingEnabled: true,
+      });
       expect(items[0].action).toEqual({ kind: 'tab', tab: 'documents' });
     });
 
     it('falls back to the documents tab for a folder document', () => {
-      const items = buildActivityFeed(emptyInput({ documents: [document({ type: 'folder' })] }));
+      const items = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'folder' })], { votingEnabled: true });
       expect(items[0].action).toEqual({ kind: 'tab', tab: 'documents' });
     });
   });
