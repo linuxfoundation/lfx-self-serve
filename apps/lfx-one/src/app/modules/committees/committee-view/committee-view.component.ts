@@ -888,13 +888,18 @@ export class CommitteeViewComponent {
     return toSignal(
       toObservable(
         computed(() => ({
+          // engagementMetricsEnabled() gates this the same as every other engagement fetch in this
+          // file: flag off means zero engagement-related network activity, including this one, not
+          // just the /engagement call itself (Cursor Bugbot -- this fetch fired for every non-roster
+          // visitor regardless of the flag, breaking that guarantee).
+          enabled: this.engagementMetricsEnabled(),
           projectUid: this.committee()?.project_uid ?? null,
           needed: !(this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)),
         }))
       ).pipe(
-        distinctUntilChanged((a, b) => a.projectUid === b.projectUid && a.needed === b.needed),
-        switchMap(({ projectUid, needed }) => {
-          if (!projectUid || !needed || !isPlatformBrowser(this.platformId)) {
+        distinctUntilChanged((a, b) => a.enabled === b.enabled && a.projectUid === b.projectUid && a.needed === b.needed),
+        switchMap(({ enabled, projectUid, needed }) => {
+          if (!enabled || !projectUid || !needed || !isPlatformBrowser(this.platformId)) {
             this.meetingCoordinatorLoading.set(false);
             return of(false);
           }
