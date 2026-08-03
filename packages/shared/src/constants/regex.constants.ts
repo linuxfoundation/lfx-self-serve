@@ -16,6 +16,9 @@ export const SALESFORCE_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{12,15}$/;
 /** Org account id (b2b_org canonical identifier) — "001" prefix + exactly 15 alphanumeric chars (the canonical 18-char SFID). Spec 002 is a hard cut-over to the 18-char SFID; the non-canonical 15-char form is rejected. Scoped to org-lens identifiers so it does not narrow the shared `SALESFORCE_ACCOUNT_ID_PATTERN` used by events/analytics. */
 export const ORG_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{15}$/;
 
+/** Generic Salesforce ID shape (no object-prefix constraint) — 15-char case-sensitive form, or its 18-char case-insensitive checksum-suffixed form. Matches the v1 platform's own `sfid.IsValid` gate (any object type: Contact, Lead, Account, custom objects). Unlike `SALESFORCE_ACCOUNT_ID_PATTERN`/`ORG_ACCOUNT_ID_PATTERN`, this doesn't check for a specific 3-char object prefix — use it where the caller only needs to know "is this SFID-shaped at all" (e.g. the LFXV2-1705 committee-member v1-mapping bridge, where the resolved identity could be a Contact SFID or another object type). */
+export const SALESFORCE_ID_PATTERN = /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/;
+
 /**
  * General-purpose SSR path parameter validator — mixed-case alphanumerics + hyphens, length 1-64.
  * Currently used to validate `foundationId` path parameters on the Org Lens membership

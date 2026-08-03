@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { isUuid } from '@lfx-one/shared/utils';
+import { SALESFORCE_ID_PATTERN, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { logger } from '../services/logger.service';
@@ -24,43 +23,43 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
   return v1Id === null || typeof v1Id === 'string';
 }
 
-/** Matches a valid Salesforce ID (15-char case-sensitive form, or its 18-char case-insensitive
- * checksum-suffixed form) — the other arm of the discriminated union: upstream validates the third
- * field with `sfid.IsValid` (15 or 18 alphanumeric characters) before treating it as usable. */
-const SFID_PATTERN = /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/;
-
 /**
  * Parses a `committee_member.uid.<v2Uid>` response (`"{project_sfid}:{committee_sfid}:{member_sfid}"`)
  * into the usable member id, or `null` if the response can't be trusted yet.
  *
- * Three rejections beyond a plain shape mismatch, all driven by `lfx-v1-sync-helper`'s own
+ * Two rejections beyond a plain shape mismatch, both driven by `lfx-v1-sync-helper`'s own
  * documented contract for this key (its `parseCommitteeMemberReverseMapping`): the third field is a
  * *discriminated union*, not always a usable person identifier.
  *
  * 1. Requires exactly 3 segments, not "at least 3" — a legacy 4-field `recordSFID:contactSFID` value
  *    (an extra colon from an older mapping generation) would otherwise silently fold its extra
  *    segment into this parser's 3rd field, handing back the wrong id without any error.
- * 2. Rejects a 3rd field that itself looks like a UUID (`isUuid`, from `@lfx-one/shared/utils` —
- *    already the codebase's shared UUID-vs-Salesforce-ID predicate, e.g. `project.controller.ts`).
- *    Per the upstream contract, a UUID there means the "poisoned" pre-backfill form of this mapping:
- *    the `platform-community__c` *record* SFID (a committee-membership row identifier), not the
- *    member's actual contact identity — the exact bug LFXV2-2673's backfill script exists to repair.
- * 3. Rejects a 3rd field that ISN'T a valid Salesforce ID shape either (upstream's own
- *    `sfid.IsValid` gate — 15 or 18 alphanumeric characters) — the other half of the same
- *    discriminator; a malformed value here is exactly as untrustworthy as a UUID one, just via the
- *    opposite failure mode.
+ * 2. Requires the 3rd field to look like a valid Salesforce ID (upstream's own `sfid.IsValid` gate,
+ *    `SALESFORCE_ID_PATTERN` — 15 or 18 alphanumeric characters). This one shape check does double
+ *    duty for both of upstream's rejection cases: a bare UUID (the "poisoned" pre-backfill form of
+ *    this mapping — the `platform-community__c` *record* SFID, a committee-membership row
+ *    identifier, not the member's actual contact identity, the exact bug LFXV2-2673's backfill
+ *    script exists to repair) already fails this pattern on its hyphens and length alone, so no
+ *    separate UUID check is needed to catch it.
  *
- * Accepting either untrustworthy shape would report a *successful* resolution to a value that can
- * never join `MEMBER_USER_ID`, and worse, positive-cache that wrong value for
- * `MEMBER_V1_MAPPING_TTL_SECONDS` (7 days) — masking the real mapping for a week even after a
- * backfill repairs it. Returning `null` instead routes this uid through `resolveV1MappingBatch`'s
- * indeterminate path (never cached, logged, retried next request), which is the honest state for a
- * transient, backfill-fixable condition.
+ * Note the two upstream-rejection causes aren't equally transient: a poisoned (UUID) value is
+ * genuinely backfill-fixable (LFXV2-2673's script targets exactly that state), but upstream's own
+ * backfill script *permanently* skips a malformed (neither UUID- nor SFID-shaped) `contact_name__c`
+ * as an unresolvable data-quality issue — it will never repair itself. This function still returns
+ * `null` for both today, which routes the uid through `resolveV1MappingBatch`'s indeterminate path
+ * (never cached, retried every request) rather than distinguishing them; a malformed value therefore
+ * re-issues a NATS round trip and logs a warning on every request indefinitely, not just until a
+ * backfill lands. Accepting either shape instead would be worse — reporting a *successful*
+ * resolution to a value that can never join `MEMBER_USER_ID`, positive-cached for
+ * `MEMBER_V1_MAPPING_TTL_SECONDS` (7 days) — but the retry-forever cost of the malformed case is a
+ * known, currently-accepted trade-off, not a solved one; a future improvement would give
+ * `resolveV1MappingBatch` a third outcome so a malformed (as opposed to poisoned) value can be
+ * negative-cached like a confirmed non-mapping instead.
  */
 export function parseMemberMappingResponse(responseText: string): string | null {
   const parts = responseText.split(':');
   if (parts.length !== 3 || !parts[2]) return null;
-  if (isUuid(parts[2]) || !SFID_PATTERN.test(parts[2])) return null;
+  if (!SALESFORCE_ID_PATTERN.test(parts[2])) return null;
   return parts[2];
 }
 
