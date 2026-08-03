@@ -66,3 +66,13 @@ export const DUAL_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'project
 export const NAV_LENSES: readonly NavLens[] = ['foundation', 'project'] as const;
 
 export const NAV_SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * Resource segments the lens-redirect endpoint may forward to. Every entry MUST have both a
+ * `/foundation/<x>` and `/project/<x>` route in app.routes.ts and accept a `?project=<slug>`
+ * context (projectQueryParamGuard). The endpoint forwards ONLY to segments in this set — the
+ * `:resource` param is never echoed raw into the redirect Location, so it cannot become an open
+ * redirect. Keep in sync with the lens-prefixed route table; project.controller.spec.ts asserts
+ * each entry exists under both lenses.
+ */
+export const LENS_REDIRECT_RESOURCES = new Set<string>(['votes', 'meetings', 'mailing-lists', 'groups', 'documents', 'surveys', 'newsletters', 'settings']);

@@ -124,6 +124,9 @@ export * from './public-committee.interface';
 // Groups dashboard engagement-stats rollup (LFXV2-1711)
 export * from './groups-engagement-stats.interface';
 
+// Public group interfaces
+export * from './public-group.interface';
+
 // Lens interfaces
 export * from './lens.interface';
 
