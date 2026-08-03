@@ -167,8 +167,11 @@ export class CommitteeViewComponent {
   public engagementLoading = signal<boolean>(true);
   // Only ever set true while the meeting_coordinator project fetch below is actually in flight
   // (initMeetingCoordinator skips the fetch whenever a cheaper eligibility check already passed),
-  // so this stays false for the overwhelming majority of page loads (dealako, LFXV2-1705).
-  private meetingCoordinatorLoading = signal(false);
+  // so this stays false for the overwhelming majority of page loads (dealako, LFXV2-1705). Raw:
+  // wrapped below by the public `meetingCoordinatorLoading`, which forces `true` immediately on a
+  // committee change rather than trusting this raw flag's own tick-behind reactivity (Cursor Bugbot
+  // — see the wrapper's doc comment).
+  private meetingCoordinatorLoadingRaw = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -227,8 +230,40 @@ export class CommitteeViewComponent {
   });
 
   // Project-level `meeting_coordinator` grant for canAccessEngagement below — see
-  // initMeetingCoordinator for why this fetch is conditional.
-  public readonly meetingCoordinator: Signal<boolean> = this.initMeetingCoordinator();
+  // initMeetingCoordinator for why this fetch is conditional. Raw/wrapped split: see the two
+  // linkedSignals below for why the raw toSignal/toObservable value isn't used directly.
+  private readonly meetingCoordinatorRaw: Signal<boolean> = this.initMeetingCoordinator();
+  // Wraps meetingCoordinatorLoadingRaw, forcing `true` immediately whenever committeeId() changes,
+  // instead of waiting for meetingCoordinatorLoadingRaw's own toObservable pipeline to notice
+  // committee() changed and flip it (a tick behind, since that pipeline only re-evaluates once
+  // `committee()`'s async fetch resolves to the new committee — see initMeetingCoordinator). Without
+  // this, there's a real window right after committee() updates (loading/committeeRefreshing already
+  // false) but before the coordinator pipeline has re-fired: canAccessEngagement's own `loading`
+  // field (myRoleLoading() || meetingCoordinatorLoading()) would read false too early, settling
+  // `eligible` on a stale meetingCoordinatorRaw() value from the PREVIOUS committee — either false
+  // when the new committee's caller actually is a coordinator (flashes "unavailable" before flipping
+  // open) or true when they aren't (briefly opens the card before flipping closed) (Cursor Bugbot).
+  public readonly meetingCoordinatorLoading: Signal<boolean> = linkedSignal<{ committeeId: string | null; raw: boolean }, boolean>({
+    source: () => ({ committeeId: this.committeeId(), raw: this.meetingCoordinatorLoadingRaw() }),
+    computation: (source, previous) => {
+      if (previous && previous.source.committeeId !== source.committeeId) {
+        return true;
+      }
+      return source.raw;
+    },
+  });
+  // Wraps meetingCoordinatorRaw the same way, resetting to `false` immediately on a committee
+  // change so the stale previous committee's resolved grant can never leak into `eligible` during
+  // the gap meetingCoordinatorLoading above now covers.
+  public readonly meetingCoordinator: Signal<boolean> = linkedSignal<{ committeeId: string | null; raw: boolean }, boolean>({
+    source: () => ({ committeeId: this.committeeId(), raw: this.meetingCoordinatorRaw() }),
+    computation: (source, previous) => {
+      if (previous && previous.source.committeeId !== source.committeeId) {
+        return false;
+      }
+      return source.raw;
+    },
+  });
 
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
   // by initEngagement's fetch gate below AND passed down to committee-overview for its card render
@@ -900,13 +935,13 @@ export class CommitteeViewComponent {
         distinctUntilChanged((a, b) => a.enabled === b.enabled && a.projectUid === b.projectUid && a.needed === b.needed),
         switchMap(({ enabled, projectUid, needed }) => {
           if (!enabled || !projectUid || !needed || !isPlatformBrowser(this.platformId)) {
-            this.meetingCoordinatorLoading.set(false);
+            this.meetingCoordinatorLoadingRaw.set(false);
             return of(false);
           }
-          this.meetingCoordinatorLoading.set(true);
+          this.meetingCoordinatorLoadingRaw.set(true);
           return this.projectService.getProject(projectUid, false, { meetingCoordinator: true }).pipe(
             map((project) => project?.meetingCoordinator === true),
-            finalize(() => this.meetingCoordinatorLoading.set(false))
+            finalize(() => this.meetingCoordinatorLoadingRaw.set(false))
           );
         })
       ),
