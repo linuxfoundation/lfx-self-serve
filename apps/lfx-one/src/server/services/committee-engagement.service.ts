@@ -23,6 +23,7 @@ import type { Request } from 'express';
 import { isEngagementMockBackend } from '../helpers/committee-engagement-backend.helper';
 import { generateMockEngagementRows } from '../helpers/committee-engagement-mock.helper';
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
+import { resolveMemberV2UidsToV1Ids } from '../helpers/member-v1-mapping.helper';
 import { committeeEngagementTable } from '../helpers/snowflake-schema.helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -45,7 +46,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * The live path resolves the route's v2 committee UUID to the model's v1 committee SFID via
  * `resolveCommitteeV2UidsToV1Ids` before querying (`queryEngagementRows`) — the model is keyed on
  * the v1 SFID (the platform-collaboration source predates v2), confirmed with Jordan Evans, data
- * owner, LFXV2-2968. See that method's doc comment for the mapping details.
+ * owner, LFXV2-2968. See that method's doc comment for the mapping details. The model is *also*
+ * keyed on a v1 member id at the row level — `getCommitteeEngagement` resolves the roster's v2
+ * member uids via `resolveMemberV2UidsToV1Ids` (a cached NATS bridge, LFXV2-1705) before
+ * `buildResponse` joins rows to the roster; see that method's and `buildResponse`'s doc comments.
+ * TODO(LFXV2-2973): both bridges are temporary — remove once the model carries v2 keys directly
+ * (LFXV2-2968).
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -55,8 +61,16 @@ export class CommitteeEngagementService {
   /**
    * Mock mode fetches the roster live (so mock rows can anchor to real uids) and generates rows
    * synchronously in-memory — no Snowflake call, no cache, nothing to await beyond the roster read.
-   * Live mode races the roster and Snowflake reads via `Promise.all`; `queryEngagementRows` owns
-   * its own caching and missing-object degrade independently of this method.
+   * `generateMockEngagementRows` already keys every row on the real `CommitteeMember.uid`, so mock
+   * mode passes `buildResponse` an identity map (`uid -> uid`) rather than calling the real NATS/cache
+   * bridge — `buildResponse` itself doesn't need to know it's mock mode, it just always joins through
+   * whichever `memberV1Map` it's given.
+   *
+   * Live mode races the roster and Snowflake reads via `Promise.all` (`queryEngagementRows` owns its
+   * own caching and missing-object degrade independently of this method), then — once the roster is
+   * known — kicks off the member-ID bridge (LFXV2-1705, TODO(LFXV2-2973): temporary, remove once the
+   * model carries v2 keys directly per LFXV2-2968) so it overlaps with whatever's left of the
+   * Snowflake query rather than adding to the critical path sequentially.
    */
   public async getCommitteeEngagement(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementResponse> {
     if (isEngagementMockBackend()) {
@@ -75,15 +89,21 @@ export class CommitteeEngagementService {
         window,
         roster_size: members.length,
       });
-      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock');
+      const identityMemberV1Map = new Map(members.map((member) => [member.uid, member.uid]));
+      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock', identityMemberV1Map);
     }
 
-    const [members, queryResult] = await Promise.all([
-      this.committeeService.getCommitteeMembers(req, committeeUid),
-      this.queryEngagementRows(req, committeeUid),
-    ]);
+    const membersPromise = this.committeeService.getCommitteeMembers(req, committeeUid);
+    const queryResultPromise = this.queryEngagementRows(req, committeeUid);
+    const members = await membersPromise;
+    const memberV1MapPromise = resolveMemberV2UidsToV1Ids(
+      req,
+      this.natsService,
+      members.map((member) => member.uid)
+    );
+    const [queryResult, memberV1Map] = await Promise.all([queryResultPromise, memberV1MapPromise]);
 
-    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live');
+    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live', memberV1Map);
   }
 
   /**
@@ -213,6 +233,16 @@ export class CommitteeEngagementService {
    * `usableData` (`dataAvailable && anyRowMatched`), not the raw query-level `dataAvailable` — a
    * total join-key mismatch degrades the same way a genuinely empty read does, from the caller's
    * point of view, rather than reporting `true` alongside a fully zeroed/`Inactive` roster.
+   *
+   * `MEMBER_USER_ID` is warehouse-native v1-space (a legacy LFID/Salesforce-SFID), not
+   * `CommitteeMember.uid` directly — `memberV1Map` (built by the caller via
+   * `resolveMemberV2UidsToV1Ids`, or an identity map in mock mode where rows are already keyed on
+   * the real uid) resolves each roster member's v2 uid to that v1 id before the lookup below. A
+   * member whose id never resolved (no mapping, a NATS failure, or the lookup's wall-clock budget
+   * cutting it off) is indistinguishable here from one who resolved but had no matching warehouse
+   * row — both simply produce no `row`, and fall through the existing zero-counts/tenure-grace
+   * path unchanged. TODO(LFXV2-2973): this member-ID bridge is temporary — remove once the model
+   * carries v2 keys directly (LFXV2-2968).
    */
   private buildResponse(
     req: Request,
@@ -220,7 +250,8 @@ export class CommitteeEngagementService {
     members: CommitteeMember[],
     queryResult: CommitteeEngagementQueryResult,
     window: CommitteeEngagementWindow,
-    dataSource: CommitteeEngagementDataSource
+    dataSource: CommitteeEngagementDataSource,
+    memberV1Map: Map<string, string>
   ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
@@ -242,10 +273,12 @@ export class CommitteeEngagementService {
     // indistinguishable from a genuinely empty read: neither leaves any trustworthy per-member data
     // to report. `usableData` — not the raw `dataAvailable` — is what both the roster `created_at`
     // tenure-grace fallback below and the response's own `data_available` field key off, so a
-    // committee whose warehouse rows exist but don't join to this roster (today's live-production
-    // reality, per LFXV2-1705) reports honestly as `data_available: false` rather than `true` with
-    // every member falsely zeroed/graced.
-    const anyRowMatched = members.some((member) => rowsByUid.has(member.uid));
+    // committee whose warehouse rows exist but don't join to this roster reports honestly as
+    // `data_available: false` rather than `true` with every member falsely zeroed/graced.
+    const anyRowMatched = members.some((member) => {
+      const v1MemberId = memberV1Map.get(member.uid);
+      return v1MemberId ? rowsByUid.has(v1MemberId) : false;
+    });
     const usableData = dataAvailable && anyRowMatched;
 
     const windowStart = this.windowStartDate(window);
@@ -257,7 +290,8 @@ export class CommitteeEngagementService {
     let matchedCount = 0;
 
     const memberEngagements = members.map((member) => {
-      const row = rowsByUid.get(member.uid);
+      const v1MemberId = memberV1Map.get(member.uid);
+      const row = v1MemberId ? rowsByUid.get(v1MemberId) : undefined;
       if (row) matchedCount++;
 
       const counts = row ? this.countsForWindow(row, window) : { invited: 0, attended: 0, committeeMeetings: 0 };

@@ -14,6 +14,7 @@ const {
   getCommitteeMembers,
   generateMockEngagementRows,
   resolveCommitteeV2UidsToV1Ids,
+  resolveMemberV2UidsToV1Ids,
   warning,
   info,
   debug,
@@ -27,6 +28,10 @@ const {
   // Defaults to a 1:1 v2-uid -> "warehouse-<uid>" mapping so existing 'committee-1'-based tests
   // don't need per-test setup; tests exercising an unresolved uid override this explicitly.
   resolveCommitteeV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`]))),
+  // Defaults to an identity mapping (v2 uid -> itself) so every existing live-mode test — written
+  // when the member join compared `member.uid` directly against `row.MEMBER_USER_ID` — keeps
+  // passing unchanged; tests covering the real member-mapping bridge override this explicitly.
+  resolveMemberV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, uid]))),
   warning: vi.fn(),
   info: vi.fn(),
   debug: vi.fn(),
@@ -55,6 +60,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 vi.mock('../helpers/committee-engagement-mock.helper', () => ({ generateMockEngagementRows }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids }));
+vi.mock('../helpers/member-v1-mapping.helper', () => ({ resolveMemberV2UidsToV1Ids }));
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeMembers = getCommitteeMembers;
@@ -126,6 +132,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     resolveCommitteeV2UidsToV1Ids
       .mockReset()
       .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`])));
+    resolveMemberV2UidsToV1Ids.mockReset().mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, uid])));
     warning.mockReset();
     info.mockReset();
     debug.mockReset();
@@ -489,6 +496,56 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
         'Joined engagement rows to the roster',
         expect.objectContaining({ matched_count: 0, query_data_available: true, data_available: false })
       );
+    });
+
+    it('resolves the roster member uids via the v1 member-mapping bridge and joins THAT, not the raw v2 uid, fixing what was a total join-key mismatch', async () => {
+      // LFXV2-1705's member-mapping bridge: the same 'm1'/'m2' roster + mismatched-id-style rows as
+      // the join-key-mismatch test above, but now with a real bridge resolution supplied — the exact
+      // scenario the bridge exists to fix. Real (nonzero) counts prove the join is live, not just
+      // "matched a zero-count row."
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('m2')]);
+      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce(
+        new Map([
+          ['m1', '0034100000dh2VLAAY'],
+          ['m2', 'lfdVxdHAYKNNhX67DT'],
+        ])
+      );
+      execute.mockResolvedValueOnce({
+        rows: [
+          row({ MEMBER_USER_ID: '0034100000dh2VLAAY', INVITED_COUNT_30D: 4, ATTENDED_COUNT_30D: 3 }),
+          row({ MEMBER_USER_ID: 'lfdVxdHAYKNNhX67DT', INVITED_COUNT_30D: 4, ATTENDED_COUNT_30D: 0 }),
+        ],
+      });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(resolveMemberV2UidsToV1Ids).toHaveBeenCalledWith(req, expect.anything(), ['m1', 'm2']);
+      expect(result.data_available).toBe(true);
+      expect(result.members.find((m) => m.uid === 'm1')).toMatchObject({ invited: 4, attended: 3, classification: 'High' });
+      expect(result.members.find((m) => m.uid === 'm2')).toMatchObject({ invited: 4, attended: 0, classification: 'Inactive' });
+      expect(result.summary.active_count).toBe(1);
+      // The join-key-mismatch warning should NOT fire once the mapping resolves real matches.
+      expect(warning).not.toHaveBeenCalledWith(req, 'get_committee_engagement', expect.stringContaining('join key mismatch'), expect.anything());
+    });
+
+    it('keeps an unmapped member at zero counts under normal tenure rules, without corrupting usableData/data_available for the rest of the roster', async () => {
+      // Partial member-mapping resolution: one roster member resolves to a real v1 id (and matches
+      // a row), the other's id never resolves (budget cutoff, NATS failure, or genuinely no mapping)
+      // — it must look identical to "resolved but no matching row," not break the whole response.
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('mapped'), member('unmapped', { created_at: recentJoin })]);
+      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce(new Map([['mapped', 'v1-mapped']]));
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'v1-mapped', INVITED_COUNT_30D: 4, ATTENDED_COUNT_30D: 4 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(true);
+      expect(result.members.find((m) => m.uid === 'mapped')).toMatchObject({ invited: 4, attended: 4, classification: 'High' });
+      // Unmapped member: no row to join, but the committee DOES have usable data (one real match),
+      // so the roster created_at tenure-grace fallback still applies — same as an individually
+      // unmatched member on an otherwise-working join.
+      expect(result.members.find((m) => m.uid === 'unmapped')).toMatchObject({ invited: 0, attended: 0, classification: 'High' });
+      expect(result.summary.active_count).toBe(2);
     });
 
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {

@@ -1,12 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
 import type { Request } from 'express';
 
-import { logger } from '../services/logger.service';
 import type { NatsService } from '../services/nats.service';
+import { resolveV1MappingBatch } from './v1-mapping-batch.helper';
 
 /**
  * Resolves LFX v2 committee UUIDs to the v1 committee SFID via the platform's
@@ -18,8 +16,9 @@ import type { NatsService } from '../services/nats.service';
  * their own system; they're simply two different ID spaces for the same committee (confirmed with
  * Jordan Evans, data owner, LFXV2-2968). This is the sanctioned platform bridge for that split —
  * the same one `meeting.controller.ts` already uses for the identical v1/v2 split on the
- * meetings/registrants path (extracted here so committee-engagement/groups-engagement-stats don't
- * fork a second copy of this exact lookup).
+ * meetings/registrants path, and the same one `member-v1-mapping.helper.ts` now uses for the
+ * analogous committee-*member* split (LFXV2-1705) — both share `v1-mapping-batch.helper.ts`'s
+ * batching/budget engine rather than forking a copy of it.
  *
  * Returns a `Map<v2Uid, v1Sfid>` containing only entries that resolved — a v2 uid with no mapping
  * (not yet migrated, or a NATS/parse failure) is simply absent from the map rather than a thrown
@@ -34,65 +33,21 @@ import type { NatsService } from '../services/nats.service';
  * call is also capped at `NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS` wall-clock: once exceeded, no further
  * batches are issued and whatever resolved so far is returned. A partial map still degrades
  * correctly through the same "did this uid resolve" contract above — the caller doesn't need to
- * know the batch was cut short.
+ * know the batch was cut short. See `v1-mapping-batch.helper.ts` for the shared implementation.
  */
 export async function resolveCommitteeV2UidsToV1Ids(req: Request, natsService: NatsService, v2CommitteeUids: string[]): Promise<Map<string, string>> {
-  const codec = natsService.getCodec();
-  const v2ToV1Map = new Map<string, string>();
-  const deadline = Date.now() + NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS;
-
-  const resolveOne = async (v2Uid: string): Promise<{ v2Uid: string; v1Sfid: string } | null> => {
-    try {
-      const lookupKey = `committee.uid.${v2Uid}`;
-      const response = await natsService.request(NatsSubjects.LOOKUP_V1_MAPPING, codec.encode(lookupKey), {
-        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
-      });
-
-      const responseText = codec.decode(response.data);
-
-      // Response format: "{project_sfid}:{committee_sfid}" or empty/error.
-      if (!responseText || responseText.startsWith('error:')) {
-        logger.warning(req, 'resolve_committee_v1_mapping', 'NATS lookup returned no mapping', {
-          v2_uid: v2Uid,
-          response: responseText || '(empty)',
-        });
-        return null;
-      }
-
-      // Extract the committee SFID (second segment after the colon).
+  const { resolved } = await resolveV1MappingBatch(
+    req,
+    natsService,
+    v2CommitteeUids,
+    (v2Uid) => `committee.uid.${v2Uid}`,
+    (responseText) => {
+      // Response format: "{project_sfid}:{committee_sfid}" — the committee SFID is the second segment.
       const parts = responseText.split(':');
-      if (parts.length < 2 || !parts[1]) {
-        logger.warning(req, 'resolve_committee_v1_mapping', 'Unexpected NATS response format', {
-          v2_uid: v2Uid,
-          response: responseText,
-        });
-        return null;
-      }
-
-      return { v2Uid, v1Sfid: parts[1] };
-    } catch (error) {
-      logger.warning(req, 'resolve_committee_v1_mapping', 'Failed to resolve v2->v1 committee mapping', {
-        v2_uid: v2Uid,
-        err: error,
-      });
-      return null;
-    }
-  };
-
-  for (let i = 0; i < v2CommitteeUids.length; i += NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      logger.warning(req, 'resolve_committee_v1_mapping', 'Lookup batch budget exceeded; returning the partial map resolved so far', {
-        resolved_count: v2ToV1Map.size,
-        requested_count: v2CommitteeUids.length,
-      });
-      break;
-    }
-    const batch = v2CommitteeUids.slice(i, i + NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY);
-    const batchResults = await Promise.all(batch.map(resolveOne));
-    for (const result of batchResults) {
-      if (result) v2ToV1Map.set(result.v2Uid, result.v1Sfid);
-    }
-  }
-
-  return v2ToV1Map;
+      return parts.length >= 2 && parts[1] ? parts[1] : null;
+    },
+    'resolve_committee_v1_mapping',
+    'committee'
+  );
+  return resolved;
 }

@@ -67,15 +67,21 @@ function resolveBackend(): 'mock' | 'live' {
  * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
  * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
  * sources when the roster join has at least one match for that committee; this rollup only has the
- * warehouse row, never a roster fallback). A larger case in the same family: this rollup dedupes
- * purely on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose
- * `MEMBER_USER_ID` values don't key to any roster member (LFXV2-1705's still-unresolved member-level
- * v1/v2 id gap — a `committee_member.uid.<v2Uid>` NATS key does exist on `lfx.lookup_v1_mapping`,
- * but resolving and wiring it into either surface is unimplemented, tracked as LFXV2-2974) still
- * contributes its warehouse-classified members to this count, while the same committee's detail
- * page now reports `data_available: false` and every non-Emeritus member `Inactive` — a real,
- * currently-live divergence, not just a theoretical one, until LFXV2-2974 lands. Visible committee
- * uids are v2 committee-service
+ * warehouse row, never a roster fallback).
+ *
+ * A larger case in the same family, deliberately NOT wired the same way: this rollup dedupes purely
+ * on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose
+ * `MEMBER_USER_ID` values don't key to any roster member still contributes its warehouse-classified
+ * members to this count, while `committee-engagement.service.ts`'s detail page — which now resolves
+ * member ids via `resolveMemberV2UidsToV1Ids` (a `committee_member.uid.<v2MemberUid>` NATS key on
+ * `lfx.lookup_v1_mapping`, LFXV2-1705) — reports `data_available: false` and every non-Emeritus
+ * member `Inactive` for that same committee. This is a real, currently-live divergence between the
+ * two surfaces, not just a theoretical one. It's intentionally not closed here: this rollup's count
+ * only needs distinct warehouse ids, not v2 identity, so it's already correct regardless of id
+ * space — resolving member ids here would require a roster fetch per visible committee, reintroducing
+ * the exact N+1 this endpoint exists to avoid. (Whether `member_sfid`, the resolved value on the
+ * detail-page side, actually shares an identity space with `MEMBER_USER_ID` is itself still pending
+ * live-validation confirmation, not a settled fact.) Visible committee uids are v2 committee-service
  * UUIDs; the model is keyed on the v1 committee SFID, so every uid is resolved via
  * `resolveCommitteeV2UidsToV1Ids` before querying (confirmed with Jordan Evans, data owner,
  * LFXV2-2968 — see `computeActiveMembers`'s doc comment for the coverage-checking details).

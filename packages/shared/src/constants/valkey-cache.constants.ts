@@ -36,6 +36,13 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
   GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
 
+  /**
+   * Domain + schema-version segment for the per-committee-member v1-id-mapping bridge cache
+   * (LFXV2-1705). TODO(LFXV2-2973): remove this namespace once the model carries v2 keys directly
+   * (LFXV2-2968) and the bridge is deleted.
+   */
+  MEMBER_V1_MAPPING_NAMESPACE: 'member-v1-mapping:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -53,6 +60,12 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the Groups dashboard engagement-stats cache — absorbs repeated dashboard refreshes. */
   GROUPS_ENGAGEMENT_TTL_SECONDS: 60,
+
+  /** Freshness window for a successfully-resolved member v1-id mapping (7 days) — these mappings are stable (a person's legacy identity doesn't change), so a long TTL avoids re-hitting NATS for every request. TODO(LFXV2-2973): remove once the bridge is deleted. */
+  MEMBER_V1_MAPPING_TTL_SECONDS: 7 * 24 * 60 * 60,
+
+  /** Short negative-cache TTL (1 hour) for a member confirmed to have no v1 mapping — long enough that a large roster of genuinely-unmapped members doesn't hammer NATS on every request, short enough that a mapping added later (e.g. after a backfill) shows up within the hour. Only ever written for a *confirmed* "no mapping" NATS response, never for an indeterminate one (a timed-out or budget-cut-off lookup) — see `v1-mapping-batch.helper.ts`'s `confirmedUnresolved` distinction. TODO(LFXV2-2973): remove once the bridge is deleted. */
+  MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,
