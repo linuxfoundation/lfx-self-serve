@@ -145,35 +145,38 @@ export class OrgLensMeetingsService {
     );
   }
 
-  /** One row per project the org engages with that also has `last_2_years` influence data. Range-independent by design. */
-  public async getInfluenceRows(req: Request, accountId: string): Promise<OrgInfluenceRow[]> {
+  /** One row per project the org engages with, in the requested window, that also has influence data for it. */
+  public async getInfluenceRows(req: Request, accountId: string, range: OrgMeetingsSupportedTimeRange): Promise<OrgInfluenceRow[]> {
     return withOrgCache(
       accountId,
-      // `v3`: same reason as the KPI key — the Δ-YoY column shares the delta formatter, so cached
-      // rows can carry the retired label. `meetings-spend` is deliberately left at v1; it has no
-      // delta labels, so evicting it would discard warm entries for no behaviour change.
-      'meetings-influence:v3',
+      // `v4`: the row shape gained `displayedInfluence` and `rankTotalAll`, and `isInfluenceRows`
+      // only checks three fields — so a warm `v3` entry would satisfy the guard while missing both.
+      // The range suffix then partitions per window; the version bump and the suffix are both
+      // required, since neither alone prevents an old-shape hit.
+      `meetings-influence:v4:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        logger.debug(req, 'get_org_lens_meetings_influence', 'Cache miss; querying Snowflake', { account_id: accountId });
+        logger.debug(req, 'get_org_lens_meetings_influence', 'Cache miss; querying Snowflake', { account_id: accountId, range });
         const sql = `
         SELECT
           PROJECT_SLUG,
           PROJECT_NAME,
           ECOSYSTEM_INFLUENCE,
+          DISPLAYED_INFLUENCE,
           BAND,
           RANK,
           RANK_TOTAL,
+          RANK_TOTAL_ALL,
           FROM_ATTENDANCE_PCT,
           DELTA_PCT,
-          PRIOR_YEAR_SCORE,
+          PRIOR_WINDOW_SCORE,
           TREND_DIRECTION,
           BREAKDOWN
         FROM ${this.influenceTable()}
-        WHERE ACCOUNT_ID = ?
+        WHERE ACCOUNT_ID = ? AND TIME_RANGE_TYPE = ?
         ORDER BY ECOSYSTEM_INFLUENCE DESC, PROJECT_NAME
       `;
-        const result = await this.snowflakeService.execute<OrgMeetingsInfluenceWarehouseRow>(sql, [accountId]);
+        const result = await this.snowflakeService.execute<OrgMeetingsInfluenceWarehouseRow>(sql, [accountId, range]);
         // A row with no slug cannot link anywhere and would collide with any other slugless row on the
         // template's track key, so it is dropped rather than rendered.
         return result.rows.filter((row) => this.toLabel(row.PROJECT_SLUG).length > 0).map((row) => this.mapInfluenceRow(row));
@@ -275,8 +278,10 @@ export class OrgLensMeetingsService {
       project: this.toLabel(row.PROJECT_NAME),
       projectSlug: this.toLabel(row.PROJECT_SLUG),
       ecosystemInfluence: this.round1(row.ECOSYSTEM_INFLUENCE),
+      displayedInfluence: this.round1(row.DISPLAYED_INFLUENCE),
       band: this.toBand(row.BAND),
       rankLabel: this.rankLabel(row.RANK, row.RANK_TOTAL),
+      rankTotalAll: this.toNullableCount(row.RANK_TOTAL_ALL),
       fromAttendancePct: this.round1(row.FROM_ATTENDANCE_PCT),
       deltaLabel: delta.label,
       deltaDirection: delta.direction,
@@ -286,7 +291,7 @@ export class OrgLensMeetingsService {
 
   /**
    * Mirrors the KPI rule for the same degeneracy. The zero baseline has to be read from
-   * `PRIOR_YEAR_SCORE`: `TREND_DIRECTION` cannot identify it, because its `flat` value is a ±1%
+   * `PRIOR_WINDOW_SCORE`: `TREND_DIRECTION` cannot identify it, because its `flat` value is a ±1%
    * deadband rather than equality and zero-baseline rows therefore split across `flat` and `up`.
    * The raw from-zero percentage reaches five figures in prod and is never rendered.
    */
@@ -297,7 +302,7 @@ export class OrgLensMeetingsService {
     // absent cases have to be excluded before the numeric check — otherwise a column that went away
     // would relabel every row "New", which reads as a real finding rather than a defect. The
     // direction is flat because there is no baseline to have moved from.
-    const priorScoreRaw = row.PRIOR_YEAR_SCORE === null || row.PRIOR_YEAR_SCORE === undefined ? NaN : Number(row.PRIOR_YEAR_SCORE);
+    const priorScoreRaw = row.PRIOR_WINDOW_SCORE === null || row.PRIOR_WINDOW_SCORE === undefined ? NaN : Number(row.PRIOR_WINDOW_SCORE);
     if (!Number.isFinite(priorScoreRaw)) {
       return { label: UNKNOWN_BASELINE_LABEL, direction: 'flat' };
     }
@@ -424,6 +429,18 @@ export class OrgLensMeetingsService {
 
   private toCount(value: unknown): number {
     return Math.max(0, Math.round(this.toFiniteNumber(value)));
+  }
+
+  /**
+   * Absence has to survive the boundary. `toCount` would turn a warehouse NULL into `0`, and a
+   * reference population of zero rendered beside a live rank asserts that no company has influence
+   * on the project — a contradiction on its face. The 1,983 projects with no reference row must
+   * reach the template as `null` so it can omit the clause instead.
+   */
+  private toNullableCount(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
   }
 
   private round1(value: unknown): number {

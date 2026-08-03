@@ -68,3 +68,18 @@ export const ORG_INFLUENCE_SIGNAL_BAR_GAP = 1.8;
 
 /** Breakdown measure label highlighted (as the section's subject) in the influence accordion's expanded detail row. */
 export const ORG_INFLUENCE_MEASURE_LABEL_MEETING_ATTENDANCE = 'Meeting Attendance';
+
+/**
+ * The two breakdown measures counted cumulatively across the whole platform rather than over the
+ * selected window: board and committee membership are standing states, not period activities, so
+ * their bars barely move when the window changes. They are decorated at render time — these are the
+ * warehouse's stored `label` values and the component matches on them, so putting the qualifier in
+ * the data would break the match.
+ */
+export const ORG_INFLUENCE_CUMULATIVE_MEASURE_LABELS: readonly string[] = ['Board Members', 'Committee Members'];
+
+/** Suffix appended to the two cumulative measures so a reader can tell them apart from the seven that follow the window. */
+export const ORG_INFLUENCE_CUMULATIVE_MEASURE_SUFFIX = ' (all time)';
+
+/** Window the foundation-wide reference population is measured at — fixed, and named wherever the figure is rendered. */
+export const ORG_INFLUENCE_REFERENCE_WINDOW_LABEL = 'the last 2 years';
