@@ -97,8 +97,9 @@ export interface CommitteeEngagementResponse {
    * stay populated regardless of whether a warehouse row matched.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
-   * production); a live query that returned >=1 row; or a live cache hit (which the cache only ever
-   * persists from that same case).
+   * production); a live query that returned >=1 row; or a live cache hit reading back that same
+   * outcome (the zero-row outcome is cached too, under a much shorter TTL, so a cache hit derives
+   * this flag from the cached row count rather than assuming `true`).
    *
    * The UI should key its "no data available" placeholder state off this flag rather than inferring
    * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`

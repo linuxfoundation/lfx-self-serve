@@ -48,11 +48,13 @@ export interface CommitteeEngagementQueryResult {
    * Only meaningful for the live path — mock mode always constructs this type directly with `true`
    * and synchronously-generated rows, no query involved (`committee-engagement.service.ts`'s
    * `getCommitteeEngagement`). Within the live path: `false` when the read produced no usable rows —
-   * either the query errored (table not yet synced / not authorized) or it succeeded but returned
-   * zero rows for this `committee_uid` (most likely a committee the model doesn't cover yet, since
-   * the model is roster-anchored and retains zero-activity members — a real, currently-populated
-   * committee should always yield >=1 row). `true` on a cache hit or a successful query returning
-   * >=1 row.
+   * either the query errored (table not yet synced / not authorized, never cached) or it succeeded
+   * but returned zero rows for this `committee_uid` (most likely a committee the model doesn't cover
+   * yet, since the model is roster-anchored and retains zero-activity members — a real,
+   * currently-populated committee should always yield >=1 row; this outcome IS cached, under a short
+   * TTL). `true` when the query (or a cache hit reading back that same outcome) returned >=1 row —
+   * a cache hit derives this from the cached array's length, not a hardcoded `true`, since both
+   * outcomes are cached under the same key.
    */
   dataAvailable: boolean;
 }

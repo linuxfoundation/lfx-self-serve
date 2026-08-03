@@ -18,8 +18,15 @@ const ACTIVE_MEMBER_WINDOW_DAYS = 30;
 // Matches committee.service.ts's getCommitteesByIds precedent — keeps both the bind count and the
 // per-query row volume bounded for a caller who belongs to many committees (e.g. LF staff).
 const COMMITTEE_UID_CHUNK_SIZE = 100;
+// Caps how many chunk queries run concurrently against the Snowflake pool (SNOWFLAKE_CONFIG's
+// MAX_CONNECTIONS is shared across every consumer in the process) — a caller with hundreds of
+// visible committees shouldn't be able to borrow a large fraction of the pool in one request.
+const CHUNK_CONCURRENCY = 3;
 
-type ActiveMemberRow = Pick<CommitteeEngagementWarehouseRow, 'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'ATTENDED_COUNT_30D'>;
+type ActiveMemberRow = Pick<
+  CommitteeEngagementWarehouseRow,
+  'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'INVITED_COUNT_30D' | 'ATTENDED_COUNT_30D'
+>;
 
 /**
  * `expectedSource` must match the backend resolved for *this* request — not just any valid
@@ -53,12 +60,17 @@ function resolveBackend(): 'mock' | 'live' {
 /**
  * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's visible
  * set only — mine semantics, no scope param (LFXV2-1711). `active_members` reads live from the same
- * `platinum_lfx_one_committee_meeting_attendance` dbt model as LFXV2-1705 (LFXV2-1711 requires the
- * two surfaces use the same definition so they can't disagree). `meetings_this_month` stays `null`
- * in live mode — the model exposes only rolling 30d/90d/YTD meeting counts, not a calendar-month
- * grain, so there's no honest source for it yet (LFXV2-2961 tracks adding one). Defaults to
- * `live` (never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock`
- * is additionally hard-blocked when `NODE_ENV=production`.
+ * `platinum_lfx_one_committee_meeting_attendance` dbt model as LFXV2-1705, applying the identical
+ * `isCommitteeMemberActive`/`isJoinedWithinWindow` predicate and tenure-clipping rule so the two
+ * surfaces can't disagree on *that* logic — but this rollup is warehouse-row-anchored only (no live
+ * roster join per visible committee, which would reintroduce the N+1 fetch this endpoint exists to
+ * avoid), so it can still diverge from the per-committee detail page for a roster member the model
+ * hasn't picked up yet (a very recent join) or a blank `MEMBER_VOTING_STATUS` the detail page would
+ * otherwise resolve via the roster's own `voting.status`. `meetings_this_month` stays `null` in live
+ * mode — the model exposes only rolling 30d/90d/YTD meeting counts, not a calendar-month grain, so
+ * there's no honest source for it yet (LFXV2-2961 tracks adding one). Defaults to `live` (never
+ * fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is additionally
+ * hard-blocked when `NODE_ENV=production`.
  */
 export class GroupsEngagementStatsService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -109,13 +121,23 @@ export class GroupsEngagementStatsService {
    * LFXV2-1711). A member is counted once even if active on multiple visible committees — the model's
    * grain is one row per `(committee_id, member_user_id)`, so a member on N committees produces N
    * rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count rather than a row count.
-   * The committee-uid list is chunked (see `COMMITTEE_UID_CHUNK_SIZE`) so a caller who belongs to
-   * many committees (e.g. LF staff) doesn't produce an unbounded bind list or row volume in one query.
+   * The committee-uid list is chunked (`COMMITTEE_UID_CHUNK_SIZE`) so a caller who belongs to many
+   * committees (e.g. LF staff) doesn't produce an unbounded bind list or row volume in one query, and
+   * chunks run at most `CHUNK_CONCURRENCY` at a time so that same caller can't monopolize a large
+   * fraction of the shared Snowflake connection pool in one request.
    *
-   * Two distinct "nothing to report" cases stay distinguishable: `0` means the caller genuinely has
-   * no visible committees (a real answer); `null` means the count couldn't be computed (missing
-   * committee-set lookup, or a Snowflake missing-object/not-authorized error) — never thrown, so a
-   * stats failure never blocks the rest of the groups dashboard.
+   * Three distinct "nothing to report" cases stay distinguishable:
+   * - `0`: the caller genuinely has no visible committees — a real answer, no query even runs.
+   * - `null` (no rows at all): the caller has visible committees, but every chunk query returned
+   *   zero rows — mirrors `committee-engagement.service.ts`'s zero-row `dataAvailable: false`
+   *   reading (the model is roster-anchored with zero-activity members retained, so real coverage
+   *   should yield >=1 row per committee; zero across the board most likely means none of the
+   *   caller's committees are synced yet, not that literally nobody is active).
+   * - `0` (rows present, none active): a real, computed zero — the caller's committees are covered
+   *   by the model and nobody in them happens to be active this window.
+   * - `null` (error): the count couldn't be computed at all (missing committee-set lookup, a
+   *   Snowflake missing-object/not-authorized error, or any chunk failing) — never thrown, so a
+   *   stats failure never blocks the rest of the groups dashboard.
    */
   private async computeActiveMembers(req: Request): Promise<number | null> {
     try {
@@ -127,20 +149,17 @@ export class GroupsEngagementStatsService {
         chunks.push(committeeUids.slice(i, i + COMMITTEE_UID_CHUNK_SIZE));
       }
 
-      // Promise.all (not allSettled): a partial-chunk failure means the count can no longer be
-      // trusted as complete, so the whole computation degrades to null via the catch below rather
-      // than silently returning an undercount from only the chunks that happened to succeed.
-      const chunkResults = await Promise.all(
-        chunks.map((chunk) => {
-          const placeholders = chunk.map(() => '?').join(', ');
-          const sql = `
-            SELECT MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, ATTENDED_COUNT_30D
-            FROM ${committeeEngagementTable()}
-            WHERE COMMITTEE_ID IN (${placeholders})
-          `;
-          return this.snowflakeService.execute<ActiveMemberRow>(sql, chunk, { expectMissingObject: true });
-        })
-      );
+      // Promise.all per batch (not allSettled): a partial-chunk failure means the count can no
+      // longer be trusted as complete, so the whole computation degrades to null via the catch
+      // below rather than silently returning an undercount from only the chunks that succeeded.
+      // Batched at CHUNK_CONCURRENCY rather than firing every chunk at once, so this one request
+      // can't borrow an unbounded share of the Snowflake connection pool.
+      const chunkResults: { rows: ActiveMemberRow[] }[] = [];
+      for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
+        const batch = chunks.slice(i, i + CHUNK_CONCURRENCY);
+        const batchResults = await Promise.all(batch.map((chunk) => this.queryActiveMemberChunk(chunk)));
+        chunkResults.push(...batchResults);
+      }
 
       const windowStart = new Date(Date.now() - ACTIVE_MEMBER_WINDOW_DAYS * DAY_MS);
       const activeUids = new Set<string>();
@@ -150,8 +169,11 @@ export class GroupsEngagementStatsService {
         rowCount += result.rows.length;
         for (const row of result.rows) {
           const classificationInput = {
-            attended: row.ATTENDED_COUNT_30D,
-            invited: 0, // unused by isCommitteeMemberActive
+            // Clamped to `invited`, matching committee-engagement.service.ts's `buildResponse` —
+            // defense-in-depth against the model's own `attended <= invited` dbt invariant ever
+            // being violated, not a sign it's known to be unenforced.
+            attended: Math.min(row.ATTENDED_COUNT_30D, row.INVITED_COUNT_30D),
+            invited: row.INVITED_COUNT_30D, // unused by isCommitteeMemberActive; kept only for the clamp above
             votingStatus: row.MEMBER_VOTING_STATUS,
             joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
           };
@@ -166,18 +188,31 @@ export class GroupsEngagementStatsService {
         active_members: activeUids.size,
       });
 
-      return activeUids.size;
+      // See the doc comment above: zero rows across every visible committee reads as "not synced
+      // yet" (null), distinct from rows being present but nobody active (a real 0).
+      return rowCount > 0 ? activeUids.size : null;
     } catch (error) {
       if (!SnowflakeService.isMissingObjectError(error)) {
-        // A non-Snowflake failure (e.g. the visible-committee-set lookup) is unexpected — surface it
-        // distinctly from the expected pre-sync/missing-GRANT case below, but still degrade to null
-        // rather than failing the whole dashboard stats request.
+        // A non-Snowflake failure (e.g. the visible-committee-set lookup, or a chunk query error
+        // other than missing-object) is unexpected — surface it distinctly from the expected
+        // pre-sync/missing-GRANT case below, but still degrade to null rather than failing the
+        // whole dashboard stats request.
         logger.warning(req, 'get_groups_engagement_stats', 'Failed to compute active members; returning null', { err: error });
         return null;
       }
       logger.warning(req, 'get_groups_engagement_stats', 'Active-members query hit a missing-object/not-authorized error; returning null', { err: error });
       return null;
     }
+  }
+
+  private queryActiveMemberChunk(committeeUids: string[]): Promise<{ rows: ActiveMemberRow[] }> {
+    const placeholders = committeeUids.map(() => '?').join(', ');
+    const sql = `
+      SELECT MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, INVITED_COUNT_30D, ATTENDED_COUNT_30D
+      FROM ${committeeEngagementTable()}
+      WHERE COMMITTEE_ID IN (${placeholders})
+    `;
+    return this.snowflakeService.execute<ActiveMemberRow>(sql, committeeUids, { expectMissingObject: true });
   }
 }
 

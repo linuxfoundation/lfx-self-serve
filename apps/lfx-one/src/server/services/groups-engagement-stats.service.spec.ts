@@ -91,10 +91,19 @@ function buildReq(): Request {
 // MEMBER_USER_ID has no default — every call site must specify one, so a test that means to
 // represent multiple distinct members can't accidentally collide under the Set-based dedup by
 // omission, and a test that means to represent the same member across committees does so explicitly.
-function activeMemberRow(overrides: { MEMBER_USER_ID: string; MEMBER_JOINED_AT?: string | null; MEMBER_VOTING_STATUS?: string; ATTENDED_COUNT_30D?: number }) {
+// INVITED_COUNT_30D defaults high enough to never clamp ATTENDED_COUNT_30D in tests that aren't
+// specifically exercising the clamp.
+function activeMemberRow(overrides: {
+  MEMBER_USER_ID: string;
+  MEMBER_JOINED_AT?: string | null;
+  MEMBER_VOTING_STATUS?: string;
+  INVITED_COUNT_30D?: number;
+  ATTENDED_COUNT_30D?: number;
+}) {
   return {
     MEMBER_JOINED_AT: '2020-01-01T00:00:00.000Z',
     MEMBER_VOTING_STATUS: 'Voting Rep',
+    INVITED_COUNT_30D: 999,
     ATTENDED_COUNT_30D: 0,
     ...overrides,
   };
@@ -334,6 +343,67 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBe(1);
+    });
+
+    it('clamps attended to invited before classifying (defense-in-depth against a data-quality issue), matching committee-engagement.service.ts', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      // ATTENDED_COUNT_30D > INVITED_COUNT_30D should never happen per the model's own dbt
+      // invariant, but if it did, an unclamped value here would still count the member as active —
+      // clamping to invited makes attended 0 when invited is genuinely 0.
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 0, ATTENDED_COUNT_30D: 5 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it("returns null (not 0) when the caller has visible committees but every chunk returns zero rows — mirrors the sibling endpoint's zero-row semantics", async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBeNull();
+    });
+
+    it('returns a real 0 (not null) when rows are present but nobody in them is active', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it('caps chunk concurrency at 3 in-flight queries at a time, rather than firing every chunk at once', async () => {
+      // 4 chunks (350 uids / 100) — enough to prove a concurrency cap without the test being about
+      // the exact cap value. Each execute call returns a controllable, not-yet-resolved promise so
+      // the test can observe how many are in flight before any resolve.
+      const committeeUids = Array.from({ length: 350 }, (_, i) => `committee-${i}`);
+      getMyCommitteeUids.mockResolvedValue(new Set(committeeUids));
+
+      const deferreds: { resolve: (value: { rows: unknown[] }) => void }[] = [];
+      execute.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            deferreds.push({ resolve });
+          })
+      );
+
+      const pending = service.getEngagementStats(buildReq());
+
+      // Let the microtask queue drain so every synchronously-kickoffable call has started.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(execute).toHaveBeenCalledTimes(3); // capped at CHUNK_CONCURRENCY, not all 4 chunks
+
+      deferreds.forEach((d) => d.resolve({ rows: [] }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(execute).toHaveBeenCalledTimes(4); // the 4th chunk starts only after the first batch settles
+
+      deferreds.slice(3).forEach((d) => d.resolve({ rows: [] }));
+      await pending;
     });
 
     it('chunks the committee-uid list at 100 per query and merges active members across chunks', async () => {

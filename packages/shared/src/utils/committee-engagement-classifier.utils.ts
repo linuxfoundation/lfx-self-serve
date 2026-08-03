@@ -90,11 +90,13 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
  * `false` (fail-safe: no tenure protection) for a missing or unparseable join date. Shared between
  * `committee-engagement.service.ts` (per-member tenure clipping for `GET /:uid/engagement`) and
  * `groups-engagement-stats.service.ts` (the `active_members` rollup for `GET /engagement-stats`) so
- * both consume identical `member_joined_at` semantics from the LFXV2-1705 dbt model, per LFXV2-1711's
- * requirement that the two surfaces agree on the 30d active-member count specifically (`GET
- * /:uid/engagement?window=30d`'s `summary.active_count` vs. the groups rollup's `active_members`) —
- * this function's shared predicate is one piece of that; it doesn't by itself guarantee agreement
- * at other windows, which the groups rollup doesn't compute at all (it's always the 30d definition).
+ * both apply identical `member_joined_at` semantics from the LFXV2-1705 dbt model. This function is
+ * one shared piece of a broader intent (LFXV2-1711: the two surfaces shouldn't disagree), not a
+ * guarantee of exact agreement by itself — the groups rollup is warehouse-row-anchored only (no live
+ * roster join per committee), so it can still diverge from the detail page's `window=30d` count for
+ * a roster member the model hasn't picked up yet, or a blank `MEMBER_VOTING_STATUS` the detail page
+ * resolves via the roster (see `groups-engagement-stats.service.ts`'s class doc). It also doesn't
+ * apply at 90d/ytd, which the groups rollup doesn't compute at all (always the 30d definition).
  */
 export function isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {
   if (!joinedAt) return false;
