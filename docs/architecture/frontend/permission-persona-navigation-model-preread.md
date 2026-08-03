@@ -6,131 +6,92 @@ Working spec for aligning how the LFX Self Serve experience in this repo decides
 
 Separate the product model into four decisions:
 
-- **Where can I go?** Outside of Me, `auditor` access (explicit or inherited) is what's needed to browse into a Foundation/Project/Organization context. It's the only relation that matters for context entry: any higher relation (writer, owner) includes `auditor` by inheritance.
+- **Where can I go?** Outside of Me, `auditor` permission (direct or inherited via the model) is what's needed to browse into a Foundation/Project/Organization context. It's the only permission that matters for context entry: any higher permission (writer, owner) includes `auditor` by inheritance.
 - **What is my persona there?** Persona shapes presentation — navigation, dashboards, sections, and metrics — never access.
-- **What can I do there?** Each action checks the specific relation its API call requires against the target object. That's often `writer`, but not always — for example, meeting organizer, or the author-only edit rule on poll responses.
+- **What can I do there?** Each action checks the specific permission its API call requires against the target object. That's often `writer`, but not always — for example, meeting organizer, or the author-only edit rule on poll responses.
 - **What can I discover?** Discovery surfaces let users find events, meetups, packages, projects, foundations, groups, and subscription surfaces outside their current contexts.
 
 The key rule:
 
 ```text
 Context access is not action authority.
-Every gate is an evaluated FGA relation check.
-Persona shapes presentation only.
-Code branches on evaluated relation checks, never on role or persona labels.
+Every gate is a permission check.
+Personas shape presentation only.
+Guards bind each action to the permission it requires.
 ```
 
 ## Core Principle
 
+App code never branches on personas. Every gate is a permission check — can
+user U do action A on object O. Guards define which permission each action
+needs.
+
 Personas (Board Member, Contributor, Maintainer, and the presentation use of
-ED) are detected signals for shaping the experience — they are not modeled
-in OpenFGA, except that ED also happens to correspond to a real relation
-(see Persona pairs and Terminology below).
+ED) are detected signals for shaping the experience only — not part of the
+model, except that ED also happens to correspond to a real grant (see
+Terminology and Model Asks below).
 
-OpenFGA relations exist as a model (graph) describing how relationships
-evaluate transitively across the objects we define — for example, writers
-of a project include the writers of that project's parent; writers of a
-committee include the writers of the committee's project. A tuple is a
-concrete edge in that graph for real data (project A is a parent of project
-B; user X is a writer of project A); a tuple between a user and an object is
-what this document calls an _explicit role grant_. Evaluating a relation
-means traversing that graph to assert whether it holds (is user X a writer
-of project B?), not checking a stored label.
+If a page or feature must exist for one audience only, that is a permission,
+not a persona check: model it in OpenFGA, wire it into a guard (a Heimdall
+RuleSet on the API route, plus a matching UI pre-check for early bail-out or
+conditional nav/tab visibility).
 
-Permissions — the rules for which relation an API call requires — are
-implemented as RuleSets on the API routes themselves, not as labels attached
-to a relation. A relation isn't a "bundle" of permissions; you can aggregate
-every API a relation gates to describe what a user with that relation can
-do, but the relation itself is not a collection of those actions.
+Grants and the model are the platform team's domain — either may change at
+any time; app code is unaffected because it only ever checks permissions.
 
-Application code branches on the _evaluated result_ of a relation check —
-the boolean or role returned from an access-check API call against the
-resolved target object — never on a persona label, to decide whether a
-context can be entered, a route can open, or a write can proceed.
+![LFX SS permission-based access model: grants evaluate through the model into permissions; guards bind each action to the permission it requires; personas shape presentation only](./permission-model.svg)
 
-If a page or feature must exist for one audience only, that is a permission
-too: model it as a relation in FGA, configure it as the RuleSet for the API
-routes that power the page, and wire up permission/access pre-checks in the
-UI for early bail-out on page rendering, or for conditionally showing links
-into the page (tab, nav, sidebar).
+## Terminology
 
-Persona may branch _presentation_ code — which layout, dashboard variant, or
-copy renders (layout, emphasis, copy, ordering) — but never an access
-decision. A presentation choice is not an access decision, so persona
-driving presentation is not an exception to the rule above.
+Five terms, used precisely throughout this document and its companion matrix:
 
-![LFX SS permission-based access model: FGA grant bundles resolve to permissions; the app asks check(user, action, object); product gates consume permissions; personas shape presentation only](./permission-model.svg)
+- **Model** — how OpenFGA evaluates relationships transitively across
+  objects (e.g. writers of a project include the writers of that project's
+  parent; writers of a committee include the writers of the committee's
+  project). Owned by the platform team.
+- **Grants** — a direct permission assignment: an OpenFGA tuple (e.g. "writer
+  on CNCF"), including grants made via team membership or via another
+  relation (e.g. `executive_director`).
+- **Permissions** — the evaluated result of checking the model (e.g. "writer
+  on Kubernetes, because writer on CNCF" — inherited, not a separate grant).
+  This is what application code checks, via `check(user, action, object)`.
+  Two read permissions matter across most of the product — **Viewer**
+  (discoverability only: the thing exists and limited, often public, data
+  is visible, but not its subordinate/connected objects; maps to Discovery)
+  and **Auditor** (privileged read: full data on the object and its
+  subordinate/connected objects; makes a Foundation or Project eligible for
+  the selector and context entry). Other permissions are named for what
+  they gate — `writer`, `committee.writer`, `meeting_coordinator`,
+  `marketing_auditor`, `campaign_manager`, response-owner — see Writer
+  Actions below.
+- **Guards** — what binds a permission to a discrete action or surface:
+  Heimdall RuleSets on API routes (the enforcement boundary) and UI route
+  guards/affordance checks (degradation only, not the security boundary).
+- **Personas** — any criteria outside the model (Board Member, Contributor,
+  Maintainer, ED-as-persona), inferred from connected data. Presentation
+  only; never a permission.
 
-## Terminology: Viewer vs Auditor
+Legacy naming still in the app: UI copy labels the auditor permission
+"Viewer" in at least one surface (Org Lens Access permission badges and
+pickers) and "View" or "Review" elsewhere — this document uses "auditor"
+regardless. The persona-detection service reads a `role` field off a
+`cdp_roles` entry (legacy field name; not a permission).
 
-The FGA model already distinguishes two different kinds of read access, and
-this document uses those names precisely instead of the ambiguous "view
-permission":
+## Current State
 
-- **Viewer** — discoverability only. You can tell the thing exists and see
-  limited (typically public) data about it, but not privileged data or its
-  subordinate/connected objects (participants, formation-stage child
-  projects, private documents). Viewer is not ordinarily assigned directly:
-  it is conditional on object attributes (public/conditional) or inherited
-  from another relation you hold (a committee `member` relation always
-  inherits `viewer`, too). Maps to Discovery.
-- **Auditor** — privileged read. You get access to privileged data on the
-  object itself, as well as its subordinate/connected objects, not just its
-  existence. Auditor is what makes a Foundation or Project eligible to
-  appear in the selector and be entered as a context.
-
-The app's UI copy today labels the auditor relation "Viewer" in at least one
-surface (Org Lens Access role badges and role pickers), while other surfaces
-call the same relation "View" or "Review." This document uses "auditor"
-throughout regardless of current UI copy, to keep "can the user view this
-foundation" (often yes — it's public) distinct from "can the user audit this
-foundation" (the permission that actually matters for selector/context
-eligibility).
-
-Terminology pass applied throughout this document: everywhere a gate on
-selector eligibility or context entry previously said "view permission," it
-now reads "auditor or explicit role"; everywhere the meaning was
-discoverability only, it reads "viewer/discoverable."
-
-## Why This Is Needed
-
-The product currently blends three things that should stay separate:
-
-1. Can the user view this foundation or project?
-2. What engagement or activity (current or past) does the user have with that context?
-3. Can the user administer or change things in that context?
-
-Those answers can overlap, but they are not the same.
-
-Examples:
-
-- A Board Member needs foundation governance context without ED-only marketing and metrics.
-- A working group chair may need meeting or document operations without foundation-wide authority.
-- A Contributor may need useful project context without create/manage actions.
-- A user may discover an Akrites package or event from Me without first entering Foundation/Project context.
-
-The app already has contextual writer permission for many create/manage actions, but the current `writerGuard` also has an Executive Director fast path. This document recommends the target model: ED should shape the Foundation experience, while create/manage authority should come from contextual writer permission.
-
-## Current UI Facts
-
-These already work or mostly work today:
-
-- **Me** is the default cross-context workspace.
-- **My Dashboard** includes **My Foundations and Projects**, which already acts as a bridge into Foundation/Project contexts.
-- Me pages already support cross-context filters such as All Foundations, All Projects, All Groups, All Roles, All Statuses, and All Types.
-- Foundation/Project pages already expose writer actions inline, such as Create Meeting, Create Group, Add Mailing List, Create Vote, Create Survey, Create Newsletter, document actions, and Permissions actions.
-- Discovery already exists in places like Discover Events.
-- Akrites shows the strongest discovery pattern: users can inspect packages and choose **Open for stewardship** from Me without starting in Foundation/Project context.
-- Lens access is already derived from writer grants, not persona alone (shipped, PR #1130), and the create picker is a lazy direct-grant tree with search (shipped, PR #1193).
-- A backend "what can I create, and where" API covering group/committee targets (LFXV2-2753) was rescoped after #1130 shipped and its ticket status is now Discarded — it is not in progress. There is no committed replacement work item for that API today.
-- The Executive Director fast path is still present in `writerGuard` (`writer.guard.ts`) and in `newsletter-access.guard.ts` on `main`: both skip their own permission check for ED persona and let the route open — for meetings, votes, surveys, mailing lists, newsletters, and document create/edit routes. That does not mean the write itself is granted; the UI is subordinate to the API's enforcement, and an ED cannot get project `writer` access just because a guard let the route render. It is very likely a guard bug (a misleading UI-only affordance that a downstream write would then reject) rather than a permission the model grants: `executive_director` does not inherit project `writer`, so none of those general write actions are backed by any ED-inherited relation. Whether this is purely a confusing dead-end (guard says yes, API says no) or an actual gap depends on whether the downstream API independently enforces `writer` for these routes — see the P0 verification ask below. The model does route two _intentional_ marketing permissions through `executive_director` — `marketing_auditor` (read) and `campaign_manager` (write, scoped to Campaigns) — which `PERMISSIONS.md`'s rendered Project table omits entirely, so it looks like ED grants nothing but reads even though the live model (`model.fga`) says otherwise. See Writer Actions and Model Asks below for how the app should check these.
-
-Current confusion:
-
-- The left rail says **Projects** even when the selected context is a foundation.
-- Me navigation repeats `My` on most labels even though the active lens already says Me.
-- Foundation/Project defaulting can land users in a no-grant context if selector eligibility is not authoritative.
-- Discovery contexts can bleed into the Foundation/Project selector, creating clutter and wrong-context landings.
+| Area                                                       | Status                  | Note                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Me cross-context workspace                                 | Shipped                 | Default landing; My Foundations and Projects bridges into Foundation/Project context; cross-context filters (All Foundations/Projects/Groups/Roles/Statuses/Types — "Roles" is legacy UI copy, not a permission)                                                                                                                                                                                                                                                            |
+| Foundation/Project writer actions                          | Shipped                 | Create Meeting/Group/Vote/Survey/Newsletter, mailing list, document, and Permissions actions exposed inline                                                                                                                                                                                                                                                                                                                                                                 |
+| Discovery                                                  | Shipped (partial)       | Discover Events exists; Akrites is the strongest pattern (browse → inspect → Open for stewardship)                                                                                                                                                                                                                                                                                                                                                                          |
+| Lens access from writer grants                             | Shipped                 | PR #1130 (derived from writer grants, not persona alone); create picker is a lazy direct-grant tree with search (PR #1193)                                                                                                                                                                                                                                                                                                                                                  |
+| "What can I create" backend API                            | Discarded               | LFXV2-2753 rescoped after #1130 shipped; ticket status Discarded, no replacement work item                                                                                                                                                                                                                                                                                                                                                                                  |
+| ED fast path in `writerGuard`/`newsletter-access.guard.ts` | Needs verification (P0) | Skips the permission check for ED persona on meetings/votes/surveys/mailing lists/newsletters/document routes. Does not grant the write itself — API enforcement is separate, and `executive_director` does not inherit project `writer`. Very likely a guard bug (a misleading UI-only affordance a downstream write would reject), not a permission the model grants. Whether it's a confusing dead-end or an actual gap depends on independent API enforcement — see P0. |
+| `marketing_auditor` / `campaign_manager` via ED            | Real, but undocumented  | Two intentional marketing permissions the live model (`model.fga`) grants through `executive_director`; `PERMISSIONS.md`'s rendered Project table omits them, making ED look read-only when it isn't                                                                                                                                                                                                                                                                        |
+| Left rail label                                            | Bug                     | Says "Projects" even when a foundation is selected                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Me nav labels                                              | Bug                     | Repeat the "My" prefix redundantly under the Me lens                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Foundation/Project defaulting                              | Risk                    | Can land in a no-grant context if selector eligibility isn't authoritative                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Discovery/selector separation                              | Risk                    | Discovery contexts can bleed into the Foundation/Project selector                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ## Target Model
 
@@ -146,32 +107,23 @@ It should support:
 - discovery entry points
 - direct jumps into Foundation/Project context
 
-Me pages can support actions when the target context is known.
-
-Rule for row/item actions:
-
-```text
-Me item + resolved target object (project, foundation, committee, group)
-+ the action-specific grant on that object = allowed create/manage action
-```
-
-Rule for create actions:
+Me pages can support actions when the target context is known. The resolved
+target object is always the authority for its action-specific permission
+check — Me is an action workspace, not the authorization context:
 
 ```text
-Me create action + chosen target object (project, foundation, committee, group)
-+ the action-specific grant on that object = allowed create/manage action
+Me item or create action + resolved target object (project, foundation, committee, group)
++ the action-specific permission on that object = allowed create/manage action
 ```
 
-This means Me can be an action workspace, but it is not the authorization context. The resolved target object remains the authority for its action-specific grant check.
-
-The target is usually Foundation/Project and the grant is writer permission, but that's the common case, not the only one. The shipped create flow (PR #1193) also resolves committee/group targets for meetings, surveys, and votes: `writerGuard` accepts `committee.writer` for those three features when a `committee_uid` is present, and accepts `project.meeting_coordinator` for meetings specifically, independent of `project.writer`. A committee writer or meeting coordinator can legitimately hold no direct project-level auditor/writer grant.
-
-Me-originated actions should carry target context:
-
-```text
-Me task + target object (project, foundation, committee, group)
-+ the action-specific grant on that object = allowed create/manage action
-```
+The target is usually Foundation/Project and the permission is `writer`, but
+that's the common case, not the only one. The shipped create flow (PR #1193)
+also resolves committee/group targets for meetings, surveys, and votes:
+`writerGuard` accepts `committee.writer` for those three features when a
+`committee_uid` is present, and accepts `project.meeting_coordinator` for
+meetings specifically, independent of `project.writer`. A committee writer
+or meeting coordinator can legitimately hold no direct project-level
+auditor/writer grant.
 
 Examples:
 
@@ -185,42 +137,54 @@ Examples:
 
 ### Foundation And Project Contexts
 
-Foundation and Project are context views, not persona rewards.
-
-Entry should be based on an authoritative permission grant. Once inside, persona shapes the presentation.
+Foundation and Project are context views, not persona rewards. Entry
+requires an authoritative permission grant; once inside, persona shapes the
+presentation.
 
 Persona pairs — presentation only, except where noted:
 
 - **Executive Director** in Foundation context maps to **Maintainer** in Project context presentation. Both are context-operator-shaped experiences. They can create/manage only when writer permission is present.
 - **Board Member** in Foundation context maps to **Contributor** in Project context presentation. Both are context-participant-shaped experiences. They do not automatically receive create/manage authority.
 
-Of these four, only ED is a real FGA relation (see Terminology and Model Asks
-for what it currently grants). Board Member, Contributor, and Maintainer are
-inferred/dynamic presentation signals detected from connected data (board
-group membership, CDP activity/`cdp_roles`, Insights) — "maintainer," for
-instance, is a discrete value the persona-detection service reads off a
-`cdp_roles` entry's `role` field, so it is a real value in its _source_
-system, just not a Project or Foundation relation in the permissions model.
-None of the three exist as an FGA relation on Project or Foundation.
+Of these four, only ED is backed by a real grant in the model (see
+Terminology and Model Asks for what it currently feeds). Board Member,
+Contributor, and Maintainer are inferred/dynamic presentation signals
+detected from connected data (board group membership, CDP activity/
+`cdp_roles`, Insights) — "maintainer," for instance, is a value the
+persona-detection service reads off a `cdp_roles` entry's `role` field
+(legacy naming), a real value in its _source_ system but not a permission
+on Project or Foundation. None of the three exist as a permission on
+Project or Foundation.
 
-Decision: participant personas (Board Member, Contributor) are
-presentation-only. Foundation/Project context entry always requires an
-auditor or explicit role grant for that exact context, independent of
-persona — persona never opens a context, regardless of which relation (if
-any) it happens to correlate with. A user without such a grant does not see
-Foundation/Project navigation at all; their experience is Me. This does not
-strand them: their own items, meetings, votes, and documents remain fully
-usable from Me via item-level eligibility (see Me Lens above), so a
-Contributor or Board Member signal without an explicit grant still has a
-complete, useful experience — just not a Foundation/Project context to enter.
-
-This means ED is not a synonym for every privileged action, and Maintainer is not a lesser product concept than ED. They are parallel presentation concepts for different context types, but only ED corresponds to any FGA relation today.
+Participant personas (Board Member, Contributor) are presentation-only.
+Foundation/Project context entry always requires auditor or another
+explicit permission for that exact context, independent of persona — a
+user without one does not see Foundation/Project navigation at all; their
+experience is Me, where their own items, meetings, votes, and documents
+remain fully usable via item-level eligibility (see Me Lens above). ED is
+not a synonym for every privileged action, and Maintainer is not a lesser
+product concept than ED — they are parallel presentation concepts for
+different context types, but only ED corresponds to any grant today.
 
 ### Writer Actions
 
-Do not introduce a separate Admin Mode for Foundation/Project create/manage authority. Admin Mode would imply that EDs, Board Members, Maintainers, or Contributors get a privileged write view because of persona alone, which conflicts with the target model.
+Do not introduce a separate Admin Mode for Foundation/Project create/manage
+authority — that would imply EDs, Board Members, Maintainers, or
+Contributors get a privileged write view because of persona alone.
 
-LF Staff Mode is a distinct, still-open product question, not a settled requirement. LF Staff already gets `auditor` on every project and foundation through LF Staff Team inheritance (see Model Asks below) — the same broad read access a privileged community member would get if explicitly granted `auditor` on a given foundation. That raises a real question this document does not yet answer: what would "LF Staff Mode" add beyond that? The only candidate that survives the question is write-side — assisted workflows where staff act _on behalf of_ a user or foundation for support/troubleshooting (e.g., fixing a broken meeting or mailing list), which no read relation grants and which a community member's `auditor` grant would not extend to at any scale. Until product defines what, if anything, LF Staff Mode adds, treat it as undefined rather than as a decided model requirement — and it should not replace contextual writer permission for normal Foundation/Project create/manage actions in the meantime.
+LF Staff Mode is a distinct, still-open product question, not a settled
+requirement. LF Staff already gets `auditor` on every project and
+foundation through LF Staff Team inheritance (see Model Asks below) — the
+same broad read access a privileged community member would get with an
+explicit `auditor` grant on a given foundation. What would "LF Staff Mode"
+add beyond that? The only candidate that survives the question is
+write-side — assisted workflows where staff act _on behalf of_ a user or
+foundation for support/troubleshooting (e.g., fixing a broken meeting or
+mailing list), which no read permission grants and which a community
+member's `auditor` grant would not extend to at any scale. Until product
+defines what, if anything, LF Staff Mode adds, treat it as undefined — and
+it should not replace contextual writer permission for normal
+Foundation/Project create/manage actions in the meantime.
 
 Keep create/manage actions inline where they belong:
 
@@ -231,7 +195,7 @@ Keep create/manage actions inline where they belong:
 - Create Vote
 - Create Survey
 - Upload File / New Folder / Add Link
-- Add User / update role / remove user
+- Add User / update permission / remove user
 - edit, delete, duplicate, assign, manage resources, invite/add people, send/publish
 
 Rule:
@@ -248,26 +212,43 @@ Current writerGuard = Executive Director fast path or canWrite()
 Target writerGuard = resolved target context + canWrite()
 ```
 
-ED-shaped pages gate on the existing named permissions — checked like any other permission, never on a persona guard and never by referencing the `executive_director` relation from application code:
+ED-shaped pages gate on the existing named permissions — checked like any
+other permission, never on a persona guard and never by branching on the
+`executive_director` grant from application code:
 
-- **Campaigns** checks `campaign_manager` (write-capable; the model currently bundles it into `executive_director` and the `marketing_ops` team).
-- **Marketing Impact** checks `marketing_auditor` (read-only; the model currently bundles it into `executive_director`, `marketing_ops`, and parent-project inheritance).
-- **Health Metrics** stays ED-gated by design — this page does not migrate to a shared capability (LFXV2-2726 is evaluating an LF Staff answer, not yet started).
+- **Campaigns** checks `campaign_manager` (write-capable; the model currently feeds it from `executive_director` and the `marketing_ops` team).
+- **Marketing Impact** checks `marketing_auditor` (read-only; the model currently feeds it from `executive_director`, `marketing_ops`, and parent-project inheritance).
+- **Health Metrics** stays ED-gated by design — this page does not migrate to a shared permission (LFXV2-2726 is evaluating an LF Staff answer, not yet started; see also the open Paul/Jim question in Model Asks).
 
-None of these three needs a new capability invented for it — the permissions already exist in the model. This migration is tracked in LFXV2-2236 ("Add Marketing Ops UI access (FGA guards)," in review as of this writing) — today, all three pages on `main` still gate solely on `executiveDirectorGuard` (a pure persona check with no FGA lookup). Until that ticket merges, treat "Current UI Facts" as describing the actual state, not this target state.
+None of these three needs a new permission invented for it — all three
+already exist in the model. This migration is tracked in LFXV2-2236 ("Add
+Marketing Ops UI access (FGA guards)," in review as of this writing) —
+today, all three pages on `main` still gate solely on
+`executiveDirectorGuard` (a pure persona check with no permission lookup).
+Until that ticket merges, treat Current State above as describing the
+actual state, not this target state.
 
-Whether the `executive_director` relation itself stays in the model, is renamed, or is bundled differently is the platform team's call, not the app's (see Model Asks below) — the app checks `marketing_auditor` and `campaign_manager` directly and does not care which relations feed them. Create/edit/manage routes should not use ED as an authorization shortcut unless the user also has writer permission for the selected target context.
+Whether the `executive_director` grant itself stays in the model, is
+renamed, or is fed differently is the platform team's call, not the app's
+(see Model Asks below) — the app checks `marketing_auditor` and
+`campaign_manager` directly and does not care what feeds them. Create/
+edit/manage routes should not use ED as an authorization shortcut unless
+the user also has writer permission for the selected target context.
 
-If LF Staff Mode ends up needing to exist as a distinct concept (see the open question above), it should have its own explicit staff eligibility and audit expectations, and should not be inferred from ED, Board Member, Maintainer, Contributor, or writer permission.
+If LF Staff Mode ends up needing to exist as a distinct concept, it should
+have its own explicit staff eligibility and audit expectations, and should
+not be inferred from ED, Board Member, Maintainer, Contributor, or writer
+permission.
 
 ### Discovery
 
-Discovery is for finding things outside the user's current contexts. It should create requests, registrations, subscriptions, or workflows, but it should not silently add the context to the Foundation/Project selector unless an auditor or explicit role grant exists.
-
-Selector and Discovery must be separate:
+Discovery is for finding things outside the user's current contexts. It
+should create requests, registrations, subscriptions, or workflows, but it
+should not silently add the context to the Foundation/Project selector
+unless auditor or another explicit permission exists.
 
 ```text
-Selector = contexts where I have an authoritative role or auditor grant
+Selector = contexts where I have auditor or another explicit permission
 Discovery/Browse = contexts or resources I can find, join, register for, request, or inspect
 ```
 
@@ -288,7 +269,7 @@ Other discovery examples:
 
 ## Priorities
 
-### P0: Make Role And Permission Resolution Authoritative
+### P0: Make Permission Resolution Authoritative
 
 Owner: engineering, with product validation
 
@@ -296,17 +277,17 @@ This is the dependency under selector eligibility, defaulting, writer actions, a
 
 Work needed:
 
-- Normalize one role/permission model across Foundation, Project, Group, and Working Group resources.
-- Confirm selector candidates come only from an authoritative auditor/role grant, not broad discovery/search results.
+- Normalize one permission model across Foundation, Project, Group, and Working Group resources.
+- Confirm selector candidates come only from auditor or another explicit permission, not broad discovery/search results.
 - Confirm APIs enforce auditor and write permission server side before changing `writerGuard` semantics.
 - Model group-scoped and working-group-scoped writer permission this cycle.
-- Define one role per context everywhere the selector, page header, and role labels are shown.
+- Define one permission label per context everywhere the selector, page header, and badges are shown.
 - Add instrumentation for wrong-context landings, no-grant defaults, selector items without grants, and UI-allowed/API-denied write attempts.
 
 Acceptance:
 
 ```text
-Authoritative role/permission model = selector eligibility
+Authoritative permission model = selector eligibility
 Discovery/search results != selector eligibility
 Group/WG writer scope = explicit model, not foundation-wide fallback
 No-grant default count = zero
@@ -333,7 +314,7 @@ Work needed:
 - Make this bridge obvious and intentional in UX.
 - Confirm Foundation rows switch to Foundation context and select the foundation.
 - Confirm Project rows switch to Project context and select the project.
-- Keep row labels clear about type and role.
+- Keep row labels clear about type and permission.
 
 Acceptance:
 
@@ -351,43 +332,43 @@ ordering must never change which context gets selected.
 
 Foundation defaulting order:
 
-1. Keep existing selected foundation if still auditor/role-permitted.
-2. Use last selected valid foundation if still auditor/role-permitted.
-3. Choose a foundation with a writer/manage grant; if more than one qualifies, pick the first in stable sort order.
-4. Otherwise, choose a foundation with an auditor/explicit role grant; if more than one qualifies, pick the first in stable sort order.
+1. Keep existing selected foundation if still permission-eligible.
+2. Use last selected valid foundation if still permission-eligible.
+3. Choose a foundation with writer permission; if more than one qualifies, pick the first in stable sort order.
+4. Otherwise, choose a foundation with auditor or another explicit permission; if more than one qualifies, pick the first in stable sort order.
 5. If none exist, stay in Me/discovery.
 
 Project defaulting order:
 
-1. Keep existing selected project if still auditor/role-permitted.
-2. Use last selected valid project if still auditor/role-permitted.
-3. Choose a project with a writer/manage grant; if more than one qualifies, pick the first in stable sort order.
-4. Otherwise, choose a project with an auditor/explicit role grant; if more than one qualifies, pick the first in stable sort order.
+1. Keep existing selected project if still permission-eligible.
+2. Use last selected valid project if still permission-eligible.
+3. Choose a project with writer permission; if more than one qualifies, pick the first in stable sort order.
+4. Otherwise, choose a project with auditor or another explicit permission; if more than one qualifies, pick the first in stable sort order.
 5. If none exist, stay in Me/discovery.
 
 Examples:
 
-- User last selected AAIF and still has an auditor/explicit role grant: Foundation lands on AAIF, even if another foundation has a higher grant.
-- User last selected `Goose` and still has an auditor/explicit role grant: Project lands on `Goose`, even if another project has a writer/manage grant.
-- Cold start, writer/manage grant on AAIF and auditor grant on LF Europe, no other grants: Foundation lands on AAIF because writer/manage wins.
-- Cold start, auditor grants on AAIF and CNCF only, no writer/manage grant anywhere: Foundation lands on first stable auditor-permitted foundation.
-- Cold start, writer/manage grant on LF Products, no other foundation grants: Foundation lands on LF Products.
-- Cold start, writer/manage grant on `agentgateway` and auditor grant on `Goose`: Project lands on `agentgateway` because writer/manage wins.
-- Cold start, auditor grants on six projects, no writer/manage grant anywhere: Project lands on first stable auditor-permitted project.
-- Cold start, writer/manage grant on `Goose` only: Project lands on `Goose`.
-- Cold start, writer/manage grants on both `agentgateway` and `Goose`, no other grants: Project lands on whichever of the two sorts first in stable order — never on API response order.
+- User last selected AAIF and is still permission-eligible: Foundation lands on AAIF, even if another foundation has a higher permission.
+- User last selected `Goose` and is still permission-eligible: Project lands on `Goose`, even if another project has writer permission.
+- Cold start, writer permission on AAIF and auditor permission on LF Europe, no other permissions: Foundation lands on AAIF because writer wins.
+- Cold start, auditor permission on AAIF and CNCF only, no writer permission anywhere: Foundation lands on first stable auditor-eligible foundation.
+- Cold start, writer permission on LF Products, no other foundation permission: Foundation lands on LF Products.
+- Cold start, writer permission on `agentgateway` and auditor permission on `Goose`: Project lands on `agentgateway` because writer wins.
+- Cold start, auditor permission on six projects, no writer permission anywhere: Project lands on first stable auditor-eligible project.
+- Cold start, writer permission on `Goose` only: Project lands on `Goose`.
+- Cold start, writer permission on both `agentgateway` and `Goose`, no other permissions: Project lands on whichever of the two sorts first in stable order — never on API response order.
 - User opens AAIF from My Dashboard: explicit selection wins; switch to Foundation context with AAIF selected.
 - User opens `agentgateway` from selector: explicit selection wins; switch to Project context with `agentgateway` selected.
-- User loses their grant for selected AAIF mid-session: clear AAIF and re-run defaulting.
-- User has no grant-permitted foundations: do not enter empty Foundation context; stay in Me/discovery.
-- User has no auditor/explicit role grant for EnerGNN: never default to EnerGNN; show it only in Discovery/Browse if discoverable.
+- User loses their permission for selected AAIF mid-session: clear AAIF and re-run defaulting.
+- User has no permission-eligible foundations: do not enter empty Foundation context; stay in Me/discovery.
+- User has no auditor or other explicit permission for EnerGNN: never default to EnerGNN; show it only in Discovery/Browse if discoverable.
 
 Acceptance:
 
 ```text
-Candidate contexts + auditor/role permission check = selector items
+Candidate contexts + auditor or another explicit permission = selector items
 Context click + last valid selection = selected context
-Cold start + highest-grant fallback = selected context
+Cold start + highest-permission fallback = selected context
 No-grant context = never selected by default
 Explicit selection always wins over defaulting
 ```
@@ -402,6 +383,7 @@ Work needed:
 - Confirm backend/downstream writes remain authoritative.
 - Confirm Me-originated actions resolve target context before applying writer checks.
 - Include Meetings, Groups, Mailing Lists, Newsletters, Votes, Surveys, Documents, and Permissions in the inventory.
+- Add regression tests for read-only users who can view a context but cannot see create/manage affordances, and for working group chairs who can manage group-level meetings/documents without receiving foundation-wide affordances.
 
 Acceptance:
 
@@ -452,7 +434,7 @@ Work needed:
 - Keep discovery separate from Foundation/Project selector eligibility.
 - Move no-grant and public discoverable contexts out of the selector and into Browse/Discovery.
 - Use explicit user actions such as register, join, follow, request access, subscribe, or open for stewardship.
-- Do not silently add discovered contexts to selectors until an auditor or explicit role grant exists.
+- Do not silently add discovered contexts to selectors until auditor or another explicit permission exists.
 
 Acceptance:
 
@@ -461,24 +443,17 @@ Discovery = find something outside current access
 Discovery action = explicit request/registration/subscription/workflow
 ```
 
-## Open Follow-Ups
-
-- Decide whether the left rail should keep separate Foundation and Project buttons or move to one context switcher with grouped context types.
-- `persona-content-matrix.md` (cross-linked above) already documents the current-state guard/sidebar behavior in detail, including the `writerGuard` ED fast path this document flags for removal — once that fast path is actually removed, update `persona-content-matrix.md`'s guard table to match.
-- Add regression tests for read-only users who can view a context but cannot see create/manage affordances.
-- Add regression tests for working group chairs who can manage group-level meetings/documents without receiving foundation-wide admin affordances.
-
 ## Model Asks (Platform Team)
 
-1. **Permission bundling for ED-derived capabilities — resolved: keep
-   `executive_director` as an FGA relation.** The app checks `auditor`,
-   `writer`, `marketing_auditor`, and `campaign_manager` directly and never
-   branches on the `executive_director` relation itself (see Writer Actions
-   above). Per Eric Searcy's review, the relation stays in the model rather
-   than being removed or replaced — it remains the bundle that carries
-   `auditor`, `marketing_auditor`, and `campaign_manager` for EDs, including
-   the one non-staff ED for whom `marketing_auditor`/`campaign_manager`
-   aren't available through any other path.
+1. **`executive_director` stays as a grant in the model — resolved.** The
+   app checks `auditor`, `writer`, `marketing_auditor`, and
+   `campaign_manager` directly and never branches on the
+   `executive_director` grant itself (see Writer Actions above). Per Eric
+   Searcy's review, it stays rather than being removed or replaced — it
+   remains the grant that feeds `auditor`, `marketing_auditor`, and
+   `campaign_manager` for EDs, including the one non-staff ED for whom
+   `marketing_auditor`/`campaign_manager` aren't available through any
+   other path.
 
 2. **Org lens for LF staff — outcome tracked as LFXV2-2936; implementation
    proposal is [LFXV2-2937](https://linuxfoundation.atlassian.net/browse/LFXV2-2937).**
@@ -493,19 +468,29 @@ Discovery action = explicit request/registration/subscription/workflow
    (support team) — Eric Searcy's LFXV2-2937, which supersedes 2936's
    suggested mechanism (same objective, different implementation). Either
    way: a model change, not a UI workaround, and app code is unaffected —
-   it only ever checks the relation on the org object.
+   it only ever checks the permission on the org object.
+
+3. **Health Metrics access for non-ED writers — open question, posed to
+   Eric Searcy, not yet resolved.** Writer permission on a context should
+   surface everything about it, including Health Metrics — today the page
+   is ED-gated by design (see Writer Actions above), which strands a
+   non-ED writer from a page their writer permission would otherwise
+   imply. Two ways to close that gap: either `writer` starts feeding
+   `marketing_auditor` in the model, or the Health Metrics guard accepts
+   `writer` OR `marketing_auditor` instead of `marketing_auditor` alone.
+   Awaiting Eric's pick — not resolved unilaterally here.
 
 ## Contract Summary
 
 This is the contract this document proposes. Review/approval on the PR is the agreement mechanism.
 
 ```text
-Authoritative role/permission model -> selector eligibility and defaulting
-Context selector eligibility -> auditor or explicit role grant
+Authoritative permission model -> selector eligibility and defaulting
+Context selector eligibility -> auditor or another explicit permission
 Sidebar/page/content visibility -> persona (presentation only)
 Action authority -> existing contextual writer permission
-Campaigns/Marketing Impact -> named capability (campaign_manager/marketing_auditor), not ED persona
-Health Metrics -> stays ED-gated by design, pending an LF Staff answer (LFXV2-2726)
+Campaigns/Marketing Impact -> named permission (campaign_manager/marketing_auditor), not ED persona
+Health Metrics -> stays ED-gated by design, pending an LF Staff answer (LFXV2-2726) and the writer/marketing_auditor question above
 Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
 No separate Admin Mode for Foundation/Project create/manage authority

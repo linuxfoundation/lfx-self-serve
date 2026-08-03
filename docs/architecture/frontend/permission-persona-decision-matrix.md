@@ -9,11 +9,11 @@ Use this document to verify how LFX Self Serve should route users, shape pages, 
 ## Decision Rules
 
 ```text
-Authoritative role/permission model -> selector eligibility and defaulting
-Context selector eligibility -> auditor or explicit role grant
-Data/page visibility -> permission (auditor/explicit role or named capability)
+Authoritative permission model -> selector eligibility and defaulting
+Context selector eligibility -> auditor or another explicit permission
+Data/page visibility -> permission (auditor, another explicit permission, or a named permission)
 Layout, emphasis, copy, ordering -> persona (presentation only)
-Create/manage authority -> resolved target object + the action-specific relation it requires (often writer, not always)
+Create/manage authority -> resolved target object + the action-specific permission it requires (often writer, not always)
 Me-originated actions -> carry target object before permission checks
 Discovery -> explicit browse/join/request workflows
 LF Staff Mode -> open product question, not a decided requirement (see preread)
@@ -25,14 +25,14 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Selector Candidate
 
 - **Input:** Foundation or Project appears as a possible context.
-- **Required permission:** Auditor or explicit role grant for that exact context.
+- **Required permission:** Auditor or another explicit permission for that exact context.
 - **Destination:** Context selector only when permission exists.
-- **Allowed actions:** Show in selector with the user's normalized role for that context.
+- **Allowed actions:** Show in selector with the user's normalized permission label for that context.
 - **Denied actions:** Do not include broad discovery/search results, public contexts, or no-grant contexts in the selector.
 
 ### Discovery Candidate
 
-- **Input:** Foundation, project, group, event, meetup, package, mailing list, or newsletter is discoverable but the user holds no auditor/explicit role grant for it.
+- **Input:** Foundation, project, group, event, meetup, package, mailing list, or newsletter is discoverable but the user holds no auditor or other explicit permission for it.
 - **Required permission:** Public/discovery eligibility.
 - **Destination:** Browse/Discovery surface.
 - **Allowed actions:** Register, join, follow, subscribe, request access, inspect, or open stewardship workflow.
@@ -41,10 +41,10 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Write Candidate
 
 - **Input:** User attempts create/edit/delete/manage/send/publish.
-- **Required permission:** Resolved target context plus the action-specific relation the API requires on that target object (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner) — never a blanket `writer` check.
+- **Required permission:** Resolved target context plus the action-specific permission the API requires on that target object (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner) — never a blanket `writer` check.
 - **Destination:** Write flow only after UI and API permission checks agree.
-- **Allowed actions:** Continue when the required action-specific relation passes.
-- **Denied actions:** Fail closed if the target context is missing, stale, no-grant, or the required action-specific relation is absent.
+- **Allowed actions:** Continue when the required action-specific permission passes.
+- **Denied actions:** Fail closed if the target context is missing, stale, no-grant, or the required action-specific permission is absent.
 
 ## Context Entry
 
@@ -55,33 +55,33 @@ No-grant contexts -> Browse/Discovery only, never default selection
 - **Destination:** Me Dashboard.
 - **Visible experience:** Cross-context personal workspace.
 - **Allowed actions:** View personal tasks, meetings, events, groups, mailing lists, newsletters, votes, surveys, documents, and discovery entry points.
-- **Create/manage rule:** Allowed only after the action resolves or asks for a target Foundation/Project context and the action-specific relation the API requires on that target passes (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner).
+- **Create/manage rule:** Allowed only after the action resolves or asks for a target Foundation/Project context and the action-specific permission the API requires on that target passes (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner).
 
 ### User Opens Foundation Without A Selected Foundation
 
 - **Input:** User clicks Foundation/Project lens and chooses Foundation context without selecting a row.
-- **Required permission:** At least one auditor/explicit-role-permitted foundation.
-- **Destination:** Last selected valid foundation first; highest-grant eligible foundation only on cold start.
-- **Default order:** Existing selected foundation (if still auditor/role-permitted), last selected valid foundation (if still auditor/role-permitted), foundation with a writer/manage grant (stable sort order breaks ties among multiple), otherwise foundation with an auditor/explicit role grant (stable sort order breaks ties), none -> stay in Me/discovery.
+- **Required permission:** At least one permission-eligible foundation (auditor or another explicit permission).
+- **Destination:** Last selected valid foundation first; highest-permission eligible foundation only on cold start.
+- **Default order:** Existing selected foundation (if still permission-eligible), last selected valid foundation (if still permission-eligible), foundation with writer permission (stable sort order breaks ties among multiple), otherwise foundation with auditor or another explicit permission (stable sort order breaks ties), none -> stay in Me/discovery.
 - **Allowed actions:** Read context data. Create/manage only if writer permission exists for the selected foundation.
 - **Denied actions:** Never default into a no-grant foundation. Do not show create/manage because of persona alone in the target model.
 
 ### User Opens Project Without A Selected Project
 
 - **Input:** User clicks Foundation/Project lens and chooses Project context without selecting a row.
-- **Required permission:** At least one auditor/explicit-role-permitted project.
-- **Destination:** Last selected valid project first; highest-grant eligible project only on cold start.
-- **Default order:** Existing selected project (if still auditor/role-permitted), last selected valid project (if still auditor/role-permitted), project with a writer/manage grant (stable sort order breaks ties among multiple), otherwise project with an auditor/explicit role grant (stable sort order breaks ties), none -> stay in Me/discovery.
+- **Required permission:** At least one permission-eligible project (auditor or another explicit permission).
+- **Destination:** Last selected valid project first; highest-permission eligible project only on cold start.
+- **Default order:** Existing selected project (if still permission-eligible), last selected valid project (if still permission-eligible), project with writer permission (stable sort order breaks ties among multiple), otherwise project with auditor or another explicit permission (stable sort order breaks ties), none -> stay in Me/discovery.
 - **Allowed actions:** Read context data. Create/manage only if writer permission exists for the selected project.
 - **Denied actions:** Never default into a no-grant project. Contributor/Maintainer persona alone does not grant create/manage authority or context entry.
 
 ### User Selects A Specific Foundation Or Project
 
 - **Input:** User selects a row from My Foundations and Projects or picks a selector item.
-- **Required permission:** Auditor or explicit role grant for that specific context.
+- **Required permission:** Auditor or another explicit permission for that specific context.
 - **Destination:** Explicitly selected Foundation/Project context.
 - **Allowed actions:** Explicit selection wins over defaulting. Create/manage follows writer permission for the selected context.
-- **Denied actions:** If the auditor/explicit role grant is missing or lost, clear selection and re-run defaulting.
+- **Denied actions:** If the required permission is missing or lost, clear selection and re-run defaulting.
 
 ## Me Lens Actions
 
@@ -89,23 +89,23 @@ No-grant contexts -> Browse/Discovery only, never default selection
 
 - **Read examples:** View meeting details, view vote results, view survey results, open document, view sent newsletter.
 - **Write examples:** Edit a meeting, manage agenda, update survey, manage document, edit newsletter draft.
-- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific relation the API requires on the item's resolved target object for write actions — e.g. `writer` for Foundation/Project targets, `committee.writer` for committee/group targets, `project.meeting_coordinator` for meeting actions without project writer, or response-owner for author-only edits (e.g. poll/survey/vote responses).
+- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific permission the API requires on the item's resolved target object for write actions — e.g. `writer` for Foundation/Project targets, `committee.writer` for committee/group targets, `project.meeting_coordinator` for meeting actions without project writer, or response-owner for author-only edits (e.g. poll/survey/vote responses).
 - **Destination:** Stay in Me or open the item detail/drawer with target context attached.
-- **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when the required action-specific relation passes.
-- **Denied actions:** If the required action-specific relation is absent, keep eligible view/read actions only.
+- **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when the required action-specific permission passes.
+- **Denied actions:** If the required action-specific permission is absent, keep eligible view/read actions only.
 
 ### Create Action From Me
 
 - **Example:** Create Meeting, Create Group, Add Mailing List, Create Newsletter, Create Vote, Create Survey, Upload File, Add Link.
-- **Required permission:** User must choose a target object (project, foundation, committee, or group), then the action-specific grant on that object must pass. For most creates the target is Foundation/Project and the grant is writer permission. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`; Create Meeting alone can also be authorized by `project.meeting_coordinator` without project writer.
+- **Required permission:** User must choose a target object (project, foundation, committee, or group), then the action-specific permission on that object must pass. For most creates the target is Foundation/Project and the permission is `writer`. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`; Create Meeting alone can also be authorized by `project.meeting_coordinator` without project writer.
 - **Destination:** Create flow scoped to the chosen target context.
-- **Allowed actions:** Continue to create form after target context and its action-specific grant are confirmed.
+- **Allowed actions:** Continue to create form after target context and its action-specific permission are confirmed.
 - **Denied actions:** Do not create against an implicit/global Me context.
 
 ### Pending Action From Me
 
 - **Example:** Review agenda, review materials, respond to governance action.
-- **Required permission:** Viewer/discoverable eligibility for the pending item. For actions that modify the target context, the action-specific relation the API requires — e.g. `writer` for context-management actions, or response-owner for a personal response to a governance action (voting/polling), which needs no writer grant at all.
+- **Required permission:** Viewer/discoverable eligibility for the pending item. For actions that modify the target context, the action-specific permission the API requires — e.g. `writer` for context-management actions, or response-owner for a personal response to a governance action (voting/polling), which needs no writer grant at all.
 - **Destination:** Pending action detail or target context.
 - **Allowed actions:** View/complete personal response actions when eligible. Manage shared resources only with writer permission.
 - **Denied actions:** Do not expose target-context management controls when writer permission is absent.
@@ -115,13 +115,13 @@ No-grant contexts -> Browse/Discovery only, never default selection
 Persona changes what the experience looks like (layout, emphasis, copy,
 ordering). It never decides whether the user can enter the context, read its
 data, or write to it — those outcomes are stated below purely in permission
-terms (auditor grant, writer grant, named capability).
+terms (auditor permission, writer permission, named permission).
 
 ### ED-Shaped Foundation With Writer Grant
 
 - **Context:** Foundation.
-- **Presentation:** ED-shaped Foundation experience, including ED-only sections where a named capability backs them.
-- **Required permission:** Auditor grant on the foundation, plus a writer grant.
+- **Presentation:** ED-shaped Foundation experience, including ED-only sections where a named permission backs them.
+- **Required permission:** Auditor permission on the foundation, plus writer permission.
 - **Allowed actions:** Create/manage Foundation resources.
 - **Denied actions:** None beyond normal context/resource constraints.
 
@@ -129,8 +129,8 @@ terms (auditor grant, writer grant, named capability).
 
 - **Context:** Foundation.
 - **Presentation:** ED-shaped Foundation experience.
-- **Required permission:** Auditor grant on the foundation. No writer grant.
-- **Allowed actions:** Read ED-shaped pages only where the named capability
+- **Required permission:** Auditor permission on the foundation. No writer permission.
+- **Allowed actions:** Read ED-shaped pages only where the named permission
   behind them (see Model Asks in the preread) is granted — not because the ED
   persona is detected.
 - **Denied actions:** Create/edit/manage routes and affordances.
@@ -139,30 +139,30 @@ terms (auditor grant, writer grant, named capability).
 
 - **Context:** Foundation.
 - **Presentation:** Board/governance-shaped Foundation experience.
-- **Required permission:** Auditor grant on the foundation, plus a writer grant.
-- **Allowed actions:** Create/manage resources covered by the writer grant.
-- **Denied actions:** ED-shaped pages unless the named capability behind them is separately granted.
+- **Required permission:** Auditor permission on the foundation, plus writer permission.
+- **Allowed actions:** Create/manage resources covered by the writer permission.
+- **Denied actions:** ED-shaped pages unless the named permission behind them is separately granted.
 
 ### Board-Shaped Foundation Presentation Without Writer Grant
 
 - **Context:** Foundation.
 - **Presentation:** Board/governance-shaped Foundation experience.
-- **Required permission:** Auditor grant on the foundation. No writer grant.
+- **Required permission:** Auditor permission on the foundation. No writer permission.
 - **Allowed actions:** Read governance context and participate where eligible.
 - **Denied actions:** Create/manage resources.
 - **Note:** the Board Member presentation signal does not itself grant the
-  auditor access this scenario assumes — without an auditor/explicit role
-  grant, this user has no Foundation context at all (see Context Entry
-  above) and works from Me instead.
+  auditor permission this scenario assumes — without auditor or another
+  explicit permission, this user has no Foundation context at all (see
+  Context Entry above) and works from Me instead.
 - **Regression case:** a user with a Board Member presentation signal but no
-  auditor/explicit role grant on the foundation never sees it in the
-  Foundation selector and is never defaulted into it.
+  auditor or other explicit permission on the foundation never sees it in
+  the Foundation selector and is never defaulted into it.
 
 ### Maintainer-Shaped Project Presentation With Writer Grant
 
 - **Context:** Project.
 - **Presentation:** Maintainer-shaped Project experience.
-- **Required permission:** Auditor grant on the project, plus a writer grant.
+- **Required permission:** Auditor permission on the project, plus writer permission.
 - **Allowed actions:** Create/manage Project resources.
 - **Denied actions:** Foundation-only ED-shaped pages and actions.
 
@@ -170,7 +170,7 @@ terms (auditor grant, writer grant, named capability).
 
 - **Context:** Project.
 - **Presentation:** Maintainer-shaped Project experience.
-- **Required permission:** Auditor grant on the project. No writer grant.
+- **Required permission:** Auditor permission on the project. No writer permission.
 - **Allowed actions:** Read Project context.
 - **Denied actions:** Create/manage resources.
 
@@ -178,28 +178,29 @@ terms (auditor grant, writer grant, named capability).
 
 - **Context:** Project.
 - **Presentation:** Contributor-shaped Project experience.
-- **Required permission:** Auditor grant on the project, plus a writer grant.
-- **Allowed actions:** Create/manage resources covered by the writer grant.
+- **Required permission:** Auditor permission on the project, plus writer permission.
+- **Allowed actions:** Create/manage resources covered by the writer permission.
 - **Denied actions:** Maintainer-only content if any page is intentionally persona-shaped.
 
 ### Contributor-Shaped Project Presentation Without Writer Grant
 
 - **Context:** Project.
 - **Presentation:** Contributor-shaped Project experience.
-- **Required permission:** Auditor grant on the project. No writer grant.
+- **Required permission:** Auditor permission on the project. No writer permission.
 - **Allowed actions:** Read Project context and participate where eligible.
 - **Denied actions:** Create/manage resources.
 - **Note:** same caveat as Board Member above — the Contributor signal alone
   does not grant Foundation/Project context entry; most contributors should
-  not be auditors, and without a grant this user's experience is Me only.
+  not be auditors, and without a qualifying permission this user's
+  experience is Me only.
 - **Regression case:** a user with a Contributor presentation signal but no
-  auditor/explicit role grant on the project never sees it in the Project
-  selector and is never defaulted into it.
+  auditor or other explicit permission on the project never sees it in the
+  Project selector and is never defaulted into it.
 
 ### LF Staff Mode (Open Question)
 
 - **Context:** Not a decided scenario — see the preread's Writer Actions section. LF Staff already holds `auditor` on every project/foundation via LF Staff Team inheritance, the same read access a community member gets with an explicit `auditor` grant. What "LF Staff Mode" would add beyond that read access is undefined.
-- **Candidate answer:** if this ends up being built, the only thing that would actually distinguish it is write-side assisted-workflow capability (acting on behalf of a user/foundation for support), which no read relation grants.
+- **Candidate answer:** if this ends up being built, the only thing that would actually distinguish it is write-side assisted-workflow capability (acting on behalf of a user/foundation for support), which no read permission grants.
 - **Denied actions:** Do not use "LF Staff Mode" as a substitute for normal Foundation/Project writer permission, and do not build it against an undefined requirement.
 
 ## Feature Decisions
@@ -208,7 +209,7 @@ terms (auditor grant, writer grant, named capability).
 
 - **Me:** Show cross-context meetings and personal meeting actions.
 - **Foundation/Project:** Show context-scoped meetings.
-- **Create/manage:** Requires the organizer-granting relation for the target — Project/Foundation Writer, Project Meeting Coordinator (meetings only), or Committee Writer when the target is a committee/group — per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer). This is the target state; `writerGuard` on `main` still has an unconditional ED-persona fast path ahead of this check (documented in [`persona-content-matrix.md`](./persona-content-matrix.md#meetings-write-paths), tracked for removal per Current UI Facts in the preread).
+- **Create/manage:** Requires the organizer-granting permission for the target — Project/Foundation Writer, Project Meeting Coordinator (meetings only), or Committee Writer when the target is a committee/group — per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer). This is the target state; `writerGuard` on `main` still has an unconditional ED-persona fast path ahead of this check (documented in [`persona-content-matrix.md`](./persona-content-matrix.md#meetings-write-paths), tracked for removal per Current State in the preread).
 - **Read-only:** User can view/join/RSVP where eligible, but cannot edit, delete, invite as manager, or manage resources.
 
 ### Groups
@@ -268,7 +269,7 @@ terms (auditor grant, writer grant, named capability).
 - **Required permission:** Public/event discovery eligibility.
 - **Destination:** Event detail or registration flow.
 - **Allowed actions:** Register, view details, request help.
-- **Denied actions:** Do not add Foundation/Project selector access unless an auditor or explicit role grant exists.
+- **Denied actions:** Do not add Foundation/Project selector access unless auditor or another explicit permission exists.
 
 ### Discover Meetups
 
@@ -284,7 +285,7 @@ terms (auditor grant, writer grant, named capability).
 - **Required permission:** Akrites discovery eligibility.
 - **Destination:** Package drawer or stewardship workflow.
 - **Allowed actions:** Inspect package, open for stewardship.
-- **Denied actions:** Do not add Foundation/Project selector access unless a separate auditor/explicit role grant exists.
+- **Denied actions:** Do not add Foundation/Project selector access unless a separate auditor or other explicit permission exists.
 
 ### Discover Projects Or Foundations
 
@@ -292,7 +293,7 @@ terms (auditor grant, writer grant, named capability).
 - **Required permission:** Public profile or discovery eligibility.
 - **Destination:** Public profile, follow/join/request access flow.
 - **Allowed actions:** Follow, join, request access, view public profile.
-- **Denied actions:** Do not expose private context pages until an auditor or explicit role grant exists.
+- **Denied actions:** Do not expose private context pages until auditor or another explicit permission exists.
 
 ### Discover Groups
 
@@ -321,7 +322,7 @@ terms (auditor grant, writer grant, named capability).
 
 ### User Has A Discoverable But No-Grant Foundation
 
-- **Input:** User can discover a foundation but holds no authoritative role or auditor/explicit role grant.
+- **Input:** User can discover a foundation but holds no qualifying permission (auditor or another explicit permission).
 - **Destination:** Browse/Discovery only.
 - **Allowed actions:** View public profile or request access if available.
 - **Denied actions:** Do not include it in selector and never default to it.
@@ -335,12 +336,12 @@ terms (auditor grant, writer grant, named capability).
 
 ### User Has A Discoverable But No-Grant Project
 
-- **Input:** User can discover a project but holds no authoritative role or auditor/explicit role grant.
+- **Input:** User can discover a project but holds no qualifying permission (auditor or another explicit permission).
 - **Destination:** Browse/Discovery only.
 - **Allowed actions:** View public profile, follow, join, or request access if available.
 - **Denied actions:** Do not include it in selector and never default to it.
 
-### User Loses Auditor/Explicit Role Grant Mid-Session
+### User Loses Auditor/Explicit Permission Mid-Session
 
 - **Input:** Selected context becomes unavailable.
 - **Destination:** Clear selection and re-run defaulting.
@@ -357,17 +358,17 @@ terms (auditor grant, writer grant, named capability).
 ### Direct Create/Edit URL
 
 - **Input:** User opens a create/edit/admin route directly.
-- **Required permission:** Resolved target context plus the action-specific relation the API requires on that target object (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner).
-- **Destination:** Requested route only if the required action-specific relation check passes.
+- **Required permission:** Resolved target context plus the action-specific permission the API requires on that target object (e.g. `writer`, `committee.writer`, `meeting_coordinator`, vote-response owner).
+- **Destination:** Requested route only if the required action-specific permission check passes.
 - **Allowed actions:** Continue if authorized.
-- **Denied actions:** Redirect or fail closed if target context is missing or the required action-specific relation is absent.
+- **Denied actions:** Redirect or fail closed if target context is missing or the required action-specific permission is absent.
 
 ## Operational Metrics
 
 Track these so the team can prove the model is working:
 
 - **Wrong-context landing:** user lands in a context different from explicit or persisted valid selection.
-- **No-grant default:** user defaults into a context without an authoritative role or auditor/explicit role grant. Target: zero.
-- **Selector no-grant item:** selector shows a context without an authoritative role or auditor/explicit role grant. Target: zero.
+- **No-grant default:** user defaults into a context without auditor or another explicit permission. Target: zero.
+- **Selector no-grant item:** selector shows a context without auditor or another explicit permission. Target: zero.
 - **UI-allowed/API-denied write:** UI showed or enabled a write action that the API denied for permission. Target: zero after rollout.
-- **Multiple role labels per context:** one context shows conflicting roles in selector, page header, or resource rows. Target: zero.
+- **Multiple permission labels per context:** one context shows conflicting permission labels in selector, page header, or resource rows. Target: zero.

@@ -4,7 +4,7 @@
 <svg viewBox="0 -70 1200 1010" width="1200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
       <rect x="-40" y="-70" width="1280" height="1080" fill="#FFFFFF"/>
   <text x="20" y="-38" font-size="21" font-weight="700" fill="#0F172B">LFX SS — Permission-Based Access Model</text>
-  <text x="20" y="-16" font-size="12.5" fill="#62748E">The app checks permissions, never roles or personas. Roles and teams are grant bundles in OpenFGA's relation graph; permissions are enforced as RuleSets on API routes.</text>
+  <text x="20" y="-16" font-size="12.5" fill="#62748E">The app checks permissions, never personas. Grants evaluate through the model into permissions; guards bind each action to the permission it requires.</text>
   <defs>
       <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
         <path d="M0,0 L8,4.5 L0,9 z" fill="#62748E"/>
@@ -17,10 +17,10 @@
     <!-- ============ BAND 1: FGA MODEL ============ -->
     <rect x="20" y="16" width="1160" height="300" rx="14" fill="#F8FBFF" stroke="#B8D9FF"/>
     <text x="44" y="48" font-size="15" font-weight="700" fill="#00426F">OPENFGA AUTHORIZATION MODEL</text>
-    <text x="44" y="68" font-size="12.5" fill="#62748E">Platform team owns the bundling — bundles may be kept, renamed, or removed; the app never references them</text>
+    <text x="44" y="68" font-size="12.5" fill="#62748E">Platform team owns grants and the model — either may change at any time; the app never references them</text>
 
     <!-- Grant bundles -->
-    <text x="60" y="104" font-size="12" font-weight="700" fill="#45556C" letter-spacing=".04em">GRANT BUNDLES  ·  roles · teams · direct grants</text>
+    <text x="60" y="104" font-size="12" font-weight="700" fill="#45556C" letter-spacing=".04em">GRANTS  ·  tuples: direct, via teams, via relations</text>
     <g font-size="12.5">
       <rect x="60" y="116" width="200" height="34" rx="8" fill="#fff" stroke="#CAD5E2"/><text x="160" y="137" text-anchor="middle" fill="#314158">LF Staff Team</text>
       <rect x="60" y="158" width="200" height="34" rx="8" fill="#fff" stroke="#CAD5E2"/><text x="160" y="179" text-anchor="middle" fill="#314158">marketing_ops team</text>
@@ -34,10 +34,11 @@
 
     <!-- funnel arrow -->
     <line x1="446" y1="200" x2="560" y2="200" stroke="#0061A3" stroke-width="2.5" marker-end="url(#arrB)"/>
-    <text x="503" y="188" text-anchor="middle" font-size="11.5" fill="#0061A3" font-weight="600">bundle into</text>
+    <text x="503" y="175" text-anchor="middle" font-size="11" fill="#0061A3" font-weight="600">evaluated by</text>
+    <text x="503" y="189" text-anchor="middle" font-size="11" fill="#0061A3" font-weight="600">the model</text>
 
     <!-- Permissions chips -->
-    <text x="586" y="104" font-size="12" font-weight="700" fill="#45556C" letter-spacing=".04em">PERMISSIONS  ·  the relations the app checks</text>
+    <text x="586" y="104" font-size="12" font-weight="700" fill="#45556C" letter-spacing=".04em">PERMISSIONS  ·  evaluated relationships the app checks</text>
     <g font-size="13" font-weight="600">
       <rect x="586" y="118" width="110" height="36" rx="18" fill="#ECF4FF" stroke="#85C2FF"/><text x="641" y="141" text-anchor="middle" fill="#0061A3">viewer</text>
       <rect x="706" y="118" width="110" height="36" rx="18" fill="#ECF4FF" stroke="#85C2FF"/><text x="761" y="141" text-anchor="middle" fill="#0061A3">auditor</text>
@@ -48,14 +49,14 @@
       <rect x="586" y="210" width="220" height="36" rx="18" fill="#ECF4FF" stroke="#85C2FF"/><text x="696" y="233" text-anchor="middle" fill="#0061A3">campaign_manager</text>
       <rect x="826" y="210" width="180" height="36" rx="18" fill="#ECF4FF" stroke="#85C2FF"/><text x="916" y="233" text-anchor="middle" fill="#0061A3">owner (own item)</text>
     </g>
-    <text x="586" y="278" font-size="11.5" fill="#62748E">Examples of bundling today:  LF Staff Team → auditor at root (cascades)   ·   executive_director → marketing_auditor + campaign_manager</text>
-    <text x="586" y="296" font-size="11.5" fill="#62748E">committee member → viewer   ·   project writer → committee.writer (inherited)</text>
+    <text x="586" y="278" font-size="11.5" fill="#62748E">Grants today:  LF Staff Team → auditor at project root (cascades down the project tree)</text>
+    <text x="586" y="296" font-size="11.5" fill="#62748E">executive_director → marketing_auditor + campaign_manager   ·   committee member → viewer</text>
 
     <!-- ============ ACCESS CHECK BAR ============ -->
     <line x1="600" y1="316" x2="600" y2="352" stroke="#0061A3" stroke-width="2.5" marker-end="url(#arrB)"/>
     <rect x="150" y="356" width="900" height="58" rx="12" fill="#00426F"/>
     <text x="600" y="381" text-anchor="middle" font-size="15.5" font-weight="700" fill="#FFFFFF" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">check( user U,  action A,  object O )</text>
-    <text x="600" y="402" text-anchor="middle" font-size="12" fill="#B8D9FF">the only question app code ever asks — enforced downstream at the API gateway, mirrored in the UI for degradation only</text>
+    <text x="600" y="402" text-anchor="middle" font-size="12" fill="#B8D9FF">the only question app code ever asks — enforced by guards at the API gateway (Heimdall RuleSets); UI mirrors for degradation only</text>
 
     <!-- arrows to gates -->
     <line x1="240" y1="414" x2="180" y2="458" stroke="#62748E" stroke-width="2" marker-end="url(#arr)"/>
@@ -112,12 +113,12 @@
     </g>
 
     <!-- product domain label -->
-    <text x="30" y="686" font-size="12" font-weight="700" fill="#45556C" letter-spacing=".04em">PRODUCT GATES  ·  every allow/deny above is a permission check against the resolved target object</text>
+    <text x="30" y="686" font-size="12" font-weight="700" fill="#45556C" letter-spacing=".04em">GUARDS  ·  each binds an action or surface to the permission it requires on the resolved target object</text>
 
     <!-- ============ BAND 3: PERSONAS ============ -->
     <rect x="20" y="706" width="1160" height="150" rx="14" fill="#F8FAFC" stroke="#E2E8F0"/>
     <text x="44" y="738" font-size="15" font-weight="700" fill="#314158">PERSONAS — DETECTED SIGNALS</text>
-    <text x="44" y="758" font-size="12.5" fill="#62748E">Inferred from connected data (board group membership, CDP activity, Insights) — not authorization</text>
+    <text x="44" y="758" font-size="12.5" fill="#62748E">Criteria outside the model, inferred from connected data (board groups, CDP activity, Insights) — never authorization</text>
     <g font-size="12.5">
       <rect x="44" y="774" width="150" height="34" rx="17" fill="#fff" stroke="#CAD5E2"/><text x="119" y="795" text-anchor="middle" fill="#45556C">Board Member</text>
       <rect x="204" y="774" width="130" height="34" rx="17" fill="#fff" stroke="#CAD5E2"/><text x="269" y="795" text-anchor="middle" fill="#45556C">Contributor</text>
@@ -139,6 +140,6 @@
     <text x="1113" y="836" text-anchor="middle" font-size="11.5" font-weight="700" fill="#DC2626">never gates access</text>
 
     <!-- footer -->
-    <text x="600" y="898" text-anchor="middle" font-size="12.5" fill="#62748E">Bundling is the platform team's domain — resolved per review: executive_director stays as an FGA relation, feeding marketing_auditor and campaign_manager.</text>
-    <text x="600" y="916" text-anchor="middle" font-size="12.5" fill="#62748E">App code is unaffected by any future bundling change, because it only ever checks permissions.</text>
+    <text x="600" y="898" text-anchor="middle" font-size="12.5" fill="#62748E">Grants and the model are the platform team's domain — resolved per review: executive_director stays, feeding marketing_auditor and campaign_manager.</text>
+    <text x="600" y="916" text-anchor="middle" font-size="12.5" fill="#62748E">App code is unaffected by any future grant or model change, because it only ever checks permissions.</text>
   </svg>
