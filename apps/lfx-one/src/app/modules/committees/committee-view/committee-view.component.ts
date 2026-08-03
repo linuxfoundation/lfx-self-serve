@@ -935,6 +935,14 @@ export class CommitteeViewComponent {
       routeCommitteeId: this.committeeId(),
       uid: this.committee()?.uid ?? null,
       window: this.engagementWindow(),
+      // FeatureFlagService.initialized() — engagementMetricsEnabled() is a plain computed() that
+      // reads its LaunchDarkly default (false) until the client initializes, and the Overview card's
+      // template gate reads that same signal directly (synchronous). This async switchMap pipeline
+      // lags a tick behind, so without flagResolved below, the transient pre-init false could get
+      // treated as a genuine "flag off" terminal state, then flash the unavailable UI once the real
+      // (true) value resolves and the template gate opens before this pipeline's next emission
+      // catches up (Cursor Bugbot).
+      flagResolved: this.featureFlagService.initialized(),
       enabled: this.engagementMetricsEnabled(),
       // meetingCoordinatorLoading folded in alongside myRoleLoading: canAccessEngagement's own
       // linkedSignal already holds through this fetch window, but this pipeline's EMPTY-hold branch
@@ -964,16 +972,27 @@ export class CommitteeViewComponent {
             a.routeCommitteeId === b.routeCommitteeId &&
             a.uid === b.uid &&
             a.window === b.window &&
+            a.flagResolved === b.flagResolved &&
             a.enabled === b.enabled &&
             a.roleLoading === b.roleLoading &&
             a.notEligible === b.notEligible &&
             a.refresh === b.refresh
         ),
-        switchMap(({ routeCommitteeId, uid, window, enabled, roleLoading, notEligible }) => {
-          // uid is guaranteed non-null here (filtered above) — this only needs to check flag/SSR now.
-          // Flag off (or SSR, where the flag fails closed to its default) means zero engagement
-          // fetches — the gated UI renders nothing, so a request would be pure waste.
-          if (!enabled || !isPlatformBrowser(this.platformId)) {
+        switchMap(({ routeCommitteeId, uid, window, flagResolved, enabled, roleLoading, notEligible }) => {
+          // SSR (or an unreachable LaunchDarkly client that never initializes) fails closed to the
+          // flag's default and stays that way forever — terminal immediately, no reason to wait.
+          if (!isPlatformBrowser(this.platformId)) {
+            this.engagementLoading.set(false);
+            return of(null);
+          }
+          // Flag hasn't resolved a real value yet -- hold rather than treat the transient
+          // pre-init default as a genuine "flag off" terminal state (see flagResolved comment above).
+          if (!flagResolved) {
+            return EMPTY;
+          }
+          // Flag resolved and genuinely off: the gated UI renders nothing, so a request would be
+          // pure waste.
+          if (!enabled) {
             this.engagementLoading.set(false);
             return of(null);
           }
