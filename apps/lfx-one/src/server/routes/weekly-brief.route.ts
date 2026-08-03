@@ -18,4 +18,7 @@ router.post('/:committeeId/weekly-briefs/generate', (req, res, next) => weeklyBr
 // PUT /committees/:committeeId/weekly-briefs/current - save edits to the current brief
 router.put('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBriefController.saveBrief(req, res, next));
 
+// POST /committees/:committeeId/weekly-briefs/share - share the current brief to the committee mailing list
+router.post('/:committeeId/weekly-briefs/share', (req, res, next) => weeklyBriefController.shareBrief(req, res, next));
+
 export default router;
