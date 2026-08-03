@@ -129,7 +129,7 @@ describe('OrgLensMeetingsService — influence row delta labels', () => {
   it('renders the warehouse percentage with the warehouse trend direction', async () => {
     const row = await firstRow({ DELTA_PCT: 9.9, TREND_DIRECTION: 'down' });
 
-    expect(row.deltaLabel).toBe('+9.9% YoY');
+    expect(row.deltaLabel).toBe('+9.9%');
     // DR-011: direction comes from TREND_DIRECTION, not the sign of the percentage.
     expect(row.deltaDirection).toBe('down');
   });
@@ -147,6 +147,20 @@ describe('OrgLensMeetingsService — influence row delta labels', () => {
     expect(row.deltaLabel).toBe('New');
   });
 
+  it('renders "No change" when the influence score stays at zero', async () => {
+    const row = await firstRow({ ECOSYSTEM_INFLUENCE: 0, PRIOR_YEAR_SCORE: 0 });
+
+    expect(row.deltaLabel).toBe('No change');
+    expect(row.deltaDirection).toBe('flat');
+  });
+
+  it('renders "No change" when a non-zero baseline has no percentage delta', async () => {
+    const row = await firstRow({ DELTA_PCT: 0, PRIOR_YEAR_SCORE: 10 });
+
+    expect(row.deltaLabel).toBe('No change');
+    expect(row.deltaDirection).toBe('flat');
+  });
+
   // An absent prior score is unknown, not small — the one case with no percentage to fall back to.
   it.each([{ PRIOR_YEAR_SCORE: null }, { PRIOR_YEAR_SCORE: undefined }])(
     'keeps the unknown-baseline label when the prior score is absent',
@@ -158,17 +172,17 @@ describe('OrgLensMeetingsService — influence row delta labels', () => {
     }
   );
 
-  it('groups an oversized YoY percentage instead of suppressing it', async () => {
+  it('groups an oversized percentage instead of suppressing it', async () => {
     const row = await firstRow({ DELTA_PCT: 61328.8 });
 
-    expect(row.deltaLabel).toBe('+61,328.8% YoY');
+    expect(row.deltaLabel).toBe('+61,328.8%');
   });
 });
 
 describe('OrgLensMeetingsService — cache keys', () => {
   it.each([
     { surface: 'kpi', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getKpiSummary(req, 'acc', 'past365d'), key: 'meetings-kpi:v2:past365d' },
-    { surface: 'influence', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getInfluenceRows(req, 'acc'), key: 'meetings-influence:v2' },
+    { surface: 'influence', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getInfluenceRows(req, 'acc'), key: 'meetings-influence:v3' },
     { surface: 'spend', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getSpendBreakdown(req, 'acc', 'past365d'), key: 'meetings-spend:past365d' },
   ])('$surface reads from $key', async ({ call, key }) => {
     execute.mockResolvedValue({ rows: [] });
