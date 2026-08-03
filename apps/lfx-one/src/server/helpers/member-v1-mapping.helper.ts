@@ -39,8 +39,10 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
  *    This one shape check does double duty for both of upstream's rejection cases: a bare UUID (the
  *    "poisoned" pre-backfill form of this mapping — the `platform-community__c` *record* SFID, a
  *    committee-membership row identifier, not the member's actual contact identity, the exact bug
- *    LFXV2-2673's backfill script exists to repair) is always 36 characters, which already fails
- *    this pattern's length bound alone — no separate UUID check is needed to catch it.
+ *    LFXV2-2673's backfill script exists to repair) — whether the canonical 36-char hyphenated
+ *    string form or its 32-char hex-only form — already fails this pattern, so no separate UUID
+ *    check is needed to catch it. See `SALESFORCE_ID_PATTERN`'s own doc and this file's spec for
+ *    which constraint (length vs. character class) catches which form.
  *
  * Note the two upstream-rejection causes aren't equally transient: a poisoned (UUID) value is
  * genuinely backfill-fixable (LFXV2-2673's script targets exactly that state), but upstream's own

@@ -17,12 +17,16 @@ const { getJson, setJson, buildMemberV1MappingCacheKey, resolveV1MappingBatch, w
 
 vi.mock('@lfx-one/shared/constants', async () => {
   // SALESFORCE_ID_PATTERN and VALKEY_CACHE both pulled via vi.importActual (not hand-copied) — both
-  // source files are import-free, so this is safe — so a future loosening of the real pattern (e.g.
-  // widening both the length bound AND the character class enough to admit the below test's
-  // hyphenated 36-char UUID fixture) fails the UUID-rejection test instead of leaving a stale
-  // duplicate green (a tightening would separately fail the happy-path test), and a changed TTL
+  // source files are import-free, so this is safe. Verified (by executing the real regex against
+  // both fixtures below, not just reasoned about): a future loosening of the real pattern's length
+  // bound alone (to admit 32 chars) flips the hex-only UUID test below — the one realistic
+  // single-constraint mutation this pair of tests actually catches. The hyphenated UUID test only
+  // flips if the length bound AND the character class are loosened together (either alone still
+  // rejects that fixture), so it's a weaker guard on its own, but still fails on the more permissive
+  // combined loosening. A tightening would separately fail the happy-path test. A changed TTL
   // constant fails the cache-write assertions instead of silently going stale alongside them. Same
-  // rationale as the deep-imported classifier functions in committee-engagement.service.spec.ts.
+  // rationale as the deep-imported classifier functions in
+  // committee-engagement.service.spec.ts.
   const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
@@ -52,9 +56,10 @@ describe('parseMemberMappingResponse', () => {
     // Per lfx-v1-sync-helper's contract, a UUID here is the platform-community__c *record* sfid, not
     // the member's contact identity — accepting it would report a successful resolution to a value
     // that can never join MEMBER_USER_ID, and positive-cache the wrong value for a week. No dedicated
-    // UUID check is needed: a UUID is always 36 characters, which already fails SALESFORCE_ID_PATTERN's
-    // exact 15-or-18-char length bound on its own (independent of the character class also excluding
-    // the UUID's hyphens).
+    // UUID check is needed: this canonical (hyphenated) UUID form is 36 characters, which already
+    // fails SALESFORCE_ID_PATTERN's exact 15-or-18-char length bound on its own; independently, the
+    // character class also excludes its hyphens — either constraint alone would already reject it
+    // (contrast the sibling hex-only-form test below, where only the length bound protects).
     expect(parseMemberMappingResponse('project-sfid:committee-sfid:123e4567-e89b-12d3-a456-426614174000')).toBeNull();
   });
 

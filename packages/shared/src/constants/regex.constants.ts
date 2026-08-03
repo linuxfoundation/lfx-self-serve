@@ -16,7 +16,23 @@ export const SALESFORCE_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{12,15}$/;
 /** Org account id (b2b_org canonical identifier) — "001" prefix + exactly 15 alphanumeric chars (the canonical 18-char SFID). Spec 002 is a hard cut-over to the 18-char SFID; the non-canonical 15-char form is rejected. Scoped to org-lens identifiers so it does not narrow the shared `SALESFORCE_ACCOUNT_ID_PATTERN` used by events/analytics. */
 export const ORG_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{15}$/;
 
-/** Generic Salesforce ID shape (no object-prefix constraint) — exactly 15 (case-sensitive form) or exactly 18 (its case-insensitive checksum-suffixed form) characters, anchored, no other length accepted. Matches the v1 platform's own `sfid.IsValid` gate (any object type: Contact, Lead, Account, custom objects). Unlike `SALESFORCE_ACCOUNT_ID_PATTERN`/`ORG_ACCOUNT_ID_PATTERN`, this doesn't check for a specific 3-char object prefix — use it where the caller only needs to know "is this SFID-shaped at all" (e.g. the LFXV2-1705 committee-member v1-mapping bridge, where the resolved identity could be a Contact SFID or another object type). The exact 15-or-18-character length is what rejects a UUID today, in either of its two forms (a UUID is 32 characters hyphen-free, or 36 with its canonical hyphens — never 15 or 18) — this is the load-bearing constraint `member-v1-mapping.helper.ts`'s `parseMemberMappingResponse` relies on to reject a "poisoned" pre-backfill mapping (LFXV2-2673) without a separate UUID check. Do not widen the length bound without confirming it still excludes both 32 and 36. The `[A-Za-z0-9]`-only character class is a secondary guard that only additionally blocks the *hyphenated* form; it provides no protection for the hex-only (non-hyphenated) form, since hex digits are already alphanumeric. Audit `parseMemberMappingResponse` before widening the length bound. */
+/**
+ * Generic Salesforce ID shape (no object-prefix constraint) — exactly 15 (case-sensitive form) or
+ * exactly 18 (its case-insensitive checksum-suffixed form) characters, anchored, no other length
+ * accepted. Matches the v1 platform's own `sfid.IsValid` gate (any object type: Contact, Lead,
+ * Account, custom objects). Unlike `SALESFORCE_ACCOUNT_ID_PATTERN`/`ORG_ACCOUNT_ID_PATTERN`, this
+ * doesn't check for a specific 3-char object prefix — use it where the caller only needs to know
+ * "is this SFID-shaped at all" (e.g. the LFXV2-1705 committee-member v1-mapping bridge, where the
+ * resolved identity could be a Contact SFID or another object type).
+ *
+ * `member-v1-mapping.helper.ts`'s `parseMemberMappingResponse` relies on this rejecting a bare UUID
+ * (in either its 32-char hex-only or 36-char hyphenated string form) to catch a "poisoned"
+ * pre-backfill mapping (LFXV2-2673) without a separate UUID check — see that file's spec for the
+ * fixtures pinning both UUID forms against this pattern; the length bound and character class don't
+ * protect the two forms identically, so treat the spec, not this comment, as the source of truth on
+ * exactly which mutation each fixture catches. Audit that caller before widening either the length
+ * bound or the character class.
+ */
 export const SALESFORCE_ID_PATTERN = /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/;
 
 /**
