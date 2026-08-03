@@ -64,7 +64,9 @@ export interface CommitteeEngagementSummary {
    * Count of non-Emeritus members with real attendance this window, or who joined within it
    * (active by definition of being newly on the roster) — broader than "classified High/Medium":
    * a Low-classified member with some real attendance still counts here. See
-   * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`.
+   * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`. The "joined within it"
+   * clause only applies when `data_available` is `true` — on a zero-row committee, tenure alone
+   * can't imply active (see `data_available`'s doc), so this is `0` there regardless of roster join dates.
    */
   active_count: number;
   /** Full committee roster size (including members with no engagement data). */
@@ -95,8 +97,10 @@ export interface CommitteeEngagementResponse {
    * (a member who genuinely joined within the requested window, classified `High` instead of
    * `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with zero real
    * rows for the whole committee, there is no engagement data to correlate tenure against, so every
-   * non-Emeritus member classifies `Inactive` and `summary` is entirely zeroed; asserting `High` (or
-   * a nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
+   * non-Emeritus member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
+   * `active_count`, `at_risk_count`) are all `0` — `total_count` still reflects the full roster size
+   * regardless, since that's roster-known independent of engagement data. Asserting `High` (or a
+   * nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
    * `attendance_rate: 0` in the same payload. The tenure-grace exception only fires when
    * `data_available` is `true` and this *specific* member's row is individually missing (e.g. a
    * roster member added since the model's last daily refresh) — the committee has real data, just
