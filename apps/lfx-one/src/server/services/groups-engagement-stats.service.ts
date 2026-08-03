@@ -70,11 +70,12 @@ function resolveBackend(): 'mock' | 'live' {
  * warehouse row, never a roster fallback). A larger case in the same family: this rollup dedupes
  * purely on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose
  * `MEMBER_USER_ID` values don't key to any roster member (LFXV2-1705's still-unresolved member-level
- * v1/v2 id gap — no `lfx.lookup_v1_mapping` user/member key exists today; needs the data owner to add
- * one or confirm an alternate join key) still contributes its warehouse-classified members to this
- * count, while the same committee's detail page now reports `data_available: false` and every
- * non-Emeritus member `Inactive` — a real, currently-live divergence, not just a theoretical one,
- * until that id mapping is resolved upstream. Visible committee uids are v2 committee-service
+ * v1/v2 id gap — a `committee_member.uid.<v2Uid>` NATS key does exist on `lfx.lookup_v1_mapping`,
+ * but resolving and wiring it into either surface is unimplemented, tracked as LFXV2-2974) still
+ * contributes its warehouse-classified members to this count, while the same committee's detail
+ * page now reports `data_available: false` and every non-Emeritus member `Inactive` — a real,
+ * currently-live divergence, not just a theoretical one, until LFXV2-2974 lands. Visible committee
+ * uids are v2 committee-service
  * UUIDs; the model is keyed on the v1 committee SFID, so every uid is resolved via
  * `resolveCommitteeV2UidsToV1Ids` before querying (confirmed with Jordan Evans, data owner,
  * LFXV2-2968 — see `computeActiveMembers`'s doc comment for the coverage-checking details).
