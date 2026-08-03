@@ -55,6 +55,7 @@ import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import enrollmentRouter from './routes/enrollment.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
+import clasRouter from './routes/clas.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import userNewslettersRouter from './routes/user-newsletters.route';
@@ -337,6 +338,7 @@ app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/crowdfunding', crowdfundingRouter);
+app.use('/api/me', clasRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 // User-scoped newsletter feed (Me lens). Mounted alongside the project-scoped

@@ -5,8 +5,10 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
+import { buildProfileTabs } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
@@ -61,6 +63,7 @@ export class ProfileLayoutComponent {
   private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -68,8 +71,10 @@ export class ProfileLayoutComponent {
   // Store raw CombinedProfile for passing to dialog
   private combinedProfile: CombinedProfile | null = null;
 
-  // Tab configuration
-  public readonly tabs: ProfileTab[] = PROFILE_TABS;
+  // Tab configuration. The read-only "My CLAs" tab is appended (before Transactions/Settings)
+  // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
+  private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
+  public readonly tabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override

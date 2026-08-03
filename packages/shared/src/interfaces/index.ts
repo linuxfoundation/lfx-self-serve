@@ -261,6 +261,9 @@ export * from './linux-email.interface';
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
 
+// EasyCLA "My CLAs" interfaces (Me lens)
+export * from './cla.interface';
+
 // Country, state, t-shirt size, tag, and timezone interfaces
 export * from './countries.interface';
 export * from './states.interface';
