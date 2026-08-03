@@ -25,7 +25,7 @@ const { execute, getCommitteeMembers, generateMockEngagementRows, warning, info,
 
 vi.mock('@lfx-one/shared/constants', () => ({
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
-  VALKEY_CACHE: { COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600 },
+  VALKEY_CACHE: { COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600, COMMITTEE_ENGAGEMENT_DEGRADE_TTL_SECONDS: 120 },
 }));
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.utils')>(
@@ -426,11 +426,12 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.members[0]).toMatchObject({ attended: 5, invited: 5 });
     });
 
-    it('returns data_available:false (and does not cache) when the live query succeeds but returns zero rows for this committee', async () => {
+    it('returns data_available:false, and negative-caches under the short degrade TTL, when the live query succeeds but returns zero rows for this committee', async () => {
       // The model is roster-anchored with zero-activity members retained, so a currently-populated
       // committee should always yield >=1 row per current roster member. Zero rows most likely means
       // this committee isn't synced/covered by the model yet — treated as "no data yet", not "zero
-      // engagement for everyone".
+      // engagement for everyone". Still cached (short TTL) so every page load for an uncovered
+      // committee doesn't cost a fresh Snowflake round trip.
       buildCommitteeCacheKey.mockReturnValue('cache-key');
       getJson.mockResolvedValueOnce(null);
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
@@ -439,7 +440,18 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.data_available).toBe(false);
-      expect(setJson).not.toHaveBeenCalled();
+      expect(setJson).toHaveBeenCalledWith('cache-key', [], 120);
+    });
+
+    it('derives data_available:false from an empty cached array on a cache hit, not a hardcoded true', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce([]);
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(result.data_available).toBe(false);
     });
 
     it('returns data_available:true and joins real model rows when the live query succeeds with actual rows', async () => {

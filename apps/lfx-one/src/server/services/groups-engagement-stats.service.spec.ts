@@ -88,7 +88,10 @@ function buildReq(): Request {
   return {} as Request;
 }
 
-function activeMemberRow(overrides: { MEMBER_JOINED_AT?: string | null; MEMBER_VOTING_STATUS?: string; ATTENDED_COUNT_30D?: number } = {}) {
+// MEMBER_USER_ID has no default — every call site must specify one, so a test that means to
+// represent multiple distinct members can't accidentally collide under the Set-based dedup by
+// omission, and a test that means to represent the same member across committees does so explicitly.
+function activeMemberRow(overrides: { MEMBER_USER_ID: string; MEMBER_JOINED_AT?: string | null; MEMBER_VOTING_STATUS?: string; ATTENDED_COUNT_30D?: number }) {
   return {
     MEMBER_JOINED_AT: '2020-01-01T00:00:00.000Z',
     MEMBER_VOTING_STATUS: 'Voting Rep',
@@ -269,7 +272,7 @@ describe('GroupsEngagementStatsService', () => {
 
     it('counts a member with real attendance as active', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 3 })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 3 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -279,7 +282,7 @@ describe('GroupsEngagementStatsService', () => {
     it('counts a zero-attendance member who joined within the trailing 30 days as active (tenure grace)', async () => {
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 0, MEMBER_JOINED_AT: recentJoin })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0, MEMBER_JOINED_AT: recentJoin })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -288,7 +291,7 @@ describe('GroupsEngagementStatsService', () => {
 
     it('excludes an Emeritus member from active_members regardless of real attendance', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 10, MEMBER_VOTING_STATUS: 'Emeritus' })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 10, MEMBER_VOTING_STATUS: 'Emeritus' })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -297,7 +300,7 @@ describe('GroupsEngagementStatsService', () => {
 
     it('does not count a veteran member with zero attendance and no tenure grace', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 0 })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -308,15 +311,58 @@ describe('GroupsEngagementStatsService', () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
       execute.mockResolvedValueOnce({
         rows: [
-          activeMemberRow({ ATTENDED_COUNT_30D: 1 }), // active
-          activeMemberRow({ ATTENDED_COUNT_30D: 0 }), // not active
-          activeMemberRow({ ATTENDED_COUNT_30D: 5 }), // active
+          activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 }), // active
+          activeMemberRow({ MEMBER_USER_ID: 'm2', ATTENDED_COUNT_30D: 0 }), // not active
+          activeMemberRow({ MEMBER_USER_ID: 'm3', ATTENDED_COUNT_30D: 5 }), // active
         ],
       });
 
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBe(2);
+    });
+
+    it('counts a member active on two visible committees once, not twice (dedupes by MEMBER_USER_ID, not row count)', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 4 }), // committee-1 row
+          activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 2 }), // same member, committee-2 row
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(1);
+    });
+
+    it('chunks the committee-uid list at 100 per query and merges active members across chunks', async () => {
+      const committeeUids = Array.from({ length: 150 }, (_, i) => `committee-${i}`);
+      getMyCommitteeUids.mockResolvedValue(new Set(committeeUids));
+      execute
+        .mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'chunk1-member', ATTENDED_COUNT_30D: 1 })] })
+        .mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'chunk2-member', ATTENDED_COUNT_30D: 1 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      const [, firstBinds] = execute.mock.calls[0] as [string, string[]];
+      const [, secondBinds] = execute.mock.calls[1] as [string, string[]];
+      expect(firstBinds).toHaveLength(100);
+      expect(secondBinds).toHaveLength(50);
+      expect(result.active_members).toBe(2);
+    });
+
+    it('degrades the whole computation to null when one chunk fails, rather than returning an undercount', async () => {
+      const committeeUids = Array.from({ length: 150 }, (_, i) => `committee-${i}`);
+      getMyCommitteeUids.mockResolvedValue(new Set(committeeUids));
+      execute
+        .mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'chunk1-member', ATTENDED_COUNT_30D: 1 })] })
+        .mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBeNull();
     });
 
     it('degrades to active_members: null (not 0) when the Snowflake query hits a missing-object error', async () => {

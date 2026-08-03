@@ -45,6 +45,9 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-committee Snowflake-backed engagement cache (1 hour, matching the Org Lens TTL). */
   COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600,
 
+  /** Short TTL for a genuinely empty (data_available: false) engagement-rows result — a committee the model doesn't cover yet. Much shorter than `COMMITTEE_ENGAGEMENT_TTL_SECONDS` so "no data yet" can't outlive the committee's dbt sync by up to an hour, while still absorbing repeated page loads in the interim. */
+  COMMITTEE_ENGAGEMENT_DEGRADE_TTL_SECONDS: 120,
+
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
 

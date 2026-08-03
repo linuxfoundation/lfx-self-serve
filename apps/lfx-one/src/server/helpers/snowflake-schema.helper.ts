@@ -8,8 +8,8 @@ import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA } from '@lfx-one/shared/constants';
  * `WORD.WORD`-shaped (exactly two segments) values pass, everything else — a stray quote, space,
  * SQL keyword, single segment, or a three-plus-segment value — is rejected in favor of the
  * default schema. Restricted to exactly two segments (not `{1,2}`) because every call site
- * appends a table name unconditionally (e.g. `engagementTable()`:
- * `` `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE` ``) — a 3-segment
+ * appends a table name unconditionally (e.g. `committeeEngagementTable()`:
+ * `` `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE` ``) — a 3-segment
  * override would produce an invalid 4-part Snowflake identifier (`database.schema.object` is the
  * max), silently breaking the query for exactly the operator input this override is documented to
  * accept.

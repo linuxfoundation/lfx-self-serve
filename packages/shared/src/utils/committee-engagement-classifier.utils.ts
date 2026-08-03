@@ -89,10 +89,12 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
 /**
  * `false` (fail-safe: no tenure protection) for a missing or unparseable join date. Shared between
  * `committee-engagement.service.ts` (per-member tenure clipping for `GET /:uid/engagement`) and
- * `groups-engagement-stats.service.ts` (the `active_members` rollup for `GET /engagement-stats`) —
- * both consume the same `member_joined_at` semantics from the LFXV2-1705 dbt model and must agree
- * on what counts as "joined within the window," per LFXV2-1711's requirement that the two surfaces
- * never disagree on active-member counts.
+ * `groups-engagement-stats.service.ts` (the `active_members` rollup for `GET /engagement-stats`) so
+ * both consume identical `member_joined_at` semantics from the LFXV2-1705 dbt model, per LFXV2-1711's
+ * requirement that the two surfaces agree on the 30d active-member count specifically (`GET
+ * /:uid/engagement?window=30d`'s `summary.active_count` vs. the groups rollup's `active_members`) —
+ * this function's shared predicate is one piece of that; it doesn't by itself guarantee agreement
+ * at other windows, which the groups rollup doesn't compute at all (it's always the 30d definition).
  */
 export function isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {
   if (!joinedAt) return false;

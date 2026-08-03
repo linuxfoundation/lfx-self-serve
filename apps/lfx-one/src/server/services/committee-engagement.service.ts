@@ -79,12 +79,20 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * Cached per `committeeUid` for an hour, matching the sibling Snowflake-backed analytics pattern
-   * in `org-lens-project-detail.service.ts`'s roster block — including its `degradedMissingObject`
-   * guard: the missing-object degrade is deliberately never written to the cache, or "no data yet"
-   * would keep being served for up to an hour after a transient GRANT regression clears. The
+   * Cached per `committeeUid`, matching the sibling Snowflake-backed analytics pattern in
+   * `org-lens-project-detail.service.ts`'s roster block — including its `degradedMissingObject`
+   * guard: a hard query error (missing table, or a missing GRANT — indistinguishable from each
+   * other) is never cached, so a transient regression can't get masked for even a short TTL. The
    * caller's `auditor` grant is already verified by `assertCommitteeRead` in the controller before
    * this runs, so a cache hit can't bypass it.
+   *
+   * A *successful* query is always cached, including a genuinely empty (`dataAvailable: false`)
+   * result — otherwise a committee the model doesn't cover yet costs a fresh Snowflake round trip
+   * on every page load until it syncs. The empty case gets a much shorter TTL
+   * (`COMMITTEE_ENGAGEMENT_DEGRADE_TTL_SECONDS`) than a populated one
+   * (`COMMITTEE_ENGAGEMENT_TTL_SECONDS`) so "no data yet" can't outlive the sync by up to an hour.
+   * A cache hit derives `dataAvailable` from the cached array's length rather than assuming `true`,
+   * since both outcomes are now cached under the same key.
    *
    * One fetch covers all three windows (30d/90d/ytd are columns on the same row, not a
    * `TIME_RANGE_TYPE` filter) — `buildResponse`'s `countsForWindow` picks the right columns per
@@ -94,7 +102,7 @@ export class CommitteeEngagementService {
     const key = buildCommitteeCacheKey(committeeUid, 'engagement-rows');
     if (key !== null) {
       const cached = await valkeyService.getJson<CommitteeEngagementWarehouseRow[]>(key, Array.isArray);
-      if (cached !== null) return { rows: cached, dataAvailable: true };
+      if (cached !== null) return { rows: cached, dataAvailable: cached.length > 0 };
     }
 
     const sql = `
@@ -108,16 +116,11 @@ export class CommitteeEngagementService {
     logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid });
 
     let rows: CommitteeEngagementWarehouseRow[] = [];
-    let dataAvailable = false;
+    let queriedSuccessfully = false;
     try {
       const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [committeeUid], { expectMissingObject: true });
       rows = result.rows;
-      // The model is roster-anchored with zero-activity members retained, so a currently-populated
-      // committee should always yield >=1 row per current roster member. Zero rows most likely
-      // means this committee isn't synced/covered by the model yet, not that engagement is
-      // genuinely zero for everyone — `dataAvailable: false` is the more honest "no data yet"
-      // signal, consistent with the missing-object degrade below.
-      dataAvailable = rows.length > 0;
+      queriedSuccessfully = true;
       logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, row_count: rows.length });
     } catch (error) {
       // Pre-sync (or a missing GRANT) the engagement table/row is absent; degrade to the empty
@@ -135,8 +138,18 @@ export class CommitteeEngagementService {
       });
     }
 
-    if (key !== null && dataAvailable) {
-      await valkeyService.setJson(key, rows, VALKEY_CACHE.COMMITTEE_ENGAGEMENT_TTL_SECONDS);
+    // The model is roster-anchored with zero-activity members retained, so a currently-populated
+    // committee should always yield >=1 row per current roster member. Zero rows most likely means
+    // this committee isn't synced/covered by the model yet, not that engagement is genuinely zero
+    // for everyone — `dataAvailable: false` is the more honest "no data yet" signal.
+    const dataAvailable = rows.length > 0;
+
+    if (key !== null && queriedSuccessfully) {
+      await valkeyService.setJson(
+        key,
+        rows,
+        dataAvailable ? VALKEY_CACHE.COMMITTEE_ENGAGEMENT_TTL_SECONDS : VALKEY_CACHE.COMMITTEE_ENGAGEMENT_DEGRADE_TTL_SECONDS
+      );
     }
 
     return { rows, dataAvailable };
@@ -151,8 +164,9 @@ export class CommitteeEngagementService {
    * expected occurrence.
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
-   * always reflects the full committee; a member with no matching row (today, only the live-degrade
-   * case — mock mode's rows are roster-anchored 1:1) defaults to `invited=0, attended=0`, but
+   * always reflects the full committee; a member with no matching row — the live-degrade case, or
+   * (on an otherwise fully successful, `data_available: true` live read) a roster member added
+   * since the model's last daily refresh — defaults to `invited=0, attended=0`, but
    * `role`/`voting_status`/join-date fall back to the roster's own values (see below) whenever the
    * row is absent or its own value for that field is missing — these three are roster attributes
    * the warehouse row also mirrors, not warehouse-computed metrics, so the roster is an equally

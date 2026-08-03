@@ -15,8 +15,11 @@ import { withUserCache } from './valkey.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_MEMBER_WINDOW_DAYS = 30;
+// Matches committee.service.ts's getCommitteesByIds precedent — keeps both the bind count and the
+// per-query row volume bounded for a caller who belongs to many committees (e.g. LF staff).
+const COMMITTEE_UID_CHUNK_SIZE = 100;
 
-type ActiveMemberRow = Pick<CommitteeEngagementWarehouseRow, 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'ATTENDED_COUNT_30D'>;
+type ActiveMemberRow = Pick<CommitteeEngagementWarehouseRow, 'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'ATTENDED_COUNT_30D'>;
 
 /**
  * `expectedSource` must match the backend resolved for *this* request — not just any valid
@@ -100,11 +103,14 @@ export class GroupsEngagementStatsService {
   }
 
   /**
-   * Counts active members (attended >=1 meeting in the trailing 30 days, or joined within it,
-   * excluding Emeritus — `isCommitteeMemberActive`, the same function LFXV2-1705 uses) across every
-   * committee the caller can see (`getMyCommitteeUids` — "mine" semantics, no scope param, per
-   * LFXV2-1711). A single `IN (...)` query covers every visible committee at once — N+1-free
-   * regardless of how many committees the caller belongs to.
+   * Counts distinct active members (attended >=1 meeting in the trailing 30 days, or joined within
+   * it, excluding Emeritus — `isCommitteeMemberActive`, the same function LFXV2-1705 uses) across
+   * every committee the caller can see (`getMyCommitteeUids` — "mine" semantics, no scope param, per
+   * LFXV2-1711). A member is counted once even if active on multiple visible committees — the model's
+   * grain is one row per `(committee_id, member_user_id)`, so a member on N committees produces N
+   * rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count rather than a row count.
+   * The committee-uid list is chunked (see `COMMITTEE_UID_CHUNK_SIZE`) so a caller who belongs to
+   * many committees (e.g. LF staff) doesn't produce an unbounded bind list or row volume in one query.
    *
    * Two distinct "nothing to report" cases stay distinguishable: `0` means the caller genuinely has
    * no visible committees (a real answer); `null` means the count couldn't be computed (missing
@@ -116,33 +122,51 @@ export class GroupsEngagementStatsService {
       const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req))];
       if (committeeUids.length === 0) return 0;
 
-      const placeholders = committeeUids.map(() => '?').join(', ');
-      const sql = `
-        SELECT MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, ATTENDED_COUNT_30D
-        FROM ${committeeEngagementTable()}
-        WHERE COMMITTEE_ID IN (${placeholders})
-      `;
+      const chunks: string[][] = [];
+      for (let i = 0; i < committeeUids.length; i += COMMITTEE_UID_CHUNK_SIZE) {
+        chunks.push(committeeUids.slice(i, i + COMMITTEE_UID_CHUNK_SIZE));
+      }
 
-      const result = await this.snowflakeService.execute<ActiveMemberRow>(sql, committeeUids, { expectMissingObject: true });
+      // Promise.all (not allSettled): a partial-chunk failure means the count can no longer be
+      // trusted as complete, so the whole computation degrades to null via the catch below rather
+      // than silently returning an undercount from only the chunks that happened to succeed.
+      const chunkResults = await Promise.all(
+        chunks.map((chunk) => {
+          const placeholders = chunk.map(() => '?').join(', ');
+          const sql = `
+            SELECT MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, ATTENDED_COUNT_30D
+            FROM ${committeeEngagementTable()}
+            WHERE COMMITTEE_ID IN (${placeholders})
+          `;
+          return this.snowflakeService.execute<ActiveMemberRow>(sql, chunk, { expectMissingObject: true });
+        })
+      );
+
       const windowStart = new Date(Date.now() - ACTIVE_MEMBER_WINDOW_DAYS * DAY_MS);
+      const activeUids = new Set<string>();
+      let rowCount = 0;
 
-      const activeMembers = result.rows.reduce((count, row) => {
-        const classificationInput = {
-          attended: row.ATTENDED_COUNT_30D,
-          invited: 0, // unused by isCommitteeMemberActive
-          votingStatus: row.MEMBER_VOTING_STATUS,
-          joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
-        };
-        return isCommitteeMemberActive(classificationInput) ? count + 1 : count;
-      }, 0);
+      for (const result of chunkResults) {
+        rowCount += result.rows.length;
+        for (const row of result.rows) {
+          const classificationInput = {
+            attended: row.ATTENDED_COUNT_30D,
+            invited: 0, // unused by isCommitteeMemberActive
+            votingStatus: row.MEMBER_VOTING_STATUS,
+            joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
+          };
+          if (isCommitteeMemberActive(classificationInput)) activeUids.add(row.MEMBER_USER_ID);
+        }
+      }
 
       logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
         committee_count: committeeUids.length,
-        row_count: result.rows.length,
-        active_members: activeMembers,
+        chunk_count: chunks.length,
+        row_count: rowCount,
+        active_members: activeUids.size,
       });
 
-      return activeMembers;
+      return activeUids.size;
     } catch (error) {
       if (!SnowflakeService.isMissingObjectError(error)) {
         // A non-Snowflake failure (e.g. the visible-committee-set lookup) is unexpected — surface it
