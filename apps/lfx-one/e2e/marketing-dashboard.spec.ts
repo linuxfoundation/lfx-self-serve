@@ -248,7 +248,7 @@ test.describe('Paid Social Reach Drawer', () => {
 
   test('opens and shows title when card is clicked', async ({ page }) => {
     await openDrawer(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content');
-    await expect(page.locator('[data-testid="paid-social-reach-drawer-title"]')).toContainText('Paid Social Reach');
+    await expect(page.locator('[data-testid="paid-social-reach-drawer-title"]')).toContainText('Paid Media');
   });
 
   test('shows ROAS and impressions charts', async ({ page }) => {
