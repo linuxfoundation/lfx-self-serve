@@ -21,10 +21,10 @@ import type {
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
-  { id: 'planning', label: 'Planning', icon: 'fa-light fa-clipboard-list' },
-  { id: 'implementation', label: 'Implementation', icon: 'fa-light fa-rocket' },
-  { id: 'insights', label: 'Insights', icon: 'fa-light fa-chart-mixed' },
-  { id: 'optimization', label: 'Optimization', icon: 'fa-light fa-gauge-high' },
+  { id: 'planning', label: 'Plan', icon: 'fa-light fa-clipboard-list' },
+  { id: 'implementation', label: 'Implement', icon: 'fa-light fa-rocket' },
+  { id: 'insights', label: 'Monitor', icon: 'fa-light fa-chart-mixed' },
+  { id: 'optimization', label: 'Optimize', icon: 'fa-light fa-gauge-high' },
 ] as const;
 
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
