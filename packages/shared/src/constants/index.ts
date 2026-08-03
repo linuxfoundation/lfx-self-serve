@@ -47,6 +47,7 @@ export * from './meetups.constants';
 export * from './links.config';
 export * from './copilot.constants';
 export * from './committee-documents.constants';
+export * from './activity-event.constants';
 export * from './lens.constants';
 export * from './badge.constants';
 export * from './training.constants';
