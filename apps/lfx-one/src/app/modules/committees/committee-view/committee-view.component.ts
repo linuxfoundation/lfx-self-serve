@@ -931,7 +931,13 @@ export class CommitteeViewComponent {
       uid: this.committee()?.uid ?? null,
       window: this.engagementWindow(),
       enabled: this.engagementMetricsEnabled(),
-      roleLoading: this.myRoleLoading(),
+      // meetingCoordinatorLoading folded in alongside myRoleLoading: canAccessEngagement's own
+      // linkedSignal already holds through this fetch window, but this pipeline's EMPTY-hold branch
+      // below reads roleLoading independently -- without it, a meeting-coordinator-only caller could
+      // see notEligible momentarily true (canAccessEngagement synchronously settled false before the
+      // project fetch even started) and clear engagementLoading before the real check resolves,
+      // flashing the unavailable state (Cursor Bugbot).
+      roleLoading: this.myRoleLoading() || this.meetingCoordinatorLoading(),
       // canAccessEngagement (roster member OR writer OR explicit committee-level auditor) — not raw
       // isVisitor(), which only means "not a roster member" and would wrongly block writers/auditors
       // who satisfy the endpoint's real committee#auditor gate without being on the roster.
