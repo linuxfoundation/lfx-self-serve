@@ -430,10 +430,11 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     });
 
     it('still tenure-graces a roster member added since the model refresh when the committee DOES have real data (data_available:true)', async () => {
-      // Distinguishes the fix above: the roster created_at fallback is suppressed only when the
-      // whole committee has zero rows. When data_available is true (this committee has real data)
-      // and one specific member's row just hasn't landed yet, tenure grace still applies — that's
-      // a real, if incomplete, data context, not a fabricated one.
+      // Distinguishes the fix below: the roster created_at fallback is suppressed only when the
+      // whole committee has zero rows, or when none of its rows key to any roster member at all
+      // (anyRowMatched: false). When data_available is true, most of the roster DID match, and one
+      // specific member's row just hasn't landed yet, tenure grace still applies — that's a real,
+      // if incomplete, data context, not a fabricated one.
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('has-data'), member('new-joiner', { created_at: recentJoin })]);
       execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'has-data', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })] });
@@ -445,19 +446,20 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(2); // both members active: one via real attendance, one via tenure grace
     });
 
-    it('suppresses the roster created_at tenure-grace fallback on a total join-key mismatch — classifies Inactive, not High, even though data_available is true', async () => {
+    it('reports data_available:false and suppresses the roster created_at tenure-grace fallback on a total join-key mismatch', async () => {
       // Reproduces the live-production bug (LFXV2-1705 validation): MEMBER_USER_ID in the warehouse
       // is a Salesforce/LFID-style id, not the v2 committee-member uid, so rows exist for this
       // committee but none key to any roster member. Unlike the single-late-joiner case above,
       // matchedCount is 0 for the WHOLE roster — the join itself is broken, not just incomplete, so
-      // member.created_at can't be trusted as a tenure signal here.
+      // member.created_at can't be trusted as a tenure signal here, and data_available (derived from
+      // usableData = dataAvailable && anyRowMatched) reports false rather than misleadingly true.
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin }), member('m2', { created_at: recentJoin })]);
       execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: '0034100000dh2VLAAY' }), row({ MEMBER_USER_ID: 'lfdVxdHAYKNNhX67DT' })] });
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(result.data_available).toBe(true);
+      expect(result.data_available).toBe(false);
       expect(result.members.find((m) => m.uid === 'm1')).toMatchObject({ classification: 'Inactive', invited: 0, attended: 0 });
       expect(result.members.find((m) => m.uid === 'm2')).toMatchObject({ classification: 'Inactive', invited: 0, attended: 0 });
       expect(result.summary.active_count).toBe(0);

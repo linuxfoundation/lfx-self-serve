@@ -66,7 +66,8 @@ function resolveBackend(): 'mock' | 'live' {
  * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS` the detail page would
  * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
  * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
- * sources; this rollup only has the warehouse row). Visible committee uids are v2 committee-service
+ * sources when the roster join has at least one match for that committee; this rollup only has the
+ * warehouse row, never a roster fallback). Visible committee uids are v2 committee-service
  * UUIDs; the model is keyed on the v1 committee SFID, so every uid is resolved via
  * `resolveCommitteeV2UidsToV1Ids` before querying (confirmed with Jordan Evans, data owner,
  * LFXV2-2968 — see `computeActiveMembers`'s doc comment for the coverage-checking details).

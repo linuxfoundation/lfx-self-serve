@@ -209,7 +209,10 @@ export class CommitteeEngagementService {
    * *any* member, so `created_at` isn't a trustworthy tenure signal for one unmatched member,
    * let alone the whole roster — tenure-grace `High` on literal 0/0 counts across every member
    * would contradict the honest "no usable join for this committee" state rather than degrade to
-   * `Inactive`.
+   * `Inactive`. For the same reason, the response's own `data_available` field reports
+   * `usableData` (`dataAvailable && anyRowMatched`), not the raw query-level `dataAvailable` — a
+   * total join-key mismatch degrades the same way a genuinely empty read does, from the caller's
+   * point of view, rather than reporting `true` alongside a fully zeroed/`Inactive` roster.
    */
   private buildResponse(
     req: Request,
@@ -235,11 +238,15 @@ export class CommitteeEngagementService {
       });
     }
 
-    // Gates the roster `created_at` tenure-grace fallback below alongside `dataAvailable` — a total
-    // join-key mismatch (rows exist, but none key to any roster member) leaves the whole roster
-    // without a trustworthy per-committee join, so `created_at` can't be trusted for anyone, not
-    // just the individually-unmatched member the fallback exists for.
+    // A total join-key mismatch (rows exist, but none key to any roster member) is operationally
+    // indistinguishable from a genuinely empty read: neither leaves any trustworthy per-member data
+    // to report. `usableData` — not the raw `dataAvailable` — is what both the roster `created_at`
+    // tenure-grace fallback below and the response's own `data_available` field key off, so a
+    // committee whose warehouse rows exist but don't join to this roster (today's live-production
+    // reality, per LFXV2-1705) reports honestly as `data_available: false` rather than `true` with
+    // every member falsely zeroed/graced.
     const anyRowMatched = members.some((member) => rowsByUid.has(member.uid));
+    const usableData = dataAvailable && anyRowMatched;
 
     const windowStart = this.windowStartDate(window);
 
@@ -280,20 +287,19 @@ export class CommitteeEngagementService {
       // would cost a recently-joined member their tenure grace (case 2 of the classifier's decision
       // order) whenever the row's own date is missing, blank, or unparseable.
       //
-      // The roster `created_at` fallback is gated on `dataAvailable && anyRowMatched`, though — it
-      // only makes sense when the committee genuinely HAS warehouse data AND at least one roster
-      // member's row is matched, i.e. this one member's row is individually missing (e.g. added
-      // since the model's last refresh) from an otherwise-working join. When `dataAvailable` is
-      // false (the whole committee returned zero rows) or `anyRowMatched` is false (rows exist but
-      // none key to this roster — a total join-key mismatch), there is no trustworthy engagement
-      // data to correlate tenure against for *any* member; treating every recent roster joiner as
-      // tenure-graced `High` in either state produces an internally inconsistent payload —
-      // `data_available:false` (or a broken join) alongside a nonzero `active_count` and `High`
-      // classifications on literal 0/0 counts. `row?.` is unaffected by this gate: a matched row
-      // can only exist when `anyRowMatched` is already true.
+      // The roster `created_at` fallback is gated on `usableData` (`dataAvailable && anyRowMatched`),
+      // though — it only makes sense when the committee genuinely HAS warehouse data AND at least
+      // one roster member's row is matched, i.e. this one member's row is individually missing (e.g.
+      // added since the model's last refresh) from an otherwise-working join. When the data isn't
+      // usable — the whole committee returned zero rows, or rows exist but none key to this roster
+      // (a total join-key mismatch) — there is no trustworthy engagement data to correlate tenure
+      // against for *any* member; treating every recent roster joiner as tenure-graced `High` in
+      // either state produces an internally inconsistent payload — `data_available:false` (which
+      // this method now also reports for the broken-join case, see `usableData` above) alongside a
+      // nonzero `active_count` and `High` classifications on literal 0/0 counts. `row?.` is
+      // unaffected by this gate: a matched row can only exist when `anyRowMatched` is already true.
       const joinedWithinWindow =
-        isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) ||
-        (dataAvailable && anyRowMatched && isJoinedWithinWindow(member.created_at, windowStart));
+        isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || (usableData && isJoinedWithinWindow(member.created_at, windowStart));
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;
@@ -341,7 +347,7 @@ export class CommitteeEngagementService {
       // Always null: the real model doesn't expose a freshness column yet (a separate follow-up).
       // `formatCommitteeEngagementFreshness` gives the UI a "Updated daily" label for this case.
       computed_at: null,
-      data_available: dataAvailable,
+      data_available: usableData,
       data_source: dataSource,
     };
   }

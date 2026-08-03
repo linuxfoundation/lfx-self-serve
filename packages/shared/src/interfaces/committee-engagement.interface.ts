@@ -65,8 +65,9 @@ export interface CommitteeEngagementSummary {
    * (active by definition of being newly on the roster) — broader than "classified High/Medium":
    * a Low-classified member with some real attendance still counts here. See
    * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`. The "joined within it"
-   * clause only applies when `data_available` is `true` — on a zero-row committee, tenure alone
-   * can't imply active (see `data_available`'s doc), so this is `0` there regardless of roster join dates.
+   * clause only applies when `data_available` is `true` — on a zero-row committee, or one whose
+   * rows exist but don't join to any roster member, tenure alone can't imply active (see
+   * `data_available`'s doc), so this is `0` there regardless of roster join dates.
    */
   active_count: number;
   /** Full committee roster size (including members with no engagement data). */
@@ -86,31 +87,36 @@ export interface CommitteeEngagementResponse {
    */
   computed_at: string | null;
   /**
-   * `false`: the live query couldn't produce usable rows — either it errored (the model isn't
-   * synced yet for this committee, or the role isn't granted on it) or it ran and returned zero
-   * rows for this `committee_uid` (the model is roster-anchored and retains zero-activity members,
-   * so a real, currently-populated committee should always yield >=1 row; zero rows most likely
-   * means this committee isn't covered by the model yet, not that engagement is genuinely zero for
-   * everyone). Every member then shows zeroed counts and classifies `Inactive` — except a roster
+   * `false`: the live read couldn't produce *usable*, roster-joined rows — either the query itself
+   * errored (the model isn't synced yet for this committee, or the role isn't granted on it), it ran
+   * and returned zero rows for this `committee_uid` (the model is roster-anchored and retains
+   * zero-activity members, so a real, currently-populated committee should always yield >=1 row;
+   * zero rows most likely means this committee isn't covered by the model yet, not that engagement
+   * is genuinely zero for everyone), or it returned rows but none of them key to any roster member at
+   * all (a total join-key mismatch — the warehouse's `MEMBER_USER_ID` values don't correspond to any
+   * `CommitteeMember.uid` for this committee). All three degrade identically from the caller's point
+   * of view. Every member then shows zeroed counts and classifies `Inactive` — except a roster
    * member with a real `Emeritus` voting status, which still classifies `Emeritus` (a seat-type
    * fact independent of whether any engagement data exists). The tenure-grace `High` exception
    * (a member who genuinely joined within the requested window, classified `High` instead of
-   * `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with zero real
-   * rows for the whole committee, there is no engagement data to correlate tenure against, so every
+   * `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with no usable
+   * data for the whole committee, there is no engagement data to correlate tenure against, so every
    * non-Emeritus member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
    * `active_count`, `at_risk_count`) are all `0` — `total_count` still reflects the full roster size
    * regardless, since that's roster-known independent of engagement data. Asserting `High` (or a
    * nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
    * `attendance_rate: 0` in the same payload. The tenure-grace exception only fires when
-   * `data_available` is `true` and this *specific* member's row is individually missing (e.g. a
-   * roster member added since the model's last daily refresh) — the committee has real data, just
-   * not yet for this member. `role`/`voting_status` are roster passthroughs and stay populated
-   * regardless of whether a warehouse row matched, in both cases.
+   * `data_available` is `true` — i.e. the committee has rows AND at least one roster member matched
+   * one — and this *specific* member's row is individually missing (e.g. a roster member added since
+   * the model's last daily refresh): the committee has real, roster-joinable data, just not yet for
+   * this member. `role`/`voting_status` are roster passthroughs and stay populated regardless of
+   * whether a warehouse row matched, in both cases.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
-   * production); a live query that returned >=1 row; or a live cache hit reading back that same
-   * outcome (the zero-row outcome is cached too, under a much shorter TTL, so a cache hit derives
-   * this flag from the cached row count rather than assuming `true`).
+   * production); or a live query — fresh or a cache hit (the row cache is keyed on row count alone,
+   * under a much shorter TTL for the zero-row outcome, but the roster join itself always re-runs
+   * against a freshly-fetched roster on every request, cached rows included) — that returned >=1 row
+   * matching at least one roster member by uid.
    *
    * The UI should key its "no data available" placeholder state off this flag rather than inferring
    * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`
