@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CommitteeEngagementWarehouseRow, GroupsEngagementStats } from '@lfx-one/shared/interfaces';
 import { isCommitteeMemberActive, isJoinedWithinWindow } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -18,10 +18,6 @@ const ACTIVE_MEMBER_WINDOW_DAYS = 30;
 // Matches committee.service.ts's getCommitteesByIds precedent — keeps both the bind count and the
 // per-query row volume bounded for a caller who belongs to many committees (e.g. LF staff).
 const COMMITTEE_UID_CHUNK_SIZE = 100;
-// Caps how many chunk queries run concurrently against the Snowflake pool (SNOWFLAKE_CONFIG's
-// MAX_CONNECTIONS is shared across every consumer in the process) — a caller with hundreds of
-// visible committees shouldn't be able to borrow a large fraction of the pool in one request.
-const CHUNK_CONCURRENCY = 3;
 
 type ActiveMemberRow = Pick<
   CommitteeEngagementWarehouseRow,
@@ -64,9 +60,11 @@ function resolveBackend(): 'mock' | 'live' {
  * `isCommitteeMemberActive`/`isJoinedWithinWindow` predicate and tenure-clipping rule so the two
  * surfaces can't disagree on *that* logic — but this rollup is warehouse-row-anchored only (no live
  * roster join per visible committee, which would reintroduce the N+1 fetch this endpoint exists to
- * avoid), so it can still diverge from the per-committee detail page for a roster member the model
- * hasn't picked up yet (a very recent join) or a blank `MEMBER_VOTING_STATUS` the detail page would
- * otherwise resolve via the roster's own `voting.status`. `meetings_this_month` stays `null` in live
+ * avoid), so it can still diverge from the per-committee detail page for: a roster member the model
+ * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS` the detail page would
+ * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
+ * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
+ * sources; this rollup only has the warehouse row). `meetings_this_month` stays `null` in live
  * mode — the model exposes only rolling 30d/90d/YTD meeting counts, not a calendar-month grain, so
  * there's no honest source for it yet (LFXV2-2961 tracks adding one). Defaults to `live` (never
  * fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is additionally
@@ -123,10 +121,10 @@ export class GroupsEngagementStatsService {
    * rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count rather than a row count.
    * The committee-uid list is chunked (`COMMITTEE_UID_CHUNK_SIZE`) so a caller who belongs to many
    * committees (e.g. LF staff) doesn't produce an unbounded bind list or row volume in one query, and
-   * chunks run at most `CHUNK_CONCURRENCY` at a time so that same caller can't monopolize a large
-   * fraction of the shared Snowflake connection pool in one request.
+   * chunks run at most `GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY` at a time so that same caller can't
+   * monopolize a large fraction of the shared Snowflake connection pool in one request.
    *
-   * Three distinct "nothing to report" cases stay distinguishable:
+   * Four distinct "nothing to report" cases stay distinguishable:
    * - `0`: the caller genuinely has no visible committees — a real answer, no query even runs.
    * - `null` (no rows at all): the caller has visible committees, but every chunk query returned
    *   zero rows — mirrors `committee-engagement.service.ts`'s zero-row `dataAvailable: false`
@@ -152,11 +150,11 @@ export class GroupsEngagementStatsService {
       // Promise.all per batch (not allSettled): a partial-chunk failure means the count can no
       // longer be trusted as complete, so the whole computation degrades to null via the catch
       // below rather than silently returning an undercount from only the chunks that succeeded.
-      // Batched at CHUNK_CONCURRENCY rather than firing every chunk at once, so this one request
-      // can't borrow an unbounded share of the Snowflake connection pool.
+      // Batched at GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY rather than firing every chunk at once, so
+      // this one request can't borrow an unbounded share of the Snowflake connection pool.
       const chunkResults: { rows: ActiveMemberRow[] }[] = [];
-      for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
-        const batch = chunks.slice(i, i + CHUNK_CONCURRENCY);
+      for (let i = 0; i < chunks.length; i += GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY) {
+        const batch = chunks.slice(i, i + GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY);
         const batchResults = await Promise.all(batch.map((chunk) => this.queryActiveMemberChunk(chunk)));
         chunkResults.push(...batchResults);
       }
@@ -168,12 +166,14 @@ export class GroupsEngagementStatsService {
       for (const result of chunkResults) {
         rowCount += result.rows.length;
         for (const row of result.rows) {
+          // Floor then clamp to `invited`, matching committee-engagement.service.ts's
+          // `countsForWindow`/`buildResponse` posture — defense-in-depth against the model's own
+          // `>= 0` and `attended <= invited` dbt invariants ever being violated, not a sign either
+          // is known to be unenforced.
+          const invited = Math.max(row.INVITED_COUNT_30D, 0);
           const classificationInput = {
-            // Clamped to `invited`, matching committee-engagement.service.ts's `buildResponse` —
-            // defense-in-depth against the model's own `attended <= invited` dbt invariant ever
-            // being violated, not a sign it's known to be unenforced.
-            attended: Math.min(row.ATTENDED_COUNT_30D, row.INVITED_COUNT_30D),
-            invited: row.INVITED_COUNT_30D, // unused by isCommitteeMemberActive; kept only for the clamp above
+            attended: Math.min(Math.max(row.ATTENDED_COUNT_30D, 0), invited),
+            invited, // unused by isCommitteeMemberActive; kept only for the clamp above
             votingStatus: row.MEMBER_VOTING_STATUS,
             joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
           };
@@ -181,16 +181,28 @@ export class GroupsEngagementStatsService {
         }
       }
 
-      logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
-        committee_count: committeeUids.length,
-        chunk_count: chunks.length,
-        row_count: rowCount,
-        active_members: activeUids.size,
-      });
-
       // See the doc comment above: zero rows across every visible committee reads as "not synced
-      // yet" (null), distinct from rows being present but nobody active (a real 0).
-      return rowCount > 0 ? activeUids.size : null;
+      // yet" (null), distinct from rows being present but nobody active (a real 0). Computed before
+      // logging so the logged active_members always matches what's actually returned.
+      const activeMembers = rowCount > 0 ? activeUids.size : null;
+
+      if (rowCount === 0) {
+        // The most likely-to-occur null case in a partially-rolled-out model — warrants the same
+        // visibility as the other two degrade paths below, not silent DEBUG.
+        logger.warning(req, 'get_groups_engagement_stats', 'No engagement rows for any visible committee; returning null (not yet synced?)', {
+          committee_count: committeeUids.length,
+          chunk_count: chunks.length,
+        });
+      } else {
+        logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
+          committee_count: committeeUids.length,
+          chunk_count: chunks.length,
+          row_count: rowCount,
+          active_members: activeMembers,
+        });
+      }
+
+      return activeMembers;
     } catch (error) {
       if (!SnowflakeService.isMissingObjectError(error)) {
         // A non-Snowflake failure (e.g. the visible-committee-set lookup, or a chunk query error

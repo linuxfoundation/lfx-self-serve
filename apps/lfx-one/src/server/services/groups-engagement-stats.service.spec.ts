@@ -34,14 +34,16 @@ const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls, e
 
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: getEffectiveUsernameMock }));
 vi.mock('./valkey.service', () => ({ withUserCache: withUserCacheMock }));
-// Source the real VALKEY_CACHE values by importing the underlying file directly (not the
-// `@lfx-one/shared/constants` barrel, which transitively pulls in Angular — see the import-rationale
-// comment in date-time.utils.ts) so a namespace/TTL rename can't silently desync this mock from the
-// value the test asserts against below. DEFAULT_LFX_ONE_PLATINUM_SCHEMA is included too since
-// `committeeEngagementTable()` (real, unmocked helper) resolves against it.
+// Source the real VALKEY_CACHE/concurrency values by importing the underlying files directly (not
+// the `@lfx-one/shared/constants` barrel, which transitively pulls in Angular — see the
+// import-rationale comment in date-time.utils.ts) so a namespace/TTL/concurrency-cap rename can't
+// silently desync this mock from the value the tests assert against below.
+// DEFAULT_LFX_ONE_PLATINUM_SCHEMA is included too since `committeeEngagementTable()` (real,
+// unmocked helper) resolves against it.
 vi.mock('@lfx-one/shared/constants', async () => {
   const { VALKEY_CACHE } = await import('../../../../../packages/shared/src/constants/valkey-cache.constants');
-  return { VALKEY_CACHE, DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE' };
+  const { GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY } = await import('../../../../../packages/shared/src/constants/org-selector.constants');
+  return { VALKEY_CACHE, GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY, DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE' };
 });
 // The classifier functions are deep-imported from their real implementation (not hand-copied) so a
 // decision-table change there fails this suite too — same rationale as
@@ -395,7 +397,7 @@ describe('GroupsEngagementStatsService', () => {
       // Let the microtask queue drain so every synchronously-kickoffable call has started.
       await Promise.resolve();
       await Promise.resolve();
-      expect(execute).toHaveBeenCalledTimes(3); // capped at CHUNK_CONCURRENCY, not all 4 chunks
+      expect(execute).toHaveBeenCalledTimes(3); // capped at GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY, not all 4 chunks
 
       deferreds.forEach((d) => d.resolve({ rows: [] }));
       await Promise.resolve();

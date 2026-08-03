@@ -94,8 +94,9 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
  * one shared piece of a broader intent (LFXV2-1711: the two surfaces shouldn't disagree), not a
  * guarantee of exact agreement by itself — the groups rollup is warehouse-row-anchored only (no live
  * roster join per committee), so it can still diverge from the detail page's `window=30d` count for
- * a roster member the model hasn't picked up yet, or a blank `MEMBER_VOTING_STATUS` the detail page
- * resolves via the roster (see `groups-engagement-stats.service.ts`'s class doc). It also doesn't
+ * a roster member the model hasn't picked up yet, a blank `MEMBER_VOTING_STATUS`, or a blank/
+ * unparseable `MEMBER_JOINED_AT` — the detail page resolves all three via a live roster fetch (see
+ * `groups-engagement-stats.service.ts`'s class doc). It also doesn't
  * apply at 90d/ytd, which the groups rollup doesn't compute at all (always the 30d definition).
  */
 export function isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {

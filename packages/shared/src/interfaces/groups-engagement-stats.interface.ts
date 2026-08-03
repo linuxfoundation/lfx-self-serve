@@ -4,17 +4,21 @@
 /**
  * Engagement rollup for the caller's visible set of groups (mine semantics, no scope param).
  * Backed by the same dbt engagement model as LFXV2-1705. `active_members` reads live; `null` means
- * the count couldn't be computed (missing committee-set lookup, or a Snowflake missing-object
- * error) — never a real zero passed off as unavailable, and never an unavailable state passed off
- * as zero (see `computeActiveMembers` in `groups-engagement-stats.service.ts`). `meetings_this_month`
- * stays `null` in live mode — the model has no calendar-month grain yet (LFXV2-2961).
+ * the count couldn't be computed — a missing committee-set lookup, a Snowflake missing-object error,
+ * or the caller's visible committees returning zero warehouse rows across the board (most likely
+ * none of them are synced into the model yet, not that literally nobody is active — see
+ * `computeActiveMembers` in `groups-engagement-stats.service.ts`). A `0` is always a real, computed
+ * answer (no visible committees at all, or rows present with nobody active) — never a stand-in for
+ * "unavailable", and `null` is never a disguised real zero. `meetings_this_month` stays `null` in
+ * live mode — the model has no calendar-month grain yet (LFXV2-2961).
  */
 export interface GroupsEngagementStats {
   /**
    * Distinct members active on any visible committee — attended >=1 meeting in the trailing 30
    * days, or joined within it (tenure grace), excluding Emeritus (`isCommitteeMemberActive`, the
    * same rule LFXV2-1705 uses). A member active on multiple visible committees is counted once, not
-   * once per committee. `null` when not computable.
+   * once per committee. `null` when not computable — see this interface's doc comment for exactly
+   * which cases that covers.
    */
   active_members: number | null;
   /** Meeting occurrences within the current calendar month. `null` when not computable. */
