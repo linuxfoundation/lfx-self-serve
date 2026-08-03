@@ -17,12 +17,12 @@ const { getJson, setJson, buildMemberV1MappingCacheKey, resolveV1MappingBatch, w
 
 vi.mock('@lfx-one/shared/constants', async () => {
   // SALESFORCE_ID_PATTERN and VALKEY_CACHE both pulled via vi.importActual (not hand-copied) — both
-  // source files are import-free, so this is safe — so a future loosening of the real pattern's
-  // length bound (e.g. widening {15}/{18} to a range that admits 36 chars) fails the UUID-rejection
-  // test below instead of leaving a stale duplicate green (a tightening would separately fail the
-  // happy-path test), and a changed TTL constant fails the cache-write assertions instead of
-  // silently going stale alongside them. Same rationale as the deep-imported classifier functions in
-  // committee-engagement.service.spec.ts.
+  // source files are import-free, so this is safe — so a future loosening of the real pattern (e.g.
+  // widening both the length bound AND the character class enough to admit the below test's
+  // hyphenated 36-char UUID fixture) fails the UUID-rejection test instead of leaving a stale
+  // duplicate green (a tightening would separately fail the happy-path test), and a changed TTL
+  // constant fails the cache-write assertions instead of silently going stale alongside them. Same
+  // rationale as the deep-imported classifier functions in committee-engagement.service.spec.ts.
   const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
@@ -56,6 +56,15 @@ describe('parseMemberMappingResponse', () => {
     // exact 15-or-18-char length bound on its own (independent of the character class also excluding
     // the UUID's hyphens).
     expect(parseMemberMappingResponse('project-sfid:committee-sfid:123e4567-e89b-12d3-a456-426614174000')).toBeNull();
+  });
+
+  it('rejects an unhyphenated 32-char UUID — isolates the length bound from the character class', () => {
+    // Hex-only, so SALESFORCE_ID_PATTERN's [A-Za-z0-9] class alone would admit it; only the exact
+    // 15-or-18-char length bound rejects it. This is the fixture that actually regresses if the
+    // length bound is ever widened to admit 32, independent of whether hyphens are also allowed —
+    // the hyphenated fixture above can't catch that specific mistake on its own, since it's already
+    // rejected by the character class regardless of length.
+    expect(parseMemberMappingResponse('project-sfid:committee-sfid:123e4567e89b12d3a456426614174000')).toBeNull();
   });
 
   it('rejects a third segment that is neither a UUID nor a valid 15/18-char Salesforce ID shape', () => {
