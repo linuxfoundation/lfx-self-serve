@@ -69,6 +69,21 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('group-join-cta-invite-only-notice')).toHaveCount(0);
   });
 
+  test('visitor of a closed group: sees the closed notice on About and Overview', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'closed', public: true }) });
+    await gotoCommitteeTab(page, '?tab=about');
+
+    await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('group-join-cta-closed-notice')).toBeVisible();
+    await expect(page.getByTestId('group-join-cta-closed-notice')).toContainText('This group is closed');
+    await expect(page.getByTestId('group-join-cta-closed-notice')).toContainText('admin must add you');
+    await expect(page.getByTestId('group-join-cta-visitor-cta')).toHaveCount(0);
+    await expect(page.getByTestId('group-join-cta-invite-only-notice')).toHaveCount(0);
+
+    await gotoCommitteeTab(page, '?tab=overview');
+    await expect(page.getByTestId('group-join-cta-closed-notice')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
   test('member: no edit affordances, no join CTA', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', writer: false }) });
     await gotoCommitteeTab(page);

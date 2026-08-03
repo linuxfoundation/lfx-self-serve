@@ -31,6 +31,7 @@ export class GroupJoinCtaComponent {
   public readonly joinCtaDescription = 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
   public readonly applyCtaDescription = 'Submit a request to join this group. A group admin will review your application and notify you of their decision.';
   public readonly inviteOnlyTitle = 'Membership is by invitation only';
+  public readonly closedGroupTitle = 'This group is closed';
   public readonly applicationPendingTitle = 'Application submitted';
   public readonly applicationPendingDescription = 'Your request to join is pending review. A group admin will notify you once a decision is made.';
 
@@ -38,8 +39,10 @@ export class GroupJoinCtaComponent {
   public canApply: Signal<boolean> = this.initCanApply();
   public showApplicationPendingNotice: Signal<boolean> = this.initShowApplicationPendingNotice();
   public showInviteOnlyNotice: Signal<boolean> = this.initShowInviteOnlyNotice();
+  public showClosedNotice: Signal<boolean> = this.initShowClosedNotice();
   public joinCtaTitle: Signal<string> = this.initJoinCtaTitle();
   public inviteOnlyDescription: Signal<string> = this.initInviteOnlyDescription();
+  public closedGroupDescription: Signal<string> = this.initClosedGroupDescription();
 
   public onJoinClick(): void {
     this.joinRequested.emit();
@@ -73,6 +76,10 @@ export class GroupJoinCtaComponent {
     });
   }
 
+  private initShowClosedNotice(): Signal<boolean> {
+    return computed(() => this.isVisitor() && this.committee().join_mode === 'closed' && !this.hasPendingInvite());
+  }
+
   private initJoinCtaTitle(): Signal<string> {
     return computed(() => `Interested in ${this.committee().name}?`);
   }
@@ -81,6 +88,13 @@ export class GroupJoinCtaComponent {
     return computed(() => {
       const name = this.committee().name;
       return `${name} is invite only. A group member or admin must send you an invitation before you can join.`;
+    });
+  }
+
+  private initClosedGroupDescription(): Signal<string> {
+    return computed(() => {
+      const name = this.committee().name;
+      return `${name} is closed to new members. You cannot join on your own — a group admin must add you before you can access group content.`;
     });
   }
 }
