@@ -5,7 +5,7 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
+import type { MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
 import { isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -17,12 +17,6 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { TableComponent } from '@components/table/table.component';
 import { MyClasService } from '@services/my-clas.service';
-
-interface MyClasState {
-  data: MyClasResponse | null;
-  error: boolean;
-  loaded: boolean;
-}
 
 /**
  * Read-only "My CLAs" Profile tab (Me lens). Renders the user's currently-valid signed CLAs

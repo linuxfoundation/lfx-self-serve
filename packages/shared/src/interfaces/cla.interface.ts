@@ -66,6 +66,13 @@ export interface MyClasResponse {
   identity: MyClasIdentitySummary;
 }
 
+/** View state for the My CLAs tab: the last response (or null), plus load/error flags. */
+export interface MyClasState {
+  data: MyClasResponse | null;
+  error: boolean;
+  loaded: boolean;
+}
+
 /** Response for `GET /api/me/clas/:signatureId/pdf-url`. */
 export interface PdfUrlResponse {
   /** Short-lived presigned S3 URL (~15 min TTL). */
