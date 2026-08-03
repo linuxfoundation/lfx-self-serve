@@ -17,11 +17,12 @@ const { getJson, setJson, buildMemberV1MappingCacheKey, resolveV1MappingBatch, w
 
 vi.mock('@lfx-one/shared/constants', async () => {
   // SALESFORCE_ID_PATTERN and VALKEY_CACHE both pulled via vi.importActual (not hand-copied) — both
-  // source files are import-free, so this is safe — so a future loosening of the real pattern (e.g.
-  // admitting hyphens) fails the UUID-rejection test below instead of leaving a stale duplicate
-  // green (a tightening would separately fail the happy-path test), and a changed TTL constant fails
-  // the cache-write assertions instead of silently going stale alongside them. Same rationale as the
-  // deep-imported classifier functions in committee-engagement.service.spec.ts.
+  // source files are import-free, so this is safe — so a future loosening of the real pattern's
+  // length bound (e.g. widening {15}/{18} to a range that admits 36 chars) fails the UUID-rejection
+  // test below instead of leaving a stale duplicate green (a tightening would separately fail the
+  // happy-path test), and a changed TTL constant fails the cache-write assertions instead of
+  // silently going stale alongside them. Same rationale as the deep-imported classifier functions in
+  // committee-engagement.service.spec.ts.
   const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
@@ -51,14 +52,16 @@ describe('parseMemberMappingResponse', () => {
     // Per lfx-v1-sync-helper's contract, a UUID here is the platform-community__c *record* sfid, not
     // the member's contact identity — accepting it would report a successful resolution to a value
     // that can never join MEMBER_USER_ID, and positive-cache the wrong value for a week. No dedicated
-    // UUID check is needed: the hyphens and 36-char length already fail SALESFORCE_ID_PATTERN.
+    // UUID check is needed: a UUID is always 36 characters, which already fails SALESFORCE_ID_PATTERN's
+    // exact 15-or-18-char length bound on its own (independent of the character class also excluding
+    // the UUID's hyphens).
     expect(parseMemberMappingResponse('project-sfid:committee-sfid:123e4567-e89b-12d3-a456-426614174000')).toBeNull();
   });
 
   it('rejects a third segment that is neither a UUID nor a valid 15/18-char Salesforce ID shape', () => {
     // The other upstream rejection case (sfid.IsValid) — a malformed value here is caught by the
-    // same shape check as the UUID case above, just via a different failure mode (wrong length,
-    // rather than hyphens).
+    // same length check as the UUID case above, just failing it for a different reason (too short,
+    // rather than too long).
     expect(parseMemberMappingResponse('project-sfid:committee-sfid:too-short')).toBeNull();
   });
 

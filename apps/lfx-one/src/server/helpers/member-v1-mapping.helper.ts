@@ -35,12 +35,12 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
  *    (an extra colon from an older mapping generation) would otherwise silently fold its extra
  *    segment into this parser's 3rd field, handing back the wrong id without any error.
  * 2. Requires the 3rd field to look like a valid Salesforce ID (upstream's own `sfid.IsValid` gate,
- *    `SALESFORCE_ID_PATTERN` — 15 or 18 alphanumeric characters). This one shape check does double
- *    duty for both of upstream's rejection cases: a bare UUID (the "poisoned" pre-backfill form of
- *    this mapping — the `platform-community__c` *record* SFID, a committee-membership row
- *    identifier, not the member's actual contact identity, the exact bug LFXV2-2673's backfill
- *    script exists to repair) already fails this pattern on its hyphens and length alone, so no
- *    separate UUID check is needed to catch it.
+ *    `SALESFORCE_ID_PATTERN` — exactly 15 or exactly 18 alphanumeric characters, no other length).
+ *    This one shape check does double duty for both of upstream's rejection cases: a bare UUID (the
+ *    "poisoned" pre-backfill form of this mapping — the `platform-community__c` *record* SFID, a
+ *    committee-membership row identifier, not the member's actual contact identity, the exact bug
+ *    LFXV2-2673's backfill script exists to repair) is always 36 characters, which already fails
+ *    this pattern's length bound alone — no separate UUID check is needed to catch it.
  *
  * Note the two upstream-rejection causes aren't equally transient: a poisoned (UUID) value is
  * genuinely backfill-fixable (LFXV2-2673's script targets exactly that state), but upstream's own
