@@ -90,12 +90,13 @@ function buildReq(): Request {
   return {} as Request;
 }
 
-// MEMBER_USER_ID has no default — every call site must specify one, so a test that means to
-// represent multiple distinct members can't accidentally collide under the Set-based dedup by
-// omission, and a test that means to represent the same member across committees does so explicitly.
-// INVITED_COUNT_30D defaults high enough to never clamp ATTENDED_COUNT_30D in tests that aren't
-// specifically exercising the clamp.
+// MEMBER_USER_ID and COMMITTEE_ID have no defaults — every call site must specify them, so a test
+// that means to represent multiple distinct members/committees can't accidentally collide under the
+// Set-based dedup/coverage checks by omission, and a test that means to represent the same member
+// across committees does so explicitly. INVITED_COUNT_30D defaults high enough to never clamp
+// ATTENDED_COUNT_30D in tests that aren't specifically exercising the clamp.
 function activeMemberRow(overrides: {
+  COMMITTEE_ID: string;
   MEMBER_USER_ID: string;
   MEMBER_JOINED_AT?: string | null;
   MEMBER_VOTING_STATUS?: string;
@@ -283,7 +284,7 @@ describe('GroupsEngagementStatsService', () => {
 
     it('counts a member with real attendance as active', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 3 })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 3 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -293,7 +294,9 @@ describe('GroupsEngagementStatsService', () => {
     it('counts a zero-attendance member who joined within the trailing 30 days as active (tenure grace)', async () => {
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0, MEMBER_JOINED_AT: recentJoin })] });
+      execute.mockResolvedValueOnce({
+        rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0, MEMBER_JOINED_AT: recentJoin })],
+      });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -302,7 +305,9 @@ describe('GroupsEngagementStatsService', () => {
 
     it('excludes an Emeritus member from active_members regardless of real attendance', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 10, MEMBER_VOTING_STATUS: 'Emeritus' })] });
+      execute.mockResolvedValueOnce({
+        rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 10, MEMBER_VOTING_STATUS: 'Emeritus' })],
+      });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -311,7 +316,7 @@ describe('GroupsEngagementStatsService', () => {
 
     it('does not count a veteran member with zero attendance and no tenure grace', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0 })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -322,9 +327,9 @@ describe('GroupsEngagementStatsService', () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
       execute.mockResolvedValueOnce({
         rows: [
-          activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 }), // active
-          activeMemberRow({ MEMBER_USER_ID: 'm2', ATTENDED_COUNT_30D: 0 }), // not active
-          activeMemberRow({ MEMBER_USER_ID: 'm3', ATTENDED_COUNT_30D: 5 }), // active
+          activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 }), // active
+          activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm2', ATTENDED_COUNT_30D: 0 }), // not active
+          activeMemberRow({ COMMITTEE_ID: 'committee-2', MEMBER_USER_ID: 'm3', ATTENDED_COUNT_30D: 5 }), // active
         ],
       });
 
@@ -337,8 +342,8 @@ describe('GroupsEngagementStatsService', () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
       execute.mockResolvedValueOnce({
         rows: [
-          activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 4 }), // committee-1 row
-          activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 2 }), // same member, committee-2 row
+          activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 4 }),
+          activeMemberRow({ COMMITTEE_ID: 'committee-2', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 2 }), // same member, other committee's row
         ],
       });
 
@@ -352,7 +357,9 @@ describe('GroupsEngagementStatsService', () => {
       // ATTENDED_COUNT_30D > INVITED_COUNT_30D should never happen per the model's own dbt
       // invariant, but if it did, an unclamped value here would still count the member as active —
       // clamping to invited makes attended 0 when invited is genuinely 0.
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 0, ATTENDED_COUNT_30D: 5 })] });
+      execute.mockResolvedValueOnce({
+        rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 0, ATTENDED_COUNT_30D: 5 })],
+      });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -368,9 +375,28 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
     });
 
-    it('returns a real 0 (not null) when rows are present but nobody in them is active', async () => {
+    it('returns null when SOME visible committees are covered but at least one is not (partial coverage), rather than an undercount', async () => {
+      // Regression test: rowCount > 0 alone used to be treated as "complete", so a caller with 3
+      // visible committees where only 1 was synced would silently report a plausible-looking count
+      // for that 1 committee while the other 2's absence went unnoticed. Coverage must now be
+      // checked per-committee.
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2', 'committee-3']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 5 }),
+          activeMemberRow({ COMMITTEE_ID: 'committee-2', MEMBER_USER_ID: 'm2', ATTENDED_COUNT_30D: 5 }),
+          // committee-3 has no rows at all — not yet synced.
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBeNull();
+    });
+
+    it('returns a real 0 (not null) when rows are present for every visible committee but nobody in them is active', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0 })] });
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 0 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -411,9 +437,15 @@ describe('GroupsEngagementStatsService', () => {
     it('chunks the committee-uid list at 100 per query and merges active members across chunks', async () => {
       const committeeUids = Array.from({ length: 150 }, (_, i) => `committee-${i}`);
       getMyCommitteeUids.mockResolvedValue(new Set(committeeUids));
-      execute
-        .mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'chunk1-member', ATTENDED_COUNT_30D: 1 })] })
-        .mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'chunk2-member', ATTENDED_COUNT_30D: 1 })] });
+      // Full coverage: one row per requested committee_id (so the coverage check passes), with
+      // exactly the first committee in each chunk's bind list marked active — one per chunk, 2 total.
+      execute.mockImplementation((_sql, binds) =>
+        Promise.resolve({
+          rows: (binds as string[]).map((id, i) =>
+            activeMemberRow({ COMMITTEE_ID: id, MEMBER_USER_ID: `member-of-${id}`, ATTENDED_COUNT_30D: i === 0 ? 1 : 0 })
+          ),
+        })
+      );
 
       const result = await service.getEngagementStats(buildReq());
 
@@ -429,7 +461,7 @@ describe('GroupsEngagementStatsService', () => {
       const committeeUids = Array.from({ length: 150 }, (_, i) => `committee-${i}`);
       getMyCommitteeUids.mockResolvedValue(new Set(committeeUids));
       execute
-        .mockResolvedValueOnce({ rows: [activeMemberRow({ MEMBER_USER_ID: 'chunk1-member', ATTENDED_COUNT_30D: 1 })] })
+        .mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'committee-0', MEMBER_USER_ID: 'chunk1-member', ATTENDED_COUNT_30D: 1 })] })
         .mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
 
       const result = await service.getEngagementStats(buildReq());

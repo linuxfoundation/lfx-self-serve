@@ -22,7 +22,7 @@ const COMMITTEE_UID_CHUNK_SIZE = 100;
 type ActiveMemberRow = Pick<
   CommitteeEngagementWarehouseRow,
   'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'INVITED_COUNT_30D' | 'ATTENDED_COUNT_30D'
->;
+> & { COMMITTEE_ID: string };
 
 /**
  * `expectedSource` must match the backend resolved for *this* request — not just any valid
@@ -126,13 +126,15 @@ export class GroupsEngagementStatsService {
    *
    * Four distinct "nothing to report" cases stay distinguishable:
    * - `0`: the caller genuinely has no visible committees — a real answer, no query even runs.
-   * - `null` (no rows at all): the caller has visible committees, but every chunk query returned
-   *   zero rows — mirrors `committee-engagement.service.ts`'s zero-row `dataAvailable: false`
-   *   reading (the model is roster-anchored with zero-activity members retained, so real coverage
-   *   should yield >=1 row per committee; zero across the board most likely means none of the
-   *   caller's committees are synced yet, not that literally nobody is active).
-   * - `0` (rows present, none active): a real, computed zero — the caller's committees are covered
-   *   by the model and nobody in them happens to be active this window.
+   * - `null` (incomplete coverage): at least one visible committee has zero rows in the model —
+   *   mirrors `committee-engagement.service.ts`'s zero-row `dataAvailable: false` reading (the
+   *   model is roster-anchored with zero-activity members retained, so a synced committee should
+   *   yield >=1 row; a missing committee most likely isn't synced yet, not that it genuinely has
+   *   zero members). This is checked per-committee, not just "did any row come back at all" — a
+   *   caller with 3 visible committees where only 1 is synced would otherwise report a plausible
+   *   but incomplete count for the other 2's silent absence, rather than degrading honestly.
+   * - `0` (full coverage, none active): a real, computed zero — every visible committee is
+   *   represented in the model and nobody in them happens to be active this window.
    * - `null` (error): the count couldn't be computed at all (missing committee-set lookup, a
    *   Snowflake missing-object/not-authorized error, or any chunk failing) — never thrown, so a
    *   stats failure never blocks the rest of the groups dashboard.
@@ -161,11 +163,13 @@ export class GroupsEngagementStatsService {
 
       const windowStart = new Date(Date.now() - ACTIVE_MEMBER_WINDOW_DAYS * DAY_MS);
       const activeUids = new Set<string>();
+      const coveredCommitteeIds = new Set<string>();
       let rowCount = 0;
 
       for (const result of chunkResults) {
         rowCount += result.rows.length;
         for (const row of result.rows) {
+          coveredCommitteeIds.add(row.COMMITTEE_ID);
           // Floor then clamp to `invited`, matching committee-engagement.service.ts's
           // `countsForWindow`/`buildResponse` posture — defense-in-depth against the model's own
           // `>= 0` and `attended <= invited` dbt invariants ever being violated, not a sign either
@@ -181,17 +185,21 @@ export class GroupsEngagementStatsService {
         }
       }
 
-      // See the doc comment above: zero rows across every visible committee reads as "not synced
-      // yet" (null), distinct from rows being present but nobody active (a real 0). Computed before
-      // logging so the logged active_members always matches what's actually returned.
-      const activeMembers = rowCount > 0 ? activeUids.size : null;
+      // Coverage is checked per-committee, not just "rowCount > 0" — a fully-covered subset of the
+      // visible set would otherwise look like a complete answer. See the doc comment above.
+      const uncoveredCount = committeeUids.length - coveredCommitteeIds.size;
+      const fullyCovered = uncoveredCount <= 0;
+      // Computed before logging so the logged active_members always matches what's actually returned.
+      const activeMembers = fullyCovered ? activeUids.size : null;
 
-      if (rowCount === 0) {
+      if (!fullyCovered) {
         // The most likely-to-occur null case in a partially-rolled-out model — warrants the same
         // visibility as the other two degrade paths below, not silent DEBUG.
-        logger.warning(req, 'get_groups_engagement_stats', 'No engagement rows for any visible committee; returning null (not yet synced?)', {
+        logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committees have no engagement rows; returning null (not yet synced?)', {
           committee_count: committeeUids.length,
           chunk_count: chunks.length,
+          covered_committee_count: coveredCommitteeIds.size,
+          uncovered_committee_count: uncoveredCount,
         });
       } else {
         logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
@@ -220,7 +228,7 @@ export class GroupsEngagementStatsService {
   private queryActiveMemberChunk(committeeUids: string[]): Promise<{ rows: ActiveMemberRow[] }> {
     const placeholders = committeeUids.map(() => '?').join(', ');
     const sql = `
-      SELECT MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, INVITED_COUNT_30D, ATTENDED_COUNT_30D
+      SELECT COMMITTEE_ID, MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, INVITED_COUNT_30D, ATTENDED_COUNT_30D
       FROM ${committeeEngagementTable()}
       WHERE COMMITTEE_ID IN (${placeholders})
     `;
