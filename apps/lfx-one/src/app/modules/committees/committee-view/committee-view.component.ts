@@ -44,6 +44,7 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
@@ -115,6 +116,7 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly invitationService = inject(InvitationService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -163,6 +165,10 @@ export class CommitteeViewComponent {
   // Matches every sibling loader in this file/committee-overview.component.ts (membersLoading,
   // documentsLoading, etc.), all of which start true for the same reason (Cursor Bugbot, LFXV2-1705).
   public engagementLoading = signal<boolean>(true);
+  // Only ever set true while the meeting_coordinator project fetch below is actually in flight
+  // (initMeetingCoordinator skips the fetch whenever a cheaper eligibility check already passed),
+  // so this stays false for the overwhelming majority of page loads (dealako, LFXV2-1705).
+  private meetingCoordinatorLoading = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -220,6 +226,10 @@ export class CommitteeViewComponent {
     return this.isCallerInAuditorList(this.committee()?.auditors);
   });
 
+  // Project-level `meeting_coordinator` grant for canAccessEngagement below — see
+  // initMeetingCoordinator for why this fetch is conditional.
+  public readonly meetingCoordinator: Signal<boolean> = this.initMeetingCoordinator();
+
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
   // by initEngagement's fetch gate below AND passed down to committee-overview for its card render
   // gate — a duplicated reconstruction in the child previously omitted canReview (Copilot: a
@@ -230,7 +240,11 @@ export class CommitteeViewComponent {
   // project-level auditor who isn't a committee-scoped auditor is included too (Copilot). Kept as a
   // separate check here rather than folded into `canReview()` itself: `canReview()` also drives
   // Settings-tab visibility and the 'review' permission level elsewhere, and broadening those to
-  // inherited auditors is a larger, out-of-scope decision for this engagement slice.
+  // inherited auditors is a larger, out-of-scope decision for this engagement slice. Also checks
+  // meetingCoordinator() (project-level `meeting_coordinator`, the fourth leg of the endpoint's
+  // `committee#auditor` FGA relation alongside member/writer/auditor-from-project — server/helpers/
+  // committee-read-access.helper.ts:14-25) so a meeting coordinator who isn't a roster member,
+  // writer, or listed/inherited auditor is still included (dealako, Copilot).
   //
   // Only updates on a *settled* (non-loading) resolution — never derived directly from
   // myRoleLoading() — so it neither reads optimistic-true during ANY loading window (which would
@@ -839,8 +853,16 @@ export class CommitteeViewComponent {
     return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean }, boolean>({
       source: () => ({
         committeeId: this.committeeId(),
-        loading: this.myRoleLoading(),
-        eligible: this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors),
+        // meetingCoordinatorLoading folded in here (not left as a separate downstream check) so the
+        // linkedSignal holds its previous settled value through that fetch's window too, the same as
+        // it already does for myRoleLoading().
+        loading: this.myRoleLoading() || this.meetingCoordinatorLoading(),
+        eligible:
+          this.myRole() !== null ||
+          this.canEdit() ||
+          this.canReview() ||
+          this.isCallerInAuditorList(this.committee()?.inherited_auditors) ||
+          this.meetingCoordinator(),
       }),
       computation: (source, previous) => {
         if (source.loading) {
@@ -849,6 +871,42 @@ export class CommitteeViewComponent {
         return source.eligible;
       },
     });
+  }
+
+  // Project-level `meeting_coordinator` FGA check (dealako, LFXV2-1705) — the fourth grant the
+  // endpoint's `committee#auditor` relation accepts alongside member/writer/auditor-from-project,
+  // which the checks above don't cover. Skips the fetch whenever one of the cheaper checks already
+  // passed (mirrors ProjectService.getDirectGrantProjects' "only run meeting_coordinator for
+  // non-writers" shortcut): those checks can't be invalidated by also being a meeting coordinator,
+  // so there is nothing this fetch could change for an already-eligible caller. Uses
+  // `getProject(uid, false, ...)` — `current: false` so this doesn't clobber ProjectService's
+  // shared `project`/`project$` state, which the project-context surfaces elsewhere expect to
+  // reflect the ACTIVE project, not incidentally whichever committee page happened to run this
+  // check. getProject already resolves to `null` (never throws) on fetch failure, so this fails
+  // closed like every other leg of canAccessEngagement.
+  private initMeetingCoordinator(): Signal<boolean> {
+    return toSignal(
+      toObservable(
+        computed(() => ({
+          projectUid: this.committee()?.project_uid ?? null,
+          needed: !(this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)),
+        }))
+      ).pipe(
+        distinctUntilChanged((a, b) => a.projectUid === b.projectUid && a.needed === b.needed),
+        switchMap(({ projectUid, needed }) => {
+          if (!projectUid || !needed || !isPlatformBrowser(this.platformId)) {
+            this.meetingCoordinatorLoading.set(false);
+            return of(false);
+          }
+          this.meetingCoordinatorLoading.set(true);
+          return this.projectService.getProject(projectUid, false, { meetingCoordinator: true }).pipe(
+            map((project) => project?.meetingCoordinator === true),
+            finalize(() => this.meetingCoordinatorLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: false }
+    );
   }
 
   private initEngagement(): Signal<CommitteeEngagementResponse | null> {
