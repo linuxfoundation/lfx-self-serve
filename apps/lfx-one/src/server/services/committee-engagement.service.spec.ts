@@ -372,16 +372,57 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.at_risk_count).toBe(0);
     });
 
-    it('falls back to the roster real created_at on a degraded (unmatched) member, so a recently-joined member still gets tenure grace', async () => {
+    it('does NOT tenure-grace a recently-joined member when the whole committee has no data — classifies Inactive, not High, on a genuinely empty read', async () => {
+      // Regression test: the roster created_at fallback used to apply unconditionally, so a
+      // recently-joined member classified High (and counted active) purely from tenure — on a
+      // committee with zero real engagement rows, contradicting data_available:false and
+      // attendance_rate:0 in the same payload. Confirmed against live prod data (LFXV2-1705
+      // validation): a committee with genuinely zero synced rows must degrade honestly, not
+      // partially compute a misleading summary from roster-only signals.
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('m1', { created_at: recentJoin })]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
-      expect(result.summary.at_risk_count).toBe(0);
-      expect(result.summary.active_count).toBe(1);
+      expect(result.members[0]).toMatchObject({ invited: 0, attended: 0, classification: 'Inactive' });
+      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 });
+    });
+
+    it('returns a fully internally-consistent zeroed payload for a no-rows committee — no member classifies High or counts active, regardless of roster tenure', async () => {
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([
+        member('veteran'), // long-tenured, never invited — would classify Inactive either way
+        member('new-joiner', { created_at: recentJoin }), // the bug case: recently joined, no data
+        member('emeritus-member', { voting: { status: 'Emeritus' } as never }), // seat-type fact, not a computed metric
+      ]);
+      execute.mockResolvedValueOnce({ rows: [] }); // genuinely empty query, not a missing-object error
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(false);
+      expect(result.members.find((m) => m.uid === 'veteran')).toMatchObject({ classification: 'Inactive' });
+      expect(result.members.find((m) => m.uid === 'new-joiner')).toMatchObject({ classification: 'Inactive', invited: 0, attended: 0 });
+      // Emeritus is a roster seat-type fact, independent of engagement data — still shown, but it
+      // doesn't count toward active_count/at_risk_count either way (isCommitteeMemberActive excludes it).
+      expect(result.members.find((m) => m.uid === 'emeritus-member')).toMatchObject({ classification: 'Emeritus' });
+      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, total_count: 3, at_risk_count: 0 });
+    });
+
+    it('still tenure-graces a roster member added since the model refresh when the committee DOES have real data (data_available:true)', async () => {
+      // Distinguishes the fix above: the roster created_at fallback is suppressed only when the
+      // whole committee has zero rows. When data_available is true (this committee has real data)
+      // and one specific member's row just hasn't landed yet, tenure grace still applies — that's
+      // a real, if incomplete, data context, not a fabricated one.
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('has-data'), member('new-joiner', { created_at: recentJoin })]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'has-data', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(true);
+      expect(result.members.find((m) => m.uid === 'new-joiner')).toMatchObject({ classification: 'High', invited: 0 });
+      expect(result.summary.active_count).toBe(2); // both members active: one via real attendance, one via tenure grace
     });
 
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {

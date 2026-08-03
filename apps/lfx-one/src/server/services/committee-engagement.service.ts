@@ -164,15 +164,19 @@ export class CommitteeEngagementService {
    * expected occurrence.
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
-   * always reflects the full committee; a member with no matching row — the live-degrade case, or
-   * (on an otherwise fully successful, `data_available: true` live read) a roster member added
-   * since the model's last daily refresh — defaults to `invited=0, attended=0`, but
-   * `role`/`voting_status`/join-date fall back to the roster's own values (see below) whenever the
-   * row is absent or its own value for that field is missing — these three are roster attributes
-   * the warehouse row also mirrors, not warehouse-computed metrics, so the roster is an equally
-   * authoritative source when the row can't supply them. A roster-Emeritus member still classifies
-   * `Emeritus`; a member who genuinely joined within the window still gets the tenure-grace `High`
-   * instead of `Inactive`; everyone else classifies `Inactive`.
+   * always reflects the full committee; a member with no matching row — the whole-committee
+   * `dataAvailable: false` case, or (on an otherwise fully successful, `dataAvailable: true` live
+   * read) a roster member added since the model's last daily refresh — defaults to `invited=0,
+   * attended=0`, but `role`/`voting_status`/join-date fall back to the roster's own values (see
+   * below) whenever the row is absent or its own value for that field is missing — these three are
+   * roster attributes the warehouse row also mirrors, not warehouse-computed metrics, so the roster
+   * is an equally authoritative source when the row can't supply them. A roster-Emeritus member
+   * still classifies `Emeritus` regardless of `dataAvailable` (a seat-type fact, not a computed
+   * metric). The roster `created_at` tenure-grace fallback, though, only fires when `dataAvailable`
+   * is true — a genuinely joined-within-window member gets `High` instead of `Inactive` when their
+   * committee has real (if individually unmatched) data, but not when the whole committee returned
+   * zero rows: with zero real data to correlate against, tenure-grace `High` on literal 0/0 counts
+   * would contradict `dataAvailable: false` rather than degrade honestly to `Inactive`.
    */
   private buildResponse(
     req: Request,
@@ -236,7 +240,17 @@ export class CommitteeEngagementService {
       // is a required roster field, so it's always available to fall back to, and discarding it here
       // would cost a recently-joined member their tenure grace (case 2 of the classifier's decision
       // order) whenever the row's own date is missing, blank, or unparseable.
-      const joinedWithinWindow = isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || isJoinedWithinWindow(member.created_at, windowStart);
+      //
+      // The roster `created_at` fallback is gated on `dataAvailable`, though — it only makes sense
+      // when the committee genuinely HAS warehouse data and this one member's row is individually
+      // missing (e.g. added since the model's last refresh). When `dataAvailable` is false (the
+      // whole committee returned zero rows), there is no engagement data at all to correlate tenure
+      // against; treating every recent roster joiner as tenure-graced `High` in that state produced
+      // an internally inconsistent payload — `data_available:false` and `attendance_rate:0`
+      // alongside a nonzero `active_count` and `High` classifications on literal 0/0 counts. `row?.`
+      // is unaffected by this gate: a matched row can only exist when `dataAvailable` is already true.
+      const joinedWithinWindow =
+        isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || (dataAvailable && isJoinedWithinWindow(member.created_at, windowStart));
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;

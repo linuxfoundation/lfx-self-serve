@@ -90,11 +90,18 @@ export interface CommitteeEngagementResponse {
    * so a real, currently-populated committee should always yield >=1 row; zero rows most likely
    * means this committee isn't covered by the model yet, not that engagement is genuinely zero for
    * everyone). Every member then shows zeroed counts and classifies `Inactive` — except a roster
-   * member with a real `Emeritus` voting status (classifies `Emeritus`) or one who genuinely joined
-   * within the requested window (classifies `High`, the tenure-grace tier, instead of `Inactive` off
-   * zero invites) — the roster's own join date still feeds that classification even on an unmatched
-   * row, though it isn't itself a response field. `role`/`voting_status` are roster passthroughs and
-   * stay populated regardless of whether a warehouse row matched.
+   * member with a real `Emeritus` voting status, which still classifies `Emeritus` (a seat-type
+   * fact independent of whether any engagement data exists). The tenure-grace `High` exception
+   * (a member who genuinely joined within the requested window, classified `High` instead of
+   * `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with zero real
+   * rows for the whole committee, there is no engagement data to correlate tenure against, so every
+   * non-Emeritus member classifies `Inactive` and `summary` is entirely zeroed; asserting `High` (or
+   * a nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
+   * `attendance_rate: 0` in the same payload. The tenure-grace exception only fires when
+   * `data_available` is `true` and this *specific* member's row is individually missing (e.g. a
+   * roster member added since the model's last daily refresh) — the committee has real data, just
+   * not yet for this member. `role`/`voting_status` are roster passthroughs and stay populated
+   * regardless of whether a warehouse row matched, in both cases.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
    * production); a live query that returned >=1 row; or a live cache hit reading back that same
@@ -103,8 +110,8 @@ export interface CommitteeEngagementResponse {
    *
    * The UI should key its "no data available" placeholder state off this flag rather than inferring
    * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`
-   * always populated and counts zeroed on `false` (see above for the roster-Emeritus and
-   * tenure-grace exceptions to the `Inactive` default).
+   * always populated and counts zeroed on `false` (see above for the roster-Emeritus exception, and
+   * the tenure-grace exception's `data_available:true`-only condition).
    */
   data_available: boolean;
   /**
