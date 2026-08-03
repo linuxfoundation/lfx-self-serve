@@ -132,6 +132,19 @@ describe('collectClaEmails', () => {
 
     expect(collectClaEmails('alice@x.org', emailData as never, [])).toEqual(['alice@x.org', 'verified@x.org']);
   });
+
+  it('caps the set at the upstream 100-email limit, keeping the session primary first', () => {
+    // 150 unique verified alternates would blow past `/v4/my-clas`'s maxItems:100 and 400 the request.
+    const emailData = {
+      primary_email: 'primary@x.org',
+      alternate_emails: Array.from({ length: 150 }, (_, i) => ({ email: `alt${i}@x.org`, verified: true })),
+    };
+
+    const result = collectClaEmails('primary@x.org', emailData as never, []);
+
+    expect(result).toHaveLength(100);
+    expect(result[0]).toBe('primary@x.org'); // primary priority preserved
+  });
 });
 
 describe('toMyClaAgreement', () => {

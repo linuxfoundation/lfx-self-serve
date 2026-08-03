@@ -23,6 +23,12 @@ import { logger } from './logger.service';
 
 const SERVICE = 'cla_service';
 
+// Upstream `/v4/my-clas` caps the repeatable `email` query param at maxItems: 100
+// (easycla cla-backend-go/swagger/cla.v2.yaml). Exceeding it fails validation and 400s the
+// whole request, so the collected set is capped rather than letting a pathological account
+// (many verified + linked-identity emails) break the page instead of degrading.
+const MAX_CLA_EMAILS = 100;
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in isolation). No I/O.
 // ---------------------------------------------------------------------------
@@ -63,6 +69,10 @@ export function normalizeGithubId(rawUserId: string): string | null {
  * auth-service email read is unavailable. Values are lowercased/trimmed and deduped. Emails are
  * sent only via `email` (never `secondaryEmail`, an unindexed upstream table scan), so a work
  * email EasyCLA filed solely as a record's secondary email is intentionally not matched.
+ *
+ * The result is capped at MAX_CLA_EMAILS to stay within the upstream `email` param limit. The
+ * session primary is added first and higher-signal sources precede linked-identity emails, so
+ * truncating the tail preserves primary priority.
  */
 export function collectClaEmails(primaryEmail: string | null, emailData: EmailManagementData | null, identities: Auth0Identity[]): string[] {
   const emails = new Set<string>();
@@ -84,7 +94,7 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
     add(identity.profileData?.email);
   }
 
-  return [...emails];
+  return [...emails].slice(0, MAX_CLA_EMAILS);
 }
 
 /**
