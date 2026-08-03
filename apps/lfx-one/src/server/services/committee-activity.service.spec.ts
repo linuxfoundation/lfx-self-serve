@@ -108,7 +108,11 @@ function vote(overrides: Partial<Vote> = {}): Vote {
     name: 'Q1 Budget',
     status: PollStatus.ACTIVE,
     creation_time: '2026-01-02T10:00:00Z',
-    end_time: '2026-01-10T00:00:00Z',
+    // Far future, deliberately — mapVoteToEvent now treats a passed end_time as an implicit close
+    // (isVoteDeadlinePast), so a fixture meant to default to "still open" can't use a fixed date
+    // that will eventually lapse into the past as real time passes. Tests exercising a
+    // deadline-passed closure override this explicitly with a past end_time.
+    end_time: '2099-01-01T00:00:00Z',
     ...overrides,
   } as Vote;
 }
@@ -861,6 +865,24 @@ describe('CommitteeActivityService', () => {
       getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, early_end_time: '2026-01-09T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data[0].type).toBe('vote_closed');
+    });
+
+    it('maps an ACTIVE vote whose end_time has already passed to vote_closed (deadline-passed regression)', async () => {
+      // An async backend job may not have flipped status to ENDED yet, but a vote whose end_time
+      // is in the past is effectively over — matching isVoteCalendarEventPast's established
+      // "deadline passed" semantics elsewhere in the app. Without this, it stayed vote_opened at
+      // creation_time indefinitely. Cursor Bugbot caught this as a follow-up to the casing fix.
+      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, end_time: '2020-01-01T00:00:00Z' })] });
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({ type: 'vote_closed', occurred_at: '2020-01-01T00:00:00Z' });
+    });
+
+    it('does not close an ACTIVE vote whose end_time is still in the future', async () => {
+      // Negative control for the deadline-passed test above.
+      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, end_time: '2099-06-01T00:00:00Z' })] });
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0].type).toBe('vote_opened');
     });
 
     it('maps a mixed-case ended vote status to vote_closed, not vote_opened (casing bug regression)', async () => {

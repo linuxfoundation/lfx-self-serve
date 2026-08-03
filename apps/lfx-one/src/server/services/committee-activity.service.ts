@@ -137,6 +137,19 @@ function isCutoffDrivenClosure(survey: Survey): boolean {
   return cutoffDate !== null && !Number.isNaN(cutoffDate.getTime()) && new Date() >= cutoffDate;
 }
 
+/**
+ * True when `deadlineIso` is absent-but-invalid or already passed — mirrors meeting.utils.ts's
+ * `isCalendarDeadlinePast` (reimplemented, not imported; see mapVoteToEvent's doc comment for why).
+ * Unlike that helper, `undefined`/empty is treated as "not past" (`false`) rather than checked —
+ * `mapVoteToEvent` only calls this with `vote.end_time`, which the ENDED/early_end_time checks
+ * ahead of it already partially cover; an absent end_time here just means "no deadline to compare."
+ */
+function isVoteDeadlinePast(deadlineIso: string | null | undefined): boolean {
+  if (!deadlineIso) return false;
+  const ms = Date.parse(deadlineIso);
+  return Number.isNaN(ms) ? true : Date.now() >= ms;
+}
+
 function isAtOrAfterSince(occurredAt: string, since: string | undefined): boolean {
   if (!since) return true;
   const ms = Date.parse(occurredAt);
@@ -378,10 +391,26 @@ export class CommitteeActivityService {
     // Every item in `page` now has a real timestamp (windowed already dropped the ones that
     // don't), so the last page item is always a valid cursor position — no need to search backward
     // for one. `hasMore` still requires a real `lastPageItem` to anchor a cursor on — if saturation
-    // is detected but this page came back empty (every fetched row got filtered out), there is no
-    // position left to resume from, so this degrades to the same "nothing more to report" outcome
-    // as before; an over-fetch this narrow (an entire upstream page filtered to zero matches) is
-    // accepted as a known residual rather than solved by a second round-trip within this call.
+    // is detected but this page came back empty, there is no position left to resume from, so this
+    // degrades to the same "nothing more to report" outcome as before.
+    //
+    // This isn't just an in-memory-filter edge case: confirmed against `lfx-v2-query-service`'s own
+    // source (`internal/service/resource_search.go`) and documented contract
+    // (`docs/query-service-contract.md`), FGA access-checking runs AFTER OpenSearch paginates —
+    // `page_token` reflects the raw (pre-filter) OpenSearch page, so a leg's single fetched page can
+    // come back with fewer visible resources than `page_size`, including zero, while `page_token`
+    // is still present. `anyLegSaturated` (above) already correctly reflects this via each leg's
+    // real `page_token` (not row count) — but if EVERY leg's single page happens to filter down to
+    // zero visible rows, `windowed`/`page` end up empty too, `lastPageItem` is undefined, and
+    // `hasMore` forces `false` regardless of `anyLegSaturated`: this response looks terminal even
+    // though a later upstream page (of any saturated leg) could contain rows this caller is
+    // authorized to see. Closing this for real means looping a leg's own upstream call until a
+    // visible candidate or exhaustion — ruled out for v1 by the ticket's "bounded calls, no
+    // per-event follow-ups" requirement (same constraint documented at the top of this method).
+    // Accepted as a known residual (per-request, not per-response — a follow-up request with the
+    // same `since`/no cursor would simply re-run this same fetch and could still surface nothing
+    // new if the access-filtering pattern hasn't changed), not solved by a second round-trip within
+    // this call.
     const lastPageItem = page.at(-1);
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
@@ -595,7 +624,16 @@ export class CommitteeActivityService {
     // directly. Skipping it here misclassified a non-canonical-case "ENDED" vote as vote_opened,
     // stamped at creation time instead of close time — caught independently by Copilot and Cursor
     // Bugbot, confirmed against current code.
-    const isClosed = normalizePollStatus(vote.status) === PollStatus.ENDED || !!vote.early_end_time;
+    //
+    // isVoteDeadlinePast(vote.end_time) — mirrors isVoteCalendarEventPast's third check
+    // (isCalendarDeadlinePast(early_end_time ?? end_time)) rather than importing it: that helper
+    // lives in meeting.utils.ts, which imports @angular/common/http — the same Angular-runtime-leak
+    // this file already avoids importing (see activity-feed.utils.ts's identical avoidance).
+    // Reimplemented locally instead. An ACTIVE vote whose end_time has already passed (but hasn't
+    // been flipped to ENDED by an async backend job yet) is still effectively over — without this,
+    // it stayed vote_opened at creation_time indefinitely, sorting far from where it belongs in the
+    // feed. Cursor Bugbot caught this as a follow-up to the casing fix above.
+    const isClosed = normalizePollStatus(vote.status) === PollStatus.ENDED || !!vote.early_end_time || isVoteDeadlinePast(vote.end_time);
     const occurredAt = isClosed
       ? firstValidTimestamp(vote.early_end_time, vote.end_time, vote.last_modified_time, vote.creation_time)
       : firstValidTimestamp(vote.creation_time, vote.last_modified_time);
