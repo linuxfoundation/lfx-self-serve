@@ -179,6 +179,20 @@ describe('OrgLensMeetingsService — influence row delta labels', () => {
 
     expect(row.deltaLabel).toBe('+61,328.8%');
   });
+
+  // A reference population of zero would assert that no company has influence on the project, so an
+  // absent RANK_TOTAL_ALL has to stay null rather than coerce through the count path.
+  it('keeps an absent reference population null instead of zeroing it', async () => {
+    const row = await firstRow({ RANK_TOTAL_ALL: null });
+
+    expect(row.rankTotalAll).toBeNull();
+  });
+
+  it('passes a present reference population through as a count', async () => {
+    const row = await firstRow({ RANK_TOTAL_ALL: 11688 });
+
+    expect(row.rankTotalAll).toBe(11688);
+  });
 });
 
 describe('OrgLensMeetingsService — cache keys', () => {
@@ -196,5 +210,17 @@ describe('OrgLensMeetingsService — cache keys', () => {
     await call(new OrgLensMeetingsService());
 
     expect(withOrgCache).toHaveBeenCalledWith('acc', key, 3600, expect.any(Function), expect.anything());
+  });
+});
+
+describe('OrgLensMeetingsService — influence range filter', () => {
+  it.each(['past365d', 'past90d', 'previousYear'] as const)('filters the influence query on %s', async (range) => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new OrgLensMeetingsService().getInfluenceRows(req, 'acc', range);
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain('TIME_RANGE_TYPE = ?');
+    expect(binds).toEqual(['acc', range]);
   });
 });

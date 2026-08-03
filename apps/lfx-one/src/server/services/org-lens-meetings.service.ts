@@ -149,10 +149,11 @@ export class OrgLensMeetingsService {
   public async getInfluenceRows(req: Request, accountId: string, range: OrgMeetingsSupportedTimeRange): Promise<OrgInfluenceRow[]> {
     return withOrgCache(
       accountId,
-      // `v4`: the row shape gained `displayedInfluence` and `rankTotalAll`, and `isInfluenceRows`
-      // only checks three fields — so a warm `v3` entry would satisfy the guard while missing both.
-      // The range suffix then partitions per window; the version bump and the suffix are both
-      // required, since neither alone prevents an old-shape hit.
+      // The range suffix partitions entries per window, and is on its own enough to keep the
+      // pre-range `v3` keys from being read — `withOrgCache` does an exact GET, so a suffixed key
+      // can never hit an unsuffixed entry. `v4` is deliberate signalling that the row shape gained
+      // `displayedInfluence` and `rankTotalAll`, which still matters because `isInfluenceRows`
+      // checks only three fields and would not reject the old shape.
       `meetings-influence:v4:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
