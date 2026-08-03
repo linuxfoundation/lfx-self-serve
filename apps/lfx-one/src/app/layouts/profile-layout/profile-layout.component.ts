@@ -194,9 +194,10 @@ export class ProfileLayoutComponent {
       return;
     }
 
-    // The drawer builds metadata with `key: undefined` for empty fields; those keys are omitted
-    // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
-    // optimistic view would clear fields that were never actually persisted as cleared.
+    // The drawer builds `key: undefined` for empty name/select fields (and for every field when the
+    // profile metadata failed to load); those keys are omitted from the PATCH, so the backend leaves
+    // them unchanged. Drop them here too — otherwise the optimistic view would clear fields that were
+    // never actually persisted as cleared. Cleared free-text fields send '' and are kept.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
 
     const mergedProfile: CombinedProfile = {
@@ -244,21 +245,24 @@ export class ProfileLayoutComponent {
     } catch {
       return;
     }
-    // Mirrors the drawer onSubmit mapping: free-text fields send the raw value so '' clears a
-    // previously-set value; name and selects keep `|| undefined` (empty = unchanged).
+    // Mirrors the drawer onSubmit mapping. Clear-to-empty only applies when the profile metadata
+    // loaded — on a failed load (profile === null, or no base profile yet) we omit empties rather
+    // than wipe unloaded fields with ''. Name and selects keep `|| undefined` (empty = unchanged).
+    const metadataLoaded = this.combinedProfile?.profile != null;
+    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
     const userMetadata: Partial<UserMetadata> = {
       given_name: formData.given_name || undefined,
       family_name: formData.family_name || undefined,
-      job_title: formData.job_title,
+      job_title: freeText(formData.job_title),
       organization: formData.organization || undefined,
       country: formData.country || undefined,
       state_province: formData.state_province || undefined,
-      city: formData.city,
-      address: formData.address,
-      postal_code: formData.postal_code,
-      phone_number: formData.phone_number,
+      city: freeText(formData.city),
+      address: freeText(formData.address),
+      postal_code: freeText(formData.postal_code),
+      phone_number: freeText(formData.phone_number),
       t_shirt_size: formData.t_shirt_size || undefined,
-      bio: formData.bio,
+      bio: freeText(formData.bio),
     };
 
     const updateData: ProfileUpdateRequest = {

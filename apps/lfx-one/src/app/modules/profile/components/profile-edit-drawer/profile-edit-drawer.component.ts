@@ -205,23 +205,27 @@ export class ProfileEditDrawerComponent {
     this.saving.set(true);
     const formValue = this.profileForm.value;
 
-    // organization_domain is resolved server-side from the organization name on every save path,
-    // so the drawer only needs to send the selected organization here.
-    // Free-text fields send the raw value so '' clears a previously-set value; name and selects keep
+    // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
+    // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
+    const metadataLoaded = this.combinedProfile()?.profile != null;
+    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
+
+    // organization_domain is resolved server-side from the organization name on every save path, so
+    // the drawer only needs to send the selected organization here. Name and selects keep
     // `|| undefined` (empty = unchanged, not clearable per product decision).
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,
-      job_title: formValue.job_title,
+      job_title: freeText(formValue.job_title),
       organization: formValue.organization || undefined,
       country: formValue.country || undefined,
       state_province: formValue.state_province || undefined,
-      city: formValue.city,
-      address: formValue.address,
-      postal_code: formValue.postal_code,
-      phone_number: formValue.phone_number,
+      city: freeText(formValue.city),
+      address: freeText(formValue.address),
+      postal_code: freeText(formValue.postal_code),
+      phone_number: freeText(formValue.phone_number),
       t_shirt_size: formValue.t_shirt_size || undefined,
-      bio: formValue.bio,
+      bio: freeText(formValue.bio),
     };
 
     const updateData: ProfileUpdateRequest = {
