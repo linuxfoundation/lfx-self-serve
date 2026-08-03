@@ -16,6 +16,7 @@ import { DataDogRumService } from './shared/services/datadog-rum.service';
 import { FeatureFlagService } from './shared/services/feature-flag.service';
 import { IntercomService } from './shared/services/intercom.service';
 import { PlausibleService } from './shared/services/plausible.service';
+import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
 
@@ -107,6 +108,7 @@ export class AppComponent {
     }
 
     this.initAccessDeniedToast();
+    this.initProjectQueryParamSync();
   }
 
   // Fails closed: missing JWT or App ID skips boot.
@@ -189,6 +191,55 @@ export class AppComponent {
           summary: 'Access Denied',
           detail: ACCESS_DENIED_MESSAGES[noticeKey] ?? "You don't have permission to perform this action for this project.",
         });
+      });
+  }
+
+  // Backfills ?project=<slug> for cookie-restored context on a fresh load so every copyable URL
+  // is self-describing (LFXV2-2837). Skipped whenever the activated route carries its own params
+  // (e.g. /foundation/groups/:id) — those entity pages derive context from the entity itself via
+  // syncEntityProjectContext, which may resolve a different project than the cookie; backfilling
+  // here first would race it and could write the wrong slug into the URL.
+  private initProjectQueryParamSync(): void {
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) return;
+
+    const router = inject(Router);
+    const location = inject(Location);
+    const projectContextService = inject(ProjectContextService);
+    const destroyRef = inject(DestroyRef);
+
+    router.events
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(destroyRef)
+      )
+      .subscribe(() => {
+        // Read the live browser URL rather than router.url — the access-denied listener above may
+        // have already stripped `_notice` via a direct Location.replaceState on this same
+        // NavigationEnd tick, and router.url does not reflect history changes made outside the
+        // Router. Reparsing router.url here would resurrect the stripped param.
+        const parsed = router.parseUrl(location.path(true));
+        if ('project' in parsed.queryParams) return;
+
+        // Derived from this navigation's own snapshot rather than
+        // projectContextService.activeRouteLensKind() — that signal is updated by
+        // MainLayoutComponent on this same NavigationEnd, but AppComponent's subscription (registered
+        // at bootstrap) always runs first, so reading the signal here would see the previous route's
+        // stale kind for one tick on lens-less routes (e.g. /profile, /badges).
+        let snapshot = router.routerState.snapshot.root;
+        let kind: 'foundation' | 'project' | null = null;
+        while (snapshot.firstChild) {
+          snapshot = snapshot.firstChild;
+          const declared = snapshot.data['lens'];
+          if (declared === 'foundation' || declared === 'project') kind = declared;
+        }
+        if (Object.keys(snapshot.params).length > 0) return;
+        if (!kind) return;
+
+        const context = kind === 'foundation' ? projectContextService.selectedFoundation() : projectContextService.selectedProject();
+        if (!context?.slug) return;
+
+        parsed.queryParams['project'] = context.slug;
+        location.replaceState(router.serializeUrl(parsed));
       });
   }
 }
