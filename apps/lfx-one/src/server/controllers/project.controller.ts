@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { AddUserToProjectRequest, CreateProjectDocumentRequest, UpdateUserRoleRequest, UploadProjectDocumentRequest } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
@@ -21,16 +21,6 @@ import { getEffectiveEmail } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Resource segments the lens-redirect endpoint may forward to. Every entry MUST have both a
- * `/foundation/<x>` and `/project/<x>` route in app.routes.ts and accept a `?project=<slug>`
- * context (projectQueryParamGuard). The endpoint forwards ONLY to segments in this set — the
- * `:resource` param is never echoed raw into the redirect Location, so it cannot become an
- * open redirect. Keep in sync with the lens-prefixed route table; project.controller.spec.ts
- * asserts each entry exists under both lenses.
- */
-export const LENS_REDIRECT_RESOURCES = new Set<string>(['votes', 'meetings', 'mailing-lists', 'groups', 'documents', 'surveys', 'newsletters', 'settings']);
 
 /**
  * Controller for handling project HTTP requests
@@ -986,9 +976,10 @@ export class ProjectController {
 
       const slugToId = await this.projectService.getProjectIdBySlug(req, slug);
       if (!slugToId.exists) {
-        logger.debug(req, 'get_lens_redirect', 'Slug not found; redirecting to flat resource route', { slug, resource });
+        logger.warning(req, 'get_lens_redirect', 'Slug not found; redirecting to flat resource route', { slug, resource });
+        logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, fallback: 'slug_not_found' });
         res.setHeader('Cache-Control', 'no-store');
-        res.redirect(302, `/${resource}`);
+        res.redirect(302, `/${resource}?project=${encodeURIComponent(slug)}`);
         return;
       }
 
@@ -1007,8 +998,9 @@ export class ProjectController {
         resource,
         err: error,
       });
+      logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, fallback: 'error' });
       res.setHeader('Cache-Control', 'no-store');
-      res.redirect(302, `/${resource}`);
+      res.redirect(302, `/${resource}?project=${encodeURIComponent(slug)}`);
     }
   }
 }
