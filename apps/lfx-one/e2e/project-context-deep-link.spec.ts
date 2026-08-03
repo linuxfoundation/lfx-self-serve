@@ -222,12 +222,17 @@ test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
   });
 
   test('tab switch preserves ?project= across an in-app navigation', async ({ page }) => {
+    await page.route('**/api/meetings*', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+    });
+
     await goto(page, `/foundation/groups?project=${MOCK_FOUNDATION_SLUG}`);
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    await page.getByTestId('sidebar-item-groups').click();
+    await page.getByTestId('sidebar-item-meetings').click();
 
-    await expect(page).toHaveURL(new RegExp(`/foundation/groups\\?project=${MOCK_FOUNDATION_SLUG}$`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/foundation/meetings\\?project=${MOCK_FOUNDATION_SLUG}$`), { timeout: ELEMENT_TIMEOUT });
   });
 
   test('fresh load with cookie-restored context backfills ?project= with no extra navigation', async ({ page }) => {
