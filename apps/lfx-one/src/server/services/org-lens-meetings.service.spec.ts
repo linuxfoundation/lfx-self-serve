@@ -46,9 +46,11 @@ function influenceRow(overrides: Record<string, unknown> = {}): Record<string, u
     BAND: 'leading',
     RANK: 1,
     RANK_TOTAL: 10,
+    RANK_TOTAL_ALL: 11688,
+    DISPLAYED_INFLUENCE: 41,
     FROM_ATTENDANCE_PCT: 46,
     DELTA_PCT: 9.9,
-    PRIOR_YEAR_SCORE: 38,
+    PRIOR_WINDOW_SCORE: 38,
     TREND_DIRECTION: 'up',
     BREAKDOWN: null,
     ...overrides,
@@ -122,7 +124,7 @@ describe('OrgLensMeetingsService — KPI delta labels', () => {
 describe('OrgLensMeetingsService — influence row delta labels', () => {
   async function firstRow(overrides: Record<string, unknown> = {}) {
     execute.mockResolvedValue({ rows: [influenceRow(overrides)] });
-    const rows = await new OrgLensMeetingsService().getInfluenceRows(req, 'acc');
+    const rows = await new OrgLensMeetingsService().getInfluenceRows(req, 'acc', 'past365d');
     return rows[0];
   }
 
@@ -135,34 +137,34 @@ describe('OrgLensMeetingsService — influence row delta labels', () => {
   });
 
   it('renders "New" from a zero prior-year score', async () => {
-    const row = await firstRow({ PRIOR_YEAR_SCORE: 0 });
+    const row = await firstRow({ PRIOR_WINDOW_SCORE: 0 });
 
     expect(row.deltaLabel).toBe('New');
     expect(row.deltaDirection).toBe('up');
   });
 
   it('treats a sub-epsilon prior score as zero rather than dividing by it', async () => {
-    const row = await firstRow({ PRIOR_YEAR_SCORE: 1e-9 });
+    const row = await firstRow({ PRIOR_WINDOW_SCORE: 1e-9 });
 
     expect(row.deltaLabel).toBe('New');
   });
 
   it('renders "No change" when the influence score stays at zero', async () => {
-    const row = await firstRow({ ECOSYSTEM_INFLUENCE: 0, PRIOR_YEAR_SCORE: 0 });
+    const row = await firstRow({ ECOSYSTEM_INFLUENCE: 0, PRIOR_WINDOW_SCORE: 0 });
 
     expect(row.deltaLabel).toBe('No change');
     expect(row.deltaDirection).toBe('flat');
   });
 
   it('renders "No change" when a non-zero baseline has no percentage delta', async () => {
-    const row = await firstRow({ DELTA_PCT: 0, PRIOR_YEAR_SCORE: 10 });
+    const row = await firstRow({ DELTA_PCT: 0, PRIOR_WINDOW_SCORE: 10 });
 
     expect(row.deltaLabel).toBe('No change');
     expect(row.deltaDirection).toBe('flat');
   });
 
   // An absent prior score is unknown, not small — the one case with no percentage to fall back to.
-  it.each([{ PRIOR_YEAR_SCORE: null }, { PRIOR_YEAR_SCORE: undefined }])(
+  it.each([{ PRIOR_WINDOW_SCORE: null }, { PRIOR_WINDOW_SCORE: undefined }])(
     'keeps the unknown-baseline label when the prior score is absent',
     async (overrides) => {
       const row = await firstRow(overrides);
@@ -177,12 +179,30 @@ describe('OrgLensMeetingsService — influence row delta labels', () => {
 
     expect(row.deltaLabel).toBe('+61,328.8%');
   });
+
+  // A reference population of zero would assert that no company has influence on the project, so an
+  // absent RANK_TOTAL_ALL has to stay null rather than coerce through the count path.
+  it('keeps an absent reference population null instead of zeroing it', async () => {
+    const row = await firstRow({ RANK_TOTAL_ALL: null });
+
+    expect(row.rankTotalAll).toBeNull();
+  });
+
+  it('passes a present reference population through as a count', async () => {
+    const row = await firstRow({ RANK_TOTAL_ALL: 11688 });
+
+    expect(row.rankTotalAll).toBe(11688);
+  });
 });
 
 describe('OrgLensMeetingsService — cache keys', () => {
   it.each([
     { surface: 'kpi', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getKpiSummary(req, 'acc', 'past365d'), key: 'meetings-kpi:v2:past365d' },
-    { surface: 'influence', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getInfluenceRows(req, 'acc'), key: 'meetings-influence:v3' },
+    {
+      surface: 'influence',
+      call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getInfluenceRows(req, 'acc', 'past365d'),
+      key: 'meetings-influence:v4:past365d',
+    },
     { surface: 'spend', call: (s: InstanceType<typeof OrgLensMeetingsService>) => s.getSpendBreakdown(req, 'acc', 'past365d'), key: 'meetings-spend:past365d' },
   ])('$surface reads from $key', async ({ call, key }) => {
     execute.mockResolvedValue({ rows: [] });
@@ -190,5 +210,17 @@ describe('OrgLensMeetingsService — cache keys', () => {
     await call(new OrgLensMeetingsService());
 
     expect(withOrgCache).toHaveBeenCalledWith('acc', key, 3600, expect.any(Function), expect.anything());
+  });
+});
+
+describe('OrgLensMeetingsService — influence range filter', () => {
+  it.each(['past365d', 'past90d', 'previousYear'] as const)('filters the influence query on %s', async (range) => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new OrgLensMeetingsService().getInfluenceRows(req, 'acc', range);
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain('TIME_RANGE_TYPE = ?');
+    expect(binds).toEqual(['acc', range]);
   });
 });
