@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { isUuid } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { logger } from '../services/logger.service';
@@ -23,35 +24,43 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
   return v1Id === null || typeof v1Id === 'string';
 }
 
-/** Matches a bare UUID (case-insensitive) — the `lfx-v1-sync-helper` responder's documented shape
- * for `committee_member.uid.*`. */
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Matches a valid Salesforce ID (15-char case-sensitive form, or its 18-char case-insensitive
+ * checksum-suffixed form) — the other arm of the discriminated union: upstream validates the third
+ * field with `sfid.IsValid` (15 or 18 alphanumeric characters) before treating it as usable. */
+const SFID_PATTERN = /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/;
 
 /**
  * Parses a `committee_member.uid.<v2Uid>` response (`"{project_sfid}:{committee_sfid}:{member_sfid}"`)
  * into the usable member id, or `null` if the response can't be trusted yet.
  *
- * Two rejections beyond a plain shape mismatch, both driven by `lfx-v1-sync-helper`'s own
+ * Three rejections beyond a plain shape mismatch, all driven by `lfx-v1-sync-helper`'s own
  * documented contract for this key (its `parseCommitteeMemberReverseMapping`): the third field is a
  * *discriminated union*, not always a usable person identifier.
  *
  * 1. Requires exactly 3 segments, not "at least 3" — a legacy 4-field `recordSFID:contactSFID` value
  *    (an extra colon from an older mapping generation) would otherwise silently fold its extra
  *    segment into this parser's 3rd field, handing back the wrong id without any error.
- * 2. Rejects a 3rd field that itself looks like a UUID. Per the upstream contract, a UUID there means
- *    the "poisoned" pre-backfill form of this mapping: the `platform-community__c` *record* SFID
- *    (a committee-membership row identifier), not the member's actual contact identity — the exact
- *    bug LFXV2-2673's backfill script exists to repair. Accepting it here would report a *successful*
- *    resolution to a value that can never join `MEMBER_USER_ID`, and worse, positive-cache that wrong
- *    value for `MEMBER_V1_MAPPING_TTL_SECONDS` (7 days) — masking the mapping for a week even after
- *    the backfill repairs it. Returning `null` instead routes this uid through
- *    `resolveV1MappingBatch`'s indeterminate path (never cached, logged, retried next request), which
- *    is the honest state for a transient, backfill-fixable condition.
+ * 2. Rejects a 3rd field that itself looks like a UUID (`isUuid`, from `@lfx-one/shared/utils` —
+ *    already the codebase's shared UUID-vs-Salesforce-ID predicate, e.g. `project.controller.ts`).
+ *    Per the upstream contract, a UUID there means the "poisoned" pre-backfill form of this mapping:
+ *    the `platform-community__c` *record* SFID (a committee-membership row identifier), not the
+ *    member's actual contact identity — the exact bug LFXV2-2673's backfill script exists to repair.
+ * 3. Rejects a 3rd field that ISN'T a valid Salesforce ID shape either (upstream's own
+ *    `sfid.IsValid` gate — 15 or 18 alphanumeric characters) — the other half of the same
+ *    discriminator; a malformed value here is exactly as untrustworthy as a UUID one, just via the
+ *    opposite failure mode.
+ *
+ * Accepting either untrustworthy shape would report a *successful* resolution to a value that can
+ * never join `MEMBER_USER_ID`, and worse, positive-cache that wrong value for
+ * `MEMBER_V1_MAPPING_TTL_SECONDS` (7 days) — masking the real mapping for a week even after a
+ * backfill repairs it. Returning `null` instead routes this uid through `resolveV1MappingBatch`'s
+ * indeterminate path (never cached, logged, retried next request), which is the honest state for a
+ * transient, backfill-fixable condition.
  */
 export function parseMemberMappingResponse(responseText: string): string | null {
   const parts = responseText.split(':');
   if (parts.length !== 3 || !parts[2]) return null;
-  if (UUID_PATTERN.test(parts[2])) return null;
+  if (isUuid(parts[2]) || !SFID_PATTERN.test(parts[2])) return null;
   return parts[2];
 }
 

@@ -78,13 +78,23 @@ describe('resolveV1MappingBatch', () => {
     expect(warning).toHaveBeenCalledWith(req, 'resolve_test_mapping', 'NATS lookup returned no mapping', expect.objectContaining({ v2_uid: 'a' }));
   });
 
-  it('marks an id confirmed-unresolved when the response is an error: response', async () => {
+  it('leaves an id indeterminate (NOT confirmed-unresolved) when the response is an error: response', async () => {
+    // Verified against the real lfx-v1-sync-helper responder: `error:` means its own KV read
+    // failed (JetStream unavailable, deadline exceeded) — an infrastructure fault, not proof no
+    // mapping exists. Only an empty response means that. Negative-caching this would turn a
+    // transient NATS-side blip into an hour of false "no mapping" answers.
     const natsService = buildNatsService({ 'test.uid.a': 'error: not found' });
 
     const result = await resolveV1MappingBatch(req, natsService, ['a'], baseOptions);
 
     expect(result.resolved.has('a')).toBe(false);
-    expect(result.confirmedUnresolved.has('a')).toBe(true);
+    expect(result.confirmedUnresolved.has('a')).toBe(false);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'resolve_test_mapping',
+      'NATS lookup responder returned an error; treating as indeterminate',
+      expect.objectContaining({ v2_uid: 'a', response: 'error: not found' })
+    );
   });
 
   it('leaves an id indeterminate (NOT confirmed-unresolved) when the response has no colon-delimited second segment', async () => {

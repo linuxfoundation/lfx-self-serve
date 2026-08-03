@@ -13,16 +13,20 @@ import type { NatsService } from '../services/nats.service';
  * caller that wants to cache "no mapping exists" (e.g. `member-v1-mapping.helper.ts`'s negative
  * cache) needs to tell that apart from "we don't actually know yet":
  * - `resolved`: the id mapped successfully.
- * - `confirmedUnresolved`: NATS explicitly answered "no mapping" (an empty response, or an
- *   `error:`-prefixed one) — safe to negative-cache.
+ * - `confirmedUnresolved`: NATS explicitly answered "no mapping" — an **empty** response. Per the
+ *   `lfx-v1-sync-helper` responder's own contract, empty is returned both for a genuine
+ *   not-found key and for a tombstoned (deleted) mapping — both real, confirmed "no mapping"
+ *   states, safe to negative-cache.
  * - Neither: indeterminate — the request itself threw (timeout, connection issue), the id was never
- *   attempted because the wall-clock budget broke the loop first, or `parseResponse` rejected a
- *   non-empty, non-error response (a shape mismatch, or — for a caller like the member helper whose
- *   `parseResponse` also screens out a transient/poisoned upstream value — a state that may resolve
- *   correctly on a later attempt). A caller must NOT treat this the same as `confirmedUnresolved` for
- *   caching purposes: negative-caching a parse failure would mask the exact signal (repeated
- *   "Unexpected NATS response format" warnings) that reveals a wrong parsing assumption, and could
- *   lock in a transient-but-fixable state for the full negative-cache TTL.
+ *   attempted because the wall-clock budget broke the loop first, the response was an
+ *   `error:`-prefixed one (the responder's KV read itself failed — an infrastructure fault, not a
+ *   "no mapping" answer), or `parseResponse` rejected a non-empty, non-error response (a shape
+ *   mismatch, or — for a caller like the member helper whose `parseResponse` also screens out a
+ *   transient/poisoned upstream value — a state that may resolve correctly on a later attempt). A
+ *   caller must NOT treat any of these the same as `confirmedUnresolved` for caching purposes:
+ *   negative-caching an infra blip or a parse failure would mask the exact signal (repeated
+ *   warnings) that reveals the underlying issue, and could lock in a transient-but-fixable state for
+ *   the full negative-cache TTL.
  */
 export interface V1MappingBatchResult {
   resolved: Map<string, string>;
@@ -90,14 +94,27 @@ export async function resolveV1MappingBatch(
 
       const responseText = codec.decode(response.data);
 
-      // Only an explicit empty/`error:` response is a *confirmed* "no mapping" answer — universal
-      // across every consumer of this subject, unlike the entity-specific `parseResponse` below.
-      if (!responseText || responseText.startsWith('error:')) {
+      // Only an explicit empty response is a *confirmed* "no mapping" answer, universal across every
+      // consumer of this subject — the responder returns empty for both a genuine not-found key and
+      // a tombstoned mapping (verified against the real lookup handler).
+      if (!responseText) {
         logger.warning(req, logOperation, 'NATS lookup returned no mapping', {
           v2_uid: v2Uid,
-          response: responseText || '(empty)',
+          response: '(empty)',
         });
         return { status: 'confirmed-unresolved', id: v2Uid };
+      }
+
+      // `error:` means the responder's own KV read failed (JetStream unavailable, bucket
+      // unreachable, deadline exceeded) — an infrastructure fault, not proof no mapping exists.
+      // Indeterminate, not confirmed-unresolved: caching this as "no mapping" would turn a transient
+      // NATS-side blip into an hour of false negatives for every affected id.
+      if (responseText.startsWith('error:')) {
+        logger.warning(req, logOperation, 'NATS lookup responder returned an error; treating as indeterminate', {
+          v2_uid: v2Uid,
+          response: responseText,
+        });
+        return null;
       }
 
       const v1Id = parseResponse(responseText);

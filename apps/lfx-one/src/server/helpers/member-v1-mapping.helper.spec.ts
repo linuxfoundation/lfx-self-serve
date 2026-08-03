@@ -18,6 +18,13 @@ const { getJson, setJson, buildMemberV1MappingCacheKey, resolveV1MappingBatch, w
 vi.mock('@lfx-one/shared/constants', () => ({
   VALKEY_CACHE: { MEMBER_V1_MAPPING_TTL_SECONDS: 604800, MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600 },
 }));
+// The real `@lfx-one/shared/utils` barrel isn't wired into this app's vitest config and pulls in
+// Angular-only code paths (see committee-engagement.service.spec.ts's identical note) — reimplements
+// the real `isUuid` predicate rather than importing it, so parseMemberMappingResponse's UUID/SFID
+// discrimination is exercised faithfully.
+vi.mock('@lfx-one/shared/utils', () => ({
+  isUuid: (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value),
+}));
 vi.mock('../services/valkey.service', () => ({ buildMemberV1MappingCacheKey, valkeyService: { getJson, setJson } }));
 vi.mock('./v1-mapping-batch.helper', () => ({ resolveV1MappingBatch }));
 vi.mock('../services/logger.service', () => ({ logger: { warning, debug } }));
@@ -37,6 +44,14 @@ describe('parseMemberMappingResponse', () => {
     // the member's contact identity — accepting it would report a successful resolution to a value
     // that can never join MEMBER_USER_ID, and positive-cache the wrong value for a week.
     expect(parseMemberMappingResponse('project-sfid:committee-sfid:123e4567-e89b-12d3-a456-426614174000')).toBeNull();
+  });
+
+  it('rejects a third segment that is neither a UUID nor a valid 15/18-char Salesforce ID shape', () => {
+    // The other half of upstream's discriminated union (sfid.IsValid) — a malformed value here is
+    // exactly as untrustworthy as a UUID one, just via the opposite failure mode. Without this check
+    // it would be accepted and positive-cached for a week as a member id that can never join
+    // MEMBER_USER_ID.
+    expect(parseMemberMappingResponse('project-sfid:committee-sfid:too-short')).toBeNull();
   });
 
   it('rejects a legacy 4-segment response instead of silently folding the extra segment into the 3rd field', () => {
