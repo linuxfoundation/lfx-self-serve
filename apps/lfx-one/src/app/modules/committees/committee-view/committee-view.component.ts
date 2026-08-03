@@ -823,19 +823,24 @@ export class CommitteeViewComponent {
   }
 
   private initCanAccessEngagement(): Signal<boolean> {
-    return toSignal(
-      toObservable(
-        computed(() => ({
-          loading: this.myRoleLoading(),
-          eligible: this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors),
-        }))
-      ).pipe(
-        filter(({ loading }) => !loading),
-        map(({ eligible }) => eligible),
-        distinctUntilChanged()
-      ),
-      { initialValue: false }
-    );
+    // linkedSignal, not toObservable/toSignal: the latter's Observable pipe is inherently a tick
+    // behind the rest of the signal graph, so engagementKey's synchronous `roleLoading` (read from
+    // myRoleLoading() directly) could see loading flip false a full tick before this signal caught
+    // up, briefly re-reading its stale (loading-window) value as `notEligible` and flashing the
+    // unavailable/em-dash state before the real eligibility resolved (Cursor Bugbot). linkedSignal's
+    // computation runs synchronously within the same signal flush, so there's no such gap: it
+    // returns the live eligibility once settled, or the last settled value while loading (false
+    // pre-first-resolution, matching every other loader default in this file).
+    return linkedSignal<{ loading: boolean; eligible: boolean }, boolean>({
+      source: () => ({
+        loading: this.myRoleLoading(),
+        eligible: this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors),
+      }),
+      computation: (source, previous) => {
+        if (source.loading) return previous?.value ?? false;
+        return source.eligible;
+      },
+    });
   }
 
   private initEngagement(): Signal<CommitteeEngagementResponse | null> {
