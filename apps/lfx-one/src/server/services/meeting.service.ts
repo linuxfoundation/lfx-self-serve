@@ -318,8 +318,13 @@ export class MeetingService {
       return [] as PastMeeting[];
     });
 
-    // The indexed v1_past_meeting projection frequently omits scheduled_start_time and only
-    // carries start_time (same reality sortPastMeetingsDescending handles) — accept either.
+    // The indexed v1_past_meeting projection never carries scheduled_start_time — its source
+    // struct (upstream PastMeetingEventData) has no such field, only start_time (verified against
+    // `lfx-v2-meeting-service`'s internal/domain/models/event_models.go and
+    // cmd/meeting-api/eventing/past_meeting_event_handler.go; see the "Meetings" paragraph in
+    // committee-activity.service.ts's fetchSize comment) — but this code still accepts either,
+    // matching sortPastMeetingsDescending's defensive shape rather than assuming the verified
+    // absence holds forever.
     const dropped = records.filter((r) => !r.meeting_and_occurrence_id || !(r.scheduled_start_time || r.start_time));
     if (dropped.length > 0) {
       logger.warning(req, 'get_past_occurrences_for_meeting', 'Dropping past occurrences missing composite id or start time', {
