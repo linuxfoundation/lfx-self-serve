@@ -15,10 +15,18 @@ const { getJson, setJson, buildMemberV1MappingCacheKey, resolveV1MappingBatch, w
   debug: vi.fn(),
 }));
 
-vi.mock('@lfx-one/shared/constants', () => ({
-  VALKEY_CACHE: { MEMBER_V1_MAPPING_TTL_SECONDS: 604800, MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600 },
-  SALESFORCE_ID_PATTERN: /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  // SALESFORCE_ID_PATTERN pulled via vi.importActual (not hand-copied) so a future tightening of the
+  // real pattern fails this suite instead of leaving a stale duplicate green — same rationale as the
+  // deep-imported classifier functions in committee-engagement.service.spec.ts.
+  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+    '../../../../../packages/shared/src/constants/regex.constants'
+  );
+  return {
+    VALKEY_CACHE: { MEMBER_V1_MAPPING_TTL_SECONDS: 604800, MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600 },
+    SALESFORCE_ID_PATTERN: actual.SALESFORCE_ID_PATTERN,
+  };
+});
 vi.mock('../services/valkey.service', () => ({ buildMemberV1MappingCacheKey, valkeyService: { getJson, setJson } }));
 vi.mock('./v1-mapping-batch.helper', () => ({ resolveV1MappingBatch }));
 vi.mock('../services/logger.service', () => ({ logger: { warning, debug } }));

@@ -27,9 +27,9 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
  * Parses a `committee_member.uid.<v2Uid>` response (`"{project_sfid}:{committee_sfid}:{member_sfid}"`)
  * into the usable member id, or `null` if the response can't be trusted yet.
  *
- * Two rejections beyond a plain shape mismatch, both driven by `lfx-v1-sync-helper`'s own
- * documented contract for this key (its `parseCommitteeMemberReverseMapping`): the third field is a
- * *discriminated union*, not always a usable person identifier.
+ * Two checks, both driven by `lfx-v1-sync-helper`'s own documented contract for this key (its
+ * `parseCommitteeMemberReverseMapping`): the third field is a *discriminated union*, not always a
+ * usable person identifier.
  *
  * 1. Requires exactly 3 segments, not "at least 3" — a legacy 4-field `recordSFID:contactSFID` value
  *    (an extra colon from an older mapping generation) would otherwise silently fold its extra
