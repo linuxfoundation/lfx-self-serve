@@ -4,7 +4,7 @@
 import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { AddUserToProjectRequest, CreateProjectDocumentRequest, UpdateUserRoleRequest, UploadProjectDocumentRequest } from '@lfx-one/shared/interfaces';
-import { isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -21,6 +21,16 @@ import { getEffectiveEmail } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resource segments the lens-redirect endpoint may forward to. Every entry MUST have both a
+ * `/foundation/<x>` and `/project/<x>` route in app.routes.ts and accept a `?project=<slug>`
+ * context (projectQueryParamGuard). The endpoint forwards ONLY to segments in this set — the
+ * `:resource` param is never echoed raw into the redirect Location, so it cannot become an
+ * open redirect. Keep in sync with the lens-prefixed route table; project.controller.spec.ts
+ * asserts each entry exists under both lenses.
+ */
+export const LENS_REDIRECT_RESOURCES = new Set<string>(['votes', 'meetings', 'mailing-lists', 'groups', 'documents', 'surveys', 'newsletters', 'settings']);
 
 /**
  * Controller for handling project HTTP requests
@@ -943,6 +953,62 @@ export class ProjectController {
       res.send(ics);
     } catch (error) {
       next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/projects/:slug/lens-redirect/:resource — 302 to the lens-prefixed
+   * resource page for email deep links (votes, meetings, …). The lens is derived from the
+   * project's own attributes (computeIsFoundation), not the recipient's active lens, so a
+   * foundation project lands on /foundation/<resource> and a non-foundation on
+   * /project/<resource>. `:resource` is allowlisted (LENS_REDIRECT_RESOURCES) so it can never
+   * become an arbitrary/open redirect. Falls back to the flat /<resource> route when the slug
+   * is unresolvable or the fetch fails. Anonymous access — no user session; M2M upstream.
+   */
+  public async getLensRedirect(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const slug = req.params['slug'] ?? '';
+    const resource = req.params['resource'] ?? '';
+    const startTime = logger.startOperation(req, 'get_lens_redirect', { project_slug: slug, resource });
+
+    if (!slug || !/^[A-Za-z0-9_-]+$/.test(slug)) {
+      next(ServiceValidationError.forField('slug', 'Invalid project slug', { operation: 'get_lens_redirect' }));
+      return;
+    }
+    if (!LENS_REDIRECT_RESOURCES.has(resource)) {
+      next(ServiceValidationError.forField('resource', 'Unsupported lens resource', { operation: 'get_lens_redirect' }));
+      return;
+    }
+
+    try {
+      if (!req.bearerToken) {
+        req.bearerToken = await generateM2MToken(req);
+      }
+
+      const slugToId = await this.projectService.getProjectIdBySlug(req, slug);
+      if (!slugToId.exists) {
+        logger.debug(req, 'get_lens_redirect', 'Slug not found; redirecting to flat resource route', { slug, resource });
+        res.setHeader('Cache-Control', 'no-store');
+        res.redirect(302, `/${resource}`);
+        return;
+      }
+
+      const project = await this.projectService.getProjectById(req, slugToId.uid, false);
+      const lens = computeIsFoundation(project) ? 'foundation' : 'project';
+
+      logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, lens });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.redirect(302, `/${lens}/${resource}?project=${encodeURIComponent(slug)}`);
+    } catch (error) {
+      // Unresolvable slug or fetch failure — fall back to the flat resource route rather than
+      // surfacing an error to an email-link recipient.
+      logger.warning(req, 'get_lens_redirect', 'Falling back to flat resource route after error', {
+        project_slug: slug,
+        resource,
+        err: error,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.redirect(302, `/${resource}`);
     }
   }
 }
