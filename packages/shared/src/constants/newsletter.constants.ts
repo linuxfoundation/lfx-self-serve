@@ -13,6 +13,12 @@ export const NEWSLETTER_PROMPT_STORAGE_KEY = 'lfx-newsletter-ai-prompt';
 
 export const NEWSLETTER_RAW_CONTENT_MAX_LENGTH = 50_000;
 
+// Field limits enforced by NewsletterController.validateCommonPayload — shared
+// so any other caller building a CreateNewsletterRequest (e.g. the weekly-brief
+// share action) can validate up front instead of relying on an opaque upstream 400.
+export const NEWSLETTER_SUBJECT_MAX_LENGTH = 200;
+export const NEWSLETTER_BODY_MAX_LENGTH = 100_000;
+
 // Cap must exceed the default AI_NEWSLETTER_SYSTEM_PROMPT (~6.2k chars) plus reasonable
 // customization headroom — otherwise the default prompt fails the frontend validator on init
 // and the Generate button never enables.

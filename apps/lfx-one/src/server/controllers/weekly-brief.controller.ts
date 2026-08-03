@@ -71,6 +71,23 @@ function validateGenerateBriefBody(body: unknown): { ok: true; value: GenerateWe
 }
 
 /**
+ * Narrow `req.body` to `{ revision: number }` for the share endpoint. The confirmation
+ * dialog shows a specific rendered revision — the caller must send it back so the
+ * service can reject a stale approval (another writer saved an edit in between)
+ * instead of silently sharing content the caller never actually reviewed.
+ */
+function validateShareBriefBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b['revision'] !== 'number' || !Number.isFinite(b['revision'] as number)) {
+    return { ok: false, fieldErrors: { revision: 'revision is required and must be a finite number' } };
+  }
+  return { ok: true, value: { revision: b['revision'] as number } };
+}
+
+/**
  * Controller for the WG Weekly Brief endpoints.
  *
  * Upstream HTTP status codes (202 accepted, 429 throttle, 409 edited-brief
@@ -227,6 +244,58 @@ export class WeeklyBriefController {
         brief_uid: result.uid,
         revision: result.revision,
         state: result.state,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/share
+   *
+   * Gated by `assertCommitteeRead` (committee#auditor) — `shareBrief` reads the current
+   * brief internally before doing anything else, same unguarded-proxy gap as
+   * getCurrentBrief without this. The actual send is authorized separately and more
+   * narrowly inside the service (`project:{project_uid}#writer`, not committee#auditor),
+   * since that's the newsletter service's real enforcement boundary; this gate only
+   * closes the existence/state read, not the write.
+   */
+  public async shareBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'share_weekly_brief', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'share_weekly_brief',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'share_weekly_brief');
+
+      const validation = validateShareBriefBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid share-weekly-brief request body', {
+            operation: 'share_weekly_brief',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const result = await this.weeklyBriefService.shareBrief(req, committeeId, validation.value.revision);
+
+      logger.success(req, 'share_weekly_brief', startTime, {
+        committee_id: committeeId,
+        total_recipients: result.total_recipients,
       });
 
       res.json(result);

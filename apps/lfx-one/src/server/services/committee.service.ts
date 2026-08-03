@@ -341,8 +341,16 @@ export class CommitteeService {
        *  write paths (e.g. accept invite) where an unknown business_email_required must not
        *  be treated as false (fail-closed). */
       throwOnSettingsError?: boolean;
+      includeMailingListStatus?: boolean;
     } = {}
   ): Promise<Committee> {
+    // `/committees/{uid}` (get-committee-base) does NOT reliably populate
+    // `has_mailing_list` in practice, despite an illustrative example in the
+    // upstream OpenAPI spec suggesting otherwise (verified false against 5/5
+    // prod committees, including ones with real, populated mailing lists —
+    // LFXV2-2914). Compute it the same way the query-service-backed list
+    // endpoints (getCommittees/getMyCommittees) do: a direct count against
+    // the mailing-list index.
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
     if (!committee) {
@@ -353,13 +361,14 @@ export class CommitteeService {
       });
     }
 
-    // Fetch settings, optional caller membership, access, and optional inherited
-    // (parent-project) permissions in parallel.
-    const [settings, membership, withAccess, inheritedPermissions] = await Promise.all([
+    // Fetch settings, optional caller membership, access, optional inherited
+    // (parent-project) permissions, and optional mailing-list status in parallel.
+    const [settings, membership, withAccess, inheritedPermissions, mlCount] = await Promise.all([
       this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
       options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
+      options.includeMailingListStatus ? this.getMailingListCountByCommittee(req, committeeId) : Promise.resolve(null),
     ]);
 
     const merged = {
@@ -367,6 +376,7 @@ export class CommitteeService {
       ...settings,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
+      ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
     };
 
     if (!options.includeProjectMetadata) {
@@ -1425,6 +1435,21 @@ export class CommitteeService {
   }
 
   /**
+   * Strict single-committee mailing-list check — unlike {@link getMailingListCountByCommittee}
+   * (fail-open-to-false via the batch/Promise.allSettled path, acceptable for a cosmetic list
+   * badge), this propagates a query-service failure instead of silently reporting "no mailing
+   * list". Used by `shareBrief`, where a false negative would misattribute a transient outage
+   * as a real precondition failure (409 NO_MAILING_LIST) instead of a retryable error.
+   */
+  public async hasMailingListStrict(req: Request, committeeId: string): Promise<boolean> {
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
+      type: 'groupsio_mailing_list',
+      tags: `committee_uid:${committeeId}`,
+    });
+    return count > 0;
+  }
+
+  /**
    * Batch-fetches committee resources by UID from the query service.
    * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
    * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
@@ -1780,6 +1805,24 @@ export class CommitteeService {
     }
 
     return found;
+  }
+
+  /**
+   * Single-committee count wrapper around {@link getCommitteesWithMailingList} — used by
+   * `getCommitteeById`'s `includeMailingListStatus` option, which needs a boolean-ish
+   * result rather than the batch method's `Set`. `/committees/{uid}` does not reliably
+   * populate `has_mailing_list` itself (verified false against real, populated
+   * committees — LFXV2-2914), so this recomputes it the same way the list endpoints do.
+   *
+   * Inherits `getCommitteesWithMailingList`'s fail-open-to-false behavior on a transient
+   * query-service failure — acceptable here since this only feeds a cosmetic list/detail
+   * badge. Callers with a real precondition riding on the answer (e.g. `shareBrief`, which
+   * would otherwise misreport an outage as "no mailing list configured") should use
+   * {@link hasMailingListStrict} instead.
+   */
+  private async getMailingListCountByCommittee(req: Request, committeeId: string): Promise<number> {
+    const found = await this.getCommitteesWithMailingList(req, [committeeId]);
+    return found.has(committeeId) ? 1 : 0;
   }
 
   /**

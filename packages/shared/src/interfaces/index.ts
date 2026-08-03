@@ -124,6 +124,9 @@ export * from './public-committee.interface';
 // Groups dashboard engagement-stats rollup (LFXV2-1711)
 export * from './groups-engagement-stats.interface';
 
+// Public group interfaces
+export * from './public-group.interface';
+
 // Lens interfaces
 export * from './lens.interface';
 
@@ -279,8 +282,12 @@ export * from './create-picker.interface';
 export * from './org-meetings-insights.interface';
 export * from './org-meetings-insights.internal.interface';
 
-// Group Overview activity feed stop-gap (LFXV2-1716)
+// Committee Overview "Recent Activity" widget view-model (LFXV2-1707, formerly the LFXV2-1716 stop-gap)
 export * from './activity-feed.interface';
+
+// Committee activity feed aggregation wire contract (LFXV2-1707)
+export * from './activity-event.interface';
+export * from './activity-event.internal.interface';
 
 // Committee member engagement/attendance rollup (LFXV2-1705)
 export * from './committee-engagement.interface';
