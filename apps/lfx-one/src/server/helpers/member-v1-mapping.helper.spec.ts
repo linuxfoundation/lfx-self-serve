@@ -16,15 +16,21 @@ const { getJson, setJson, buildMemberV1MappingCacheKey, resolveV1MappingBatch, w
 }));
 
 vi.mock('@lfx-one/shared/constants', async () => {
-  // SALESFORCE_ID_PATTERN pulled via vi.importActual (not hand-copied) so a future tightening of the
-  // real pattern fails this suite instead of leaving a stale duplicate green — same rationale as the
+  // SALESFORCE_ID_PATTERN and VALKEY_CACHE both pulled via vi.importActual (not hand-copied) — both
+  // source files are import-free, so this is safe — so a future loosening of the real pattern (e.g.
+  // admitting hyphens) fails the UUID-rejection test below instead of leaving a stale duplicate
+  // green (a tightening would separately fail the happy-path test), and a changed TTL constant fails
+  // the cache-write assertions instead of silently going stale alongside them. Same rationale as the
   // deep-imported classifier functions in committee-engagement.service.spec.ts.
-  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+  const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
+  const valkeyCache = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/valkey-cache.constants')>(
+    '../../../../../packages/shared/src/constants/valkey-cache.constants'
+  );
   return {
-    VALKEY_CACHE: { MEMBER_V1_MAPPING_TTL_SECONDS: 604800, MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600 },
-    SALESFORCE_ID_PATTERN: actual.SALESFORCE_ID_PATTERN,
+    VALKEY_CACHE: valkeyCache.VALKEY_CACHE,
+    SALESFORCE_ID_PATTERN: regex.SALESFORCE_ID_PATTERN,
   };
 });
 vi.mock('../services/valkey.service', () => ({ buildMemberV1MappingCacheKey, valkeyService: { getJson, setJson } }));
