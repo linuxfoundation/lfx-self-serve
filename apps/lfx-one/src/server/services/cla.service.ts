@@ -67,7 +67,11 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
   return {
     id: cla.signatureID,
     kind: isIcla ? 'ICLA' : 'ECLA',
-    projectName: cla.claGroupName || cla.claGroupID || '',
+    claGroupName: cla.claGroupName || cla.claGroupID || '',
+    // Salesforce project name/logo (upstream omits both when unresolvable) — normalize
+    // empty strings to undefined so the Project cell falls back to claGroupName / the icon.
+    projectName: cla.projectName || undefined,
+    projectLogo: cla.projectLogo || undefined,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
     status: cla.valid ? 'valid' : 'inactive',

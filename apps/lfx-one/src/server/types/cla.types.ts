@@ -17,6 +17,13 @@ export interface EasyClaMyCla {
   claGroupID?: string;
   /** CLA Group display name — omitted when the record could not be resolved. */
   claGroupName?: string;
+  /**
+   * Salesforce project display name the CLA Group belongs to (a foundation-level CLA
+   * Group resolves to its foundation) — omitted when it could not be resolved.
+   */
+  projectName?: string;
+  /** Project (or foundation) logo URL — omitted when there is none or it could not be resolved. */
+  projectLogo?: string;
   /** Employer company name — ECLA only. */
   companyName?: string;
   /** Employer signing-entity name — ECLA only. */

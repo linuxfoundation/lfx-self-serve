@@ -23,8 +23,21 @@ export interface MyClaAgreement {
   /** EasyCLA signatureID — also the key for the PDF-URL endpoint. */
   id: string;
   kind: ClaKind;
-  /** CLA group / project name the agreement was signed against. */
-  projectName: string;
+  /**
+   * CLA group name the agreement was signed against (the endpoint's `claGroupName`,
+   * falling back to the CLA group UUID). This is NOT the Salesforce project name —
+   * see `projectName`. Rendered as the subtext of the Project cell when a
+   * `projectName` is present, and as the primary line when it is not.
+   */
+  claGroupName: string;
+  /**
+   * Salesforce project display name the CLA Group belongs to (a foundation-level CLA
+   * Group resolves to its foundation). Undefined when upstream could not resolve it —
+   * the Project cell then falls back to `claGroupName`. Rendered as the bold primary line.
+   */
+  projectName?: string;
+  /** Project (or foundation) logo URL, when upstream resolved one. Undefined ⇒ show the fallback icon. */
+  projectLogo?: string;
   /** Employer company name — present for ECLA only. */
   companyName?: string;
   /** ISO date the agreement was signed. */

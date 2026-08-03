@@ -101,8 +101,24 @@ describe('toMyClaAgreement', () => {
   });
 
   it('prefers claGroupName, falling back to claGroupID', () => {
-    expect(toMyClaAgreement(icla({ claGroupName: 'My Project', claGroupID: 'cg-1' })).projectName).toBe('My Project');
-    expect(toMyClaAgreement(icla({ claGroupName: undefined, claGroupID: 'cg-1' })).projectName).toBe('cg-1');
+    expect(toMyClaAgreement(icla({ claGroupName: 'My Project', claGroupID: 'cg-1' })).claGroupName).toBe('My Project');
+    expect(toMyClaAgreement(icla({ claGroupName: undefined, claGroupID: 'cg-1' })).claGroupName).toBe('cg-1');
+  });
+
+  it('surfaces the Salesforce projectName and projectLogo when upstream resolved them', () => {
+    const a = toMyClaAgreement(icla({ projectName: 'Kubernetes', projectLogo: 'https://logos.example.org/k8s.png' }));
+    expect(a.projectName).toBe('Kubernetes');
+    expect(a.projectLogo).toBe('https://logos.example.org/k8s.png');
+  });
+
+  it('normalizes an unresolved (omitted or empty) projectName/projectLogo to undefined', () => {
+    const omitted = toMyClaAgreement(icla({ projectName: undefined, projectLogo: undefined }));
+    expect(omitted.projectName).toBeUndefined();
+    expect(omitted.projectLogo).toBeUndefined();
+
+    const empty = toMyClaAgreement(icla({ projectName: '', projectLogo: '' }));
+    expect(empty.projectName).toBeUndefined();
+    expect(empty.projectLogo).toBeUndefined();
   });
 
   it('never offers a PDF for an ICLA upstream marked pdfAvailable=false', () => {

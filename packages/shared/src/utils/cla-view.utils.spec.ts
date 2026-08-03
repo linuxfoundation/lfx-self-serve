@@ -16,7 +16,7 @@ import {
 } from './cla-view.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
-  return { id: 's1', kind: 'ICLA', projectName: 'P', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, ...overrides };
+  return { id: 's1', kind: 'ICLA', claGroupName: 'P', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, ...overrides };
 }
 
 function identity(overrides: Partial<MyClasIdentitySummary> = {}): MyClasIdentitySummary {
