@@ -870,8 +870,9 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
 
 /**
  * Build ED Evolution dashboard cards from live API data.
- * 1 Campaign Performance + 4 North Star + 2 Brand.
- * Member Retention is merged into the Member Growth drawer.
+ * 6 North Star (Events, Members, Adoption, Email, Paid Media, Attribution)
+ * + 2 Brand (Social, Sentiment) + Flywheel.
+ * Member Retention is merged into the Members drawer.
  *
  * Sparkline color semantics:
  *  - Blue  (lfxColors.blue[500])   — volume/reach metric (primary signal on every card)
@@ -879,7 +880,7 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
  * Emerald/red are reserved for delta indicators (up/down), never sparkline stroke.
  */
 export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricCard[] {
-  const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign } = data;
+  const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign, revenueImpact } = data;
 
   // Pre-compute email open rate for the Campaign Performance card
   const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
@@ -999,21 +1000,21 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
 
-    // === Campaign Performance (dual-signal: Email Opens + Paid Impressions) ===
-    // Categorised as 'memberships' (North Star) intentionally — campaigns directly
-    // drive member acquisition and retention, making this a dual-signal North Star
-    // metric alongside Members, not a Brand card.
+    // === Email ===
+    // Categorised as 'memberships' (North Star) intentionally — owned channels
+    // directly drive member acquisition and retention, so Email, Paid Media and
+    // Attribution sit alongside Members rather than under Brand.
     {
-      title: 'Campaign Performance',
-      icon: 'fa-light fa-chart-mixed',
+      title: 'Email',
+      icon: 'fa-light fa-envelope',
       chartType: 'line',
       category: 'memberships',
       testId: 'ed-evo-campaign-performance',
-      description: 'Email opens and paid impressions with MoM trends.',
+      description: 'Email opens with click-through and open rate, and MoM trend.',
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
-          `Email · ${emailCtr.currentCtr.toFixed(1)}% CTR · ${emailOpenRate.toFixed(0)}% 6mo Open`,
+          `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
           formatNumber(emailTotalOpens) + ' opens',
           emailCtr.monthlyOpens,
           lfxColors.blue[500],
@@ -1021,20 +1022,90 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
         ),
         protoDualSignal(
-          `Paid · ${formatCurrency(paidCampaign.totalSpend)} spend`,
+          `Open rate · 6 mo`,
+          `${emailOpenRate.toFixed(0)}%`,
+          // Sends carry the denominator behind the open rate — showing that series
+          // keeps the second signal honest rather than repeating the opens curve.
+          emailCtr.monthlySends,
+          lfxColors.violet[500],
+          seriesMomChange(emailCtr.monthlySends),
+          seriesTrendDirection(emailCtr.monthlySends)
+        ),
+      ],
+      caption: trendWindow(emailCtr.monthlyOpens.length),
+      tooltipText: 'Email opens with click-through rate, plus sends and the six-month open rate.',
+      drawerType: DashboardDrawerType.MarketingEmailCtr,
+    } as DashboardMetricCard,
+
+    // === Paid Media ===
+    {
+      title: 'Paid Media',
+      icon: 'fa-light fa-rectangle-ad',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-paid-media',
+      description: 'Paid campaign impressions and spend with return on ad spend.',
+      customContentType: 'dual-signal',
+      dualSignals: [
+        protoDualSignal(
+          `Impressions · ${formatCurrency(paidCampaign.totalSpend)} spend`,
           formatNumber(paidCampaign.totalReach) + ' impressions',
           paidCampaign.monthlyData,
-          lfxColors.violet[500],
+          lfxColors.blue[500],
           // Activity = spend OR impressions per month: an active month that
           // delivered zero impressions keeps its real MoM, while zero-filled
           // no-campaign months stay suppressed.
           seriesMomChange(paidCampaign.monthlyData, paidActivity),
           seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
         ),
+        protoDualSignal(
+          'ROAS',
+          `${paidCampaign.roas.toFixed(1)}x`,
+          // Guard on paidActivity, not monthlyRoas itself: a no-campaign month
+          // reports 0 ROAS, which would otherwise read as a real decline.
+          paidCampaign.monthlyRoas.length > 0 ? paidCampaign.monthlyRoas : [],
+          lfxColors.violet[500],
+          seriesMomChange(paidCampaign.monthlyRoas, paidActivity),
+          seriesTrendDirection(paidCampaign.monthlyRoas, paidActivity)
+        ),
       ],
-      caption: trendWindow(Math.max(emailCtr.monthlyOpens.length, paidCampaign.monthlyData.length)),
-      tooltipText: 'Email opens with CTR and open rate. Paid campaign impressions with total spend.',
-      drawerType: DashboardDrawerType.MarketingEmailCtr,
+      caption: trendWindow(paidCampaign.monthlyData.length),
+      tooltipText: 'Paid campaign impressions with total spend, and return on ad spend over the same window.',
+      drawerType: DashboardDrawerType.MarketingPaidSocialReach,
+    } as DashboardMetricCard,
+
+    // === Attribution ===
+    // Reads revenueImpact, which already carries the multi-touch attribution
+    // models and channel breakdown. That data was fetched but had no card
+    // surfacing it — only the drawer, which was unreachable from the carousel.
+    {
+      title: 'Attribution',
+      icon: 'fa-light fa-diagram-project',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-attribution',
+      description: 'Revenue attributed to marketing, compared across attribution models.',
+      customContentType: 'dual-signal',
+      dualSignals: [
+        protoDualSignal(
+          'Revenue attributed',
+          formatCurrency(revenueImpact.revenueAttributed),
+          // No monthly series is exposed for attributed revenue — leave the
+          // sparkline empty rather than borrow an unrelated curve.
+          [],
+          lfxColors.blue[500],
+          formatMomChange(revenueImpact.changePercentage),
+          normalizeTrend(revenueImpact.changePercentage, revenueImpact.trend)
+        ),
+        protoDualSignal('Linear model', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
+      ],
+      caption:
+        revenueImpact.attributionChannels.length > 0
+          ? `${revenueImpact.attributionChannels.length} channels · ${revenueImpact.matchRate.toFixed(0)}% match rate`
+          : `${revenueImpact.matchRate.toFixed(0)}% match rate`,
+      tooltipText:
+        'Revenue attributed to marketing touchpoints, with the linear multi-touch model shown alongside. Match rate is the share of revenue that could be tied to a tracked touchpoint.',
+      drawerType: DashboardDrawerType.RevenueImpact,
     } as DashboardMetricCard,
 
     // === Flywheel (retention is merged into the Members drawer) ===
