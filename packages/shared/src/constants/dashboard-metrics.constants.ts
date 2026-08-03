@@ -1108,27 +1108,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       drawerType: DashboardDrawerType.RevenueImpact,
     } as DashboardMetricCard,
 
-    // === Flywheel (retention is merged into the Members drawer) ===
-    {
-      title: 'Flywheel',
-      icon: 'fa-light fa-arrows-spin',
-      chartType: 'line',
-      category: 'memberships',
-      testId: 'ed-evo-flywheel-conversion',
-      description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
-      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
-      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
-      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
-      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
-      chartData: protoSparkline(
-        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
-        lfxColors.blue[500]
-      ),
-      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText:
-        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
-      drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
-    } as DashboardMetricCard,
+    // === Sentiment ===
     {
       title: 'Sentiment',
       icon: 'fa-light fa-heart-pulse',
@@ -1159,6 +1139,28 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           : `${formatNumber(brandHealth.totalMentions)} mentions (30d)`,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
+    } as DashboardMetricCard,
+
+    // === Flywheel (retention is merged into the Members drawer) ===
+    {
+      title: 'Flywheel',
+      icon: 'fa-light fa-arrows-spin',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-flywheel-conversion',
+      description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
+      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
+      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
+      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
+      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
+      chartData: protoSparkline(
+        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
+        lfxColors.blue[500]
+      ),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText:
+        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
+      drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
     } as DashboardMetricCard,
 
     // Attribution rows merged into Campaign Performance card above.

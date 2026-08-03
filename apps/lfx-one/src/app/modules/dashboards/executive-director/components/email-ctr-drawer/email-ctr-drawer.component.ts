@@ -19,8 +19,6 @@ import type {
   EmailCtrResponse,
   FunnelAggregates,
   FunnelTierMetrics,
-  MarketingAttributionChannel,
-  MarketingAttributionProject,
   MarketingAttributionResponse,
   MarketingKeyInsight,
   MarketingRecommendedAction,
@@ -121,32 +119,6 @@ export class EmailCtrDrawerComponent {
 
   protected readonly attributionData: Signal<MarketingAttributionResponse> = this.initAttributionData();
   private readonly attributionDataResolved = signal(false);
-  protected readonly expandedChannels = signal<Set<string>>(new Set());
-  protected readonly attributionProjectsByChannel: Signal<Map<string, MarketingAttributionProject[]>> = computed(() => {
-    const grouped = new Map<string, MarketingAttributionProject[]>();
-    for (const p of this.attributionData().projects) {
-      const list = grouped.get(p.channel) ?? [];
-      list.push(p);
-      grouped.set(p.channel, list);
-    }
-    return grouped;
-  });
-  protected readonly attributionTotals: Signal<{
-    sessions: number;
-    linearRevenue: number;
-    firstTouchRevenue: number;
-    lastTouchRevenue: number;
-    timeDecayRevenue: number;
-  }> = computed(() => {
-    const channels = this.attributionData().channels;
-    return {
-      sessions: channels.reduce((s, c) => s + c.sessions, 0),
-      linearRevenue: channels.reduce((s, c) => s + c.linearRevenue, 0),
-      firstTouchRevenue: channels.reduce((s, c) => s + c.firstTouchRevenue, 0),
-      lastTouchRevenue: channels.reduce((s, c) => s + c.lastTouchRevenue, 0),
-      timeDecayRevenue: channels.reduce((s, c) => s + c.timeDecayRevenue, 0),
-    };
-  });
 
   protected readonly formatCurrency = formatCurrency;
 
@@ -176,21 +148,6 @@ export class EmailCtrDrawerComponent {
     if (performance === 'GOOD') return 'warn';
     if (performance === 'EXCELLENT' || performance === 'STRONG') return 'success';
     return 'secondary';
-  }
-
-  protected toggleChannel(channel: string): void {
-    const current = this.expandedChannels();
-    const next = new Set(current);
-    if (next.has(channel)) {
-      next.delete(channel);
-    } else {
-      next.add(channel);
-    }
-    this.expandedChannels.set(next);
-  }
-
-  protected revPerSession(channel: MarketingAttributionChannel): string {
-    return channel.sessions > 0 ? `$${(channel.linearRevenue / channel.sessions).toFixed(2)}` : '—';
   }
 
   private initHasNoData(): Signal<boolean> {
@@ -406,8 +363,10 @@ export class EmailCtrDrawerComponent {
         }
       }
 
-      // Combine — 1 per section, max 3
-      const actions = [...attrActions.slice(0, 1), ...paidActions.slice(0, 1), ...emailActions.slice(0, 1)];
+      // Email-only: paid actions belong to the Paid Media drawer and attribution
+      // actions to the Attribution drawer. Both buckets are still computed above
+      // because their inputs feed the shared funnel/channel maths.
+      const actions = [...emailActions.slice(0, 3)];
 
       if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
@@ -551,8 +510,8 @@ export class EmailCtrDrawerComponent {
         }
       }
 
-      // Combine — 1 per section, max 3
-      return [...attrInsights.slice(0, 1), ...paidInsights.slice(0, 1), ...emailInsights.slice(0, 1)];
+      // Email-only — see the note on initRecommendedActions.
+      return [...emailInsights.slice(0, 3)];
     });
   }
 

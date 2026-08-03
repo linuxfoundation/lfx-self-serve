@@ -2,17 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatCurrency, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { catchError, combineLatest, filter, map, of, switchMap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   EventRegistrationAttributionChannelView,
+  MarketingAttributionChannel,
+  MarketingAttributionProject,
+  MarketingAttributionResponse,
   MarketingKeyInsight,
   MarketingRecommendedAction,
   RevenueImpactAttributionChannelView,
@@ -24,11 +32,15 @@ import type {
 @Component({
   selector: 'lfx-revenue-impact-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, ChartComponent, DecimalPipe, DrawerModule, TagComponent],
+  imports: [ButtonComponent, CardComponent, ChartComponent, DecimalPipe, DrawerModule, TagComponent],
   templateUrl: './revenue-impact-drawer.component.html',
 })
 export class RevenueImpactDrawerComponent {
   // === Model Signals (two-way binding) ===
+  // === Services ===
+  private readonly analyticsService = inject(AnalyticsService);
+  private readonly projectContextService = inject(ProjectContextService);
+
   public readonly visible = model<boolean>(false);
 
   // === Inputs ===
@@ -165,6 +177,41 @@ export class RevenueImpactDrawerComponent {
       formattedPercentage: c.percentage.toFixed(1),
     }))
   );
+  // === Marketing Attribution (multi-touch models + revenue by channel) ===
+  // Fetched here rather than passed in: this comes from the marketing-attribution
+  // endpoint, not the revenueImpact payload the rest of this drawer binds to.
+  protected readonly attributionData: Signal<MarketingAttributionResponse> = this.initAttributionData();
+  protected readonly expandedChannels = signal<Set<string>>(new Set());
+
+  protected readonly attributionProjectsByChannel: Signal<Map<string, MarketingAttributionProject[]>> = computed(() => {
+    const grouped = new Map<string, MarketingAttributionProject[]>();
+    for (const p of this.attributionData().projects) {
+      const list = grouped.get(p.channel) ?? [];
+      list.push(p);
+      grouped.set(p.channel, list);
+    }
+    return grouped;
+  });
+
+  protected readonly attributionTotals: Signal<{
+    sessions: number;
+    linearRevenue: number;
+    firstTouchRevenue: number;
+    lastTouchRevenue: number;
+    timeDecayRevenue: number;
+  }> = computed(() => {
+    const channels = this.attributionData().channels;
+    return {
+      sessions: channels.reduce((s, c) => s + c.sessions, 0),
+      linearRevenue: channels.reduce((s, c) => s + c.linearRevenue, 0),
+      firstTouchRevenue: channels.reduce((s, c) => s + c.firstTouchRevenue, 0),
+      lastTouchRevenue: channels.reduce((s, c) => s + c.lastTouchRevenue, 0),
+      timeDecayRevenue: channels.reduce((s, c) => s + c.timeDecayRevenue, 0),
+    };
+  });
+
+  protected readonly formatCurrency = formatCurrency;
+
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
   private readonly split: Signal<MarketingSplitByPriority> = computed(() => splitByPriority(this.recommendedActions(), this.keyInsights()));
@@ -179,6 +226,46 @@ export class RevenueImpactDrawerComponent {
 
   protected onClose(): void {
     this.visible.set(false);
+  }
+
+  /** Compact number for dense table cells — 1.2K / 3.4M. */
+  protected formatCompact(value: number): string {
+    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return value.toLocaleString();
+  }
+
+  protected revPerSession(channel: MarketingAttributionChannel): string {
+    return channel.sessions > 0 ? `$${(channel.linearRevenue / channel.sessions).toFixed(2)}` : '—';
+  }
+
+  protected toggleChannel(channel: string): void {
+    const current = this.expandedChannels();
+    const next = new Set(current);
+    if (next.has(channel)) {
+      next.delete(channel);
+    } else {
+      next.add(channel);
+    }
+    this.expandedChannels.set(next);
+  }
+
+  private initAttributionData(): Signal<MarketingAttributionResponse> {
+    const defaultValue: MarketingAttributionResponse = { channels: [], projects: [] };
+
+    const visible$ = toObservable(this.visible);
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
+
+    return toSignal(
+      combineLatest([visible$, foundation$]).pipe(
+        filter(([isVisible, slug]) => isVisible && !!slug),
+        map(([, slug]) => slug),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(catchError(() => of(defaultValue)))
+        )
+      ),
+      { initialValue: defaultValue }
+    );
   }
 
   private initProjectBreakdownLegend(): Signal<RevenueImpactChannelLegendView[]> {
