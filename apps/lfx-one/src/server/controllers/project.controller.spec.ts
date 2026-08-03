@@ -25,10 +25,19 @@ vi.mock('@lfx-one/shared/utils', () => ({
   isFileTypeAllowed: vi.fn(),
   isUuid: vi.fn(),
 }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  ALLOWED_FILE_TYPES: [],
-  LENS_REDIRECT_RESOURCES: new Set<string>(['votes', 'meetings', 'mailing-lists', 'groups', 'documents', 'surveys', 'newsletters', 'settings']),
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  // Deep-import the real allowlist so the drift guard below asserts the production
+  // value, not a hardcoded copy that can drift. The barrel is mocked because it
+  // re-exports Angular-dependent constants; `lens.constants.ts` itself only has a
+  // type-only import from `../interfaces`, so importing it directly is safe.
+  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/lens.constants')>(
+    '../../../../../packages/shared/src/constants/lens.constants'
+  );
+  return {
+    ALLOWED_FILE_TYPES: [],
+    LENS_REDIRECT_RESOURCES: actual.LENS_REDIRECT_RESOURCES,
+  };
+});
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
 // wholesale so only the controller's getLensRedirect path loads.
