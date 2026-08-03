@@ -329,6 +329,29 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
     });
 
+    it('handles two visible v2 committees resolving to the SAME v1 id without under-counting coverage (duplicate-safe, not an inverted-map lookup)', async () => {
+      // Regression test: an earlier implementation inverted v2ToV1Map into a v1->v2 map to check
+      // coverage, which is lossy if two v2 uids ever map to the same v1 id (the second entry
+      // silently overwrites the first). Coverage must be checked forward (per v2 uid via
+      // v2ToV1Map.get), which stays correct regardless of whether the mapping is 1:1.
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
+      resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(
+        new Map([
+          ['committee-1', 'shared-v1-sfid'],
+          ['committee-2', 'shared-v1-sfid'],
+        ])
+      );
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'shared-v1-sfid', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      // Only one distinct v1 id is ever bound (deduped), but both v2 committees resolve to a
+      // covered row, so this must NOT degrade to null.
+      const [, binds] = execute.mock.calls[0] as [string, string[]];
+      expect(binds).toEqual(['shared-v1-sfid']);
+      expect(result.active_members).toBe(1);
+    });
+
     it('counts a member with real attendance as active', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
       execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 3 })] });

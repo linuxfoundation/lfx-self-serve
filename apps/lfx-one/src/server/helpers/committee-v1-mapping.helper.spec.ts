@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { warning } = vi.hoisted(() => ({ warning: vi.fn() }));
 
-vi.mock('@lfx-one/shared/constants', () => ({ NATS_CONFIG: { REQUEST_TIMEOUT: 5000 } }));
+vi.mock('@lfx-one/shared/constants', () => ({ NATS_CONFIG: { REQUEST_TIMEOUT: 5000, LOOKUP_BATCH_CONCURRENCY: 10 } }));
 vi.mock('@lfx-one/shared/enums', () => ({ NatsSubjects: { LOOKUP_V1_MAPPING: 'lfx.lookup_v1_mapping' } }));
 vi.mock('../services/logger.service', () => ({ logger: { warning } }));
 
@@ -121,5 +121,37 @@ describe('resolveCommitteeV2UidsToV1Ids', () => {
     const result = await resolveCommitteeV2UidsToV1Ids(req, natsService, []);
 
     expect(result.size).toBe(0);
+  });
+
+  it('caps concurrency at NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY (10) rather than firing every request at once', async () => {
+    const uids = Array.from({ length: 15 }, (_, i) => `v2-${i}`);
+    const deferreds: { resolve: (value: { data: Uint8Array }) => void }[] = [];
+    const request = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          deferreds.push({ resolve });
+        })
+    );
+    const natsService = {
+      getCodec: () => ({ encode: (value: string) => encode(value), decode: (data: Uint8Array) => new TextDecoder().decode(data) }),
+      request,
+    } as unknown as import('../services/nats.service').NatsService;
+
+    const pending = resolveCommitteeV2UidsToV1Ids(req, natsService, uids);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(10); // capped, not all 15
+
+    deferreds.forEach((d) => d.resolve({ data: encode('proj:resolved') }));
+    // More ticks than the first drain: resolving the batch's promises needs a tick, resolveOne's
+    // post-await continuation another, Promise.all settling another, then the for-loop's next
+    // iteration kicking off the second batch's requests a final one.
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(15); // the remaining 5 start once the first batch settles
+
+    deferreds.slice(10).forEach((d) => d.resolve({ data: encode('proj:resolved') }));
+    const result = await pending;
+    expect(result.size).toBe(15);
   });
 });

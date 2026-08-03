@@ -163,8 +163,11 @@ export class GroupsEngagementStatsService {
         });
         return null;
       }
-      const v1ToV2Map = new Map([...v2ToV1Map].map(([v2Uid, v1Id]) => [v1Id, v2Uid]));
-      const v1Ids = [...v2ToV1Map.values()];
+      // Deduped (not just [...values()]): two visible v2 committees could in principle resolve to
+      // the same v1 id, and an inverted v1->v2 map would then silently drop one of them — checking
+      // coverage forward (per v2 uid, via v2ToV1Map.get) below instead of through an inversion means
+      // that never needs to be a 1:1 assumption.
+      const v1Ids = [...new Set(v2ToV1Map.values())];
 
       const chunks: string[][] = [];
       for (let i = 0; i < v1Ids.length; i += COMMITTEE_UID_CHUNK_SIZE) {
@@ -185,14 +188,13 @@ export class GroupsEngagementStatsService {
 
       const windowStart = new Date(Date.now() - ACTIVE_MEMBER_WINDOW_DAYS * DAY_MS);
       const activeUids = new Set<string>();
-      const coveredV2Uids = new Set<string>();
+      const coveredV1Ids = new Set<string>();
       let rowCount = 0;
 
       for (const result of chunkResults) {
         rowCount += result.rows.length;
         for (const row of result.rows) {
-          const v2Uid = v1ToV2Map.get(row.COMMITTEE_ID);
-          if (v2Uid) coveredV2Uids.add(v2Uid);
+          coveredV1Ids.add(row.COMMITTEE_ID);
           // Floor then clamp to `invited`, matching committee-engagement.service.ts's
           // `countsForWindow`/`buildResponse` posture — defense-in-depth against the model's own
           // `>= 0` and `attended <= invited` dbt invariants ever being violated, not a sign either
@@ -208,12 +210,15 @@ export class GroupsEngagementStatsService {
         }
       }
 
-      // Coverage is checked per originally-requested v2 committee, not just "rowCount > 0" — a
-      // fully-covered subset of the visible set would otherwise look like a complete answer, and a
-      // v2 uid that never resolved to a v1 id at all (never queried) counts as uncovered too. See
-      // the doc comment above.
-      const uncoveredCount = committeeUids.length - coveredV2Uids.size;
-      const fullyCovered = uncoveredCount <= 0;
+      // Coverage is checked per originally-requested v2 committee, forward through v2ToV1Map (not
+      // via a v1->v2 inversion, which would be lossy if two v2 committees ever resolved to the same
+      // v1 id) — a v2 uid that never resolved to a v1 id at all, or whose resolved v1 id has no
+      // covered row, both count as uncovered. See the doc comment above.
+      const uncoveredCount = committeeUids.filter((uid) => {
+        const v1Id = v2ToV1Map.get(uid);
+        return !v1Id || !coveredV1Ids.has(v1Id);
+      }).length;
+      const fullyCovered = uncoveredCount === 0;
       // Computed before logging so the logged active_members always matches what's actually returned.
       const activeMembers = fullyCovered ? activeUids.size : null;
 
@@ -224,7 +229,6 @@ export class GroupsEngagementStatsService {
           committee_count: committeeUids.length,
           resolved_v1_id_count: v2ToV1Map.size,
           chunk_count: chunks.length,
-          covered_committee_count: coveredV2Uids.size,
           uncovered_committee_count: uncoveredCount,
         });
       } else {

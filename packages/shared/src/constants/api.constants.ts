@@ -56,6 +56,13 @@ export const NATS_CONFIG = {
    * Request timeout in milliseconds
    */
   REQUEST_TIMEOUT: 5000,
+
+  /**
+   * Max concurrent request/reply round trips when resolving a batch of IDs (e.g.
+   * resolveCommitteeV2UidsToV1Ids) — a caller with a large N (LF staff visible on hundreds of
+   * committees) shouldn't fire hundreds of concurrent NATS requests at once.
+   */
+  LOOKUP_BATCH_CONCURRENCY: 10,
 } as const;
 
 /**
