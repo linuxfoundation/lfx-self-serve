@@ -231,9 +231,20 @@ export class CommitteeViewComponent {
   // separate check here rather than folded into `canReview()` itself: `canReview()` also drives
   // Settings-tab visibility and the 'review' permission level elsewhere, and broadening those to
   // inherited auditors is a larger, out-of-scope decision for this engagement slice.
-  public readonly canAccessEngagement: Signal<boolean> = computed(
-    () => !this.isVisitor() || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)
-  );
+  //
+  // Explicitly pessimistic during myRoleLoading() rather than deriving from !isVisitor() (which
+  // reads `true` — "not a visitor" — throughout ANY loading window regardless of the real my_role,
+  // by design, so tab-visibility gates like isMemberOrAdmin default to showing tabs during the
+  // initial load rather than flashing them away). That optimism is wrong for a gate that fires a
+  // fetch and renders a whole new card: a genuine visitor would see canAccessEngagement() flip true
+  // for the duration of every myRoleLoading() window (initial load, post-join, any silent
+  // refreshCommittee()), flashing the Overview card open before it resolves closed again (Cursor
+  // Bugbot). Loading itself is already handled separately — initEngagement's own `roleLoading` check
+  // holds fetches via EMPTY during this window — so this only needs to settle before deciding.
+  public readonly canAccessEngagement: Signal<boolean> = computed(() => {
+    if (this.myRoleLoading()) return false;
+    return this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors);
+  });
 
   public myPermission: Signal<CommitteePermissionLevel> = computed(() => {
     if (this.canEdit()) return 'manage';
