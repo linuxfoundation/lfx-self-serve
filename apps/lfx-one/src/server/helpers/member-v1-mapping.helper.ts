@@ -4,6 +4,7 @@
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import { logger } from '../services/logger.service';
 import type { NatsService } from '../services/nats.service';
 import { buildMemberV1MappingCacheKey, valkeyService } from '../services/valkey.service';
 import { resolveV1MappingBatch } from './v1-mapping-batch.helper';
@@ -22,17 +23,50 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
   return v1Id === null || typeof v1Id === 'string';
 }
 
+/** Matches a bare UUID (case-insensitive) — the `lfx-v1-sync-helper` responder's documented shape
+ * for `committee_member.uid.*`. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Parses a `committee_member.uid.<v2Uid>` response (`"{project_sfid}:{committee_sfid}:{member_sfid}"`)
+ * into the usable member id, or `null` if the response can't be trusted yet.
+ *
+ * Two rejections beyond a plain shape mismatch, both driven by `lfx-v1-sync-helper`'s own
+ * documented contract for this key (its `parseCommitteeMemberReverseMapping`): the third field is a
+ * *discriminated union*, not always a usable person identifier.
+ *
+ * 1. Requires exactly 3 segments, not "at least 3" — a legacy 4-field `recordSFID:contactSFID` value
+ *    (an extra colon from an older mapping generation) would otherwise silently fold its extra
+ *    segment into this parser's 3rd field, handing back the wrong id without any error.
+ * 2. Rejects a 3rd field that itself looks like a UUID. Per the upstream contract, a UUID there means
+ *    the "poisoned" pre-backfill form of this mapping: the `platform-community__c` *record* SFID
+ *    (a committee-membership row identifier), not the member's actual contact identity — the exact
+ *    bug LFXV2-2673's backfill script exists to repair. Accepting it here would report a *successful*
+ *    resolution to a value that can never join `MEMBER_USER_ID`, and worse, positive-cache that wrong
+ *    value for `MEMBER_V1_MAPPING_TTL_SECONDS` (7 days) — masking the mapping for a week even after
+ *    the backfill repairs it. Returning `null` instead routes this uid through
+ *    `resolveV1MappingBatch`'s indeterminate path (never cached, logged, retried next request), which
+ *    is the honest state for a transient, backfill-fixable condition.
+ */
+export function parseMemberMappingResponse(responseText: string): string | null {
+  const parts = responseText.split(':');
+  if (parts.length !== 3 || !parts[2]) return null;
+  if (UUID_PATTERN.test(parts[2])) return null;
+  return parts[2];
+}
+
 /**
  * Resolves LFX v2 committee-member UUIDs to the v1 member SFID via the same
  * `lfx.lookup_v1_mapping` NATS bridge `committee-v1-mapping.helper.ts` uses for committees
- * (`committee_member.uid.<v2Uid>` key, response `"{project_sfid}:{committee_sfid}:{member_sfid}"` —
- * the member SFID is the third segment). TODO(LFXV2-2973): this whole bridge is temporary — remove
- * it once the warehouse model carries v2 keys directly (LFXV2-2968).
+ * (`committee_member.uid.<v2Uid>` key — see `parseMemberMappingResponse` for the response shape and
+ * its discriminated-union caveat). TODO(LFXV2-2973): this whole bridge is temporary — remove it once
+ * the warehouse model carries v2 keys directly (LFXV2-2968).
  *
- * The exact response shape here is the one open assumption in this bridge: it comes from the
- * `lfx-v1-sync-helper` repo's documented NATS contract, not from any in-repo evidence or a live
- * round-trip test in this codebase. If the real shape differs, every uid degrades to unresolved
- * (never throws) — the one line to change is `parseResponse` below.
+ * Beyond the response-shape parsing, one open assumption remains unverified: whether the resolved
+ * `member_sfid` actually shares an identity space with the warehouse's `MEMBER_USER_ID` column at
+ * all (candidates include a Salesforce Contact SFID and a legacy LFID — both appear in live
+ * `MEMBER_USER_ID` samples). This resolver can only be as correct as that assumption; live
+ * validation must confirm real joins before trusting this bridge's output in production.
  *
  * Fronted by a long-TTL (`MEMBER_V1_MAPPING_TTL_SECONDS`, 7d) Valkey cache — a person's legacy
  * identity is stable, so once resolved there's no reason to re-hit NATS for the same member on
@@ -41,9 +75,10 @@ function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCa
  * hammer NATS on every page load, while a mapping added later (e.g. after a backfill) still shows
  * up within the hour. Critically, this negative cache is only ever written for a *confirmed*
  * "no mapping" NATS response (`resolveV1MappingBatch`'s `confirmedUnresolved`) — never for an
- * indeterminate one (a timed-out request, or a uid the wall-clock budget never got to). Caching the
- * latter would silently convert a transient NATS hiccup into "this member has no mapping" for a full
- * hour, for every consumer of that member across every committee they're on.
+ * indeterminate one (a timed-out request, a uid the wall-clock budget never got to, or a response
+ * `parseMemberMappingResponse` rejected). Caching any of those would silently convert a transient or
+ * fixable state into "this member has no mapping" for a full hour, for every consumer of that member
+ * across every committee they're on.
  *
  * The cache-check phase deliberately does NOT reuse `NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY`'s
  * chunking — that constant protects a remote NATS responder from a request burst, which doesn't
@@ -64,34 +99,55 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
   if (uniqueUids.length === 0) return result;
 
   const uncached: string[] = [];
+  let cacheHits = 0;
+  let negativeCacheHits = 0;
+  let cacheBypassedUnsafeUids = 0;
 
   await Promise.all(
     uniqueUids.map(async (uid) => {
       const key = buildMemberV1MappingCacheKey(uid);
-      const cached = key ? await valkeyService.getJson<MemberV1MappingCacheEntry>(key, isMemberV1MappingCacheEntry) : null;
+      if (!key) {
+        cacheBypassedUnsafeUids++;
+        uncached.push(uid);
+        return;
+      }
+      const cached = await valkeyService.getJson<MemberV1MappingCacheEntry>(key, isMemberV1MappingCacheEntry);
       if (cached === null) {
         uncached.push(uid);
         return;
       }
-      if (cached.v1Id !== null) result.set(uid, cached.v1Id);
-      // else: confirmed-negative cache hit — leave unresolved, don't re-ask NATS.
+      if (cached.v1Id !== null) {
+        result.set(uid, cached.v1Id);
+        cacheHits++;
+      } else {
+        // confirmed-negative cache hit — leave unresolved, don't re-ask NATS.
+        negativeCacheHits++;
+      }
     })
   );
 
-  if (uncached.length === 0) return result;
+  if (cacheBypassedUnsafeUids > 0) {
+    logger.warning(req, 'resolve_member_v1_mapping', 'Member uid failed the cache-key safety check; bypassing cache for it', {
+      unsafe_uid_count: cacheBypassedUnsafeUids,
+    });
+  }
 
-  const { resolved, confirmedUnresolved } = await resolveV1MappingBatch(
-    req,
-    natsService,
-    uncached,
-    (v2Uid) => `committee_member.uid.${v2Uid}`,
-    (responseText) => {
-      const parts = responseText.split(':');
-      return parts.length >= 3 && parts[2] ? parts[2] : null;
-    },
-    'resolve_member_v1_mapping',
-    'committee-member'
-  );
+  if (uncached.length === 0) {
+    logger.debug(req, 'resolve_member_v1_mapping', 'Member v1-mapping resolution complete (cache-only, no NATS calls)', {
+      requested_count: uniqueUids.length,
+      cache_hits: cacheHits,
+      negative_cache_hits: negativeCacheHits,
+      resolved_count: result.size,
+    });
+    return result;
+  }
+
+  const { resolved, confirmedUnresolved } = await resolveV1MappingBatch(req, natsService, uncached, {
+    buildLookupKey: (v2Uid) => `committee_member.uid.${v2Uid}`,
+    parseResponse: parseMemberMappingResponse,
+    logOperation: 'resolve_member_v1_mapping',
+    entityLabel: 'committee-member',
+  });
 
   await Promise.all(
     uncached.map(async (uid) => {
@@ -111,6 +167,16 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
       // Indeterminate (neither resolved nor confirmedUnresolved): no cache write — retry next time.
     })
   );
+
+  logger.debug(req, 'resolve_member_v1_mapping', 'Member v1-mapping resolution complete', {
+    requested_count: uniqueUids.length,
+    cache_hits: cacheHits,
+    negative_cache_hits: negativeCacheHits,
+    nats_resolved_count: resolved.size,
+    nats_confirmed_unresolved_count: confirmedUnresolved.size,
+    resolved_count: result.size,
+    unresolved_count: uniqueUids.length - result.size,
+  });
 
   return result;
 }

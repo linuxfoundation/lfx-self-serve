@@ -36,18 +36,15 @@ import { resolveV1MappingBatch } from './v1-mapping-batch.helper';
  * know the batch was cut short. See `v1-mapping-batch.helper.ts` for the shared implementation.
  */
 export async function resolveCommitteeV2UidsToV1Ids(req: Request, natsService: NatsService, v2CommitteeUids: string[]): Promise<Map<string, string>> {
-  const { resolved } = await resolveV1MappingBatch(
-    req,
-    natsService,
-    v2CommitteeUids,
-    (v2Uid) => `committee.uid.${v2Uid}`,
-    (responseText) => {
+  const { resolved } = await resolveV1MappingBatch(req, natsService, v2CommitteeUids, {
+    buildLookupKey: (v2Uid) => `committee.uid.${v2Uid}`,
+    parseResponse: (responseText) => {
       // Response format: "{project_sfid}:{committee_sfid}" — the committee SFID is the second segment.
       const parts = responseText.split(':');
       return parts.length >= 2 && parts[1] ? parts[1] : null;
     },
-    'resolve_committee_v1_mapping',
-    'committee'
-  );
+    logOperation: 'resolve_committee_v1_mapping',
+    entityLabel: 'committee',
+  });
   return resolved;
 }

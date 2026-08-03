@@ -21,6 +21,7 @@ const parseResponse = (text: string) => {
   const parts = text.split(':');
   return parts.length >= 2 && parts[1] ? parts[1] : null;
 };
+const baseOptions = { buildLookupKey, parseResponse, logOperation: 'resolve_test_mapping', entityLabel: 'test' };
 
 function encode(value: string): Uint8Array {
   return new TextEncoder().encode(value);
@@ -50,7 +51,7 @@ describe('resolveV1MappingBatch', () => {
   it('resolves an id to its parsed v1 id (second colon-delimited segment)', async () => {
     const natsService = buildNatsService({ 'test.uid.a': 'project-sfid:v1-a' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a'], baseOptions);
 
     expect(result.resolved.get('a')).toBe('v1-a');
     expect(result.resolved.size).toBe(1);
@@ -60,17 +61,17 @@ describe('resolveV1MappingBatch', () => {
   it('resolves multiple ids concurrently, each to its own v1 id', async () => {
     const natsService = buildNatsService({ 'test.uid.a': 'proj:v1-a', 'test.uid.b': 'proj:v1-b' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a', 'b'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a', 'b'], baseOptions);
 
     expect(result.resolved.get('a')).toBe('v1-a');
     expect(result.resolved.get('b')).toBe('v1-b');
     expect(result.resolved.size).toBe(2);
   });
 
-  it('marks an id confirmed-unresolved (not indeterminate) when the response is empty', async () => {
+  it('marks an id confirmed-unresolved when the response is empty — a genuine "no mapping" answer', async () => {
     const natsService = buildNatsService({ 'test.uid.a': '' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a'], baseOptions);
 
     expect(result.resolved.has('a')).toBe(false);
     expect(result.confirmedUnresolved.has('a')).toBe(true);
@@ -80,34 +81,39 @@ describe('resolveV1MappingBatch', () => {
   it('marks an id confirmed-unresolved when the response is an error: response', async () => {
     const natsService = buildNatsService({ 'test.uid.a': 'error: not found' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a'], baseOptions);
 
     expect(result.resolved.has('a')).toBe(false);
     expect(result.confirmedUnresolved.has('a')).toBe(true);
   });
 
-  it('marks an id confirmed-unresolved when the response has no colon-delimited second segment', async () => {
+  it('leaves an id indeterminate (NOT confirmed-unresolved) when the response has no colon-delimited second segment', async () => {
+    // NATS answered with *something* — this parser just couldn't extract a usable id from it. That's
+    // not proof no mapping exists (could be a shape mismatch this consumer's parser gets wrong), so
+    // it must not be safe to negative-cache — the regression this test guards against a general-code
+    // review caught: parse failures used to be lumped in with confirmed-unresolved.
     const natsService = buildNatsService({ 'test.uid.a': 'no-colon-here' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a'], baseOptions);
 
     expect(result.resolved.has('a')).toBe(false);
-    expect(result.confirmedUnresolved.has('a')).toBe(true);
+    expect(result.confirmedUnresolved.has('a')).toBe(false);
     expect(warning).toHaveBeenCalledWith(req, 'resolve_test_mapping', 'Unexpected NATS response format', expect.objectContaining({ v2_uid: 'a' }));
   });
 
-  it('marks an id confirmed-unresolved when the response has a blank second segment', async () => {
+  it('leaves an id indeterminate when the response has a blank second segment', async () => {
     const natsService = buildNatsService({ 'test.uid.a': 'proj:' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a'], baseOptions);
 
-    expect(result.confirmedUnresolved.has('a')).toBe(true);
+    expect(result.resolved.has('a')).toBe(false);
+    expect(result.confirmedUnresolved.has('a')).toBe(false);
   });
 
   it('leaves an id indeterminate (neither resolved nor confirmed-unresolved) when the NATS request itself rejects', async () => {
     const natsService = buildNatsService({ 'test.uid.a': new Error('NATS timeout'), 'test.uid.b': 'proj:v1-b' });
 
-    const result = await resolveV1MappingBatch(req, natsService, ['a', 'b'], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ['a', 'b'], baseOptions);
 
     expect(result.resolved.has('a')).toBe(false);
     expect(result.confirmedUnresolved.has('a')).toBe(false);
@@ -118,7 +124,7 @@ describe('resolveV1MappingBatch', () => {
   it('returns empty resolved/confirmedUnresolved for an empty input list, without calling NATS', async () => {
     const natsService = buildNatsService({});
 
-    const result = await resolveV1MappingBatch(req, natsService, [], buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, [], baseOptions);
 
     expect(result.resolved.size).toBe(0);
     expect(result.confirmedUnresolved.size).toBe(0);
@@ -138,7 +144,7 @@ describe('resolveV1MappingBatch', () => {
       request,
     } as unknown as import('../services/nats.service').NatsService;
 
-    const pending = resolveV1MappingBatch(req, natsService, ids, buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const pending = resolveV1MappingBatch(req, natsService, ids, baseOptions);
 
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(10));
 
@@ -168,7 +174,7 @@ describe('resolveV1MappingBatch', () => {
       request,
     } as unknown as import('../services/nats.service').NatsService;
 
-    resolveV1MappingBatch(req, natsService, ids, buildLookupKey, parseResponse, 'resolve_test_mapping', 'test', { concurrency: 2 });
+    resolveV1MappingBatch(req, natsService, ids, { ...baseOptions, concurrency: 2 });
 
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
   });
@@ -182,7 +188,7 @@ describe('resolveV1MappingBatch', () => {
     dateSpy.mockReturnValueOnce(0);
     dateSpy.mockReturnValue(20000);
 
-    const result = await resolveV1MappingBatch(req, natsService, ids, buildLookupKey, parseResponse, 'resolve_test_mapping', 'test');
+    const result = await resolveV1MappingBatch(req, natsService, ids, baseOptions);
 
     expect(result.resolved.size).toBe(10);
     expect(warning).toHaveBeenCalledWith(

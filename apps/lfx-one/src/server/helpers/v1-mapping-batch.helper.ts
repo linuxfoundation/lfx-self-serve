@@ -13,16 +13,33 @@ import type { NatsService } from '../services/nats.service';
  * caller that wants to cache "no mapping exists" (e.g. `member-v1-mapping.helper.ts`'s negative
  * cache) needs to tell that apart from "we don't actually know yet":
  * - `resolved`: the id mapped successfully.
- * - `confirmedUnresolved`: NATS answered and the answer was a valid "no mapping" (empty response,
- *   an `error:`-prefixed response, or a response that didn't parse) — safe to negative-cache.
- * - Neither: indeterminate — the request itself threw (timeout, connection issue), or the id was
- *   never attempted because the wall-clock budget broke the loop first. A caller must NOT treat
- *   this the same as `confirmedUnresolved` for caching purposes — retry it next time instead of
- *   locking in "no mapping" for an id that was never actually asked about.
+ * - `confirmedUnresolved`: NATS explicitly answered "no mapping" (an empty response, or an
+ *   `error:`-prefixed one) — safe to negative-cache.
+ * - Neither: indeterminate — the request itself threw (timeout, connection issue), the id was never
+ *   attempted because the wall-clock budget broke the loop first, or `parseResponse` rejected a
+ *   non-empty, non-error response (a shape mismatch, or — for a caller like the member helper whose
+ *   `parseResponse` also screens out a transient/poisoned upstream value — a state that may resolve
+ *   correctly on a later attempt). A caller must NOT treat this the same as `confirmedUnresolved` for
+ *   caching purposes: negative-caching a parse failure would mask the exact signal (repeated
+ *   "Unexpected NATS response format" warnings) that reveals a wrong parsing assumption, and could
+ *   lock in a transient-but-fixable state for the full negative-cache TTL.
  */
 export interface V1MappingBatchResult {
   resolved: Map<string, string>;
   confirmedUnresolved: Set<string>;
+}
+
+/** Named-parameter bag for `resolveV1MappingBatch` — folds what were previously trailing positional
+ * arguments (`buildLookupKey`, `parseResponse`, `logOperation`, `entityLabel`) into one object so two
+ * adjacent same-typed strings (`logOperation`/`entityLabel`) can't be silently transposed at a call
+ * site; a swap there would compile cleanly but produce plausible-looking-but-wrong log output. */
+export interface V1MappingBatchOptions {
+  buildLookupKey: (id: string) => string;
+  parseResponse: (responseText: string) => string | null;
+  logOperation: string;
+  entityLabel: string;
+  concurrency?: number;
+  budgetMs?: number;
 }
 
 /**
@@ -51,14 +68,11 @@ export async function resolveV1MappingBatch(
   req: Request,
   natsService: NatsService,
   ids: string[],
-  buildLookupKey: (id: string) => string,
-  parseResponse: (responseText: string) => string | null,
-  logOperation: string,
-  entityLabel: string,
-  options?: { concurrency?: number; budgetMs?: number }
+  options: V1MappingBatchOptions
 ): Promise<V1MappingBatchResult> {
-  const concurrency = options?.concurrency ?? NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY;
-  const budgetMs = options?.budgetMs ?? NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS;
+  const { buildLookupKey, parseResponse, logOperation, entityLabel } = options;
+  const concurrency = options.concurrency ?? NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY;
+  const budgetMs = options.budgetMs ?? NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS;
 
   const codec = natsService.getCodec();
   const resolved = new Map<string, string>();
@@ -76,7 +90,8 @@ export async function resolveV1MappingBatch(
 
       const responseText = codec.decode(response.data);
 
-      // Response format is entity-specific (parsed via `parseResponse`), but empty/`error:` is universal.
+      // Only an explicit empty/`error:` response is a *confirmed* "no mapping" answer — universal
+      // across every consumer of this subject, unlike the entity-specific `parseResponse` below.
       if (!responseText || responseText.startsWith('error:')) {
         logger.warning(req, logOperation, 'NATS lookup returned no mapping', {
           v2_uid: v2Uid,
@@ -87,11 +102,16 @@ export async function resolveV1MappingBatch(
 
       const v1Id = parseResponse(responseText);
       if (!v1Id) {
+        // Indeterminate, NOT confirmed-unresolved: NATS answered with *something*, but this
+        // consumer's parser couldn't extract a usable id from it — a shape mismatch (this entity's
+        // response format is wrong) or a value `parseResponse` itself rejected as unusable-for-now
+        // (e.g. the member helper's transient/poisoned-record screen). Either way it's not proof no
+        // mapping exists, so it must not be cached as one.
         logger.warning(req, logOperation, 'Unexpected NATS response format', {
           v2_uid: v2Uid,
           response: responseText,
         });
-        return { status: 'confirmed-unresolved', id: v2Uid };
+        return null;
       }
 
       return { status: 'resolved', id: v2Uid, v1Id };

@@ -67,10 +67,14 @@ export class CommitteeEngagementService {
    * whichever `memberV1Map` it's given.
    *
    * Live mode races the roster and Snowflake reads via `Promise.all` (`queryEngagementRows` owns its
-   * own caching and missing-object degrade independently of this method), then — once the roster is
-   * known — kicks off the member-ID bridge (LFXV2-1705, TODO(LFXV2-2973): temporary, remove once the
-   * model carries v2 keys directly per LFXV2-2968) so it overlaps with whatever's left of the
-   * Snowflake query rather than adding to the critical path sequentially.
+   * own caching and missing-object degrade independently of this method) — both promises are handed
+   * to the same `Promise.all` call synchronously so neither can ever be an unhandled rejection, even
+   * if one settles while the other is still pending. The member-ID bridge (LFXV2-1705,
+   * TODO(LFXV2-2973): temporary, remove once the model carries v2 keys directly per LFXV2-2968) then
+   * runs only when the query actually returned rows — a committee with zero rows (not yet synced, or
+   * a missing-object degrade) has nothing to join against regardless of whether member ids resolve,
+   * so skipping it avoids paying the bridge's worst-case NATS exposure (concurrency-batched, but still
+   * many seconds under a slow/down responder) on every request for a committee this data can't help.
    */
   public async getCommitteeEngagement(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementResponse> {
     if (isEngagementMockBackend()) {
@@ -93,15 +97,19 @@ export class CommitteeEngagementService {
       return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock', identityMemberV1Map);
     }
 
-    const membersPromise = this.committeeService.getCommitteeMembers(req, committeeUid);
-    const queryResultPromise = this.queryEngagementRows(req, committeeUid);
-    const members = await membersPromise;
-    const memberV1MapPromise = resolveMemberV2UidsToV1Ids(
-      req,
-      this.natsService,
-      members.map((member) => member.uid)
-    );
-    const [queryResult, memberV1Map] = await Promise.all([queryResultPromise, memberV1MapPromise]);
+    const [members, queryResult] = await Promise.all([
+      this.committeeService.getCommitteeMembers(req, committeeUid),
+      this.queryEngagementRows(req, committeeUid),
+    ]);
+
+    const memberV1Map =
+      queryResult.rows.length > 0
+        ? await resolveMemberV2UidsToV1Ids(
+            req,
+            this.natsService,
+            members.map((member) => member.uid)
+          )
+        : new Map<string, string>();
 
     return this.buildResponse(req, committeeUid, members, queryResult, window, 'live', memberV1Map);
   }
@@ -203,12 +211,14 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * Joins on `MEMBER_USER_ID` = `CommitteeMember.uid`, per the finalized dbt model's documented
-   * grain (`committee_id, member_user_id` — see `committee-engagement.internal.interface.ts`); an
-   * exact key needing no blank/duplicate-email data-quality layer. A minimal duplicate-uid guard
-   * remains (last-write-wins, logged) in case the live read ever surfaces a grain bug; the model's
-   * own dbt tests already enforce uniqueness on this grain, so this is a defensive backstop, not an
-   * expected occurrence.
+   * Joins on `MEMBER_USER_ID` = the roster member's *resolved v1 id* (`memberV1Map.get(member.uid)`,
+   * LFXV2-1705's member-ID bridge — see this class's and `member-v1-mapping.helper.ts`'s doc
+   * comments), not `CommitteeMember.uid` directly: the finalized dbt model's documented grain
+   * (`committee_id, member_user_id` — see `committee-engagement.internal.interface.ts`) is native to
+   * the legacy platform-collaboration source, which predates v2 and never carried v2 identifiers. A
+   * minimal duplicate-uid guard remains (last-write-wins, logged) in case the live read ever surfaces
+   * a grain bug; the model's own dbt tests already enforce uniqueness on this grain, so this is a
+   * defensive backstop, not an expected occurrence.
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
    * always reflects the full committee; a member with no matching row — the whole-committee

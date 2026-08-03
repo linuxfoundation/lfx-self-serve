@@ -548,6 +548,19 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(2);
     });
 
+    it('skips the member-mapping bridge entirely when the query returns zero rows — nothing to join against, so no need to pay the NATS cost', async () => {
+      // A committee with no warehouse rows (not yet synced, or a genuine empty read) has nothing for
+      // any resolved member id to match, so calling resolveMemberV2UidsToV1Ids would only add latency
+      // (up to the NATS batch's own wall-clock budget) without ever being able to change the outcome.
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(resolveMemberV2UidsToV1Ids).not.toHaveBeenCalled();
+      expect(result.data_available).toBe(false);
+    });
+
     it('rethrows a non-missing-object Snowflake error rather than degrading', async () => {
       getCommitteeMembers.mockResolvedValueOnce([]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
