@@ -58,8 +58,7 @@ export class CommitteeEngagementSummaryComponent {
     () => `Attendance Rate: ${this.attendanceRateLabel()} — personal attendance across all invited roster members, including Emeritus seats`
   );
   public readonly activeMembersAriaLabel: Signal<string> = computed(
-    () =>
-      `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — members with attendance this window or who joined within it; Emeritus seats excluded`
+    () => `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — active count excludes Emeritus seats; total roster count includes them`
   );
 
   public onWindowChange(windowId: string): void {

@@ -232,19 +232,15 @@ export class CommitteeViewComponent {
   // Settings-tab visibility and the 'review' permission level elsewhere, and broadening those to
   // inherited auditors is a larger, out-of-scope decision for this engagement slice.
   //
-  // Explicitly pessimistic during myRoleLoading() rather than deriving from !isVisitor() (which
-  // reads `true` — "not a visitor" — throughout ANY loading window regardless of the real my_role,
-  // by design, so tab-visibility gates like isMemberOrAdmin default to showing tabs during the
-  // initial load rather than flashing them away). That optimism is wrong for a gate that fires a
-  // fetch and renders a whole new card: a genuine visitor would see canAccessEngagement() flip true
-  // for the duration of every myRoleLoading() window (initial load, post-join, any silent
-  // refreshCommittee()), flashing the Overview card open before it resolves closed again (Cursor
-  // Bugbot). Loading itself is already handled separately — initEngagement's own `roleLoading` check
-  // holds fetches via EMPTY during this window — so this only needs to settle before deciding.
-  public readonly canAccessEngagement: Signal<boolean> = computed(() => {
-    if (this.myRoleLoading()) return false;
-    return this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors);
-  });
+  // Only updates on a *settled* (non-loading) resolution — never derived directly from
+  // myRoleLoading() — so it neither reads optimistic-true during ANY loading window (which would
+  // flash the Overview card open for a genuine visitor before resolving closed, Cursor Bugbot) nor
+  // flips pessimistic-false during a later silent refreshCommittee() for an already-eligible user
+  // (edit chairs, join/leave, member mutations all set committeeRefreshing() — briefly re-entering
+  // myRoleLoading() — which would otherwise unmount+remount the card each time even though
+  // initEngagement holds its data via EMPTY through that same window, Cursor Bugbot). Defaults to
+  // false pre-first-resolution, then holds the last settled answer until the next settled one.
+  public readonly canAccessEngagement: Signal<boolean> = this.initCanAccessEngagement();
 
   public myPermission: Signal<CommitteePermissionLevel> = computed(() => {
     if (this.canEdit()) return 'manage';
@@ -826,6 +822,22 @@ export class CommitteeViewComponent {
     );
   }
 
+  private initCanAccessEngagement(): Signal<boolean> {
+    return toSignal(
+      toObservable(
+        computed(() => ({
+          loading: this.myRoleLoading(),
+          eligible: this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors),
+        }))
+      ).pipe(
+        filter(({ loading }) => !loading),
+        map(({ eligible }) => eligible),
+        distinctUntilChanged()
+      ),
+      { initialValue: false }
+    );
+  }
+
   private initEngagement(): Signal<CommitteeEngagementResponse | null> {
     // One combined computed (not combineLatest over separate toObservable() sources) so the fields
     // — recomputed in the same signal flush — can't glitch through an inconsistent intermediate
@@ -989,11 +1001,12 @@ export class CommitteeViewComponent {
     );
   }
 
-  /** Case-insensitive email match against an auditor list (committee-scoped or inherited). */
+  /** Case-insensitive email OR username match against an auditor list (committee-scoped or inherited). */
   private isCallerInAuditorList(auditors: CommitteeUser[] | undefined): boolean {
     const email = this.userService.user()?.email?.toLowerCase();
-    if (!email) return false;
-    return auditors?.some((u) => u.email?.toLowerCase() === email) ?? false;
+    const username = this.userService.viewerUsername()?.toLowerCase();
+    if (!email && !username) return false;
+    return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
   }
 
   private getJoinErrorMessage(err: HttpErrorResponse, committeeName: string): string {
