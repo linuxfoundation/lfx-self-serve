@@ -829,6 +829,11 @@ export class CommitteeViewComponent {
     // At-Risk count (client-joined against the fresh roster) and the overview card's server
     // summary could diverge until the next window switch.
     const engagementKey = computed(() => ({
+      // The route's committee id updates synchronously on navigation (toSignal({requireSync:true})
+      // on route.paramMap); `committee()` — and therefore `uid` below — only catches up once the
+      // async committee fetch resolves. Comparing the two detects the in-between window where
+      // engagement()/engagementLoading still reflect the PREVIOUS committee (Cursor Bugbot).
+      routeCommitteeId: this.committeeId(),
       uid: this.committee()?.uid ?? null,
       window: this.engagementWindow(),
       enabled: this.engagementMetricsEnabled(),
@@ -851,6 +856,7 @@ export class CommitteeViewComponent {
         filter((key): key is typeof key & { uid: string } => key.uid !== null),
         distinctUntilChanged(
           (a, b) =>
+            a.routeCommitteeId === b.routeCommitteeId &&
             a.uid === b.uid &&
             a.window === b.window &&
             a.enabled === b.enabled &&
@@ -858,12 +864,23 @@ export class CommitteeViewComponent {
             a.notEligible === b.notEligible &&
             a.refresh === b.refresh
         ),
-        switchMap(({ uid, window, enabled, roleLoading, notEligible }) => {
+        switchMap(({ routeCommitteeId, uid, window, enabled, roleLoading, notEligible }) => {
           // uid is guaranteed non-null here (filtered above) — this only needs to check flag/SSR now.
           // Flag off (or SSR, where the flag fails closed to its default) means zero engagement
           // fetches — the gated UI renders nothing, so a request would be pure waste.
           if (!enabled || !isPlatformBrowser(this.platformId)) {
             this.engagementLoading.set(false);
+            return of(null);
+          }
+          // Navigated to a different committee, but `committee()` (and thus `uid`) hasn't caught up
+          // yet: `engagement()` still holds the PREVIOUS committee's data while `engagementWindow`
+          // has already reset (linkedSignal keyed on committeeId, same tick as the route change) —
+          // rendering that stale payload under the reset window pills would show mismatched
+          // committee/window data with no loading indicator. Clear immediately (not EMPTY, which
+          // would preserve it) and show the skeleton. Distinct from an ordinary same-committee
+          // roleLoading refresh below, where the still-valid prior data should keep rendering.
+          if (routeCommitteeId !== uid) {
+            this.engagementLoading.set(true);
             return of(null);
           }
           // Role still resolving (e.g. mid silent-refresh) — hold current state rather than fire a
