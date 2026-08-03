@@ -152,7 +152,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(execute).not.toHaveBeenCalled();
     });
 
-    it('is always data_available: true and computed_at: null', async () => {
+    it('is data_available: true for a non-empty roster, and computed_at: null', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1' })]);
 
@@ -160,6 +160,16 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       expect(result.data_available).toBe(true);
       expect(result.computed_at).toBeNull();
+    });
+
+    it('reports data_available:false for a mock response on an empty roster — no member to match', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      generateMockEngagementRows.mockReturnValueOnce([]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(false);
+      expect(result.data_source).toBe('mock');
     });
 
     it('marks the response data_source: mock and logs at INFO, so a consumer or operator can tell it apart from a real read', async () => {
@@ -468,6 +478,16 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
         'get_committee_engagement',
         expect.stringContaining('join key mismatch'),
         expect.objectContaining({ committee_uid: 'committee-1', row_count: 2, roster_size: 2 })
+      );
+      // Guards the debug-log field split (LFXV2-1705 review fix): query_data_available carries the
+      // raw query-level flag, data_available carries what the response actually reports — the two
+      // diverge in exactly this total-join-key-mismatch scenario, which is what makes it worth
+      // asserting on here rather than in a case where they'd coincidentally agree.
+      expect(debug).toHaveBeenCalledWith(
+        req,
+        'get_committee_engagement',
+        'Joined engagement rows to the roster',
+        expect.objectContaining({ matched_count: 0, query_data_available: true, data_available: false })
       );
     });
 
