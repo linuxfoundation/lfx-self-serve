@@ -59,6 +59,9 @@ export class ProjectContextService {
   public readonly selectedFoundation: Signal<ProjectContext | null> = computed(() => this.foundationSelection());
   public readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectSelection());
 
+  /** The context kind the current route declares (see {@link routeLensKind}), exposed read-only. */
+  public readonly activeRouteLensKind: Signal<'foundation' | 'project' | null> = computed(() => this.routeLensKind());
+
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
   public readonly canWrite: Signal<boolean> = this.initCanWrite();
 

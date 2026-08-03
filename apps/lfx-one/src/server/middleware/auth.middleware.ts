@@ -29,6 +29,9 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public meeting join - no authentication required
   { pattern: '/meetings/', type: 'ssr', auth: 'optional' },
 
+  // Public group detail - anonymous access with optional auth for membership enrichment
+  { pattern: '/groups/', type: 'ssr', auth: 'optional' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 
