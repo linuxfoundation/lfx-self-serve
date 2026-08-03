@@ -165,6 +165,81 @@
         }
       </div>
 
+      <!-- Performance by Project — moved here from the Email drawer, which showed it
+           while it still served the combined Campaign Performance card. -->
+      @if ((drawerData().projectBreakdown?.length ?? 0) > 0) {
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-projects-section">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Performance by Project</h3>
+            <p class="text-sm text-gray-600">Paid campaign performance grouped by project over the last 6 months</p>
+          </div>
+
+          <!-- Summary Stats -->
+          <div class="flex flex-wrap gap-4" data-testid="paid-social-reach-drawer-project-stats">
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-gray-500">Conversions</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ totalConversions() }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-gray-500">Sessions</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ totalSessions() }}</span>
+            </div>
+          </div>
+
+          <!-- Table Header -->
+          <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+            <span class="flex-[2] min-w-[120px]">Project / Campaign</span>
+            <span class="flex-1 text-right">Spend</span>
+            <span class="flex-1 text-right">Rev (last-touch)</span>
+            <span class="w-14 text-right">ROAS</span>
+            <span class="flex-1 text-right">Conv.</span>
+            <span class="w-14 text-right">Conv %</span>
+            <span class="w-14 text-right">CPC</span>
+            <span class="w-20 text-right">Performance</span>
+          </div>
+
+          <!-- Project Rows -->
+          @for (project of drawerData().projectBreakdown!; track project.projectName) {
+            <div
+              class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+              role="button"
+              tabindex="0"
+              [attr.aria-expanded]="expandedProjects().has(project.projectName)"
+              (click)="toggleProject(project.projectName)"
+              (keydown.enter)="toggleProject(project.projectName)"
+              (keydown.space)="$event.preventDefault(); toggleProject(project.projectName)"
+              data-testid="paid-social-reach-drawer-project-row">
+              <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2">{{ project.projectName }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">${{ formatCompact(project.spend) }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">${{ formatCompact(project.revenue) }}</span>
+              <span class="w-14 text-right text-sm font-semibold text-gray-900">{{ project.roas | number: '1.1-1' }}x</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(project.conversions) }}</span>
+              <span class="w-14 text-right text-sm font-semibold text-gray-900">{{ project.convRate | number: '1.1-1' }}%</span>
+              <span class="w-14 text-right text-sm font-semibold text-gray-900">${{ project.cpc | number: '1.2-2' }}</span>
+              <span class="w-20 flex justify-end">
+                <lfx-tag [value]="project.performance" [severity]="getPerformanceSeverity(project.performance)" [rounded]="true" />
+              </span>
+            </div>
+
+            <!-- Expanded Campaign Rows -->
+            @if (expandedProjects().has(project.projectName)) {
+              @for (campaign of project.campaigns; track campaign.campaignName) {
+                <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="paid-social-reach-drawer-campaign-row">
+                  <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{ campaign.campaignName }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">${{ formatCompact(campaign.spend) }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">${{ formatCompact(campaign.revenue) }}</span>
+                  <span class="w-14 text-right text-xs text-gray-600">{{ campaign.roas | number: '1.1-1' }}x</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.conversions) }}</span>
+                  <span class="w-14 text-right text-xs text-gray-600">{{ campaign.convRate | number: '1.1-1' }}%</span>
+                  <span class="w-14 text-right text-xs text-gray-600">${{ campaign.cpc | number: '1.2-2' }}</span>
+                  <span class="w-20"></span>
+                </div>
+              }
+            }
+          }
+        </div>
+      }
+
       <!-- Channel Breakdown (hidden until data quality is validated) -->
     }
   </div>

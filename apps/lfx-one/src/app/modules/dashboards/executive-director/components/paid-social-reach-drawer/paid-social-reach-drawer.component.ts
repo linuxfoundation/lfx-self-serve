@@ -148,9 +148,50 @@ export class PaidSocialReachDrawerComponent {
   protected readonly formatNumber = formatNumber;
   protected readonly formatCurrency = formatCurrency;
 
+  // === Performance by Project ===
+  /** Project rows the user has expanded to reveal their campaigns. */
+  protected readonly expandedProjects = signal<Set<string>>(new Set());
+
+  /** Conversions summed across every project. */
+  protected readonly totalConversions: Signal<string> = computed(() => {
+    const projects = this.drawerData().projectBreakdown ?? [];
+    return formatNumber(projects.reduce((sum, p) => sum + p.conversions, 0));
+  });
+
+  /** Sessions summed across every project. */
+  protected readonly totalSessions: Signal<string> = computed(() => {
+    const projects = this.drawerData().projectBreakdown ?? [];
+    return formatNumber(projects.reduce((sum, p) => sum + p.sessions, 0));
+  });
+
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
+  }
+
+  /** Compact number for dense table cells — 1.2K / 3.4M. */
+  protected formatCompact(value: number): string {
+    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return value.toLocaleString();
+  }
+
+  protected getPerformanceSeverity(performance: string): 'danger' | 'warn' | 'success' | 'secondary' {
+    if (performance === 'LOW OPENS' || performance === 'LOW CLICKS' || performance === 'POOR' || performance === 'NO REVENUE') return 'danger';
+    if (performance === 'GOOD') return 'warn';
+    if (performance === 'EXCELLENT' || performance === 'STRONG') return 'success';
+    return 'secondary';
+  }
+
+  protected toggleProject(projectName: string): void {
+    const current = this.expandedProjects();
+    const next = new Set(current);
+    if (next.has(projectName)) {
+      next.delete(projectName);
+    } else {
+      next.add(projectName);
+    }
+    this.expandedProjects.set(next);
   }
 
   // === Private Initializers ===

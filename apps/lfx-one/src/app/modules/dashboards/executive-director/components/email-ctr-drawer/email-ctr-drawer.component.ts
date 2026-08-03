@@ -88,19 +88,10 @@ export class EmailCtrDrawerComponent {
     return sends > 0 ? Math.round(((clicks * 100.0) / sends) * 10) / 10 : 0;
   });
 
+  // Paid data still drives this drawer's recommendations and key insights; the paid
+  // presentation itself now lives in the Paid Media drawer.
   protected readonly paidData: Signal<SocialReachResponse> = this.initPaidData();
   private readonly paidDataResolved = signal(false);
-  protected readonly formattedTotalSpend: Signal<string> = computed(() => formatCurrency(this.paidData().totalSpend));
-  protected readonly formattedTotalRevenue: Signal<string> = computed(() => formatCurrency(this.paidData().totalRevenue));
-  protected readonly paidTotalConversions: Signal<string> = computed(() => {
-    const projects = this.paidData().projectBreakdown ?? [];
-    return formatNumber(projects.reduce((sum, p) => sum + p.conversions, 0));
-  });
-  protected readonly paidTotalSessions: Signal<string> = computed(() => {
-    const projects = this.paidData().projectBreakdown ?? [];
-    return formatNumber(projects.reduce((sum, p) => sum + p.sessions, 0));
-  });
-  protected readonly expandedProjects = signal<Set<string>>(new Set());
 
   protected readonly funnelAggregates: Signal<FunnelAggregates> = computed(() => {
     const projects = this.paidData().projectBreakdown ?? [];
@@ -185,17 +176,6 @@ export class EmailCtrDrawerComponent {
     if (performance === 'GOOD') return 'warn';
     if (performance === 'EXCELLENT' || performance === 'STRONG') return 'success';
     return 'secondary';
-  }
-
-  protected toggleProject(projectName: string): void {
-    const current = this.expandedProjects();
-    const next = new Set(current);
-    if (next.has(projectName)) {
-      next.delete(projectName);
-    } else {
-      next.add(projectName);
-    }
-    this.expandedProjects.set(next);
   }
 
   protected toggleChannel(channel: string): void {
