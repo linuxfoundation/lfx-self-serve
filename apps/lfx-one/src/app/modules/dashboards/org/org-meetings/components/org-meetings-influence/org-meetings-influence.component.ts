@@ -118,7 +118,11 @@ export class OrgMeetingsInfluenceComponent {
    */
   private buildRankTooltip(row: OrgInfluenceRow): string {
     const compared = `Ranked among the companies that contributed code or attended meetings on this project in the selected period.`;
-    if (row.rankTotalAll === null) {
+    // Absence is tested by type, not against null. The contract says `number | null`, but this runs
+    // on a payload that crossed HTTP and a cache, and during a rolling deploy a peer still on the
+    // pre-range contract omits the field entirely. `undefined` would slip past a `=== null` check
+    // and throw on toLocaleString inside a computed, taking the whole table down over a tooltip.
+    if (typeof row.rankTotalAll !== 'number') {
       return compared;
     }
     return `${compared} Across ${ORG_INFLUENCE_REFERENCE_WINDOW_LABEL}, ${row.rankTotalAll.toLocaleString('en-US')} companies have any recorded influence on it.`;
