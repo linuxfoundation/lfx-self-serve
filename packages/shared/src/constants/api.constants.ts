@@ -63,6 +63,17 @@ export const NATS_CONFIG = {
    * committees) shouldn't fire hundreds of concurrent NATS requests at once.
    */
   LOOKUP_BATCH_CONCURRENCY: 10,
+
+  /**
+   * Wall-clock budget (ms) for a whole batched lookup (e.g. resolveCommitteeV2UidsToV1Ids), not
+   * any single request. Batching trades an unbounded concurrent burst for a worst case of
+   * `ceil(N / LOOKUP_BATCH_CONCURRENCY)` sequential timeouts if the responder is down — for a
+   * large N that's minutes, not seconds. This caps the total wait: once exceeded, the caller stops
+   * issuing further batches and returns whatever resolved so far, letting the caller's own
+   * incomplete-result degrade path (e.g. treating an unresolved id as "not covered") handle the rest
+   * honestly instead of hanging the request.
+   */
+  LOOKUP_BATCH_BUDGET_MS: 15000,
 } as const;
 
 /**

@@ -1746,8 +1746,16 @@ export class MeetingController {
    * Thin wrapper over the shared `resolveCommitteeV2UidsToV1Ids` helper (also used by
    * `committee-engagement.service.ts` / `groups-engagement-stats.service.ts` for the identical
    * v1/v2 split, LFXV2-2968) — that helper returns the natural `v2Uid -> v1Sfid` direction; this
-   * method just inverts it, since registrant matching here needs to go from a v1 `committee_uid`
-   * back to the v2 identity.
+   * method inverts it, since registrant matching here needs to go from a v1 `committee_uid` back
+   * to the v2 identity.
+   *
+   * Pre-existing assumption, unchanged by the extraction: this inversion assumes the mapping is
+   * 1:1. If two of this meeting's v2 committees ever resolved to the same v1 SFID, the second
+   * overwrites the first here and that committee's registrants would be attributed to the wrong
+   * one — `groups-engagement-stats.service.ts`'s coverage check hit exactly this case and switched
+   * to a duplicate-safe forward lookup instead of inverting; this call site hasn't been changed to
+   * match, since a meeting's committees list is expected to be small and this path has no test
+   * coverage today to safely restructure the registrant-matching fan-out alongside it.
    */
   private async resolveV2ToV1CommitteeMappings(req: Request, v2CommitteeUids: string[]): Promise<Map<string, string>> {
     const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2CommitteeUids);

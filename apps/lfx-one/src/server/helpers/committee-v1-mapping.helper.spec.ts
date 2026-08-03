@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { warning } = vi.hoisted(() => ({ warning: vi.fn() }));
 
-vi.mock('@lfx-one/shared/constants', () => ({ NATS_CONFIG: { REQUEST_TIMEOUT: 5000, LOOKUP_BATCH_CONCURRENCY: 10 } }));
+vi.mock('@lfx-one/shared/constants', () => ({ NATS_CONFIG: { REQUEST_TIMEOUT: 5000, LOOKUP_BATCH_CONCURRENCY: 10, LOOKUP_BATCH_BUDGET_MS: 15000 } }));
 vi.mock('@lfx-one/shared/enums', () => ({ NatsSubjects: { LOOKUP_V1_MAPPING: 'lfx.lookup_v1_mapping' } }));
 vi.mock('../services/logger.service', () => ({ logger: { warning } }));
 
@@ -139,19 +139,40 @@ describe('resolveCommitteeV2UidsToV1Ids', () => {
 
     const pending = resolveCommitteeV2UidsToV1Ids(req, natsService, uids);
 
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(request).toHaveBeenCalledTimes(10); // capped, not all 15
+    // Waits for the actual condition rather than hand-counting microtask ticks — resilient to any
+    // future await added inside the batch loop (e.g. a budget check) that would shift the tick
+    // topology without changing the behavior being tested.
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(10)); // capped, not all 15 at once
 
     deferreds.forEach((d) => d.resolve({ data: encode('proj:resolved') }));
-    // More ticks than the first drain: resolving the batch's promises needs a tick, resolveOne's
-    // post-await continuation another, Promise.all settling another, then the for-loop's next
-    // iteration kicking off the second batch's requests a final one.
-    for (let i = 0; i < 6; i++) await Promise.resolve();
-    expect(request).toHaveBeenCalledTimes(15); // the remaining 5 start once the first batch settles
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(15)); // the remaining 5 start once the first batch settles
 
     deferreds.slice(10).forEach((d) => d.resolve({ data: encode('proj:resolved') }));
     const result = await pending;
     expect(result.size).toBe(15);
+  });
+
+  it('stops issuing further batches once the wall-clock budget is exceeded, returning the partial map resolved so far', async () => {
+    // 25 uids -> 3 batches of 10/10/5. Date.now() is stubbed so the deadline check reads "exceeded"
+    // starting with the second batch, proving the loop bails out early rather than draining all 3.
+    const uids = Array.from({ length: 25 }, (_, i) => `v2-${i}`);
+    const natsService = buildNatsService(Object.fromEntries(uids.map((uid) => [`committee.uid.${uid}`, 'proj:resolved'])));
+
+    const dateSpy = vi.spyOn(Date, 'now');
+    dateSpy.mockReturnValueOnce(0); // deadline = 0 + 15000
+    dateSpy.mockReturnValueOnce(0); // first loop check (i=0): 0 <= 15000, proceeds
+    dateSpy.mockReturnValue(20000); // every check after: 20000 > 15000, budget exceeded
+
+    const result = await resolveCommitteeV2UidsToV1Ids(req, natsService, uids);
+
+    expect(result.size).toBe(10); // only the first batch ran before the budget check broke the loop
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'resolve_committee_v1_mapping',
+      'Lookup batch budget exceeded; returning the partial map resolved so far',
+      expect.objectContaining({ resolved_count: 10, requested_count: 25 })
+    );
+
+    dateSpy.mockRestore();
   });
 });

@@ -28,11 +28,18 @@ import type { NatsService } from '../services/nats.service';
  *
  * Batched at `NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY` in-flight requests at a time rather than firing
  * one per uid unconditionally — a caller resolving a large N (e.g. LF staff visible on hundreds of
- * committees) shouldn't burst hundreds of concurrent NATS round trips in one call.
+ * committees) shouldn't burst hundreds of concurrent NATS round trips in one call. That batching
+ * trades an unbounded burst for a worst case of `ceil(N / LOOKUP_BATCH_CONCURRENCY)` sequential
+ * timeouts if the responder is down, which for a large N is minutes, not seconds — so the whole
+ * call is also capped at `NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS` wall-clock: once exceeded, no further
+ * batches are issued and whatever resolved so far is returned. A partial map still degrades
+ * correctly through the same "did this uid resolve" contract above — the caller doesn't need to
+ * know the batch was cut short.
  */
 export async function resolveCommitteeV2UidsToV1Ids(req: Request, natsService: NatsService, v2CommitteeUids: string[]): Promise<Map<string, string>> {
   const codec = natsService.getCodec();
   const v2ToV1Map = new Map<string, string>();
+  const deadline = Date.now() + NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS;
 
   const resolveOne = async (v2Uid: string): Promise<{ v2Uid: string; v1Sfid: string } | null> => {
     try {
@@ -73,6 +80,13 @@ export async function resolveCommitteeV2UidsToV1Ids(req: Request, natsService: N
   };
 
   for (let i = 0; i < v2CommitteeUids.length; i += NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY) {
+    if (Date.now() > deadline) {
+      logger.warning(req, 'resolve_committee_v1_mapping', 'Lookup batch budget exceeded; returning the partial map resolved so far', {
+        resolved_count: v2ToV1Map.size,
+        requested_count: v2CommitteeUids.length,
+      });
+      break;
+    }
     const batch = v2CommitteeUids.slice(i, i + NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY);
     const batchResults = await Promise.all(batch.map(resolveOne));
     for (const result of batchResults) {

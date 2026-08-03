@@ -227,7 +227,8 @@ export class GroupsEngagementStatsService {
         // visibility as the other two degrade paths below, not silent DEBUG.
         logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committees have no engagement rows; returning null (not yet synced?)', {
           committee_count: committeeUids.length,
-          resolved_v1_id_count: v2ToV1Map.size,
+          resolved_v2_uid_count: v2ToV1Map.size,
+          distinct_v1_id_count: v1Ids.length,
           chunk_count: chunks.length,
           uncovered_committee_count: uncoveredCount,
         });
