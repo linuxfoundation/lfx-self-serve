@@ -136,10 +136,22 @@
 
     @if (showOrganizationField()) {
       <div class="flex w-full flex-col gap-2">
-        <label class="block text-sm font-medium text-gray-700">Organization <span class="text-gray-400 font-normal">(optional)</span></label>
+        <label class="block text-sm font-medium text-gray-700">
+          Organization
+          @if (organizationRequiredForDirectAdd()) {
+            <span class="text-red-600" aria-hidden="true">*</span>
+          } @else {
+            <span class="text-gray-400 font-normal">(optional)</span>
+          }
+        </label>
         @if (isDirectAdd()) {
           <p class="text-xs text-gray-500">
-            Optionally set a default organization for the new member(s). If you select an existing user above, this auto-populates from their profile.
+            @if (organizationRequiredForDirectAdd()) {
+              This group requires an organization for each member. Search for an organization below, or enter the name and website. Selecting someone above may
+              auto-populate this field from their profile.
+            } @else {
+              Optionally set a default organization for the new member(s). If you select an existing user above, this auto-populates from their profile.
+            }
           </p>
         } @else {
           <p class="text-xs text-gray-500">
@@ -157,13 +169,13 @@
           inputStyleClass="text-sm w-full"
           panelStyleClass="text-sm w-full"
           dataTestId="add-member-organization-search"
-          [domainRequired]="true"
+          [domainRequired]="organizationRequiredForDirectAdd()"
           (onOrganizationResolved)="onOrgResolved($event)">
         </lfx-organization-search>
-        @if (showOrgError()) {
+        @if (orgErrorMessage(); as orgError) {
           <p class="text-xs text-red-600" role="alert" data-testid="add-member-org-error">
             <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
-            Organization not found. Select from the search results, or clear the field to leave it blank.
+            {{ orgError }}
           </p>
         }
       </div>

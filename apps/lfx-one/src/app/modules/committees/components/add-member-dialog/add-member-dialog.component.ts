@@ -28,11 +28,20 @@ import {
   OrganizationResolveResult,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
-import { buildCommitteeOrganizationPayload, committeeRequiresOrganization, hasLfAccount, parseEmailList, rankUserSearchResults } from '@lfx-one/shared/utils';
+import {
+  buildCommitteeOrganizationPayload,
+  committeeOrganizationFormComplete,
+  committeeRequiresOrganization,
+  hasLfAccount,
+  normalizeToUrl,
+  parseEmailList,
+  rankUserSearchResults,
+} from '@lfx-one/shared/utils';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { SearchService } from '@services/search.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -87,8 +96,10 @@ export class AddMemberDialogComponent {
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
   public readonly mode: AddMemberDialogMode = this.config.data?.mode ?? 'direct-add';
   public readonly isDirectAdd = computed(() => this.mode === 'direct-add');
-  /** True when the committee requires organization on accept — shows an optional default org field. */
+  /** True when the committee requires organization (voting or business email). */
   public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
+  /** Direct-add must include a valid organization before members can be created upstream. */
+  public readonly organizationRequiredForDirectAdd = computed(() => this.showOrganizationField() && this.isDirectAdd());
   private readonly existingMemberEmails = new Set<string>(
     ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
@@ -145,6 +156,7 @@ export class AddMemberDialogComponent {
   );
   public readonly orgInvalid: Signal<boolean> = this.initOrgInvalid();
   public readonly showOrgError: Signal<boolean> = this.initShowOrgError();
+  public readonly orgErrorMessage: Signal<string | null> = this.initOrgErrorMessage();
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
 
@@ -186,21 +198,30 @@ export class AddMemberDialogComponent {
     this.form.get('emails')!.setValue(current ? `${current}\n${email}` : email);
     this.searchForm.get('query')!.setValue('');
 
-    // Pre-fill the org field from the selected user's current employer when shown and blank.
-    if (this.showOrganizationField() && user.username && !this.form.get('organization')!.value?.trim()) {
-      this.searchService
-        .getUserCurrentEmployer(user.username)
-        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-        .subscribe((employer) => {
-          if (employer?.name && !this.form.get('organization')!.value?.trim()) {
-            this.resolvedOrganizationName = employer.name.trim();
-            this.form.patchValue({
-              organization: employer.name.trim(),
-              organization_id: employer.id ?? null,
-              organization_url: employer.website ?? '',
-            });
-          }
-        });
+    // Pre-fill organization from search result / profile when the field is shown.
+    if (this.showOrganizationField()) {
+      const searchOrg = user.organization;
+      if (!this.form.get('organization')!.value?.trim() && searchOrg?.name) {
+        this.prefillOrganization(searchOrg.name, searchOrg.website);
+      }
+      if (user.username && !committeeOrganizationFormComplete(this.organizationFormValue())) {
+        this.searchService
+          .getUserCurrentEmployer(user.username)
+          .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+          .subscribe((employer) => {
+            if (!employer?.name) {
+              return;
+            }
+            if (!this.form.get('organization')!.value?.trim()) {
+              this.prefillOrganization(employer.name, employer.website);
+              return;
+            }
+            if (!committeeOrganizationFormComplete(this.organizationFormValue()) && employer.website) {
+              const normalizedUrl = normalizeToUrl(employer.website) ?? employer.website.trim();
+              this.form.patchValue({ organization_url: normalizedUrl });
+            }
+          });
+      }
     }
   }
 
@@ -222,6 +243,7 @@ export class AddMemberDialogComponent {
 
     if (this.showOrganizationField()) {
       this.orgSubmitAttempted.set(true);
+      this.form.get('organization')?.markAsTouched();
       if (this.organizationSearch()?.manualMode()) {
         this.form.get('organization_url')?.markAsTouched();
       }
@@ -250,7 +272,13 @@ export class AddMemberDialogComponent {
             this.resolvedOrganizationName = result.name;
             this.form.patchValue({ organization_id: result.id || null, organization: result.name });
           }
-          fanOut(buildCommitteeOrganizationPayload(this.organizationFormValue()));
+          const formValue = this.organizationFormValue();
+          if (this.organizationRequiredForDirectAdd() && !committeeOrganizationFormComplete(formValue)) {
+            this.orgSubmitAttempted.set(true);
+            this.submitting.set(false);
+            return;
+          }
+          fanOut(buildCommitteeOrganizationPayload(formValue));
         },
       });
       return;
@@ -403,8 +431,7 @@ export class AddMemberDialogComponent {
     if (err.status === 409) {
       return 'already a member';
     }
-    const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
-    return upstream ?? 'add failed';
+    return extractErrorMessage(err, 'add failed');
   }
 
   private inviteFailureReason(err: HttpErrorResponse): string {
@@ -434,36 +461,73 @@ export class AddMemberDialogComponent {
 
   private initOrgInvalid(): Signal<boolean> {
     return computed(() => {
-      if (!this.showOrganizationField()) return false;
+      if (!this.showOrganizationField()) {
+        return false;
+      }
+
+      const required = this.organizationRequiredForDirectAdd();
+      const formValue = this.organizationFormValue();
+      const hasName = !!formValue.organization.trim();
+      const pendingSearch = this.organizationSearch()?.searchTerm() ?? '';
+
       if (this.organizationSearch()?.manualMode()) {
+        if (required && !hasName) {
+          return true;
+        }
         return this.orgUrlStatus() === 'INVALID';
       }
-      const vals = this.orgFormValues();
-      const hasName = !!(vals.organization ?? '').trim();
-      const pendingSearch = this.organizationSearch()?.searchTerm() ?? '';
-      if (!hasName && pendingSearch) return true;
-      if (!hasName) return false;
-      const hasOrgId = !!vals.organization_id;
-      const urlValue = (vals.organization_url ?? '').trim();
-      let hasValidUrl = false;
-      if (urlValue) {
-        try {
-          hasValidUrl = new URL(urlValue).protocol === 'https:';
-        } catch {
-          /* not a valid URL */
-        }
+
+      if (!hasName && pendingSearch) {
+        return true;
       }
-      return !hasOrgId && !hasValidUrl;
+      if (!hasName) {
+        return required;
+      }
+
+      return !committeeOrganizationFormComplete(formValue);
     });
   }
 
   private initShowOrgError(): Signal<boolean> {
     return computed(() => {
-      if (!this.orgInvalid()) return false;
-      if (this.organizationSearch()?.manualMode()) return false;
-      if (this.orgSubmitAttempted()) return true;
+      if (!this.orgInvalid()) {
+        return false;
+      }
+      if (this.orgSubmitAttempted()) {
+        return true;
+      }
+      if (this.organizationSearch()?.manualMode()) {
+        return false;
+      }
       const hasName = !!(this.orgFormValues().organization ?? '').trim();
       return !hasName && !!(this.organizationSearch()?.searchTerm() ?? '');
+    });
+  }
+
+  private initOrgErrorMessage(): Signal<string | null> {
+    return computed(() => {
+      if (!this.showOrgError()) {
+        return null;
+      }
+      const formValue = this.organizationFormValue();
+      if (this.organizationRequiredForDirectAdd() && !formValue.organization.trim()) {
+        return 'Organization is required. Search for an organization or enter the name and website.';
+      }
+      if (this.organizationSearch()?.manualMode()) {
+        return 'Enter the organization name and a valid https:// website.';
+      }
+      return 'Select an organization from the search results, or enter the name and website.';
+    });
+  }
+
+  private prefillOrganization(name: string, website?: string | null): void {
+    const trimmedName = name.trim();
+    const normalizedUrl = website ? (normalizeToUrl(website) ?? website.trim()) : '';
+    this.resolvedOrganizationName = trimmedName;
+    this.form.patchValue({
+      organization: trimmedName,
+      organization_id: null,
+      organization_url: normalizedUrl,
     });
   }
 
