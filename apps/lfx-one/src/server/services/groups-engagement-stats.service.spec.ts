@@ -5,7 +5,7 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls } = vi.hoisted(() => {
+const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls, execute, getMyCommitteeUids } = vi.hoisted(() => {
   const store = new Map<string, unknown>();
   const calls = { count: 0 };
   return {
@@ -27,6 +27,8 @@ const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls } 
     ),
     cacheStore: store,
     fetcherCalls: calls,
+    execute: vi.fn(),
+    getMyCommitteeUids: vi.fn(),
   };
 });
 
@@ -35,10 +37,37 @@ vi.mock('./valkey.service', () => ({ withUserCache: withUserCacheMock }));
 // Source the real VALKEY_CACHE values by importing the underlying file directly (not the
 // `@lfx-one/shared/constants` barrel, which transitively pulls in Angular — see the import-rationale
 // comment in date-time.utils.ts) so a namespace/TTL rename can't silently desync this mock from the
-// value the test asserts against below.
+// value the test asserts against below. DEFAULT_LFX_ONE_PLATINUM_SCHEMA is included too since
+// `committeeEngagementTable()` (real, unmocked helper) resolves against it.
 vi.mock('@lfx-one/shared/constants', async () => {
   const { VALKEY_CACHE } = await import('../../../../../packages/shared/src/constants/valkey-cache.constants');
-  return { VALKEY_CACHE };
+  return { VALKEY_CACHE, DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE' };
+});
+// The classifier functions are deep-imported from their real implementation (not hand-copied) so a
+// decision-table change there fails this suite too — same rationale as
+// committee-engagement.service.spec.ts, which exhaustively covers their boundary behavior.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.utils')>(
+    '../../../../../packages/shared/src/utils/committee-engagement-classifier.utils'
+  );
+  return {
+    isCommitteeMemberActive: actual.isCommitteeMemberActive,
+    isJoinedWithinWindow: actual.isJoinedWithinWindow,
+  };
+});
+vi.mock('./committee.service', () => ({
+  CommitteeService: class {
+    public getMyCommitteeUids = getMyCommitteeUids;
+  },
+}));
+vi.mock('./snowflake.service', async () => {
+  const { isMissingObjectError } = await vi.importActual<typeof import('../helpers/snowflake-error.helper')>('../helpers/snowflake-error.helper');
+  return {
+    SnowflakeService: {
+      getInstance: () => ({ execute }),
+      isMissingObjectError,
+    },
+  };
 });
 vi.mock('./logger.service', () => ({
   logger: {
@@ -59,6 +88,15 @@ function buildReq(): Request {
   return {} as Request;
 }
 
+function activeMemberRow(overrides: { MEMBER_JOINED_AT?: string | null; MEMBER_VOTING_STATUS?: string; ATTENDED_COUNT_30D?: number } = {}) {
+  return {
+    MEMBER_JOINED_AT: '2020-01-01T00:00:00.000Z',
+    MEMBER_VOTING_STATUS: 'Voting Rep',
+    ATTENDED_COUNT_30D: 0,
+    ...overrides,
+  };
+}
+
 describe('GroupsEngagementStatsService', () => {
   let service: GroupsEngagementStatsService;
   const originalBackend = process.env['ENGAGEMENT_BACKEND'];
@@ -70,6 +108,8 @@ describe('GroupsEngagementStatsService', () => {
     fetcherCalls.count = 0;
     service = new GroupsEngagementStatsService();
     getEffectiveUsernameMock.mockReturnValue('alice');
+    getMyCommitteeUids.mockReset().mockResolvedValue(new Set());
+    execute.mockReset();
     // Fail-safe default: any environment that doesn't explicitly opt in gets 'live' (null fields),
     // never fabricated numbers — so tests must opt into 'mock' explicitly, matching production.
     process.env['ENGAGEMENT_BACKEND'] = 'mock';
@@ -120,6 +160,12 @@ describe('GroupsEngagementStatsService', () => {
     it('marks the response source as mock', async () => {
       const result = await service.getEngagementStats(buildReq());
       expect(result.source).toBe('mock');
+    });
+
+    it('never touches Snowflake or the committee-uid lookup', async () => {
+      await service.getEngagementStats(buildReq());
+      expect(execute).not.toHaveBeenCalled();
+      expect(getMyCommitteeUids).not.toHaveBeenCalled();
     });
   });
 
@@ -172,37 +218,147 @@ describe('GroupsEngagementStatsService', () => {
       // stays 'mock' (or gets unset — either way), but NODE_ENV flips to production. Without the
       // backend-aware accept validator, this would return the still-cached `source: 'mock'` entry.
       process.env['NODE_ENV'] = 'production';
+      getMyCommitteeUids.mockResolvedValue(new Set());
 
       const liveResult = await service.getEngagementStats(buildReq());
 
       expect(liveResult.source).toBe('live');
-      expect(liveResult.active_members).toBeNull();
+      expect(liveResult.active_members).toBe(0);
       expect(liveResult.meetings_this_month).toBeNull();
       expect(fetcherCalls.count).toBe(2);
     });
   });
 
-  describe('live mode', () => {
-    it('returns null engagement fields without throwing, plus a computed_at timestamp and source=live', async () => {
+  describe('live mode — active_members', () => {
+    beforeEach(() => {
       process.env['ENGAGEMENT_BACKEND'] = 'live';
+    });
+
+    it('returns active_members: 0 (not null) and skips the Snowflake query when the caller has no visible committees', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set());
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('meetings_this_month always stays null in live mode — no calendar-month data source exists yet', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.meetings_this_month).toBeNull();
+      expect(typeof result.computed_at).toBe('string');
+      expect(result.source).toBe('live');
+    });
+
+    it('queries with an IN-clause placeholder per visible committee, binds in the same order', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2', 'committee-3']));
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      await service.getEngagementStats(buildReq());
+
+      const [sql, binds, options] = execute.mock.calls[0] as [string, string[], unknown];
+      expect((sql.match(/\?/g) ?? []).length).toBe(3);
+      expect(binds).toEqual(['committee-1', 'committee-2', 'committee-3']);
+      expect(options).toEqual({ expectMissingObject: true });
+      expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEETING_ATTENDANCE');
+    });
+
+    it('counts a member with real attendance as active', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 3 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(1);
+    });
+
+    it('counts a zero-attendance member who joined within the trailing 30 days as active (tenure grace)', async () => {
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 0, MEMBER_JOINED_AT: recentJoin })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(1);
+    });
+
+    it('excludes an Emeritus member from active_members regardless of real attendance', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 10, MEMBER_VOTING_STATUS: 'Emeritus' })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it('does not count a veteran member with zero attendance and no tenure grace', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ ATTENDED_COUNT_30D: 0 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it('sums active members across multiple rows from multiple visible committees', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({ ATTENDED_COUNT_30D: 1 }), // active
+          activeMemberRow({ ATTENDED_COUNT_30D: 0 }), // not active
+          activeMemberRow({ ATTENDED_COUNT_30D: 5 }), // active
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(2);
+    });
+
+    it('degrades to active_members: null (not 0) when the Snowflake query hits a missing-object error', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
 
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
-      expect(typeof result.computed_at).toBe('string');
       expect(result.source).toBe('live');
     });
-  });
 
-  describe('production hard-block', () => {
-    it('ignores ENGAGEMENT_BACKEND=mock and returns null fields (source=live) when NODE_ENV=production', async () => {
-      process.env['ENGAGEMENT_BACKEND'] = 'mock';
-      process.env['NODE_ENV'] = 'production';
+    it('degrades to active_members: null without throwing when fetching the visible committee set fails', async () => {
+      getMyCommitteeUids.mockRejectedValue(new Error('query-service unavailable'));
 
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
+      expect(result.meetings_this_month).toBeNull();
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('rethrows via degrade (not a thrown error) on an unexpected non-missing-object Snowflake error', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: connection reset'));
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBeNull();
+    });
+  });
+
+  describe('production hard-block', () => {
+    it('ignores ENGAGEMENT_BACKEND=mock and computes live active_members (source=live) when NODE_ENV=production', async () => {
+      process.env['ENGAGEMENT_BACKEND'] = 'mock';
+      process.env['NODE_ENV'] = 'production';
+      getMyCommitteeUids.mockResolvedValue(new Set());
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
       expect(result.meetings_this_month).toBeNull();
       expect(result.source).toBe('live');
     });

@@ -2,12 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { GroupsEngagementStats } from '@lfx-one/shared/interfaces';
+import { CommitteeEngagementWarehouseRow, GroupsEngagementStats } from '@lfx-one/shared/interfaces';
+import { isCommitteeMemberActive, isJoinedWithinWindow } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { committeeEngagementTable } from '../helpers/snowflake-schema.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
+import { SnowflakeService } from './snowflake.service';
 import { withUserCache } from './valkey.service';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_MEMBER_WINDOW_DAYS = 30;
+
+type ActiveMemberRow = Pick<CommitteeEngagementWarehouseRow, 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'ATTENDED_COUNT_30D'>;
 
 /**
  * `expectedSource` must match the backend resolved for *this* request — not just any valid
@@ -38,28 +47,26 @@ function resolveBackend(): 'mock' | 'live' {
   return process.env['ENGAGEMENT_BACKEND'] === 'mock' && process.env['NODE_ENV'] !== 'production' ? 'mock' : 'live';
 }
 
-// Per-process guard: the `live` no-dbt-path branch is the *expected steady state* in every
-// deployed environment until LFXV2-1705 ships (weeks/months, not an exceptional blip), so logging
-// it at WARN on every cache miss (~1/user/minute at the 60s TTL) would be sustained log noise
-// rather than an actionable signal. One WARN per process is enough to be discoverable on-call.
-let liveModeWarned = false;
-
 /**
  * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's visible
- * set only — mine semantics, no scope param (LFXV2-1711). Backed by the same dbt engagement model as
- * LFXV2-1705, which isn't readable yet, so both stats are mocked behind `ENGAGEMENT_BACKEND` until
- * that read path exists — a deliberate interim shim (flag-gated in the UI, TODO-marked here) pending
- * LFXV2-1705, not a permanent stand-in for the real upstream contract. Defaults to `live` (null
- * fields, never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is
- * additionally hard-blocked when `NODE_ENV=production` — an unconfigured or production environment
- * must fail to "no data," never to invented-looking data.
+ * set only — mine semantics, no scope param (LFXV2-1711). `active_members` reads live from the same
+ * `platinum_lfx_one_committee_meeting_attendance` dbt model as LFXV2-1705 (LFXV2-1711 requires the
+ * two surfaces use the same definition so they can't disagree). `meetings_this_month` stays `null`
+ * in live mode — the model exposes only rolling 30d/90d/YTD meeting counts, not a calendar-month
+ * grain, so there's no honest source for it yet (LFXV2-2961 tracks adding one). Defaults to
+ * `live` (never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock`
+ * is additionally hard-blocked when `NODE_ENV=production`.
  */
 export class GroupsEngagementStatsService {
+  private readonly snowflakeService = SnowflakeService.getInstance();
+  private readonly committeeService = new CommitteeService();
+
   /**
    * Returns the caller's engagement rollup, cached ~60s per user (see `withUserCache`) to absorb
-   * repeated dashboard refreshes. Never throws — `live` mode returns null fields pre-dbt-deploy
-   * rather than failing the request, matching the graceful-degradation precedent used elsewhere for
-   * not-yet-available dbt models (LFXV2-2874).
+   * repeated dashboard refreshes. Never throws — `live` mode degrades to null fields (missing
+   * committee set, missing-object Snowflake error, or any other unexpected failure) rather than
+   * failing the request, matching the graceful-degradation precedent used elsewhere for
+   * not-yet-available data (LFXV2-2874).
    */
   public async getEngagementStats(req: Request): Promise<GroupsEngagementStats> {
     const username = getEffectiveUsername(req) ?? '';
@@ -78,17 +85,11 @@ export class GroupsEngagementStatsService {
     const computedAt = new Date().toISOString();
 
     if (backend === 'live') {
-      // TODO(LFXV2-1711): read from the dbt engagement model (same source as LFXV2-1705) once its
-      // read path exists. Until then, always return null fields rather than fabricating live-looking
-      // data — the client renders an "Unavailable" degraded state for these two cards. WARN once per
-      // process (see `liveModeWarned` above), matching the graceful-degradation intent of the
-      // LFXV2-2874 precedent without turning the permanent pre-dbt-deploy steady state into
-      // sustained per-request log noise.
-      if (!liveModeWarned) {
-        liveModeWarned = true;
-        logger.warning(req, 'get_groups_engagement_stats', 'Engagement dbt model has no read path yet — returning null fields');
-      }
-      return { active_members: null, meetings_this_month: null, computed_at: computedAt, source: 'live' };
+      const activeMembers = await this.computeActiveMembers(req);
+      // meetings_this_month: no calendar-month grain exists in the model (only rolling
+      // 30d/90d/YTD) — left null rather than mislabeling a rolling window as "this month".
+      // LFXV2-2961 tracks adding a calendar-month data source.
+      return { active_members: activeMembers, meetings_this_month: null, computed_at: computedAt, source: 'live' };
     }
 
     // WARN, not DEBUG, on every call: unlike the live branch above, mock should essentially never
@@ -96,6 +97,63 @@ export class GroupsEngagementStatsService {
     // this the moment someone reports the dashboard numbers look wrong.
     logger.warning(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=mock — serving fixture engagement stats, not real data');
     return { ...deterministicMockStats(username), computed_at: computedAt, source: 'mock' };
+  }
+
+  /**
+   * Counts active members (attended >=1 meeting in the trailing 30 days, or joined within it,
+   * excluding Emeritus — `isCommitteeMemberActive`, the same function LFXV2-1705 uses) across every
+   * committee the caller can see (`getMyCommitteeUids` — "mine" semantics, no scope param, per
+   * LFXV2-1711). A single `IN (...)` query covers every visible committee at once — N+1-free
+   * regardless of how many committees the caller belongs to.
+   *
+   * Two distinct "nothing to report" cases stay distinguishable: `0` means the caller genuinely has
+   * no visible committees (a real answer); `null` means the count couldn't be computed (missing
+   * committee-set lookup, or a Snowflake missing-object/not-authorized error) — never thrown, so a
+   * stats failure never blocks the rest of the groups dashboard.
+   */
+  private async computeActiveMembers(req: Request): Promise<number | null> {
+    try {
+      const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req))];
+      if (committeeUids.length === 0) return 0;
+
+      const placeholders = committeeUids.map(() => '?').join(', ');
+      const sql = `
+        SELECT MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, ATTENDED_COUNT_30D
+        FROM ${committeeEngagementTable()}
+        WHERE COMMITTEE_ID IN (${placeholders})
+      `;
+
+      const result = await this.snowflakeService.execute<ActiveMemberRow>(sql, committeeUids, { expectMissingObject: true });
+      const windowStart = new Date(Date.now() - ACTIVE_MEMBER_WINDOW_DAYS * DAY_MS);
+
+      const activeMembers = result.rows.reduce((count, row) => {
+        const classificationInput = {
+          attended: row.ATTENDED_COUNT_30D,
+          invited: 0, // unused by isCommitteeMemberActive
+          votingStatus: row.MEMBER_VOTING_STATUS,
+          joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
+        };
+        return isCommitteeMemberActive(classificationInput) ? count + 1 : count;
+      }, 0);
+
+      logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
+        committee_count: committeeUids.length,
+        row_count: result.rows.length,
+        active_members: activeMembers,
+      });
+
+      return activeMembers;
+    } catch (error) {
+      if (!SnowflakeService.isMissingObjectError(error)) {
+        // A non-Snowflake failure (e.g. the visible-committee-set lookup) is unexpected — surface it
+        // distinctly from the expected pre-sync/missing-GRANT case below, but still degrade to null
+        // rather than failing the whole dashboard stats request.
+        logger.warning(req, 'get_groups_engagement_stats', 'Failed to compute active members; returning null', { err: error });
+        return null;
+      }
+      logger.warning(req, 'get_groups_engagement_stats', 'Active-members query hit a missing-object/not-authorized error; returning null', { err: error });
+      return null;
+    }
   }
 }
 

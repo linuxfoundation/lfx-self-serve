@@ -36,6 +36,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     computeCommitteeEngagementRate: actual.computeCommitteeEngagementRate,
     isCommitteeMemberActive: actual.isCommitteeMemberActive,
     isCommitteeMemberAtRisk: actual.isCommitteeMemberAtRisk,
+    isJoinedWithinWindow: actual.isJoinedWithinWindow,
   };
 });
 vi.mock('../helpers/committee-engagement-mock.helper', () => ({ generateMockEngagementRows }));
@@ -330,15 +331,20 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       delete process.env[NODE_ENV_KEY];
     });
 
-    it('queries the engagement table with the committee uid and window bound in order, against the resolved schema', async () => {
+    it('queries the engagement table with a single committee-uid bind, against the resolved schema and real model columns', async () => {
       getCommitteeMembers.mockResolvedValueOnce([]);
       execute.mockResolvedValueOnce({ rows: [] });
 
       await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-      expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEMBER_MEETING_ATTENDANCE'), ['committee-1', '90d'], {
+      expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEETING_ATTENDANCE'), ['committee-1'], {
         expectMissingObject: true,
       });
+      const [sql] = execute.mock.calls[0] as [string];
+      expect(sql).toContain('WHERE COMMITTEE_ID = ?');
+      expect(sql).toContain('MEMBER_USER_ID');
+      expect(sql).toContain('INVITED_COUNT_30D');
+      expect(sql).toContain('COMMITTEE_MEETINGS_YTD');
     });
 
     it('degrades to a zeroed, data_available:false response when the engagement table is missing', async () => {
@@ -398,13 +404,13 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       await expect(service.getCommitteeEngagement(req, 'committee-1', '30d')).rejects.toThrow('invalid identifier');
     });
 
-    it('builds the engagement-rows cache key from the committee uid and window', async () => {
+    it('builds the engagement-rows cache key from the committee uid only, since one fetch now covers all three windows', async () => {
       getCommitteeMembers.mockResolvedValueOnce([]);
       execute.mockResolvedValueOnce({ rows: [] });
 
       await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-      expect(buildCommitteeCacheKey).toHaveBeenCalledWith('committee-1', 'engagement-rows:90d');
+      expect(buildCommitteeCacheKey).toHaveBeenCalledWith('committee-1', 'engagement-rows');
     });
 
     it('returns cached rows without querying Snowflake on a cache hit, but still fetches the roster live', async () => {
@@ -420,7 +426,11 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.members[0]).toMatchObject({ attended: 5, invited: 5 });
     });
 
-    it('caches an empty result on a genuinely successful (empty) query', async () => {
+    it('returns data_available:false (and does not cache) when the live query succeeds but returns zero rows for this committee', async () => {
+      // The model is roster-anchored with zero-activity members retained, so a currently-populated
+      // committee should always yield >=1 row per current roster member. Zero rows most likely means
+      // this committee isn't synced/covered by the model yet — treated as "no data yet", not "zero
+      // engagement for everyone".
       buildCommitteeCacheKey.mockReturnValue('cache-key');
       getJson.mockResolvedValueOnce(null);
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
@@ -428,26 +438,21 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(setJson).toHaveBeenCalledWith('cache-key', [], 3600);
-      expect(result.data_available).toBe(true);
+      expect(result.data_available).toBe(false);
+      expect(setJson).not.toHaveBeenCalled();
     });
 
-    it('degrades (and does not cache) when the live query succeeds but returns rows in the old placeholder shape, since they cannot be mapped to the current model', async () => {
+    it('returns data_available:true and joins real model rows when the live query succeeds with actual rows', async () => {
       buildCommitteeCacheKey.mockReturnValue('cache-key');
       getJson.mockResolvedValueOnce(null);
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
-      execute.mockResolvedValueOnce({ rows: [{ MEMBER_EMAIL: 'a@x.com', ATTENDED_COUNT: 1, INVITED_COUNT: 2, COMPUTED_AT: null }] });
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 8 })] });
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(result.data_available).toBe(false);
-      expect(setJson).not.toHaveBeenCalled();
-      expect(warning).toHaveBeenCalledWith(
-        req,
-        'get_committee_engagement',
-        expect.stringContaining('pre-finalization placeholder shape'),
-        expect.objectContaining({ committee_uid: 'committee-1', row_count: 1 })
-      );
+      expect(result.data_available).toBe(true);
+      expect(result.members[0]).toMatchObject({ uid: 'm1', attended: 8, invited: 10, classification: 'High' });
+      expect(setJson).toHaveBeenCalledWith('cache-key', [row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 8 })], 3600);
     });
 
     it('does not cache the missing-object degrade — "no data yet" must not outlive the real dbt model landing', async () => {

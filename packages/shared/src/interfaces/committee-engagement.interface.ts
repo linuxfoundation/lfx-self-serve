@@ -84,36 +84,26 @@ export interface CommitteeEngagementResponse {
    */
   computed_at: string | null;
   /**
-   * `false`: the live query couldn't produce usable rows — either it couldn't run at all (the model
-   * isn't deployed, or the role isn't granted on it), or it ran and returned rows in the legacy
-   * placeholder shape rather than the finalized model's shape (see `LegacyEngagementPlaceholderRow`
-   * in `committee-engagement.internal.interface.ts`). Every member then shows zeroed counts and
-   * classifies `Inactive` — except a roster member with a real `Emeritus` voting status (classifies
-   * `Emeritus`) or one who genuinely joined within the requested window (classifies `High`, the
-   * tenure-grace tier, instead of `Inactive` off zero invites) — the roster's own join date still
-   * feeds that classification even on an unmatched row, though it isn't itself a response field.
-   * `role`/`voting_status` are roster passthroughs and stay populated regardless of whether a
-   * warehouse row matched.
+   * `false`: the live query couldn't produce usable rows — either it errored (the model isn't
+   * synced yet for this committee, or the role isn't granted on it) or it ran and returned zero
+   * rows for this `committee_uid` (the model is roster-anchored and retains zero-activity members,
+   * so a real, currently-populated committee should always yield >=1 row; zero rows most likely
+   * means this committee isn't covered by the model yet, not that engagement is genuinely zero for
+   * everyone). Every member then shows zeroed counts and classifies `Inactive` — except a roster
+   * member with a real `Emeritus` voting status (classifies `Emeritus`) or one who genuinely joined
+   * within the requested window (classifies `High`, the tenure-grace tier, instead of `Inactive` off
+   * zero invites) — the roster's own join date still feeds that classification even on an unmatched
+   * row, though it isn't itself a response field. `role`/`voting_status` are roster passthroughs and
+   * stay populated regardless of whether a warehouse row matched.
    *
    * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
-   * production); a genuinely successful live query; or a live cache hit (which the cache only ever
-   * persists from that same successful-query case). Both of the latter two are imprecise today —
-   * until the live SQL is rewritten against the finalized model, the only query that can succeed is
-   * one against the legacy placeholder table returning zero rows, which says nothing real about the
-   * committee but is marked `true` anyway (see `queryEngagementRows`'s `TODO(LFXV2-1705 follow-up)`
-   * in `committee-engagement.service.ts`). Once that rewrite lands, `true` will mean what it's meant
-   * to now: real-shaped rows, even zero of them for a genuinely new committee.
+   * production); a live query that returned >=1 row; or a live cache hit (which the cache only ever
+   * persists from that same case).
    *
-   * `true` means the read completed without degrading (mock generation, a cache hit, or a live
-   * query that neither errored nor returned unmappable placeholder rows) — it says nothing about
-   * whether the numbers are real, and today neither this flag nor `data_source` can guarantee that
-   * (see the imprecise `true` cases above); that guarantee only exists once the live SQL rewrite
-   * lands. It also doesn't gate whether per-member rows are present — `members[]` is roster-complete
-   * either way, with `role`/`voting_status` always populated and counts zeroed on `false` (see above
-   * for the roster-Emeritus and tenure-grace exceptions to the `Inactive` default — the roster join
-   * date behind that second exception isn't itself a response field). The UI should key its "no data
-   * available" placeholder state off this flag rather than inferring it
-   * from all-zero numbers.
+   * The UI should key its "no data available" placeholder state off this flag rather than inferring
+   * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`
+   * always populated and counts zeroed on `false` (see above for the roster-Emeritus and
+   * tenure-grace exceptions to the `Inactive` default).
    */
   data_available: boolean;
   /**

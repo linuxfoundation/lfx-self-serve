@@ -8,16 +8,21 @@ import type {
   CommitteeEngagementWarehouseRow,
   CommitteeEngagementWindow,
   CommitteeMember,
-  LegacyEngagementPlaceholderRow,
 } from '@lfx-one/shared/interfaces';
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
-import { classifyCommitteeEngagement, computeCommitteeEngagementRate, isCommitteeMemberActive, isCommitteeMemberAtRisk } from '@lfx-one/shared/utils';
+import {
+  classifyCommitteeEngagement,
+  computeCommitteeEngagementRate,
+  isCommitteeMemberActive,
+  isCommitteeMemberAtRisk,
+  isJoinedWithinWindow,
+} from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { isEngagementMockBackend } from '../helpers/committee-engagement-backend.helper';
 import { generateMockEngagementRows } from '../helpers/committee-engagement-mock.helper';
-import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
+import { committeeEngagementTable } from '../helpers/snowflake-schema.helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
@@ -27,16 +32,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Reads the per-committee-member meeting-attendance rollup (LFXV2-1705), gated between a
- * deterministic mock generator and the real (not-yet-deployed) warehouse read by
- * `ENGAGEMENT_BACKEND` (see `isEngagementMockBackend`), and joins whichever source produced rows
- * against the committee roster via `buildResponse`. Only the mock generator actually produces
- * `CommitteeEngagementWarehouseRow`-shaped rows today — the live SQL in `queryEngagementRows`
- * still targets the original placeholder columns (see that method's TODO) and resolves to an
- * empty row set rather than ever handing `buildResponse` a mismatched shape — including on a
- * cache hit, since `COMMITTEE_ENGAGEMENT_NAMESPACE`'s version segment is bumped whenever the
- * cached row shape changes, so no entry written under a prior shape can be read back as this one.
- * `buildResponse` itself doesn't branch on which path ran; the live SQL still needs a rewrite to
- * genuinely produce this shape once the real read surface is decided.
+ * deterministic mock generator and the real live warehouse read by `ENGAGEMENT_BACKEND` (see
+ * `isEngagementMockBackend`), and joins whichever source produced rows against the committee
+ * roster via `buildResponse`. Both paths produce `CommitteeEngagementWarehouseRow`-shaped rows —
+ * mock synchronously in-memory, live via a direct Snowflake read against the finalized
+ * `platinum_lfx_one_committee_meeting_attendance` dbt model (`lf-dbt#2694`), materialized as
+ * `COMMITTEE_MEETING_ATTENDANCE` under the `PLATINUM_LFX_ONE` schema. `buildResponse` doesn't
+ * branch on which path ran.
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -70,82 +72,65 @@ export class CommitteeEngagementService {
 
     const [members, queryResult] = await Promise.all([
       this.committeeService.getCommitteeMembers(req, committeeUid),
-      this.queryEngagementRows(req, committeeUid, window),
+      this.queryEngagementRows(req, committeeUid),
     ]);
 
     return this.buildResponse(req, committeeUid, members, queryResult, window, 'live');
   }
 
   /**
-   * Cached per `(committeeUid, window)` for an hour, matching the sibling Snowflake-backed
-   * analytics pattern in `org-lens-project-detail.service.ts`'s roster block — including its
-   * `degradedMissingObject` guard: the missing-object degrade is deliberately never written to the
-   * cache, or "no data yet" would keep being served for up to an hour after the real dbt model
-   * lands (and, per the comment below, a transient GRANT regression would get an hour of false
-   * "no data" too). The caller's `auditor` grant is already verified by `assertCommitteeRead` in
-   * the controller before this runs, so a cache hit can't bypass it.
+   * Cached per `committeeUid` for an hour, matching the sibling Snowflake-backed analytics pattern
+   * in `org-lens-project-detail.service.ts`'s roster block — including its `degradedMissingObject`
+   * guard: the missing-object degrade is deliberately never written to the cache, or "no data yet"
+   * would keep being served for up to an hour after a transient GRANT regression clears. The
+   * caller's `auditor` grant is already verified by `assertCommitteeRead` in the controller before
+   * this runs, so a cache hit can't bypass it.
    *
-   * TODO(LFXV2-1705 follow-up): this SQL still targets the original placeholder shape
-   * (`MEMBER_EMAIL`/`ATTENDED_COUNT`/`INVITED_COUNT`/`COMPUTED_AT`), not the finalized
-   * `platinum_lfx_one_committee_meeting_attendance` model's real columns. Typed against
-   * `LegacyEngagementPlaceholderRow` — not `CommitteeEngagementWarehouseRow` — since the two
-   * shapes share no fields and there's no honest mapping between them; a successful query (which
-   * would only happen if a table under the old placeholder name/columns exists, not the real
-   * model) degrades the same way a missing table does rather than silently type-casting an old row
-   * into the new shape and producing `undefined`/`NaN` throughout the response. Needs a full
-   * rewrite once the live read surface (query-service vs. direct Snowflake) is decided.
+   * One fetch covers all three windows (30d/90d/ytd are columns on the same row, not a
+   * `TIME_RANGE_TYPE` filter) — `buildResponse`'s `countsForWindow` picks the right columns per
+   * request, so there's no need to cache or query per-window.
    */
-  private async queryEngagementRows(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementQueryResult> {
-    const key = buildCommitteeCacheKey(committeeUid, `engagement-rows:${window}`);
+  private async queryEngagementRows(req: Request, committeeUid: string): Promise<CommitteeEngagementQueryResult> {
+    const key = buildCommitteeCacheKey(committeeUid, 'engagement-rows');
     if (key !== null) {
       const cached = await valkeyService.getJson<CommitteeEngagementWarehouseRow[]>(key, Array.isArray);
       if (cached !== null) return { rows: cached, dataAvailable: true };
     }
 
     const sql = `
-      SELECT MEMBER_EMAIL, ATTENDED_COUNT, INVITED_COUNT, COMPUTED_AT
-      FROM ${this.engagementTable()}
-      WHERE COMMITTEE_UID = ? AND TIME_RANGE_TYPE = ?
-      ORDER BY MEMBER_EMAIL
+      SELECT MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_ROLE, MEMBER_VOTING_STATUS,
+             INVITED_COUNT_30D, ATTENDED_COUNT_30D, COMMITTEE_MEETINGS_30D,
+             INVITED_COUNT_90D, ATTENDED_COUNT_90D, COMMITTEE_MEETINGS_90D,
+             INVITED_COUNT_YTD, ATTENDED_COUNT_YTD, COMMITTEE_MEETINGS_YTD
+      FROM ${committeeEngagementTable()}
+      WHERE COMMITTEE_ID = ?
     `;
-    logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid, window });
+    logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid });
 
-    const rows: CommitteeEngagementWarehouseRow[] = [];
+    let rows: CommitteeEngagementWarehouseRow[] = [];
     let dataAvailable = false;
     try {
-      const result = await this.snowflakeService.execute<LegacyEngagementPlaceholderRow>(sql, [committeeUid, window], { expectMissingObject: true });
-      if (result.rows.length > 0) {
-        // A table under the placeholder name/columns exists and returned rows — can't happen once
-        // the real model deploys under its own name, but if it ever does, this is not a shape this
-        // service can map, so it degrades rather than fabricating MEMBER_USER_ID/etc. from columns
-        // that don't have that information.
-        logger.warning(
-          req,
-          'get_committee_engagement',
-          'Live engagement query returned rows in the pre-finalization placeholder shape; cannot map to the current model, returning empty response',
-          {
-            committee_uid: committeeUid,
-            window,
-            row_count: result.rows.length,
-          }
-        );
-      } else {
-        dataAvailable = true;
-        logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, window, row_count: 0 });
-      }
+      const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [committeeUid], { expectMissingObject: true });
+      rows = result.rows;
+      // The model is roster-anchored with zero-activity members retained, so a currently-populated
+      // committee should always yield >=1 row per current roster member. Zero rows most likely
+      // means this committee isn't synced/covered by the model yet, not that engagement is
+      // genuinely zero for everyone — `dataAvailable: false` is the more honest "no data yet"
+      // signal, consistent with the missing-object degrade below.
+      dataAvailable = rows.length > 0;
+      logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, row_count: rows.length });
     } catch (error) {
-      // Pre-dbt-deploy the engagement table is absent; degrade to the empty response the
-      // members table expects instead of 5xx per committee page load. `dataAvailable: false`
-      // lets the response tell the UI this is "no data yet", not "zero engagement".
+      // Pre-sync (or a missing GRANT) the engagement table/row is absent; degrade to the empty
+      // response the members table expects instead of 5xx per committee page load. `dataAvailable:
+      // false` lets the response tell the UI this is "no data yet", not "zero engagement".
       //
       // isMissingObjectError's regex ("does not exist or not authorized") also matches a missing
-      // GRANT, not just a missing table — once the model is deployed, a role/permissions
-      // misconfiguration will degrade identically to the pre-deploy state. The message and
-      // attached `err` below are worded to not assert which case this is; check `err` first.
+      // GRANT, not just a missing table — a role/permissions misconfiguration degrades identically
+      // to the pre-sync state. The message and attached `err` below are worded to not assert which
+      // case this is; check `err` first.
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
       logger.warning(req, 'get_committee_engagement', 'Engagement query hit a missing-object/not-authorized error; returning empty response', {
         committee_uid: committeeUid,
-        window,
         err: error,
       });
     }
@@ -160,12 +145,10 @@ export class CommitteeEngagementService {
   /**
    * Joins on `MEMBER_USER_ID` = `CommitteeMember.uid`, per the finalized dbt model's documented
    * grain (`committee_id, member_user_id` — see `committee-engagement.internal.interface.ts`); an
-   * exact key needing no blank/duplicate-email data-quality layer. This assumes `member_user_id`
-   * resolves to the same identity as `CommitteeMember.uid` — worth re-confirming against the real
-   * model once the live read is wired up, since it's untestable before then. A minimal
-   * duplicate-uid guard remains (last-write-wins, logged) in case a future live implementation has
-   * a grain bug; the model's own dbt tests already enforce uniqueness on this grain, so this is a
-   * defensive backstop, not an expected occurrence.
+   * exact key needing no blank/duplicate-email data-quality layer. A minimal duplicate-uid guard
+   * remains (last-write-wins, logged) in case the live read ever surfaces a grain bug; the model's
+   * own dbt tests already enforce uniqueness on this grain, so this is a defensive backstop, not an
+   * expected occurrence.
    *
    * Every roster member appears in the response even without a matching row, so `total_count`
    * always reflects the full committee; a member with no matching row (today, only the live-degrade
@@ -239,8 +222,7 @@ export class CommitteeEngagementService {
       // is a required roster field, so it's always available to fall back to, and discarding it here
       // would cost a recently-joined member their tenure grace (case 2 of the classifier's decision
       // order) whenever the row's own date is missing, blank, or unparseable.
-      const joinedWithinWindow =
-        this.isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || this.isJoinedWithinWindow(member.created_at, windowStart);
+      const joinedWithinWindow = isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || isJoinedWithinWindow(member.created_at, windowStart);
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;
@@ -298,8 +280,8 @@ export class CommitteeEngagementService {
    * the caller, but `invited`/`committeeMeetings` themselves had no floor, so a warehouse
    * data-quality issue (e.g. a negative `INVITED_COUNT`) could otherwise flow unclamped into
    * `computeCommitteeEngagementRate` and the response. Defense-in-depth, matching the same clamp's
-   * posture one line up in `buildResponse` — not a reachable case today (Snowflake is a trusted
-   * internal source, and the live path currently always degrades to an empty row set).
+   * posture one line up in `buildResponse` — the model's own dbt tests already enforce a `>= 0`
+   * bound on every count column, so this is a backstop, not an expected occurrence.
    */
   private countsForWindow(
     row: CommitteeEngagementWarehouseRow,
@@ -319,21 +301,5 @@ export class CommitteeEngagementService {
     if (window === '30d') return new Date(now.getTime() - 30 * DAY_MS);
     if (window === '90d') return new Date(now.getTime() - 90 * DAY_MS);
     return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
-  }
-
-  /** `false` (fail-safe: no tenure protection) for a missing or unparseable join date. The caller ORs two independent calls (row date, roster date) rather than picking one value to check, so a present-but-unparseable row date can't shadow a genuinely usable roster one. */
-  private isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {
-    if (!joinedAt) return false;
-    const joined = joinedAt instanceof Date ? joinedAt : new Date(joinedAt);
-    return !Number.isNaN(joined.getTime()) && joined.getTime() > windowStart.getTime();
-  }
-
-  /**
-   * TODO(LFXV2-1705 follow-up): placeholder table/column names for the live path — see
-   * `queryEngagementRows`'s doc comment for why this doesn't need reconciling with the finalized
-   * model's real schema until the live read surface is decided.
-   */
-  private engagementTable(): string {
-    return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE`;
   }
 }

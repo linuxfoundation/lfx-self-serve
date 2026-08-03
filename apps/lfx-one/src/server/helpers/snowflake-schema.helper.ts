@@ -31,3 +31,14 @@ function snowflakeQualifier(value: string | undefined): string | null {
 export function resolveLfxOnePlatinumSchema(): string {
   return snowflakeQualifier(process.env['LFX_ONE_PLATINUM_SCHEMA']) ?? DEFAULT_LFX_ONE_PLATINUM_SCHEMA;
 }
+
+/**
+ * The finalized `platinum_lfx_one_committee_meeting_attendance` dbt model (LFXV2-1705, `lf-dbt#2694`)
+ * — dbt's alias generation strips the `platinum_lfx_one_` schema prefix, so the materialized table
+ * is `COMMITTEE_MEETING_ATTENDANCE`. Shared by `committee-engagement.service.ts` (per-committee read)
+ * and `groups-engagement-stats.service.ts` (cross-committee `active_members` aggregate) — same table,
+ * one place to update if it's ever renamed.
+ */
+export function committeeEngagementTable(): string {
+  return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE`;
+}

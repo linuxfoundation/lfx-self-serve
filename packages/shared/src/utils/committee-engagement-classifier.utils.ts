@@ -85,3 +85,17 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
   if (input.votingStatus === CommitteeMemberVotingStatus.EMERITUS) return false;
   return input.attended > 0 || input.joinedWithinWindow;
 }
+
+/**
+ * `false` (fail-safe: no tenure protection) for a missing or unparseable join date. Shared between
+ * `committee-engagement.service.ts` (per-member tenure clipping for `GET /:uid/engagement`) and
+ * `groups-engagement-stats.service.ts` (the `active_members` rollup for `GET /engagement-stats`) —
+ * both consume the same `member_joined_at` semantics from the LFXV2-1705 dbt model and must agree
+ * on what counts as "joined within the window," per LFXV2-1711's requirement that the two surfaces
+ * never disagree on active-member counts.
+ */
+export function isJoinedWithinWindow(joinedAt: string | Date | null, windowStart: Date): boolean {
+  if (!joinedAt) return false;
+  const joined = joinedAt instanceof Date ? joinedAt : new Date(joinedAt);
+  return !Number.isNaN(joined.getTime()) && joined.getTime() > windowStart.getTime();
+}
