@@ -9,10 +9,24 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // from their real implementation (not hand-copied) so a decision-table change there fails this
 // suite too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.utils.spec.ts.
-const { execute, getCommitteeMembers, generateMockEngagementRows, warning, info, debug, buildCommitteeCacheKey, getJson, setJson } = vi.hoisted(() => ({
+const {
+  execute,
+  getCommitteeMembers,
+  generateMockEngagementRows,
+  resolveCommitteeV2UidsToV1Ids,
+  warning,
+  info,
+  debug,
+  buildCommitteeCacheKey,
+  getJson,
+  setJson,
+} = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
   generateMockEngagementRows: vi.fn(),
+  // Defaults to a 1:1 v2-uid -> "warehouse-<uid>" mapping so existing 'committee-1'-based tests
+  // don't need per-test setup; tests exercising an unresolved uid override this explicitly.
+  resolveCommitteeV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`]))),
   warning: vi.fn(),
   info: vi.fn(),
   debug: vi.fn(),
@@ -40,11 +54,13 @@ vi.mock('@lfx-one/shared/utils', async () => {
   };
 });
 vi.mock('../helpers/committee-engagement-mock.helper', () => ({ generateMockEngagementRows }));
+vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids }));
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeMembers = getCommitteeMembers;
   },
 }));
+vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./snowflake.service', async () => {
   // `SnowflakeService` itself is mocked wholesale (constructing the real class pulls in the
   // snowflake-sdk connection pool and OTel instrumentation), but `isMissingObjectError` is a pure
@@ -107,6 +123,9 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     execute.mockReset();
     getCommitteeMembers.mockReset();
     generateMockEngagementRows.mockReset();
+    resolveCommitteeV2UidsToV1Ids
+      .mockReset()
+      .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`])));
     warning.mockReset();
     info.mockReset();
     debug.mockReset();
@@ -331,13 +350,14 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       delete process.env[NODE_ENV_KEY];
     });
 
-    it('queries the engagement table with a single committee-uid bind, against the resolved schema and real model columns', async () => {
+    it('resolves the v2 committee uid to its v1 id and binds THAT, not the raw v2 uid, against the resolved schema and real model columns', async () => {
       getCommitteeMembers.mockResolvedValueOnce([]);
       execute.mockResolvedValueOnce({ rows: [] });
 
       await service.getCommitteeEngagement(req, 'committee-1', '90d');
 
-      expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEETING_ATTENDANCE'), ['committee-1'], {
+      expect(resolveCommitteeV2UidsToV1Ids).toHaveBeenCalledWith(req, expect.anything(), ['committee-1']);
+      expect(execute).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEETING_ATTENDANCE'), ['warehouse-committee-1'], {
         expectMissingObject: true,
       });
       const [sql] = execute.mock.calls[0] as [string];
@@ -465,6 +485,35 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(getCommitteeMembers).toHaveBeenCalledOnce();
       expect(result.data_available).toBe(true);
       expect(result.members[0]).toMatchObject({ attended: 5, invited: 5 });
+    });
+
+    it('skips the v1-mapping NATS resolution entirely on a cache hit', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce([]);
+      getCommitteeMembers.mockResolvedValueOnce([]);
+
+      await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(resolveCommitteeV2UidsToV1Ids).not.toHaveBeenCalled();
+    });
+
+    it('degrades to a zeroed, data_available:false response (and does not query Snowflake) when the v2 uid has no v1 mapping', async () => {
+      buildCommitteeCacheKey.mockReturnValue('cache-key');
+      getJson.mockResolvedValueOnce(null);
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(new Map()); // no entry for 'committee-1'
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(result.data_available).toBe(false);
+      expect(setJson).not.toHaveBeenCalled();
+      expect(warning).toHaveBeenCalledWith(
+        req,
+        'get_committee_engagement',
+        expect.stringContaining('Could not resolve committee v2 uid to a v1 id'),
+        expect.objectContaining({ committee_uid: 'committee-1' })
+      );
     });
 
     it('returns data_available:false, and negative-caches under the short degrade TTL, when the live query succeeds but returns zero rows for this committee', async () => {

@@ -22,9 +22,11 @@ import type { Request } from 'express';
 
 import { isEngagementMockBackend } from '../helpers/committee-engagement-backend.helper';
 import { generateMockEngagementRows } from '../helpers/committee-engagement-mock.helper';
+import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { committeeEngagementTable } from '../helpers/snowflake-schema.helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
+import { NatsService } from './nats.service';
 import { SnowflakeService } from './snowflake.service';
 import { buildCommitteeCacheKey, valkeyService } from './valkey.service';
 
@@ -39,10 +41,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * `platinum_lfx_one_committee_meeting_attendance` dbt model (`lf-dbt#2694`), materialized as
  * `COMMITTEE_MEETING_ATTENDANCE` under the `PLATINUM_LFX_ONE` schema. `buildResponse` doesn't
  * branch on which path ran.
+ *
+ * The live path resolves the route's v2 committee UUID to the model's v1 committee SFID via
+ * `resolveCommitteeV2UidsToV1Ids` before querying (`queryEngagementRows`) — the model is keyed on
+ * the v1 SFID (the platform-collaboration source predates v2), confirmed with Jordan Evans, data
+ * owner, LFXV2-2968. See that method's doc comment for the mapping details.
  */
 export class CommitteeEngagementService {
   private readonly snowflakeService = SnowflakeService.getInstance();
   private readonly committeeService = new CommitteeService();
+  private readonly natsService = new NatsService();
 
   /**
    * Mock mode fetches the roster live (so mock rows can anchor to real uids) and generates rows
@@ -97,12 +105,31 @@ export class CommitteeEngagementService {
    * One fetch covers all three windows (30d/90d/ytd are columns on the same row, not a
    * `TIME_RANGE_TYPE` filter) — `buildResponse`'s `countsForWindow` picks the right columns per
    * request, so there's no need to cache or query per-window.
+   *
+   * `committeeUid` is the v2 committee-service UUID (the route param); the model is keyed on the
+   * v1 committee SFID — two different, both-correct ID spaces for the same committee (confirmed
+   * with Jordan Evans, data owner, LFXV2-2968). Resolved via `resolveCommitteeV2UidsToV1Ids` (the
+   * platform's `lfx.lookup_v1_mapping` NATS bridge, the same one `meeting.controller.ts` already
+   * uses for the identical split) before querying — the cache-hit fast path above runs first,
+   * still keyed on the v2 uid (the request identity), so a cache hit never needs the NATS round trip.
    */
   private async queryEngagementRows(req: Request, committeeUid: string): Promise<CommitteeEngagementQueryResult> {
     const key = buildCommitteeCacheKey(committeeUid, 'engagement-rows');
     if (key !== null) {
       const cached = await valkeyService.getJson<CommitteeEngagementWarehouseRow[]>(key, Array.isArray);
       if (cached !== null) return { rows: cached, dataAvailable: cached.length > 0 };
+    }
+
+    const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, [committeeUid]);
+    const warehouseCommitteeId = v2ToV1Map.get(committeeUid);
+    if (!warehouseCommitteeId) {
+      // No v1 mapping for this committee (not yet migrated, or the NATS lookup failed) — degrade
+      // the same honest way as a missing-object Snowflake error, and don't cache it: a transient
+      // NATS hiccup shouldn't get masked as "no data" for even the short degrade TTL.
+      logger.warning(req, 'get_committee_engagement', 'Could not resolve committee v2 uid to a v1 id; returning empty response', {
+        committee_uid: committeeUid,
+      });
+      return { rows: [], dataAvailable: false };
     }
 
     const sql = `
@@ -113,12 +140,12 @@ export class CommitteeEngagementService {
       FROM ${committeeEngagementTable()}
       WHERE COMMITTEE_ID = ?
     `;
-    logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid });
+    logger.debug(req, 'get_committee_engagement', 'Querying engagement rows', { committee_uid: committeeUid, warehouse_committee_id: warehouseCommitteeId });
 
     let rows: CommitteeEngagementWarehouseRow[] = [];
     let queriedSuccessfully = false;
     try {
-      const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [committeeUid], { expectMissingObject: true });
+      const result = await this.snowflakeService.execute<CommitteeEngagementWarehouseRow>(sql, [warehouseCommitteeId], { expectMissingObject: true });
       rows = result.rows;
       queriedSuccessfully = true;
       logger.debug(req, 'get_committee_engagement', 'Fetched engagement rows', { committee_uid: committeeUid, row_count: rows.length });

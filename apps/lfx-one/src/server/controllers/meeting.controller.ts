@@ -18,10 +18,9 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
+import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
@@ -1743,58 +1742,15 @@ export class MeetingController {
   /**
    * Resolves v2 committee UIDs to v1 committee SFIDs via NATS lookup.
    * Returns a map of v1_sfid → v2_uid for matching registrants to committees.
+   *
+   * Thin wrapper over the shared `resolveCommitteeV2UidsToV1Ids` helper (also used by
+   * `committee-engagement.service.ts` / `groups-engagement-stats.service.ts` for the identical
+   * v1/v2 split, LFXV2-2968) — that helper returns the natural `v2Uid -> v1Sfid` direction; this
+   * method just inverts it, since registrant matching here needs to go from a v1 `committee_uid`
+   * back to the v2 identity.
    */
   private async resolveV2ToV1CommitteeMappings(req: Request, v2CommitteeUids: string[]): Promise<Map<string, string>> {
-    const v1ToV2Map = new Map<string, string>();
-    const codec = this.natsService.getCodec();
-
-    const results = await Promise.all(
-      v2CommitteeUids.map(async (v2Uid) => {
-        try {
-          const lookupKey = `committee.uid.${v2Uid}`;
-          const response = await this.natsService.request(NatsSubjects.LOOKUP_V1_MAPPING, codec.encode(lookupKey), {
-            timeout: NATS_CONFIG.REQUEST_TIMEOUT,
-          });
-
-          const responseText = codec.decode(response.data);
-
-          // Response format: "{project_sfid}:{committee_sfid}" or empty/error
-          if (!responseText || responseText.startsWith('error:')) {
-            logger.warning(req, 'resolve_v2_to_v1_committee', 'NATS lookup returned no mapping', {
-              v2_uid: v2Uid,
-              response: responseText || '(empty)',
-            });
-            return null;
-          }
-
-          // Extract the committee_sfid (second part after the colon)
-          const parts = responseText.split(':');
-          if (parts.length < 2 || !parts[1]) {
-            logger.warning(req, 'resolve_v2_to_v1_committee', 'Unexpected NATS response format', {
-              v2_uid: v2Uid,
-              response: responseText,
-            });
-            return null;
-          }
-
-          const v1Sfid = parts[1];
-          return { v1Sfid, v2Uid };
-        } catch (error) {
-          logger.warning(req, 'resolve_v2_to_v1_committee', 'Failed to resolve v2→v1 committee mapping', {
-            v2_uid: v2Uid,
-            err: error,
-          });
-          return null;
-        }
-      })
-    );
-
-    for (const result of results) {
-      if (result) {
-        v1ToV2Map.set(result.v1Sfid, result.v2Uid);
-      }
-    }
-
-    return v1ToV2Map;
+    const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2CommitteeUids);
+    return new Map([...v2ToV1Map].map(([v2Uid, v1Sfid]) => [v1Sfid, v2Uid]));
   }
 }

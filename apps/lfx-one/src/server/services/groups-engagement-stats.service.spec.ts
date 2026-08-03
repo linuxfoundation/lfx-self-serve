@@ -5,7 +5,7 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls, execute, getMyCommitteeUids } = vi.hoisted(() => {
+const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls, execute, getMyCommitteeUids, resolveCommitteeV2UidsToV1Ids } = vi.hoisted(() => {
   const store = new Map<string, unknown>();
   const calls = { count: 0 };
   return {
@@ -29,10 +29,16 @@ const { getEffectiveUsernameMock, withUserCacheMock, cacheStore, fetcherCalls, e
     fetcherCalls: calls,
     execute: vi.fn(),
     getMyCommitteeUids: vi.fn(),
+    // Identity mapping by default (v2 uid -> itself) so the bulk of existing tests — written
+    // before the v1/v2 translation existed — don't need every COMMITTEE_ID updated; tests
+    // specifically covering the translation override this with a distinct mapping.
+    resolveCommitteeV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, uid]))),
   };
 });
 
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: getEffectiveUsernameMock }));
+vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids }));
+vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./valkey.service', () => ({ withUserCache: withUserCacheMock }));
 // Source the real VALKEY_CACHE/concurrency values by importing the underlying files directly (not
 // the `@lfx-one/shared/constants` barrel, which transitively pulls in Angular — see the
@@ -124,6 +130,9 @@ describe('GroupsEngagementStatsService', () => {
     service = new GroupsEngagementStatsService();
     getEffectiveUsernameMock.mockReturnValue('alice');
     getMyCommitteeUids.mockReset().mockResolvedValue(new Set());
+    resolveCommitteeV2UidsToV1Ids
+      .mockReset()
+      .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, uid])));
     execute.mockReset();
     // Fail-safe default: any environment that doesn't explicitly opt in gets 'live' (null fields),
     // never fabricated numbers — so tests must opt into 'mock' explicitly, matching production.
@@ -280,6 +289,44 @@ describe('GroupsEngagementStatsService', () => {
       expect(binds).toEqual(['committee-1', 'committee-2', 'committee-3']);
       expect(options).toEqual({ expectMissingObject: true });
       expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.COMMITTEE_MEETING_ATTENDANCE');
+    });
+
+    it('resolves visible v2 committee uids to their v1 ids and binds THOSE, not the raw v2 uids', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(new Map([['committee-1', 'v1-sfid-1']]));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'v1-sfid-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(resolveCommitteeV2UidsToV1Ids).toHaveBeenCalledWith(expect.anything(), expect.anything(), ['committee-1']);
+      const [, binds] = execute.mock.calls[0] as [string, string[]];
+      expect(binds).toEqual(['v1-sfid-1']);
+      expect(result.active_members).toBe(1);
+    });
+
+    it('returns null without querying Snowflake when no visible committee uid resolves to a v1 id', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
+      resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(new Map());
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(result.active_members).toBeNull();
+    });
+
+    it('treats an unresolved committee uid as uncovered — null overall even when every RESOLVED committee has full row coverage', async () => {
+      // committee-1 resolves and is fully covered; committee-2 never resolves to a v1 id at all
+      // (never even queried). Coverage must be judged against the original visible set, not just
+      // the subset that happened to resolve.
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
+      resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(new Map([['committee-1', 'v1-sfid-1']]));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'v1-sfid-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 })] });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      const [, binds] = execute.mock.calls[0] as [string, string[]];
+      expect(binds).toEqual(['v1-sfid-1']); // only the resolved committee was ever queried
+      expect(result.active_members).toBeNull();
     });
 
     it('counts a member with real attendance as active', async () => {
