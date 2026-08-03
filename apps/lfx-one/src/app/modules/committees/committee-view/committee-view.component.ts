@@ -52,7 +52,7 @@ import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, of, switchMap, take, tap, timer } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, of, startWith, switchMap, take, tap, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -165,13 +165,6 @@ export class CommitteeViewComponent {
   // Matches every sibling loader in this file/committee-overview.component.ts (membersLoading,
   // documentsLoading, etc.), all of which start true for the same reason (Cursor Bugbot, LFXV2-1705).
   public engagementLoading = signal<boolean>(true);
-  // Only ever set true while the meeting_coordinator project fetch below is actually in flight
-  // (initMeetingCoordinator skips the fetch whenever a cheaper eligibility check already passed),
-  // so this stays false for the overwhelming majority of page loads (dealako, LFXV2-1705). Raw:
-  // wrapped below by the public `meetingCoordinatorLoading`, which forces `true` immediately on a
-  // committee change rather than trusting this raw flag's own tick-behind reactivity (Cursor Bugbot
-  // — see the wrapper's doc comment).
-  private meetingCoordinatorLoadingRaw = signal(false);
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -229,40 +222,30 @@ export class CommitteeViewComponent {
     return this.isCallerInAuditorList(this.committee()?.auditors);
   });
 
-  // Project-level `meeting_coordinator` grant for canAccessEngagement below — see
-  // initMeetingCoordinator for why this fetch is conditional. Raw/wrapped split: see the two
-  // linkedSignals below for why the raw toSignal/toObservable value isn't used directly.
-  private readonly meetingCoordinatorRaw: Signal<boolean> = this.initMeetingCoordinator();
-  // Wraps meetingCoordinatorLoadingRaw, forcing `true` immediately whenever committeeId() changes,
-  // instead of waiting for meetingCoordinatorLoadingRaw's own toObservable pipeline to notice
-  // committee() changed and flip it (a tick behind, since that pipeline only re-evaluates once
-  // `committee()`'s async fetch resolves to the new committee — see initMeetingCoordinator). Without
-  // this, there's a real window right after committee() updates (loading/committeeRefreshing already
-  // false) but before the coordinator pipeline has re-fired: canAccessEngagement's own `loading`
-  // field (myRoleLoading() || meetingCoordinatorLoading()) would read false too early, settling
-  // `eligible` on a stale meetingCoordinatorRaw() value from the PREVIOUS committee — either false
-  // when the new committee's caller actually is a coordinator (flashes "unavailable" before flipping
-  // open) or true when they aren't (briefly opens the card before flipping closed) (Cursor Bugbot).
-  public readonly meetingCoordinatorLoading: Signal<boolean> = linkedSignal<{ committeeId: string | null; raw: boolean }, boolean>({
-    source: () => ({ committeeId: this.committeeId(), raw: this.meetingCoordinatorLoadingRaw() }),
-    computation: (source, previous) => {
-      if (previous && previous.source.committeeId !== source.committeeId) {
-        return true;
-      }
-      return source.raw;
-    },
+  // Combined settle-state for the meeting_coordinator project fetch below, tagged with the resolved
+  // committee().uid it belongs to. A single object signal, not separate primitive booleans: Angular
+  // signals skip notifying dependents on a `.set()` that doesn't change a primitive's value, which a
+  // prior version (two raw booleans wrapped by committeeId-keyed linkedSignals that forced `true`/
+  // `false` once per navigation, waiting for the raw pipeline to "release" them) got bitten by --
+  // navigating between two committees where the caller is already eligible via roster/writer both
+  // times resolves the SAME `false` the previous committee already held, the no-op `.set()` never
+  // notified the wrapper, and meetingCoordinatorLoading stayed forced `true` forever for the new
+  // committee (Copilot). A fresh object literal is always reference-distinct, so every emission below
+  // reliably propagates, and meetingCoordinatorLoading/meetingCoordinator (further down) compare the
+  // tag against the LIVE committeeId() directly rather than needing a value-change to "release" them.
+  private readonly meetingCoordinatorState: Signal<{ committeeId: string | null; loading: boolean; coordinator: boolean }> = this.initMeetingCoordinator();
+  // True until meetingCoordinatorState has settled FOR THE CURRENT committee (the tag comparison
+  // covers both "still mid-navigation, state belongs to the previous committee" and "fetch actually
+  // in flight" — see the state signal's doc comment above).
+  public readonly meetingCoordinatorLoading: Signal<boolean> = computed(() => {
+    const state = this.meetingCoordinatorState();
+    return state.committeeId !== this.committeeId() || state.loading;
   });
-  // Wraps meetingCoordinatorRaw the same way, resetting to `false` immediately on a committee
-  // change so the stale previous committee's resolved grant can never leak into `eligible` during
-  // the gap meetingCoordinatorLoading above now covers.
-  public readonly meetingCoordinator: Signal<boolean> = linkedSignal<{ committeeId: string | null; raw: boolean }, boolean>({
-    source: () => ({ committeeId: this.committeeId(), raw: this.meetingCoordinatorRaw() }),
-    computation: (source, previous) => {
-      if (previous && previous.source.committeeId !== source.committeeId) {
-        return false;
-      }
-      return source.raw;
-    },
+  // Only trusts the resolved grant once meetingCoordinatorState belongs to the CURRENT committee —
+  // never leaks a stale previous committee's resolved value into eligible() below.
+  public readonly meetingCoordinator: Signal<boolean> = computed(() => {
+    const state = this.meetingCoordinatorState();
+    return state.committeeId === this.committeeId() && state.coordinator;
   });
 
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
@@ -919,7 +902,7 @@ export class CommitteeViewComponent {
   // reflect the ACTIVE project, not incidentally whichever committee page happened to run this
   // check. getProject already resolves to `null` (never throws) on fetch failure, so this fails
   // closed like every other leg of canAccessEngagement.
-  private initMeetingCoordinator(): Signal<boolean> {
+  private initMeetingCoordinator(): Signal<{ committeeId: string | null; loading: boolean; coordinator: boolean }> {
     return toSignal(
       toObservable(
         computed(() => ({
@@ -928,24 +911,27 @@ export class CommitteeViewComponent {
           // just the /engagement call itself (Cursor Bugbot -- this fetch fired for every non-roster
           // visitor regardless of the flag, breaking that guarantee).
           enabled: this.engagementMetricsEnabled(),
+          // Tag every emission with the committee this evaluation is actually FOR (committee(),
+          // resolved -- not committeeId(), the route-synchronous id) so meetingCoordinatorLoading/
+          // meetingCoordinator above can tell a settled result apart from one still belonging to the
+          // previous committee during a navigation gap.
+          committeeUid: this.committee()?.uid ?? null,
           projectUid: this.committee()?.project_uid ?? null,
           needed: !(this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)),
         }))
       ).pipe(
-        distinctUntilChanged((a, b) => a.enabled === b.enabled && a.projectUid === b.projectUid && a.needed === b.needed),
-        switchMap(({ enabled, projectUid, needed }) => {
+        distinctUntilChanged((a, b) => a.enabled === b.enabled && a.committeeUid === b.committeeUid && a.projectUid === b.projectUid && a.needed === b.needed),
+        switchMap(({ enabled, committeeUid, projectUid, needed }) => {
           if (!enabled || !projectUid || !needed || !isPlatformBrowser(this.platformId)) {
-            this.meetingCoordinatorLoadingRaw.set(false);
-            return of(false);
+            return of({ committeeId: committeeUid, loading: false, coordinator: false });
           }
-          this.meetingCoordinatorLoadingRaw.set(true);
           return this.projectService.getProject(projectUid, false, { meetingCoordinator: true }).pipe(
-            map((project) => project?.meetingCoordinator === true),
-            finalize(() => this.meetingCoordinatorLoadingRaw.set(false))
+            map((project) => ({ committeeId: committeeUid, loading: false, coordinator: project?.meetingCoordinator === true })),
+            startWith({ committeeId: committeeUid, loading: true, coordinator: false })
           );
         })
       ),
-      { initialValue: false }
+      { initialValue: { committeeId: null, loading: false, coordinator: false } }
     );
   }
 
