@@ -105,10 +105,9 @@ export class CommitteeOverviewComponent {
   public engagementLoading = input<boolean>(false);
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
   // Whether this user is authorized to read committee engagement data — computed once in
-  // committee-view.component.ts (canAccessEngagement: roster member OR writer OR explicit
-  // committee-level auditor) and passed down here as the single source of truth, rather than this
-  // component reconstructing its own narrower version (a prior local isMemberOrAdmin here omitted
-  // canReview/auditors, incorrectly hiding the card from committee-level auditors — LFXV2-1705 review).
+  // committee-view.component.ts (canAccessEngagement: roster member, writer, or a committee-level
+  // OR inherited project/foundation auditor) and passed down here as the single source of truth,
+  // rather than this component reconstructing its own narrower version (LFXV2-1705 review).
   public engagementAccessible = input<boolean>(false);
 
   // Outputs

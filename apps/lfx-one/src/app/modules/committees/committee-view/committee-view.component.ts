@@ -21,6 +21,7 @@ import {
   CommitteeMemberVisibility,
   CommitteePermissionLevel,
   CommitteeTab,
+  CommitteeUser,
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
@@ -216,9 +217,7 @@ export class CommitteeViewComponent {
 
   public canReview: Signal<boolean> = computed(() => {
     if (this.canEdit()) return false;
-    const email = this.userService.user()?.email?.toLowerCase();
-    if (!email) return false;
-    return this.committee()?.auditors?.some((u) => u.email?.toLowerCase() === email) ?? false;
+    return this.isCallerInAuditorList(this.committee()?.auditors);
   });
 
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
@@ -226,10 +225,15 @@ export class CommitteeViewComponent {
   // gate — a duplicated reconstruction in the child previously omitted canReview (Copilot: a
   // committee-scoped explicit auditor — on `committee.auditors[]`, neither a roster member nor a
   // writer — is precisely what the endpoint's committee#auditor grant means, yet was still blocked).
-  // Still an incomplete proxy for the server's real ACL: a project-level auditor grant inherited
-  // without an explicit committee.auditors[] entry has no client-visible signal at all and remains
-  // unhandled — same known gap as canReview() itself, not newly introduced here.
-  public readonly canAccessEngagement: Signal<boolean> = computed(() => !this.isVisitor() || this.canEdit() || this.canReview());
+  // Also checks `inherited_auditors` (project/foundation-ancestry review grants — GET /committees/:id
+  // always requests `includeInheritedPermissions`, so this is already on `committee()` today) so a
+  // project-level auditor who isn't a committee-scoped auditor is included too (Copilot). Kept as a
+  // separate check here rather than folded into `canReview()` itself: `canReview()` also drives
+  // Settings-tab visibility and the 'review' permission level elsewhere, and broadening those to
+  // inherited auditors is a larger, out-of-scope decision for this engagement slice.
+  public readonly canAccessEngagement: Signal<boolean> = computed(
+    () => !this.isVisitor() || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)
+  );
 
   public myPermission: Signal<CommitteePermissionLevel> = computed(() => {
     if (this.canEdit()) return 'manage';
@@ -955,6 +959,13 @@ export class CommitteeViewComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  /** Case-insensitive email match against an auditor list (committee-scoped or inherited). */
+  private isCallerInAuditorList(auditors: CommitteeUser[] | undefined): boolean {
+    const email = this.userService.user()?.email?.toLowerCase();
+    if (!email) return false;
+    return auditors?.some((u) => u.email?.toLowerCase() === email) ?? false;
   }
 
   private getJoinErrorMessage(err: HttpErrorResponse, committeeName: string): string {
