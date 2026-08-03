@@ -13,12 +13,18 @@ const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonatin
   isImpersonating: vi.fn<() => boolean>(() => false),
 }));
 const { getUserIdentities } = vi.hoisted(() => ({ getUserIdentities: vi.fn(async () => [] as unknown[]) }));
+const { getUserEmails } = vi.hoisted(() => ({ getUserEmails: vi.fn(async () => null as unknown) }));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating }));
 vi.mock('./auth0.service', () => ({
   Auth0Service: class {
     public getUserIdentities = getUserIdentities;
+  },
+}));
+vi.mock('./email-verification.service', () => ({
+  EmailVerificationService: class {
+    public getUserEmails = getUserEmails;
   },
 }));
 vi.mock('./logger.service', () => ({
@@ -29,7 +35,7 @@ import type { Request } from 'express';
 
 import type { EasyClaMyCla, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
-import { ClaService, claServiceBaseUrl, normalizeGithubId, toMyClaAgreement } from './cla.service';
+import { ClaService, claServiceBaseUrl, collectClaEmails, normalizeGithubId, toMyClaAgreement } from './cla.service';
 
 const req = {} as unknown as Request;
 
@@ -52,6 +58,7 @@ beforeEach(() => {
   getEffectiveSub.mockReturnValue(null);
   isImpersonating.mockReturnValue(false);
   getUserIdentities.mockResolvedValue([]);
+  getUserEmails.mockResolvedValue(null);
   process.env['API_GW_AUDIENCE'] = 'https://api-gw.dev.example.org/';
 });
 
@@ -82,6 +89,48 @@ describe('normalizeGithubId', () => {
   it('rejects non-numeric values', () => {
     expect(normalizeGithubId('github|not-a-number')).toBeNull();
     expect(normalizeGithubId('octocat')).toBeNull();
+  });
+});
+
+describe('collectClaEmails', () => {
+  it('returns just the session primary when no other source is available', () => {
+    expect(collectClaEmails('alice@x.org', null, [])).toEqual(['alice@x.org']);
+  });
+
+  it('returns an empty set when there is no email anywhere', () => {
+    expect(collectClaEmails(null, null, [])).toEqual([]);
+  });
+
+  it('unions the session primary, the verified email list and linked-identity emails, deduped case-insensitively', () => {
+    const emailData = {
+      primary_email: 'alice@x.org',
+      alternate_emails: [
+        { email: 'alice@work.com', verified: true },
+        { email: 'Alice@Work.com', verified: true }, // case-dup of the above
+      ],
+    };
+    const identities = [
+      { provider: 'github', user_id: 'github|1', connection: 'github', profileData: { email: 'octo@users.noreply.github.com' } },
+      { provider: 'email', user_id: 'email|1', connection: 'email', profileData: { email: 'ALICE@x.org' } }, // dup of primary
+    ];
+
+    expect(collectClaEmails('alice@x.org', emailData as never, identities as never)).toEqual([
+      'alice@x.org',
+      'alice@work.com',
+      'octo@users.noreply.github.com',
+    ]);
+  });
+
+  it('excludes unverified alternate emails (verified !== true)', () => {
+    const emailData = {
+      primary_email: 'alice@x.org',
+      alternate_emails: [
+        { email: 'unverified@x.org', verified: false },
+        { email: 'verified@x.org', verified: true },
+      ],
+    };
+
+    expect(collectClaEmails('alice@x.org', emailData as never, [])).toEqual(['alice@x.org', 'verified@x.org']);
   });
 });
 
@@ -183,6 +232,39 @@ describe('ClaService.resolveIdentity', () => {
     const identity = await new ClaService().resolveIdentity(req);
 
     expect(identity).toMatchObject({ lfUsername: 'alice', emails: ['alice@x.org'], githubIds: [], githubUsernames: [], githubLinked: false });
+  });
+
+  it('sends all verified emails: session primary + verified alternates + linked-identity emails, deduped (#1227)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat', email: 'octo@users.noreply.github.com' } },
+    ]);
+    getUserEmails.mockResolvedValueOnce({
+      primary_email: 'alice@x.org',
+      alternate_emails: [
+        { email: 'alice@work.com', verified: true },
+        { email: 'old@x.org', verified: false }, // unverified — dropped
+      ],
+    });
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.emails).toEqual(['alice@x.org', 'alice@work.com', 'octo@users.noreply.github.com']);
+    expect(identity.githubIds).toEqual(['13434323']);
+  });
+
+  it('degrades to the session primary email only when the verified-email lookup returns null (auth-service down)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([]);
+    getUserEmails.mockResolvedValueOnce(null);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.emails).toEqual(['alice@x.org']);
   });
 });
 
