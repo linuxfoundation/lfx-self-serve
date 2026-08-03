@@ -890,67 +890,36 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   const paidActivity = paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0));
 
   return [
-    // === Campaign Performance (dual-signal: Email Opens + Paid Impressions) ===
-    // Categorised as 'memberships' (North Star) intentionally — campaigns directly
-    // drive member acquisition and retention, making this a dual-signal North Star
-    // metric alongside Member Growth, not a Brand card.
+    // Card order is the display order in the Marketing Overview carousel, and the
+    // filter pills preserve it within each category — so this array is the single
+    // source of truth for sequence. North Star cards lead (Events → Members →
+    // Adoption), then Social, then Campaign Performance, then the remaining Brand
+    // and Flywheel cards.
+    // === North Star ===
     {
-      title: 'Campaign Performance',
-      icon: 'fa-light fa-chart-mixed',
+      title: 'Events',
+      icon: 'fa-light fa-calendar-star',
       chartType: 'line',
       category: 'memberships',
-      testId: 'ed-evo-campaign-performance',
-      description: 'Email opens and paid impressions with MoM trends.',
-      customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          `Email · ${emailCtr.currentCtr.toFixed(1)}% CTR · ${emailOpenRate.toFixed(0)}% 6mo Open`,
-          formatNumber(emailTotalOpens) + ' opens',
-          emailCtr.monthlyOpens,
-          lfxColors.blue[500],
-          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
-          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
-        ),
-        protoDualSignal(
-          `Paid · ${formatCurrency(paidCampaign.totalSpend)} spend`,
-          formatNumber(paidCampaign.totalReach) + ' impressions',
-          paidCampaign.monthlyData,
-          lfxColors.violet[500],
-          // Activity = spend OR impressions per month: an active month that
-          // delivered zero impressions keeps its real MoM, while zero-filled
-          // no-campaign months stay suppressed.
-          seriesMomChange(paidCampaign.monthlyData, paidActivity),
-          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
-        ),
-      ],
-      caption: trendWindow(Math.max(emailCtr.monthlyOpens.length, paidCampaign.monthlyData.length)),
-      tooltipText: 'Email opens with CTR and open rate. Paid campaign impressions with total spend.',
-      drawerType: DashboardDrawerType.MarketingEmailCtr,
-    } as DashboardMetricCard,
-
-    // === North Star (4 cards — retention merged into Member Growth drawer) ===
-    {
-      title: 'Flywheel Re-engagement',
-      icon: 'fa-light fa-arrows-spin',
-      chartType: 'line',
-      category: 'memberships',
-      testId: 'ed-evo-flywheel-conversion',
-      description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
-      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
-      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
-      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
-      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
+      testId: 'ed-evo-event-growth',
+      description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
+      value: formatNumber(eventGrowth.totalRegistrants),
+      changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
+      trend: trendFromChange(eventGrowth.registrantYoyChange),
+      subtitle:
+        eventGrowth.monthlyData.length > 0
+          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
+          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
       chartData: protoSparkline(
-        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
+        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText:
-        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
-      drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
+      tooltipText: 'Year-to-date event registrants and YoY change.',
+      drawerType: DashboardDrawerType.NorthStarEventGrowth,
     } as DashboardMetricCard,
     {
-      title: 'Member Growth',
+      title: 'Members',
       icon: 'fa-light fa-user-group',
       chartType: 'line',
       category: 'memberships',
@@ -972,7 +941,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
     } as DashboardMetricCard,
     {
-      title: 'Engaged Community',
+      title: 'Adoption',
       icon: 'fa-light fa-people-group',
       chartType: 'line',
       category: 'memberships',
@@ -991,32 +960,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       tooltipText: 'Unique individuals active across community, working groups, newsletter, training, code, web, and certified in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
     } as DashboardMetricCard,
-    {
-      title: 'Event Growth',
-      icon: 'fa-light fa-calendar-star',
-      chartType: 'line',
-      category: 'memberships',
-      testId: 'ed-evo-event-growth',
-      description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
-      value: formatNumber(eventGrowth.totalRegistrants),
-      changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
-      trend: trendFromChange(eventGrowth.registrantYoyChange),
-      subtitle:
-        eventGrowth.monthlyData.length > 0
-          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
-          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
-      chartData: protoSparkline(
-        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
-        lfxColors.blue[500]
-      ),
-      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Year-to-date event registrants and YoY change.',
-      drawerType: DashboardDrawerType.NorthStarEventGrowth,
-    } as DashboardMetricCard,
 
-    // === Brand (2 dual-signal cards) ===
+    // === Brand ===
     {
-      title: 'Brand Reach',
+      title: 'Social',
       icon: 'fa-light fa-signal-bars',
       chartType: 'line',
       category: 'brand',
@@ -1051,8 +998,68 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
+
+    // === Campaign Performance (dual-signal: Email Opens + Paid Impressions) ===
+    // Categorised as 'memberships' (North Star) intentionally — campaigns directly
+    // drive member acquisition and retention, making this a dual-signal North Star
+    // metric alongside Members, not a Brand card.
     {
-      title: 'Brand Health',
+      title: 'Campaign Performance',
+      icon: 'fa-light fa-chart-mixed',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-campaign-performance',
+      description: 'Email opens and paid impressions with MoM trends.',
+      customContentType: 'dual-signal',
+      dualSignals: [
+        protoDualSignal(
+          `Email · ${emailCtr.currentCtr.toFixed(1)}% CTR · ${emailOpenRate.toFixed(0)}% 6mo Open`,
+          formatNumber(emailTotalOpens) + ' opens',
+          emailCtr.monthlyOpens,
+          lfxColors.blue[500],
+          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
+          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
+        ),
+        protoDualSignal(
+          `Paid · ${formatCurrency(paidCampaign.totalSpend)} spend`,
+          formatNumber(paidCampaign.totalReach) + ' impressions',
+          paidCampaign.monthlyData,
+          lfxColors.violet[500],
+          // Activity = spend OR impressions per month: an active month that
+          // delivered zero impressions keeps its real MoM, while zero-filled
+          // no-campaign months stay suppressed.
+          seriesMomChange(paidCampaign.monthlyData, paidActivity),
+          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
+        ),
+      ],
+      caption: trendWindow(Math.max(emailCtr.monthlyOpens.length, paidCampaign.monthlyData.length)),
+      tooltipText: 'Email opens with CTR and open rate. Paid campaign impressions with total spend.',
+      drawerType: DashboardDrawerType.MarketingEmailCtr,
+    } as DashboardMetricCard,
+
+    // === Flywheel (retention is merged into the Members drawer) ===
+    {
+      title: 'Flywheel',
+      icon: 'fa-light fa-arrows-spin',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-flywheel-conversion',
+      description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
+      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
+      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
+      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
+      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
+      chartData: protoSparkline(
+        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
+        lfxColors.blue[500]
+      ),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText:
+        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
+      drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
+    } as DashboardMetricCard,
+    {
+      title: 'Sentiment',
       icon: 'fa-light fa-heart-pulse',
       chartType: 'line',
       category: 'brand',
