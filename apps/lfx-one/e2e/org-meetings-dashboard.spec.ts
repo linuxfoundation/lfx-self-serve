@@ -67,14 +67,26 @@ function mockInfluenceRow(project: string, projectSlug: string, deltaLabel = '+6
     project,
     projectSlug,
     ecosystemInfluence: 88,
+    // Smaller than `ecosystemInfluence` by the membership-tier component, as the warehouse emits it —
+    // the expanded sentence must quote the percentage against this figure, not the headline one.
+    displayedInfluence: 87,
     band: 'leading',
     rankLabel: '#3 of 210',
+    rankTotalAll: 11688,
     fromAttendancePct: 15,
     deltaLabel,
     deltaDirection,
+    // Nine entries summing to exactly 100.0, matching the warehouse's largest-remainder guarantee.
     breakdown: [
-      { label: 'Collaboration Activity', pct: 30 },
+      { label: 'Collaboration Activity', pct: 30.2 },
+      { label: 'Board Members', pct: 20.1 },
       { label: 'Meeting Attendance', pct: 15 },
+      { label: 'Committee Members', pct: 12.3 },
+      { label: 'Event Attendance', pct: 8.4 },
+      { label: 'Event Speakers', pct: 6 },
+      { label: 'Event Sponsorships', pct: 4 },
+      { label: 'Meetup Attendance', pct: 2.5 },
+      { label: 'Certified Individuals', pct: 1.5 },
     ],
   };
 }
@@ -181,7 +193,11 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     const influence = page.getByTestId('org-meetings-influence');
     await expect(influence).toBeVisible();
     await expect(influence).toContainText('+6%');
+    // The delta compares against the preceding window of equal length, so a "year over year" header
+    // would describe a comparison the page is not making at any sub-annual range.
     await expect(influence).not.toContainText('YoY');
+    await expect(influence).not.toContainText('year over year');
+    await expect(influence).toContainText('Δ vs. prior period');
 
     // All rows start collapsed, so no detail rows are rendered.
     await expect(page.getByTestId('org-meetings-influence-row-kubernetes-detail')).toHaveCount(0);
@@ -222,12 +238,16 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     // stub, so a refetch that never fires (or sends the wrong range) is otherwise invisible.
     const kpiRequest = page.waitForRequest((req) => req.url().includes('/lens/meetings/kpi') && req.url().includes('range=previousYear'));
     const spendRequest = page.waitForRequest((req) => req.url().includes('/lens/meetings/spend') && req.url().includes('range=previousYear'));
+    // The influence table used to sit out the selector entirely; this is the assertion that catches
+    // it silently going back to a fixed window.
+    const influenceRequest = page.waitForRequest((req) => req.url().includes('/lens/meetings/influence') && req.url().includes('range=previousYear'));
 
     await page.getByTestId('org-meetings-time-range').click();
     await page.getByTestId('org-meetings-time-range-option-previousYear').click();
 
     await kpiRequest;
     await spendRequest;
+    await influenceRequest;
     await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('Previous year');
     await expect(page.getByTestId('org-meetings-kpi-cards')).toBeVisible();
   });
@@ -277,6 +297,43 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     const empty = page.getByTestId('org-meetings-influence-empty');
     await expect(empty).toBeVisible();
     await expect(empty).toContainText('published Ecosystem Influence Score');
+    // Narrow windows make this state common, so the copy has to name the window too — otherwise it
+    // reads as "your organization has no project influence at all".
+    await expect(empty).toContainText('past 365 days');
+  });
+
+  test('renders a breakdown whose nine percentages sum to exactly 100', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
+    const detail = page.getByTestId('org-meetings-influence-row-kubernetes-detail');
+    await expect(detail).toBeVisible();
+
+    const percentages = await detail.locator('span', { hasText: /^\d+(\.\d+)?%$/ }).allInnerTexts();
+    expect(percentages).toHaveLength(9);
+    const sum = percentages.reduce((total, text) => total + Number.parseFloat(text), 0);
+    expect(Math.abs(sum - 100)).toBeLessThan(0.001);
+  });
+
+  test('marks the two cumulative breakdown measures and explains the rank denominator', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgMeetingsPage(page);
+
+    // The rank denominator counts only project-specific engagement, so it is orders of magnitude
+    // smaller than the foundation-wide figure the Organization Dashboard publishes. The tooltip is
+    // the only thing that keeps the difference from reading as data loss.
+    const rank = page.getByTestId('org-meetings-influence-row-kubernetes-rank');
+    await expect(rank).toHaveAttribute('aria-label', /contributed code or attended meetings/);
+    await expect(rank).toHaveAttribute('aria-label', /Across the last 2 years, 11,688 companies/);
+
+    await page.getByTestId('org-meetings-influence-row-kubernetes-caret').click();
+    const detail = page.getByTestId('org-meetings-influence-row-kubernetes-detail');
+    // Board and committee membership do not follow the window, so they carry a qualifier.
+    await expect(detail).toContainText('Board Members (all time)');
+    await expect(detail).toContainText('Committee Members (all time)');
+    await expect(detail).toContainText('Collaboration Activity');
+    await expect(detail).not.toContainText('Collaboration Activity (all time)');
   });
 
   test('hides the meeting-type and role cards when the org is too small to aggregate', async ({ page }) => {

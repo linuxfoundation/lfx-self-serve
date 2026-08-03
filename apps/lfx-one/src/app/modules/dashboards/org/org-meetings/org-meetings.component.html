@@ -54,7 +54,6 @@
 
     <lfx-org-meetings-spend-breakdown [timeRange]="servedTimeRange()" />
 
-    <!-- No time range: project influence is range-independent. -->
-    <lfx-org-meetings-influence />
+    <lfx-org-meetings-influence [timeRange]="servedTimeRange()" />
   }
 </main>

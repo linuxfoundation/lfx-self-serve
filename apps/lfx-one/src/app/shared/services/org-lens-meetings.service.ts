@@ -25,8 +25,9 @@ export class OrgLensMeetingsService {
     });
   }
 
-  /** No `range` — the influence surface is range-independent, so the parameter is absent by design. */
-  public getInfluenceRows(orgUid: string): Observable<OrgInfluenceRow[]> {
-    return this.http.get<OrgInfluenceRow[]>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/meetings/influence`);
+  public getInfluenceRows(orgUid: string, range: OrgMeetingsSupportedTimeRange): Observable<OrgInfluenceRow[]> {
+    return this.http.get<OrgInfluenceRow[]>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/meetings/influence`, {
+      params: new HttpParams().set('range', range),
+    });
   }
 }

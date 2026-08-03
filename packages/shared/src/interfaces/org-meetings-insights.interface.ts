@@ -84,6 +84,12 @@ export interface OrgInfluenceBreakdownSegment {
 /** An `OrgInfluenceBreakdownSegment` flagged as the Meeting Attendance measure, for highlighting. */
 export interface OrgInfluenceBreakdownRow extends OrgInfluenceBreakdownSegment {
   isAttendance: boolean;
+  /**
+   * `label` with a cumulative qualifier appended where the measure is a standing state rather than a
+   * period activity. Decorated here rather than stored, because `label` is the match key the
+   * highlighting compares against.
+   */
+  displayLabel: string;
 }
 
 /** One row of the "How attendance drives Ecosystem Influence" accordion. */
@@ -91,9 +97,23 @@ export interface OrgInfluenceRow {
   project: string;
   projectSlug: string;
   ecosystemInfluence: number;
+  /**
+   * The nine displayed categories summed — the total every percentage on this row is a share of.
+   * Smaller than `ecosystemInfluence`, which also carries the membership-tier component that is
+   * scored but never displayed. Quoting a percentage against `ecosystemInfluence` overstates the
+   * total it came from.
+   */
+  displayedInfluence: number;
   /** Qualitative ecosystem-influence band shown (with signal-bar icon) in place of the raw score. */
   band: OrgLensProjectBand;
   rankLabel: string;
+  /**
+   * How many companies have any recorded influence on the project across the last 2 years — a fixed
+   * reconciliation reference for the Organization Dashboard's published rank, not a count for the
+   * requested range. May exceed or fall below the ranked population, and is null where the project
+   * has no such figure, in which case the reference must be omitted rather than rendered as zero.
+   */
+  rankTotalAll: number | null;
   fromAttendancePct: number;
   deltaLabel: string;
   deltaDirection: OrgMeetingsDeltaDirection;
@@ -113,6 +133,12 @@ export interface OrgInfluenceDisplayRow extends Omit<OrgInfluenceRow, 'breakdown
   bandChipClass: string;
   bandLabel: string;
   bandBars: OrgInfluenceBandBar[];
+  /**
+   * Names the compared population, what qualified it, and the window each rendered figure covers.
+   * The two populations are measured over different periods, so naming only one of them invites the
+   * reader to take the fixed reference for a count of the selected window.
+   */
+  rankTooltip: string;
   /** Emphasis-scaled, clamped fill width for the attendance bar, precomputed so the template stays declarative. */
   attendanceBarWidth: number;
   breakdown: OrgInfluenceBreakdownRow[];
