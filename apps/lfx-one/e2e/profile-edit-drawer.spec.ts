@@ -168,4 +168,56 @@ test.describe('Profile edit drawer', () => {
     // The drawer must send the bio inside the user_metadata envelope.
     expect(patchBody?.user_metadata?.bio).toBe(uniqueBio);
   });
+
+  test('S5: clearing a previously-set free-text field sends "" and hides it in the panel', async ({ page }) => {
+    // Free-text fields are clearable (LFXV2-2933): emptying the control must send bio: '' rather than
+    // the old `|| undefined` that omitted the key. Stub PATCH; patchBody holds the latest request.
+    let patchBody: { user_metadata?: { bio?: string } } | null = null;
+    await page.route('**/api/profile', async (route) => {
+      if (route.request().method() === 'PATCH') {
+        patchBody = route.request().postDataJSON();
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+
+    // Seed a bio so there's a set value to clear (the test user's starting bio is unknown).
+    await page.getByTestId('profile-edit-button').click();
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const bio = page.getByTestId('profile-edit-drawer-about-me').locator('textarea');
+    const uniqueBio = `E2E bio ${Date.now()}`;
+    await bio.fill(uniqueBio);
+
+    const saveButton = page.getByTestId('profile-edit-drawer-save-button').locator('button');
+    await expect(saveButton).toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+    await saveButton.click();
+    await expect(drawer, 'drawer should close after the seeding save').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-panel-about'), 'panel should show the seeded bio').toContainText(uniqueBio, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // Reopen: the drawer is seeded from the layout's optimistically-updated profile, so the bio
+    // textarea carries the value we just saved.
+    await page.getByTestId('profile-edit-button').click();
+    await expect(drawer, 'drawer should reopen').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(bio, 'reopened drawer should seed the just-saved bio').toHaveValue(uniqueBio, { timeout: ELEMENT_TIMEOUT });
+
+    // Clear the field and save.
+    await bio.fill('');
+    await expect(saveButton, 'Save enables once the cleared field makes the form dirty').toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+    await saveButton.click();
+
+    await expect(drawer, 'drawer should close after the clear save').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    // Optimistic clear: the About Me block is hidden once bio is empty (@if (aboutMe()) gate).
+    await expect(page.getByTestId('profile-panel-about'), 'panel should drop the About Me block once bio is cleared').toBeHidden({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    // The wire must carry an explicit empty string, not an omitted key.
+    expect(patchBody?.user_metadata?.bio).toBe('');
+  });
 });

@@ -244,19 +244,21 @@ export class ProfileLayoutComponent {
     } catch {
       return;
     }
+    // Mirrors the drawer onSubmit mapping: free-text fields send the raw value so '' clears a
+    // previously-set value; name and selects keep `|| undefined` (empty = unchanged).
     const userMetadata: Partial<UserMetadata> = {
       given_name: formData.given_name || undefined,
       family_name: formData.family_name || undefined,
-      job_title: formData.job_title || undefined,
+      job_title: formData.job_title,
       organization: formData.organization || undefined,
       country: formData.country || undefined,
       state_province: formData.state_province || undefined,
-      city: formData.city || undefined,
-      address: formData.address || undefined,
-      postal_code: formData.postal_code || undefined,
-      phone_number: formData.phone_number || undefined,
+      city: formData.city,
+      address: formData.address,
+      postal_code: formData.postal_code,
+      phone_number: formData.phone_number,
       t_shirt_size: formData.t_shirt_size || undefined,
-      bio: formData.bio || undefined,
+      bio: formData.bio,
     };
 
     const updateData: ProfileUpdateRequest = {

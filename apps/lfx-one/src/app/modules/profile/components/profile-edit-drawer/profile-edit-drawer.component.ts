@@ -207,19 +207,21 @@ export class ProfileEditDrawerComponent {
 
     // organization_domain is resolved server-side from the organization name on every save path,
     // so the drawer only needs to send the selected organization here.
+    // Free-text fields send the raw value so '' clears a previously-set value; name and selects keep
+    // `|| undefined` (empty = unchanged, not clearable per product decision).
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,
-      job_title: formValue.job_title || undefined,
+      job_title: formValue.job_title,
       organization: formValue.organization || undefined,
       country: formValue.country || undefined,
       state_province: formValue.state_province || undefined,
-      city: formValue.city || undefined,
-      address: formValue.address || undefined,
-      postal_code: formValue.postal_code || undefined,
-      phone_number: formValue.phone_number || undefined,
+      city: formValue.city,
+      address: formValue.address,
+      postal_code: formValue.postal_code,
+      phone_number: formValue.phone_number,
       t_shirt_size: formValue.t_shirt_size || undefined,
-      bio: formValue.bio || undefined,
+      bio: formValue.bio,
     };
 
     const updateData: ProfileUpdateRequest = {
