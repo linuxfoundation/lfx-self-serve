@@ -830,14 +830,22 @@ export class CommitteeViewComponent {
     // unavailable/em-dash state before the real eligibility resolved (Cursor Bugbot). linkedSignal's
     // computation runs synchronously within the same signal flush, so there's no such gap: it
     // returns the live eligibility once settled, or the last settled value while loading (false
-    // pre-first-resolution, matching every other loader default in this file).
-    return linkedSignal<{ loading: boolean; eligible: boolean }, boolean>({
+    // pre-first-resolution, matching every other loader default in this file). Keyed on
+    // committeeId() (the route-synchronous id, same distinguishing signal initEngagement's
+    // routeCommitteeId uses) so the held value is only reused for a SAME-committee silent refresh:
+    // route-reused navigation to a different committee must not keep rendering the previous
+    // committee's eligibility (and therefore its stale Overview card, which is gated on this signal
+    // alone with no loading check) while the new committee's own role is still resolving (Copilot).
+    return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean }, boolean>({
       source: () => ({
+        committeeId: this.committeeId(),
         loading: this.myRoleLoading(),
         eligible: this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors),
       }),
       computation: (source, previous) => {
-        if (source.loading) return previous?.value ?? false;
+        if (source.loading) {
+          return previous && previous.source.committeeId === source.committeeId ? previous.value : false;
+        }
         return source.eligible;
       },
     });
