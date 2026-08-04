@@ -386,109 +386,6 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 ];
 
 // ============================================
-// Marketing Overview Metrics (Executive Director)
-// ============================================
-
-/**
- * Marketing overview metrics for executive director dashboard
- * UI configuration templates (icons, categories, drawer types). Data values are populated at runtime.
- */
-export const MARKETING_OVERVIEW_METRICS: DashboardMetricCard[] = [
-  {
-    title: 'Website Visits',
-    icon: 'fa-light fa-globe',
-    chartType: 'line',
-    category: 'marketing',
-    testId: 'marketing-card-website-visits',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.MarketingWebsiteVisits,
-  },
-  {
-    title: 'Email CTR',
-    icon: 'fa-light fa-envelope',
-    chartType: 'line',
-    category: 'marketing',
-    testId: 'marketing-card-email-ctr',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.MarketingEmailCtr,
-  },
-  {
-    title: 'Paid Social Reach',
-    icon: 'fa-light fa-share-nodes',
-    chartType: 'line',
-    category: 'marketing',
-    testId: 'marketing-card-paid-social-reach',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.MarketingPaidSocialReach,
-  },
-  {
-    title: 'Social Media',
-    icon: 'fa-light fa-thumbs-up',
-    chartType: 'line',
-    category: 'marketing',
-    testId: 'marketing-card-social-media',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.MarketingSocialMedia,
-  },
-];
-
-// ============================================
-// North Star Metrics (Executive Director)
-// ============================================
-
-/**
- * North Star KPI metrics for executive director dashboard
- * UI configuration templates (icons, categories, drawer types). Data values populated at runtime
- * until Snowflake tables for membership/financial data are available.
- */
-export const NORTH_STAR_METRICS: DashboardMetricCard[] = [
-  {
-    title: 'Engaged Community',
-    icon: 'fa-light fa-users',
-    chartType: 'line',
-    category: 'memberships',
-    testId: 'north-star-card-engaged-community',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
-  },
-  {
-    title: 'Member Acq. Rate & CAC',
-    icon: 'fa-light fa-user-plus',
-    chartType: 'bar',
-    category: 'memberships',
-    testId: 'north-star-card-member-acquisition',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
-  },
-  {
-    title: 'Member Retention & NRR',
-    icon: 'fa-light fa-arrow-rotate-right',
-    chartType: 'line',
-    category: 'memberships',
-    testId: 'north-star-card-member-retention',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.NorthStarMemberRetention,
-  },
-  {
-    title: 'Flywheel Re-engagement',
-    icon: 'fa-light fa-rotate',
-    chartType: 'line',
-    category: 'memberships',
-    testId: 'north-star-card-flywheel-conversion',
-    chartData: EMPTY_CHART_DATA,
-    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-    drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
-  },
-];
-
-// ============================================
 // Progress Metrics (Core Developer & Maintainer)
 // ============================================
 
@@ -870,8 +767,9 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
 
 /**
  * Build ED Evolution dashboard cards from live API data.
- * 1 Campaign Performance + 4 North Star + 2 Brand.
- * Member Retention is merged into the Member Growth drawer.
+ * 6 North Star (Events, Members, Adoption, Email, Paid Media, Attribution)
+ * + 2 Brand (Social, Sentiment) + Flywheel.
+ * Member Retention is merged into the Members drawer.
  *
  * Sparkline color semantics:
  *  - Blue  (lfxColors.blue[500])   — volume/reach metric (primary signal on every card)
@@ -879,78 +777,56 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
  * Emerald/red are reserved for delta indicators (up/down), never sparkline stroke.
  */
 export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricCard[] {
-  const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign } = data;
+  const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign, revenueImpact } = data;
 
   // Pre-compute email open rate for the Campaign Performance card
   const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
   const emailTotalOpens = emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0);
   const emailOpenRate = emailTotalSends > 0 ? (emailTotalOpens / emailTotalSends) * 100 : 0;
 
+  // Per-month open RATE, not send volume. Charting sends here would report an
+  // improving trend whenever sends grow faster than opens — the opposite of the
+  // truth. Months with no sends contribute 0 and are suppressed by the sends
+  // activity guard passed alongside.
+  const emailMonthlyOpenRate = emailCtr.monthlyOpens.map((opens, i) => {
+    const sends = emailCtr.monthlySends[i] ?? 0;
+    return sends > 0 ? (opens / sends) * 100 : 0;
+  });
+
   // Paid month activity: spend OR impressions (a spend-only month is active).
   const paidActivity = paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0));
 
   return [
-    // === Campaign Performance (dual-signal: Email Opens + Paid Impressions) ===
-    // Categorised as 'memberships' (North Star) intentionally — campaigns directly
-    // drive member acquisition and retention, making this a dual-signal North Star
-    // metric alongside Member Growth, not a Brand card.
+    // Card order is the display order in the Marketing Overview carousel, and the
+    // filter pills preserve it within each category — so this array is the single
+    // source of truth for sequence. North Star cards lead (Events → Members →
+    // Adoption), then Social, then Campaign Performance, then the remaining Brand
+    // and Flywheel cards.
+    // === North Star ===
     {
-      title: 'Campaign Performance',
-      icon: 'fa-light fa-chart-mixed',
+      title: 'Events',
+      icon: 'fa-light fa-calendar-star',
       chartType: 'line',
       category: 'memberships',
-      testId: 'ed-evo-campaign-performance',
-      description: 'Email opens and paid impressions with MoM trends.',
-      customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          `Email · ${emailCtr.currentCtr.toFixed(1)}% CTR · ${emailOpenRate.toFixed(0)}% 6mo Open`,
-          formatNumber(emailTotalOpens) + ' opens',
-          emailCtr.monthlyOpens,
-          lfxColors.blue[500],
-          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
-          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
-        ),
-        protoDualSignal(
-          `Paid · ${formatCurrency(paidCampaign.totalSpend)} spend`,
-          formatNumber(paidCampaign.totalReach) + ' impressions',
-          paidCampaign.monthlyData,
-          lfxColors.violet[500],
-          // Activity = spend OR impressions per month: an active month that
-          // delivered zero impressions keeps its real MoM, while zero-filled
-          // no-campaign months stay suppressed.
-          seriesMomChange(paidCampaign.monthlyData, paidActivity),
-          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
-        ),
-      ],
-      caption: trendWindow(Math.max(emailCtr.monthlyOpens.length, paidCampaign.monthlyData.length)),
-      tooltipText: 'Email opens with CTR and open rate. Paid campaign impressions with total spend.',
-      drawerType: DashboardDrawerType.MarketingEmailCtr,
-    } as DashboardMetricCard,
-
-    // === North Star (4 cards — retention merged into Member Growth drawer) ===
-    {
-      title: 'Flywheel Re-engagement',
-      icon: 'fa-light fa-arrows-spin',
-      chartType: 'line',
-      category: 'memberships',
-      testId: 'ed-evo-flywheel-conversion',
-      description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
-      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
-      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
-      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
-      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
+      testId: 'ed-evo-event-growth',
+      description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
+      value: formatNumber(eventGrowth.totalRegistrants),
+      changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
+      trend: trendFromChange(eventGrowth.registrantYoyChange),
+      subtitle:
+        eventGrowth.monthlyData.length > 0
+          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
+          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
       chartData: protoSparkline(
-        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
+        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText:
-        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
-      drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
+      tooltipText: 'Year-to-date event registrants and YoY change.',
+      drawerType: DashboardDrawerType.NorthStarEventGrowth,
     } as DashboardMetricCard,
     {
-      title: 'Member Growth',
+      title: 'Members',
       icon: 'fa-light fa-user-group',
       chartType: 'line',
       category: 'memberships',
@@ -972,7 +848,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
     } as DashboardMetricCard,
     {
-      title: 'Engaged Community',
+      title: 'Adoption',
       icon: 'fa-light fa-people-group',
       chartType: 'line',
       category: 'memberships',
@@ -991,32 +867,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       tooltipText: 'Unique individuals active across community, working groups, newsletter, training, code, web, and certified in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
     } as DashboardMetricCard,
-    {
-      title: 'Event Growth',
-      icon: 'fa-light fa-calendar-star',
-      chartType: 'line',
-      category: 'memberships',
-      testId: 'ed-evo-event-growth',
-      description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
-      value: formatNumber(eventGrowth.totalRegistrants),
-      changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
-      trend: trendFromChange(eventGrowth.registrantYoyChange),
-      subtitle:
-        eventGrowth.monthlyData.length > 0
-          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
-          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
-      chartData: protoSparkline(
-        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
-        lfxColors.blue[500]
-      ),
-      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Year-to-date event registrants and YoY change.',
-      drawerType: DashboardDrawerType.NorthStarEventGrowth,
-    } as DashboardMetricCard,
 
-    // === Brand (2 dual-signal cards) ===
+    // === Brand ===
     {
-      title: 'Brand Reach',
+      title: 'Social',
       icon: 'fa-light fa-signal-bars',
       chartType: 'line',
       category: 'brand',
@@ -1051,8 +905,119 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
+
+    // === Email ===
+    // Categorised as 'memberships' (North Star) intentionally — owned channels
+    // directly drive member acquisition and retention, so Email, Paid Media and
+    // Attribution sit alongside Members rather than under Brand.
     {
-      title: 'Brand Health',
+      title: 'Email',
+      icon: 'fa-light fa-envelope',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-campaign-performance',
+      description: 'Email opens with click-through and open rate, and MoM trend.',
+      customContentType: 'dual-signal',
+      dualSignals: [
+        protoDualSignal(
+          `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
+          formatNumber(emailTotalOpens) + ' opens',
+          emailCtr.monthlyOpens,
+          lfxColors.blue[500],
+          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
+          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
+        ),
+        protoDualSignal(
+          `Open rate · 6 mo`,
+          `${emailOpenRate.toFixed(0)}%`,
+          emailMonthlyOpenRate,
+          lfxColors.violet[500],
+          // Guard on sends, not on the rate itself: a zero-send month has a 0% rate
+          // that would otherwise read as a real collapse.
+          seriesMomChange(emailMonthlyOpenRate, emailCtr.monthlySends),
+          seriesTrendDirection(emailMonthlyOpenRate, emailCtr.monthlySends)
+        ),
+      ],
+      caption: trendWindow(emailCtr.monthlyOpens.length),
+      tooltipText: 'Email opens with click-through rate, plus sends and the six-month open rate.',
+      drawerType: DashboardDrawerType.MarketingEmailCtr,
+    } as DashboardMetricCard,
+
+    // === Paid Media ===
+    {
+      title: 'Paid Media',
+      icon: 'fa-light fa-rectangle-ad',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-paid-media',
+      description: 'Paid campaign impressions and spend with return on ad spend.',
+      customContentType: 'dual-signal',
+      dualSignals: [
+        protoDualSignal(
+          `Impressions · ${formatCurrency(paidCampaign.totalSpend)} spend`,
+          formatNumber(paidCampaign.totalReach) + ' impressions',
+          paidCampaign.monthlyData,
+          lfxColors.blue[500],
+          // Activity = spend OR impressions per month: an active month that
+          // delivered zero impressions keeps its real MoM, while zero-filled
+          // no-campaign months stay suppressed.
+          seriesMomChange(paidCampaign.monthlyData, paidActivity),
+          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
+        ),
+        protoDualSignal(
+          'ROAS',
+          `${paidCampaign.roas.toFixed(1)}x`,
+          // Guard on paidActivity, not monthlyRoas itself: a no-campaign month
+          // reports 0 ROAS, which would otherwise read as a real decline.
+          paidCampaign.monthlyRoas.length > 0 ? paidCampaign.monthlyRoas : [],
+          lfxColors.violet[500],
+          seriesMomChange(paidCampaign.monthlyRoas, paidActivity),
+          seriesTrendDirection(paidCampaign.monthlyRoas, paidActivity)
+        ),
+      ],
+      caption: trendWindow(paidCampaign.monthlyData.length),
+      tooltipText: 'Paid campaign impressions with total spend, and return on ad spend over the same window.',
+      drawerType: DashboardDrawerType.MarketingPaidSocialReach,
+    } as DashboardMetricCard,
+
+    // === Attribution ===
+    // Reads revenueImpact, which already carries the multi-touch attribution
+    // models and channel breakdown. That data was fetched but had no card
+    // surfacing it — only the drawer, which was unreachable from the carousel.
+    {
+      title: 'Attribution',
+      icon: 'fa-light fa-diagram-project',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-attribution',
+      description: 'Won revenue year-to-date, with paid-ads linear-attributed revenue alongside.',
+      customContentType: 'dual-signal',
+      dualSignals: [
+        protoDualSignal(
+          'Won revenue · YTD',
+          formatCurrency(revenueImpact.revenueAttributed),
+          // No monthly series is exposed for attributed revenue — leave the
+          // sparkline empty rather than borrow an unrelated curve.
+          [],
+          lfxColors.blue[500],
+          // YoY, not MoM: revenueImpact.changePercentage is WON_REVENUE_YOY_CHANGE_PCT.
+          formatYoyChange(revenueImpact.changePercentage),
+          normalizeTrend(revenueImpact.changePercentage, revenueImpact.trend)
+        ),
+        protoDualSignal('Paid ads · linear', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
+      ],
+      caption:
+        revenueImpact.attributionChannels.length > 0
+          ? `${revenueImpact.attributionChannels.length} channels · ${revenueImpact.matchRate.toFixed(0)}% deal conversion`
+          : `${revenueImpact.matchRate.toFixed(0)}% deal conversion`,
+      tooltipText:
+        "Won revenue year-to-date (WON_REVENUE_YTD) with paid-ads linear-attributed revenue alongside. Deal conversion is the YTD close rate. These are pipeline figures — the drawer's multi-touch models cover a separate six-month window.",
+      drawerType: DashboardDrawerType.RevenueImpact,
+    } as DashboardMetricCard,
+
+    // === Sentiment ===
+    {
+      title: 'Sentiment',
       icon: 'fa-light fa-heart-pulse',
       chartType: 'line',
       category: 'brand',
@@ -1083,6 +1048,26 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,
 
-    // Attribution rows merged into Campaign Performance card above.
+    // === Flywheel (retention is merged into the Members drawer) ===
+    {
+      title: 'Flywheel',
+      icon: 'fa-light fa-arrows-spin',
+      chartType: 'line',
+      category: 'memberships',
+      testId: 'ed-evo-flywheel-conversion',
+      description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
+      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
+      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
+      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
+      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
+      chartData: protoSparkline(
+        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
+        lfxColors.blue[500]
+      ),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText:
+        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
+      drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
+    } as DashboardMetricCard,
   ];
 }
