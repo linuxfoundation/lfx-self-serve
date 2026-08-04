@@ -266,7 +266,9 @@ export class PaidSocialReachDrawerComponent {
   protected formatCompact(value: number): string {
     if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
     if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-    return value.toLocaleString();
+    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
+    // server-side vs client-side and trips hydration text mismatches.
+    return value.toLocaleString('en-US');
   }
 
   protected getPerformanceSeverity(performance: string): 'danger' | 'warn' | 'success' | 'secondary' {
@@ -303,7 +305,10 @@ export class PaidSocialReachDrawerComponent {
     };
 
     const visible$ = toObservable(this.visible);
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || ''));
+    // Match the parent's fallback: the ED overview loads this card's data with 'tlf'
+    // when no foundation is selected, so an empty slug here would filter the request
+    // out and render an empty drawer behind a populated card.
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(

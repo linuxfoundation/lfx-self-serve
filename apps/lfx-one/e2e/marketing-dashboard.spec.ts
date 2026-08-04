@@ -295,7 +295,7 @@ test.describe('Member Growth Drawer', () => {
 
   test('opens and shows title when card is clicked', async ({ page }) => {
     await openDrawer(page, 'flywheel-pulse-member-growth', 'member-acquisition-drawer-content');
-    await expect(page.locator('[data-testid="member-acquisition-drawer-title"]')).toContainText('Member Growth');
+    await expect(page.locator('[data-testid="member-acquisition-drawer-title"]')).toContainText('Members');
   });
 
   test('shows stats section', async ({ page }) => {

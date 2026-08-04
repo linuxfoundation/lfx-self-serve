@@ -166,7 +166,9 @@ export class RevenueImpactDrawerComponent {
   protected formatCompact(value: number): string {
     if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
     if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-    return value.toLocaleString();
+    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
+    // server-side vs client-side and trips hydration text mismatches.
+    return value.toLocaleString('en-US');
   }
 
   protected revPerSession(channel: MarketingAttributionChannel): string {

@@ -784,6 +784,15 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   const emailTotalOpens = emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0);
   const emailOpenRate = emailTotalSends > 0 ? (emailTotalOpens / emailTotalSends) * 100 : 0;
 
+  // Per-month open RATE, not send volume. Charting sends here would report an
+  // improving trend whenever sends grow faster than opens — the opposite of the
+  // truth. Months with no sends contribute 0 and are suppressed by the sends
+  // activity guard passed alongside.
+  const emailMonthlyOpenRate = emailCtr.monthlyOpens.map((opens, i) => {
+    const sends = emailCtr.monthlySends[i] ?? 0;
+    return sends > 0 ? (opens / sends) * 100 : 0;
+  });
+
   // Paid month activity: spend OR impressions (a spend-only month is active).
   const paidActivity = paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0));
 
@@ -921,12 +930,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         protoDualSignal(
           `Open rate · 6 mo`,
           `${emailOpenRate.toFixed(0)}%`,
-          // Sends carry the denominator behind the open rate — showing that series
-          // keeps the second signal honest rather than repeating the opens curve.
-          emailCtr.monthlySends,
+          emailMonthlyOpenRate,
           lfxColors.violet[500],
-          seriesMomChange(emailCtr.monthlySends),
-          seriesTrendDirection(emailCtr.monthlySends)
+          // Guard on sends, not on the rate itself: a zero-send month has a 0% rate
+          // that would otherwise read as a real collapse.
+          seriesMomChange(emailMonthlyOpenRate, emailCtr.monthlySends),
+          seriesTrendDirection(emailMonthlyOpenRate, emailCtr.monthlySends)
         ),
       ],
       caption: trendWindow(emailCtr.monthlyOpens.length),
@@ -991,7 +1000,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           // sparkline empty rather than borrow an unrelated curve.
           [],
           lfxColors.blue[500],
-          formatMomChange(revenueImpact.changePercentage),
+          // YoY, not MoM: revenueImpact.changePercentage is WON_REVENUE_YOY_CHANGE_PCT.
+          formatYoyChange(revenueImpact.changePercentage),
           normalizeTrend(revenueImpact.changePercentage, revenueImpact.trend)
         ),
         protoDualSignal('Linear model', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
