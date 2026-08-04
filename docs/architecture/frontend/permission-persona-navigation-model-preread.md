@@ -216,9 +216,9 @@ ED-shaped pages gate on the existing named permissions — checked like any
 other permission, never on a persona guard and never by branching on the
 `executive_director` grant from application code:
 
-- **Campaigns** checks `campaign_manager` (write-capable; the model currently feeds it from `executive_director` and the `marketing_ops` team).
-- **Marketing Impact** checks `marketing_auditor` (read-only; the model currently feeds it from `executive_director`, `marketing_ops`, and parent-project inheritance).
-- **Health Metrics** stays ED-gated by design — this page does not migrate to a shared permission (LFXV2-2726 is evaluating an LF Staff answer, not yet started; see also the open Paul/Jim question in Model Asks).
+- **Campaigns** checks `campaign_manager` (write-capable; the model currently feeds it from `executive_director` and the `marketing_ops` team). Write authority is not implied by `writer` — decided, see Model Asks below.
+- **Marketing Impact** checks `marketing_auditor` (read-only; the model currently feeds it from `executive_director`, `marketing_ops`, and parent-project inheritance). The model is also adding `writer` → `marketing_auditor`, so context writers see it without the guard knowing about `writer` — decided, see Model Asks below.
+- **Health Metrics** guards on `auditor` — decided, see Model Asks below. Anyone who can audit the context sees its health; auditor alone never implies write.
 
 None of these three needs a new permission invented for it — all three
 already exist in the model. This migration is tracked in LFXV2-2236 ("Add
@@ -470,15 +470,26 @@ Discovery action = explicit request/registration/subscription/workflow
    way: a model change, not a UI workaround, and app code is unaffected —
    it only ever checks the permission on the org object.
 
-3. **Health Metrics access for non-ED writers — open question, posed to
-   Eric Searcy, not yet resolved.** Writer permission on a context should
-   surface everything about it, including Health Metrics — today the page
-   is ED-gated by design (see Writer Actions above), which strands a
-   non-ED writer from a page their writer permission would otherwise
-   imply. Two ways to close that gap: either `writer` starts feeding
-   `marketing_auditor` in the model, or the Health Metrics guard accepts
-   `writer` OR `marketing_auditor` instead of `marketing_auditor` alone.
-   Awaiting Eric's pick — not resolved unilaterally here.
+3. **Health Metrics and Marketing Impact gating — decided (Slack, Jul
+   31–Aug 4).** Guards check a single permission; inheritance belongs in
+   the model, not in the guard (Eric's rule — no multi-permission ORs).
+   Accordingly:
+   - Health Metrics guards on `auditor`. Anyone who can audit the context
+     sees its health — e.g. a user with an explicit auditor grant sees
+     everything an ED sees on this page — and auditor alone never implies
+     write.
+   - Marketing Impact guards on `marketing_auditor`; the model adds
+     `writer` → `marketing_auditor` so context writers see it (model
+     change, platform team).
+   - Campaigns guards on `campaign_manager` (write authority is not
+     implied by writer).
+
+   `executiveDirectorGuard` on these three routes is replaced by three
+   single-permission guards — `auditor` for Health Metrics,
+   `marketing_auditor` for Marketing Impact, `campaign_manager` for
+   Campaigns — no persona, no multi-permission ORs. Eric will separately
+   update `entity-design.md` and `PERMISSIONS.md` to this lexicon
+   (his action; reference only, not tracked here).
 
 ## Contract Summary
 
@@ -489,8 +500,9 @@ Authoritative permission model -> selector eligibility and defaulting
 Context selector eligibility -> auditor or another explicit permission
 Sidebar/page/content visibility -> persona (presentation only)
 Action authority -> existing contextual writer permission
-Campaigns/Marketing Impact -> named permission (campaign_manager/marketing_auditor), not ED persona
-Health Metrics -> stays ED-gated by design, pending an LF Staff answer (LFXV2-2726) and the writer/marketing_auditor question above
+Campaigns -> guards on campaign_manager (write), not ED persona
+Marketing Impact -> guards on marketing_auditor; model adds writer -> marketing_auditor
+Health Metrics -> guards on auditor; auditor alone never implies write
 Me-originated actions -> carry target context before writer checks
 Discovery -> explicit browse/join/request workflows
 No separate Admin Mode for Foundation/Project create/manage authority
