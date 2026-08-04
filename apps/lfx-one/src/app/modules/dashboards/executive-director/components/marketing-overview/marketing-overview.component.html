@@ -250,6 +250,7 @@
 
 <lfx-paid-social-reach-drawer
   [visible]="activeDrawer() === DashboardDrawerType.MarketingPaidSocialReach"
+  [data]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-paid-social-reach-drawer>
 
 <lfx-social-media-drawer

@@ -23,9 +23,6 @@ import type {
   MarketingAttributionResponse,
   MarketingKeyInsight,
   MarketingRecommendedAction,
-  RevenueImpactAttributionChannelView,
-  RevenueImpactChannelLegendView,
-  RevenueImpactProjectBreakdownView,
   RevenueImpactResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -68,52 +65,6 @@ export class RevenueImpactDrawerComponent {
     twitter_ads: 'bg-gray-500',
   };
   private static readonly channelBgFallback = 'bg-gray-400';
-
-  protected readonly paidMediaTrendChartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: {
-        display: true,
-        position: 'top',
-        align: 'end',
-        labels: { color: lfxColors.gray[700], font: { size: 11 }, boxWidth: 12, boxHeight: 12, padding: 12 },
-      },
-      tooltip: {
-        ...DASHBOARD_TOOLTIP_CONFIG,
-        callbacks: {
-          label: (ctx) => ` ${ctx.dataset.label ?? ''}: $${Number(ctx.parsed.y ?? 0).toLocaleString()}`,
-        },
-      },
-    },
-    scales: {
-      x: {
-        display: true,
-        grid: { display: false },
-        border: { display: true, color: lfxColors.gray[300] },
-        ticks: { color: lfxColors.gray[500], font: { size: 11 } },
-      },
-      y: {
-        type: 'linear',
-        position: 'left',
-        display: true,
-        grid: { color: lfxColors.gray[200], lineWidth: 1 },
-        border: { display: false },
-        title: { display: true, text: 'Dollars ($)', color: lfxColors.gray[500], font: { size: 11 } },
-        ticks: {
-          color: lfxColors.gray[500],
-          font: { size: 11 },
-          callback: (value) => {
-            const n = Number(value);
-            if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-            if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-            return `$${n.toLocaleString()}`;
-          },
-        },
-      },
-    },
-  };
 
   protected readonly eventAttrChartOptions: ChartOptions<'bar'> = {
     responsive: true,
@@ -165,18 +116,8 @@ export class RevenueImpactDrawerComponent {
   protected readonly eventAttrSortBy = signal<'revenue' | 'sessions' | 'visitors'>('revenue');
 
   // === Computed Signals ===
-  protected readonly paidMediaTrendChartData: Signal<ChartData<'bar'>> = this.initPaidMediaTrendChartData();
   protected readonly eventAttrChartData: Signal<ChartData<'bar'>> = this.initEventAttrChartData();
-  protected readonly projectBreakdownLegend: Signal<RevenueImpactChannelLegendView[]> = this.initProjectBreakdownLegend();
-  protected readonly sortedProjectBreakdown: Signal<RevenueImpactProjectBreakdownView[]> = this.initSortedProjectBreakdown();
   protected readonly sortedEventAttrChannels: Signal<EventRegistrationAttributionChannelView[]> = this.initSortedEventAttrChannels();
-  protected readonly attributionChannelsView: Signal<RevenueImpactAttributionChannelView[]> = computed(() =>
-    this.data().attributionChannels.map((c) => ({
-      ...c,
-      label: RevenueImpactDrawerComponent.formatChannelLabel(c.channel),
-      formattedPercentage: c.percentage.toFixed(1),
-    }))
-  );
   // === Marketing Attribution (multi-touch models + revenue by channel) ===
   // Fetched here rather than passed in: this comes from the marketing-attribution
   // endpoint, not the revenueImpact payload the rest of this drawer binds to.
@@ -266,51 +207,6 @@ export class RevenueImpactDrawerComponent {
       ),
       { initialValue: defaultValue }
     );
-  }
-
-  private initProjectBreakdownLegend(): Signal<RevenueImpactChannelLegendView[]> {
-    return computed(() => {
-      const channelTotals = new Map<string, number>();
-      for (const r of this.data().projectBreakdown) {
-        for (const [channel, impressions] of Object.entries(r.channelImpressions)) {
-          channelTotals.set(channel, (channelTotals.get(channel) ?? 0) + (impressions ?? 0));
-        }
-      }
-      return Array.from(channelTotals.keys())
-        .sort((a, b) => (channelTotals.get(b) ?? 0) - (channelTotals.get(a) ?? 0))
-        .map((channel) => ({
-          channel,
-          label: RevenueImpactDrawerComponent.formatChannelLabel(channel),
-          bgClass: RevenueImpactDrawerComponent.bgClassFor(channel),
-        }));
-    });
-  }
-
-  private initSortedProjectBreakdown(): Signal<RevenueImpactProjectBreakdownView[]> {
-    return computed(() => {
-      const legend = this.projectBreakdownLegend();
-      return [...this.data().projectBreakdown]
-        .sort((a, b) => b.totalImpressions - a.totalImpressions)
-        .map((project) => {
-          const segments = legend
-            .map(({ channel, label, bgClass }) => {
-              const impressions = project.channelImpressions[channel] ?? 0;
-              const sharePercent = project.totalImpressions > 0 ? (impressions / project.totalImpressions) * 100 : 0;
-              return {
-                channel,
-                bgClass,
-                sharePercent,
-                title: `${label}: ${RevenueImpactDrawerComponent.formatImpressionsShort(impressions)}`,
-              };
-            })
-            .filter((s) => s.sharePercent > 0);
-          return {
-            ...project,
-            formattedTotalImpressions: RevenueImpactDrawerComponent.formatImpressionsShort(project.totalImpressions),
-            segments,
-          };
-        });
-    });
   }
 
   private initSortedEventAttrChannels(): Signal<EventRegistrationAttributionChannelView[]> {
@@ -477,32 +373,6 @@ export class RevenueImpactDrawerComponent {
       }
 
       return insights;
-    });
-  }
-
-  private initPaidMediaTrendChartData(): Signal<ChartData<'bar'>> {
-    return computed(() => {
-      const trend = this.data().paidMedia.monthlyTrend;
-      const labels = trend.map((r) => RevenueImpactDrawerComponent.formatYearMonthLabel(r.month));
-      return {
-        labels,
-        datasets: [
-          {
-            type: 'bar',
-            label: 'Spend',
-            data: trend.map((r) => r.spend),
-            backgroundColor: lfxColors.blue[500],
-            borderRadius: 4,
-          },
-          {
-            type: 'bar',
-            label: 'Revenue',
-            data: trend.map((r) => r.revenue),
-            backgroundColor: lfxColors.emerald[600],
-            borderRadius: 4,
-          },
-        ],
-      };
     });
   }
 
