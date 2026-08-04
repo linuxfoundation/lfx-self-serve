@@ -43,11 +43,11 @@ An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can 
 
 ## Why don't my signed CLAs show up on My CLAs?
 
-My CLAs matches agreements to your LF username, verified emails, and linked GitHub accounts. If you signed with an email or GitHub account that is not linked to this LFX profile, the CLA will not appear. Open [Identities](/profile/identities), link those accounts, then return to **My CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
+My CLAs matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **My CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
 
 ## Can I sign a CLA from the My CLAs tab?
 
-No. My CLAs is read-only and only shows agreements already on file. Signing happens in the EasyCLA contributor flow when you contribute to a project that requires a CLA. See [My CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla).
+No. My CLAs is read-only and only shows agreements already on file. Signing happens outside this tab, and the signing process may evolve. See [My CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
 
 ## Who do I contact if I cannot access my account?
 

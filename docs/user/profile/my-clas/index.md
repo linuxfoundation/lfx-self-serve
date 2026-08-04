@@ -13,7 +13,7 @@ These steps apply to any signed-in user on LFX Self Serve.
 
 **My CLAs** is a read-only Profile tab that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. My CLAs answers: _which agreements have I signed, and under which projects am I covered?_
 
-You cannot sign a CLA from this page. Signing happens in the EasyCLA contributor flow when you contribute to a project that requires a CLA. The signing experience continues to evolve; this page only shows agreements already on file.
+You cannot sign a CLA from this page. Signing happens outside My CLAs, and the signing process may evolve; this page only shows agreements already on file.
 
 For broader EasyCLA concepts (what a CLA is, project and corporate consoles, troubleshooting), see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla).
 
@@ -83,7 +83,7 @@ No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCL
 
 ## Can I sign a CLA from My CLAs?
 
-No. My CLAs is read-only. To get covered, follow the EasyCLA contributor flow when you contribute to a project that requires a CLA. See the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for how signing works.
+No. My CLAs is read-only. Signing happens outside this tab, and the process may evolve. See the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
 
 ## Related
 
