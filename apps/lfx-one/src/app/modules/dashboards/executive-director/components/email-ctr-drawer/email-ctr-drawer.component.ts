@@ -17,12 +17,9 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import type {
   EmailCtrResponse,
-  FunnelAggregates,
-  FunnelTierMetrics,
   MarketingAttributionResponse,
   MarketingKeyInsight,
   MarketingRecommendedAction,
-  PaidCampaignPerformance,
   SocialReachResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -90,32 +87,6 @@ export class EmailCtrDrawerComponent {
   // presentation itself now lives in the Paid Media drawer.
   protected readonly paidData: Signal<SocialReachResponse> = this.initPaidData();
   private readonly paidDataResolved = signal(false);
-
-  protected readonly funnelAggregates: Signal<FunnelAggregates> = computed(() => {
-    const projects = this.paidData().projectBreakdown ?? [];
-    const campaigns: PaidCampaignPerformance[] = projects.flatMap((p) => p.campaigns);
-
-    const aggregate = (stages: string[]): FunnelTierMetrics => {
-      const matched = campaigns.filter((c) => stages.includes(c.funnelStage));
-      return {
-        count: matched.length,
-        spend: matched.reduce((s, c) => s + c.spend, 0),
-        revenue: matched.reduce((s, c) => s + c.revenue, 0),
-        impressions: matched.reduce((s, c) => s + c.impressions, 0),
-        clicks: matched.reduce((s, c) => s + c.clicks, 0),
-        sessions: matched.reduce((s, c) => s + c.sessions, 0),
-        conversions: matched.reduce((s, c) => s + c.conversions, 0),
-      };
-    };
-
-    // Fold 'Unknown' into ToFU — unmapped campaigns are typically awareness-level,
-    // and excluding them would cause funnel totals to disagree with paidData().totalReach.
-    const tofu = aggregate(['ToFU', 'ToFU2', 'Unknown']);
-    const mofu = aggregate(['MoFU']);
-    const bofu = aggregate(['BoFU']);
-
-    return { tofu, mofu, bofu };
-  });
 
   protected readonly attributionData: Signal<MarketingAttributionResponse> = this.initAttributionData();
   private readonly attributionDataResolved = signal(false);
@@ -216,96 +187,7 @@ export class EmailCtrDrawerComponent {
       }
 
       const email = this.drawerData();
-      const paid = this.paidData();
-      const attribution = this.attributionData();
-
-      // Collect best action per section (attribution, paid, email) — max 3 total
-      const attrActions: MarketingRecommendedAction[] = [];
-      const paidActions: MarketingRecommendedAction[] = [];
       const emailActions: MarketingRecommendedAction[] = [];
-
-      // --- Attribution ---
-      const marketingChannelNames = new Set(['Email', 'Paid Performance', 'Internal & Banner']);
-      const marketingChannels = attribution.channels.filter((c) => marketingChannelNames.has(c.channel));
-      if (marketingChannels.length > 0) {
-        const emailChannel = marketingChannels.find((c) => c.channel === 'Email');
-        const bannerChannel = marketingChannels.find((c) => c.channel === 'Internal & Banner');
-        const zeroCostUnused: string[] = [];
-        if (emailChannel && emailChannel.sessions === 0) zeroCostUnused.push('Email');
-        if (bannerChannel && bannerChannel.sessions === 0) zeroCostUnused.push('Internal & Banner');
-
-        if (zeroCostUnused.length > 0) {
-          attrActions.push({
-            title: `Leverage ${zeroCostUnused.join(' and ')} for more reach`,
-            description: `${zeroCostUnused.join(' and ')} ${zeroCostUnused.length > 1 ? 'are' : 'is'} not driving sessions — activate these zero-cost channels to complement paid`,
-            priority: 'medium',
-            actionType: 'growth',
-          });
-        }
-
-        if (attrActions.length === 0) {
-          const totalMktSessions = marketingChannels.reduce((s, c) => s + c.sessions, 0);
-          const lowChannels = marketingChannels.filter((c) => totalMktSessions > 0 && (c.sessions / totalMktSessions) * 100 < 10 && c.sessions > 0);
-          if (lowChannels.length > 0) {
-            attrActions.push({
-              title: `Scale up ${lowChannels.map((c) => c.channel).join(' and ')}`,
-              description: `These channels are active but contributing less than 10% of marketing sessions — increase activity to boost reach`,
-              priority: 'medium',
-              actionType: 'growth',
-            });
-          }
-        }
-      }
-
-      // --- Paid (funnel-aware, impressions-based) — pick highest-priority ---
-      const funnel = this.funnelAggregates();
-
-      if (funnel.tofu.count > 0 && funnel.tofu.impressions === 0 && funnel.tofu.spend > 0) {
-        paidActions.push({
-          title: 'Awareness campaigns generating no impressions',
-          description: `${funnel.tofu.count} awareness campaign${funnel.tofu.count > 1 ? 's' : ''} with ${formatCurrency(funnel.tofu.spend)} spend but zero impressions — review ad targeting`,
-          priority: 'high',
-          actionType: 'optimize',
-        });
-      }
-
-      if (paidActions.length === 0 && funnel.mofu.count > 0 && funnel.mofu.spend > 0) {
-        const ctr = funnel.mofu.impressions > 0 ? (funnel.mofu.clicks / funnel.mofu.impressions) * 100 : 0;
-        if (ctr > 0 && ctr < 1) {
-          paidActions.push({
-            title: 'Low click-through on engagement campaigns',
-            description: `Engagement CTR at ${ctr.toFixed(2)}% — test new ad creative or refine audience targeting`,
-            priority: 'medium',
-            actionType: 'optimize',
-          });
-        }
-      }
-
-      if (paidActions.length === 0 && paid.monthlyData.length >= 3) {
-        // The series is calendar zero-filled — all three months must be
-        // ACTIVE (spend or impressions), or a trailing no-campaign month
-        // fabricates a "3 consecutive months" decline (spend gap, not a
-        // trend). An active month with zero impressions is a real data point.
-        const recent3 = paid.monthlyData.slice(-3);
-        const active3 = recent3.map((v, i) => v > 0 || (paid.monthlySpend?.[paid.monthlyData.length - 3 + i] ?? 0) > 0);
-        if (active3.every(Boolean) && recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
-          paidActions.push({
-            title: 'Investigate declining paid impressions',
-            description: 'Impressions dropped for 3 consecutive months — review budget pacing and bid strategy',
-            priority: 'medium',
-            actionType: 'investigate',
-          });
-        }
-      }
-
-      if (paidActions.length === 0 && funnel.bofu.count > 0 && funnel.bofu.spend > 0 && funnel.bofu.conversions === 0) {
-        paidActions.push({
-          title: 'Conversion campaigns spending without converting',
-          description: `${funnel.bofu.count} conversion campaign${funnel.bofu.count > 1 ? 's are' : ' is'} active with no recorded conversions — review landing page and conversion tracking`,
-          priority: 'high',
-          actionType: 'optimize',
-        });
-      }
 
       // --- Email — pick highest-priority ---
       // Use the true MoM figure: with a trailing (last-6) period, changePercentage
@@ -363,9 +245,8 @@ export class EmailCtrDrawerComponent {
         }
       }
 
-      // Email-only: paid actions belong to the Paid Media drawer and attribution
-      // actions to the Attribution drawer. Both buckets are still computed above
-      // because their inputs feed the shared funnel/channel maths.
+      // Email-only: paid recommendations live in the Paid Media drawer and
+      // attribution ones in the Attribution drawer.
       const actions = [...emailActions.slice(0, 3)];
 
       if (actions.length === 0 && !this.hasNoData()) {
@@ -389,93 +270,7 @@ export class EmailCtrDrawerComponent {
       }
 
       const email = this.drawerData();
-      const paid = this.paidData();
-      const attribution = this.attributionData();
-
-      // Collect best insight per section (attribution, paid, email) — max 3 total
-      const attrInsights: MarketingKeyInsight[] = [];
-      const paidInsights: MarketingKeyInsight[] = [];
       const emailInsights: MarketingKeyInsight[] = [];
-
-      // --- Attribution — pick 1 best ---
-      if (attribution.channels.length > 0) {
-        const totalSessions = attribution.channels.reduce((s, c) => s + c.sessions, 0);
-        const totalLinearRevenue = attribution.channels.reduce((s, c) => s + c.linearRevenue, 0);
-
-        if (totalLinearRevenue > 0 && totalSessions > 0) {
-          const revPerSession = totalLinearRevenue / totalSessions;
-          attrInsights.push({
-            text: `${formatNumber(totalSessions)} total sessions driving ${EmailCtrDrawerComponent.formatRevenue(totalLinearRevenue)} attributed revenue ($${revPerSession.toFixed(2)}/session)`,
-            type: 'driver',
-          });
-        } else if (totalLinearRevenue > 0) {
-          attrInsights.push({
-            text: `${EmailCtrDrawerComponent.formatRevenue(totalLinearRevenue)} attributed revenue across channels`,
-            type: 'driver',
-          });
-        } else if (totalSessions > 0) {
-          attrInsights.push({ text: `${formatNumber(totalSessions)} total sessions across ${attribution.channels.length} channels`, type: 'info' });
-        }
-      }
-
-      // --- Paid (funnel-aware, impressions-based) — pick 1 best ---
-      const funnel = this.funnelAggregates();
-      const totalPaidImpressions = funnel.tofu.impressions + funnel.mofu.impressions + funnel.bofu.impressions;
-
-      if (totalPaidImpressions > 0) {
-        paidInsights.push({
-          text: `Paid campaigns: ${formatNumber(totalPaidImpressions)} impressions across ${funnel.tofu.count + funnel.mofu.count + funnel.bofu.count} campaigns (${formatCurrency(funnel.tofu.spend + funnel.mofu.spend + funnel.bofu.spend)} spend)`,
-          type: totalPaidImpressions > 10_000 ? 'driver' : 'info',
-        });
-      }
-
-      if (paidInsights.length === 0 && funnel.tofu.count > 0) {
-        if (funnel.tofu.impressions > 0) {
-          paidInsights.push({
-            text: `Awareness: ${formatNumber(funnel.tofu.impressions)} impressions across ${funnel.tofu.count} campaign${funnel.tofu.count > 1 ? 's' : ''} (${formatCurrency(funnel.tofu.spend)} spend)`,
-            type: funnel.tofu.impressions > 10_000 ? 'driver' : 'info',
-          });
-        } else if (funnel.tofu.spend > 0) {
-          paidInsights.push({
-            text: `Awareness: ${funnel.tofu.count} campaign${funnel.tofu.count > 1 ? 's' : ''} active but no impressions recorded`,
-            type: 'warning',
-          });
-        }
-      }
-
-      if (paidInsights.length === 0 && funnel.mofu.count > 0) {
-        const ctr = funnel.mofu.impressions > 0 ? (funnel.mofu.clicks / funnel.mofu.impressions) * 100 : 0;
-        if (funnel.mofu.clicks > 0) {
-          paidInsights.push({
-            text: `Engagement: ${formatNumber(funnel.mofu.clicks)} clicks at ${ctr.toFixed(1)}% CTR across ${funnel.mofu.count} campaign${funnel.mofu.count > 1 ? 's' : ''}`,
-            type: ctr >= 2 ? 'driver' : 'info',
-          });
-        }
-      }
-
-      if (paidInsights.length === 0 && funnel.bofu.count > 0) {
-        paidInsights.push({
-          text: `Conversion: ${formatNumber(funnel.bofu.conversions)} conversion${funnel.bofu.conversions !== 1 ? 's' : ''} across ${funnel.bofu.count} campaign${funnel.bofu.count > 1 ? 's' : ''} (${formatCurrency(funnel.bofu.spend)} spend)`,
-          type: funnel.bofu.conversions > 0 ? 'driver' : 'warning',
-        });
-      }
-
-      if (paidInsights.length === 0 && paid.totalReach > 0 && paid.monthlyData.length >= 2) {
-        const prev = paid.monthlyData[paid.monthlyData.length - 2];
-        const curr = paid.monthlyData[paid.monthlyData.length - 1];
-        // Both months must be ACTIVE (spend or impressions): a zero-filled
-        // no-campaign month reads as ~-100% MoM — a spend gap, not a drop —
-        // while an active month with zero impressions is a real data point.
-        const currActive = curr > 0 || (paid.monthlySpend?.[paid.monthlyData.length - 1] ?? 0) > 0;
-        if (prev > 0 && currActive) {
-          const paidMom = ((curr - prev) / prev) * 100;
-          if (paidMom > 20) {
-            paidInsights.push({ text: `Paid impressions surged ${paidMom.toFixed(0)}% MoM — ${formatNumber(curr)} last month`, type: 'driver' });
-          } else if (paidMom < -20) {
-            paidInsights.push({ text: `Paid impressions dropped ${Math.abs(paidMom).toFixed(0)}% MoM`, type: 'warning' });
-          }
-        }
-      }
 
       // --- Email — pick 1 best ---
       // momChangePercentage is the true MoM (unaffected by the trailing window);

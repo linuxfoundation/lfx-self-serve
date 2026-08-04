@@ -89,7 +89,19 @@
       </div>
     }
 
-    @if (attributionData().channels.length > 0) {
+    <!-- This drawer fetches attribution itself, so the section needs its own loading
+         and empty states — otherwise it renders blank both while in flight and on error. -->
+    @if (!attributionResolved()) {
+      <div class="flex flex-col gap-4" data-testid="revenue-impact-drawer-attribution-loading">
+        <p-skeleton width="100%" height="4rem" />
+        <p-skeleton width="100%" height="12rem" />
+      </div>
+    } @else if (attributionData().channels.length === 0) {
+      <div class="text-center py-8 border border-dashed border-gray-300 rounded-lg" data-testid="revenue-impact-drawer-attribution-empty">
+        <i class="fa-light fa-chart-mixed text-3xl text-gray-400 mb-2 block" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">No attribution data available for this period</p>
+      </div>
+    } @else {
       <div class="flex flex-col gap-5" data-testid="revenue-impact-drawer-attribution-section">
         <div class="flex items-center gap-2">
           <i class="fa-light fa-chart-mixed text-indigo-500"></i>

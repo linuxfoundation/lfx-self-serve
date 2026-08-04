@@ -12,8 +12,9 @@ import { DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
 import { formatCurrency, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, filter, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -29,15 +30,15 @@ import type {
 @Component({
   selector: 'lfx-revenue-impact-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, ChartComponent, DecimalPipe, DrawerModule, TagComponent],
+  imports: [ButtonComponent, CardComponent, ChartComponent, DecimalPipe, DrawerModule, SkeletonModule, TagComponent],
   templateUrl: './revenue-impact-drawer.component.html',
 })
 export class RevenueImpactDrawerComponent {
-  // === Model Signals (two-way binding) ===
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
 
+  // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
   // === Inputs ===
@@ -54,17 +55,6 @@ export class RevenueImpactDrawerComponent {
     projectBreakdown: [],
     eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
   });
-
-  // === Static Config ===
-  private static readonly channelBgClass: Record<string, string> = {
-    google_ads: 'bg-blue-500',
-    facebook_ads: 'bg-blue-700',
-    microsoft_ads: 'bg-emerald-600',
-    linkedin_ads: 'bg-gray-700',
-    reddit_ads: 'bg-red-500',
-    twitter_ads: 'bg-gray-500',
-  };
-  private static readonly channelBgFallback = 'bg-gray-400';
 
   protected readonly eventAttrChartOptions: ChartOptions<'bar'> = {
     responsive: true,
@@ -121,6 +111,9 @@ export class RevenueImpactDrawerComponent {
   // === Marketing Attribution (multi-touch models + revenue by channel) ===
   // Fetched here rather than passed in: this comes from the marketing-attribution
   // endpoint, not the revenueImpact payload the rest of this drawer binds to.
+  /** False while the attribution fetch is in flight — lets the sections below tell
+   *  "still loading" apart from "resolved with no channels". */
+  protected readonly attributionResolved = signal(false);
   protected readonly attributionData: Signal<MarketingAttributionResponse> = this.initAttributionData();
   protected readonly expandedChannels = signal<Set<string>>(new Set());
 
@@ -201,8 +194,18 @@ export class RevenueImpactDrawerComponent {
       combineLatest([visible$, foundation$]).pipe(
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
+        tap(() => this.attributionResolved.set(false)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(catchError(() => of(defaultValue)))
+          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(
+            tap(() => this.attributionResolved.set(true)),
+            // Resolve on error too: the sections below distinguish "still loading" from
+            // "resolved but empty", and a failed fetch is the latter — leaving it false
+            // would pin the drawer in a skeleton state forever.
+            catchError(() => {
+              this.attributionResolved.set(true);
+              return of(defaultValue);
+            })
+          )
         )
       ),
       { initialValue: defaultValue }
@@ -436,16 +439,6 @@ export class RevenueImpactDrawerComponent {
       .split('_')
       .map((word) => (word === 'ads' ? 'Ads' : word.charAt(0).toUpperCase() + word.slice(1)))
       .join(' ');
-  }
-
-  private static formatImpressionsShort(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-    return n.toLocaleString();
-  }
-
-  private static bgClassFor(channel: string): string {
-    return RevenueImpactDrawerComponent.channelBgClass[channel] ?? RevenueImpactDrawerComponent.channelBgFallback;
   }
 
   private static formatYearMonthLabel(yearMonth: string): string {

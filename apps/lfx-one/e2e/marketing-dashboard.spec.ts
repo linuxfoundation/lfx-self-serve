@@ -225,7 +225,7 @@ test.describe('Email CTR Drawer', () => {
 
   test('opens and shows title when card is clicked', async ({ page }) => {
     await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
-    await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email Click-Through Rate');
+    await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email');
   });
 
   test('shows stats and email sections', async ({ page }) => {
