@@ -144,12 +144,10 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     resolveCommitteeV2UidsToV1Ids
       .mockReset()
       .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`])));
-    resolveMemberV2UidsToV1Ids
-      .mockReset()
-      .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => ({
-        resolved: new Map(uids.map((uid) => [uid, uid])),
-        indeterminateUids: new Set(),
-      }));
+    resolveMemberV2UidsToV1Ids.mockReset().mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => ({
+      resolved: new Map(uids.map((uid) => [uid, uid])),
+      indeterminateUids: new Set(),
+    }));
     warning.mockReset();
     info.mockReset();
     debug.mockReset();
@@ -583,10 +581,16 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.data_available).toBe(false);
-      // Every member still gets zero-counts/normal-tenure treatment (no tenure-grace `High`, since
-      // usableData is false) — the degrade only changes the reported `data_available` flag, it
-      // doesn't hide the roster.
       expect(result.members).toHaveLength(2);
+      // Regression test (cursor review, PR #1293): `mapped` has a real, matched row with nonzero
+      // counts, but the committee-wide degrade must still zero it out — data_available:false's own
+      // documented contract is that EVERY member shows zeroed counts and classifies Inactive, not
+      // just the members that individually failed to resolve. Before indeterminate tracking, this held
+      // for free (a matched row could only exist when usableData was already true); it no longer does,
+      // so this has to be asserted explicitly rather than trusted to fall out of the data.
+      expect(result.members.find((m) => m.uid === 'mapped')).toMatchObject({ invited: 0, attended: 0, classification: 'Inactive' });
+      expect(result.members.find((m) => m.uid === 'timed-out')).toMatchObject({ invited: 0, attended: 0, classification: 'Inactive' });
+      expect(result.summary).toMatchObject({ active_count: 0, at_risk_count: 0, attendance_rate: 0 });
     });
 
     it('skips the member-mapping bridge entirely when the query returns zero rows — nothing to join against, so no need to pay the NATS cost', async () => {

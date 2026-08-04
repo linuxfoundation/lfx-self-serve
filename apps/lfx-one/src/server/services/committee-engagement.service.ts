@@ -320,7 +320,19 @@ export class CommitteeEngagementService {
       const row = v1MemberId ? rowsByUid.get(v1MemberId) : undefined;
       if (row) matchedCount++;
 
-      const counts = row ? this.countsForWindow(row, window) : { invited: 0, attended: 0, committeeMeetings: 0 };
+      // `usableData` false must mean EVERY member's counts are zeroed, per this response's own
+      // `data_available` doc contract — before indeterminate tracking, that held for free (usableData
+      // false could only mean a total join-key mismatch, which structurally left `row` undefined for
+      // every member). Now that an indeterminate member can coexist with a genuinely-matched one on
+      // the same roster, a real `row` for THIS member no longer implies the committee-wide data is
+      // usable — `effectiveRow` enforces the zeroing explicitly rather than relying on it falling out
+      // of the data by construction (LFXV2-1705 review fix, cursor). `role`/`voting_status` below
+      // still read from the raw `row`, not `effectiveRow` — the doc contract explicitly permits those
+      // roster-passthrough fields (including the Emeritus classification they drive) to stay populated
+      // regardless of `data_available`, unlike the count/rate/classification fields this gates.
+      const effectiveRow = usableData ? row : undefined;
+
+      const counts = effectiveRow ? this.countsForWindow(effectiveRow, window) : { invited: 0, attended: 0, committeeMeetings: 0 };
       // Clamped to `invited`: the finalized model's own dbt tests are expected to enforce
       // `attended <= invited` as a grain invariant, but this defends against that guarantee being
       // violated in practice (a mismatched grain assumption, a future live-read bug) rather than
@@ -356,10 +368,11 @@ export class CommitteeEngagementService {
       // against for *any* member; treating every recent roster joiner as tenure-graced `High` in
       // either state produces an internally inconsistent payload — `data_available:false` (which
       // this method now also reports for the broken-join case, see `usableData` above) alongside a
-      // nonzero `active_count` and `High` classifications on literal 0/0 counts. `row?.` is
-      // unaffected by this gate: a matched row can only exist when `anyRowMatched` is already true.
+      // nonzero `active_count` and `High` classifications on literal 0/0 counts. `effectiveRow?.` (not
+      // `row?.`) for the first term too: a matched row's own join date is real engagement data, and
+      // must be zeroed out the same way its counts are whenever `usableData` is false.
       const joinedWithinWindow =
-        isJoinedWithinWindow(row?.MEMBER_JOINED_AT ?? null, windowStart) || (usableData && isJoinedWithinWindow(member.created_at, windowStart));
+        isJoinedWithinWindow(effectiveRow?.MEMBER_JOINED_AT ?? null, windowStart) || (usableData && isJoinedWithinWindow(member.created_at, windowStart));
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;
