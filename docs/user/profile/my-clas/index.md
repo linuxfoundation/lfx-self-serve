@@ -63,7 +63,7 @@ My CLAs only finds agreements that match an identity linked to your LFX account.
 - You signed under a **work or secondary email** that is not among your verified / linked emails
 - You signed with a **GitHub username** that is not connected under Identities
 
-**What to do:** open [Identities](/profile/identities) and link the Email or GitHub accounts you used when signing. Then return to **My CLAs** — matching is automatic once the identity is linked.
+**What to do:** open [Identities](/profile/identities) and link the Email or GitHub accounts you used when signing. Then return to **My CLAs** — newly linked Email/GitHub identities are included on the next load. If an agreement is still missing after that, see [EasyCLA troubleshooting](https://docs.linuxfoundation.org/lfx/easycla/v2-current/getting-started/easycla-troubleshooting).
 
 The info banner on the My CLAs tab also points to the Identities flow (_Link your Email, GitHub, or GitLab accounts →_). Linking Email or GitHub is what recovers missing CLA matches today.
 
