@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS } from '../constants/committee-engagement.constants';
+import { TagSeverity } from './components.interface';
 
 /** Time window a committee-engagement request/response is scoped to. */
 export type CommitteeEngagementWindow = (typeof COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS)[number];
@@ -135,4 +136,20 @@ export interface CommitteeEngagementResponse {
    * `data_available`, before presenting the numbers as real.
    */
   data_source: CommitteeEngagementDataSource;
+}
+
+/**
+ * Precomputed per-member view of the Members table's engagement cells (LFXV2-1705). Built once in
+ * a UID-keyed computed signal so the template binds properties directly instead of calling methods
+ * per row on every change-detection pass (`docs/reviews/frontend-checklist.md` rule 4, "no template
+ * functions").
+ */
+export interface CommitteeMemberEngagementRowView {
+  /** Null when the member has no engagement row (e.g. joined after the rollup was computed). */
+  row: CommitteeMemberEngagement | null;
+  /** "Meetings" cell text — see `formatCommitteeEngagementMeetings`. */
+  meetingsLabel: string;
+  /** Tooltip context for the engagement chip; empty string disables the tooltip. */
+  context: string;
+  severity: TagSeverity;
 }

@@ -5,10 +5,11 @@ import { NgClass } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { TagProps, TagSeverity } from '@lfx-one/shared/interfaces';
 import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-tag',
-  imports: [NgClass, TagModule],
+  imports: [NgClass, TagModule, TooltipModule],
   templateUrl: './tag.component.html',
 })
 export class TagComponent {
@@ -21,6 +22,31 @@ export class TagComponent {
   public readonly dot = input<TagProps['dot']>(false);
   /** Renders the tag with a border and transparent background instead of a filled background. */
   public readonly outlined = input<TagProps['outlined']>(false);
+  /**
+   * Tooltip text for hover AND keyboard focus. Bound directly on this component's own rendered
+   * element (`p-tag` or the plain `span` for `outlined`) rather than a wrapping element a consumer
+   * might add — PrimeNG's tooltip directive resolves its focus/blur listener target via
+   * `querySelector('.p-component')` on whatever element it sits on, falling back to the element
+   * itself only when no such descendant exists. `p-tag`'s own host carries the `p-component` class,
+   * so a consumer-side wrapping `<span pTooltip tabindex>` around `<lfx-tag>` finds `p-tag` as that
+   * descendant and attaches the listener there — a DIFFERENT node than the one carrying `tabindex`,
+   * so keyboard focus never fires it (LFXV2-1705 review). Applying it here instead, directly on
+   * `p-tag`, makes `querySelector` find no descendant and fall back to `p-tag` itself — the same
+   * node `tabindex` is on.
+   */
+  public readonly tooltip = input<TagProps['tooltip']>('');
+  public readonly tooltipPosition = input<TagProps['tooltipPosition']>('top');
+
+  /**
+   * Combines the tag's own value with the tooltip explanation so focusing/hovering the tag
+   * doesn't replace its accessible name with only the tooltip text (e.g. a "High" chip must still
+   * announce "High", not just its Chair-attendance explainer). `null` disables aria-label entirely
+   * when there's no tooltip, leaving the tag's rendered text content as its accessible name.
+   */
+  protected readonly accessibleLabel = computed(() => {
+    const tooltipText = this.tooltip();
+    return tooltipText ? `${this.value()} — ${tooltipText}` : null;
+  });
 
   protected readonly dotBgClass = computed(() => {
     const map: Record<TagSeverity, string> = {
