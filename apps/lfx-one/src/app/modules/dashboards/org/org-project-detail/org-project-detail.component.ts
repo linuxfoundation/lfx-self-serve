@@ -216,11 +216,13 @@ export class OrgProjectDetailComponent {
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly technicalCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
+    const periods = this.influenceState().data?.periods ?? null;
+    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months, periods));
   });
   protected readonly ecosystemCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
+    const periods = this.influenceState().data?.periods ?? null;
+    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months, periods));
   });
   // Live VM for the open drawer card, re-derived from the current (range-scoped) cards so the drawer
   // hero stat/caption track the ?range= toggle instead of a stale open-time snapshot.
@@ -697,12 +699,12 @@ export class OrgProjectDetailComponent {
     );
   }
 
-  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation. */
+  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation, re-fetches on range change. */
   private buildTrendState(): Observable<BlockState<OrgLensTrendBlock>> {
-    return combineLatest([this.orgUid$, this.slug$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
-      filter(([, , activated]) => activated),
-      switchMap(([uid, slug]) =>
-        this.detailService.getTrendBlock(uid, this.orgName(), slug).pipe(
+    return combineLatest([this.orgUid$, this.slug$, this.range$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
+      filter(([, , , activated]) => activated),
+      switchMap(([uid, slug, range]) =>
+        this.detailService.getTrendBlock(uid, this.orgName(), slug, range).pipe(
           map(
             (block): BlockState<OrgLensTrendBlock> => (block && block.trend.length > 0 ? { status: 'ready', data: block } : { status: 'empty', data: block })
           ),
@@ -879,12 +881,22 @@ export class OrgProjectDetailComponent {
     return out;
   }
 
-  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem', months: number): InfluenceCardVm {
+  private toInfluenceCard(
+    card: OrgLensProjectInfluenceCard,
+    colorHex: string,
+    group: 'technical' | 'ecosystem',
+    months: number,
+    periods: string[] | null
+  ): InfluenceCardVm {
     const variant = this.chartVariantFor(card.key);
     const valueSuffix = card.key === 'avg-merge-time' ? ' days' : '';
-    const sparkline = card.sparkline.slice(-months);
-    const projectSparkline = card.projectSparkline.slice(-months);
-    const labels = this.monthLabels.slice(-sparkline.length);
+    // "All time" (periods present): the payload already carries the adaptive-bucket axis, so render
+    // the series as-is against the server-emitted labels. 1y/2y: slice the trailing months and derive
+    // the fixed month labels client-side (unchanged).
+    const useBuckets = periods !== null && periods.length > 0;
+    const sparkline = useBuckets ? card.sparkline : card.sparkline.slice(-months);
+    const projectSparkline = useBuckets ? card.projectSparkline : card.projectSparkline.slice(-months);
+    const labels = useBuckets ? periods.slice(-sparkline.length) : this.monthLabels.slice(-sparkline.length);
     return {
       key: card.key,
       title: card.label,
@@ -953,12 +965,17 @@ export class OrgProjectDetailComponent {
     const trend = this.trendState().data?.trend ?? [];
     if (trend.length === 0) return { labels: [], datasets: [] };
 
+    // "All time" (periods present): render the variable-length bucketed series as-is against the
+    // server-emitted bucket labels (a shared lifetime axis for every org). 1y/2y: slice trailing
+    // months + derive month labels client-side (unchanged).
+    const periods = this.trendState().data?.periods ?? null;
+    const useBuckets = periods !== null && periods.length > 0;
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    const series = trend.map((t) => ({ name: t.orgName, data: t.combined.slice(-months) }));
+    const series = trend.map((t) => ({ name: t.orgName, data: useBuckets ? t.combined : t.combined.slice(-months) }));
     const len = series.reduce((max, s) => Math.max(max, s.data.length), 0);
     if (len === 0) return { labels: [], datasets: [] };
 
-    const labels = this.monthLabels.slice(-len);
+    const labels = useBuckets ? periods.slice(-len) : this.monthLabels.slice(-len);
     const entries = series.map((s) => ({ name: s.name, data: this.padStart(s.data, len) }));
 
     // Normalize each month so all series sum to 100%.
