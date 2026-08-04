@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { formatCurrency, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -76,8 +76,6 @@ export class EmailCtrDrawerComponent {
     const clicks = types.reduce((sum, t) => sum + t.totalClicks, 0);
     return sends > 0 ? Math.round(((clicks * 100.0) / sends) * 10) / 10 : 0;
   });
-
-  protected readonly formatCurrency = formatCurrency;
 
   protected onClose(): void {
     this.visible.set(false);
@@ -289,12 +287,5 @@ export class EmailCtrDrawerComponent {
       // Email-only — see the note on initRecommendedActions.
       return [...emailInsights.slice(0, 3)];
     });
-  }
-
-  private static formatRevenue(value: number): string {
-    if (value <= 0) return '—';
-    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-    return `$${value.toLocaleString()}`;
   }
 }

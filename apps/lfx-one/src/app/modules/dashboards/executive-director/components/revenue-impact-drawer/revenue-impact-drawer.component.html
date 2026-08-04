@@ -113,31 +113,31 @@
           <lfx-card styleClass="flex-1 min-w-[100px]">
             <div class="flex flex-col gap-1">
               <span class="text-sm text-gray-500">Total Sessions</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ formatCompact(attributionTotals().sessions) }}</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedSessions }}</span>
             </div>
           </lfx-card>
           <lfx-card styleClass="flex-1 min-w-[100px]">
             <div class="flex flex-col gap-1">
               <span class="text-sm text-gray-500">First Touch</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().firstTouchRevenue) }}</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedFirstTouchRevenue }}</span>
             </div>
           </lfx-card>
           <lfx-card styleClass="flex-1 min-w-[100px]">
             <div class="flex flex-col gap-1">
               <span class="text-sm text-gray-500">Last Touch</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().lastTouchRevenue) }}</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedLastTouchRevenue }}</span>
             </div>
           </lfx-card>
           <lfx-card styleClass="flex-1 min-w-[100px]">
             <div class="flex flex-col gap-1">
               <span class="text-sm text-gray-500">Linear</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().linearRevenue) }}</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedLinearRevenue }}</span>
             </div>
           </lfx-card>
           <lfx-card styleClass="flex-1 min-w-[100px]">
             <div class="flex flex-col gap-1">
               <span class="text-sm text-gray-500">Time Decay</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().timeDecayRevenue) }}</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedTimeDecayRevenue }}</span>
             </div>
           </lfx-card>
         </div>
@@ -161,7 +161,7 @@
           </div>
 
           <!-- Channel Rows -->
-          @for (channel of attributionData().channels; track channel.channel) {
+          @for (channel of attributionChannelRows(); track channel.channel) {
             <div
               class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
               role="button"
@@ -172,24 +172,24 @@
               (keydown.space)="$event.preventDefault(); toggleChannel(channel.channel)"
               data-testid="revenue-impact-drawer-attribution-channel-row">
               <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2">{{ channel.channel }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(channel.sessions) }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.firstTouchRevenue) }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.lastTouchRevenue) }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.linearRevenue) }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.timeDecayRevenue) }}</span>
-              <span class="w-20 text-right text-sm font-semibold text-gray-900">{{ revPerSession(channel) }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedSessions }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedFirstTouchRevenue }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedLastTouchRevenue }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedLinearRevenue }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedTimeDecayRevenue }}</span>
+              <span class="w-20 text-right text-sm font-semibold text-gray-900">{{ channel.formattedRevPerSession }}</span>
             </div>
 
             <!-- Expanded Project Rows -->
             @if (expandedChannels().has(channel.channel)) {
-              @for (project of attributionProjectsByChannel().get(channel.channel) ?? []; track project.projectName) {
+              @for (project of channel.projects; track project.projectName) {
                 <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="revenue-impact-drawer-attribution-project-row">
                   <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="project.projectName">{{ project.projectName }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(project.sessions) }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.firstTouchRevenue) }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.lastTouchRevenue) }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.linearRevenue) }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.timeDecayRevenue) }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedSessions }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedFirstTouchRevenue }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedLastTouchRevenue }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedLinearRevenue }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedTimeDecayRevenue }}</span>
                   <span class="w-20"></span>
                 </div>
               }
@@ -199,11 +199,11 @@
           <!-- Total Row -->
           <div class="flex items-center py-2.5 px-1 border-t-2 border-gray-300 font-bold">
             <span class="flex-[2] min-w-[120px] text-sm text-gray-900">TOTAL</span>
-            <span class="flex-1 text-right text-sm text-gray-900">{{ formatCompact(attributionTotals().sessions) }}</span>
-            <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().firstTouchRevenue) }}</span>
-            <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().lastTouchRevenue) }}</span>
-            <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().linearRevenue) }}</span>
-            <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().timeDecayRevenue) }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedSessions }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedFirstTouchRevenue }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedLastTouchRevenue }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedLinearRevenue }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedTimeDecayRevenue }}</span>
             <span class="w-20"></span>
           </div>
         </div>

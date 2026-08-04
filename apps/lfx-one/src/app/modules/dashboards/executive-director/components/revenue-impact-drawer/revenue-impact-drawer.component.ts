@@ -19,9 +19,10 @@ import { SkeletonModule } from 'primeng/skeleton';
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   EventRegistrationAttributionChannelView,
-  MarketingAttributionChannel,
+  MarketingAttributionChannelView,
   MarketingAttributionProject,
   MarketingAttributionResponse,
+  MarketingAttributionTotalsView,
   MarketingKeyInsight,
   MarketingRecommendedAction,
   RevenueImpactResponse,
@@ -127,24 +128,48 @@ export class RevenueImpactDrawerComponent {
     return grouped;
   });
 
-  protected readonly attributionTotals: Signal<{
-    sessions: number;
-    linearRevenue: number;
-    firstTouchRevenue: number;
-    lastTouchRevenue: number;
-    timeDecayRevenue: number;
-  }> = computed(() => {
+  protected readonly attributionTotals: Signal<MarketingAttributionTotalsView> = computed(() => {
     const channels = this.attributionData().channels;
+    const sessions = channels.reduce((s, c) => s + c.sessions, 0);
+    const linearRevenue = channels.reduce((s, c) => s + c.linearRevenue, 0);
+    const firstTouchRevenue = channels.reduce((s, c) => s + c.firstTouchRevenue, 0);
+    const lastTouchRevenue = channels.reduce((s, c) => s + c.lastTouchRevenue, 0);
+    const timeDecayRevenue = channels.reduce((s, c) => s + c.timeDecayRevenue, 0);
     return {
-      sessions: channels.reduce((s, c) => s + c.sessions, 0),
-      linearRevenue: channels.reduce((s, c) => s + c.linearRevenue, 0),
-      firstTouchRevenue: channels.reduce((s, c) => s + c.firstTouchRevenue, 0),
-      lastTouchRevenue: channels.reduce((s, c) => s + c.lastTouchRevenue, 0),
-      timeDecayRevenue: channels.reduce((s, c) => s + c.timeDecayRevenue, 0),
+      sessions,
+      linearRevenue,
+      firstTouchRevenue,
+      lastTouchRevenue,
+      timeDecayRevenue,
+      formattedSessions: RevenueImpactDrawerComponent.compact(sessions),
+      formattedFirstTouchRevenue: formatCurrency(firstTouchRevenue),
+      formattedLastTouchRevenue: formatCurrency(lastTouchRevenue),
+      formattedLinearRevenue: formatCurrency(linearRevenue),
+      formattedTimeDecayRevenue: formatCurrency(timeDecayRevenue),
     };
   });
 
-  protected readonly formatCurrency = formatCurrency;
+  /** Channel rows with every display string precomputed — templates only read fields. */
+  protected readonly attributionChannelRows: Signal<MarketingAttributionChannelView[]> = computed(() => {
+    const byChannel = this.attributionProjectsByChannel();
+    return this.attributionData().channels.map((c) => ({
+      ...c,
+      formattedSessions: RevenueImpactDrawerComponent.compact(c.sessions),
+      formattedFirstTouchRevenue: formatCurrency(c.firstTouchRevenue),
+      formattedLastTouchRevenue: formatCurrency(c.lastTouchRevenue),
+      formattedLinearRevenue: formatCurrency(c.linearRevenue),
+      formattedTimeDecayRevenue: formatCurrency(c.timeDecayRevenue),
+      formattedRevPerSession: c.sessions > 0 ? `$${(c.linearRevenue / c.sessions).toFixed(2)}` : '—',
+      projects: (byChannel.get(c.channel) ?? []).map((pr) => ({
+        ...pr,
+        formattedSessions: RevenueImpactDrawerComponent.compact(pr.sessions),
+        formattedFirstTouchRevenue: formatCurrency(pr.firstTouchRevenue),
+        formattedLastTouchRevenue: formatCurrency(pr.lastTouchRevenue),
+        formattedLinearRevenue: formatCurrency(pr.linearRevenue),
+        formattedTimeDecayRevenue: formatCurrency(pr.timeDecayRevenue),
+      })),
+    }));
+  });
 
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
@@ -158,23 +183,6 @@ export class RevenueImpactDrawerComponent {
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
 
-  protected onClose(): void {
-    this.visible.set(false);
-  }
-
-  /** Compact number for dense table cells — 1.2K / 3.4M. */
-  protected formatCompact(value: number): string {
-    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
-    // server-side vs client-side and trips hydration text mismatches.
-    return value.toLocaleString('en-US');
-  }
-
-  protected revPerSession(channel: MarketingAttributionChannel): string {
-    return channel.sessions > 0 ? `$${(channel.linearRevenue / channel.sessions).toFixed(2)}` : '—';
-  }
-
   protected toggleChannel(channel: string): void {
     const current = this.expandedChannels();
     const next = new Set(current);
@@ -184,6 +192,19 @@ export class RevenueImpactDrawerComponent {
       next.add(channel);
     }
     this.expandedChannels.set(next);
+  }
+
+  protected onClose(): void {
+    this.visible.set(false);
+  }
+
+  /** Compact number for dense table cells — 1.2K / 3.4M. */
+  private static compact(value: number): string {
+    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
+    // server-side vs client-side and trips hydration text mismatches.
+    return value.toLocaleString('en-US');
   }
 
   private initAttributionData(): Signal<MarketingAttributionResponse> {

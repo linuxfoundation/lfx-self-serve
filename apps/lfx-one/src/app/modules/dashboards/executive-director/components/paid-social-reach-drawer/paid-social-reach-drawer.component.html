@@ -167,7 +167,7 @@
 
       <!-- Performance by Project — moved here from the Email drawer, which showed it
            while it still served the combined Campaign Performance card. -->
-      @if ((drawerData().projectBreakdown?.length ?? 0) > 0) {
+      @if (projectRows().length > 0) {
         <div
           class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg"
           role="table"
@@ -203,41 +203,50 @@
           </div>
 
           <!-- Project Rows -->
-          @for (project of drawerData().projectBreakdown!; track project.projectName) {
-            <div
-              class="flex items-center py-2.5 px-1 border-b border-gray-100 transition-colors"
-              [class.cursor-pointer]="project.campaigns.length > 0"
-              [class.hover:bg-gray-50]="project.campaigns.length > 0"
-              role="row"
-              [attr.tabindex]="project.campaigns.length > 0 ? 0 : null"
-              [attr.aria-expanded]="project.campaigns.length > 0 ? expandedProjects().has(project.projectName) : null"
-              (click)="project.campaigns.length > 0 && toggleProject(project.projectName)"
-              (keydown.enter)="project.campaigns.length > 0 && toggleProject(project.projectName)"
-              (keydown.space)="$event.preventDefault(); project.campaigns.length > 0 && toggleProject(project.projectName)"
-              data-testid="paid-social-reach-drawer-project-row">
-              <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2" role="cell">{{ project.projectName }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">${{ formatCompact(project.spend) }}</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">${{ formatCompact(project.revenue) }}</span>
+          @for (project of projectRows(); track project.projectName) {
+            <div class="flex items-center py-2.5 px-1 border-b border-gray-100 transition-colors" role="row" data-testid="paid-social-reach-drawer-project-row">
+              <span class="flex-[2] min-w-[120px] pr-2" role="cell">
+                @if (project.hasCampaigns) {
+                  <!-- The control is a real button inside the name cell: a role="row"
+                       element must not also be the focusable expand/collapse target. -->
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-1.5 text-left text-sm font-semibold text-gray-900 truncate hover:text-blue-700"
+                    [attr.aria-expanded]="project.expanded"
+                    [attr.aria-label]="'Toggle campaigns for ' + project.projectName"
+                    (click)="toggleProject(project.projectName)">
+                    <i
+                      class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform"
+                      [class.rotate-90]="project.expanded"
+                      aria-hidden="true"></i>
+                    <span class="truncate">{{ project.projectName }}</span>
+                  </button>
+                } @else {
+                  <span class="text-sm font-semibold text-gray-900 truncate">{{ project.projectName }}</span>
+                }
+              </span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.formattedSpend }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.formattedRevenue }}</span>
               <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.roas | number: '1.1-1' }}x</span>
-              <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ formatCompact(project.conversions) }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.formattedConversions }}</span>
               <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.convRate | number: '1.1-1' }}%</span>
               <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">${{ project.cpc | number: '1.2-2' }}</span>
               <span class="w-20 flex justify-end" role="cell">
-                <lfx-tag [value]="project.performance" [severity]="getPerformanceSeverity(project.performance)" [rounded]="true" />
+                <lfx-tag [value]="project.performance" [severity]="project.severity" [rounded]="true" />
               </span>
             </div>
 
             <!-- Expanded Campaign Rows -->
-            @if (expandedProjects().has(project.projectName)) {
-              @for (campaign of project.campaigns; track campaign.campaignName) {
+            @if (project.expanded) {
+              @for (campaign of project.campaignRows; track campaign.campaignName) {
                 <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" role="row" data-testid="paid-social-reach-drawer-campaign-row">
                   <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" role="cell" [title]="campaign.campaignName">{{
                     campaign.campaignName
                   }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600" role="cell">${{ formatCompact(campaign.spend) }}</span>
-                  <span class="flex-1 text-right text-xs text-gray-600" role="cell">${{ formatCompact(campaign.revenue) }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600" role="cell">{{ campaign.formattedSpend }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600" role="cell">{{ campaign.formattedRevenue }}</span>
                   <span class="w-14 text-right text-xs text-gray-600" role="cell">{{ campaign.roas | number: '1.1-1' }}x</span>
-                  <span class="flex-1 text-right text-xs text-gray-600" role="cell">{{ formatCompact(campaign.conversions) }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600" role="cell">{{ campaign.formattedConversions }}</span>
                   <span class="w-14 text-right text-xs text-gray-600" role="cell">{{ campaign.convRate | number: '1.1-1' }}%</span>
                   <span class="w-14 text-right text-xs text-gray-600" role="cell">${{ campaign.cpc | number: '1.2-2' }}</span>
                   <span class="w-20" role="cell" aria-hidden="true"></span>

@@ -21,6 +21,7 @@ import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   MarketingKeyInsight,
   MarketingRecommendedAction,
+  PaidProjectBreakdownView,
   RevenueImpactAttributionChannelView,
   RevenueImpactChannelLegendView,
   RevenueImpactProjectBreakdownView,
@@ -233,6 +234,30 @@ export class PaidSocialReachDrawerComponent {
   /** Project rows the user has expanded to reveal their campaigns. */
   protected readonly expandedProjects = signal<Set<string>>(new Set());
 
+  /**
+   * Project rows with display strings, severity and expansion state precomputed.
+   * Recomputes when either the data or the expanded set changes, so the template
+   * only reads fields — no function calls, no Set.has() in bindings.
+   */
+  protected readonly projectRows: Signal<PaidProjectBreakdownView[]> = computed(() => {
+    const expanded = this.expandedProjects();
+    return (this.drawerData().projectBreakdown ?? []).map((p) => ({
+      ...p,
+      formattedSpend: PaidSocialReachDrawerComponent.compact(p.spend),
+      formattedRevenue: PaidSocialReachDrawerComponent.compact(p.revenue),
+      formattedConversions: PaidSocialReachDrawerComponent.compact(p.conversions),
+      severity: PaidSocialReachDrawerComponent.severityFor(p.performance),
+      hasCampaigns: p.campaigns.length > 0,
+      expanded: expanded.has(p.projectName),
+      campaignRows: p.campaigns.map((c) => ({
+        ...c,
+        formattedSpend: PaidSocialReachDrawerComponent.compact(c.spend),
+        formattedRevenue: PaidSocialReachDrawerComponent.compact(c.revenue),
+        formattedConversions: PaidSocialReachDrawerComponent.compact(c.conversions),
+      })),
+    }));
+  });
+
   /** Conversions summed across every project. */
   protected readonly totalConversions: Signal<string> = computed(() => {
     const projects = this.drawerData().projectBreakdown ?? [];
@@ -258,26 +283,6 @@ export class PaidSocialReachDrawerComponent {
   );
 
   // === Protected Methods ===
-  protected onClose(): void {
-    this.visible.set(false);
-  }
-
-  /** Compact number for dense table cells — 1.2K / 3.4M. */
-  protected formatCompact(value: number): string {
-    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
-    // server-side vs client-side and trips hydration text mismatches.
-    return value.toLocaleString('en-US');
-  }
-
-  protected getPerformanceSeverity(performance: string): 'danger' | 'warn' | 'success' | 'secondary' {
-    if (performance === 'LOW OPENS' || performance === 'LOW CLICKS' || performance === 'POOR' || performance === 'NO REVENUE') return 'danger';
-    if (performance === 'GOOD') return 'warn';
-    if (performance === 'EXCELLENT' || performance === 'STRONG') return 'success';
-    return 'secondary';
-  }
-
   protected toggleProject(projectName: string): void {
     const current = this.expandedProjects();
     const next = new Set(current);
@@ -287,6 +292,26 @@ export class PaidSocialReachDrawerComponent {
       next.add(projectName);
     }
     this.expandedProjects.set(next);
+  }
+
+  protected onClose(): void {
+    this.visible.set(false);
+  }
+
+  /** Compact number for dense table cells — 1.2K / 3.4M. */
+  private static compact(value: number): string {
+    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
+    // server-side vs client-side and trips hydration text mismatches.
+    return value.toLocaleString('en-US');
+  }
+
+  private static severityFor(performance: string): 'danger' | 'warn' | 'success' | 'secondary' {
+    if (performance === 'LOW OPENS' || performance === 'LOW CLICKS' || performance === 'POOR' || performance === 'NO REVENUE') return 'danger';
+    if (performance === 'GOOD') return 'warn';
+    if (performance === 'EXCELLENT' || performance === 'STRONG') return 'success';
+    return 'secondary';
   }
 
   // === Private Initializers ===
