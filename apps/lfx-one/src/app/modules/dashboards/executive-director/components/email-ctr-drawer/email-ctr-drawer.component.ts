@@ -233,7 +233,7 @@ export class EmailCtrDrawerComponent {
       if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
           title: 'Maintain current momentum',
-          description: 'All channels performing well — continue current strategy and monitor for shifts',
+          description: 'Email performance is healthy — continue current strategy and monitor for shifts',
           priority: 'low',
           actionType: 'growth',
         });
