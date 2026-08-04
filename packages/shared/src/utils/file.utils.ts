@@ -317,7 +317,6 @@ export function downloadFromUrl(url: string, filename?: string): void {
   if (filename) {
     anchor.download = sanitizeFilename(filename);
   }
-  anchor.rel = 'noopener';
   anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();

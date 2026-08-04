@@ -74,16 +74,18 @@ export class ProfileClasComponent {
   /**
    * Resolves the ICLA's short-lived PDF URL and triggers a file download (no new tab).
    * Origin-tab spinner stays on while the presigned URL resolves; see #1228.
+   * Filename includes project/CLA-group name so multi-project downloads don't collide.
    */
-  protected onDownload(signatureId: string): void {
+  protected onDownload(agreement: MyClaAgreement): void {
     if (this.downloadingId()) return;
 
-    this.downloadingId.set(signatureId);
+    this.downloadingId.set(agreement.id);
 
-    this.myClasService.getPdfUrl(signatureId).subscribe({
+    this.myClasService.getPdfUrl(agreement.id).subscribe({
       next: ({ url }) => {
         this.downloadingId.set(null);
-        downloadFromUrl(url, 'signed-cla.pdf');
+        const label = agreement.projectName || agreement.claGroupName || 'cla';
+        downloadFromUrl(url, `${label}-signed.pdf`);
       },
       error: () => {
         this.downloadingId.set(null);
