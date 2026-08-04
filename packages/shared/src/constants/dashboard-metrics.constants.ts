@@ -880,8 +880,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       changePercentage: formatMomChange(brandReach.changePercentage),
       trend: normalizeTrend(brandReach.changePercentage, brandReach.trend),
       subtitle: `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}`,
-      // No historical follower series available — render a flat line at the current
-      // total rather than reusing website-session data (they are different metrics).
+      // No historical follower series available. flatSparklineData renders a nearly
+      // flat line at the current total (a constant array collapses Chart.js's Y range
+      // and hides the line entirely) — it is a placeholder, not a trend. Website
+      // sessions are deliberately not reused here: different metric, different card.
       chartData: protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Social followers across all platforms, with month-over-month change.',
@@ -902,10 +904,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       value: formatNumber(brandReach.totalMonthlySessions),
       changePercentage: formatMomChange(brandReach.sessionMomChangePct),
       trend: normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down'),
-      // weeklyTrend only holds weeks WITH rows, so its length is not the reporting
-      // window — the endpoint covers a fixed six-month range, so the window is
-      // labeled directly rather than estimated from row count.
-      subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Last 6 months' : 'Sessions (30d)',
+      // The value is a rolling 30-day total; the sparkline is a separate weekly series
+      // over a fixed six-month range. Label them separately so the 30-day figure is not
+      // read as a six-month number. weeklyTrend only holds weeks WITH rows, so its
+      // length is not the reporting window and the window is labeled directly.
+      subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)',
       chartData: protoSparkline(
         brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
         lfxColors.violet[500]

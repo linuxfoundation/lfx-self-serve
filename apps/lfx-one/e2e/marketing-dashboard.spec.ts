@@ -182,6 +182,14 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Social Media');
   });
 
+  test('renders Web card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-web-sessions"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Web');
+  });
+
   test('renders filter pills', async ({ page }) => {
     const filters = page.locator('[data-testid="ed-evolution-filters"]');
     await expect(filters).toBeVisible();
@@ -195,7 +203,7 @@ test.describe('Website Visits Drawer', () => {
   });
 
   test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await expect(page.locator('[data-testid="website-visits-drawer-title"]')).toContainText('Website Visits');
   });
 
@@ -206,12 +214,12 @@ test.describe('Website Visits Drawer', () => {
   });
 
   test('shows trend chart section', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await expect(page.locator('[data-testid="website-visits-drawer-trend-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await page.locator('[data-testid="website-visits-drawer-close"]').click();
     await expect(page.locator('[data-testid="website-visits-drawer-content"]')).not.toBeVisible();
   });
