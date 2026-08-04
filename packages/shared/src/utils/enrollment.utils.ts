@@ -10,6 +10,8 @@ import { EnrollmentDisplayStatus, IndividualEnrollment } from '../interfaces/enr
 export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDisplayStatus {
   const { membership, price } = item;
   if (!membership) return 'Not Enrolled';
+  // Only 'Expired' short-circuits here. 'Active' and 'Purchased' are equivalent for display — a
+  // purchased membership is an active one, so both flow into the date-based derivation below.
   if (membership.status === 'Expired') return 'Expired';
   if (price === null || price === undefined) return 'Active';
   const endDateString = membership.endDate.length >= 10 ? membership.endDate.slice(0, 10) : membership.endDate;

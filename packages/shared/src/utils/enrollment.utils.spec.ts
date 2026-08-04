@@ -129,6 +129,25 @@ describe('deriveEnrollmentStatus', () => {
     const item = enrollment({ membership: membership({ endDate: daysFromNow(10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expiring Soon');
   });
+
+  // 'Purchased' has no dedicated branch — it deliberately flows into the same date-based derivation
+  // as 'Active'. These pin that equivalence so the fall-through can't silently regress.
+  describe("treats 'Purchased' identically to 'Active'", () => {
+    it('returns Active when EndDate is more than 30 days out', () => {
+      const item = enrollment({ membership: membership({ status: 'Purchased', endDate: daysFromNow(60) }) });
+      expect(deriveEnrollmentStatus(item)).toBe('Active');
+    });
+
+    it('returns Expiring Soon when EndDate is within 30 days and not stripe-autoRenew', () => {
+      const item = enrollment({ membership: membership({ status: 'Purchased', endDate: daysFromNow(10) }) });
+      expect(deriveEnrollmentStatus(item)).toBe('Expiring Soon');
+    });
+
+    it('returns Expired when EndDate is in the past', () => {
+      const item = enrollment({ membership: membership({ status: 'Purchased', endDate: daysFromNow(-5) }) });
+      expect(deriveEnrollmentStatus(item)).toBe('Expired');
+    });
+  });
 });
 
 describe('enrollmentStatusSeverity', () => {
