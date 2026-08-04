@@ -233,19 +233,19 @@ export class CommitteeViewComponent {
   // committee (Copilot). A fresh object literal is always reference-distinct, so every emission below
   // reliably propagates, and meetingCoordinatorLoading/meetingCoordinator (further down) compare the
   // tag against the LIVE committeeId() directly rather than needing a value-change to "release" them.
-  private readonly meetingCoordinatorState: Signal<{ committeeId: string | null; loading: boolean; coordinator: boolean }> = this.initMeetingCoordinator();
+  private readonly meetingCoordinatorState: Signal<{ committeeUid: string | null; loading: boolean; coordinator: boolean }> = this.initMeetingCoordinator();
   // True until meetingCoordinatorState has settled FOR THE CURRENT committee (the tag comparison
   // covers both "still mid-navigation, state belongs to the previous committee" and "fetch actually
   // in flight" — see the state signal's doc comment above).
   public readonly meetingCoordinatorLoading: Signal<boolean> = computed(() => {
     const state = this.meetingCoordinatorState();
-    return state.committeeId !== this.committeeId() || state.loading;
+    return state.committeeUid !== this.committeeId() || state.loading;
   });
   // Only trusts the resolved grant once meetingCoordinatorState belongs to the CURRENT committee —
   // never leaks a stale previous committee's resolved value into eligible() below.
   public readonly meetingCoordinator: Signal<boolean> = computed(() => {
     const state = this.meetingCoordinatorState();
-    return state.committeeId === this.committeeId() && state.coordinator;
+    return state.committeeUid === this.committeeId() && state.coordinator;
   });
 
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
@@ -912,7 +912,7 @@ export class CommitteeViewComponent {
   // reflect the ACTIVE project, not incidentally whichever committee page happened to run this
   // check. getProject already resolves to `null` (never throws) on fetch failure, so this fails
   // closed like every other leg of canAccessEngagement.
-  private initMeetingCoordinator(): Signal<{ committeeId: string | null; loading: boolean; coordinator: boolean }> {
+  private initMeetingCoordinator(): Signal<{ committeeUid: string | null; loading: boolean; coordinator: boolean }> {
     return toSignal(
       toObservable(
         computed(() => ({
@@ -933,15 +933,15 @@ export class CommitteeViewComponent {
         distinctUntilChanged((a, b) => a.enabled === b.enabled && a.committeeUid === b.committeeUid && a.projectUid === b.projectUid && a.needed === b.needed),
         switchMap(({ enabled, committeeUid, projectUid, needed }) => {
           if (!enabled || !projectUid || !needed || !isPlatformBrowser(this.platformId)) {
-            return of({ committeeId: committeeUid, loading: false, coordinator: false });
+            return of({ committeeUid, loading: false, coordinator: false });
           }
           return this.projectService.getProject(projectUid, false, { meetingCoordinator: true }).pipe(
-            map((project) => ({ committeeId: committeeUid, loading: false, coordinator: project?.meetingCoordinator === true })),
-            startWith({ committeeId: committeeUid, loading: true, coordinator: false })
+            map((project) => ({ committeeUid, loading: false, coordinator: project?.meetingCoordinator === true })),
+            startWith({ committeeUid, loading: true, coordinator: false })
           );
         })
       ),
-      { initialValue: { committeeId: null, loading: false, coordinator: false } }
+      { initialValue: { committeeUid: null, loading: false, coordinator: false } }
     );
   }
 
@@ -966,14 +966,16 @@ export class CommitteeViewComponent {
       routeCommitteeId: this.committeeId(),
       uid: this.committee()?.uid ?? null,
       window: this.engagementWindow(),
-      // FeatureFlagService.initialized() — engagementMetricsEnabled() is a plain computed() that
-      // reads its LaunchDarkly default (false) until the client initializes, and the Overview card's
-      // template gate reads that same signal directly (synchronous). This async switchMap pipeline
-      // lags a tick behind, so without flagResolved below, the transient pre-init false could get
-      // treated as a genuine "flag off" terminal state, then flash the unavailable UI once the real
-      // (true) value resolves and the template gate opens before this pipeline's next emission
-      // catches up (Cursor Bugbot).
-      flagResolved: this.featureFlagService.initialized(),
+      // FeatureFlagService.providerReady() — not initialized(), which only confirms user context was
+      // applied to the LaunchDarkly client, not that the provider has actually streamed real flag
+      // values yet (dealako). engagementMetricsEnabled() is a plain computed() that reads its
+      // LaunchDarkly default (false) until the provider is ready, and the Overview card's template
+      // gate reads that same signal directly (synchronous). This async switchMap pipeline lags a tick
+      // behind, so without flagResolved below, the transient pre-ready false could get treated as a
+      // genuine "flag off" terminal state, then flash the unavailable UI once the real (true) value
+      // resolves and the template gate opens before this pipeline's next emission catches up (Cursor
+      // Bugbot).
+      flagResolved: this.featureFlagService.providerReady(),
       enabled: this.engagementMetricsEnabled(),
       // meetingCoordinatorLoading folded in alongside myRoleLoading: canAccessEngagement's own
       // linkedSignal already holds through this fetch window, but this pipeline's EMPTY-hold branch
