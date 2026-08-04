@@ -891,11 +891,7 @@ export class CommitteeViewComponent {
         // from project` has no plain-member leg); a roster member with none of the grants below
         // would open the Overview card / fire the fetch and land on a permanent unavailable state
         // after the expected 403 (Cursor Bugbot).
-        eligible:
-          this.canEdit() ||
-          this.canReview() ||
-          this.isCallerInAuditorList(this.committee()?.inherited_auditors) ||
-          this.meetingCoordinator(),
+        eligible: this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors) || this.meetingCoordinator(),
       }),
       computation: (source, previous) => {
         if (source.loading) {
