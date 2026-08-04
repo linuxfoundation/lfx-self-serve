@@ -357,6 +357,9 @@ export class CommitteeMembersComponent implements OnInit {
       acceptButtonStyleClass: 'p-button-success p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => {
+        if (this.committee()?.uid !== committeeUid) {
+          return;
+        }
         if (this.processingApplicationUid()) return;
 
         this.processingApplicationUid.set(application.uid);
@@ -406,6 +409,9 @@ export class CommitteeMembersComponent implements OnInit {
 
     dialogRef?.onClose.pipe(take(1)).subscribe((reviewerNotes: string | null | undefined) => {
       if (reviewerNotes === undefined) return;
+      if (this.committee()?.uid !== committeeUid) {
+        return;
+      }
       if (this.processingApplicationUid()) return;
 
       this.processingApplicationUid.set(application.uid);
