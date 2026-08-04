@@ -1,13 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { GroupsEngagementStats } from '@lfx-one/shared/interfaces';
+import { GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CommitteeEngagementWarehouseRow, GroupsEngagementStats } from '@lfx-one/shared/interfaces';
+import { isCommitteeMemberActive, isJoinedWithinWindow } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
+import { committeeEngagementTable } from '../helpers/snowflake-schema.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
+import { NatsService } from './nats.service';
+import { SnowflakeService } from './snowflake.service';
 import { withUserCache } from './valkey.service';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_MEMBER_WINDOW_DAYS = 30;
+// Matches committee.service.ts's getCommitteesByIds precedent — keeps both the bind count and the
+// per-query row volume bounded for a caller who belongs to many committees (e.g. LF staff).
+const COMMITTEE_UID_CHUNK_SIZE = 100;
+
+type ActiveMemberRow = Pick<
+  CommitteeEngagementWarehouseRow,
+  'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'INVITED_COUNT_30D' | 'ATTENDED_COUNT_30D'
+> & { COMMITTEE_ID: string };
 
 /**
  * `expectedSource` must match the backend resolved for *this* request — not just any valid
@@ -38,28 +55,53 @@ function resolveBackend(): 'mock' | 'live' {
   return process.env['ENGAGEMENT_BACKEND'] === 'mock' && process.env['NODE_ENV'] !== 'production' ? 'mock' : 'live';
 }
 
-// Per-process guard: the `live` no-dbt-path branch is the *expected steady state* in every
-// deployed environment until LFXV2-1705 ships (weeks/months, not an exceptional blip), so logging
-// it at WARN on every cache miss (~1/user/minute at the 60s TTL) would be sustained log noise
-// rather than an actionable signal. One WARN per process is enough to be discoverable on-call.
-let liveModeWarned = false;
-
 /**
  * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's visible
- * set only — mine semantics, no scope param (LFXV2-1711). Backed by the same dbt engagement model as
- * LFXV2-1705, which isn't readable yet, so both stats are mocked behind `ENGAGEMENT_BACKEND` until
- * that read path exists — a deliberate interim shim (flag-gated in the UI, TODO-marked here) pending
- * LFXV2-1705, not a permanent stand-in for the real upstream contract. Defaults to `live` (null
- * fields, never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is
- * additionally hard-blocked when `NODE_ENV=production` — an unconfigured or production environment
- * must fail to "no data," never to invented-looking data.
+ * set only — mine semantics, no scope param (LFXV2-1711). `active_members` reads live from the same
+ * `platinum_lfx_one_committee_meeting_attendance` dbt model as LFXV2-1705, applying the identical
+ * `isCommitteeMemberActive`/`isJoinedWithinWindow` predicate and tenure-clipping rule so the two
+ * surfaces can't disagree on *that* logic — but this rollup is warehouse-row-anchored only (no live
+ * roster join per visible committee, which would reintroduce the N+1 fetch this endpoint exists to
+ * avoid), so it can still diverge from the per-committee detail page for: a roster member the model
+ * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS` the detail page would
+ * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
+ * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
+ * sources when the roster join has at least one match for that committee; this rollup only has the
+ * warehouse row, never a roster fallback).
+ *
+ * A larger case in the same family, deliberately NOT wired the same way: this rollup dedupes purely
+ * on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose
+ * `MEMBER_USER_ID` values don't key to any roster member still contributes its warehouse-classified
+ * members to this count, while `committee-engagement.service.ts`'s detail page — which now resolves
+ * member ids via `resolveMemberV2UidsToV1Ids` (a `committee_member.uid.<v2MemberUid>` NATS key on
+ * `lfx.lookup_v1_mapping`, LFXV2-1705) — reports `data_available: false` and every non-Emeritus
+ * member `Inactive` for that same committee. This is a real, currently-live divergence between the
+ * two surfaces, not just a theoretical one. It's intentionally not closed here: this rollup's count
+ * only needs distinct warehouse ids, not v2 identity, so it's already correct regardless of id
+ * space — resolving member ids here would require a roster fetch per visible committee, reintroducing
+ * the exact N+1 this endpoint exists to avoid. (Whether `member_sfid`, the resolved value on the
+ * detail-page side, actually shares an identity space with `MEMBER_USER_ID` is itself still pending
+ * live-validation confirmation, not a settled fact.) Visible committee uids are v2 committee-service
+ * UUIDs; the model is keyed on the v1 committee SFID, so every uid is resolved via
+ * `resolveCommitteeV2UidsToV1Ids` before querying (confirmed with Jordan Evans, data owner,
+ * LFXV2-2968 — see `computeActiveMembers`'s doc comment for the coverage-checking details).
+ * `meetings_this_month` stays `null` in live mode — the model exposes only rolling 30d/90d/YTD
+ * meeting counts, not a calendar-month grain, so there's no honest source for it yet (LFXV2-2961
+ * tracks adding one). Defaults to `live` (never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock`
+ * is explicitly set, and `mock` is additionally
+ * hard-blocked when `NODE_ENV=production`.
  */
 export class GroupsEngagementStatsService {
+  private readonly snowflakeService = SnowflakeService.getInstance();
+  private readonly committeeService = new CommitteeService();
+  private readonly natsService = new NatsService();
+
   /**
    * Returns the caller's engagement rollup, cached ~60s per user (see `withUserCache`) to absorb
-   * repeated dashboard refreshes. Never throws — `live` mode returns null fields pre-dbt-deploy
-   * rather than failing the request, matching the graceful-degradation precedent used elsewhere for
-   * not-yet-available dbt models (LFXV2-2874).
+   * repeated dashboard refreshes. Never throws — `live` mode degrades to null fields (missing
+   * committee set, missing-object Snowflake error, or any other unexpected failure) rather than
+   * failing the request, matching the graceful-degradation precedent used elsewhere for
+   * not-yet-available data (LFXV2-2874).
    */
   public async getEngagementStats(req: Request): Promise<GroupsEngagementStats> {
     const username = getEffectiveUsername(req) ?? '';
@@ -78,17 +120,11 @@ export class GroupsEngagementStatsService {
     const computedAt = new Date().toISOString();
 
     if (backend === 'live') {
-      // TODO(LFXV2-1711): read from the dbt engagement model (same source as LFXV2-1705) once its
-      // read path exists. Until then, always return null fields rather than fabricating live-looking
-      // data — the client renders an "Unavailable" degraded state for these two cards. WARN once per
-      // process (see `liveModeWarned` above), matching the graceful-degradation intent of the
-      // LFXV2-2874 precedent without turning the permanent pre-dbt-deploy steady state into
-      // sustained per-request log noise.
-      if (!liveModeWarned) {
-        liveModeWarned = true;
-        logger.warning(req, 'get_groups_engagement_stats', 'Engagement dbt model has no read path yet — returning null fields');
-      }
-      return { active_members: null, meetings_this_month: null, computed_at: computedAt, source: 'live' };
+      const activeMembers = await this.computeActiveMembers(req);
+      // meetings_this_month: no calendar-month grain exists in the model (only rolling
+      // 30d/90d/YTD) — left null rather than mislabeling a rolling window as "this month".
+      // LFXV2-2961 tracks adding a calendar-month data source.
+      return { active_members: activeMembers, meetings_this_month: null, computed_at: computedAt, source: 'live' };
     }
 
     // WARN, not DEBUG, on every call: unlike the live branch above, mock should essentially never
@@ -96,6 +132,162 @@ export class GroupsEngagementStatsService {
     // this the moment someone reports the dashboard numbers look wrong.
     logger.warning(req, 'get_groups_engagement_stats', 'ENGAGEMENT_BACKEND=mock — serving fixture engagement stats, not real data');
     return { ...deterministicMockStats(username), computed_at: computedAt, source: 'mock' };
+  }
+
+  /**
+   * Counts distinct active members (attended >=1 meeting in the trailing 30 days, or joined within
+   * it, excluding Emeritus — `isCommitteeMemberActive`, the same function LFXV2-1705 uses) across
+   * every committee the caller can see (`getMyCommitteeUids` — "mine" semantics, no scope param, per
+   * LFXV2-1711). A member is counted once even if active on multiple visible committees — the model's
+   * grain is one row per `(committee_id, member_user_id)`, so a member on N committees produces N
+   * rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count rather than a row count.
+   * `getMyCommitteeUids` returns v2 committee-service UUIDs; the model is keyed on the v1 committee
+   * SFID (confirmed with Jordan Evans, data owner, LFXV2-2968), so every visible uid is resolved
+   * via `resolveCommitteeV2UidsToV1Ids` (the platform's `lfx.lookup_v1_mapping` NATS bridge) before
+   * querying — see that helper's doc comment for the v1/v2 split. The committee-uid list (now v1
+   * ids) is chunked (`COMMITTEE_UID_CHUNK_SIZE`) so a caller who belongs to many committees (e.g.
+   * LF staff) doesn't produce an unbounded bind list or row volume in one query, and chunks run at
+   * most `GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY` at a time so that same caller can't monopolize a
+   * large fraction of the shared Snowflake connection pool in one request.
+   *
+   * Four distinct "nothing to report" cases stay distinguishable:
+   * - `0`: the caller genuinely has no visible committees — a real answer, no query even runs.
+   * - `null` (incomplete coverage): at least one visible committee has no covered row in the model —
+   *   either its v2 uid didn't resolve to a v1 id at all, or it resolved but the model has zero rows
+   *   for that v1 id. Both read the same way: mirrors `committee-engagement.service.ts`'s zero-row
+   *   `dataAvailable: false` reading (the model is roster-anchored with zero-activity members
+   *   retained, so a synced committee should yield >=1 row). This is checked per-committee, not
+   *   just "did any row come back at all" — a caller with 3 visible committees where only 1 is
+   *   covered would otherwise report a plausible but incomplete count for the other 2's silent
+   *   absence, rather than degrading honestly. The first case (an unresolved v2 uid) is caught
+   *   immediately after the committee-id bridge runs, before any chunk query — a partial resolution
+   *   already guarantees this method's result, so there's no reason to pay for the Snowflake
+   *   round trips first.
+   * - `0` (full coverage, none active): a real, computed zero — every visible committee resolved
+   *   and is represented in the model, and nobody in them happens to be active this window.
+   * - `null` (error): the count couldn't be computed at all (missing committee-set lookup, a
+   *   Snowflake missing-object/not-authorized error, or any chunk failing) — never thrown, so a
+   *   stats failure never blocks the rest of the groups dashboard.
+   */
+  private async computeActiveMembers(req: Request): Promise<number | null> {
+    try {
+      const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req))];
+      if (committeeUids.length === 0) return 0;
+
+      const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, committeeUids);
+      // Any unresolved committee already guarantees `fullyCovered` is `false` below (an unresolved
+      // v2 uid has no v1 id to check coverage against, so `uncoveredCount` can never reach 0) — the
+      // Snowflake chunk-query pipeline's result would be discarded regardless, so a partial
+      // resolution short-circuits here rather than paying for chunked queries whose only possible
+      // outcome is the same `null` this returns immediately.
+      if (v2ToV1Map.size < committeeUids.length) {
+        logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committee v2 uids did not resolve to a v1 id; returning null', {
+          committee_count: committeeUids.length,
+          resolved_v2_uid_count: v2ToV1Map.size,
+        });
+        return null;
+      }
+      // Deduped (not just [...values()]): two visible v2 committees could in principle resolve to
+      // the same v1 id, and an inverted v1->v2 map would then silently drop one of them — checking
+      // coverage forward (per v2 uid, via v2ToV1Map.get) below instead of through an inversion means
+      // that never needs to be a 1:1 assumption.
+      const v1Ids = [...new Set(v2ToV1Map.values())];
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < v1Ids.length; i += COMMITTEE_UID_CHUNK_SIZE) {
+        chunks.push(v1Ids.slice(i, i + COMMITTEE_UID_CHUNK_SIZE));
+      }
+
+      // Promise.all per batch (not allSettled): a partial-chunk failure means the count can no
+      // longer be trusted as complete, so the whole computation degrades to null via the catch
+      // below rather than silently returning an undercount from only the chunks that succeeded.
+      // Batched at GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY rather than firing every chunk at once, so
+      // this one request can't borrow an unbounded share of the Snowflake connection pool.
+      const chunkResults: { rows: ActiveMemberRow[] }[] = [];
+      for (let i = 0; i < chunks.length; i += GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY) {
+        const batch = chunks.slice(i, i + GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY);
+        const batchResults = await Promise.all(batch.map((chunk) => this.queryActiveMemberChunk(chunk)));
+        chunkResults.push(...batchResults);
+      }
+
+      const windowStart = new Date(Date.now() - ACTIVE_MEMBER_WINDOW_DAYS * DAY_MS);
+      const activeUids = new Set<string>();
+      const coveredV1Ids = new Set<string>();
+      let rowCount = 0;
+
+      for (const result of chunkResults) {
+        rowCount += result.rows.length;
+        for (const row of result.rows) {
+          coveredV1Ids.add(row.COMMITTEE_ID);
+          // Floor then clamp to `invited`, matching committee-engagement.service.ts's
+          // `countsForWindow`/`buildResponse` posture — defense-in-depth against the model's own
+          // `>= 0` and `attended <= invited` dbt invariants ever being violated, not a sign either
+          // is known to be unenforced.
+          const invited = Math.max(row.INVITED_COUNT_30D, 0);
+          const classificationInput = {
+            attended: Math.min(Math.max(row.ATTENDED_COUNT_30D, 0), invited),
+            invited, // unused by isCommitteeMemberActive; kept only for the clamp above
+            votingStatus: row.MEMBER_VOTING_STATUS,
+            joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
+          };
+          if (isCommitteeMemberActive(classificationInput)) activeUids.add(row.MEMBER_USER_ID);
+        }
+      }
+
+      // Coverage is checked per originally-requested v2 committee, forward through v2ToV1Map (not
+      // via a v1->v2 inversion, which would be lossy if two v2 committees ever resolved to the same
+      // v1 id) — a v2 uid that never resolved to a v1 id at all, or whose resolved v1 id has no
+      // covered row, both count as uncovered. See the doc comment above.
+      const uncoveredCount = committeeUids.filter((uid) => {
+        const v1Id = v2ToV1Map.get(uid);
+        return !v1Id || !coveredV1Ids.has(v1Id);
+      }).length;
+      const fullyCovered = uncoveredCount === 0;
+      // Computed before logging so the logged active_members always matches what's actually returned.
+      const activeMembers = fullyCovered ? activeUids.size : null;
+
+      if (!fullyCovered) {
+        // The most likely-to-occur null case in a partially-rolled-out model — warrants the same
+        // visibility as the other two degrade paths below, not silent DEBUG.
+        logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committees have no engagement rows; returning null (not yet synced?)', {
+          committee_count: committeeUids.length,
+          resolved_v2_uid_count: v2ToV1Map.size,
+          distinct_v1_id_count: v1Ids.length,
+          chunk_count: chunks.length,
+          uncovered_committee_count: uncoveredCount,
+        });
+      } else {
+        logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
+          committee_count: committeeUids.length,
+          chunk_count: chunks.length,
+          row_count: rowCount,
+          active_members: activeMembers,
+        });
+      }
+
+      return activeMembers;
+    } catch (error) {
+      if (!SnowflakeService.isMissingObjectError(error)) {
+        // A non-Snowflake failure (e.g. the visible-committee-set lookup, or a chunk query error
+        // other than missing-object) is unexpected — surface it distinctly from the expected
+        // pre-sync/missing-GRANT case below, but still degrade to null rather than failing the
+        // whole dashboard stats request.
+        logger.warning(req, 'get_groups_engagement_stats', 'Failed to compute active members; returning null', { err: error });
+        return null;
+      }
+      logger.warning(req, 'get_groups_engagement_stats', 'Active-members query hit a missing-object/not-authorized error; returning null', { err: error });
+      return null;
+    }
+  }
+
+  private queryActiveMemberChunk(warehouseCommitteeIds: string[]): Promise<{ rows: ActiveMemberRow[] }> {
+    const placeholders = warehouseCommitteeIds.map(() => '?').join(', ');
+    const sql = `
+      SELECT COMMITTEE_ID, MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, INVITED_COUNT_30D, ATTENDED_COUNT_30D
+      FROM ${committeeEngagementTable()}
+      WHERE COMMITTEE_ID IN (${placeholders})
+    `;
+    return this.snowflakeService.execute<ActiveMemberRow>(sql, warehouseCommitteeIds, { expectMissingObject: true });
   }
 }
 

@@ -38,6 +38,11 @@ vi.mock('../services/meeting.service', () => ({
     return {};
   }),
 }));
+vi.mock('../services/groups-engagement-stats.service', () => ({
+  GroupsEngagementStatsService: vi.fn(function () {
+    return {};
+  }),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
