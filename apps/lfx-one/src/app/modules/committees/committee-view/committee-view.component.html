@@ -381,6 +381,12 @@
             [hasPendingApplication]="hasPendingApplication()"
             [meetings]="upcomingMeetings()"
             [upcomingMeetingsLoading]="meetingsLoading()"
+            [engagementEnabled]="engagementMetricsEnabled()"
+            [engagement]="engagement()"
+            [engagementLoading]="engagementLoading()"
+            [engagementWindow]="engagementWindow()"
+            [engagementAccessible]="canAccessEngagement()"
+            (engagementWindowChange)="onEngagementWindowChange($event)"
             (joinRequested)="handleJoinRequest()"
             (tabNavigated)="handleTabNavigation($event)"
             (committeeUpdated)="refreshMembers()" />
@@ -416,6 +422,12 @@
               [applications]="applications()"
               [applicationsLoading]="applicationsLoading()"
               [canSendMemberInvites]="canSendMemberInvites()"
+              [engagementEnabled]="engagementMetricsEnabled()"
+              [engagementAccessible]="canAccessEngagement()"
+              [engagement]="engagement()"
+              [engagementLoading]="engagementLoading()"
+              [engagementWindow]="engagementWindow()"
+              (engagementWindowChange)="onEngagementWindowChange($event)"
               (refresh)="onMembersRefreshed()" />
           }
         }

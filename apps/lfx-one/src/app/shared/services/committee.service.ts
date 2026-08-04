@@ -8,6 +8,8 @@ import {
   Committee,
   CommitteeDocument,
   CommitteeDocumentType,
+  CommitteeEngagementResponse,
+  CommitteeEngagementWindow,
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
@@ -40,14 +42,40 @@ export class CommitteeService {
 
   /**
    * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's
-   * visible set. Mocked pending the LFXV2-1705 dbt model. Resolves to `null` on error — logged here
+   * visible set. `active_members` reads live from the LFXV2-1705 dbt model; `meetings_this_month`
+   * stays `null` pending a calendar-month data source. Resolves to `null` on error — logged here
    * (the single error-handling site, matching `getMyCommittees` below) — so the caller can degrade
    * gracefully (see `buildEngagementStatCards`) rather than let a failure block the groups list.
    */
   public getGroupsEngagementStats(): Observable<GroupsEngagementStats | null> {
     return this.http.get<GroupsEngagementStats>('/api/committees/engagement-stats').pipe(
-      catchError((error) => {
-        console.error('Failed to load groups engagement stats:', error);
+      catchError((error: HttpErrorResponse) => {
+        // Narrow status/message only — the full HttpErrorResponse can carry response headers/body
+        // content, and this reaches Datadog RUM error tracking (dealako review, LFXV2-1705).
+        console.error('Failed to load groups engagement stats:', error.status, error.message);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Per-member meeting-attendance rollup for one committee + window (LFXV2-1705). Resolves to
+   * `null` on any error — logged here, the single error-handling site (matching
+   * `getGroupsEngagementStats`) — so callers degrade to an "attendance unavailable" state without
+   * affecting the roster. A 403 is expected for non-auditor callers (the endpoint is
+   * `committee#auditor`-gated, stricter than roster visibility) and degrades the same way.
+   */
+  public getCommitteeEngagement(committeeUid: string, window: CommitteeEngagementWindow): Observable<CommitteeEngagementResponse | null> {
+    const params = new HttpParams().set('window', window);
+    return this.http.get<CommitteeEngagementResponse>(`/api/committees/${encodeURIComponent(committeeUid)}/engagement`, { params }).pipe(
+      catchError((error: HttpErrorResponse) => {
+        // 403 is the expected outcome for every non-auditor caller — logging it as an error would
+        // spam the console (and Datadog RUM error tracking) once per window switch for most users.
+        // Narrow status/message only (not the full HttpErrorResponse) when it does log — the full
+        // object can carry response headers/body content (dealako review, LFXV2-1705).
+        if (error.status !== 403) {
+          console.error('Failed to load committee engagement:', error.status, error.message);
+        }
         return of(null);
       })
     );
@@ -294,8 +322,9 @@ export class CommitteeService {
       params = params.set('foundation_uid', foundationUid);
     }
     return this.http.get<MyCommittee[]>('/api/committees/my-committees', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load my committees:', error);
+      catchError((error: HttpErrorResponse) => {
+        // Narrow status/message only — see getCommitteeEngagement above (dealako review, LFXV2-1705).
+        console.error('Failed to load my committees:', error.status, error.message);
         return of([]);
       })
     );

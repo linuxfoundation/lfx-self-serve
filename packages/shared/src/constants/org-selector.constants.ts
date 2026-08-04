@@ -18,5 +18,8 @@ export const ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY = 8;
 /** Max concurrent per-account Snowflake reads when warming the Org Lens account-context cache, so a many-account bootstrap can't exhaust the Snowflake connection pool. */
 export const ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY = 8;
 
+/** Max concurrent committee-uid chunk queries against the Snowflake pool when computing the groups-engagement-stats `active_members` rollup — same pool-exhaustion concern as `ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY`, lower because each chunk query is wider (up to 100 committees) rather than single-account. */
+export const GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY = 3;
+
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;

@@ -19,6 +19,8 @@ import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/e
 import {
   ActivityFeedItem,
   Committee,
+  CommitteeEngagementResponse,
+  CommitteeEngagementWindow,
   CommitteeMember,
   CommitteePendingActionRow,
   Meeting,
@@ -27,6 +29,7 @@ import {
   Survey,
   Vote,
 } from '@lfx-one/shared/interfaces';
+import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import { assertNeverSilent, countVotingReps, getSurveyDisplayStatus, isValidUrl, mapActivityEventsToFeedItems } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -42,6 +45,7 @@ import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, ma
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
+import { CommitteeEngagementSummaryComponent } from '../committee-engagement-summary/committee-engagement-summary.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
 import { WeeklyBriefCardComponent } from '../weekly-brief-card/weekly-brief-card.component';
@@ -51,6 +55,7 @@ import { WeeklyBriefCardComponent } from '../weekly-brief-card/weekly-brief-card
   imports: [
     ButtonComponent,
     CardComponent,
+    CommitteeEngagementSummaryComponent,
     DashboardMeetingCardComponent,
     GroupJoinCtaComponent,
     SkeletonModule,
@@ -93,11 +98,23 @@ export class CommitteeOverviewComponent {
   // and About need it, and About's cadence card would otherwise cause a second, redundant fetch).
   public meetings = input<Meeting[]>([]);
   public upcomingMeetingsLoading = input<boolean>(true);
+  // Engagement rollup (LFXV2-1705, behind wg-engagement-metrics) — fetched at the page level and
+  // shared with the Members tab so the window selection survives tab switches.
+  public engagementEnabled = input<boolean>(false);
+  public engagement = input<CommitteeEngagementResponse | null>(null);
+  public engagementLoading = input<boolean>(false);
+  public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
+  // Whether this user is authorized to read committee engagement data — computed once in
+  // committee-view.component.ts (canAccessEngagement: roster member, writer, or a committee-level
+  // OR inherited project/foundation auditor) and passed down here as the single source of truth,
+  // rather than this component reconstructing its own narrower version (LFXV2-1705 review).
+  public engagementAccessible = input<boolean>(false);
 
   // Outputs
   public readonly committeeUpdated = output<void>();
   public readonly joinRequested = output<void>();
   public readonly tabNavigated = output<string>();
+  public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
 
   // Vote drawer state
   public voteDrawerVisible = signal(false);

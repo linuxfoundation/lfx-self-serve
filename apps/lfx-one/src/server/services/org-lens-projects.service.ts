@@ -50,9 +50,10 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v2` bump: entries cached before the no-activity hydration landed hold activity-only rows; versioning the
-    // sub-resource key drops them so freshly viewed workspaces don't omit no-activity rows for up to the TTL.
-    const cacheKey = `projects:v2:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator. The frontend now treats a missing
+    // field as full (rolling-deploy safe), but versioning still drops stale cache entries; the validator below
+    // also rejects any entry missing metricsState so we don't keep serving mixed-shape payloads.
+    const cacheKey = `projects:v3:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
@@ -366,9 +367,8 @@ export class OrgLensProjectsService {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
-    // Both reads depend only on projectSlugs, so run them concurrently to avoid a second sequential Snowflake round trip.
-    // fetchNoActivityProjects: workspace slugs with no org-scoped row (no activity yet) → synthesize an identity-only
-    // "no activity yet" row from the onboarded catalog instead of dropping it. Only for requested slugs, not the preload.
+    // Run both slug-keyed reads concurrently to avoid a second sequential Snowflake round trip. fetchNoActivityProjects
+    // fires only for requested slugs with no ORG_LENS_PROJECTS row (post-relaxation, no-activity participation is a real `full` row above).
     const [peopleRows, noActivityProjects] = await Promise.all([
       projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs) : Promise.resolve([]),
       // No-activity hydration is a soft enhancement over the onboarded catalog (which may be mid-migration or
@@ -396,6 +396,8 @@ export class OrgLensProjectsService {
     if (!missing.length) {
       return [];
     }
+    // Select project-global health so a fallback row can still render Health (sub-case A). These alias the columns
+    // mapProject reads, so health maps with no extra branch; org-relative metrics (bands, trend, people) stay blank.
     const sql = `
       SELECT
         PROJECT_SLUG,
@@ -403,14 +405,28 @@ export class OrgLensProjectsService {
         PROJECT_LOGO_URL,
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
-        FOUNDATION_LOGO_URL
+        FOUNDATION_LOGO_URL,
+        HEALTH_OVERALL_SCORE,
+        HEALTH_CONTRIBUTOR_PERCENTAGE,
+        HEALTH_POPULARITY_PERCENTAGE,
+        HEALTH_DEVELOPMENT_PERCENTAGE,
+        HEALTH_SECURITY_PERCENTAGE
       FROM ${this.onboardedProjectsTable()}
       WHERE LOWER(PROJECT_SLUG) IN (${missing.map(() => '?').join(', ')})
     `;
     const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
-    // mapProject fills every metric field the identity query does not select with its missing-data
-    // placeholder (health 'unavailable', influence fallbacks, zeroed trend, empty people arrays).
-    return result.rows.map((row) => ({ ...this.mapProject(row, []), noActivityYet: true }));
+    // mapProject fills unselected org-relative metrics with placeholders and maps health from the columns above.
+    // Split on computed health: present → 'health-only' (Health renders); NULL → 'unavailable' (all-Unavailable row).
+    return result.rows.map((row) => {
+      const hasHealthScore = row.HEALTH_OVERALL_SCORE !== null && row.HEALTH_OVERALL_SCORE !== undefined;
+      // Emit both discriminators: metricsState for the new frontend, noActivityYet so a still-running pre-close-out
+      // frontend keeps treating these as unavailable during a rolling deploy.
+      return {
+        ...this.mapProject(row, []),
+        metricsState: hasHealthScore ? ('health-only' as const) : ('unavailable' as const),
+        noActivityYet: true,
+      };
+    });
   }
 
   private buildProjectsQuery(slugs: string[] | null): string {
@@ -504,6 +520,9 @@ export class OrgLensProjectsService {
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
       healthMetrics: hasHealthScore ? this.mapHealthMetrics(row) : [],
+      // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
+      // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
+      metricsState: 'full',
     };
   }
 
@@ -954,6 +973,9 @@ export class OrgLensProjectsService {
       (project) =>
         typeof project.slug === 'string' &&
         typeof project.name === 'string' &&
+        // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch as
+        // current-shape payloads instead of serving a mixed schema from Valkey.
+        (project.metricsState === 'full' || project.metricsState === 'health-only' || project.metricsState === 'unavailable') &&
         Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
         Array.isArray(project.healthMetrics) &&
         Array.isArray(project.maintainers) &&

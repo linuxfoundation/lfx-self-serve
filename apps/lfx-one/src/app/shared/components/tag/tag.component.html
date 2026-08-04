@@ -5,7 +5,13 @@
   <span
     class="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 text-xs font-medium px-2 py-0.5 whitespace-nowrap"
     [class.rounded-full]="rounded()"
-    [ngClass]="styleClass()">
+    [ngClass]="styleClass()"
+    [pTooltip]="tooltip()"
+    tooltipEvent="both"
+    [tooltipPosition]="tooltipPosition()"
+    [attr.tabindex]="tooltip() ? 0 : null"
+    [attr.role]="tooltip() ? 'note' : null"
+    [attr.aria-label]="accessibleLabel()">
     @if (dot()) {
       <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full" [ngClass]="dotBgClass()" aria-hidden="true"></span>
     } @else if (icon()) {
@@ -14,7 +20,18 @@
     {{ value() }}
   </span>
 } @else {
-  <p-tag [value]="value()" [severity]="severity()" [icon]="dot() ? undefined : icon()" [rounded]="rounded()" [styleClass]="styleClass()">
+  <p-tag
+    [value]="value()"
+    [severity]="severity()"
+    [icon]="dot() ? undefined : icon()"
+    [rounded]="rounded()"
+    [styleClass]="styleClass()"
+    [pTooltip]="tooltip()"
+    tooltipEvent="both"
+    [tooltipPosition]="tooltipPosition()"
+    [attr.tabindex]="tooltip() ? 0 : null"
+    [attr.role]="tooltip() ? 'note' : null"
+    [attr.aria-label]="accessibleLabel()">
     @if (dot()) {
       <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true"></span>
     }
