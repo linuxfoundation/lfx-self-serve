@@ -56,6 +56,7 @@ export async function mockCommitteeApis(page: Page, uid: string, opts: { committ
   await page.route(`**/api/committees/${uid}/children`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route(`**/api/committees/${uid}/members`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route(`**/api/committees/${uid}/invites*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/committees/${uid}/applications*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route('**/api/mailing-lists*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route('**/api/meetings*', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
