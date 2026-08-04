@@ -74,7 +74,7 @@ export class PublicProfileHeroComponent {
     if (!vanity) {
       return null;
     }
-    return vanity.includes('http') ? vanity : `https://www.linkedin.com/in/${vanity}`;
+    return this.isHttpUrl(vanity) ? vanity : `https://www.linkedin.com/in/${vanity}`;
   }
 
   private githubUsername(basic: PublicProfileBasic): string | null {
@@ -87,6 +87,12 @@ export class PublicProfileHeroComponent {
     if (!handle) {
       return null;
     }
-    return handle.includes('http') ? handle : `https://twitter.com/${handle}`;
+    return this.isHttpUrl(handle) ? handle : `https://twitter.com/${handle}`;
+  }
+
+  // Accept a pre-formed value as-is only when it is an explicit http(s) URL; reject any
+  // other scheme (e.g. javascript:) before it can reach an [href] binding in the template.
+  private isHttpUrl(value: string): boolean {
+    return value.startsWith('http://') || value.startsWith('https://');
   }
 }

@@ -28,8 +28,9 @@ export class PublicProfileDateRangePipe implements PipeTransform {
       return '';
     }
     const date = new Date(value);
-    // Drop unparseable values and epoch/1970 placeholders (upstream's "no date" sentinel).
-    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() <= 1970) {
+    // Drop unparseable values and the epoch/zero-time placeholder (upstream's "no date"
+    // sentinel), while keeping any genuine post-epoch date.
+    if (Number.isNaN(date.getTime()) || date.getTime() <= 0) {
       return '';
     }
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });

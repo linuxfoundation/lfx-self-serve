@@ -8,7 +8,7 @@
   </div>
 
   <div class="grid grid-cols-3 gap-4 place-items-center" data-testid="badges-grid">
-    @for (badge of badges(); track $index) {
+    @for (badge of badges(); track badge) {
       @if (badge.url) {
         <a
           [href]="badge.url"

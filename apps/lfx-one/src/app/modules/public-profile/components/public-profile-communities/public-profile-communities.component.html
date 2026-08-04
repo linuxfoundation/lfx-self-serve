@@ -25,7 +25,7 @@
 
         <!-- Role entries -->
         <div class="flex flex-col gap-3 px-4 py-3">
-          @for (role of project.roles; track $index) {
+          @for (role of project.roles; track role) {
             <div class="flex flex-col gap-0.5" data-testid="community-role">
               <p class="text-sm font-medium text-gray-900 break-words">
                 {{ role.Name }}
