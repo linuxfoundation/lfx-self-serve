@@ -40,7 +40,8 @@ export class CommitteeService {
 
   /**
    * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's
-   * visible set. Mocked pending the LFXV2-1705 dbt model. Resolves to `null` on error — logged here
+   * visible set. `active_members` reads live from the LFXV2-1705 dbt model; `meetings_this_month`
+   * stays `null` pending a calendar-month data source. Resolves to `null` on error — logged here
    * (the single error-handling site, matching `getMyCommittees` below) — so the caller can degrade
    * gracefully (see `buildEngagementStatCards`) rather than let a failure block the groups list.
    */

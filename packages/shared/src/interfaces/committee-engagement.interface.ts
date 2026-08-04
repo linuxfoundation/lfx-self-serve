@@ -65,7 +65,10 @@ export interface CommitteeEngagementSummary {
    * Count of non-Emeritus members with real attendance this window, or who joined within it
    * (active by definition of being newly on the roster) — broader than "classified High/Medium":
    * a Low-classified member with some real attendance still counts here. See
-   * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`.
+   * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`. The "joined within it"
+   * clause only applies when `data_available` is `true` — on a zero-row committee, or one whose
+   * rows exist but don't join to any roster member, tenure alone can't imply active (see
+   * `data_available`'s doc), so this is `0` there regardless of roster join dates.
    */
   active_count: number;
   /** Full committee roster size (including members with no engagement data). */
@@ -85,36 +88,43 @@ export interface CommitteeEngagementResponse {
    */
   computed_at: string | null;
   /**
-   * `false`: the live query couldn't produce usable rows — either it couldn't run at all (the model
-   * isn't deployed, or the role isn't granted on it), or it ran and returned rows in the legacy
-   * placeholder shape rather than the finalized model's shape (see `LegacyEngagementPlaceholderRow`
-   * in `committee-engagement.internal.interface.ts`). Every member then shows zeroed counts and
-   * classifies `Inactive` — except a roster member with a real `Emeritus` voting status (classifies
-   * `Emeritus`) or one who genuinely joined within the requested window (classifies `High`, the
-   * tenure-grace tier, instead of `Inactive` off zero invites) — the roster's own join date still
-   * feeds that classification even on an unmatched row, though it isn't itself a response field.
-   * `role`/`voting_status` are roster passthroughs and stay populated regardless of whether a
-   * warehouse row matched.
+   * `false`: the live read couldn't produce *usable*, roster-joined rows — either the query itself
+   * errored (the model isn't synced yet for this committee, or the role isn't granted on it), it ran
+   * and returned zero rows for this `committee_uid` (the model is roster-anchored and retains
+   * zero-activity members, so a real, currently-populated committee should always yield >=1 row;
+   * zero rows most likely means this committee isn't covered by the model yet, not that engagement
+   * is genuinely zero for everyone), or it returned rows but none of them key to any roster member at
+   * all (a total join-key mismatch — the warehouse's `MEMBER_USER_ID` values don't correspond to any
+   * `CommitteeMember.uid` for this committee). All three degrade identically from the caller's point
+   * of view. Every member then shows zeroed counts and classifies `Inactive` — except a roster
+   * member with a real `Emeritus` voting status, which still classifies `Emeritus` (a seat-type
+   * fact independent of whether any engagement data exists). The tenure-grace `High` exception
+   * (a member who genuinely joined within the requested window, classified `High` instead of
+   * `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with no usable
+   * data for the whole committee, there is no engagement data to correlate tenure against, so every
+   * non-Emeritus member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
+   * `active_count`, `at_risk_count`) are all `0` — `total_count` still reflects the full roster size
+   * regardless, since that's roster-known independent of engagement data. Asserting `High` (or a
+   * nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
+   * `attendance_rate: 0` in the same payload. The tenure-grace exception only fires when
+   * `data_available` is `true` — i.e. the committee has rows AND at least one roster member matched
+   * one — and this *specific* member's row is individually missing (e.g. a roster member added since
+   * the model's last daily refresh): the committee has real, roster-joinable data, just not yet for
+   * this member. `role`/`voting_status` are roster passthroughs and stay populated regardless of
+   * whether a warehouse row matched, in both cases.
    *
-   * `true`: a mock-backend response (`ENGAGEMENT_BACKEND=mock`, explicit opt-in and blocked in
-   * production); a genuinely successful live query; or a live cache hit (which the cache only ever
-   * persists from that same successful-query case). Both of the latter two are imprecise today —
-   * until the live SQL is rewritten against the finalized model, the only query that can succeed is
-   * one against the legacy placeholder table returning zero rows, which says nothing real about the
-   * committee but is marked `true` anyway (see `queryEngagementRows`'s `TODO(LFXV2-1705 follow-up)`
-   * in `committee-engagement.service.ts`). Once that rewrite lands, `true` will mean what it's meant
-   * to now: real-shaped rows, even zero of them for a genuinely new committee.
+   * `true`: a mock-backend response for a non-empty roster (`ENGAGEMENT_BACKEND=mock`, explicit
+   * opt-in and blocked in production — a mock response for a committee with zero roster members is
+   * the one degenerate case that still reports `false`, since there's trivially no member to match);
+   * or a live query — fresh or a cache hit (the row cache is keyed on the committee uid; the cached
+   * array's length picks the TTL and derives this flag on a hit, so a hit never assumes `true` — but
+   * the roster join itself always re-runs against a freshly-fetched roster on every request, cached
+   * rows included) — that returned >=1 row matching at least one roster member by uid.
    *
-   * `true` means the read completed without degrading (mock generation, a cache hit, or a live
-   * query that neither errored nor returned unmappable placeholder rows) — it says nothing about
-   * whether the numbers are real, and today neither this flag nor `data_source` can guarantee that
-   * (see the imprecise `true` cases above); that guarantee only exists once the live SQL rewrite
-   * lands. It also doesn't gate whether per-member rows are present — `members[]` is roster-complete
-   * either way, with `role`/`voting_status` always populated and counts zeroed on `false` (see above
-   * for the roster-Emeritus and tenure-grace exceptions to the `Inactive` default — the roster join
-   * date behind that second exception isn't itself a response field). The UI should key its "no data
-   * available" placeholder state off this flag rather than inferring it
-   * from all-zero numbers.
+   * The UI should key its "no data available" placeholder state off this flag rather than inferring
+   * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`
+   * always populated and counts zeroed on `false` (see above for the roster-Emeritus exception, and
+   * the tenure-grace exception's `data_available:true`-only condition).
    */
   data_available: boolean;
   /**

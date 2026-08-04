@@ -85,7 +85,8 @@ export class CommitteeController {
   /**
    * GET /committees/engagement-stats
    * Groups dashboard rollup for the caller's visible set (Active Members, Meetings This Month).
-   * Mocked pending the LFXV2-1705 dbt engagement model — see GroupsEngagementStatsService.
+   * active_members reads live from the LFXV2-1705 dbt engagement model; meetings_this_month stays
+   * null pending a calendar-month data source — see GroupsEngagementStatsService.
    */
   public async getGroupsEngagementStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_groups_engagement_stats', {});

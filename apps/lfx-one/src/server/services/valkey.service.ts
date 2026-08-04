@@ -307,6 +307,18 @@ export function buildUserCacheKey(namespace: string, username: string): string |
   return `${keyPrefix()}:${namespace}:${username}`;
 }
 
+/**
+ * Per-committee-member v1-id-mapping bridge cache key (LFXV2-1705); null (fail-closed → skip cache,
+ * still attempt NATS) when the member uid isn't filter-safe, so it can't corrupt the `:`-delimited
+ * key. One entry per v2 uid (no sub-resource) — unlike `buildCommitteeCacheKey`, there's exactly one
+ * mapping value per member, not multiple sub-resources to distinguish. TODO(LFXV2-2973): remove once
+ * the bridge is deleted.
+ */
+export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
+  if (!isFilterSafeIdentifier(memberUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.MEMBER_V1_MAPPING_NAMESPACE}:${memberUid}`;
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

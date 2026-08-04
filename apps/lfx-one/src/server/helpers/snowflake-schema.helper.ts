@@ -8,8 +8,8 @@ import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA } from '@lfx-one/shared/constants';
  * `WORD.WORD`-shaped (exactly two segments) values pass, everything else — a stray quote, space,
  * SQL keyword, single segment, or a three-plus-segment value — is rejected in favor of the
  * default schema. Restricted to exactly two segments (not `{1,2}`) because every call site
- * appends a table name unconditionally (e.g. `engagementTable()`:
- * `` `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEMBER_MEETING_ATTENDANCE` ``) — a 3-segment
+ * appends a table name unconditionally (e.g. `committeeEngagementTable()`:
+ * `` `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE` ``) — a 3-segment
  * override would produce an invalid 4-part Snowflake identifier (`database.schema.object` is the
  * max), silently breaking the query for exactly the operator input this override is documented to
  * accept.
@@ -30,4 +30,15 @@ function snowflakeQualifier(value: string | undefined): string | null {
  */
 export function resolveLfxOnePlatinumSchema(): string {
   return snowflakeQualifier(process.env['LFX_ONE_PLATINUM_SCHEMA']) ?? DEFAULT_LFX_ONE_PLATINUM_SCHEMA;
+}
+
+/**
+ * The finalized `platinum_lfx_one_committee_meeting_attendance` dbt model (LFXV2-1705, `lf-dbt#2694`)
+ * — dbt's alias generation strips the `platinum_lfx_one_` schema prefix, so the materialized table
+ * is `COMMITTEE_MEETING_ATTENDANCE`. Shared by `committee-engagement.service.ts` (per-committee read)
+ * and `groups-engagement-stats.service.ts` (cross-committee `active_members` aggregate) — same table,
+ * one place to update if it's ever renamed.
+ */
+export function committeeEngagementTable(): string {
+  return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE`;
 }
