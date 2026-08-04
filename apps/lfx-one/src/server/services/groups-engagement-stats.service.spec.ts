@@ -191,6 +191,12 @@ describe('GroupsEngagementStatsService', () => {
       expect(execute).not.toHaveBeenCalled();
       expect(getMyCommitteeUids).not.toHaveBeenCalled();
     });
+
+    it('fabricates full coverage (covered === total, both positive) so the mock path exercises the no-qualifier UI state', async () => {
+      const result = await service.getEngagementStats(buildReq());
+      expect(result.coverage.covered).toBe(result.coverage.total);
+      expect(result.coverage.total).toBeGreaterThan(0);
+    });
   });
 
   describe('caching', () => {
@@ -219,6 +225,23 @@ describe('GroupsEngagementStatsService', () => {
       // the real VALKEY_CACHE namespace (not a hardcoded duplicate) so a `:v1` → `:v2` bump can't
       // leave this assertion silently checking a key the service no longer writes to.
       cacheStore.set(`${VALKEY_CACHE.GROUPS_ENGAGEMENT_NAMESPACE}:alice`, { active_members: 'not-a-number' });
+
+      await service.getEngagementStats(buildReq());
+      expect(fetcherCalls.count).toBe(2);
+    });
+
+    it('treats a pre-LFXV2-2978 cached entry with no `coverage` field as a miss and recomputes, rather than serving it stale for the TTL', async () => {
+      await service.getEngagementStats(buildReq());
+      expect(fetcherCalls.count).toBe(1);
+
+      // Otherwise-valid shape from before `coverage` was added — simulates a cache entry written by
+      // a pre-upgrade instance still sharing the same key immediately after deploy.
+      cacheStore.set(`${VALKEY_CACHE.GROUPS_ENGAGEMENT_NAMESPACE}:alice`, {
+        active_members: 5,
+        meetings_this_month: 2,
+        computed_at: new Date().toISOString(),
+        source: 'mock',
+      });
 
       await service.getEngagementStats(buildReq());
       expect(fetcherCalls.count).toBe(2);
@@ -264,6 +287,7 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBe(0);
+      expect(result.coverage).toEqual({ covered: 0, total: 0 });
       expect(execute).not.toHaveBeenCalled();
     });
 
@@ -312,20 +336,25 @@ describe('GroupsEngagementStatsService', () => {
 
       expect(execute).not.toHaveBeenCalled();
       expect(result.active_members).toBeNull();
+      expect(result.coverage).toEqual({ covered: 0, total: 2 });
     });
 
-    it('treats an unresolved committee uid as uncovered — null overall, short-circuiting before any chunk query even runs', async () => {
-      // committee-1 resolves; committee-2 never resolves to a v1 id at all. A partial resolution
-      // already guarantees `fullyCovered` will be false (committee-2 can never gain a covered row),
-      // so this now short-circuits to null immediately rather than paying for a Snowflake round trip
-      // whose result is discarded regardless — see computeActiveMembers' early-return.
+    it('no longer short-circuits on an unresolved committee uid — counts over the resolved/covered subset instead (LFXV2-2978)', async () => {
+      // committee-1 resolves and is covered by a model row; committee-2 never resolves to a v1 id at
+      // all. Under the old all-or-nothing rule this returned null without ever querying Snowflake.
+      // Under partial coverage, the covered subset (committee-1) is still queried and counted, and
+      // the unresolved committee-2 is reported as uncovered via `coverage`, not swallowed into null.
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
       resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(new Map([['committee-1', 'v1-sfid-1']]));
+      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'v1-sfid-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
-      expect(execute).not.toHaveBeenCalled();
-      expect(result.active_members).toBeNull();
+      expect(execute).toHaveBeenCalledTimes(1);
+      const [, binds] = execute.mock.calls[0] as [string, string[]];
+      expect(binds).toEqual(['v1-sfid-1']);
+      expect(result.active_members).toBe(1);
+      expect(result.coverage).toEqual({ covered: 1, total: 2 });
     });
 
     it('handles two visible v2 committees resolving to the SAME v1 id without under-counting coverage (duplicate-safe, not an inverted-map lookup)', async () => {
@@ -435,20 +464,21 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBe(0);
     });
 
-    it("returns null (not 0) when the caller has visible committees but every chunk returns zero rows — mirrors the sibling endpoint's zero-row semantics", async () => {
+    it("returns null (not 0) with zero coverage when the caller has visible committees but every chunk returns zero rows — mirrors the sibling endpoint's zero-row semantics", async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
       execute.mockResolvedValueOnce({ rows: [] });
 
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
+      expect(result.coverage).toEqual({ covered: 0, total: 2 });
     });
 
-    it('returns null when SOME visible committees are covered but at least one is not (partial coverage), rather than an undercount', async () => {
-      // Regression test: rowCount > 0 alone used to be treated as "complete", so a caller with 3
-      // visible committees where only 1 was synced would silently report a plausible-looking count
-      // for that 1 committee while the other 2's absence went unnoticed. Coverage must now be
-      // checked per-committee.
+    it('counts over the covered subset when SOME visible committees are covered but at least one is not (partial coverage), rather than degrading to null (LFXV2-2978)', async () => {
+      // Regression test for the OLD behavior this replaces: a caller with 3 visible committees where
+      // only 2 were synced used to degrade the whole request to null, discarding an otherwise-good
+      // count over the 2 covered committees. The product decision is now to count over the covered
+      // subset and disclose coverage, not discard it.
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2', 'committee-3']));
       execute.mockResolvedValueOnce({
         rows: [
@@ -460,7 +490,8 @@ describe('GroupsEngagementStatsService', () => {
 
       const result = await service.getEngagementStats(buildReq());
 
-      expect(result.active_members).toBeNull();
+      expect(result.active_members).toBe(2);
+      expect(result.coverage).toEqual({ covered: 2, total: 3 });
     });
 
     it('returns a real 0 (not null) when rows are present for every visible committee but nobody in them is active', async () => {
@@ -536,6 +567,9 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
+      // total reflects the visible-committee count established before the chunk failure (not 0) —
+      // the caller's committee set was known even though the count itself couldn't be trusted.
+      expect(result.coverage).toEqual({ covered: 0, total: 150 });
     });
 
     it('degrades to active_members: null (not 0) when the Snowflake query hits a missing-object error', async () => {
@@ -547,6 +581,7 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
       expect(result.source).toBe('live');
+      expect(result.coverage).toEqual({ covered: 0, total: 1 });
     });
 
     it('degrades to active_members: null without throwing when fetching the visible committee set fails', async () => {
@@ -557,6 +592,9 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
       expect(execute).not.toHaveBeenCalled();
+      // total is 0 here (not just covered) — the failure happened before the visible-committee
+      // count was ever established, unlike the chunk-failure case above.
+      expect(result.coverage).toEqual({ covered: 0, total: 0 });
     });
 
     it('rethrows via degrade (not a thrown error) on an unexpected non-missing-object Snowflake error', async () => {
@@ -566,6 +604,7 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
+      expect(result.coverage).toEqual({ covered: 0, total: 1 });
     });
   });
 
