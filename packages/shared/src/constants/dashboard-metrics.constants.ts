@@ -990,11 +990,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'memberships',
       testId: 'ed-evo-attribution',
-      description: 'Revenue attributed to marketing, compared across attribution models.',
+      description: 'Won revenue year-to-date, with paid-ads linear-attributed revenue alongside.',
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
-          'Revenue attributed',
+          'Won revenue · YTD',
           formatCurrency(revenueImpact.revenueAttributed),
           // No monthly series is exposed for attributed revenue — leave the
           // sparkline empty rather than borrow an unrelated curve.
@@ -1004,14 +1004,14 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           formatYoyChange(revenueImpact.changePercentage),
           normalizeTrend(revenueImpact.changePercentage, revenueImpact.trend)
         ),
-        protoDualSignal('Linear model', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
+        protoDualSignal('Paid ads · linear', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
       ],
       caption:
         revenueImpact.attributionChannels.length > 0
-          ? `${revenueImpact.attributionChannels.length} channels · ${revenueImpact.matchRate.toFixed(0)}% match rate`
-          : `${revenueImpact.matchRate.toFixed(0)}% match rate`,
+          ? `${revenueImpact.attributionChannels.length} channels · ${revenueImpact.matchRate.toFixed(0)}% deal conversion`
+          : `${revenueImpact.matchRate.toFixed(0)}% deal conversion`,
       tooltipText:
-        'Revenue attributed to marketing touchpoints, with the linear multi-touch model shown alongside. Match rate is the share of revenue that could be tied to a tracked touchpoint.',
+        "Won revenue year-to-date (WON_REVENUE_YTD) with paid-ads linear-attributed revenue alongside. Deal conversion is the YTD close rate. These are pipeline figures — the drawer's multi-touch models cover a separate six-month window.",
       drawerType: DashboardDrawerType.RevenueImpact,
     } as DashboardMetricCard,
 
