@@ -567,6 +567,9 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
+      // total reflects the visible-committee count established before the chunk failure (not 0) —
+      // the caller's committee set was known even though the count itself couldn't be trusted.
+      expect(result.coverage).toEqual({ covered: 0, total: 150 });
     });
 
     it('degrades to active_members: null (not 0) when the Snowflake query hits a missing-object error', async () => {
@@ -578,6 +581,7 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
       expect(result.source).toBe('live');
+      expect(result.coverage).toEqual({ covered: 0, total: 1 });
     });
 
     it('degrades to active_members: null without throwing when fetching the visible committee set fails', async () => {
@@ -588,6 +592,9 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
       expect(result.meetings_this_month).toBeNull();
       expect(execute).not.toHaveBeenCalled();
+      // total is 0 here (not just covered) — the failure happened before the visible-committee
+      // count was ever established, unlike the chunk-failure case above.
+      expect(result.coverage).toEqual({ covered: 0, total: 0 });
     });
 
     it('rethrows via degrade (not a thrown error) on an unexpected non-missing-object Snowflake error', async () => {
@@ -597,6 +604,7 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBeNull();
+      expect(result.coverage).toEqual({ covered: 0, total: 1 });
     });
   });
 

@@ -510,4 +510,16 @@ describe('buildEngagementStatCards', () => {
     const cards = buildEngagementStatCards(nullWithCoverage, false);
     expect(cards[0]).toMatchObject({ value: '—', subLine: 'Unavailable' });
   });
+
+  it('does not throw and degrades to the plain sub-line when `coverage` is absent from the response (pre-upgrade server during a rolling deploy)', () => {
+    // Simulates a client bundle ahead of the server: a response shaped like the pre-LFXV2-2978
+    // contract, with no `coverage` field at all. `stats` is deliberately typed loosely here (not
+    // `GroupsEngagementStats`) since the whole point is that runtime shape can drift from the type.
+    const staleShape = { active_members: 12, meetings_this_month: 3, computed_at: new Date().toISOString(), source: 'live' };
+    expect(() => buildEngagementStatCards(staleShape as GroupsEngagementStats, false)).not.toThrow();
+    const cards = buildEngagementStatCards(staleShape as GroupsEngagementStats, false);
+    expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
+    expect(cards[0].subLine).toMatch(/^Updated /);
+    expect(cards[0].subLine).not.toContain('across');
+  });
 });

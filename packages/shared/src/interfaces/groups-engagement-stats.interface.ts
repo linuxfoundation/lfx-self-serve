@@ -12,8 +12,9 @@
  * covered (nothing to count) or the computation itself failed (missing committee-set lookup, a
  * Snowflake missing-object error, or any other unexpected failure) — see `computeActiveMembers` in
  * `groups-engagement-stats.service.ts`. A `0` is always a real, computed answer (no visible
- * committees at all, or full coverage with nobody active) — never a stand-in for "unavailable", and
- * `null` is never a disguised real zero. `meetings_this_month` stays `null` in live mode — the model
+ * committees at all, or nobody active across the covered subset — whether that subset is full or
+ * partial, check `coverage` to tell which) — never a stand-in for "unavailable", and `null` is never
+ * a disguised real zero. `meetings_this_month` stays `null` in live mode — the model
  * has no calendar-month grain yet (LFXV2-2961).
  */
 export interface GroupsEngagementStats {

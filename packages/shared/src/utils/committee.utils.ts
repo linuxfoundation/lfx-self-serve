@@ -410,9 +410,12 @@ function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string |
  * is deliberately not shared with the sibling card via `resolveEngagementSubLine`. Appends to the
  * base sub-line (rather than replacing it) so the freshness/mock provenance stays visible alongside
  * the disclosure. Full coverage (`covered === total`, always true for mock) renders no qualifier —
- * identical to the sibling card's plain sub-line.
+ * identical to the sibling card's plain sub-line. `stats.coverage` is optional-chained (not just a
+ * `stats` null check) — a rolling deploy can put this client bundle in front of a pre-upgrade server
+ * instance whose response predates `coverage`, and that shape drift must degrade to the plain
+ * sub-line, not throw inside the `computed()` this feeds (which would blank the whole stat-card row).
  */
 function resolveActiveMembersSubLine(stats: GroupsEngagementStats | null, baseSubLine: string | undefined): string | undefined {
-  if (!stats || stats.coverage.covered >= stats.coverage.total) return baseSubLine;
+  if (!stats?.coverage || stats.coverage.covered >= stats.coverage.total) return baseSubLine;
   return `${baseSubLine} · across ${stats.coverage.covered} of ${stats.coverage.total} groups`;
 }

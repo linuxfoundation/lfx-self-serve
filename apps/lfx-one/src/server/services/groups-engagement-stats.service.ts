@@ -170,7 +170,7 @@ export class GroupsEngagementStatsService {
    * id — see the coverage-loop comment below). `activeMembers` is computed over the covered subset
    * only (LFXV2-2978 — a caller with 10 visible committees where 9 are covered gets a real count
    * over those 9, plus `coverage: { covered: 9, total: 10 }`, rather than a blanket `null` for the
-   * whole caller). Three distinct "nothing to report" cases stay distinguishable:
+   * whole caller). Four distinct result shapes stay distinguishable:
    * - `{ activeMembers: 0, coverage: { covered: 0, total: 0 } }`: the caller genuinely has no
    *   visible committees — a real answer, no query even runs.
    * - `{ activeMembers: null, coverage: { covered: 0, total } }`: every visible committee is
@@ -179,10 +179,14 @@ export class GroupsEngagementStatsService {
    * - `{ activeMembers: N, coverage: { covered, total } }` (`covered` possibly `< total`): a real,
    *   computed count over whichever committees are covered — `covered === total` means it's
    *   complete; `covered < total` means it's a real but partial count the client should disclose.
-   * - `{ activeMembers: null, coverage: { covered: 0, total: 0 } }` (error): the count couldn't be
-   *   computed at all (missing committee-set lookup, a Snowflake missing-object/not-authorized
-   *   error, or any chunk failing) — never thrown, so a stats failure never blocks the rest of the
-   *   groups dashboard.
+   *   `N` can itself be `0` (a real, fully- or partially-covered zero — nobody active in the covered
+   *   subset), which is why this shape is distinguished from the null cases by `active_members`
+   *   being non-null, not by it being nonzero.
+   * - `{ activeMembers: null, coverage: { covered: 0, total } }` (error, `total` possibly `0`): the
+   *   count couldn't be computed at all (missing committee-set lookup, a Snowflake missing-object/
+   *   not-authorized error, or any chunk failing) — never thrown, so a stats failure never blocks the
+   *   rest of the groups dashboard. `total` reports the visible-committee count if it was already
+   *   known before the failure, `0` if the failure happened before that — see the catch block below.
    */
   private async computeActiveMembers(req: Request): Promise<{ activeMembers: number | null; coverage: { covered: number; total: number } }> {
     // Tracked outside the try block (not just a `const` inside it) so the catch block can still
@@ -261,28 +265,20 @@ export class GroupsEngagementStatsService {
       // not a filter applied after the fact.
       const activeMembers = coveredCount > 0 ? activeUids.size : null;
 
-      if (coveredCount < committeeUids.length) {
-        // The most likely-to-occur partial-coverage case in a partially-rolled-out model — warrants
-        // visibility at WARNING, same as the error paths below, even though (unlike those) it still
-        // produces a usable (if partial) count rather than degrading the whole request.
-        logger.warning(
-          req,
-          'get_groups_engagement_stats',
-          'Some visible committees are not covered by the engagement model; counting over the covered subset',
-          {
-            covered: coveredCount,
-            total: committeeUids.length,
-            uncovered_committee_count: uncoveredCount,
-          }
-        );
-      } else {
-        logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
-          committee_count: committeeUids.length,
-          chunk_count: chunks.length,
-          row_count: rowCount,
-          active_members: activeMembers,
-        });
-      }
+      // DEBUG, not WARNING: live validation showed nearly every real caller has at least one
+      // uncovered visible committee (see the class doc comment above), so `coveredCount <
+      // committeeUids.length` is now the expected steady state on most cache misses, not a
+      // degraded/recoverable-error condition per `.claude/rules/logging-patterns.md`'s WARN
+      // criteria — a WARN here would fire on nearly every request and bury the genuine WARNs the
+      // catch block below emits on actual failures.
+      logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
+        committee_count: committeeUids.length,
+        chunk_count: chunks.length,
+        row_count: rowCount,
+        active_members: activeMembers,
+        covered: coveredCount,
+        uncovered_committee_count: uncoveredCount,
+      });
 
       return { activeMembers, coverage };
     } catch (error) {
