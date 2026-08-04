@@ -4,7 +4,7 @@
 <svg viewBox="0 -70 1200 1010" width="1200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
       <rect x="-40" y="-70" width="1280" height="1080" fill="#FFFFFF"/>
   <text x="20" y="-38" font-size="21" font-weight="700" fill="#0F172B">LFX SS — Permission-Based Access Model</text>
-  <text x="20" y="-16" font-size="12.5" fill="#62748E">The app checks permissions, never personas. Grants evaluate through the model into permissions; guards bind each action to the permission it requires.</text>
+  <text x="20" y="-16" font-size="12.5" fill="#62748E">The app checks permissions, never personas. Grants evaluate through the model into permissions; guards bind each action to the single permission it requires.</text>
   <defs>
       <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
         <path d="M0,0 L8,4.5 L0,9 z" fill="#62748E"/>
@@ -106,10 +106,10 @@
       <rect x="888" y="492" width="282" height="12" fill="#F1F5F9"/>
       <text x="1029" y="489" text-anchor="middle" font-size="13.5" font-weight="700" fill="#314158">CREATE / MANAGE ACTIONS</text>
       <text x="1029" y="530" text-anchor="middle" font-size="12.5" fill="#45556C">needs</text>
-      <rect x="908" y="540" width="242" height="30" rx="15" fill="#ECF4FF" stroke="#85C2FF"/><text x="1029" y="560" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0061A3">action-specific relation on target</text>
-      <text x="1029" y="594" text-anchor="middle" font-size="11.5" fill="#62748E">writer · committee.writer ·</text>
-      <text x="1029" y="610" text-anchor="middle" font-size="11.5" fill="#62748E">meeting_coordinator · owner</text>
-      <text x="1029" y="634" text-anchor="middle" font-size="11" fill="#90A1B9">resolved target object · fail closed</text>
+      <rect x="908" y="540" width="242" height="30" rx="15" fill="#ECF4FF" stroke="#85C2FF"/><text x="1029" y="560" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0061A3">the action's own permission on its object</text>
+      <text x="1029" y="594" text-anchor="middle" font-size="11.5" fill="#62748E">meeting → organizer · project → writer ·</text>
+      <text x="1029" y="610" text-anchor="middle" font-size="11.5" fill="#62748E">committee → writer · response → owner</text>
+      <text x="1029" y="634" text-anchor="middle" font-size="11" fill="#90A1B9">one check — the model does the traversal</text>
     </g>
 
     <!-- product domain label -->

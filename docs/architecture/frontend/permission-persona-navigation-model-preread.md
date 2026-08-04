@@ -117,23 +117,35 @@ Me item or create action + resolved target object (project, foundation, committe
 ```
 
 The target is usually Foundation/Project and the permission is `writer`, but
-that's the common case, not the only one. The shipped create flow (PR #1193)
-also resolves committee/group targets for meetings, surveys, and votes:
+that's the common case, not the only one. For creates, the shipped flow (PR
+#1193) resolves a committee/group target for meetings, surveys, and votes:
 `writerGuard` accepts `committee.writer` for those three features when a
-`committee_uid` is present, and accepts `project.meeting_coordinator` for
-meetings specifically, independent of `project.writer`. A committee writer
-or meeting coordinator can legitimately hold no direct project-level
-auditor/writer grant.
+`committee_uid` is present, and accepts `project.meeting_coordinator` when
+the target is a project and no meeting object exists yet — each create
+checks exactly one permission on the chosen parent, never several checked
+together.
+
+Actions on an _existing_ item work differently: gate on the single
+permission the model has already resolved onto that item's own object, not
+a re-derived combination of its parents' permissions. A scheduled meeting's
+edit/manage action checks `organizer` on the meeting itself — the model
+inherits `organizer` from Project Meeting Coordinator, Committee Writer,
+and Project Writer, so a committee writer or meeting coordinator can
+legitimately hold no direct project-level permission and still pass the
+check. Reproducing that inheritance as multiple checks in the UI (checking
+project writer, then committee writer, then meeting coordinator
+separately) is the anti-pattern to avoid — match the API's guards, which
+are always evaluated against the object being interacted with.
 
 Examples:
 
-- **Pending agenda action:** resolve the target group/project/foundation; allow agenda management only if writer permission applies.
-- **Meeting card:** open the meeting with its context; edit/manage only if writer permission applies.
-- **Vote or survey:** open the item; view/results follow viewer/discoverable eligibility for that item, edit/close follows writer permission.
+- **Pending action item:** expand and validate the permission based on the action item type — `vote participant`/`survey respondent` (response-owner) to cast a ballot or submit a response, `organizer` to manage an agenda-bearing meeting. A passive reminder like an upcoming agenda has no writeable action of its own and needs no permission beyond opening the meeting page.
+- **Meeting card:** open the meeting with its context; edit/manage only if `organizer` permission applies to that meeting.
+- **Vote or survey:** open the item; view/results follow viewer/discoverable eligibility for that item, edit/close follows writer permission for that item.
 - **Document row:** open the document context; upload/folder/link actions follow writer permission.
 - **Newsletter draft:** open the draft with its target audience context; edit/delete/send follows writer permission for that context.
 - **Newsletter create:** ask for the target Foundation/Project and audience first; then apply writer permission.
-- **Akrites package:** open package drawer/workflow; stewardship follows Akrites request/stewardship rules.
+- **Akrites package:** open package drawer/workflow — an exception to the OpenFGA model: no "package" entity or "stewardship" relation exists today, so this follows Akrites' own request/stewardship rules rather than a permission check.
 
 ### Foundation And Project Contexts
 
@@ -232,8 +244,8 @@ Whether the `executive_director` grant itself stays in the model, is
 renamed, or is fed differently is the platform team's call, not the app's
 (see Model Asks below) — the app checks `marketing_auditor` and
 `campaign_manager` directly and does not care what feeds them. Create/
-edit/manage routes should not use ED as an authorization shortcut unless
-the user also has writer permission for the selected target context.
+edit/manage routes must never use ED as an authorization shortcut — the UI
+guard checks the same permission the API guard checks, full stop.
 
 If LF Staff Mode ends up needing to exist as a distinct concept, it should
 have its own explicit staff eligibility and audit expectations, and should

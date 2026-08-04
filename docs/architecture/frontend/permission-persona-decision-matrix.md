@@ -89,7 +89,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 
 - **Read examples:** View meeting details, view vote results, view survey results, open document, view sent newsletter.
 - **Write examples:** Edit a meeting, manage agenda, update survey, manage document, edit newsletter draft.
-- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific permission the API requires on the item's resolved target object for write actions — e.g. `writer` for Foundation/Project targets, `committee.writer` for committee/group targets, `project.meeting_coordinator` for meeting actions without project writer, or response-owner for author-only edits (e.g. poll/survey/vote responses).
+- **Required permission:** Viewer/discoverable eligibility or item eligibility for read actions. The action-specific permission the API requires on the item's resolved target object for write actions — e.g. `writer` for Foundation/Project targets, `committee.writer` for committee/group targets, `organizer` for meeting actions (the model resolves it from project writer, committee writer, or meeting coordinator — the guard checks only `organizer` on the meeting), or response-owner for author-only edits (e.g. poll/survey/vote responses).
 - **Destination:** Stay in Me or open the item detail/drawer with target context attached.
 - **Allowed actions:** Read actions follow item eligibility. Create/manage actions are visible or enabled when the required action-specific permission passes.
 - **Denied actions:** If the required action-specific permission is absent, keep eligible view/read actions only.
@@ -97,7 +97,7 @@ No-grant contexts -> Browse/Discovery only, never default selection
 ### Create Action From Me
 
 - **Example:** Create Meeting, Create Group, Add Mailing List, Create Newsletter, Create Vote, Create Survey, Upload File, Add Link.
-- **Required permission:** User must choose a target object (project, foundation, committee, or group), then the action-specific permission on that object must pass. For most creates the target is Foundation/Project and the permission is `writer`. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`; Create Meeting alone can also be authorized by `project.meeting_coordinator` without project writer.
+- **Required permission:** User must choose a target object (project, foundation, committee, or group), then the action-specific permission on that object must pass. For most creates the target is Foundation/Project and the permission is `writer`. For Create Meeting, Create Survey, and Create Vote, the target can also be a committee/group, authorized by `committee.writer`. Create Meeting's project-target check is a single permission — the model grants project-level meeting-creation authority to both `project.writer` and `project.meeting_coordinator`, so the guard checks the one resolved permission, never two separate calls in the UI.
 - **Destination:** Create flow scoped to the chosen target context.
 - **Allowed actions:** Continue to create form after target context and its action-specific permission are confirmed.
 - **Denied actions:** Do not create against an implicit/global Me context.
@@ -209,7 +209,8 @@ terms (auditor permission, writer permission, named permission).
 
 - **Me:** Show cross-context meetings and personal meeting actions.
 - **Foundation/Project:** Show context-scoped meetings.
-- **Create/manage:** Requires the organizer-granting permission for the target — Project/Foundation Writer, Project Meeting Coordinator (meetings only), or Committee Writer when the target is a committee/group — per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer). This is the target state; `writerGuard` on `main` still has an unconditional ED-persona fast path ahead of this check (documented in [`persona-content-matrix.md`](./persona-content-matrix.md#meetings-write-paths), tracked for removal per Current State in the preread).
+- **Create:** Requires the create-granting permission on the chosen target — `writer` or `meeting_coordinator` when the target is a Project, `writer` when the target is a Foundation, `committee.writer` when the target is a committee/group. One permission checked on the chosen target, not several checked together.
+- **Manage (edit/delete/invite as manager) an existing meeting:** Requires `organizer` on the meeting itself, per `PERMISSIONS.md`'s Scheduled Meeting inheritance (`Organizer` inherits from Project Meeting Coordinator, Committee Writer, Project Writer). The model performs the inheritance; the guard makes one check against the meeting object, not a re-derived OR of the container permissions. This is the target state; `writerGuard` on `main` still has an unconditional ED-persona fast path ahead of this check (documented in [`persona-content-matrix.md`](./persona-content-matrix.md#meetings-write-paths), tracked for removal per Current State in the preread).
 - **Read-only:** User can view/join/RSVP where eligible, but cannot edit, delete, invite as manager, or manage resources.
 
 ### Groups
@@ -237,14 +238,14 @@ terms (auditor permission, writer permission, named permission).
 
 - **Me:** Show votes the user has been invited to or can view across contexts.
 - **Foundation/Project:** Show context-scoped votes.
-- **Create/manage:** Requires target context plus writer permission, OR `committee.writer` when the target is a committee/group.
+- **Create/manage:** Requires the create-granting permission on the chosen target — `writer` when the target is Foundation/Project, `committee.writer` when the target is a committee/group.
 - **Read-only:** User can vote or view results when eligible, but cannot create, edit, close, or delete votes.
 
 ### Surveys
 
 - **Me:** Show surveys the user has been invited to or can view across contexts.
 - **Foundation/Project:** Show context-scoped surveys.
-- **Create/manage:** Requires target context plus writer permission, OR `committee.writer` when the target is a committee/group.
+- **Create/manage:** Requires the create-granting permission on the chosen target — `writer` when the target is Foundation/Project, `committee.writer` when the target is a committee/group.
 - **Read-only:** User can respond or view allowed results, but cannot create, edit, close, or delete surveys.
 
 ### Documents
