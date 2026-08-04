@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card>
+  <div class="flex items-center gap-2 mb-4">
+    <i class="fa-light fa-award text-gray-500 text-xs"></i>
+    <h2 class="text-gray-600 text-sm font-normal">Badges</h2>
+  </div>
+
+  <div class="grid grid-cols-3 gap-4 place-items-center" data-testid="badges-grid">
+    @for (badge of badges(); track $index) {
+      @if (badge.url) {
+        <a
+          [href]="badge.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex items-center justify-center hover:opacity-80 transition-opacity"
+          data-testid="badge-link">
+          <img [src]="badge.image" alt="Badge" class="w-16 h-16 object-contain" loading="lazy" />
+        </a>
+      } @else {
+        <div class="flex items-center justify-center" data-testid="badge-item">
+          <img [src]="badge.image" alt="Badge" class="w-16 h-16 object-contain" loading="lazy" />
+        </div>
+      }
+    }
+  </div>
+</lfx-card>

@@ -29,6 +29,13 @@ export interface PublicProfile {
   presentations?: PublicProfilePresentation[];
 }
 
+/** View-model for a rendered social link in the public profile hero. */
+export interface PublicProfileSocialLink {
+  label: string;
+  url: string;
+  icon: string;
+}
+
 export interface PublicProfileBasic {
   Name?: string;
   LogoURL?: string;
@@ -38,6 +45,8 @@ export interface PublicProfileBasic {
   Username?: string;
   Title?: string;
   Bio?: string;
+  /** Current employer/affiliation shown as "{Title} at {AccountName}"; a value containing "Individual" is a placeholder and is hidden. */
+  AccountName?: string;
   AccountLogoURL?: string;
   Identities?: PublicProfileIdentity[];
 }
@@ -49,6 +58,15 @@ export interface PublicProfileIdentity {
 
 export interface PublicProfileTechnicalContribution {
   projects: PublicProfileProject[];
+}
+
+/** Aggregated contribution counts across all projects, shown in the contributions summary. */
+export interface PublicProfileContributionTotals {
+  commits: number;
+  prs: number;
+  issues: number;
+  added: number;
+  deleted: number;
 }
 
 export interface PublicProfileProject {
@@ -94,7 +112,13 @@ export interface PublicProfileContribution {
 export interface PublicProfileCommunityRole {
   ID: string;
   LogoURL?: string;
+  /** Owning project; its `Name` is the card header fallback when no `LogoURL` is present. */
+  Project?: PublicProfileCommunityProject;
   roles: PublicProfileCommunityRoleEntry[];
+}
+
+export interface PublicProfileCommunityProject {
+  Name?: string;
 }
 
 export interface PublicProfileCommunityRoleEntry {

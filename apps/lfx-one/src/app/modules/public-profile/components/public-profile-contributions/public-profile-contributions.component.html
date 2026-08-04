@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card>
+  <div class="flex items-center gap-2 mb-4">
+    <i class="fa-light fa-code-commit text-gray-500 text-xs"></i>
+    <h2 class="text-gray-600 text-sm font-normal">Technical Contributions</h2>
+  </div>
+
+  <!-- Totals summary across all projects -->
+  <div class="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6" data-testid="contributions-totals">
+    <div class="flex flex-col items-center justify-center rounded-lg bg-gray-50 py-3 px-2">
+      <span class="text-lg font-semibold text-gray-900">{{ totals().commits | number }}</span>
+      <span class="text-xs text-gray-500">Commits</span>
+    </div>
+    <div class="flex flex-col items-center justify-center rounded-lg bg-gray-50 py-3 px-2">
+      <span class="text-lg font-semibold text-gray-900">{{ totals().prs | number }}</span>
+      <span class="text-xs text-gray-500">PRs</span>
+    </div>
+    <div class="flex flex-col items-center justify-center rounded-lg bg-gray-50 py-3 px-2">
+      <span class="text-lg font-semibold text-gray-900">{{ totals().issues | number }}</span>
+      <span class="text-xs text-gray-500">Issues</span>
+    </div>
+    <div class="flex flex-col items-center justify-center rounded-lg bg-gray-50 py-3 px-2">
+      <span class="text-lg font-semibold text-emerald-600">+{{ totals().added | number }}</span>
+      <span class="text-xs text-gray-500">Added</span>
+    </div>
+    <div class="flex flex-col items-center justify-center rounded-lg bg-gray-50 py-3 px-2">
+      <span class="text-lg font-semibold text-red-500">-{{ totals().deleted | number }}</span>
+      <span class="text-xs text-gray-500">Deleted</span>
+    </div>
+  </div>
+
+  <!-- Per-project breakdown -->
+  <div class="flex flex-col gap-3" data-testid="contributions-projects">
+    @for (project of projects(); track project.ID) {
+      <div class="flex items-center gap-3 rounded-lg border border-gray-100 p-3" data-testid="contribution-project">
+        <lfx-avatar
+          [image]="project.LogoURL || ''"
+          [label]="project.Name"
+          shape="circle"
+          [style]="{ width: '36px', height: '36px' }"
+          styleClass="bg-gray-100 text-gray-600 flex-shrink-0"></lfx-avatar>
+        <div class="flex flex-col gap-1 min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-900 truncate">{{ project.Name }}</p>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+            <span
+              ><span class="font-medium text-gray-700">{{ project.commits | number }}</span> commits</span
+            >
+            <span
+              ><span class="font-medium text-gray-700">{{ project.prs | number }}</span> PRs</span
+            >
+            <span
+              ><span class="font-medium text-gray-700">{{ project.issues | number }}</span> issues</span
+            >
+            <span class="text-emerald-600">+{{ project.added | number }}</span>
+            <span class="text-red-500">-{{ project.deleted | number }}</span>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+</lfx-card>

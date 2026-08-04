@@ -1,0 +1,89 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-header></lfx-header>
+
+<div class="bg-gray-50 min-h-screen">
+  <div class="container mx-auto py-6 px-4 sm:px-8">
+    <div class="max-w-[1024px] mx-auto flex flex-col">
+      @if (loading()) {
+        <!-- Skeleton loading state -->
+        <div class="flex flex-col gap-6">
+          <p-skeleton width="100%" height="220px" borderRadius="12px" />
+          <div class="grid grid-cols-1 lg:grid-cols-[2.1fr_1fr] gap-6">
+            <p-skeleton width="100%" height="360px" borderRadius="12px" />
+            <p-skeleton width="100%" height="360px" borderRadius="12px" />
+          </div>
+        </div>
+      } @else if (error()) {
+        <!-- Error state for unexpected failures -->
+        <lfx-card data-testid="public-profile-error-card">
+          <div class="text-center py-12">
+            <div class="flex justify-center mb-6">
+              <div class="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center">
+                <i class="fa-light fa-triangle-exclamation text-4xl text-red-400"></i>
+              </div>
+            </div>
+            <h2 class="text-lg font-semibold text-gray-900 mb-2">Something went wrong</h2>
+            <p class="text-sm text-gray-600 mb-4">We couldn't load this profile. Please try again later.</p>
+          </div>
+        </lfx-card>
+      } @else if (profile()) {
+        <div class="flex flex-col gap-6">
+          <!-- Hero -->
+          <lfx-public-profile-hero
+            [basic]="basic()"
+            [authenticated]="authenticated()"
+            (signIn)="navigateToLogin()"
+            data-testid="public-profile-hero"></lfx-public-profile-hero>
+
+          <div class="grid grid-cols-1 lg:grid-cols-[2.1fr_1fr] gap-6">
+            <!-- Main column -->
+            <div class="flex flex-col gap-6 min-w-0">
+              @if (about()) {
+                <lfx-card data-testid="public-profile-about">
+                  <div class="flex items-center gap-2 mb-3">
+                    <i class="fa-light fa-user text-gray-500 text-xs"></i>
+                    <h2 class="text-gray-600 text-sm font-normal">About</h2>
+                  </div>
+                  <lfx-markdown-renderer [content]="about()"></lfx-markdown-renderer>
+                </lfx-card>
+              }
+
+              @if (hasContributions()) {
+                <lfx-public-profile-contributions
+                  [technicalContribution]="technicalContribution()"
+                  data-testid="public-profile-contributions"></lfx-public-profile-contributions>
+              }
+
+              @if (hasCommunities()) {
+                <lfx-public-profile-communities [roles]="communityRoles()" data-testid="public-profile-communities"></lfx-public-profile-communities>
+              }
+            </div>
+
+            <!-- Rail column -->
+            <div class="flex flex-col gap-6 min-w-0">
+              @if (hasBadges()) {
+                <lfx-public-profile-badges [badges]="badges()" data-testid="public-profile-badges"></lfx-public-profile-badges>
+              }
+
+              @if (hasCertifications()) {
+                <lfx-public-profile-certifications
+                  [certifications]="certifications()"
+                  data-testid="public-profile-certifications"></lfx-public-profile-certifications>
+              }
+
+              @if (hasTrainings()) {
+                <lfx-public-profile-trainings [trainings]="trainings()" data-testid="public-profile-trainings"></lfx-public-profile-trainings>
+              }
+
+              @if (hasEvents()) {
+                <lfx-public-profile-events [events]="events()" data-testid="public-profile-events"></lfx-public-profile-events>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</div>

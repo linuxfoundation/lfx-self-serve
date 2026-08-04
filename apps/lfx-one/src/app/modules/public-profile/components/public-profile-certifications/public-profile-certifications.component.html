@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card>
+  <div class="flex items-center gap-2 mb-4">
+    <i class="fa-light fa-certificate text-gray-500 text-xs"></i>
+    <h2 class="text-gray-600 text-sm font-normal">Certifications</h2>
+  </div>
+
+  <div class="flex flex-col gap-3" data-testid="certifications-list">
+    @for (cert of certifications(); track cert.id) {
+      <div class="flex items-start gap-3" data-testid="certification-item">
+        <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <i class="fa-light fa-certificate text-blue-500 text-sm"></i>
+        </div>
+        <div class="flex flex-col gap-0.5 min-w-0">
+          <p class="text-sm font-medium text-gray-900 break-words">{{ cert.name }}</p>
+          @if (cert.type) {
+            <p class="text-xs text-gray-500">{{ cert.type }}</p>
+          }
+          @if (cert.startDate || cert.endDate) {
+            <p class="text-xs text-gray-400">{{ cert.startDate | publicProfileDateRange: cert.endDate }}</p>
+          }
+        </div>
+      </div>
+    }
+  </div>
+</lfx-card>

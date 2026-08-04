@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card>
+  <div class="flex items-center gap-2 mb-4">
+    <i class="fa-light fa-graduation-cap text-gray-500 text-xs"></i>
+    <h2 class="text-gray-600 text-sm font-normal">Trainings</h2>
+  </div>
+
+  <div class="flex flex-col gap-3" data-testid="trainings-list">
+    @for (training of trainings(); track $index) {
+      <div class="flex items-start gap-3" data-testid="training-item">
+        <div class="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <i class="fa-light fa-graduation-cap text-violet-500 text-sm"></i>
+        </div>
+        <div class="flex flex-col gap-0.5 min-w-0">
+          <p class="text-sm font-medium text-gray-900 break-words">{{ training.Name }}</p>
+          @if (training.Type) {
+            <p class="text-xs text-gray-500">{{ training.Type }}</p>
+          }
+          @if (training.StartDate || training.EndDate) {
+            <p class="text-xs text-gray-400">{{ training.StartDate | publicProfileDateRange: training.EndDate }}</p>
+          }
+        </div>
+      </div>
+    }
+  </div>
+</lfx-card>
