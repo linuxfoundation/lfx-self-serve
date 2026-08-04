@@ -3,6 +3,8 @@
 
 import { Routes } from '@angular/router';
 
+import { myClasEnabledGuard } from '@app/shared/guards/my-clas-enabled.guard';
+
 export const PROFILE_ROUTES: Routes = [
   {
     path: '',
@@ -27,6 +29,13 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'individual-enrollment',
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
+      },
+
+      // My CLAs tab — read-only EasyCLA agreements, dark-launched behind `my-clas-enabled` (CanMatch).
+      {
+        path: 'clas',
+        canMatch: [myClasEnabledGuard],
+        loadComponent: () => import('./clas/profile-clas.component').then((m) => m.ProfileClasComponent),
       },
 
       // Transactions tab — canonical home for the former /me/transactions page.

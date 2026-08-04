@@ -59,6 +59,9 @@ export * from './access-check.interface';
 // User profile interfaces
 export * from './user-profile.interface';
 
+// Public profile interfaces (S3 artifact proxied by /public/api/profile/:username)
+export * from './public-profile.interface';
+
 // User statistics interfaces
 export * from './user-statistics.interface';
 
@@ -123,6 +126,9 @@ export * from './public-committee.interface';
 
 // Groups dashboard engagement-stats rollup (LFXV2-1711)
 export * from './groups-engagement-stats.interface';
+
+// Public group interfaces
+export * from './public-group.interface';
 
 // Lens interfaces
 export * from './lens.interface';
@@ -257,6 +263,9 @@ export * from './linux-email.interface';
 
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
+
+// EasyCLA "My CLAs" interfaces (Me lens)
+export * from './cla.interface';
 
 // Country, state, t-shirt size, tag, and timezone interfaces
 export * from './countries.interface';
