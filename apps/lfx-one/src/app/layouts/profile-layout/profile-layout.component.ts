@@ -233,37 +233,18 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
-    // authorization isn't silently replayed by a later, unrelated profile-auth return.
-    let formData: Partial<UserMetadata>;
+    // Stored as { savedAt, userMetadata } — replay the drawer's already-mapped payload verbatim (its
+    // clear-to-empty decision), discarding it past the TTL so a stale return isn't silently replayed.
+    let userMetadata: Partial<UserMetadata>;
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
-      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+      const envelope = JSON.parse(savedState) as { savedAt?: unknown; userMetadata?: Partial<UserMetadata> };
+      if (typeof envelope?.savedAt !== 'number' || !envelope.userMetadata || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
         return;
       }
-      formData = envelope.form;
+      userMetadata = envelope.userMetadata;
     } catch {
       return;
     }
-    // Mirrors the drawer onSubmit mapping. Clear-to-empty only applies when the profile metadata
-    // loaded — on a failed load (profile === null, or no base profile yet) we omit empties rather
-    // than wipe unloaded fields with ''. Name and selects keep `|| undefined` (empty = unchanged).
-    const metadataLoaded = this.combinedProfile?.profile != null;
-    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
-    const userMetadata: Partial<UserMetadata> = {
-      given_name: formData.given_name || undefined,
-      family_name: formData.family_name || undefined,
-      job_title: freeText(formData.job_title),
-      organization: formData.organization || undefined,
-      country: formData.country || undefined,
-      state_province: formData.state_province || undefined,
-      city: freeText(formData.city),
-      address: freeText(formData.address),
-      postal_code: freeText(formData.postal_code),
-      phone_number: freeText(formData.phone_number),
-      t_shirt_size: formData.t_shirt_size || undefined,
-      bio: freeText(formData.bio),
-    };
 
     const updateData: ProfileUpdateRequest = {
       user_metadata: userMetadata as UserMetadata,

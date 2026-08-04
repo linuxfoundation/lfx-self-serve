@@ -256,9 +256,9 @@ export class ProfileEditDrawerComponent {
             // Guard the browser-only APIs for SSR safety. This handler only runs on a user-initiated
             // save (browser), but the guard keeps the reference SSR-safe per .claude/rules/ssr-safety.md.
             if (isPlatformBrowser(this.platformId)) {
-              // Stamp with a timestamp so the host shell can discard a stale pending-save if this
-              // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
-              sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
+              // Persist the mapped payload (not the raw form) so the submit-time clear-to-empty decision
+              // survives the redirect; the host replays it verbatim (stringify drops undefined keys).
+              sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), userMetadata }));
               window.location.href = error.error.authorize_url;
             }
             return;
