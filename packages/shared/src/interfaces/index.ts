@@ -59,6 +59,9 @@ export * from './access-check.interface';
 // User profile interfaces
 export * from './user-profile.interface';
 
+// Public profile interfaces (S3 artifact proxied by /public/api/profile/:username)
+export * from './public-profile.interface';
+
 // User statistics interfaces
 export * from './user-statistics.interface';
 
