@@ -391,6 +391,12 @@
             [hasPendingInvite]="!!pendingInvitation()"
             [meetings]="upcomingMeetings()"
             [upcomingMeetingsLoading]="meetingsLoading()"
+            [engagementEnabled]="engagementMetricsEnabled()"
+            [engagement]="engagement()"
+            [engagementLoading]="engagementLoading()"
+            [engagementWindow]="engagementWindow()"
+            [engagementAccessible]="canAccessEngagement()"
+            (engagementWindowChange)="onEngagementWindowChange($event)"
             (joinRequested)="handleJoinRequest()"
             (tabNavigated)="handleTabNavigation($event)"
             (committeeUpdated)="refreshMembers()" />
@@ -422,6 +428,12 @@
               [membersLoading]="membersLoading()"
               [invites]="invites()"
               [invitesLoading]="invitesLoading()"
+              [engagementEnabled]="engagementMetricsEnabled()"
+              [engagementAccessible]="canAccessEngagement()"
+              [engagement]="engagement()"
+              [engagementLoading]="engagementLoading()"
+              [engagementWindow]="engagementWindow()"
+              (engagementWindowChange)="onEngagementWindowChange($event)"
               (refresh)="onMembersRefreshed()" />
           }
         }

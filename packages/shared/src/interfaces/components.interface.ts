@@ -158,6 +158,15 @@ export interface TagProps {
   dot?: boolean;
   /** Renders the tag with a border and transparent background instead of a filled background */
   outlined?: boolean;
+  /**
+   * Tooltip text shown on hover AND keyboard focus (tabindex/role/aria-label are derived from this
+   * being non-empty). Applied directly to the tag's own rendered element — not a wrapping element —
+   * so PrimeNG's tooltip directive resolves its focus/blur listener target to the same node that
+   * carries `tabindex` (see `TagComponent`'s doc comment for why a wrapping element breaks this).
+   * Empty/unset disables the tooltip entirely.
+   */
+  tooltip?: string;
+  tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
 }
 
 /**
