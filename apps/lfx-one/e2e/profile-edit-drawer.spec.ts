@@ -220,4 +220,52 @@ test.describe('Profile edit drawer', () => {
     // The wire must carry an explicit empty string, not an omitted key.
     expect(patchBody?.user_metadata?.bio).toBe('');
   });
+
+  test('S6: when metadata failed to load, clearing free-text fields omits them (no wipe)', async ({ page }) => {
+    // Guard for LFXV2-2933: clear-to-empty only fires once profile metadata loaded. When the GET
+    // returns no `profile` (a NATS getUserInfo miss), the drawer seeds those controls empty, so an
+    // empty save must fall back to `|| undefined` and OMIT the keys rather than wipe stored data the
+    // form never received. Rewrite the GET to strip `profile` (keeping the real `user` so the panel
+    // still renders), then assert cleared bio + job_title are absent from the PATCH.
+    let patchBody: { user_metadata?: Record<string, unknown> } | null = null;
+    await page.route('**/api/profile', async (route) => {
+      const request = route.request();
+      if (request.method() === 'PATCH') {
+        patchBody = request.postDataJSON();
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      if (request.method() === 'GET') {
+        const response = await route.fetch();
+        const body = await response.json();
+        await route.fulfill({ response, json: { ...body, profile: null } });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Dirty then clear both fields so the form is submittable but each value is empty at save time.
+    const bio = page.getByTestId('profile-edit-drawer-about-me').locator('textarea');
+    const jobTitle = page.getByTestId('profile-edit-drawer-job-title').locator('input');
+    await bio.fill('temporary bio');
+    await bio.fill('');
+    await jobTitle.fill('temporary title');
+    await jobTitle.fill('');
+
+    const saveButton = page.getByTestId('profile-edit-drawer-save-button').locator('button');
+    await expect(saveButton, 'Save enables once the dirtied fields make the form dirty').toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+    await saveButton.click();
+    await expect(drawer, 'drawer should close after save').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+
+    // metadataLoaded === false → freeText('') maps to undefined → JSON.stringify drops the keys.
+    expect(patchBody?.user_metadata, 'PATCH should still send a user_metadata envelope').toBeTruthy();
+    expect(patchBody?.user_metadata && 'bio' in patchBody.user_metadata, 'empty bio must be omitted, not sent as ""').toBe(false);
+    expect(patchBody?.user_metadata && 'job_title' in patchBody.user_metadata, 'empty job_title must be omitted, not sent as ""').toBe(false);
+  });
 });

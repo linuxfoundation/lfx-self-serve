@@ -233,13 +233,22 @@ export class ProfileLayoutComponent {
 
     // Stored as { savedAt, userMetadata } — replay the drawer's already-mapped payload verbatim (its
     // clear-to-empty decision), discarding it past the TTL so a stale return isn't silently replayed.
+    // A pre-LFXV2-2933 bundle wrote { savedAt, form } (raw form value); accept that legacy shape during
+    // the rollout window and map it with the prior omit-empties rules so a save started just before a
+    // mid-Flow-C deploy isn't silently dropped by the new parser.
     let userMetadata: Partial<UserMetadata>;
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; userMetadata?: Partial<UserMetadata> };
-      if (typeof envelope?.savedAt !== 'number' || !envelope.userMetadata || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+      const envelope = JSON.parse(savedState) as { savedAt?: unknown; userMetadata?: Partial<UserMetadata>; form?: Partial<UserMetadata> };
+      if (typeof envelope?.savedAt !== 'number' || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
         return;
       }
-      userMetadata = envelope.userMetadata;
+      if (envelope.userMetadata) {
+        userMetadata = envelope.userMetadata;
+      } else if (envelope.form) {
+        userMetadata = this.mapLegacyFormEnvelope(envelope.form);
+      } else {
+        return;
+      }
     } catch {
       return;
     }
@@ -268,6 +277,27 @@ export class ProfileLayoutComponent {
         });
       },
     });
+  }
+
+  // Legacy { savedAt, form } envelope (pre-LFXV2-2933 bundle) stored the raw form value. Map it with
+  // the prior `|| undefined` omit-empties rules so a save started before a mid-Flow-C deploy replays
+  // with its original (non-clearing) semantics rather than being silently dropped by the new parser.
+  // Removable once no pre-2933 bundle can still be serving the write path (past the pending-save TTL).
+  private mapLegacyFormEnvelope(form: Partial<UserMetadata>): Partial<UserMetadata> {
+    return {
+      given_name: form.given_name || undefined,
+      family_name: form.family_name || undefined,
+      job_title: form.job_title || undefined,
+      organization: form.organization || undefined,
+      country: form.country || undefined,
+      state_province: form.state_province || undefined,
+      city: form.city || undefined,
+      address: form.address || undefined,
+      postal_code: form.postal_code || undefined,
+      phone_number: form.phone_number || undefined,
+      t_shirt_size: form.t_shirt_size || undefined,
+      bio: form.bio || undefined,
+    };
   }
 
   // Strip the Flow C query params (success/error) while staying on the current tab.
