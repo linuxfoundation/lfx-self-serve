@@ -243,16 +243,16 @@ export class PaidSocialReachDrawerComponent {
     const expanded = this.expandedProjects();
     return (this.drawerData().projectBreakdown ?? []).map((p) => ({
       ...p,
-      formattedSpend: PaidSocialReachDrawerComponent.compact(p.spend),
-      formattedRevenue: PaidSocialReachDrawerComponent.compact(p.revenue),
+      formattedSpend: `$${PaidSocialReachDrawerComponent.compact(p.spend)}`,
+      formattedRevenue: `$${PaidSocialReachDrawerComponent.compact(p.revenue)}`,
       formattedConversions: PaidSocialReachDrawerComponent.compact(p.conversions),
       severity: PaidSocialReachDrawerComponent.severityFor(p.performance),
       hasCampaigns: p.campaigns.length > 0,
       expanded: expanded.has(p.projectName),
       campaignRows: p.campaigns.map((c) => ({
         ...c,
-        formattedSpend: PaidSocialReachDrawerComponent.compact(c.spend),
-        formattedRevenue: PaidSocialReachDrawerComponent.compact(c.revenue),
+        formattedSpend: `$${PaidSocialReachDrawerComponent.compact(c.spend)}`,
+        formattedRevenue: `$${PaidSocialReachDrawerComponent.compact(c.revenue)}`,
         formattedConversions: PaidSocialReachDrawerComponent.compact(c.conversions),
       })),
     }));
