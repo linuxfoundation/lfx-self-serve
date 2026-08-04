@@ -151,8 +151,16 @@ export class AddMemberDialogComponent {
     }
     return result;
   });
+  /** Org-required direct-add uses one shared organization field — bulk add would mis-assign employers. */
+  public readonly directAddRequiresSingleEmail = computed(
+    () => this.organizationRequiredForDirectAdd() && this.categorized().toInvite.length > 1
+  );
   public readonly canSubmit = computed(
-    () => !this.submitting() && this.categorized().toInvite.length > 0 && !(this.showOrganizationField() && this.orgInvalid())
+    () =>
+      !this.submitting() &&
+      this.categorized().toInvite.length > 0 &&
+      !this.directAddRequiresSingleEmail() &&
+      !(this.showOrganizationField() && this.orgInvalid())
   );
   public readonly orgInvalid: Signal<boolean> = this.initOrgInvalid();
   public readonly showOrgError: Signal<boolean> = this.initShowOrgError();
@@ -238,6 +246,16 @@ export class AddMemberDialogComponent {
     const committeeId = this.committee?.uid;
     const emails = this.categorized().toInvite;
     if (!committeeId || emails.length === 0) {
+      return;
+    }
+
+    if (this.organizationRequiredForDirectAdd() && emails.length > 1) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Add one member at a time',
+        detail: 'This group requires an organization for each member. Add people individually so each organization is recorded correctly.',
+        life: 6000,
+      });
       return;
     }
 
