@@ -25,11 +25,11 @@ Agreements are matched automatically from your signed-in session and your linked
 
 ## ICLA vs ECLA
 
-| Type                      | What it means                                                                                                      | On My CLAs                                                               | Document                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                               | Listed                                                                   | **Download PDF** of your signed agreement                      |
-| **ECLA** (Employee CLA)   | You are covered because your employer holds a Corporate CLA (CCLA) and you are on that company's **Approved List** | Listed (shows the employer name)                                         | No individual PDF — shown as _Covered by Corporate CLA (CCLA)_ |
-| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                              | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab         |
+| Type                      | What it means                                                                                                      | On My CLAs                                                               | Document                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                               | Listed                                                                   | **Download PDF** when EasyCLA has the signed file (otherwise _PDF unavailable_) |
+| **ECLA** (Employee CLA)   | You are covered because your employer holds a Corporate CLA (CCLA) and you are on that company's **Approved List** | Listed (shows the employer name)                                         | No individual PDF — shown as _Covered by Corporate CLA (CCLA)_                  |
+| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                              | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                          |
 
 In short: an **ICLA** is _your_ paperwork; an **ECLA** means you are covered under your company's **CCLA**.
 
@@ -37,12 +37,12 @@ In short: an **ICLA** is _your_ paperwork; an **ECLA** means you are covered und
 
 When agreements are found, My CLAs shows a table with four columns:
 
-| Column       | Contents                                                                                                    |
-| ------------ | ----------------------------------------------------------------------------------------------------------- |
-| **Project**  | Project logo (or a placeholder), project name, and — when it differs — the CLA group name as secondary text |
-| **Type**     | `ICLA`, or `ECLA · <company name>`                                                                          |
-| **Signed**   | The date the agreement was signed                                                                           |
-| **Document** | **Download PDF** for an ICLA; _Covered by Corporate CLA (CCLA)_ for an ECLA                                 |
+| Column       | Contents                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| **Project**  | Project logo (or a placeholder), project name, and — when it differs — the CLA group name as secondary text         |
+| **Type**     | `ICLA`, or `ECLA · <company name>`                                                                                  |
+| **Signed**   | The date the agreement was signed                                                                                   |
+| **Document** | **Download PDF** for an ICLA when available (else _PDF unavailable_); _Covered by Corporate CLA (CCLA)_ for an ECLA |
 
 Only currently valid agreements appear on this list.
 
