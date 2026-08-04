@@ -1049,10 +1049,7 @@ export class OrgProjectsComponent {
    * - new FE + old BFF full row (neither flag) → full
    * - new FE + new BFF → `metricsState` wins
    */
-  private isOrgMetricsUnavailable(project: {
-    metricsState?: OrgLensProject['metricsState'];
-    noActivityYet?: boolean;
-  }): boolean {
+  private isOrgMetricsUnavailable(project: { metricsState?: OrgLensProject['metricsState']; noActivityYet?: boolean }): boolean {
     if (project.metricsState === 'health-only' || project.metricsState === 'unavailable') {
       return true;
     }
