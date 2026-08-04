@@ -188,8 +188,9 @@ export interface OrgProjectsSignalBar {
 export interface OrgProjectsTableRow extends OrgLensProject {
   insightsUrl: string;
   /**
-   * True for fallback rows (`metricsState` !== `full`): drives the "Unavailable" band/trend/count treatment, the
-   * plain-text (non-linked) name, and the "No activity yet" pill. Real rows (incl. participating no-activity) are false.
+   * True for explicit fallback rows (`health-only` / `unavailable`): drives the "Unavailable" band/trend/count
+   * treatment, the plain-text (non-linked) name, and the "No activity yet" pill. Real rows (incl. participating
+   * no-activity) and a missing discriminator (rolling-deploy old BFF) are false.
    */
   orgMetricsUnavailable: boolean;
   technicalBars: OrgProjectsSignalBar[];

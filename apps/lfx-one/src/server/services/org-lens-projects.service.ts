@@ -50,8 +50,9 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator (read as `!== 'full'` → Unavailable),
-    // so versioning the sub-resource key drops them; the validator below also rejects any entry missing metricsState.
+    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator. The frontend now treats a missing
+    // field as full (rolling-deploy safe), but versioning still drops stale cache entries; the validator below
+    // also rejects any entry missing metricsState so we don't keep serving mixed-shape payloads.
     const cacheKey = `projects:v3:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
@@ -966,8 +967,8 @@ export class OrgLensProjectsService {
       (project) =>
         typeof project.slug === 'string' &&
         typeof project.name === 'string' &&
-        // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch instead of
-        // rendering every row Unavailable (`undefined !== 'full'`).
+        // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch as
+        // current-shape payloads instead of serving a mixed schema from Valkey.
         (project.metricsState === 'full' || project.metricsState === 'health-only' || project.metricsState === 'unavailable') &&
         Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
         Array.isArray(project.healthMetrics) &&

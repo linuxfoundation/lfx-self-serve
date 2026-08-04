@@ -525,7 +525,7 @@ export class OrgProjectsComponent {
     }
     const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
     const body = rows.map((p) => {
-      const orgMetricsUnavailable = p.metricsState !== 'full';
+      const orgMetricsUnavailable = this.isOrgMetricsUnavailable(p.metricsState);
       return [
         p.name,
         HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
@@ -790,7 +790,8 @@ export class OrgProjectsComponent {
       this.sortedProjects().map((project) => {
         // Fallback rows (org has no metrics row for the project) render org-relative metrics as "Unavailable".
         // A `full` row — including a participating project with no code activity — renders every metric for real.
-        const orgMetricsUnavailable = project.metricsState !== 'full';
+        // Missing discriminator (rolling-deploy old BFF) is treated as full — see isOrgMetricsUnavailable.
+        const orgMetricsUnavailable = this.isOrgMetricsUnavailable(project.metricsState);
         return {
           ...project,
           orgMetricsUnavailable,
@@ -1032,15 +1033,23 @@ export class OrgProjectsComponent {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
-  // Fallback rows (`metricsState` !== `full`, influence/trend "Unavailable") always sort after measured rows, both
-  // directions — mirroring how health availability sinks unavailable rows. Participating no-activity rows are `full`.
+  // Fallback rows (explicit health-only/unavailable, influence/trend "Unavailable") always sort after measured rows,
+  // both directions — mirroring how health availability sinks unavailable rows. Participating no-activity rows are `full`.
   private compareInfluenceAvailability(a: OrgLensProject, b: OrgLensProject): number {
-    const aUnavailable = a.metricsState !== 'full';
-    const bUnavailable = b.metricsState !== 'full';
+    const aUnavailable = this.isOrgMetricsUnavailable(a.metricsState);
+    const bUnavailable = this.isOrgMetricsUnavailable(b.metricsState);
     if (aUnavailable === bUnavailable) {
       return 0;
     }
     return aUnavailable ? 1 : -1;
+  }
+
+  /**
+   * True only for explicit fallback discriminators. A missing `metricsState` (pre-close-out BFF during a rolling
+   * deploy) is treated as full — those payloads only ever contained real org-metrics rows.
+   */
+  private isOrgMetricsUnavailable(metricsState: OrgLensProject['metricsState'] | undefined): boolean {
+    return metricsState === 'health-only' || metricsState === 'unavailable';
   }
 
   private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {
