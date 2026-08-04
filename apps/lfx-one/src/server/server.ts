@@ -45,6 +45,7 @@ import personaRouter from './routes/persona.route';
 import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicCommitteesRouter from './routes/public-committees.route';
+import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -54,6 +55,7 @@ import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import enrollmentRouter from './routes/enrollment.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
+import clasRouter from './routes/clas.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import userNewslettersRouter from './routes/user-newsletters.route';
@@ -273,8 +275,9 @@ if (sessionStoreEnabled) {
 
 app.use(auth(authConfig));
 
-// Meeting join pages are optional-auth; silent login picks up any existing SSO session.
+// Public pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
+app.use('/groups/', attemptSilentLogin());
 
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
@@ -304,6 +307,7 @@ app.use('/login', authRateLimiter);
 
 app.use('/public/api/meetings', publicMeetingsRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
+app.use('/public/api/groups', publicGroupsRouter);
 app.use('/public/api/projects', publicProjectsRouter);
 
 app.use('/api/projects', projectsRouter);
@@ -334,6 +338,7 @@ app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/crowdfunding', crowdfundingRouter);
+app.use('/api/me', clasRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
 // User-scoped newsletter feed (Me lens). Mounted alongside the project-scoped
