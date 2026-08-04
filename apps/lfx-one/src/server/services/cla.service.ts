@@ -10,7 +10,7 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
-import { MyClaAgreement, MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import { Auth0Identity, EmailManagementData, MyClaAgreement, MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { EasyClaMyCla, EasyClaMyClaList, EasyClaMyClaPdf, ResolvedClaIdentity } from '../types/cla.types';
@@ -18,9 +18,16 @@ import { MicroserviceError } from '../errors';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 
 const SERVICE = 'cla_service';
+
+// Upstream `/v4/my-clas` caps the repeatable `email` query param at maxItems: 100
+// (easycla cla-backend-go/swagger/cla.v2.yaml). Exceeding it fails validation and 400s the
+// whole request, so the collected set is capped rather than letting a pathological account
+// (many verified + linked-identity emails) break the page instead of degrading.
+const MAX_CLA_EMAILS = 100;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in isolation). No I/O.
@@ -46,6 +53,48 @@ export function claServiceBaseUrl(): string {
 export function normalizeGithubId(rawUserId: string): string | null {
   const stripped = rawUserId.includes('|') ? rawUserId.substring(rawUserId.indexOf('|') + 1) : rawUserId;
   return /^\d+$/.test(stripped) ? stripped : null;
+}
+
+/**
+ * Builds the deduplicated email set sent to `/v4/my-clas`. Contributors often sign under a
+ * work email that is not their LFID primary, so all of the user's verified emails are sent
+ * (#1227) — each via the indexed `email` query param.
+ *
+ * Two server-side sources are unioned; both are re-verified upstream (EasyCLA drops any email
+ * the user does not actually own into `skippedIdentities`), so over-sending is safe:
+ *   - the authoritative verified-email list (`user_emails.read`): primary + `verified` alternates.
+ *   - emails carried on the already-fetched linked identities (`profileData.email`).
+ *
+ * The session primary is always included as a floor so behaviour never regresses when the
+ * auth-service email read is unavailable. Values are lowercased/trimmed and deduped. Emails are
+ * sent only via `email` (never `secondaryEmail`, an unindexed upstream table scan), so a work
+ * email EasyCLA filed solely as a record's secondary email is intentionally not matched.
+ *
+ * The result is capped at MAX_CLA_EMAILS to stay within the upstream `email` param limit. The
+ * session primary is added first and higher-signal sources precede linked-identity emails, so
+ * truncating the tail preserves primary priority.
+ */
+export function collectClaEmails(primaryEmail: string | null, emailData: EmailManagementData | null, identities: Auth0Identity[]): string[] {
+  const emails = new Set<string>();
+  const add = (value: string | null | undefined): void => {
+    const normalized = value?.toLowerCase().trim();
+    if (normalized) emails.add(normalized);
+  };
+
+  add(primaryEmail);
+
+  if (emailData) {
+    add(emailData.primary_email);
+    for (const alternate of emailData.alternate_emails ?? []) {
+      if (alternate.verified) add(alternate.email);
+    }
+  }
+
+  for (const identity of identities) {
+    add(identity.profileData?.email);
+  }
+
+  return [...emails].slice(0, MAX_CLA_EMAILS);
 }
 
 /**
@@ -86,10 +135,16 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
 
 export class ClaService {
   private readonly auth0Service = new Auth0Service();
+  private readonly emailVerificationService = new EmailVerificationService();
 
   /**
    * Resolves the session identity to the identity-key set passed to `/v4/my-clas`:
-   * LF username, verified email, and linked GitHub numeric IDs *and* usernames.
+   * LF username, all of the user's verified emails, and linked GitHub numeric IDs *and*
+   * usernames.
+   *
+   * All verified emails are sent (#1227), not just the session primary: contributors often
+   * sign under a work email that differs from their LFID primary, so those signatures would
+   * otherwise be missed. See collectClaEmails for the sources and the indexed-`email` rationale.
    *
    * Both the numeric GitHub id and the username are sent: the numeric id validates
    * upstream against EasyCLA user records, while the username validates via the
@@ -101,22 +156,40 @@ export class ClaService {
 
     const lfUsername = getEffectiveUsername(req);
     const primaryEmail = getEffectiveEmail(req);
-    const emails = primaryEmail ? [primaryEmail] : [];
-
-    // Linked GitHub identities enrich resolution with githubId/githubUsername keys, but are
-    // not load-bearing: if the auth-service lookup fails (e.g. NATS unavailable), degrade to
-    // LF-username + email resolution rather than failing the whole page.
     const auth0Sub = getEffectiveSub(req);
-    let identities: Awaited<ReturnType<Auth0Service['getUserIdentities']>> = [];
+
+    // The linked identities (GitHub keys) and the full verified-email set both come from the
+    // auth-service; fetch them concurrently so the extra call adds no serial latency. Neither is
+    // load-bearing: a NATS/auth-service failure degrades to LF-username + session-primary-email
+    // resolution rather than failing the whole page. getUserEmails already returns null on
+    // failure; getUserIdentities throws, so its rejection is handled here.
+    let identities: Auth0Identity[] = [];
+    let emailData: EmailManagementData | null = null;
     if (auth0Sub) {
-      try {
-        identities = await this.auth0Service.getUserIdentities(req, auth0Sub);
-      } catch (error) {
+      const [identitiesResult, emailsResult] = await Promise.allSettled([
+        this.auth0Service.getUserIdentities(req, auth0Sub),
+        this.emailVerificationService.getUserEmails(req, auth0Sub),
+      ]);
+
+      if (identitiesResult.status === 'fulfilled') {
+        identities = identitiesResult.value;
+      } else {
         logger.warning(req, 'cla_resolve_identity', 'linked-identity lookup failed; continuing without GitHub keys', {
-          err: error instanceof Error ? error.message : String(error),
+          err: identitiesResult.reason instanceof Error ? identitiesResult.reason.message : String(identitiesResult.reason),
+        });
+      }
+
+      if (emailsResult.status === 'fulfilled') {
+        emailData = emailsResult.value;
+      } else {
+        logger.warning(req, 'cla_resolve_identity', 'verified-email lookup failed; continuing without the verified-email list', {
+          err: emailsResult.reason instanceof Error ? emailsResult.reason.message : String(emailsResult.reason),
         });
       }
     }
+
+    const emails = collectClaEmails(primaryEmail, emailData, identities);
+
     const githubIdentities = identities.filter((i) => i.provider === 'github');
     const githubIds = githubIdentities.map((i) => normalizeGithubId(i.user_id)).filter((id): id is string => id !== null);
     const githubUsernames = githubIdentities.map((i) => i.profileData?.nickname?.trim()).filter((name): name is string => !!name);
@@ -134,6 +207,7 @@ export class ClaService {
       github_linked: githubLinked,
       github_id_count: githubIds.length,
       github_username_count: githubUsernames.length,
+      email_count: emails.length,
     });
     return resolved;
   }
