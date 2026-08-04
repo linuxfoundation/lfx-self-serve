@@ -7,8 +7,9 @@
  */
 export interface PublicProfile {
   /**
-   * Normalized public gate written by the proxy. `true` when the upstream artifact's
-   * public flag is truthy or absent; `false` only when it is explicitly disabled.
+   * Normalized public gate written by the proxy. `true` only when the upstream artifact's
+   * public flag is explicitly boolean `true`; a missing or non-boolean flag resolves to
+   * `false` (fail closed — the proxy withholds the payload for anything but an explicit opt-in).
    */
   isPublic: boolean;
   /** Raw upstream public flag, preserved as-is for reference. */

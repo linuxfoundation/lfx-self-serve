@@ -50,12 +50,16 @@ describe('getPublicProfilesBucketUrl', () => {
 });
 
 describe('resolvePublicFlag', () => {
-  it('treats an absent flag as public (published implies public)', () => {
-    expect(resolvePublicFlag({})).toBe(true);
+  it('treats an absent flag as private (fail closed — requires an explicit opt-in)', () => {
+    expect(resolvePublicFlag({})).toBe(false);
   });
 
-  it('treats a truthy PascalCase IsPublic as public', () => {
+  it('treats an explicit boolean true as public (PascalCase)', () => {
     expect(resolvePublicFlag({ IsPublic: true })).toBe(true);
+  });
+
+  it('treats an explicit boolean true as public (camelCase)', () => {
+    expect(resolvePublicFlag({ isPublic: true })).toBe(true);
   });
 
   it('treats an explicit false as private (PascalCase)', () => {
@@ -64,6 +68,22 @@ describe('resolvePublicFlag', () => {
 
   it('treats an explicit false as private (camelCase)', () => {
     expect(resolvePublicFlag({ isPublic: false })).toBe(false);
+  });
+
+  it('lets an explicit PascalCase false win over a stray camelCase true (fail closed)', () => {
+    expect(resolvePublicFlag({ IsPublic: false, isPublic: true })).toBe(false);
+  });
+
+  it('treats a non-boolean flag as private (string "false")', () => {
+    expect(resolvePublicFlag({ IsPublic: 'false' })).toBe(false);
+  });
+
+  it('treats a non-boolean flag as private (numeric 0)', () => {
+    expect(resolvePublicFlag({ IsPublic: 0 })).toBe(false);
+  });
+
+  it('treats a non-boolean flag as private (object)', () => {
+    expect(resolvePublicFlag({ IsPublic: {} })).toBe(false);
   });
 });
 
@@ -140,6 +160,34 @@ describe('PublicProfileService.getPublicProfile', () => {
   it('throws a MicroserviceError when the body is invalid JSON', async () => {
     fetchMock.mockResolvedValue(mockResponse(200, '{not json'));
     await expect(service.getPublicProfile(req, 'jane')).rejects.toBeInstanceOf(MicroserviceError);
+  });
+
+  it('throws a MicroserviceError when the body parses to null (not a JSON object)', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, 'null'));
+    await expect(service.getPublicProfile(req, 'jane')).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('throws a MicroserviceError when the body parses to a JSON array (not an object)', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, '[1,2,3]'));
+    await expect(service.getPublicProfile(req, 'jane')).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('throws a MicroserviceError when the body parses to a JSON primitive (not an object)', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, '42'));
+    await expect(service.getPublicProfile(req, 'jane')).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('normalizes an absent flag to isPublic false (fail closed) and preserves the payload', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, JSON.stringify({ basic: { Name: 'Jane' } })));
+    const result = await service.getPublicProfile(req, 'jane');
+    expect(result?.isPublic).toBe(false);
+    expect(result?.basic).toEqual({ Name: 'Jane' });
+  });
+
+  it('normalizes a non-boolean flag to isPublic false (fail closed)', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, JSON.stringify({ IsPublic: 'false', basic: { Name: 'Jane' } })));
+    const result = await service.getPublicProfile(req, 'jane');
+    expect(result?.isPublic).toBe(false);
   });
 
   it('maps a fetch timeout to a 504 MicroserviceError', async () => {

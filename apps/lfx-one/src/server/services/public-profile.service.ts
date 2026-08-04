@@ -17,12 +17,14 @@ export function getPublicProfilesBucketUrl(): string {
 }
 
 /**
- * Normalizes the artifact's public flag to a boolean: an absent flag means public
- * (published implies public); only an explicit `false` (IsPublic/isPublic) is private.
+ * Normalizes the artifact's public flag to a boolean. This is the sole privacy gate for an
+ * anonymous endpoint, so it fails closed: the payload is released only when the upstream flag
+ * (IsPublic/isPublic) is explicitly boolean `true`. A missing or non-boolean flag resolves to
+ * `false` — artifacts exist for private profiles too, so a dropped/malformed flag must not leak.
  */
 export function resolvePublicFlag(parsed: Record<string, unknown>): boolean {
   const raw = parsed['IsPublic'] ?? parsed['isPublic'];
-  return raw !== false;
+  return raw === true;
 }
 
 /**
@@ -131,9 +133,9 @@ export class PublicProfileService {
       });
     }
 
-    let parsed: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(rawBody) as Record<string, unknown>;
+      parsed = JSON.parse(rawBody);
     } catch (error: unknown) {
       // Log only the body length, never the raw body — it may hold private profile data.
       logger.warning(req, operation, 'Public profile artifact was invalid JSON', { err: error, body_length: rawBody.length, username });
@@ -143,6 +145,18 @@ export class PublicProfileService {
       });
     }
 
-    return { ...parsed, isPublic: resolvePublicFlag(parsed) } as PublicProfile;
+    // Valid JSON can still be the wrong shape (null / array / primitive). Reject anything that
+    // isn't a plain object rather than crashing on the flag lookup or spreading a non-object
+    // into a "public" payload. Log only the body length, never the raw body.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      logger.warning(req, operation, 'Public profile artifact was not a JSON object', { body_length: rawBody.length, username });
+      throw new MicroserviceError('Public profile fetch failed: unexpected response shape from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: PUBLIC_PROFILE_SERVICE_NAME,
+      });
+    }
+
+    const record = parsed as Record<string, unknown>;
+    return { ...record, isPublic: resolvePublicFlag(record) } as PublicProfile;
   }
 }
