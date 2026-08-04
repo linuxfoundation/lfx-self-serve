@@ -98,6 +98,11 @@ export class CommitteeMembersComponent implements OnInit {
   // Engagement rollup (LFXV2-1705, behind wg-engagement-metrics). Fetched once at the page level
   // (committee-view) and shared with the Overview summary; flag off = no engagement UI at all.
   public engagementEnabled = input<boolean>(false);
+  // canAccessEngagement() passed down from committee-view — same input Overview already has.
+  // Without this, the flag alone gated the Meetings/Engagement columns and window pills, so a
+  // roster member (or public-roster visitor) with no committee#auditor grant still saw that UI
+  // even though no fetch runs for them (Cursor Bugbot).
+  public engagementAccessible = input<boolean>(false);
   public engagement = input<CommitteeEngagementResponse | null>(null);
   public engagementLoading = input<boolean>(false);
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
@@ -184,7 +189,7 @@ export class CommitteeMembersComponent implements OnInit {
     if (this.committee()?.enable_voting) {
       count += 2;
     }
-    if (this.engagementEnabled()) {
+    if (this.engagementEnabled() && this.engagementAccessible()) {
       count += 2;
     }
     return count;

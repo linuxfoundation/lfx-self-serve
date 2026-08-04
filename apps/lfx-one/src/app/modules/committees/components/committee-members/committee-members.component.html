@@ -25,7 +25,7 @@
             </button>
           }
         </div>
-        @if (engagementEnabled()) {
+        @if (engagementEnabled() && engagementAccessible()) {
           <div class="flex flex-wrap items-center gap-3" data-testid="members-engagement-controls">
             @if (isMockEngagement()) {
               <lfx-tag value="Sample data" severity="warn" data-testid="members-engagement-mock-tag" />
@@ -120,7 +120,7 @@
                 <span class="text-sm font-inter text-gray-500">Voting Status</span>
               </th>
             }
-            @if (engagementEnabled()) {
+            @if (engagementEnabled() && engagementAccessible()) {
               <th>
                 <span class="text-sm font-inter text-gray-500">Meetings</span>
               </th>
@@ -170,7 +170,7 @@
                 <span class="text-sm font-inter text-gray-500">{{ member.voting?.status || 'None' }}</span>
               </td>
             }
-            @if (engagementEnabled()) {
+            @if (engagementEnabled() && engagementAccessible()) {
               @let engagementView = memberEngagementRows().get(member.uid);
               <td>
                 @if (engagementLoading()) {

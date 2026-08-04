@@ -885,8 +885,13 @@ export class CommitteeViewComponent {
         // linkedSignal holds its previous settled value through that fetch's window too, the same as
         // it already does for myRoleLoading().
         loading: this.myRoleLoading() || this.meetingCoordinatorLoading(),
+        // Not `this.myRole() !== null` — the server's `committee#auditor` gate (`server/helpers/
+        // committee-read-access.helper.ts:14-25`) deliberately excludes rank-and-file roster
+        // members (`[user, team#member] or writer or auditor from project or meeting_coordinator
+        // from project` has no plain-member leg); a roster member with none of the grants below
+        // would open the Overview card / fire the fetch and land on a permanent unavailable state
+        // after the expected 403 (Cursor Bugbot).
         eligible:
-          this.myRole() !== null ||
           this.canEdit() ||
           this.canReview() ||
           this.isCallerInAuditorList(this.committee()?.inherited_auditors) ||
@@ -927,7 +932,9 @@ export class CommitteeViewComponent {
           // previous committee during a navigation gap.
           committeeUid: this.committee()?.uid ?? null,
           projectUid: this.committee()?.project_uid ?? null,
-          needed: !(this.myRole() !== null || this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)),
+          // Same fix as canAccessEngagement's eligible above: a rank-and-file roster member on their
+          // own doesn't satisfy committee#auditor, so their myRole() alone can't skip this probe.
+          needed: !(this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)),
         }))
       ).pipe(
         distinctUntilChanged((a, b) => a.enabled === b.enabled && a.committeeUid === b.committeeUid && a.projectUid === b.projectUid && a.needed === b.needed),
