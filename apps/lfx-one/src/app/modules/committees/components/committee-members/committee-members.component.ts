@@ -3,9 +3,9 @@
 
 import { DatePipe, TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -55,7 +55,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, of, startWith, take, timer } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, of, startWith, take, takeUntil, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -238,6 +238,16 @@ export class CommitteeMembersComponent implements OnInit {
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.organizationOptions = this.initializeOrganizationOptions();
     this.filteredMembers = this.initializeFilteredMembers();
+
+    // Route-reused `/groups/:id` can bind a new committee while an approve/reject poll is in flight.
+    let previousCommitteeUid: string | null | undefined;
+    effect(() => {
+      const uid = this.committee()?.uid ?? null;
+      if (previousCommitteeUid !== undefined && uid !== previousCommitteeUid) {
+        this.processingApplicationUid.set(null);
+      }
+      previousCommitteeUid = uid;
+    });
   }
 
   public ngOnInit(): void {
@@ -334,6 +344,8 @@ export class CommitteeMembersComponent implements OnInit {
     const committee = this.committee();
     if (!committee?.uid || this.processingApplicationUid()) return;
 
+    const committeeUid = committee.uid;
+
     this.confirmationService.confirm({
       message: `Approve ${application.applicant_email}'s request to join this group?`,
       header: 'Approve Application',
@@ -345,14 +357,17 @@ export class CommitteeMembersComponent implements OnInit {
         if (this.processingApplicationUid()) return;
 
         this.processingApplicationUid.set(application.uid);
-        this.committeeService.approveApplication(committee.uid, application.uid).subscribe({
+        this.committeeService.approveApplication(committeeUid, application.uid).subscribe({
           next: () => {
+            if (this.committee()?.uid !== committeeUid) {
+              return;
+            }
             this.messageService.add({
               severity: 'success',
               summary: 'Application Approved',
               detail: `${application.applicant_email} has been added to the group.`,
             });
-            this.refreshAfterApplicationReview(application.uid);
+            this.refreshAfterApplicationReview(committeeUid, application.uid);
           },
           error: (err: HttpErrorResponse) => {
             this.processingApplicationUid.set(null);
@@ -371,6 +386,8 @@ export class CommitteeMembersComponent implements OnInit {
     const committee = this.committee();
     if (!committee?.uid || this.processingApplicationUid()) return;
 
+    const committeeUid = committee.uid;
+
     const dialogRef = this.dialogService.open(RejectApplicationDialogComponent, {
       header: 'Reject Application',
       width: '480px',
@@ -384,14 +401,17 @@ export class CommitteeMembersComponent implements OnInit {
       if (this.processingApplicationUid()) return;
 
       this.processingApplicationUid.set(application.uid);
-      this.committeeService.rejectApplication(committee.uid, application.uid, reviewerNotes || undefined).subscribe({
+      this.committeeService.rejectApplication(committeeUid, application.uid, reviewerNotes || undefined).subscribe({
         next: () => {
+          if (this.committee()?.uid !== committeeUid) {
+            return;
+          }
           this.messageService.add({
             severity: 'success',
             summary: 'Application Rejected',
             detail: `The request from ${application.applicant_email} has been rejected.`,
           });
-          this.refreshAfterApplicationReview(application.uid);
+          this.refreshAfterApplicationReview(committeeUid, application.uid);
         },
         error: (err: HttpErrorResponse) => {
           this.processingApplicationUid.set(null);
@@ -562,27 +582,35 @@ export class CommitteeMembersComponent implements OnInit {
    * Refreshes members/applications after approve/reject. The query index can lag the upstream
    * write, so poll until the application is no longer pending before giving up.
    */
-  private refreshAfterApplicationReview(applicationUid: string): void {
-    const committeeId = this.committee()?.uid;
-    this.refreshMembers();
+  private refreshAfterApplicationReview(committeeUid: string, applicationUid: string): void {
+    const isActiveReview = (): boolean => this.committee()?.uid === committeeUid;
+
+    const refreshIfActive = (): void => {
+      if (isActiveReview()) {
+        this.refreshMembers();
+      }
+    };
 
     const releaseReviewLock = (): void => {
-      if (this.processingApplicationUid() === applicationUid) {
+      if (isActiveReview() && this.processingApplicationUid() === applicationUid) {
         this.processingApplicationUid.set(null);
       }
     };
 
-    if (!committeeId) {
-      releaseReviewLock();
-      return;
-    }
+    refreshIfActive();
+
+    const committeeChanged$ = toObservable(this.committee).pipe(
+      filter((committee) => (committee?.uid ?? null) !== committeeUid),
+      take(1)
+    );
 
     let pollSucceeded = false;
 
     timer(400, 400)
       .pipe(
         take(6),
-        exhaustMap(() => this.committeeService.getCommitteeApplications(committeeId).pipe(catchError(() => of(null as CommitteeJoinApplication[] | null)))),
+        takeUntil(committeeChanged$),
+        exhaustMap(() => this.committeeService.getCommitteeApplications(committeeUid).pipe(catchError(() => of(null as CommitteeJoinApplication[] | null)))),
         filter((applications): applications is CommitteeJoinApplication[] => {
           if (applications === null) {
             return false;
@@ -595,13 +623,19 @@ export class CommitteeMembersComponent implements OnInit {
       )
       .subscribe({
         next: () => {
+          if (!isActiveReview()) {
+            return;
+          }
           pollSucceeded = true;
-          this.refreshMembers();
+          refreshIfActive();
           releaseReviewLock();
         },
         complete: () => {
-          if (!pollSucceeded && !this.destroyRef.destroyed) {
-            this.refreshMembers();
+          if (!isActiveReview() || this.destroyRef.destroyed) {
+            return;
+          }
+          if (!pollSucceeded) {
+            refreshIfActive();
           }
           releaseReviewLock();
         },
