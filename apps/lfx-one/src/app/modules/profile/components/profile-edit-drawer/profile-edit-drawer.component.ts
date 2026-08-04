@@ -205,21 +205,26 @@ export class ProfileEditDrawerComponent {
     this.saving.set(true);
     const formValue = this.profileForm.value;
 
-    // organization_domain is resolved server-side from the organization name on every save path,
-    // so the drawer only needs to send the selected organization here.
+    // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
+    // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
+    const metadataLoaded = this.combinedProfile()?.profile != null;
+    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
+
+    // organization_domain is resolved server-side from the organization name, so we only send the
+    // organization. Name/selects keep `|| undefined` (empty = unchanged, not clearable per product).
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,
-      job_title: formValue.job_title || undefined,
+      job_title: freeText(formValue.job_title),
       organization: formValue.organization || undefined,
       country: formValue.country || undefined,
       state_province: formValue.state_province || undefined,
-      city: formValue.city || undefined,
-      address: formValue.address || undefined,
-      postal_code: formValue.postal_code || undefined,
-      phone_number: formValue.phone_number || undefined,
+      city: freeText(formValue.city),
+      address: freeText(formValue.address),
+      postal_code: freeText(formValue.postal_code),
+      phone_number: freeText(formValue.phone_number),
       t_shirt_size: formValue.t_shirt_size || undefined,
-      bio: formValue.bio || undefined,
+      bio: freeText(formValue.bio),
     };
 
     const updateData: ProfileUpdateRequest = {
@@ -250,9 +255,9 @@ export class ProfileEditDrawerComponent {
             // Guard the browser-only APIs for SSR safety. This handler only runs on a user-initiated
             // save (browser), but the guard keeps the reference SSR-safe per .claude/rules/ssr-safety.md.
             if (isPlatformBrowser(this.platformId)) {
-              // Stamp with a timestamp so the host shell can discard a stale pending-save if this
-              // authorization is abandoned (see ProfileLayoutComponent.handleProfileAuthReturn TTL guard).
-              sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), form: this.profileForm.value }));
+              // Persist the mapped payload (not the raw form) so the submit-time clear-to-empty decision
+              // survives the redirect; the host replays it verbatim (stringify drops undefined keys).
+              sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), userMetadata }));
               window.location.href = error.error.authorize_url;
             }
             return;

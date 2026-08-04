@@ -258,8 +258,8 @@
               <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-projects-row-' + project.slug">
                 <td>
                   <div class="flex items-center gap-2">
-                    @if (project.noActivityYet) {
-                      <!-- No org-scoped row exists yet, so the project-detail page would 404 — render the name as plain text. -->
+                    @if (project.orgMetricsUnavailable) {
+                      <!-- No org-scoped row exists for this project, so the project-detail page would 404 — render the name as plain text. -->
                       <div class="flex items-center gap-2 text-left">
                         <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
                         <span class="text-sm font-medium text-gray-900">{{ project.name }}</span>
@@ -273,7 +273,7 @@
                         <span class="text-sm font-medium text-blue-600 hover:underline">{{ project.name }}</span>
                       </a>
                     }
-                    @if (project.noActivityYet) {
+                    @if (project.orgMetricsUnavailable) {
                       <span
                         class="inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
                         [attr.data-testid]="'org-projects-no-activity-' + project.slug"
@@ -305,7 +305,7 @@
                       @for (bar of project.technicalBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
-                      @if (project.technicalInfluence === 'non-lf' && !project.noActivityYet) {
+                      @if (project.technicalInfluence === 'non-lf' && !project.orgMetricsUnavailable) {
                         <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
                         <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                       }
@@ -319,7 +319,7 @@
                       @for (bar of project.ecosystemBars; track bar.x) {
                         <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" rx="1" [class]="bar.colorClass"></rect>
                       }
-                      @if (project.ecosystemInfluence === 'non-lf' && !project.noActivityYet) {
+                      @if (project.ecosystemInfluence === 'non-lf' && !project.orgMetricsUnavailable) {
                         <line x1="0.5" y1="15.5" x2="15.5" y2="0.5" stroke-width="3.5" stroke-linecap="round" class="stroke-white"></line>
                         <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke-width="1.5" stroke-linecap="round" class="stroke-gray-400"></line>
                       }
@@ -328,7 +328,7 @@
                   </span>
                 </td>
                 <td>
-                  @if (project.noActivityYet) {
+                  @if (project.orgMetricsUnavailable) {
                     <span class="text-sm text-gray-500" [attr.data-testid]="'org-projects-trend-' + project.slug">{{ metricUnavailableLabel }}</span>
                   } @else {
                     <div class="flex flex-col items-start gap-1.5">
@@ -342,7 +342,14 @@
                         tooltipPosition="top"
                         tooltipStyleClass="lfx-tooltip-trend"
                         [attr.data-testid]="'org-projects-trend-' + project.slug">
-                        <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
+                        @if (project.hasTrendData) {
+                          <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
+                        } @else {
+                          <!-- No monthly influence history: draw a flat baseline so the cell reads as "steady", not a broken empty chart. -->
+                          <span class="flex h-full w-full items-center" aria-hidden="true">
+                            <span class="w-full border-t border-dashed border-gray-300"></span>
+                          </span>
+                        }
                       </span>
                       @if (project.showTrendArrow) {
                         <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
@@ -360,7 +367,7 @@
                   }
                 </td>
                 <td>
-                  @if (project.noActivityYet) {
+                  @if (project.orgMetricsUnavailable) {
                     <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-projects-contributors-' + project.slug">{{
                       project.contributors.length
                     }}</span>
@@ -376,7 +383,7 @@
                   }
                 </td>
                 <td>
-                  @if (project.noActivityYet) {
+                  @if (project.orgMetricsUnavailable) {
                     <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-projects-participants-' + project.slug">{{
                       project.participants.length
                     }}</span>

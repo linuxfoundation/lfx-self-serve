@@ -306,6 +306,23 @@ export function rowsToCsv(rows: ReadonlyArray<ReadonlyArray<string | number>>): 
   return rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
 }
 
+/** Trigger a browser file download from a URL via `<a download>` (no new tab). No-op during SSR. */
+export function downloadFromUrl(url: string, filename?: string): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  if (filename) {
+    anchor.download = sanitizeFilename(filename);
+  }
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
+
 /**
  * Trigger a client-side CSV file download in the browser. No-op during SSR (no `document`).
  * Prepends a UTF-8 BOM so Excel detects the encoding.
