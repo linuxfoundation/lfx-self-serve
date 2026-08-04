@@ -106,7 +106,7 @@ SPDX-License-Identifier: MIT
                   size="small"
                   [text]="true"
                   [loading]="downloadingId() === agreement.id"
-                  (onClick)="onDownload(agreement.id)" />
+                  (onClick)="onDownload(agreement)" />
               } @else if (agreement.kind === 'ECLA') {
                 <span class="text-xs text-slate-400">Covered by Corporate CLA (CCLA)</span>
               } @else {

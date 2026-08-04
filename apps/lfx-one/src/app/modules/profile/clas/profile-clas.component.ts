@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, sign
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import type { MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
-import { isMyClasEmpty } from '@lfx-one/shared/utils';
+import { downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
@@ -22,8 +22,8 @@ import { MyClasService } from '@services/my-clas.service';
  * Read-only "My CLAs" Profile tab (Me lens). Renders the user's currently-valid signed CLAs
  * (ICLA + ECLA) from `/v4/my-clas` in a single table (Project / Type / Signed / Document) per
  * the approved M1 mockup — no status column, because the BFF filters to valid-only so every row
- * is valid. Agreements are resolved server-side from the session identity; ICLA PDFs open via
- * short-lived URLs.
+ * is valid. Agreements are resolved server-side from the session identity; ICLA PDFs download via
+ * short-lived URLs (no new tab).
  */
 @Component({
   selector: 'lfx-profile-clas',
@@ -72,34 +72,28 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Resolves the ICLA's short-lived PDF URL and opens it. A blank tab is opened
-   * synchronously on click (before the async request) so the browser attributes it to the
-   * user gesture and does not block the popup; its location is set once the URL resolves.
+   * Resolves the ICLA's short-lived PDF URL and triggers a file download (no new tab).
+   * Origin-tab spinner stays on while the presigned URL resolves; see #1228.
+   * Filename includes project/CLA-group name so multi-project downloads don't collide.
    */
-  protected onDownload(signatureId: string): void {
+  protected onDownload(agreement: MyClaAgreement): void {
     if (this.downloadingId()) return;
 
-    // Open the blank tab WITHOUT `noopener` so we retain the window handle to redirect once the
-    // URL resolves (`noopener` makes window.open return null). Sever the opener link manually for
-    // the same reverse-tabnabbing protection `noopener` would provide.
-    const tab = window.open('', '_blank');
-    if (tab) tab.opener = null;
-    this.downloadingId.set(signatureId);
+    this.downloadingId.set(agreement.id);
 
-    this.myClasService.getPdfUrl(signatureId).subscribe({
+    this.myClasService.getPdfUrl(agreement.id).subscribe({
       next: ({ url }) => {
         this.downloadingId.set(null);
-        if (tab) {
-          tab.location.href = url;
-        } else {
-          // Popup was blocked despite the synchronous open — fall back to a same-tab navigation.
-          window.location.href = url;
-        }
+        const label = agreement.projectName || agreement.claGroupName || 'cla';
+        downloadFromUrl(url, `${label}-signed.pdf`);
       },
       error: () => {
         this.downloadingId.set(null);
-        tab?.close();
-        this.messageService.add({ severity: 'error', summary: 'Download failed', detail: 'Could not open the signed document. Please try again.' });
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Download failed',
+          detail: 'Could not download the signed document. Please try again.',
+        });
       },
     });
   }

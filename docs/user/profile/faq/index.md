@@ -3,9 +3,9 @@ title: Profile FAQ
 description: Frequently asked questions about your LFX Self Serve profile.
 audience: [all]
 product_area: Profile
-tags: [profile, faq, email, password, affiliations]
+tags: [profile, faq, email, password, affiliations, cla, easycla]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-04
 intercom_collection: Profile
 ---
 
@@ -32,6 +32,22 @@ Developer settings (API token) are in the **Settings** tab of your Profile (`/pr
 ## My name is displaying incorrectly. How do I fix it?
 
 Go to **Profile** (`/profile`) and update your first and last name fields and save your changes.
+
+## Where do I find My CLAs?
+
+Go to **Profile** → **My CLAs** (`/profile/clas`), or open [app.lfx.dev](https://app.lfx.dev) and select **Profile**, then the **My CLAs** tab. For full detail, see [My CLAs](../my-clas/).
+
+## What is the difference between an ICLA and an ECLA?
+
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from My CLAs when available. An **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA) via the company's **Approved List**; My CLAs lists it with the company name and no individual PDF. See [My CLAs](../my-clas/).
+
+## Why don't my signed CLAs show up on My CLAs?
+
+My CLAs matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **My CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
+
+## Can I sign a CLA from the My CLAs tab?
+
+No. My CLAs is read-only and only shows agreements already on file. Signing happens outside this tab, and the signing process may evolve. See [My CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
 
 ## Who do I contact if I cannot access my account?
 
