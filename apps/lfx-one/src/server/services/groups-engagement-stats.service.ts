@@ -271,9 +271,14 @@ export class GroupsEngagementStatsService {
         // `.claude/rules/logging-patterns.md` reserves WARN for, and the only thing that
         // distinguishes this from the catch block's post-fetch-failure WARNs in production logs
         // (both produce the identical `{ activeMembers: null, coverage: { covered: 0, total } }`
-        // wire shape — see the doc comment above).
+        // wire shape — see the doc comment above). `resolved_v1_count`/`chunk_count` distinguish
+        // the two sub-causes on-call would otherwise have to guess between: 0 resolved ids means no
+        // visible uid mapped at all (an `lfx.lookup_v1_mapping` problem), while resolved ids > 0
+        // means uids mapped but the model has no rows for them yet (a dbt/sync problem).
         logger.warning(req, 'get_groups_engagement_stats', 'No visible committee is covered by the engagement model; returning null active_members', {
           committee_count: committeeUids.length,
+          resolved_v1_count: v1Ids.length,
+          chunk_count: chunks.length,
         });
       } else {
         // DEBUG, not WARNING: live validation showed nearly every real caller has at least one
