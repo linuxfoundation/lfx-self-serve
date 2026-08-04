@@ -74,6 +74,18 @@ describe('resolvePublicFlag', () => {
     expect(resolvePublicFlag({ IsPublic: false, isPublic: true })).toBe(false);
   });
 
+  it('fails closed on the reciprocal conflict (PascalCase true, camelCase false)', () => {
+    expect(resolvePublicFlag({ IsPublic: true, isPublic: false })).toBe(false);
+  });
+
+  it('fails closed when a present casing is null even if the other is true', () => {
+    expect(resolvePublicFlag({ IsPublic: null, isPublic: true })).toBe(false);
+  });
+
+  it('treats both casings explicitly true as public', () => {
+    expect(resolvePublicFlag({ IsPublic: true, isPublic: true })).toBe(true);
+  });
+
   it('treats a non-boolean flag as private (string "false")', () => {
     expect(resolvePublicFlag({ IsPublic: 'false' })).toBe(false);
   });
@@ -115,6 +127,14 @@ describe('PublicProfileService.getPublicProfile', () => {
 
   it('throws a 503 MicroserviceError when the bucket URL uses a non-http scheme, without fetching', async () => {
     process.env[BUCKET_ENV] = 'file:///etc';
+    await expect(service.getPublicProfile(req, 'jane')).rejects.toMatchObject({ statusCode: 503 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('throws a 503 MicroserviceError when the bucket URL has no host, without fetching', async () => {
+    // `https://` trims to `https:`; a combined-URL parse would treat the username as the host, so
+    // the base itself must be rejected rather than producing an outbound fetch.
+    process.env[BUCKET_ENV] = 'https://';
     await expect(service.getPublicProfile(req, 'jane')).rejects.toMatchObject({ statusCode: 503 });
     expect(fetchMock).not.toHaveBeenCalled();
   });

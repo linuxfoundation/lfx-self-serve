@@ -18,13 +18,16 @@ export function getPublicProfilesBucketUrl(): string {
 
 /**
  * Normalizes the artifact's public flag to a boolean. This is the sole privacy gate for an
- * anonymous endpoint, so it fails closed: the payload is released only when the upstream flag
- * (IsPublic/isPublic) is explicitly boolean `true`. A missing or non-boolean flag resolves to
- * `false` — artifacts exist for private profiles too, so a dropped/malformed flag must not leak.
+ * anonymous endpoint, so it fails closed: the payload is released only when at least one flag
+ * casing (IsPublic/isPublic) is present and every present casing is explicitly boolean `true`.
+ * A missing, non-boolean, or conflicting flag (e.g. `{ IsPublic: true, isPublic: false }`)
+ * resolves to `false` — artifacts exist for private profiles too, so anything but an unambiguous
+ * opt-in must not leak.
  */
 export function resolvePublicFlag(parsed: Record<string, unknown>): boolean {
-  const raw = parsed['IsPublic'] ?? parsed['isPublic'];
-  return raw === true;
+  const keys = ['IsPublic', 'isPublic'] as const;
+  const present = keys.filter((key) => Object.prototype.hasOwnProperty.call(parsed, key));
+  return present.length > 0 && present.every((key) => parsed[key] === true);
 }
 
 /**
@@ -51,13 +54,14 @@ export class PublicProfileService {
       });
     }
 
-    const url = `${bucketUrl}/${encodeURIComponent(username)}.json`;
-
-    // Validate the operator-supplied bucket URL is well-formed and http(s) before fetching —
+    // Validate the operator-supplied bucket *base* (not the combined key URL) before fetching —
     // guards a misconfigured bucket value (malformed URL / non-http scheme), not user SSRF.
+    // Parsing the base rather than the combined URL is what closes the empty-authority hole:
+    // a bucket set to just `https://` collapses to `https:`, which `new URL()` rejects here,
+    // whereas `new URL('https:/jane.json')` is lenient and would treat the username as the host.
     let parsedUrl: URL;
     try {
-      parsedUrl = new URL(url);
+      parsedUrl = new URL(bucketUrl);
     } catch {
       logger.warning(req, operation, `Public profiles bucket URL is malformed (${PUBLIC_PROFILES_BUCKET_URL_ENV})`, { bucket_url: bucketUrl, username });
       throw new MicroserviceError(`Public profile fetch failed: ${PUBLIC_PROFILES_BUCKET_URL_ENV} is malformed`, 503, 'PUBLIC_PROFILES_BUCKET_URL_INVALID', {
@@ -81,6 +85,10 @@ export class PublicProfileService {
       );
     }
 
+    // Build the object-key URL from the validated base. encodeURIComponent guards the key even
+    // though the username pattern above already excludes path/traversal characters.
+    const url = `${bucketUrl}/${encodeURIComponent(username)}.json`;
+
     logger.debug(req, operation, 'Fetching public profile artifact', { username });
 
     let upstream: Response;
@@ -97,10 +105,16 @@ export class PublicProfileService {
 
       const cause = (error as (Error & { cause?: { code?: string } }) | undefined)?.cause;
       const networkCode = cause?.code ?? 'UPSTREAM_UNREACHABLE';
-      const message = error instanceof Error ? error.message : String(error);
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
 
-      logger.warning(req, operation, 'Public profile fetch failed before response', { err: error, error_code: networkCode, username });
-      throw new MicroserviceError(`Public profile fetch failed: ${message}`, 502, networkCode, { operation, service: PUBLIC_PROFILE_SERVICE_NAME });
+      // Keep the network diagnostics (name + code) in the server log, but throw a stable public
+      // message/code: apiErrorHandler serializes MicroserviceError.message/.code into the response,
+      // so raw fetch diagnostics (ENOTFOUND, ECONNREFUSED, TLS errors) must not reach anonymous callers.
+      logger.warning(req, operation, 'Public profile fetch failed before response', { error_name: errorName, error_code: networkCode, username });
+      throw new MicroserviceError('Public profile fetch failed: upstream unreachable', 502, 'UPSTREAM_UNREACHABLE', {
+        operation,
+        service: PUBLIC_PROFILE_SERVICE_NAME,
+      });
     }
 
     // A missing artifact is the normal "no public profile" case — surface as not-found, not an error.
@@ -137,8 +151,10 @@ export class PublicProfileService {
     try {
       parsed = JSON.parse(rawBody);
     } catch (error: unknown) {
-      // Log only the body length, never the raw body — it may hold private profile data.
-      logger.warning(req, operation, 'Public profile artifact was invalid JSON', { err: error, body_length: rawBody.length, username });
+      // Log only the error name and body length, never the error object — Node's JSON.parse
+      // SyntaxError message embeds a snippet of the input, which may hold private profile data.
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      logger.warning(req, operation, 'Public profile artifact was invalid JSON', { error_name: errorName, body_length: rawBody.length, username });
       throw new MicroserviceError('Public profile fetch failed: invalid JSON response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: PUBLIC_PROFILE_SERVICE_NAME,

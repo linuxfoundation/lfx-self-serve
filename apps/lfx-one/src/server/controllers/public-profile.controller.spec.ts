@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { PublicProfile } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { NextFunction, Request, Response } from 'express';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 // Per-test-controllable service mock. The controller constructs `new PublicProfileService()`
 // as a field, so the mocked constructor must hand back this same object every time.
@@ -21,12 +22,10 @@ vi.mock('../services/logger.service', () => ({
 import { ResourceNotFoundError } from '../errors';
 import { PublicProfileController } from './public-profile.controller';
 
-const USERNAME = 'jane';
-
-function buildReqRes() {
-  const req = { params: { username: USERNAME }, path: `/public/api/profile/${USERNAME}`, log: {} } as any;
-  const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-  const next = vi.fn();
+function buildReqRes(username = 'jane'): { req: Request; res: Response & { json: Mock; status: Mock }; next: NextFunction & Mock } {
+  const req = { params: { username }, path: `/public/api/profile/${username}`, log: {} } as unknown as Request;
+  const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as unknown as Response & { json: Mock; status: Mock };
+  const next = vi.fn() as unknown as NextFunction & Mock;
   return { req, res, next };
 }
 
