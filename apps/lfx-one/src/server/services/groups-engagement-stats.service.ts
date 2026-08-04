@@ -159,7 +159,10 @@ export class GroupsEngagementStatsService {
    *   retained, so a synced committee should yield >=1 row). This is checked per-committee, not
    *   just "did any row come back at all" — a caller with 3 visible committees where only 1 is
    *   covered would otherwise report a plausible but incomplete count for the other 2's silent
-   *   absence, rather than degrading honestly.
+   *   absence, rather than degrading honestly. The first case (an unresolved v2 uid) is caught
+   *   immediately after the committee-id bridge runs, before any chunk query — a partial resolution
+   *   already guarantees this method's result, so there's no reason to pay for the Snowflake
+   *   round trips first.
    * - `0` (full coverage, none active): a real, computed zero — every visible committee resolved
    *   and is represented in the model, and nobody in them happens to be active this window.
    * - `null` (error): the count couldn't be computed at all (missing committee-set lookup, a
@@ -172,9 +175,15 @@ export class GroupsEngagementStatsService {
       if (committeeUids.length === 0) return 0;
 
       const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, committeeUids);
-      if (v2ToV1Map.size === 0) {
-        logger.warning(req, 'get_groups_engagement_stats', 'Could not resolve any visible committee v2 uid to a v1 id; returning null', {
+      // Any unresolved committee already guarantees `fullyCovered` is `false` below (an unresolved
+      // v2 uid has no v1 id to check coverage against, so `uncoveredCount` can never reach 0) — the
+      // Snowflake chunk-query pipeline's result would be discarded regardless, so a partial
+      // resolution short-circuits here rather than paying for chunked queries whose only possible
+      // outcome is the same `null` this returns immediately.
+      if (v2ToV1Map.size < committeeUids.length) {
+        logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committee v2 uids did not resolve to a v1 id; returning null', {
           committee_count: committeeUids.length,
+          resolved_v2_uid_count: v2ToV1Map.size,
         });
         return null;
       }

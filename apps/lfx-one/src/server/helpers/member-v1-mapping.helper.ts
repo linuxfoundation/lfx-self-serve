@@ -17,10 +17,19 @@ interface MemberV1MappingCacheEntry {
   v1Id: string | null;
 }
 
+/** Rejects a cached entry whose non-null `v1Id` isn't SFID-shaped — this is the same validation
+ * `parseMemberMappingResponse` applies to a fresh NATS response, applied again on the read path. A
+ * value written by an earlier, less-hardened version of this bridge (e.g. an unvalidated UUID from
+ * before the parser rejected poisoned mappings) could otherwise sit in Valkey as a false positive
+ * cache hit for the remainder of its `MEMBER_V1_MAPPING_TTL_SECONDS` (7-day) TTL, continuing to
+ * break the warehouse join. `getJson`'s `accept` contract treats a failed shape check as a miss, so
+ * failing this re-validation is enough to force the uid back through fresh NATS resolution — no
+ * separate invalidation logic needed. */
 function isMemberV1MappingCacheEntry(value: unknown): value is MemberV1MappingCacheEntry {
   if (!value || typeof value !== 'object') return false;
   const v1Id = (value as { v1Id?: unknown }).v1Id;
-  return v1Id === null || typeof v1Id === 'string';
+  if (v1Id === null) return true;
+  return typeof v1Id === 'string' && SALESFORCE_ID_PATTERN.test(v1Id);
 }
 
 /**
@@ -66,6 +75,21 @@ export function parseMemberMappingResponse(responseText: string): string | null 
 }
 
 /**
+ * Result of `resolveMemberV2UidsToV1Ids` — `resolved` alone can't tell a caller "every roster member
+ * is accounted for" from "some are still unknown," which matters because a caller like
+ * `committee-engagement.service.ts` needs to distinguish a member who is confirmed to have no v1
+ * mapping (safe to show as genuinely zero engagement) from one whose lookup timed out, was cut off
+ * by the wall-clock budget, or came back malformed (unknown — showing them as zero would be a false
+ * negative masquerading as real data during a transient NATS blip). `indeterminateUids` carries
+ * exactly that second set; a uid absent from both `resolved` and `indeterminateUids` is confirmed to
+ * have no v1 mapping.
+ */
+export interface MemberV1MappingResult {
+  resolved: Map<string, string>;
+  indeterminateUids: Set<string>;
+}
+
+/**
  * Resolves LFX v2 committee-member UUIDs to the v1 member SFID via the same
  * `lfx.lookup_v1_mapping` NATS bridge `committee-v1-mapping.helper.ts` uses for committees
  * (`committee_member.uid.<v2Uid>` key — see `parseMemberMappingResponse` for the response shape and
@@ -88,27 +112,37 @@ export function parseMemberMappingResponse(responseText: string): string | null 
  * indeterminate one (a timed-out request, a uid the wall-clock budget never got to, or a response
  * `parseMemberMappingResponse` rejected). Caching any of those would silently convert a transient or
  * fixable state into "this member has no mapping" for a full hour, for every consumer of that member
- * across every committee they're on.
+ * across every committee they're on. A cached entry is also re-validated against `SALESFORCE_ID_PATTERN`
+ * on read (see `isMemberV1MappingCacheEntry`), so a value written before this parser was hardened
+ * against poisoned/malformed responses can't keep serving as a false positive for its remaining TTL.
  *
  * The cache-check phase deliberately does NOT reuse `NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY`'s
  * chunking — that constant protects a remote NATS responder from a request burst, which doesn't
  * apply to a Valkey `GET` (a single multiplexed command over one already-open connection). All
- * cache reads fire in one unchunked `Promise.all` instead.
+ * cache reads fire in one unchunked `Promise.all` instead. Cache misses are collected into a `Set`
+ * during that fan-out (rather than appended to an array as each read settles) and then rebuilt into
+ * `uncached` in the caller's original roster order — the concurrent reads themselves complete in
+ * whatever order Valkey happens to answer them, and passing that completion-order list straight into
+ * `resolveV1MappingBatch` would make *which* members get cut off by the wall-clock budget
+ * nondeterministic across otherwise-identical requests.
  *
  * Cache read/write failures never throw or fail this call — `ValkeyService.getJson`/`setJson`
  * already degrade to `null`/`false` internally on any Valkey outage, so a fully-down cache just
  * means every uid falls through to NATS, still bounded by the NATS batch's own budget.
  *
- * Returns a `Map<v2Uid, v1Id>` containing only entries that resolved (via cache or NATS) — an
- * unmapped, unresolved, or budget-cut-off uid is simply absent, matching
- * `resolveCommitteeV2UidsToV1Ids`'s existing "map membership = did it resolve" contract.
+ * Returns `resolved` containing only entries that resolved (via cache or NATS), matching
+ * `resolveCommitteeV2UidsToV1Ids`'s existing "map membership = did it resolve" contract, plus
+ * `indeterminateUids` for the subset of unresolved uids whose status is genuinely unknown rather than
+ * confirmed-unmapped — see `MemberV1MappingResult`'s own doc for why that distinction matters to the
+ * caller.
  */
-export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: NatsService, memberUids: string[]): Promise<Map<string, string>> {
+export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: NatsService, memberUids: string[]): Promise<MemberV1MappingResult> {
   const uniqueUids = [...new Set(memberUids)];
   const result = new Map<string, string>();
-  if (uniqueUids.length === 0) return result;
+  const indeterminateUids = new Set<string>();
+  if (uniqueUids.length === 0) return { resolved: result, indeterminateUids };
 
-  const uncached: string[] = [];
+  const missUids = new Set<string>();
   let cacheHits = 0;
   let negativeCacheHits = 0;
   let cacheBypassedUnsafeUids = 0;
@@ -118,12 +152,12 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
       const key = buildMemberV1MappingCacheKey(uid);
       if (!key) {
         cacheBypassedUnsafeUids++;
-        uncached.push(uid);
+        missUids.add(uid);
         return;
       }
       const cached = await valkeyService.getJson<MemberV1MappingCacheEntry>(key, isMemberV1MappingCacheEntry);
       if (cached === null) {
-        uncached.push(uid);
+        missUids.add(uid);
         return;
       }
       if (cached.v1Id !== null) {
@@ -142,6 +176,11 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
     });
   }
 
+  // Rebuilt in `uniqueUids`' original (roster) order — not the completion order the cache-check
+  // fan-out above settled in — so which members the wall-clock budget below cuts off is
+  // deterministic across identical requests.
+  const uncached = uniqueUids.filter((uid) => missUids.has(uid));
+
   if (uncached.length === 0) {
     logger.debug(req, 'resolve_member_v1_mapping', 'Member v1-mapping resolution complete (cache-only, no NATS calls)', {
       requested_count: uniqueUids.length,
@@ -149,7 +188,7 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
       negative_cache_hits: negativeCacheHits,
       resolved_count: result.size,
     });
-    return result;
+    return { resolved: result, indeterminateUids };
   }
 
   const { resolved, confirmedUnresolved } = await resolveV1MappingBatch(req, natsService, uncached, {
@@ -162,7 +201,11 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
   await Promise.all(
     uncached.map(async (uid) => {
       const v1Id = resolved.get(uid);
-      if (v1Id) result.set(uid, v1Id);
+      if (v1Id) {
+        result.set(uid, v1Id);
+      } else if (!confirmedUnresolved.has(uid)) {
+        indeterminateUids.add(uid);
+      }
 
       // A `null` key (unsafe uid) bypasses the cache entirely — still resolved above via NATS, just
       // never persisted — matching `buildCommitteeCacheKey`'s existing fail-closed convention.
@@ -185,8 +228,8 @@ export async function resolveMemberV2UidsToV1Ids(req: Request, natsService: Nats
     nats_resolved_count: resolved.size,
     nats_confirmed_unresolved_count: confirmedUnresolved.size,
     resolved_count: result.size,
-    unresolved_count: uniqueUids.length - result.size,
+    indeterminate_count: indeterminateUids.size,
   });
 
-  return result;
+  return { resolved: result, indeterminateUids };
 }

@@ -314,18 +314,17 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBeNull();
     });
 
-    it('treats an unresolved committee uid as uncovered — null overall even when every RESOLVED committee has full row coverage', async () => {
-      // committee-1 resolves and is fully covered; committee-2 never resolves to a v1 id at all
-      // (never even queried). Coverage must be judged against the original visible set, not just
-      // the subset that happened to resolve.
+    it('treats an unresolved committee uid as uncovered — null overall, short-circuiting before any chunk query even runs', async () => {
+      // committee-1 resolves; committee-2 never resolves to a v1 id at all. A partial resolution
+      // already guarantees `fullyCovered` will be false (committee-2 can never gain a covered row),
+      // so this now short-circuits to null immediately rather than paying for a Snowflake round trip
+      // whose result is discarded regardless — see computeActiveMembers' early-return.
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1', 'committee-2']));
       resolveCommitteeV2UidsToV1Ids.mockResolvedValueOnce(new Map([['committee-1', 'v1-sfid-1']]));
-      execute.mockResolvedValueOnce({ rows: [activeMemberRow({ COMMITTEE_ID: 'v1-sfid-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 1 })] });
 
       const result = await service.getEngagementStats(buildReq());
 
-      const [, binds] = execute.mock.calls[0] as [string, string[]];
-      expect(binds).toEqual(['v1-sfid-1']); // only the resolved committee was ever queried
+      expect(execute).not.toHaveBeenCalled();
       expect(result.active_members).toBeNull();
     });
 

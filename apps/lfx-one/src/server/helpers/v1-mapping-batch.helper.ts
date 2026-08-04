@@ -75,7 +75,12 @@ export async function resolveV1MappingBatch(
   options: V1MappingBatchOptions
 ): Promise<V1MappingBatchResult> {
   const { buildLookupKey, parseResponse, logOperation, entityLabel } = options;
-  const concurrency = options.concurrency ?? NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY;
+  // Floored at 1: a caller-supplied `concurrency` of 0 or negative would make `i += concurrency`
+  // never advance, so the loop below would slice an empty batch every iteration and busy-spin on
+  // the microtask queue for the full `budgetMs` window instead of failing or hanging predictably.
+  // No current caller passes a dynamic value, but the option is documented as overridable, so this
+  // guards a future one.
+  const concurrency = Math.max(1, options.concurrency ?? NATS_CONFIG.LOOKUP_BATCH_CONCURRENCY);
   const budgetMs = options.budgetMs ?? NATS_CONFIG.LOOKUP_BATCH_BUDGET_MS;
 
   const codec = natsService.getCodec();
@@ -124,9 +129,15 @@ export async function resolveV1MappingBatch(
         // response format is wrong) or a value `parseResponse` itself rejected as unusable-for-now
         // (e.g. the member helper's transient/poisoned-record screen). Either way it's not proof no
         // mapping exists, so it must not be cached as one.
+        //
+        // Logs shape metadata only, never the raw `responseText` — for the committee-member caller,
+        // a rejected value here can be a real person's legacy Contact SFID or LFID (the "poisoned"
+        // pre-backfill record id this parser exists to reject), and this logger's `response` field
+        // isn't redacted.
         logger.warning(req, logOperation, 'Unexpected NATS response format', {
           v2_uid: v2Uid,
-          response: responseText,
+          response_length: responseText.length,
+          segment_count: responseText.split(':').length,
         });
         return null;
       }

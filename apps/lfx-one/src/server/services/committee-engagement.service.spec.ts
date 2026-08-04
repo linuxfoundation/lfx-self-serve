@@ -28,10 +28,14 @@ const {
   // Defaults to a 1:1 v2-uid -> "warehouse-<uid>" mapping so existing 'committee-1'-based tests
   // don't need per-test setup; tests exercising an unresolved uid override this explicitly.
   resolveCommitteeV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`]))),
-  // Defaults to an identity mapping (v2 uid -> itself) so every existing live-mode test — written
-  // when the member join compared `member.uid` directly against `row.MEMBER_USER_ID` — keeps
-  // passing unchanged; tests covering the real member-mapping bridge override this explicitly.
-  resolveMemberV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, uid]))),
+  // Defaults to an identity mapping (v2 uid -> itself, no indeterminate uids) so every existing
+  // live-mode test — written when the member join compared `member.uid` directly against
+  // `row.MEMBER_USER_ID` — keeps passing unchanged; tests covering the real member-mapping bridge
+  // (including indeterminate resolution) override this explicitly.
+  resolveMemberV2UidsToV1Ids: vi.fn(async (_req: unknown, _nats: unknown, uids: string[]) => ({
+    resolved: new Map(uids.map((uid) => [uid, uid])),
+    indeterminateUids: new Set(),
+  })),
   warning: vi.fn(),
   info: vi.fn(),
   debug: vi.fn(),
@@ -93,8 +97,16 @@ import { CommitteeEngagementService } from './committee-engagement.service';
 const req = {} as unknown as Request;
 const ENGAGEMENT_BACKEND_KEY = 'ENGAGEMENT_BACKEND';
 const NODE_ENV_KEY = 'NODE_ENV';
+// `committeeEngagementTable()` (real, unmocked — only its `DEFAULT_LFX_ONE_PLATINUM_SCHEMA` constant
+// is stubbed above) reads this env var at call time and falls back to the mocked default only when
+// it's unset. Left alone, a value inherited from the developer's shell or a loaded `.env` file would
+// silently override the mocked default and desync the SQL-content assertions below from what's
+// actually being tested — deleted in the shared beforeEach and restored in afterAll, mirroring the
+// ENGAGEMENT_BACKEND/NODE_ENV isolation already done for the same reason.
+const PLATINUM_SCHEMA_KEY = 'LFX_ONE_PLATINUM_SCHEMA';
 const originalEngagementBackend = process.env[ENGAGEMENT_BACKEND_KEY];
 const originalNodeEnv = process.env[NODE_ENV_KEY];
+const originalPlatinumSchema = process.env[PLATINUM_SCHEMA_KEY];
 
 function member(
   uid: string,
@@ -132,13 +144,19 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
     resolveCommitteeV2UidsToV1Ids
       .mockReset()
       .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, `warehouse-${uid}`])));
-    resolveMemberV2UidsToV1Ids.mockReset().mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => new Map(uids.map((uid) => [uid, uid])));
+    resolveMemberV2UidsToV1Ids
+      .mockReset()
+      .mockImplementation(async (_req: unknown, _nats: unknown, uids: string[]) => ({
+        resolved: new Map(uids.map((uid) => [uid, uid])),
+        indeterminateUids: new Set(),
+      }));
     warning.mockReset();
     info.mockReset();
     debug.mockReset();
     buildCommitteeCacheKey.mockReset().mockReturnValue(null);
     getJson.mockReset();
     setJson.mockReset();
+    delete process.env[PLATINUM_SCHEMA_KEY];
     service = new CommitteeEngagementService();
   });
 
@@ -504,12 +522,13 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       // scenario the bridge exists to fix. Real (nonzero) counts prove the join is live, not just
       // "matched a zero-count row."
       getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('m2')]);
-      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce(
-        new Map([
+      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce({
+        resolved: new Map([
           ['m1', '0034100000dh2VLAAY'],
           ['m2', 'lfdVxdHAYKNNhX67DT'],
-        ])
-      );
+        ]),
+        indeterminateUids: new Set(),
+      });
       execute.mockResolvedValueOnce({
         rows: [
           row({ MEMBER_USER_ID: '0034100000dh2VLAAY', INVITED_COUNT_30D: 4, ATTENDED_COUNT_30D: 3 }),
@@ -528,24 +547,46 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(warning).not.toHaveBeenCalledWith(req, 'get_committee_engagement', expect.stringContaining('join key mismatch'), expect.anything());
     });
 
-    it('keeps an unmapped member at zero counts under normal tenure rules, without corrupting usableData/data_available for the rest of the roster', async () => {
+    it('keeps a confirmed-unmapped member at zero counts under normal tenure rules, without corrupting usableData/data_available for the rest of the roster', async () => {
       // Partial member-mapping resolution: one roster member resolves to a real v1 id (and matches
-      // a row), the other's id never resolves (budget cutoff, NATS failure, or genuinely no mapping)
-      // — it must look identical to "resolved but no matching row," not break the whole response.
+      // a row); the other is confirmed to have no v1 mapping (absent from both `resolved` and
+      // `indeterminateUids`) — a real "not on this legacy platform" fact, which must look identical
+      // to "resolved but no matching row," not break the whole response. Contrast with the
+      // indeterminate case below, which degrades the whole committee instead.
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('mapped'), member('unmapped', { created_at: recentJoin })]);
-      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce(new Map([['mapped', 'v1-mapped']]));
+      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce({ resolved: new Map([['mapped', 'v1-mapped']]), indeterminateUids: new Set() });
       execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'v1-mapped', INVITED_COUNT_30D: 4, ATTENDED_COUNT_30D: 4 })] });
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.data_available).toBe(true);
       expect(result.members.find((m) => m.uid === 'mapped')).toMatchObject({ invited: 4, attended: 4, classification: 'High' });
-      // Unmapped member: no row to join, but the committee DOES have usable data (one real match),
-      // so the roster created_at tenure-grace fallback still applies — same as an individually
-      // unmatched member on an otherwise-working join.
+      // Confirmed-unmapped member: no row to join, but the committee DOES have usable data (one real
+      // match), so the roster created_at tenure-grace fallback still applies — same as an
+      // individually unmatched member on an otherwise-working join.
       expect(result.members.find((m) => m.uid === 'unmapped')).toMatchObject({ invited: 0, attended: 0, classification: 'High' });
       expect(result.summary.active_count).toBe(2);
+    });
+
+    it('degrades the whole committee to data_available:false when any roster member has an INDETERMINATE (not confirmed-unmapped) v1 resolution', async () => {
+      // A NATS timeout, budget cutoff, or malformed response leaves a member's v1 mapping genuinely
+      // unknown — not a confirmed "no mapping" fact. Showing it as 0/0 Inactive alongside the rest of
+      // the roster's real counts would be indistinguishable from the confirmed-unmapped case above,
+      // silently passing off an unknown as a known zero. The user-approved fix: any indeterminate
+      // uid degrades the whole committee, even though one member (`mapped`) resolved and matched a
+      // real row.
+      getCommitteeMembers.mockResolvedValueOnce([member('mapped'), member('timed-out')]);
+      resolveMemberV2UidsToV1Ids.mockResolvedValueOnce({ resolved: new Map([['mapped', 'v1-mapped']]), indeterminateUids: new Set(['timed-out']) });
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'v1-mapped', INVITED_COUNT_30D: 4, ATTENDED_COUNT_30D: 4 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.data_available).toBe(false);
+      // Every member still gets zero-counts/normal-tenure treatment (no tenure-grace `High`, since
+      // usableData is false) — the degrade only changes the reported `data_available` flag, it
+      // doesn't hide the roster.
+      expect(result.members).toHaveLength(2);
     });
 
     it('skips the member-mapping bridge entirely when the query returns zero rows — nothing to join against, so no need to pay the NATS cost', async () => {
@@ -720,4 +761,6 @@ afterAll(() => {
   else process.env[ENGAGEMENT_BACKEND_KEY] = originalEngagementBackend;
   if (originalNodeEnv === undefined) delete process.env[NODE_ENV_KEY];
   else process.env[NODE_ENV_KEY] = originalNodeEnv;
+  if (originalPlatinumSchema === undefined) delete process.env[PLATINUM_SCHEMA_KEY];
+  else process.env[PLATINUM_SCHEMA_KEY] = originalPlatinumSchema;
 });

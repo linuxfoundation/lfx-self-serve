@@ -108,7 +108,20 @@ describe('resolveV1MappingBatch', () => {
 
     expect(result.resolved.has('a')).toBe(false);
     expect(result.confirmedUnresolved.has('a')).toBe(false);
-    expect(warning).toHaveBeenCalledWith(req, 'resolve_test_mapping', 'Unexpected NATS response format', expect.objectContaining({ v2_uid: 'a' }));
+    // Shape metadata only — never the raw response, which for the committee-member caller can be a
+    // real person's legacy Contact SFID or LFID (cursor.com review, PR #1293).
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'resolve_test_mapping',
+      'Unexpected NATS response format',
+      expect.objectContaining({ v2_uid: 'a', response_length: 'no-colon-here'.length, segment_count: 1 })
+    );
+    expect(warning).not.toHaveBeenCalledWith(
+      req,
+      'resolve_test_mapping',
+      'Unexpected NATS response format',
+      expect.objectContaining({ response: expect.anything() })
+    );
   });
 
   it('leaves an id indeterminate when the response has a blank second segment', async () => {

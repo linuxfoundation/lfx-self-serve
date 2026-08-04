@@ -109,7 +109,8 @@ describe('resolveMemberV2UidsToV1Ids', () => {
 
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['a']);
 
-    expect(result.get('a')).toBe('v1-a');
+    expect(result.resolved.get('a')).toBe('v1-a');
+    expect(result.indeterminateUids.size).toBe(0);
     expect(resolveV1MappingBatch).not.toHaveBeenCalled();
   });
 
@@ -119,37 +120,43 @@ describe('resolveMemberV2UidsToV1Ids', () => {
 
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['a']);
 
-    expect(result.get('a')).toBe('v1-a');
+    expect(result.resolved.get('a')).toBe('v1-a');
     expect(setJson).toHaveBeenCalledWith('cache:a', { v1Id: 'v1-a' }, 604800);
   });
 
-  it('skips NATS and leaves the uid unresolved on a confirmed-negative cache hit', async () => {
+  it('skips NATS and leaves the uid unresolved (and NOT indeterminate) on a confirmed-negative cache hit', async () => {
     getJson.mockResolvedValueOnce({ v1Id: null });
 
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['a']);
 
-    expect(result.has('a')).toBe(false);
+    expect(result.resolved.has('a')).toBe(false);
+    expect(result.indeterminateUids.has('a')).toBe(false);
     expect(resolveV1MappingBatch).not.toHaveBeenCalled();
   });
 
-  it('negative-caches a confirmed-unresolved NATS result at the short degrade TTL', async () => {
-    getJson.mockResolvedValueOnce(null);
-    resolveV1MappingBatch.mockResolvedValueOnce({ resolved: new Map(), confirmedUnresolved: new Set(['a']) });
+  it('treats a cached value that fails SALESFORCE_ID_PATTERN as a cache miss and re-resolves via NATS', async () => {
+    // A value written by an earlier, less-hardened version of this bridge (e.g. an unvalidated UUID
+    // from before parseMemberMappingResponse rejected poisoned mappings) must not keep serving as a
+    // false positive for the remainder of its 7-day TTL — isMemberV1MappingCacheEntry's shape check
+    // rejects it, which getJson's own contract already treats as a miss.
+    getJson.mockResolvedValueOnce(null); // simulates getJson's accept-callback rejecting the poisoned entry
+    resolveV1MappingBatch.mockResolvedValueOnce({ resolved: new Map([['a', 'fresh-valid-sfid']]), confirmedUnresolved: new Set() });
 
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['a']);
 
-    expect(result.has('a')).toBe(false);
-    expect(setJson).toHaveBeenCalledWith('cache:a', { v1Id: null }, 3600);
+    expect(result.resolved.get('a')).toBe('fresh-valid-sfid');
+    expect(resolveV1MappingBatch).toHaveBeenCalledWith(req, natsService, ['a'], expect.anything());
   });
 
-  it('does NOT write any cache entry for an indeterminate NATS outcome (neither resolved nor confirmed-unresolved)', async () => {
+  it('does NOT write any cache entry for an indeterminate NATS outcome, and reports it in indeterminateUids (neither resolved nor confirmed-unresolved)', async () => {
     getJson.mockResolvedValueOnce(null);
     // Simulates a thrown/timed-out lookup, or a rejected parse: absent from both result buckets.
     resolveV1MappingBatch.mockResolvedValueOnce({ resolved: new Map(), confirmedUnresolved: new Set() });
 
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['a']);
 
-    expect(result.has('a')).toBe(false);
+    expect(result.resolved.has('a')).toBe(false);
+    expect(result.indeterminateUids.has('a')).toBe(true);
     expect(setJson).not.toHaveBeenCalled();
   });
 
@@ -163,9 +170,9 @@ describe('resolveMemberV2UidsToV1Ids', () => {
 
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['cached-positive', 'cached-negative', 'needs-nats']);
 
-    expect(result.get('cached-positive')).toBe('v1-cached');
-    expect(result.has('cached-negative')).toBe(false);
-    expect(result.get('needs-nats')).toBe('v1-fresh');
+    expect(result.resolved.get('cached-positive')).toBe('v1-cached');
+    expect(result.resolved.has('cached-negative')).toBe(false);
+    expect(result.resolved.get('needs-nats')).toBe('v1-fresh');
     // Only the genuine cache miss should ever reach the NATS phase.
     expect(resolveV1MappingBatch).toHaveBeenCalledWith(
       req,
@@ -180,10 +187,29 @@ describe('resolveMemberV2UidsToV1Ids', () => {
     );
   });
 
+  it('rebuilds the NATS-bound uid list in original roster order, not cache-check completion order', async () => {
+    // 'slow' resolves its cache check after 'fast' and 'mid' despite being requested first — the
+    // deterministic-order fix collects misses into a Set during the concurrent cache-check fan-out
+    // and rebuilds `uncached` by filtering the ORIGINAL uniqueUids array, so which uids the NATS
+    // batch's wall-clock budget would cut off first stays reproducible across identical requests
+    // regardless of Promise-settlement order.
+    getJson.mockImplementation(async (key: string) => {
+      if (key === 'cache:slow') return new Promise((resolve) => setTimeout(() => resolve(null), 15));
+      if (key === 'cache:mid') return new Promise((resolve) => setTimeout(() => resolve(null), 5));
+      return null; // cache:fast resolves on the current microtask
+    });
+    resolveV1MappingBatch.mockResolvedValueOnce({ resolved: new Map(), confirmedUnresolved: new Set() });
+
+    await resolveMemberV2UidsToV1Ids(req, natsService, ['slow', 'mid', 'fast']);
+
+    expect(resolveV1MappingBatch).toHaveBeenCalledWith(req, natsService, ['slow', 'mid', 'fast'], expect.anything());
+  });
+
   it('returns an empty map for an empty input list, calling neither the cache nor NATS', async () => {
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, []);
 
-    expect(result.size).toBe(0);
+    expect(result.resolved.size).toBe(0);
+    expect(result.indeterminateUids.size).toBe(0);
     expect(getJson).not.toHaveBeenCalled();
     expect(resolveV1MappingBatch).not.toHaveBeenCalled();
   });
@@ -196,7 +222,7 @@ describe('resolveMemberV2UidsToV1Ids', () => {
 
     expect(getJson).toHaveBeenCalledTimes(1);
     expect(resolveV1MappingBatch).toHaveBeenCalledWith(req, natsService, ['a'], expect.objectContaining({ logOperation: expect.any(String) }));
-    expect(result.get('a')).toBe('v1-a');
+    expect(result.resolved.get('a')).toBe('v1-a');
   });
 
   it('bypasses the cache entirely (still attempts NATS, never writes back) for a uid that fails the cache-key safety check, and warns once', async () => {
@@ -206,7 +232,7 @@ describe('resolveMemberV2UidsToV1Ids', () => {
     const result = await resolveMemberV2UidsToV1Ids(req, natsService, ['unsafe uid']);
 
     expect(getJson).not.toHaveBeenCalled();
-    expect(result.get('unsafe uid')).toBe('v1-a');
+    expect(result.resolved.get('unsafe uid')).toBe('v1-a');
     expect(setJson).not.toHaveBeenCalled();
     expect(warning).toHaveBeenCalledWith(
       req,
@@ -226,7 +252,14 @@ describe('resolveMemberV2UidsToV1Ids', () => {
       req,
       'resolve_member_v1_mapping',
       'Member v1-mapping resolution complete',
-      expect.objectContaining({ requested_count: 3, cache_hits: 1, nats_resolved_count: 1, nats_confirmed_unresolved_count: 1, resolved_count: 2 })
+      expect.objectContaining({
+        requested_count: 3,
+        cache_hits: 1,
+        nats_resolved_count: 1,
+        nats_confirmed_unresolved_count: 1,
+        resolved_count: 2,
+        indeterminate_count: 0,
+      })
     );
   });
 

@@ -23,7 +23,7 @@ import type { Request } from 'express';
 import { isEngagementMockBackend } from '../helpers/committee-engagement-backend.helper';
 import { generateMockEngagementRows } from '../helpers/committee-engagement-mock.helper';
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { resolveMemberV2UidsToV1Ids } from '../helpers/member-v1-mapping.helper';
+import { resolveMemberV2UidsToV1Ids, type MemberV1MappingResult } from '../helpers/member-v1-mapping.helper';
 import { committeeEngagementTable } from '../helpers/snowflake-schema.helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -62,9 +62,10 @@ export class CommitteeEngagementService {
    * Mock mode fetches the roster live (so mock rows can anchor to real uids) and generates rows
    * synchronously in-memory — no Snowflake call, no cache, nothing to await beyond the roster read.
    * `generateMockEngagementRows` already keys every row on the real `CommitteeMember.uid`, so mock
-   * mode passes `buildResponse` an identity map (`uid -> uid`) rather than calling the real NATS/cache
-   * bridge — `buildResponse` itself doesn't need to know it's mock mode, it just always joins through
-   * whichever `memberV1Map` it's given.
+   * mode passes `buildResponse` an identity-map `MemberV1MappingResult` (`resolved: uid -> uid`,
+   * `indeterminateUids` empty) rather than calling the real NATS/cache bridge — `buildResponse`
+   * itself doesn't need to know it's mock mode, it just always joins through whichever
+   * `memberMapping` it's given.
    *
    * Live mode races the roster and Snowflake reads via `Promise.all` (`queryEngagementRows` owns its
    * own caching and missing-object degrade independently of this method) — both promises are handed
@@ -93,8 +94,11 @@ export class CommitteeEngagementService {
         window,
         roster_size: members.length,
       });
-      const identityMemberV1Map = new Map(members.map((member) => [member.uid, member.uid]));
-      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock', identityMemberV1Map);
+      const identityMemberMapping: MemberV1MappingResult = {
+        resolved: new Map(members.map((member) => [member.uid, member.uid])),
+        indeterminateUids: new Set(),
+      };
+      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock', identityMemberMapping);
     }
 
     const [members, queryResult] = await Promise.all([
@@ -102,16 +106,16 @@ export class CommitteeEngagementService {
       this.queryEngagementRows(req, committeeUid),
     ]);
 
-    const memberV1Map =
+    const memberMapping: MemberV1MappingResult =
       queryResult.rows.length > 0
         ? await resolveMemberV2UidsToV1Ids(
             req,
             this.natsService,
             members.map((member) => member.uid)
           )
-        : new Map<string, string>();
+        : { resolved: new Map(), indeterminateUids: new Set() };
 
-    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live', memberV1Map);
+    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live', memberMapping);
   }
 
   /**
@@ -211,7 +215,7 @@ export class CommitteeEngagementService {
   }
 
   /**
-   * Joins on `MEMBER_USER_ID` = the roster member's *resolved v1 id* (`memberV1Map.get(member.uid)`,
+   * Joins on `MEMBER_USER_ID` = the roster member's *resolved v1 id* (`memberMapping.resolved.get(member.uid)`,
    * LFXV2-1705's member-ID bridge — see this class's and `member-v1-mapping.helper.ts`'s doc
    * comments), not `CommitteeMember.uid` directly: the finalized dbt model's documented grain
    * (`committee_id, member_user_id` — see `committee-engagement.internal.interface.ts`) is native to
@@ -240,19 +244,31 @@ export class CommitteeEngagementService {
    * let alone the whole roster — tenure-grace `High` on literal 0/0 counts across every member
    * would contradict the honest "no usable join for this committee" state rather than degrade to
    * `Inactive`. For the same reason, the response's own `data_available` field reports
-   * `usableData` (`dataAvailable && anyRowMatched`), not the raw query-level `dataAvailable` — a
-   * total join-key mismatch degrades the same way a genuinely empty read does, from the caller's
-   * point of view, rather than reporting `true` alongside a fully zeroed/`Inactive` roster.
+   * `usableData` (`dataAvailable && anyRowMatched && memberMapping.indeterminateUids.size === 0`),
+   * not the raw query-level `dataAvailable` — a total join-key mismatch degrades the same way a
+   * genuinely empty read does, from the caller's point of view, rather than reporting `true`
+   * alongside a fully zeroed/`Inactive` roster.
+   *
+   * The `indeterminateUids.size === 0` conjunct exists because a member whose v1 id resolution is
+   * genuinely unknown (a NATS timeout, a wall-clock-budget cutoff, or a malformed response —
+   * `member-v1-mapping.helper.ts`'s `indeterminateUids`) is not the same as a member confirmed to
+   * have no v1 mapping: the latter is a real "zero engagement, not on this legacy platform" fact,
+   * safe to show as 0/0 Inactive, while the former is an unknown that would otherwise silently
+   * render as an identical-looking 0/0 Inactive — a false negative indistinguishable from the
+   * genuine case in the response body. Rather than publish that misleading partial result, one or
+   * more indeterminate members degrades the whole committee's `data_available` to `false`, the
+   * same honest signal already used for a total join-key mismatch or an empty read.
    *
    * `MEMBER_USER_ID` is warehouse-native v1-space (a legacy LFID/Salesforce-SFID), not
-   * `CommitteeMember.uid` directly — `memberV1Map` (built by the caller via
+   * `CommitteeMember.uid` directly — `memberMapping.resolved` (built by the caller via
    * `resolveMemberV2UidsToV1Ids`, or an identity map in mock mode where rows are already keyed on
    * the real uid) resolves each roster member's v2 uid to that v1 id before the lookup below. A
-   * member whose id never resolved (no mapping, a NATS failure, or the lookup's wall-clock budget
-   * cutting it off) is indistinguishable here from one who resolved but had no matching warehouse
-   * row — both simply produce no `row`, and fall through the existing zero-counts/tenure-grace
-   * path unchanged. TODO(LFXV2-2973): this member-ID bridge is temporary — remove once the model
-   * carries v2 keys directly (LFXV2-2968).
+   * member confirmed to have no v1 mapping is indistinguishable here from one who resolved but had
+   * no matching warehouse row — both simply produce no `row`, and fall through the existing
+   * zero-counts/tenure-grace path unchanged; a member whose resolution is indeterminate instead
+   * degrades the whole committee via `usableData` above, rather than silently joining as "no row".
+   * TODO(LFXV2-2973): this member-ID bridge is temporary — remove once the model carries v2 keys
+   * directly (LFXV2-2968).
    */
   private buildResponse(
     req: Request,
@@ -261,7 +277,7 @@ export class CommitteeEngagementService {
     queryResult: CommitteeEngagementQueryResult,
     window: CommitteeEngagementWindow,
     dataSource: CommitteeEngagementDataSource,
-    memberV1Map: Map<string, string>
+    memberMapping: MemberV1MappingResult
   ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
@@ -286,10 +302,10 @@ export class CommitteeEngagementService {
     // committee whose warehouse rows exist but don't join to this roster reports honestly as
     // `data_available: false` rather than `true` with every member falsely zeroed/graced.
     const anyRowMatched = members.some((member) => {
-      const v1MemberId = memberV1Map.get(member.uid);
+      const v1MemberId = memberMapping.resolved.get(member.uid);
       return v1MemberId ? rowsByUid.has(v1MemberId) : false;
     });
-    const usableData = dataAvailable && anyRowMatched;
+    const usableData = dataAvailable && anyRowMatched && memberMapping.indeterminateUids.size === 0;
 
     const windowStart = this.windowStartDate(window);
 
@@ -300,7 +316,7 @@ export class CommitteeEngagementService {
     let matchedCount = 0;
 
     const memberEngagements = members.map((member) => {
-      const v1MemberId = memberV1Map.get(member.uid);
+      const v1MemberId = memberMapping.resolved.get(member.uid);
       const row = v1MemberId ? rowsByUid.get(v1MemberId) : undefined;
       if (row) matchedCount++;
 
