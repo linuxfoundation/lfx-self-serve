@@ -95,7 +95,8 @@ export class PublicProfilePageComponent {
               return profile;
             }),
             catchError((err) => {
-              if ([400, 404].includes(err?.status)) {
+              const status = err?.status;
+              if (typeof status === 'number' && [400, 404].includes(status)) {
                 this.router.navigate(['/u/not-found']);
               } else {
                 this.error.set(true);
