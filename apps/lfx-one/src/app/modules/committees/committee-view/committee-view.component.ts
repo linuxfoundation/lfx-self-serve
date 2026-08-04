@@ -369,6 +369,16 @@ export class CommitteeViewComponent {
   }
 
   public refreshCommittee(): void {
+    // Set synchronously here, not only inside initializeCommittee's async switchMap below (which
+    // still sets it too, on the actual refetch) -- closes a race where refreshMembers() bumps
+    // membersRefresh() (read by initEngagement's engagementKey) in the same synchronous call, but
+    // that pipeline and this one are two independently-scheduled toObservable-driven effects with no
+    // ordering guarantee between them. Without this, engagementKey could re-evaluate and fire a real
+    // engagement fetch before myRoleLoading() picked up committeeRefreshing()=true, wasting a request
+    // that then gets cancelled via EMPTY once roleLoading does catch up -- without engagementLoading
+    // ever clearing, leaving skeletons over still-valid data for the whole refresh window (Cursor
+    // Bugbot).
+    this.committeeRefreshing.set(true);
     this.refresh.update((v) => v + 1);
   }
 
