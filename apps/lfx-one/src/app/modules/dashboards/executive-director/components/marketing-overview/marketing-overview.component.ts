@@ -241,11 +241,9 @@ export class MarketingOverviewComponent {
   });
   protected readonly revenueImpactData = computed<RevenueImpactResponse>(() => this.edEvolutionData().revenueImpact);
 
+  // Rendered directly by the carousel, in array order — the category split that used
+  // to sit here regrouped the cards and overrode the intended sequence.
   protected readonly filteredCards: Signal<DashboardMetricCard[]> = this.initFilteredCards();
-
-  protected readonly northStarCards = computed<DashboardMetricCard[]>(() => this.filteredCards().filter((c) => c.category === 'memberships'));
-  protected readonly nonNorthStarCards = computed<DashboardMetricCard[]>(() => this.filteredCards().filter((c) => c.category !== 'memberships'));
-  protected readonly totalCardCount = computed<number>(() => this.filteredCards().length);
 
   // === Public Methods ===
   public handleCardClick(drawerType: DashboardDrawerType): void {
