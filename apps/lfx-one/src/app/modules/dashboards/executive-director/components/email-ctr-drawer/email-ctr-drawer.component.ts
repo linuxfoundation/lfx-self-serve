@@ -15,13 +15,7 @@ import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
-import type {
-  EmailCtrResponse,
-  MarketingAttributionResponse,
-  MarketingKeyInsight,
-  MarketingRecommendedAction,
-  SocialReachResponse,
-} from '@lfx-one/shared/interfaces';
+import type { EmailCtrResponse, MarketingKeyInsight, MarketingRecommendedAction } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-email-ctr-drawer',
@@ -51,7 +45,7 @@ export class EmailCtrDrawerComponent {
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
 
   // True once all three data sources have resolved (not still loading)
-  private readonly dataResolved: Signal<boolean> = computed(() => !this.drawerLoading() && this.paidDataResolved() && this.attributionDataResolved());
+  private readonly dataResolved: Signal<boolean> = computed(() => !this.drawerLoading());
 
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
 
@@ -82,14 +76,6 @@ export class EmailCtrDrawerComponent {
     const clicks = types.reduce((sum, t) => sum + t.totalClicks, 0);
     return sends > 0 ? Math.round(((clicks * 100.0) / sends) * 10) / 10 : 0;
   });
-
-  // Paid data still drives this drawer's recommendations and key insights; the paid
-  // presentation itself now lives in the Paid Media drawer.
-  protected readonly paidData: Signal<SocialReachResponse> = this.initPaidData();
-  private readonly paidDataResolved = signal(false);
-
-  protected readonly attributionData: Signal<MarketingAttributionResponse> = this.initAttributionData();
-  private readonly attributionDataResolved = signal(false);
 
   protected readonly formatCurrency = formatCurrency;
 
@@ -129,14 +115,7 @@ export class EmailCtrDrawerComponent {
         return false;
       }
       const email = this.drawerData();
-      const paid = this.paidData();
-      const attribution = this.attributionData();
-      const hasEmailActivity = email.currentCtr > 0 || email.monthlySends.some((s) => s > 0);
-      const hasPaidActivity = paid.totalReach > 0 || paid.totalSpend > 0;
-      const hasAttributionActivity =
-        attribution.channels.length > 0 &&
-        attribution.channels.some((c) => c.sessions > 0 || c.linearRevenue > 0 || c.firstTouchRevenue > 0 || c.lastTouchRevenue > 0 || c.timeDecayRevenue > 0);
-      return !hasEmailActivity && !hasPaidActivity && !hasAttributionActivity;
+      return !(email.currentCtr > 0 || email.monthlySends.some((s) => s > 0));
     });
   }
 
@@ -310,67 +289,6 @@ export class EmailCtrDrawerComponent {
       // Email-only — see the note on initRecommendedActions.
       return [...emailInsights.slice(0, 3)];
     });
-  }
-
-  private initPaidData(): Signal<SocialReachResponse> {
-    const defaultValue: SocialReachResponse = {
-      totalReach: 0,
-      roas: 0,
-      totalSpend: 0,
-      totalRevenue: 0,
-      changePercentage: 0,
-      trend: 'up',
-      monthlyData: [],
-      monthlyLabels: [],
-      monthlyRoas: [],
-      channelGroups: [],
-    };
-
-    const visible$ = toObservable(this.visible);
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
-
-    return toSignal(
-      combineLatest([visible$, foundation$]).pipe(
-        filter(([isVisible, slug]) => isVisible && !!slug),
-        map(([, slug]) => slug),
-        tap(() => this.paidDataResolved.set(false)),
-        switchMap((foundationSlug) =>
-          this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
-            tap(() => this.paidDataResolved.set(true)),
-            catchError(() => {
-              this.paidDataResolved.set(true);
-              return of(defaultValue);
-            })
-          )
-        )
-      ),
-      { initialValue: defaultValue }
-    );
-  }
-
-  private initAttributionData(): Signal<MarketingAttributionResponse> {
-    const defaultValue: MarketingAttributionResponse = { channels: [], projects: [] };
-
-    const visible$ = toObservable(this.visible);
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
-
-    return toSignal(
-      combineLatest([visible$, foundation$]).pipe(
-        filter(([isVisible, slug]) => isVisible && !!slug),
-        map(([, slug]) => slug),
-        tap(() => this.attributionDataResolved.set(false)),
-        switchMap((foundationSlug) =>
-          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(
-            tap(() => this.attributionDataResolved.set(true)),
-            catchError(() => {
-              this.attributionDataResolved.set(true);
-              return of(defaultValue);
-            })
-          )
-        )
-      ),
-      { initialValue: defaultValue }
-    );
   }
 
   private static formatRevenue(value: number): string {
