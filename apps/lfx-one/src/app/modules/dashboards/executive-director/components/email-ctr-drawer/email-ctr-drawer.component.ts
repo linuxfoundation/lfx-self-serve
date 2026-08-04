@@ -224,8 +224,12 @@ export class EmailCtrDrawerComponent {
         }
       }
 
-      // Email-only: paid recommendations live in the Paid Media drawer and
-      // attribution ones in the Attribution drawer.
+      // Email-only. Paid recommendations live in the Paid Media drawer, which
+      // derives its own from getSocialReach. The multi-touch attribution table
+      // moved to the Attribution drawer without recommendations — that drawer
+      // still advises from its revenueImpact input, so nothing currently reads
+      // the marketing-attribution channels. Tracked as a follow-up rather than
+      // rebuilt here, since it is a new feature rather than a relocation.
       const actions = [...emailActions.slice(0, 3)];
 
       if (actions.length === 0 && !this.hasNoData()) {
