@@ -803,6 +803,8 @@ export class OrgProjectsComponent {
           ecosystemBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
           healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
           healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
+          // Need ≥2 samples to draw a line; a shorter series renders a flat baseline placeholder instead.
+          hasTrendData: project.trend.series.length > 1,
           sparklineDataset: {
             labels: project.trend.series.map((_, i) => String(i)),
             datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],

@@ -201,6 +201,12 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   /** Health badge display label (e.g. "Excellent"). */
   healthLabel: string;
   healthBadge: { bg: string; text: string };
+  /**
+   * True when there are at least two score samples to draw a line. False for a `full` row with no monthly
+   * influence history (e.g. an ecosystem-only participation with zero activity) — the template then renders a
+   * flat baseline placeholder instead of an empty Chart.js canvas that reads as broken.
+   */
+  hasTrendData: boolean;
   /** Pre-built Chart.js dataset for the sparkline; stable reference avoids re-allocation on recompute. */
   sparklineDataset: { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] };
   /**

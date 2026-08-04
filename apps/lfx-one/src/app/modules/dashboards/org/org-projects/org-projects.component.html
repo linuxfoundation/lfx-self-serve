@@ -342,7 +342,14 @@
                         tooltipPosition="top"
                         tooltipStyleClass="lfx-tooltip-trend"
                         [attr.data-testid]="'org-projects-trend-' + project.slug">
-                        <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
+                        @if (project.hasTrendData) {
+                          <lfx-chart type="line" [data]="project.sparklineDataset" [options]="sparklineOptions" height="32px" width="80px" />
+                        } @else {
+                          <!-- No monthly influence history: draw a flat baseline so the cell reads as "steady", not a broken empty chart. -->
+                          <span class="flex h-full w-full items-center" aria-hidden="true">
+                            <span class="w-full border-t border-dashed border-gray-300"></span>
+                          </span>
+                        }
                       </span>
                       @if (project.showTrendArrow) {
                         <span class="inline-flex items-center gap-1.5 text-xs" [attr.data-testid]="'org-projects-trend-delta-' + project.slug">
