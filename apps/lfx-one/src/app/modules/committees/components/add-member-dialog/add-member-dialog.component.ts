@@ -152,9 +152,7 @@ export class AddMemberDialogComponent {
     return result;
   });
   /** Org-required direct-add uses one shared organization field — bulk add would mis-assign employers. */
-  public readonly directAddRequiresSingleEmail = computed(
-    () => this.organizationRequiredForDirectAdd() && this.categorized().toInvite.length > 1
-  );
+  public readonly directAddRequiresSingleEmail = computed(() => this.organizationRequiredForDirectAdd() && this.categorized().toInvite.length > 1);
   public readonly canSubmit = computed(
     () =>
       !this.submitting() &&
