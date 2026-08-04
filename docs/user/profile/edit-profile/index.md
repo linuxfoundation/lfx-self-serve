@@ -18,7 +18,7 @@ The Profile page (`/profile`) includes these tabs:
 - **Work history & Affiliations** — your work history and project affiliations
 - **Identities** — connected accounts used to identify you and attribute contributions
 - **Individual Enrollment** — enroll in the Linux Foundation Individual Supporter plan
-- **My CLAs** — your signed Individual and Employee CLAs (`/profile/clas`); see [My CLAs](../my-clas/)
+- **My CLAs** — your signed ICLAs and Employee CLA (ECLA) coverage (`/profile/clas`); see [My CLAs](../my-clas/)
 - **Transactions** — your Linux Foundation purchase history (`/profile/transactions`)
 - **Settings** — email addresses, password, and developer API token (`/profile/settings`)
 
@@ -64,5 +64,5 @@ Developer settings are in the **Settings** tab of your Profile (`/profile/settin
 ## Related
 
 - [Profile overview](../) — an overview of the Profile section
-- [My CLAs](../my-clas/) — view your signed Individual and Employee CLAs
+- [My CLAs](../my-clas/) — view your signed ICLAs and Employee CLA coverage
 - [Settings](../../settings/) — email, password, and API token management

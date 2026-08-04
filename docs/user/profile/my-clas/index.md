@@ -21,7 +21,7 @@ For broader EasyCLA concepts (what a CLA is, project and corporate consoles, tro
 2. Select **Profile** from the left navigation sidebar.
 3. Open the **My CLAs** tab, or go directly to `/profile/clas`.
 
-Agreements are matched automatically from your signed-in session and your [linked identities](/profile/identities) (Email, GitHub, GitLab). You never search or type a project name here.
+Agreements are matched automatically from your signed-in session and your linked [Email and GitHub identities](/profile/identities). You never search or type a project name here.
 
 ## ICLA vs ECLA
 
@@ -57,15 +57,15 @@ That does not always mean you never signed — see the next section.
 
 ## Why a signed CLA might not show up
 
-My CLAs only finds agreements that match an identity linked to your LFX account. A CLA can be missing from the list when:
+My CLAs only finds agreements that match an identity linked to your LFX account. Matching today uses your LF username, verified emails, and linked GitHub accounts. A CLA can be missing from the list when:
 
-- The **email**, **GitHub**, or **GitLab** account you used when signing is **not linked** to this LFX profile
+- The **email** or **GitHub** account you used when signing is **not linked** to this LFX profile
 - You signed under a **work or secondary email** that is not among your verified / linked emails
-- You signed with a **GitHub or GitLab username** that is not connected under Identities
+- You signed with a **GitHub username** that is not connected under Identities
 
-**What to do:** open [Identities](/profile/identities) (`/profile/identities`) and link the Email, GitHub, or GitLab accounts you use for contributions. Then return to **My CLAs** — matching is automatic once the identity is linked.
+**What to do:** open [Identities](/profile/identities) and link the Email or GitHub accounts you used when signing. Then return to **My CLAs** — matching is automatic once the identity is linked.
 
-The info banner on the My CLAs tab also points to the same Identities flow: _Link your Email, GitHub, or GitLab accounts →_.
+The info banner on the My CLAs tab also points to the Identities flow (_Link your Email, GitHub, or GitLab accounts →_). Linking Email or GitHub is what recovers missing CLA matches today.
 
 ## Related
 
