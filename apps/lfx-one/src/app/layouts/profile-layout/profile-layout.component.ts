@@ -194,6 +194,13 @@ export class ProfileLayoutComponent {
       return;
     }
 
+    // A null profile means the GET never loaded; merging would fabricate a non-null profile and flip
+    // the drawer's metadataLoaded true, letting a later save wipe unloaded fields. Refetch instead.
+    if (this.combinedProfile.profile == null) {
+      this.refreshProfile$.next();
+      return;
+    }
+
     // Drop `key: undefined` entries (omitted from the PATCH, so unchanged upstream) so the optimistic
     // view mirrors what was persisted. Cleared free-text fields send '' and are kept.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;

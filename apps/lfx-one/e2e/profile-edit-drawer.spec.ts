@@ -268,4 +268,53 @@ test.describe('Profile edit drawer', () => {
     expect(patchBody?.user_metadata && 'bio' in patchBody.user_metadata, 'empty bio must be omitted, not sent as ""').toBe(false);
     expect(patchBody?.user_metadata && 'job_title' in patchBody.user_metadata, 'empty job_title must be omitted, not sent as ""').toBe(false);
   });
+
+  test('S7: a save on a failed load does not enable clear-to-empty on reopen', async ({ page }) => {
+    // Regression for LFXV2-2933: with the profile GET always returning no `profile`, a first save must
+    // not fabricate a non-null profile that flips metadataLoaded true and lets a later save wipe fields.
+    let lastPatchBody: { user_metadata?: Record<string, unknown> } | null = null;
+    await page.route('**/api/profile', async (route) => {
+      const request = route.request();
+      if (request.method() === 'PATCH') {
+        lastPatchBody = request.postDataJSON();
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      if (request.method() === 'GET') {
+        const response = await route.fetch();
+        const body = await response.json();
+        await route.fulfill({ response, json: { ...body, profile: null } });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    const jobTitle = page.getByTestId('profile-edit-drawer-job-title').locator('input');
+    const bio = page.getByTestId('profile-edit-drawer-about-me').locator('textarea');
+    const saveButton = page.getByTestId('profile-edit-drawer-save-button').locator('button');
+
+    // First save on the degraded load: set a job_title so the form is dirty, then persist.
+    await page.getByTestId('profile-edit-button').click();
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await jobTitle.fill('Engineer');
+    await expect(saveButton).toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+    await saveButton.click();
+    await expect(drawer, 'drawer should close after the first save').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+
+    // Reopen and clear bio: metadataLoaded must still be false (the GET never loaded a profile), so an
+    // empty bio is omitted rather than sent as '' and wiping data the failed GET never returned.
+    await page.getByTestId('profile-edit-button').click();
+    await expect(drawer, 'drawer should reopen').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await bio.fill('temporary bio');
+    await bio.fill('');
+    await expect(saveButton).toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+    await saveButton.click();
+    await expect(drawer, 'drawer should close after the second save').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+
+    expect(lastPatchBody?.user_metadata, 'second PATCH should send a user_metadata envelope').toBeTruthy();
+    expect(lastPatchBody?.user_metadata && 'bio' in lastPatchBody.user_metadata, 'empty bio must stay omitted after reopen').toBe(false);
+  });
 });
