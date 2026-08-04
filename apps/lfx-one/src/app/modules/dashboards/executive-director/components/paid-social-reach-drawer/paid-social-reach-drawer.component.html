@@ -205,24 +205,24 @@
           <!-- Project Rows -->
           @for (project of projectRows(); track project.projectName) {
             <div class="flex items-center py-2.5 px-1 border-b border-gray-100 transition-colors" role="row" data-testid="paid-social-reach-drawer-project-row">
-              <span class="flex-[2] min-w-[120px] pr-2" role="cell">
+              <span class="flex-[2] min-w-[120px] pr-2 overflow-hidden" role="cell">
                 @if (project.hasCampaigns) {
                   <!-- The control is a real button inside the name cell: a role="row"
                        element must not also be the focusable expand/collapse target. -->
                   <button
                     type="button"
-                    class="flex w-full items-center gap-1.5 text-left text-sm font-semibold text-gray-900 truncate hover:text-blue-700"
+                    class="flex w-full min-w-0 items-center gap-1.5 text-left text-sm font-semibold text-gray-900 hover:text-blue-700"
                     [attr.aria-expanded]="project.expanded"
                     [attr.aria-label]="'Toggle campaigns for ' + project.projectName"
                     (click)="toggleProject(project.projectName)">
                     <i
-                      class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform"
+                      class="fa-solid fa-chevron-right shrink-0 text-[10px] text-gray-400 transition-transform"
                       [class.rotate-90]="project.expanded"
                       aria-hidden="true"></i>
-                    <span class="truncate">{{ project.projectName }}</span>
+                    <span class="min-w-0 truncate">{{ project.projectName }}</span>
                   </button>
                 } @else {
-                  <span class="text-sm font-semibold text-gray-900 truncate">{{ project.projectName }}</span>
+                  <span class="block truncate text-sm font-semibold text-gray-900">{{ project.projectName }}</span>
                 }
               </span>
               <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.formattedSpend }}</span>
