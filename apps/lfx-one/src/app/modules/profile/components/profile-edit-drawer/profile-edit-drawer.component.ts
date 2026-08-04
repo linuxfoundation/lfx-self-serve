@@ -210,9 +210,8 @@ export class ProfileEditDrawerComponent {
     const metadataLoaded = this.combinedProfile()?.profile != null;
     const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
 
-    // organization_domain is resolved server-side from the organization name on every save path, so
-    // the drawer only needs to send the selected organization here. Name and selects keep
-    // `|| undefined` (empty = unchanged, not clearable per product decision).
+    // organization_domain is resolved server-side from the organization name, so we only send the
+    // organization. Name/selects keep `|| undefined` (empty = unchanged, not clearable per product).
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,

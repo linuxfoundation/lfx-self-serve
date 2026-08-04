@@ -194,10 +194,8 @@ export class ProfileLayoutComponent {
       return;
     }
 
-    // The drawer builds `key: undefined` for empty name/select fields (and for every field when the
-    // profile metadata failed to load); those keys are omitted from the PATCH, so the backend leaves
-    // them unchanged. Drop them here too — otherwise the optimistic view would clear fields that were
-    // never actually persisted as cleared. Cleared free-text fields send '' and are kept.
+    // Drop `key: undefined` entries (omitted from the PATCH, so unchanged upstream) so the optimistic
+    // view mirrors what was persisted. Cleared free-text fields send '' and are kept.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
 
     const mergedProfile: CombinedProfile = {
