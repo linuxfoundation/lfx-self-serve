@@ -4,13 +4,7 @@
 import { PublicProfile } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import {
-  PUBLIC_PROFILE_FETCH_TIMEOUT_MS,
-  PUBLIC_PROFILE_SERVICE_NAME,
-  PUBLIC_PROFILE_USERNAME_PATTERN,
-  PUBLIC_PROFILES_BUCKET_URL_ENV,
-  UPSTREAM_ERROR_BODY_LIMIT,
-} from '../constants';
+import { PUBLIC_PROFILE_FETCH_TIMEOUT_MS, PUBLIC_PROFILE_SERVICE_NAME, PUBLIC_PROFILE_USERNAME_PATTERN, PUBLIC_PROFILES_BUCKET_URL_ENV } from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 
@@ -114,17 +108,17 @@ export class PublicProfileService {
     }
 
     if (!upstream.ok) {
-      const body = (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+      // Log only the body length, never the raw body — this is a public PII-bearing artifact.
+      const bodyLength = (await upstream.text().catch(() => '')).length;
       logger.warning(req, operation, 'Public profile fetch returned non-OK response', {
         status: upstream.status,
         status_text: upstream.statusText,
-        body,
+        body_length: bodyLength,
         username,
       });
       throw new MicroserviceError(`Public profile fetch failed: ${upstream.status} ${upstream.statusText}`, upstream.status, 'PUBLIC_PROFILE_FETCH_FAILED', {
         operation,
         service: PUBLIC_PROFILE_SERVICE_NAME,
-        errorBody: body,
       });
     }
 
@@ -141,12 +135,11 @@ export class PublicProfileService {
     try {
       parsed = JSON.parse(rawBody) as Record<string, unknown>;
     } catch (error: unknown) {
-      const truncatedBody = rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
-      logger.warning(req, operation, 'Public profile artifact was invalid JSON', { err: error, body: truncatedBody, username });
+      // Log only the body length, never the raw body — it may hold private profile data.
+      logger.warning(req, operation, 'Public profile artifact was invalid JSON', { err: error, body_length: rawBody.length, username });
       throw new MicroserviceError('Public profile fetch failed: invalid JSON response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: PUBLIC_PROFILE_SERVICE_NAME,
-        errorBody: truncatedBody,
       });
     }
 
