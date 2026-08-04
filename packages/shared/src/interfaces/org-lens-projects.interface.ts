@@ -99,6 +99,12 @@ export interface OrgLensProject {
    * fallback rows (no org metrics row) drive the "Unavailable" renders and "No activity yet" treatment.
    */
   metricsState: OrgLensProjectMetricsState;
+  /**
+   * Transitional wire flag for rolling-deploy compat with pre-close-out frontends that still read `noActivityYet`.
+   * New BFF sets `true` on fallback rows alongside `metricsState`; omit (or false) on `full` rows. Do not use this
+   * as the primary discriminator in new code — prefer `metricsState` / `orgMetricsUnavailable`.
+   */
+  noActivityYet?: boolean;
 }
 
 /** A single CHAOSS health sub-score (0–100) shown in the health-detail popover. */
@@ -188,9 +194,9 @@ export interface OrgProjectsSignalBar {
 export interface OrgProjectsTableRow extends OrgLensProject {
   insightsUrl: string;
   /**
-   * True for explicit fallback rows (`health-only` / `unavailable`): drives the "Unavailable" band/trend/count
-   * treatment, the plain-text (non-linked) name, and the "No activity yet" pill. Real rows (incl. participating
-   * no-activity) and a missing discriminator (rolling-deploy old BFF) are false.
+   * True for explicit fallback rows (`health-only` / `unavailable`, or legacy `noActivityYet` when `metricsState`
+   * is missing): drives the "Unavailable" band/trend/count treatment, the plain-text (non-linked) name, and the
+   * "No activity yet" pill. Real rows (incl. participating no-activity) are false.
    */
   orgMetricsUnavailable: boolean;
   technicalBars: OrgProjectsSignalBar[];

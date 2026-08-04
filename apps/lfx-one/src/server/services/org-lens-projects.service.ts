@@ -419,7 +419,13 @@ export class OrgLensProjectsService {
     // Split on computed health: present → 'health-only' (Health renders); NULL → 'unavailable' (all-Unavailable row).
     return result.rows.map((row) => {
       const hasHealthScore = row.HEALTH_OVERALL_SCORE !== null && row.HEALTH_OVERALL_SCORE !== undefined;
-      return { ...this.mapProject(row, []), metricsState: hasHealthScore ? ('health-only' as const) : ('unavailable' as const) };
+      // Emit both discriminators: metricsState for the new frontend, noActivityYet so a still-running pre-close-out
+      // frontend keeps treating these as unavailable during a rolling deploy.
+      return {
+        ...this.mapProject(row, []),
+        metricsState: hasHealthScore ? ('health-only' as const) : ('unavailable' as const),
+        noActivityYet: true,
+      };
     });
   }
 

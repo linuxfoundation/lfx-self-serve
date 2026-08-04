@@ -61,6 +61,7 @@ function unavailableProject(slug: string, name: string) {
     participants: [],
     healthMetrics: [],
     metricsState: 'unavailable',
+    noActivityYet: true,
   };
 }
 
@@ -80,6 +81,7 @@ function healthOnlyProject(slug: string, name: string) {
       { label: 'Security', value: 75 },
     ],
     metricsState: 'health-only',
+    noActivityYet: true,
   };
 }
 
