@@ -15,21 +15,16 @@ import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 
 /**
- * Resolves the configured S3 bucket base URL that hosts public profile artifacts from
- * `PUBLIC_PROFILES_BUCKET_URL`, trimming any trailing slashes so the object key can be
- * appended directly. Returns an empty string when the var is unset or blank — there is no
- * baked-in default (see the env constant's doc comment); the caller treats an empty result as
- * "not configured" and fails the request loudly rather than reading the wrong bucket.
+ * Resolves the public profiles bucket base URL from env, trimming trailing slashes.
+ * Returns '' when unset/blank (no default); the caller treats '' as "not configured".
  */
 export function getPublicProfilesBucketUrl(): string {
   return (process.env[PUBLIC_PROFILES_BUCKET_URL_ENV] || '').trim().replace(/\/+$/, '');
 }
 
 /**
- * Normalizes the artifact's public flag into a single boolean. The upstream flow only
- * publishes a file when the profile is public, so an absent flag is treated as public;
- * only an explicit `false` (in either the PascalCase `IsPublic` or camelCase `isPublic`
- * form some artifacts use) marks the profile private.
+ * Normalizes the artifact's public flag to a boolean: an absent flag means public
+ * (published implies public); only an explicit `false` (IsPublic/isPublic) is private.
  */
 export function resolvePublicFlag(parsed: Record<string, unknown>): boolean {
   const raw = parsed['IsPublic'] ?? parsed['isPublic'];
@@ -37,13 +32,8 @@ export function resolvePublicFlag(parsed: Record<string, unknown>): boolean {
 }
 
 /**
- * Fetches a user's public profile artifact from S3 (no authentication). Returns `null` when
- * the username is malformed or the artifact does not exist (S3 404) — both surface to the
- * caller as "not found". Any other failure (network, timeout, non-404 upstream status,
- * empty/invalid body) throws a MicroserviceError.
- *
- * The parsed payload is returned verbatim with a normalized `isPublic` flag attached; the
- * controller is responsible for withholding the body when the profile is private.
+ * Fetches a user's public profile artifact from S3 (no auth). Returns null when the username
+ * is malformed or the artifact is missing (404); other failures throw a MicroserviceError.
  */
 export class PublicProfileService {
   public async getPublicProfile(req: Request, username: string): Promise<PublicProfile | null> {
@@ -67,10 +57,8 @@ export class PublicProfileService {
 
     const url = `${bucketUrl}/${encodeURIComponent(username)}.json`;
 
-    // Validate the operator-supplied bucket URL is well-formed and http(s) before fetching. The
-    // host is fixed by config (not user input), so this guards against a misconfigured bucket
-    // value (malformed URL, or a non-http scheme like file:) rather than user-driven SSRF — a
-    // clear 503 beats an opaque network 502 when the environment is set up wrong.
+    // Validate the operator-supplied bucket URL is well-formed and http(s) before fetching —
+    // guards a misconfigured bucket value (malformed URL / non-http scheme), not user SSRF.
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(url);

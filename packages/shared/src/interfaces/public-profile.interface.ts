@@ -2,20 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Shape of the public profile artifact published to S3 by the upstream
- * `GenerateUserPublicProfile` flow and proxied by `/public/api/profile/:username`.
- *
- * The LFX One server is a thin proxy — it fetches the JSON verbatim, gates on the
- * public flag, and passes the payload through untransformed. These interfaces mirror
- * the artifact's own (mixed-case) field names rather than renaming them.
- *
- * Field casing is taken from the reference artifact sample
- * (`myprofile/frontend/public/profiles/example.json`): `basic`, `technical_contribution`,
- * `community_roles`, and `event_activities` use PascalCase members, while
- * `certification_activities` and `skills` use their own casing. Some optional sections
- * (`presentations`, `training_activities`) are not present in that sample, so their member
- * shapes are best-effort and should be reconfirmed against a live artifact when the public
- * page UI consumes them.
+ * Shape of the S3 public profile artifact proxied by `/public/api/profile/:username`.
+ * Mirrors the artifact's own mixed-case field names; the server passes it through verbatim.
  */
 export interface PublicProfile {
   /**
@@ -31,10 +19,12 @@ export interface PublicProfile {
   technical_contribution?: PublicProfileTechnicalContribution;
   community_roles?: PublicProfileCommunityRole[];
   event_activities?: PublicProfileEvent[];
+  /** Best-effort shape — absent from the reference sample; reconfirm against a live artifact. */
   training_activities?: PublicProfileTraining[] | null;
   certification_activities?: PublicProfileCertification[];
   badges?: PublicProfileBadge[];
   skills?: PublicProfileSkill[];
+  /** Best-effort shape — absent from the reference sample; reconfirm against a live artifact. */
   presentations?: PublicProfilePresentation[];
 }
 

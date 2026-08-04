@@ -7,17 +7,13 @@ import { ResourceNotFoundError } from '../errors';
 import { logger } from '../services/logger.service';
 import { PublicProfileService } from '../services/public-profile.service';
 
-/**
- * Controller for the public (unauthenticated) profile page data source.
- */
+/** Controller for the public (unauthenticated) profile page data source. */
 export class PublicProfileController {
   private publicProfileService: PublicProfileService = new PublicProfileService();
 
   /**
-   * GET /public/api/profile/:username
-   * Returns a user's public profile artifact. A missing or malformed profile is a 404. A
-   * profile whose owner has made it private responds 200 with only `{ isPublic: false }` so
-   * the page can render its private state without exposing any withheld data.
+   * GET /public/api/profile/:username — 404 when missing/malformed; a private profile
+   * responds 200 with only `{ isPublic: false }` so no withheld data is exposed.
    */
   public async getPublicProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { username } = req.params;
