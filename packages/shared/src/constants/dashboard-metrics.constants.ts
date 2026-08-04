@@ -875,35 +875,44 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'brand',
       testId: 'ed-evo-brand-reach',
-      description: 'Social followers across all platforms and rolling 30-day website sessions.',
-      customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          'Social Followers',
-          formatNumber(brandReach.totalSocialFollowers),
-          // No historical follower series available — leave the sparkline empty rather than reuse
-          // website-session data (they are different metrics).
-          [],
-          lfxColors.blue[500],
-          formatMomChange(brandReach.changePercentage),
-          normalizeTrend(brandReach.changePercentage, brandReach.trend)
-        ),
-        protoDualSignal(
-          'Sessions (30d)',
-          formatNumber(brandReach.totalMonthlySessions),
-          brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : [],
-          lfxColors.violet[500],
-          formatMomChange(brandReach.sessionMomChangePct),
-          normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down')
-        ),
-      ],
-      // weeklyTrend only holds weeks WITH rows, so its length is not the
-      // reporting window — the endpoint covers a fixed six-month range, so
-      // the window is labeled directly rather than estimated from row count.
-      caption: brandReach.weeklyTrend.length > 0 ? `${brandReach.activePlatforms} platforms · Last 6 months` : `${brandReach.activePlatforms} platforms`,
-      tooltipText:
-        'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
+      description: 'Social followers across all platforms.',
+      value: formatNumber(brandReach.totalSocialFollowers),
+      changePercentage: formatMomChange(brandReach.changePercentage),
+      trend: normalizeTrend(brandReach.changePercentage, brandReach.trend),
+      subtitle: `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}`,
+      // No historical follower series available — render a flat line at the current
+      // total rather than reusing website-session data (they are different metrics).
+      chartData: protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText: 'Social followers across all platforms, with month-over-month change.',
       drawerType: DashboardDrawerType.BrandReach,
+    } as DashboardMetricCard,
+
+    // === Web ===
+    // Website sessions were previously the second dual-signal on the Social card.
+    // Split out so followers (a stock) and sessions (a flow) each get their own card
+    // rather than sharing one, and so web activity gets a dedicated drill-down.
+    {
+      title: 'Web',
+      icon: 'fa-light fa-globe',
+      chartType: 'line',
+      category: 'brand',
+      testId: 'ed-evo-web-sessions',
+      description: 'Rolling 30-day sessions across foundation web properties.',
+      value: formatNumber(brandReach.totalMonthlySessions),
+      changePercentage: formatMomChange(brandReach.sessionMomChangePct),
+      trend: normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down'),
+      // weeklyTrend only holds weeks WITH rows, so its length is not the reporting
+      // window — the endpoint covers a fixed six-month range, so the window is
+      // labeled directly rather than estimated from row count.
+      subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Last 6 months' : 'Sessions (30d)',
+      chartData: protoSparkline(
+        brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
+        lfxColors.violet[500]
+      ),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText: 'Rolling 30-day website sessions across foundation web properties, with month-over-month change.',
+      drawerType: DashboardDrawerType.MarketingWebsiteVisits,
     } as DashboardMetricCard,
 
     // === Email ===
