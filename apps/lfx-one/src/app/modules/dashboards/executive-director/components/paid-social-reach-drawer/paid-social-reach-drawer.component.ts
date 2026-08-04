@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -18,7 +18,16 @@ import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { SocialReachResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
+import type {
+  MarketingKeyInsight,
+  MarketingRecommendedAction,
+  PaidProjectBreakdownView,
+  RevenueImpactAttributionChannelView,
+  RevenueImpactChannelLegendView,
+  RevenueImpactProjectBreakdownView,
+  RevenueImpactResponse,
+  SocialReachResponse,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-paid-social-reach-drawer',
@@ -35,6 +44,79 @@ export class PaidSocialReachDrawerComponent {
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
+
+  // === Inputs ===
+  /** Revenue-impact payload — carries the paid-media project breakdown, channel mix
+   *  and spend/revenue trend that this drawer renders below its own social-reach data. */
+  public readonly data = input<RevenueImpactResponse>({
+    pipelineInfluenced: 0,
+    revenueAttributed: 0,
+    matchRate: 0,
+    changePercentage: 0,
+    trend: 'up',
+    attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
+    engagementTypes: [],
+    paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
+    attributionChannels: [],
+    projectBreakdown: [],
+    eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
+  });
+
+  private static readonly channelBgClass: Record<string, string> = {
+    google_ads: 'bg-blue-500',
+    facebook_ads: 'bg-blue-700',
+    microsoft_ads: 'bg-emerald-600',
+    linkedin_ads: 'bg-gray-700',
+    reddit_ads: 'bg-red-500',
+    twitter_ads: 'bg-gray-500',
+  };
+  private static readonly channelBgFallback = 'bg-gray-400';
+
+  protected readonly paidMediaTrendChartOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        align: 'end',
+        labels: { color: lfxColors.gray[700], font: { size: 11 }, boxWidth: 12, boxHeight: 12, padding: 12 },
+      },
+      tooltip: {
+        ...DASHBOARD_TOOLTIP_CONFIG,
+        callbacks: {
+          label: (ctx) => ` ${ctx.dataset.label ?? ''}: $${Number(ctx.parsed.y ?? 0).toLocaleString()}`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        display: true,
+        grid: { display: false },
+        border: { display: true, color: lfxColors.gray[300] },
+        ticks: { color: lfxColors.gray[500], font: { size: 11 } },
+      },
+      y: {
+        type: 'linear',
+        position: 'left',
+        display: true,
+        grid: { color: lfxColors.gray[200], lineWidth: 1 },
+        border: { display: false },
+        title: { display: true, text: 'Dollars ($)', color: lfxColors.gray[500], font: { size: 11 } },
+        ticks: {
+          color: lfxColors.gray[500],
+          font: { size: 11 },
+          callback: (value) => {
+            const n = Number(value);
+            if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+            if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
+            return `$${n.toLocaleString()}`;
+          },
+        },
+      },
+    },
+  };
 
   // === WritableSignals ===
   protected readonly drawerLoading = signal(false);
@@ -148,9 +230,88 @@ export class PaidSocialReachDrawerComponent {
   protected readonly formatNumber = formatNumber;
   protected readonly formatCurrency = formatCurrency;
 
+  // === Performance by Project ===
+  /** Project rows the user has expanded to reveal their campaigns. */
+  protected readonly expandedProjects = signal<Set<string>>(new Set());
+
+  /**
+   * Project rows with display strings, severity and expansion state precomputed.
+   * Recomputes when either the data or the expanded set changes, so the template
+   * only reads fields — no function calls, no Set.has() in bindings.
+   */
+  protected readonly projectRows: Signal<PaidProjectBreakdownView[]> = computed(() => {
+    const expanded = this.expandedProjects();
+    return (this.drawerData().projectBreakdown ?? []).map((p) => ({
+      ...p,
+      formattedSpend: `$${PaidSocialReachDrawerComponent.compact(p.spend)}`,
+      formattedRevenue: `$${PaidSocialReachDrawerComponent.compact(p.revenue)}`,
+      formattedConversions: PaidSocialReachDrawerComponent.compact(p.conversions),
+      severity: PaidSocialReachDrawerComponent.severityFor(p.performance),
+      hasCampaigns: p.campaigns.length > 0,
+      expanded: expanded.has(p.projectName),
+      campaignRows: p.campaigns.map((c) => ({
+        ...c,
+        formattedSpend: `$${PaidSocialReachDrawerComponent.compact(c.spend)}`,
+        formattedRevenue: `$${PaidSocialReachDrawerComponent.compact(c.revenue)}`,
+        formattedConversions: PaidSocialReachDrawerComponent.compact(c.conversions),
+      })),
+    }));
+  });
+
+  /** Conversions summed across every project. */
+  protected readonly totalConversions: Signal<string> = computed(() => {
+    const projects = this.drawerData().projectBreakdown ?? [];
+    return formatNumber(projects.reduce((sum, p) => sum + p.conversions, 0));
+  });
+
+  /** Sessions summed across every project. */
+  protected readonly totalSessions: Signal<string> = computed(() => {
+    const projects = this.drawerData().projectBreakdown ?? [];
+    return formatNumber(projects.reduce((sum, p) => sum + p.sessions, 0));
+  });
+
+  // === Paid media breakdown (from the revenueImpact input) ===
+  protected readonly paidMediaTrendChartData: Signal<ChartData<'bar'>> = this.initPaidMediaTrendChartData();
+  protected readonly projectBreakdownLegend: Signal<RevenueImpactChannelLegendView[]> = this.initProjectBreakdownLegend();
+  protected readonly sortedProjectBreakdown: Signal<RevenueImpactProjectBreakdownView[]> = this.initSortedProjectBreakdown();
+  protected readonly attributionChannelsView: Signal<RevenueImpactAttributionChannelView[]> = computed(() =>
+    this.data().attributionChannels.map((c) => ({
+      ...c,
+      label: PaidSocialReachDrawerComponent.formatChannelLabel(c.channel),
+      formattedPercentage: c.percentage.toFixed(1),
+    }))
+  );
+
   // === Protected Methods ===
+  protected toggleProject(projectName: string): void {
+    const current = this.expandedProjects();
+    const next = new Set(current);
+    if (next.has(projectName)) {
+      next.delete(projectName);
+    } else {
+      next.add(projectName);
+    }
+    this.expandedProjects.set(next);
+  }
+
   protected onClose(): void {
     this.visible.set(false);
+  }
+
+  /** Compact number for dense table cells — 1.2K / 3.4M. */
+  private static compact(value: number): string {
+    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
+    // server-side vs client-side and trips hydration text mismatches.
+    return value.toLocaleString('en-US');
+  }
+
+  private static severityFor(performance: string): 'danger' | 'warn' | 'success' | 'secondary' {
+    if (performance === 'LOW OPENS' || performance === 'LOW CLICKS' || performance === 'POOR' || performance === 'NO REVENUE') return 'danger';
+    if (performance === 'GOOD') return 'warn';
+    if (performance === 'EXCELLENT' || performance === 'STRONG') return 'success';
+    return 'secondary';
   }
 
   // === Private Initializers ===
@@ -169,7 +330,10 @@ export class PaidSocialReachDrawerComponent {
     };
 
     const visible$ = toObservable(this.visible);
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || ''));
+    // Match the parent's fallback: the ED overview loads this card's data with 'tlf'
+    // when no foundation is selected, so an empty slug here would filter the request
+    // out and render an empty drawer behind a populated card.
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(
@@ -354,6 +518,108 @@ export class PaidSocialReachDrawerComponent {
           },
         ],
       };
+    });
+  }
+
+  private initProjectBreakdownLegend(): Signal<RevenueImpactChannelLegendView[]> {
+    return computed(() => {
+      const channelTotals = new Map<string, number>();
+      for (const r of this.data().projectBreakdown) {
+        for (const [channel, impressions] of Object.entries(r.channelImpressions)) {
+          channelTotals.set(channel, (channelTotals.get(channel) ?? 0) + (impressions ?? 0));
+        }
+      }
+      return Array.from(channelTotals.keys())
+        .sort((a, b) => (channelTotals.get(b) ?? 0) - (channelTotals.get(a) ?? 0))
+        .map((channel) => ({
+          channel,
+          label: PaidSocialReachDrawerComponent.formatChannelLabel(channel),
+          bgClass: PaidSocialReachDrawerComponent.bgClassFor(channel),
+        }));
+    });
+  }
+
+  private initSortedProjectBreakdown(): Signal<RevenueImpactProjectBreakdownView[]> {
+    return computed(() => {
+      const legend = this.projectBreakdownLegend();
+      return [...this.data().projectBreakdown]
+        .sort((a, b) => b.totalImpressions - a.totalImpressions)
+        .map((project) => {
+          const segments = legend
+            .map(({ channel, label, bgClass }) => {
+              const impressions = project.channelImpressions[channel] ?? 0;
+              const sharePercent = project.totalImpressions > 0 ? (impressions / project.totalImpressions) * 100 : 0;
+              return {
+                channel,
+                bgClass,
+                sharePercent,
+                title: `${label}: ${PaidSocialReachDrawerComponent.formatImpressionsShort(impressions)}`,
+              };
+            })
+            .filter((s) => s.sharePercent > 0);
+          return {
+            ...project,
+            formattedTotalImpressions: PaidSocialReachDrawerComponent.formatImpressionsShort(project.totalImpressions),
+            segments,
+          };
+        });
+    });
+  }
+
+  private initPaidMediaTrendChartData(): Signal<ChartData<'bar'>> {
+    return computed(() => {
+      const trend = this.data().paidMedia.monthlyTrend;
+      const labels = trend.map((r) => PaidSocialReachDrawerComponent.formatYearMonthLabel(r.month));
+      return {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Spend',
+            data: trend.map((r) => r.spend),
+            backgroundColor: lfxColors.blue[500],
+            borderRadius: 4,
+          },
+          {
+            type: 'bar',
+            label: 'Revenue',
+            data: trend.map((r) => r.revenue),
+            backgroundColor: lfxColors.emerald[600],
+            borderRadius: 4,
+          },
+        ],
+      };
+    });
+  }
+
+  private static formatChannelLabel(channel: string): string {
+    return channel
+      .split('_')
+      .map((word) => (word === 'ads' ? 'Ads' : word.charAt(0).toUpperCase() + word.slice(1)))
+      .join(' ');
+  }
+
+  private static formatImpressionsShort(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+    // Locale pinned: this value is rendered into markup, so an unpinned call
+    // produces different separators under SSR and trips hydration.
+    return n.toLocaleString('en-US');
+  }
+
+  private static bgClassFor(channel: string): string {
+    return PaidSocialReachDrawerComponent.channelBgClass[channel] ?? PaidSocialReachDrawerComponent.channelBgFallback;
+  }
+
+  private static formatYearMonthLabel(yearMonth: string): string {
+    const match = /^(\d{4})-(\d{2})$/.exec(yearMonth);
+    if (!match) return yearMonth;
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    return new Date(Date.UTC(year, month, 1)).toLocaleDateString('en-US', {
+      month: 'short',
+      year: '2-digit',
+      timeZone: 'UTC',
     });
   }
 }

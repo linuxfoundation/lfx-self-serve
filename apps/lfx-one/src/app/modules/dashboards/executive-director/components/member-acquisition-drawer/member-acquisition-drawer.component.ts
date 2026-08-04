@@ -8,7 +8,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { formatCurrency, formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatCurrency, formatNumber, formatPercent, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { FormatMoneyPipe } from '@pipes/format-money.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -181,7 +181,7 @@ export class MemberAcquisitionDrawerComponent {
       if (changePercentage <= -15) {
         actions.push({
           title: 'Reverse acquisition decline',
-          description: `New member signups dropped ${Math.abs(changePercentage).toFixed(1)}% QoQ — review top-of-funnel channels, conversion paths, and outbound pipeline`,
+          description: `New member signups dropped ${formatPercent(Math.abs(changePercentage))}% QoQ — review top-of-funnel channels, conversion paths, and outbound pipeline`,
           priority: 'high',
 
           actionType: 'decline',
@@ -189,7 +189,7 @@ export class MemberAcquisitionDrawerComponent {
       } else if (changePercentage <= -5) {
         actions.push({
           title: 'Acquisition softening',
-          description: `New member signups down ${Math.abs(changePercentage).toFixed(1)}% QoQ — watch next quarter's pipeline and renewal mix`,
+          description: `New member signups down ${formatPercent(Math.abs(changePercentage))}% QoQ — watch next quarter's pipeline and renewal mix`,
           priority: 'medium',
 
           actionType: 'investigate',
@@ -244,7 +244,7 @@ export class MemberAcquisitionDrawerComponent {
           type: 'driver',
         });
       } else if (changePercentage <= -10) {
-        insights.push({ text: `New member acquisition down ${Math.abs(changePercentage).toFixed(1)}% QoQ`, type: 'warning' });
+        insights.push({ text: `New member acquisition down ${formatPercent(Math.abs(changePercentage))}% QoQ`, type: 'warning' });
       }
 
       // Revenue-per-member trend (the tier-mix signal)
@@ -312,9 +312,9 @@ export class MemberAcquisitionDrawerComponent {
       }
 
       if (netRevenueRetention > 100) {
-        insights.push({ text: `NRR above 100% at ${netRevenueRetention}% — successful upsell to higher tiers`, type: 'driver' });
+        insights.push({ text: `NRR above 100% at ${formatPercent(netRevenueRetention)}% — successful upsell to higher tiers`, type: 'driver' });
       } else if (netRevenueRetention > 0 && netRevenueRetention < 100) {
-        insights.push({ text: `NRR at ${netRevenueRetention}% — revenue declining from existing members`, type: 'warning' });
+        insights.push({ text: `NRR at ${formatPercent(netRevenueRetention)}% — revenue declining from existing members`, type: 'warning' });
       }
 
       if (monthlyData.length >= 3) {
@@ -346,7 +346,7 @@ export class MemberAcquisitionDrawerComponent {
       if (netRevenueRetention > 0 && netRevenueRetention < 90) {
         actions.push({
           title: 'Improve net revenue retention',
-          description: `NRR at ${netRevenueRetention}% — significant revenue loss from existing members. Review downgrades and churn`,
+          description: `NRR at ${formatPercent(netRevenueRetention)}% — significant revenue loss from existing members. Review downgrades and churn`,
           priority: 'high',
 
           actionType: 'revenue',
@@ -354,7 +354,7 @@ export class MemberAcquisitionDrawerComponent {
       } else if (netRevenueRetention >= 90 && netRevenueRetention < 98) {
         actions.push({
           title: 'Monitor net revenue retention',
-          description: `NRR at ${netRevenueRetention}% — revenue contraction from existing members. Explore upsell opportunities`,
+          description: `NRR at ${formatPercent(netRevenueRetention)}% — revenue contraction from existing members. Explore upsell opportunities`,
           priority: 'medium',
 
           actionType: 'revenue',
@@ -364,7 +364,7 @@ export class MemberAcquisitionDrawerComponent {
       if (changePercentage < -3) {
         actions.push({
           title: 'Address retention decline',
-          description: `Renewal rate dropped ${Math.abs(changePercentage)}% — review member satisfaction and renewal outreach timing`,
+          description: `Renewal rate dropped ${formatPercent(Math.abs(changePercentage))}% — review member satisfaction and renewal outreach timing`,
           priority: 'high',
 
           actionType: 'decline',
@@ -374,7 +374,7 @@ export class MemberAcquisitionDrawerComponent {
       if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
           title: 'Maintain retention excellence',
-          description: `${renewalRate}% renewal rate${netRevenueRetention > 100 ? ` with ${netRevenueRetention}% NRR` : ''}`,
+          description: `${formatPercent(renewalRate)}% renewal rate${netRevenueRetention > 100 ? ` with ${formatPercent(netRevenueRetention)}% NRR` : ''}`,
           priority: 'low',
 
           actionType: 'growth',

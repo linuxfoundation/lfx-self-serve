@@ -166,12 +166,12 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Email CTR');
   });
 
-  test('renders Paid Social Reach card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-paid-social-reach"]');
+  test('renders Paid Media card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-paid-media"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
-    await expect(card).toContainText('Paid Social');
+    await expect(card).toContainText('Paid Media');
   });
 
   test('renders Social Media card', async ({ page }) => {
@@ -225,7 +225,7 @@ test.describe('Email CTR Drawer', () => {
 
   test('opens and shows title when card is clicked', async ({ page }) => {
     await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
-    await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email Click-Through Rate');
+    await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email');
   });
 
   test('shows stats and email sections', async ({ page }) => {
@@ -247,18 +247,18 @@ test.describe('Paid Social Reach Drawer', () => {
   });
 
   test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content');
-    await expect(page.locator('[data-testid="paid-social-reach-drawer-title"]')).toContainText('Paid Social Reach');
+    await openDrawer(page, 'ed-evo-paid-media', 'paid-social-reach-drawer-content');
+    await expect(page.locator('[data-testid="paid-social-reach-drawer-title"]')).toContainText('Paid Media');
   });
 
   test('shows ROAS and impressions charts', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content', 'paid-social-reach-drawer-stats');
+    await openDrawerAndWaitForData(page, 'ed-evo-paid-media', 'paid-social-reach-drawer-content', 'paid-social-reach-drawer-stats');
     await expect(page.locator('[data-testid="paid-social-reach-drawer-roas-chart-section"]')).toBeVisible();
     await expect(page.locator('[data-testid="paid-social-reach-drawer-chart-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-paid-social-reach', 'paid-social-reach-drawer-content');
+    await openDrawer(page, 'ed-evo-paid-media', 'paid-social-reach-drawer-content');
     await page.locator('[data-testid="paid-social-reach-drawer-close"]').click();
     await expect(page.locator('[data-testid="paid-social-reach-drawer-content"]')).not.toBeVisible();
   });
@@ -295,7 +295,7 @@ test.describe('Member Growth Drawer', () => {
 
   test('opens and shows title when card is clicked', async ({ page }) => {
     await openDrawer(page, 'flywheel-pulse-member-growth', 'member-acquisition-drawer-content');
-    await expect(page.locator('[data-testid="member-acquisition-drawer-title"]')).toContainText('Member Growth');
+    await expect(page.locator('[data-testid="member-acquisition-drawer-title"]')).toContainText('Members');
   });
 
   test('shows stats section', async ({ page }) => {
