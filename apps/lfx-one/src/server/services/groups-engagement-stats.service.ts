@@ -33,6 +33,12 @@ type ActiveMemberRow = Pick<
  * hit for up to `GROUPS_ENGAGEMENT_TTL_SECONDS`. Without this, a stray `mock` entry cached
  * before a switch to `live`/production would keep answering "Sample data" for up to 60s after
  * the switch, undermining the production hard-block's guarantee.
+ *
+ * The same reasoning generalizes beyond `source`: this validator is also this response shape's
+ * version check. A field a newer service version always sets (like `coverage`, added in
+ * LFXV2-2978) must be checked here too, so a cache entry written by a pre-upgrade instance —
+ * which never had that field — reads as a miss and recomputes immediately instead of being served
+ * to a client expecting the newer shape for up to `GROUPS_ENGAGEMENT_TTL_SECONDS` after deploy.
  */
 function isGroupsEngagementStats(value: unknown, expectedSource: 'mock' | 'live'): boolean {
   const v = value as Partial<GroupsEngagementStats>;
@@ -42,7 +48,11 @@ function isGroupsEngagementStats(value: unknown, expectedSource: 'mock' | 'live'
     (v.active_members === null || typeof v.active_members === 'number') &&
     (v.meetings_this_month === null || typeof v.meetings_this_month === 'number') &&
     typeof v.computed_at === 'string' &&
-    v.source === expectedSource
+    v.source === expectedSource &&
+    typeof v.coverage === 'object' &&
+    v.coverage !== null &&
+    typeof v.coverage.covered === 'number' &&
+    typeof v.coverage.total === 'number'
   );
 }
 
@@ -84,12 +94,15 @@ function resolveBackend(): 'mock' | 'live' {
  * live-validation confirmation, not a settled fact.) Visible committee uids are v2 committee-service
  * UUIDs; the model is keyed on the v1 committee SFID, so every uid is resolved via
  * `resolveCommitteeV2UidsToV1Ids` before querying (confirmed with Jordan Evans, data owner,
- * LFXV2-2968 — see `computeActiveMembers`'s doc comment for the coverage-checking details).
- * `meetings_this_month` stays `null` in live mode — the model exposes only rolling 30d/90d/YTD
- * meeting counts, not a calendar-month grain, so there's no honest source for it yet (LFXV2-2961
- * tracks adding one). Defaults to `live` (never fabricated numbers) unless `ENGAGEMENT_BACKEND=mock`
- * is explicitly set, and `mock` is additionally
- * hard-blocked when `NODE_ENV=production`.
+ * LFXV2-2968). Live validation showed nearly every real caller has at least one visible committee
+ * that's unresolved or not yet synced, so as of LFXV2-2978 `active_members` counts over the
+ * *covered* subset only and reports `coverage: { covered, total }` alongside it, rather than
+ * degrading to `null` on any single gap — see `computeActiveMembers`'s doc comment for exactly what
+ * "covered" means. `meetings_this_month` stays `null` in live mode — the model exposes only rolling
+ * 30d/90d/YTD meeting counts, not a calendar-month grain, so there's no honest source for it yet
+ * (LFXV2-2961 tracks adding one). Defaults to `live` (never fabricated numbers) unless
+ * `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is additionally hard-blocked when
+ * `NODE_ENV=production`.
  */
 export class GroupsEngagementStatsService {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -120,11 +133,11 @@ export class GroupsEngagementStatsService {
     const computedAt = new Date().toISOString();
 
     if (backend === 'live') {
-      const activeMembers = await this.computeActiveMembers(req);
+      const { activeMembers, coverage } = await this.computeActiveMembers(req);
       // meetings_this_month: no calendar-month grain exists in the model (only rolling
       // 30d/90d/YTD) — left null rather than mislabeling a rolling window as "this month".
       // LFXV2-2961 tracks adding a calendar-month data source.
-      return { active_members: activeMembers, meetings_this_month: null, computed_at: computedAt, source: 'live' };
+      return { active_members: activeMembers, meetings_this_month: null, computed_at: computedAt, source: 'live', coverage };
     }
 
     // WARN, not DEBUG, on every call: unlike the live branch above, mock should essentially never
@@ -137,60 +150,58 @@ export class GroupsEngagementStatsService {
   /**
    * Counts distinct active members (attended >=1 meeting in the trailing 30 days, or joined within
    * it, excluding Emeritus — `isCommitteeMemberActive`, the same function LFXV2-1705 uses) across
-   * every committee the caller can see (`getMyCommitteeUids` — "mine" semantics, no scope param, per
-   * LFXV2-1711). A member is counted once even if active on multiple visible committees — the model's
-   * grain is one row per `(committee_id, member_user_id)`, so a member on N committees produces N
-   * rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count rather than a row count.
-   * `getMyCommitteeUids` returns v2 committee-service UUIDs; the model is keyed on the v1 committee
-   * SFID (confirmed with Jordan Evans, data owner, LFXV2-2968), so every visible uid is resolved
-   * via `resolveCommitteeV2UidsToV1Ids` (the platform's `lfx.lookup_v1_mapping` NATS bridge) before
-   * querying — see that helper's doc comment for the v1/v2 split. The committee-uid list (now v1
-   * ids) is chunked (`COMMITTEE_UID_CHUNK_SIZE`) so a caller who belongs to many committees (e.g.
-   * LF staff) doesn't produce an unbounded bind list or row volume in one query, and chunks run at
-   * most `GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY` at a time so that same caller can't monopolize a
-   * large fraction of the shared Snowflake connection pool in one request.
+   * the *covered* subset of committees the caller can see (`getMyCommitteeUids` — "mine" semantics,
+   * no scope param, per LFXV2-1711). A member is counted once even if active on multiple covered
+   * committees — the model's grain is one row per `(committee_id, member_user_id)`, so a member on
+   * N committees produces N rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count
+   * rather than a row count. `getMyCommitteeUids` returns v2 committee-service UUIDs; the model is
+   * keyed on the v1 committee SFID (confirmed with Jordan Evans, data owner, LFXV2-2968), so every
+   * visible uid is resolved via `resolveCommitteeV2UidsToV1Ids` (the platform's
+   * `lfx.lookup_v1_mapping` NATS bridge) before querying — see that helper's doc comment for the
+   * v1/v2 split. The (resolved) committee-uid list is chunked (`COMMITTEE_UID_CHUNK_SIZE`) so a
+   * caller who belongs to many committees (e.g. LF staff) doesn't produce an unbounded bind list or
+   * row volume in one query, and chunks run at most `GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY` at a time
+   * so that same caller can't monopolize a large fraction of the shared Snowflake connection pool in
+   * one request.
    *
-   * Four distinct "nothing to report" cases stay distinguishable:
-   * - `0`: the caller genuinely has no visible committees — a real answer, no query even runs.
-   * - `null` (incomplete coverage): at least one visible committee has no covered row in the model —
-   *   either its v2 uid didn't resolve to a v1 id at all, or it resolved but the model has zero rows
-   *   for that v1 id. Both read the same way: mirrors `committee-engagement.service.ts`'s zero-row
-   *   `dataAvailable: false` reading (the model is roster-anchored with zero-activity members
-   *   retained, so a synced committee should yield >=1 row). This is checked per-committee, not
-   *   just "did any row come back at all" — a caller with 3 visible committees where only 1 is
-   *   covered would otherwise report a plausible but incomplete count for the other 2's silent
-   *   absence, rather than degrading honestly. The first case (an unresolved v2 uid) is caught
-   *   immediately after the committee-id bridge runs, before any chunk query — a partial resolution
-   *   already guarantees this method's result, so there's no reason to pay for the Snowflake
-   *   round trips first.
-   * - `0` (full coverage, none active): a real, computed zero — every visible committee resolved
-   *   and is represented in the model, and nobody in them happens to be active this window.
-   * - `null` (error): the count couldn't be computed at all (missing committee-set lookup, a
-   *   Snowflake missing-object/not-authorized error, or any chunk failing) — never thrown, so a
-   *   stats failure never blocks the rest of the groups dashboard.
+   * A committee is "covered" when its v2 uid resolved to a v1 id AND the model has at least one row
+   * for that v1 id — checked per originally-requested v2 committee, forward through `v2ToV1Map` (not
+   * via a v1->v2 inversion, which would be lossy if two v2 committees ever resolved to the same v1
+   * id — see the coverage-loop comment below). `activeMembers` is computed over the covered subset
+   * only (LFXV2-2978 — a caller with 10 visible committees where 9 are covered gets a real count
+   * over those 9, plus `coverage: { covered: 9, total: 10 }`, rather than a blanket `null` for the
+   * whole caller). Three distinct "nothing to report" cases stay distinguishable:
+   * - `{ activeMembers: 0, coverage: { covered: 0, total: 0 } }`: the caller genuinely has no
+   *   visible committees — a real answer, no query even runs.
+   * - `{ activeMembers: null, coverage: { covered: 0, total } }`: every visible committee is
+   *   uncovered (none resolved to a v1 id, or none have model rows yet) — nothing to count, still
+   *   distinguishable from the zero-visible-committees case above via `coverage.total`.
+   * - `{ activeMembers: N, coverage: { covered, total } }` (`covered` possibly `< total`): a real,
+   *   computed count over whichever committees are covered — `covered === total` means it's
+   *   complete; `covered < total` means it's a real but partial count the client should disclose.
+   * - `{ activeMembers: null, coverage: { covered: 0, total: 0 } }` (error): the count couldn't be
+   *   computed at all (missing committee-set lookup, a Snowflake missing-object/not-authorized
+   *   error, or any chunk failing) — never thrown, so a stats failure never blocks the rest of the
+   *   groups dashboard.
    */
-  private async computeActiveMembers(req: Request): Promise<number | null> {
+  private async computeActiveMembers(req: Request): Promise<{ activeMembers: number | null; coverage: { covered: number; total: number } }> {
+    // Tracked outside the try block (not just a `const` inside it) so the catch block can still
+    // report an accurate `total` in its `coverage` if the failure happens after the committee set
+    // was fetched but before the count could be computed (e.g. a chunk query failure).
+    let visibleCount = 0;
     try {
       const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req))];
-      if (committeeUids.length === 0) return 0;
+      visibleCount = committeeUids.length;
+      if (committeeUids.length === 0) return { activeMembers: 0, coverage: { covered: 0, total: 0 } };
 
       const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, committeeUids);
-      // Any unresolved committee already guarantees `fullyCovered` is `false` below (an unresolved
-      // v2 uid has no v1 id to check coverage against, so `uncoveredCount` can never reach 0) — the
-      // Snowflake chunk-query pipeline's result would be discarded regardless, so a partial
-      // resolution short-circuits here rather than paying for chunked queries whose only possible
-      // outcome is the same `null` this returns immediately.
-      if (v2ToV1Map.size < committeeUids.length) {
-        logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committee v2 uids did not resolve to a v1 id; returning null', {
-          committee_count: committeeUids.length,
-          resolved_v2_uid_count: v2ToV1Map.size,
-        });
-        return null;
-      }
       // Deduped (not just [...values()]): two visible v2 committees could in principle resolve to
       // the same v1 id, and an inverted v1->v2 map would then silently drop one of them — checking
       // coverage forward (per v2 uid, via v2ToV1Map.get) below instead of through an inversion means
-      // that never needs to be a 1:1 assumption.
+      // that never needs to be a 1:1 assumption. Only resolved uids appear in this map at all
+      // (`resolveCommitteeV2UidsToV1Ids`'s contract), so this already queries the covered subset
+      // only — an unresolved v2 uid simply contributes nothing to `v1Ids` rather than blocking the
+      // rest of the caller's covered committees from being counted.
       const v1Ids = [...new Set(v2ToV1Map.values())];
 
       const chunks: string[][] = [];
@@ -242,20 +253,28 @@ export class GroupsEngagementStatsService {
         const v1Id = v2ToV1Map.get(uid);
         return !v1Id || !coveredV1Ids.has(v1Id);
       }).length;
-      const fullyCovered = uncoveredCount === 0;
-      // Computed before logging so the logged active_members always matches what's actually returned.
-      const activeMembers = fullyCovered ? activeUids.size : null;
+      const coveredCount = committeeUids.length - uncoveredCount;
+      const coverage = { covered: coveredCount, total: committeeUids.length };
+      // Computed before logging so the logged active_members always matches what's actually
+      // returned. `activeUids` is already scoped to covered committees (rows only exist for
+      // committees present in the query result), so this is a true "count over the covered subset,"
+      // not a filter applied after the fact.
+      const activeMembers = coveredCount > 0 ? activeUids.size : null;
 
-      if (!fullyCovered) {
-        // The most likely-to-occur null case in a partially-rolled-out model — warrants the same
-        // visibility as the other two degrade paths below, not silent DEBUG.
-        logger.warning(req, 'get_groups_engagement_stats', 'One or more visible committees have no engagement rows; returning null (not yet synced?)', {
-          committee_count: committeeUids.length,
-          resolved_v2_uid_count: v2ToV1Map.size,
-          distinct_v1_id_count: v1Ids.length,
-          chunk_count: chunks.length,
-          uncovered_committee_count: uncoveredCount,
-        });
+      if (coveredCount < committeeUids.length) {
+        // The most likely-to-occur partial-coverage case in a partially-rolled-out model — warrants
+        // visibility at WARNING, same as the error paths below, even though (unlike those) it still
+        // produces a usable (if partial) count rather than degrading the whole request.
+        logger.warning(
+          req,
+          'get_groups_engagement_stats',
+          'Some visible committees are not covered by the engagement model; counting over the covered subset',
+          {
+            covered: coveredCount,
+            total: committeeUids.length,
+            uncovered_committee_count: uncoveredCount,
+          }
+        );
       } else {
         logger.debug(req, 'get_groups_engagement_stats', 'Computed active members', {
           committee_count: committeeUids.length,
@@ -265,18 +284,23 @@ export class GroupsEngagementStatsService {
         });
       }
 
-      return activeMembers;
+      return { activeMembers, coverage };
     } catch (error) {
+      // `total: visibleCount` rather than a hardcoded 0 — if `getMyCommitteeUids` succeeded and the
+      // failure happened later (e.g. a chunk query), the visible-committee count is still known and
+      // more honest than reporting 0. It stays 0 only when the failure happened before that count
+      // was ever established.
+      const coverage = { covered: 0, total: visibleCount };
       if (!SnowflakeService.isMissingObjectError(error)) {
         // A non-Snowflake failure (e.g. the visible-committee-set lookup, or a chunk query error
         // other than missing-object) is unexpected — surface it distinctly from the expected
         // pre-sync/missing-GRANT case below, but still degrade to null rather than failing the
         // whole dashboard stats request.
         logger.warning(req, 'get_groups_engagement_stats', 'Failed to compute active members; returning null', { err: error });
-        return null;
+        return { activeMembers: null, coverage };
       }
       logger.warning(req, 'get_groups_engagement_stats', 'Active-members query hit a missing-object/not-authorized error; returning null', { err: error });
-      return null;
+      return { activeMembers: null, coverage };
     }
   }
 
@@ -294,13 +318,18 @@ export class GroupsEngagementStatsService {
 /**
  * Deterministic fixture keyed off the caller's identity — same user always sees the same numbers
  * across requests/instances (no randomness), so the mock behaves predictably in manual testing and
- * screenshots without needing a backing store.
+ * screenshots without needing a backing store. `coverage` is always full (`covered === total`) —
+ * mock never fabricates a partial-coverage state, since the whole point of mock mode is exercising
+ * the UI with plausible-looking values, not a degraded one the live path already covers via its own
+ * partial/zero-coverage tests.
  */
-function deterministicMockStats(username: string): Pick<GroupsEngagementStats, 'active_members' | 'meetings_this_month'> {
+function deterministicMockStats(username: string): Pick<GroupsEngagementStats, 'active_members' | 'meetings_this_month' | 'coverage'> {
   const hash = hashString(username || 'anonymous');
+  const visibleGroups = 1 + (hash % 6);
   return {
     active_members: 1 + (hash % 50),
     meetings_this_month: hash % 8,
+    coverage: { covered: visibleGroups, total: visibleGroups },
   };
 }
 
