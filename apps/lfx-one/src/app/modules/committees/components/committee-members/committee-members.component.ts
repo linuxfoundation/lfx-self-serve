@@ -3,7 +3,7 @@
 
 import { DatePipe, TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -55,7 +55,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, of, startWith, take, takeUntil, timer } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -93,6 +93,8 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  /** Bound committee UID stream — created in the constructor injection context for reuse in async callbacks. */
+  private readonly committeeUid$: Observable<string | null>;
 
   // Input signals
   public committee = input.required<Committee | null>();
@@ -239,10 +241,11 @@ export class CommitteeMembersComponent implements OnInit {
     this.organizationOptions = this.initializeOrganizationOptions();
     this.filteredMembers = this.initializeFilteredMembers();
 
+    this.committeeUid$ = toObservable(computed(() => this.committee()?.uid ?? null));
+
     // Route-reused `/groups/:id` can bind a new committee while an approve/reject poll is in flight.
     let previousCommitteeUid: string | null | undefined;
-    effect(() => {
-      const uid = this.committee()?.uid ?? null;
+    this.committeeUid$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((uid) => {
       if (previousCommitteeUid !== undefined && uid !== previousCommitteeUid) {
         this.processingApplicationUid.set(null);
       }
@@ -370,7 +373,12 @@ export class CommitteeMembersComponent implements OnInit {
             this.refreshAfterApplicationReview(committeeUid, application.uid);
           },
           error: (err: HttpErrorResponse) => {
-            this.processingApplicationUid.set(null);
+            if (this.committee()?.uid !== committeeUid) {
+              return;
+            }
+            if (this.processingApplicationUid() === application.uid) {
+              this.processingApplicationUid.set(null);
+            }
             this.messageService.add({
               severity: 'error',
               summary: 'Unable to Approve',
@@ -414,7 +422,12 @@ export class CommitteeMembersComponent implements OnInit {
           this.refreshAfterApplicationReview(committeeUid, application.uid);
         },
         error: (err: HttpErrorResponse) => {
-          this.processingApplicationUid.set(null);
+          if (this.committee()?.uid !== committeeUid) {
+            return;
+          }
+          if (this.processingApplicationUid() === application.uid) {
+            this.processingApplicationUid.set(null);
+          }
           this.messageService.add({
             severity: 'error',
             summary: 'Unable to Reject',
@@ -599,8 +612,8 @@ export class CommitteeMembersComponent implements OnInit {
 
     refreshIfActive();
 
-    const committeeChanged$ = toObservable(this.committee).pipe(
-      filter((committee) => (committee?.uid ?? null) !== committeeUid),
+    const committeeChanged$ = this.committeeUid$.pipe(
+      filter((uid) => uid !== committeeUid),
       take(1)
     );
 
