@@ -65,7 +65,7 @@ function unavailableProject(slug: string, name: string) {
 }
 
 // Fallback row with NO org-scoped influence/trend but WITH real project-global health — health shows a real band,
-// influence and trend read "Unavailable" (US2 sub-case A).
+// influence and trend read "Unavailable".
 function healthOnlyProject(slug: string, name: string) {
   return {
     ...project(slug, name),
@@ -85,7 +85,7 @@ function healthOnlyProject(slug: string, name: string) {
 
 // Ecosystem-only participation: a project the org participates in through non-code channels (no trailing-24-month
 // code activity) but which the org dashboard still lists with real bands/health/trend. metricsState stays `full`
-// (org-dashboard parity), so the row renders as a real, linkable project — NOT an Unavailable fallback (US3).
+// (org-dashboard parity), so the row renders as a real, linkable project — NOT an Unavailable fallback.
 function ecosystemOnlyProject(slug: string, name: string) {
   return {
     ...project(slug, name),
@@ -418,7 +418,7 @@ test.describe('Org Projects', () => {
   });
 
   test('renders ecosystem-only participation rows with real bands (org-dashboard default-list parity)', async ({ page }) => {
-    // US3: the default list includes projects the org participates in only through ecosystem channels (no code
+    // The default list includes projects the org participates in only through ecosystem channels (no code
     // activity). These are `full` rows — real bands/trend, a working detail link — not "Unavailable" fallbacks.
     await stubOrgContext(page);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
@@ -526,7 +526,7 @@ test.describe('Org Projects', () => {
     await expect(page.getByLabel('Option List').getByText('Kubernetes')).toBeVisible();
   });
 
-  test('shows only "Searching…" in-flight, never "No results found" (US4)', async ({ page }) => {
+  test('shows only "Searching…" in-flight, never "No results found"', async ({ page }) => {
     await gotoOrgProjectsPage(page, {
       workspaces: [DEFAULT_WORKSPACE, { id: 'custom', name: 'Custom Workspace', projectSlugs: ['existing'] }],
       url: `${ORG_PROJECTS_URL}?workspace=custom`,
