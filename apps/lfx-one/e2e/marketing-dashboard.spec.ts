@@ -7,7 +7,7 @@ import { test, expect, Page } from '@playwright/test';
  * Marketing Dashboard E2E Tests
  *
  * Tests the Executive Director marketing overview section including:
- * - Marketing metric cards (Website Visits, Email CTR, Paid Social Reach, Social Media)
+ * - Marketing metric cards (Website Visits, Email CTR, Paid Social Reach)
  * - North Star metric cards (Flywheel Conversion, Member Growth, Engaged Community)
  * - Drill-down drawers for each metric
  * - Carousel navigation
@@ -261,29 +261,6 @@ test.describe('Paid Social Reach Drawer', () => {
     await openDrawer(page, 'ed-evo-paid-media', 'paid-social-reach-drawer-content');
     await page.locator('[data-testid="paid-social-reach-drawer-close"]').click();
     await expect(page.locator('[data-testid="paid-social-reach-drawer-content"]')).not.toBeVisible();
-  });
-});
-
-test.describe('Social Media Drawer', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto(DASHBOARD_URL);
-    await switchToExecutiveDirector(page);
-  });
-
-  test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-content');
-    await expect(page.locator('[data-testid="social-media-drawer-title"]')).toContainText('Social Media');
-  });
-
-  test('shows stats and platform breakdown', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-social-media', 'social-media-drawer-content', 'social-media-drawer-stats');
-    await expect(page.locator('[data-testid="social-media-drawer-platforms-section"]')).toBeVisible();
-  });
-
-  test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-content');
-    await page.locator('[data-testid="social-media-drawer-close"]').click();
-    await expect(page.locator('[data-testid="social-media-drawer-content"]')).not.toBeVisible();
   });
 });
 
