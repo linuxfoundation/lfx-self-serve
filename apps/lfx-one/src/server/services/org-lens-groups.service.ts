@@ -24,9 +24,7 @@ export class OrgLensGroupsService {
 
     const committeeMap = this.aggregateByCommittee(nonBoardSeats);
 
-    const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) =>
-      this.toGroupSummary(uid, groupSeats)
-    );
+    const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) => this.toGroupSummary(uid, groupSeats));
 
     // Primary sort: most org members first; secondary: alphabetical by name.
     groups.sort((a, b) => b.org_seat_count - a.org_seat_count || a.name.localeCompare(b.name));

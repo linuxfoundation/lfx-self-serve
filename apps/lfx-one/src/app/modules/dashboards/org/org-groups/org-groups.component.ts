@@ -55,19 +55,13 @@ export class OrgGroupsComponent {
     toObservable(computed(() => this.accountContext.selectedAccount().accountId)).pipe(
       filter((id): id is string => !!id),
       distinctUntilChanged(),
-      switchMap((id) =>
-        this.groupsService.getGroups(id).pipe(
-          catchError(() => of(null))
-        )
-      ),
+      switchMap((id) => this.groupsService.getGroups(id).pipe(catchError(() => of(null)))),
       takeUntilDestroyed()
     )
   );
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
-  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() =>
-    this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category) }))
-  );
+  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() => this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category) })));
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
@@ -86,5 +80,4 @@ export class OrgGroupsComponent {
     }
     return counts;
   });
-
 }
