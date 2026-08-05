@@ -44,6 +44,7 @@
               pTooltip="Public · Open shareable group page"
               tooltipPosition="top"
               aria-label="Public group — open shareable page"
+              [attr.data-testid]="'public-group-link-' + item.committee.uid"
               (click)="$event.stopPropagation()">
               <i class="fa-light fa-globe w-3 h-3" aria-hidden="true"></i>
             </a>
