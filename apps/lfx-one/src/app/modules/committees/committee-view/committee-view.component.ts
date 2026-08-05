@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, makeStateKey, PLATFORM_ID, signal, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -151,12 +151,20 @@ export class CommitteeViewComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly transferState = inject(TransferState);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.
   private deferredToClient = false;
+
+  // Carries the server's 403 across the hydration boundary: the browser boots a *new* component
+  // instance, so a plain field (like `deferredToClient` above) doesn't survive to tell the
+  // client's first read that the server was denied. Without this, a client-side 200 that still
+  // lacks `my_role` looks identical to an ordinary visitor's read and never starts the membership
+  // catch-up poll (Copilot).
+  private readonly ssrDeniedCommitteeKey = makeStateKey<string>('committee-view-ssr-denied-committee-uid');
 
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
@@ -863,7 +871,12 @@ export class CommitteeViewComponent {
           this.accessFinalizing.set(false);
           this.deferredToClient = false;
 
-          return this.readCommitteeToleratingPropagation(committeeId, !this.committee()).pipe(
+          // `this.committee()` holds the *previous* committee until this switchMap's read emits, so
+          // navigating between groups (e.g. a parent/subgroup link) would otherwise misread a still-
+          // loading different group as a silent refresh and skip the retry window (Cursor Bugbot).
+          const isInitialLoad = this.committee()?.uid !== committeeId;
+
+          return this.readCommitteeToleratingPropagation(committeeId, isInitialLoad).pipe(
             finalize(() => {
               // On the server a denial leaves the spinner up: the terminal call belongs to the
               // client, which re-fetches after hydration.
@@ -903,6 +916,10 @@ export class CommitteeViewComponent {
    *   `withCredentials` and a `Cookie` header, and `app.config.ts` does not set
    *   `includeRequestsWithAuthHeaders`), so the client always re-fetches after hydration and gets
    *   its own window. Enabling that option would suppress the re-fetch and silently weaken this.
+   *
+   * A 403 with a known pending invite for this group is an *expected* denial, not propagation lag —
+   * it resolves immediately (skipping the window) so `pendingInvitationFromRoute` can render
+   * Accept/Decline right away instead of behind a misleading "Finalizing" flash (Cursor Bugbot).
    */
   private readCommitteeToleratingPropagation(committeeId: string, isInitialLoad: boolean): Observable<Committee | null> {
     const attemptRead = (retriesLeft: number, deniedBefore: boolean): Observable<Committee | null> =>
@@ -925,8 +942,19 @@ export class CommitteeViewComponent {
             return of(null);
           }
 
+          const hasPendingInvite = !!findPendingInvitationForCommittee(
+            this.invitationService.pendingInvitations(),
+            this.invitationService.resolvedInviteUids(),
+            committeeId
+          );
+          if (hasPendingInvite) {
+            this.applyCommitteeLoadError(status);
+            return of(null);
+          }
+
           if (!isPlatformBrowser(this.platformId)) {
             this.deferredToClient = true;
+            this.transferState.set(this.ssrDeniedCommitteeKey, committeeId);
             return of(null);
           }
 
@@ -945,7 +973,21 @@ export class CommitteeViewComponent {
         })
       );
 
-    return attemptRead(ACCESS_RETRY_ATTEMPTS, false);
+    // If the server was denied, seed the client's first attempt as "already denied once" so a 200
+    // that still lacks `my_role` starts the membership catch-up poll instead of looking like an
+    // ordinary visitor's read.
+    const deniedByServer = isInitialLoad && this.consumeSsrDeniedFlag(committeeId);
+    return attemptRead(ACCESS_RETRY_ATTEMPTS, deniedByServer);
+  }
+
+  /** One-shot: clears the flag on read so a later navigation to the same id doesn't reuse it. */
+  private consumeSsrDeniedFlag(committeeId: string): boolean {
+    if (!isPlatformBrowser(this.platformId) || !this.transferState.hasKey(this.ssrDeniedCommitteeKey)) {
+      return false;
+    }
+    const deniedUid = this.transferState.get(this.ssrDeniedCommitteeKey, '');
+    this.transferState.remove(this.ssrDeniedCommitteeKey);
+    return deniedUid === committeeId;
   }
 
   private applyCommitteeLoadError(status: number | undefined): void {
