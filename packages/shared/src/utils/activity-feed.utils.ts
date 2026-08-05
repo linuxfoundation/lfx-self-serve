@@ -3,12 +3,13 @@
 
 // Specific-file imports (not the '../constants' barrel): importing the constants barrel from a
 // utils file would route back through this file's own utils barrel if any constants file ever
-// re-acquires a '../utils' edge — so utils files pin constants by file path to keep that cycle
-// impossible by construction. A live edge would transitively pull in Angular-only runtime code
-// (e.g. meeting.utils.ts's `@angular/common/http` import), which Vitest can't resolve outside an
-// Angular context. The '../interfaces' import below is `import type` for the same reason: it's
-// erased entirely, so it can't reintroduce this cycle even if a future interface file adds a
-// runtime import that reaches '../constants' or '../utils'.
+// imports the '../utils' barrel (by-file '../utils/x.utils' imports, like the ones below, are
+// fine — this only guards against the barrel) — so utils files pin constants by file path to keep
+// that cycle impossible by construction. A live barrel edge would transitively pull in
+// Angular-only runtime code (e.g. meeting.utils.ts's `@angular/common/http` import), which Vitest
+// can't resolve outside an Angular context. The '../interfaces' import below is `import type` for
+// the same reason: it's erased entirely, so it can't reintroduce this cycle even if a future
+// interface file adds a runtime import that reaches '../constants' or '../utils'.
 import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
