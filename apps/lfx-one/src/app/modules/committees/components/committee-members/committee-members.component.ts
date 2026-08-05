@@ -957,14 +957,14 @@ export class CommitteeMembersComponent implements OnInit {
 
   private initTableRows(): Signal<CommitteeTableRow[]> {
     return computed(() => {
+      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
       if (this.activeTab() === 'pending') {
-        return this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
+        return inviteRows;
       }
       const memberRows: CommitteeTableRow[] = this.filteredMembers().map((m) => ({ rowType: 'member' as const, data: m }));
       if (!this.canManageMembers() || this.joinMode() === 'closed') {
         return memberRows;
       }
-      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
       return [...memberRows, ...inviteRows];
     });
   }
