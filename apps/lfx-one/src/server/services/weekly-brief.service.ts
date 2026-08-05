@@ -5,7 +5,7 @@ import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
-  WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID,
+  WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
 } from '@lfx-one/shared/constants';
 import {
@@ -21,6 +21,7 @@ import {
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveEmail } from '../utils/auth-helper';
 
@@ -46,11 +47,15 @@ function briefTextToHtml(text: string): string {
 }
 
 /**
- * Normalizes committee-service's not-yet-finalized error-reason field onto
- * the envelope. LFXV2-2989 (committee-service) will add this to the API
- * payload but the exact field name isn't settled — probe both candidates and
- * fall back to undefined so an unrecognized/absent reason degrades to the
- * existing generic failure state, not a crash.
+ * Normalizes committee-service's error-reason onto the envelope. As of
+ * LFXV2-2989 filing, committee-service's finalizeError() logs the reason
+ * (e.g. "no_sources") but does not yet persist or expose it on the wire —
+ * neither `error_reason` nor `reason` exists in the current API contract, so
+ * this always returns undefined against live traffic today, and the
+ * quiet-week UI branch is reachable only via
+ * WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID in mock mode. Probing both
+ * candidate field names lets this activate automatically, with no second
+ * consumer-side change, once upstream ships whichever name it lands on.
  * TODO(LFXV2-2989): once upstream merges, drop the `reason` fallback and read
  * only the pinned field name.
  */
@@ -117,7 +122,7 @@ function currentMockBrief(committeeId: string): WeeklyBrief {
   // Deterministic quiet-week demo fixture — lets the calm empty state be exercised in
   // mock/dev mode without a real committee-service generation run (LFXV2-3000).
   if (committeeId === WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID) {
-    return buildMockBrief(committeeId, { state: 'error', error_reason: 'no_sources' });
+    return buildMockBrief(committeeId, { state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES });
   }
   return buildMockBrief(committeeId);
 }
@@ -211,7 +216,7 @@ export class WeeklyBriefService {
       `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
       'GET'
     );
-    if (response.brief) {
+    if (response.brief?.state === 'error') {
       response.brief.error_reason = extractBriefErrorReason(response.brief);
     }
     return response;
@@ -277,6 +282,14 @@ export class WeeklyBriefService {
         undefined,
         body
       );
+      // Normally 202/generating (see this method's docstring), but the card writes this
+      // envelope straight into its state (weekly-brief-card.component.ts's onGenerate) without
+      // going through getCurrentBrief's GET — if upstream ever returns a terminal `error` here
+      // instead, it must carry the same normalized error_reason, or the card would flash the
+      // generic failure state (with a quota-spending "Try again") until the next poll tick.
+      if (response.data.brief?.state === 'error') {
+        response.data.brief.error_reason = extractBriefErrorReason(response.data.brief);
+      }
       return { status: response.status, data: response.data };
     } catch (error) {
       throw this.withConflictBody(error);

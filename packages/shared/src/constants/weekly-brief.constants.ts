@@ -42,5 +42,10 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
 /** States a poll of GET /current should stop on — everything else (`empty`, `generating`) keeps it running. */
 export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new Set(['generated', 'edited', 'approved', 'error']);
 
-/** Mock-mode only: GET /current for this committee uid always returns a quiet-week (no_sources) error brief. */
-export const WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID = 'wb-mock-quiet-week';
+/**
+ * `WeeklyBrief.error_reason` values the UI treats specially. Currently only `NO_SOURCES`
+ * (the committee had no activity in the lookback window, not a genuine generation
+ * failure) — any other value or absence renders the generic failure state. See
+ * `WeeklyBriefErrorReason` in `weekly-brief.interface.ts` for the derived type.
+ */
+export const WEEKLY_BRIEF_ERROR_REASON = { NO_SOURCES: 'no_sources' } as const;

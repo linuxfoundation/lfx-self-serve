@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { WEEKLY_BRIEF_ERROR_REASON } from '../constants/weekly-brief.constants';
+
 export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' | 'approved' | 'error';
+
+/** Recognized values of `WeeklyBrief.error_reason` — see `WEEKLY_BRIEF_ERROR_REASON`. */
+export type WeeklyBriefErrorReason = (typeof WEEKLY_BRIEF_ERROR_REASON)[keyof typeof WEEKLY_BRIEF_ERROR_REASON];
 
 /**
  * Matches upstream's `GroupWeeklyBriefSourceRef` exactly — `kind` is an open
@@ -40,13 +45,14 @@ export interface WeeklyBrief {
   last_edited_by?: string;
   /**
    * Set when `state` is 'error' and upstream identified a specific cause.
-   * Currently only "no_sources" (committee had no activity in the lookback
-   * window) is meaningful to the UI; any other value or absence renders the
-   * generic failure state. Populated via extractBriefErrorReason() in
-   * weekly-brief.service.ts — see TODO(LFXV2-2989) there for the pinned field
-   * name once upstream ships it.
+   * As of LFXV2-2989 filing, committee-service's finalizeError() logs the
+   * reason (e.g. "no_sources") but does not yet persist or expose it on the
+   * wire — this is always undefined against live traffic until that ships.
+   * `WeeklyBriefErrorReason` values are the only ones the UI treats
+   * specially; any other string or absence renders the generic failure
+   * state. Populated via extractBriefErrorReason() in weekly-brief.service.ts.
    */
-  error_reason?: string;
+  error_reason?: WeeklyBriefErrorReason | string;
 }
 
 export interface WeeklyBriefThrottle {

@@ -40,6 +40,7 @@
  */
 
 import { expect, Page, Route, test } from '@playwright/test';
+import { WEEKLY_BRIEF_ERROR_REASON } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 
@@ -338,14 +339,15 @@ test.describe('WG Weekly Brief card — empty state (flag ON)', () => {
 });
 
 test.describe('WG Weekly Brief card — error states (flag ON)', () => {
-  // LFXV2-3000: state:'error' + error_reason:'no_sources' means the committee had no
-  // activity in the lookback window, not a real generation failure — retrying can never
-  // succeed and would only spend a regeneration slot, so this renders a calm empty state
-  // with no retry button, distinct from the generic failure state below.
-  test('renders the quiet-week empty state with no retry button for error_reason: no_sources', async ({ page }) => {
+  // LFXV2-3000: state:'error' + error_reason:NO_SOURCES means the committee had no
+  // activity in the lookback window, not a real generation failure — regenerating can
+  // never succeed and would only spend a regeneration slot, so this renders a calm empty
+  // state with a quota-free "Check again" refresh instead of the quota-spending "Try
+  // again" the generic failure state below uses.
+  test('renders the quiet-week empty state with a quota-free refresh, not the retry button, for error_reason: no_sources', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, {
-      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'no_sources' },
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES },
       throttle: USED_THROTTLE_AFTER_GENERATE,
     });
 
@@ -356,6 +358,7 @@ test.describe('WG Weekly Brief card — error states (flag ON)', () => {
     const quietWeekState = page.getByTestId('weekly-brief-card-quiet-week-state');
     await expect(quietWeekState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(quietWeekState).toContainText('Quiet week');
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-refresh-button')).toBeVisible();
 
     await expect(page.getByTestId('weekly-brief-card-error-state')).toHaveCount(0);
     await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toHaveCount(0);

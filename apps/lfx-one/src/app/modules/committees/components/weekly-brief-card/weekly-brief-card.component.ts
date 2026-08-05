@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
   WEEKLY_BRIEF_TERMINAL_STATES,
@@ -122,7 +123,7 @@ export class WeeklyBriefCardComponent {
   // so this renders a calm empty state instead of the failure card's "Try again".
   public readonly isQuietWeek: Signal<boolean> = computed(() => {
     const b = this.brief();
-    return b?.state === 'error' && b?.error_reason === 'no_sources';
+    return b?.state === 'error' && b?.error_reason === WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES;
   });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {

@@ -20,10 +20,13 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
-  WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID: 'wb-mock-quiet-week',
+  WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
 }));
+// '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
+// plain string/number literals with no transitive Angular imports — safe to leave unmocked,
+// unlike the shared-package mocks above.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // `formatUtcDateRangeLabel` lives in the same `@lfx-one/shared/utils` barrel as
 // form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
@@ -48,6 +51,7 @@ vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
 
 import type { Request } from 'express';
 
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { MicroserviceError } from '../errors';
 
 import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
@@ -211,7 +215,7 @@ describe('WeeklyBriefService', () => {
     });
 
     it('getCurrentBrief returns a deterministic quiet-week (no_sources) error brief for the designated sentinel committee uid (LFXV2-3000)', async () => {
-      const result = await service.getCurrentBrief(req, 'wb-mock-quiet-week');
+      const result = await service.getCurrentBrief(req, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID);
       expect(result.brief?.state).toBe('error');
       expect(result.brief?.error_reason).toBe('no_sources');
     });
@@ -284,6 +288,14 @@ describe('WeeklyBriefService', () => {
       expect(result.brief?.error_reason).toBeUndefined();
     });
 
+    it('getCurrentBrief does not populate error_reason on a non-error state, even if the field is present (contract: error_reason is only meaningful on state: error)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated', reason: 'no_sources' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief?.error_reason).toBeUndefined();
+    });
+
     it('getCurrentBrief propagates a 404 as a real error instead of normalizing it to an empty brief', async () => {
       const notFound = Object.assign(new Error('not found'), { statusCode: 404 });
       proxyRequest.mockRejectedValueOnce(notFound);
@@ -302,6 +314,15 @@ describe('WeeklyBriefService', () => {
       expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/generate', 'POST', undefined, {
         force: true,
       });
+    });
+
+    it('generateBrief maps error_reason onto the 202 envelope too, in case upstream ever returns a terminal error there instead of `generating` (LFXV2-3000)', async () => {
+      const data = { brief: { uid: 'b1', state: 'error', error_reason: 'no_sources' }, throttle: {} };
+      proxyRequestWithResponse.mockResolvedValueOnce({ status: 202, data, statusText: 'Accepted', headers: {} });
+
+      const result = await service.generateBrief(req, 'committee-1', { force: true });
+
+      expect(result.data.brief?.error_reason).toBe('no_sources');
     });
 
     it('generateBrief forwards the upstream 429 throttle body instead of dropping it', async () => {
