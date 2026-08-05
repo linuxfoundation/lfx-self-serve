@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAIR_ROLES } from '@lfx-one/shared/constants';
+import { CHAIR_ROLES, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
+  Committee,
   CommitteeMember,
   GroupsIOMailingList,
   PublicGroupContext,
@@ -47,25 +48,43 @@ export class PublicGroupsController {
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
-      const committee = await this.committeeService.getCommitteeById(req, id);
+      let committeeUid = id;
+      if (!UUID_REGEX.test(id)) {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee',
+          tags: `public_name:${id}`,
+          page_size: 1,
+        });
+        if (resources.length === 0) {
+          throw new AuthorizationError('Group not found', {
+            operation: 'get_public_group_by_id',
+            service: 'public_groups_controller',
+            path: `/groups/${id}`,
+            code: 'GROUP_NOT_FOUND',
+          });
+        }
+        committeeUid = resources[0].id;
+      }
+
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid);
 
       if (!committee.public) {
         throw new AuthorizationError('This group is private', {
           operation: 'get_public_group_by_id',
           service: 'public_groups_controller',
-          path: `/committees/${id}`,
+          path: `/committees/${committeeUid}`,
           code: 'GROUP_PRIVATE',
         });
       }
 
       const [members, project, meetingsResponse, mailingListsResponse] = await Promise.all([
-        this.committeeService.getCommitteeMembers(req, id),
+        this.committeeService.getCommitteeMembers(req, committeeUid),
         this.projectService.getProjectById(req, committee.project_uid, false),
-        this.meetingService.getMeetings(req, { tags: `committee_uid:${id}` }, 'v1_meeting', false),
+        this.meetingService.getMeetings(req, { tags: `committee_uid:${committeeUid}` }, 'v1_meeting', false),
         this.microserviceProxy
           .proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'groupsio_mailing_list',
-            tags: `committee_uid:${id}`,
+            tags: `committee_uid:${committeeUid}`,
           })
           .catch(() => ({ resources: [] })),
       ]);
@@ -129,7 +148,7 @@ export class PublicGroupsController {
       const links: PublicGroupLinks = {
         website: committee.website,
         mailing_list: mailingListLink,
-        calendar: committee.calendar?.public ? `/public/api/committees/${id}/calendar.ics` : undefined,
+        calendar: committee.calendar?.public ? `/public/api/committees/${committeeUid}/calendar.ics` : undefined,
       };
 
       const publicMeetings = meetingsResponse.data.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
@@ -138,6 +157,7 @@ export class PublicGroupsController {
       const detail: PublicGroupDetail = {
         uid: committee.uid,
         name: committee.name,
+        public_name: committee.public_name || undefined,
         description: committee.description ?? undefined,
         category: committee.category,
         join_mode: committee.join_mode,
@@ -165,13 +185,13 @@ export class PublicGroupsController {
             detail.my_role = callerMembership.role?.name || 'Member';
           }
         } catch {
-          logger.debug(req, 'get_public_group_by_id', 'Failed to resolve caller membership', { group_uid: id });
+          logger.debug(req, 'get_public_group_by_id', 'Failed to resolve caller membership', { group_uid: committeeUid });
         }
         req.bearerToken = m2mToken;
       }
 
       logger.success(req, 'get_public_group_by_id', startTime, {
-        group_uid: id,
+        group_uid: committeeUid,
         group_name: committee.name,
         chairs_count: chairs.length,
         meetings_count: upcomingMeetings.length,

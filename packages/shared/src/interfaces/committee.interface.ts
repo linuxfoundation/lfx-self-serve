@@ -412,6 +412,8 @@ export interface Committee {
   // ── Join & Invite fields ──
   /** How users can join this group (default: 'invite_only') */
   join_mode?: JoinMode;
+  /** Human-readable slug for public URLs (optional, set by PCC) */
+  public_name?: string;
 
   // ── Communication Channels ──
   /** Whether the committee has any associated mailing lists (enriched by BFF via query-service association counts) */
