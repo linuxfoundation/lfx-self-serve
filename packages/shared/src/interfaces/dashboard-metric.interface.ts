@@ -236,6 +236,7 @@ export enum DashboardDrawerType {
   BrandReach = 'brand-reach',
   BrandHealth = 'brand-health',
   RevenueImpact = 'revenue-impact',
+  Education = 'education',
 }
 
 /** Lifecycle stage of a foundation project */

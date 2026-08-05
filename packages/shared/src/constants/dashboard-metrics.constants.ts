@@ -777,7 +777,27 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
  * Emerald/red are reserved for delta indicators (up/down), never sparkline stroke.
  */
 export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricCard[] {
-  const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign, revenueImpact } = data;
+  const {
+    flywheel,
+    memberAcquisition,
+    memberRetention,
+    engagedCommunity,
+    eventGrowth,
+    brandReach,
+    brandHealth,
+    emailCtr,
+    paidCampaign,
+    revenueImpact,
+    education,
+  } = data;
+
+  // Education totals. edX is counted in enrollments but has no revenue column in
+  // COURSE_PURCHASES, so it is intentionally absent from the revenue sum — adding a 0
+  // would be harmless here but the omission is deliberate and mirrored in the drawer.
+  const educationTotalEnrollments = education
+    ? education.enrollment.instructorLed + education.enrollment.eLearning + education.enrollment.certExams + education.enrollment.edx
+    : 0;
+  const educationTotalRevenue = education ? education.revenue.instructorLed + education.revenue.eLearning + education.revenue.certExams : 0;
 
   // Pre-compute email open rate for the Campaign Performance card
   const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
@@ -799,9 +819,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   return [
     // Card order is the display order in the Marketing Overview carousel, and the
     // filter pills preserve it within each category — so this array is the single
-    // source of truth for sequence. North Star cards lead (Events → Members →
-    // Adoption), then Social, then Campaign Performance, then the remaining Brand
-    // and Flywheel cards.
+    // source of truth for sequence. Agreed sequence:
+    // Events → Education → Members → Adoption → Social → Email → Paid Media →
+    // Attribution → Sentiment → Flywheel.
+    // Note: Education is grouped with the North Star cards by position only; it keeps
+    // its own section marker below because it is not a North Star metric.
     // === North Star ===
     {
       title: 'Events',
@@ -825,6 +847,34 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       tooltipText: 'Year-to-date event registrants and YoY change.',
       drawerType: DashboardDrawerType.NorthStarEventGrowth,
     } as DashboardMetricCard,
+
+    // === Education ===
+    // Sits second, directly after Events, per the agreed carousel sequence.
+    // Reuses the Health Metrics training-certification endpoint, so the values match
+    // that card by construction. ENROLLMENTS is a pre-aggregated wide table with the
+    // range baked into column names and no date column, so no historical series is
+    // available — the sparkline is flat and the subtitle says so rather than implying
+    // a trend. Suppressed entirely when the foundation has no enrollment data.
+    ...(educationTotalEnrollments > 0
+      ? [
+          {
+            title: 'Education',
+            icon: 'fa-light fa-graduation-cap',
+            chartType: 'line',
+            category: 'memberships',
+            testId: 'ed-evo-education',
+            description: 'Training and certification enrollments across instructor-led, eLearning, cert exams, and edX.',
+            value: formatNumber(educationTotalEnrollments),
+            subtitle: `${formatCurrency(educationTotalRevenue)} net revenue · ${education?.range === 'YTD' ? 'YTD' : 'selected year'}`,
+            chartData: protoSparkline(flatSparklineData(educationTotalEnrollments), lfxColors.blue[500]),
+            chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+            tooltipText:
+              'Total training and certification enrollments with net revenue. Source has no monthly grain, so no trend is shown. edX contributes enrollments but carries no revenue.',
+            drawerType: DashboardDrawerType.Education,
+          } as DashboardMetricCard,
+        ]
+      : []),
+
     {
       title: 'Members',
       icon: 'fa-light fa-user-group',

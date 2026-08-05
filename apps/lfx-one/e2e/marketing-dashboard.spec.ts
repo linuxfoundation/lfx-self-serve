@@ -182,9 +182,48 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Web');
   });
 
+  // The Education card is suppressed when the foundation reports zero enrollments, so
+  // assert on attachment rather than a hard failure if TLF ever drops to no training.
+  test('renders Education card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-education"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Education');
+  });
+
   test('renders filter pills', async ({ page }) => {
     const filters = page.locator('[data-testid="ed-evolution-filters"]');
     await expect(filters).toBeVisible();
+  });
+});
+
+test.describe('Education Drawer', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+  });
+
+  test('opens and shows title when card is clicked', async ({ page }) => {
+    await openDrawer(page, 'ed-evo-education', 'education-drawer-content');
+    await expect(page.locator('[data-testid="education-drawer-title"]')).toContainText('Education');
+  });
+
+  test('shows stats section with data', async ({ page }) => {
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-stats');
+    const statCards = page.locator('[data-testid="education-drawer-stats"]').locator('lfx-card');
+    await expect(statCards).toHaveCount(3);
+  });
+
+  test('shows format breakdown section', async ({ page }) => {
+    await openDrawer(page, 'ed-evo-education', 'education-drawer-content');
+    await expect(page.locator('[data-testid="education-drawer-formats"]')).toBeVisible();
+  });
+
+  test('closes when close button is clicked', async ({ page }) => {
+    await openDrawer(page, 'ed-evo-education', 'education-drawer-content');
+    await page.locator('[data-testid="education-drawer-close"]').click();
+    await expect(page.locator('[data-testid="education-drawer-content"]')).not.toBeVisible();
   });
 });
 
