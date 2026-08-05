@@ -293,6 +293,7 @@
                     <i [class]="item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
                   </div>
                   <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ item.label }}</span>
+                  <span class="text-xs text-gray-400 shrink-0">{{ formatActivityTimestamp(item.timestamp) }}</span>
                 </button>
               }
             </div>

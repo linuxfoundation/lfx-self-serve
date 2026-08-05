@@ -30,7 +30,14 @@ import {
   Vote,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
-import { assertNeverSilent, countVotingReps, getSurveyDisplayStatus, isValidUrl, mapActivityEventsToFeedItems } from '@lfx-one/shared/utils';
+import {
+  assertNeverSilent,
+  countVotingReps,
+  formatRelativeTime,
+  getSurveyDisplayStatus,
+  isValidUrl,
+  mapActivityEventsToFeedItems,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -452,6 +459,11 @@ export class CommitteeOverviewComponent {
         });
       },
     });
+  }
+
+  // `item.timestamp` is an ISO string (event.occurred_at); formatRelativeTime takes a Date.
+  protected formatActivityTimestamp(timestamp: string): string {
+    return formatRelativeTime(new Date(timestamp));
   }
 
   private clearSectionFadeTimer(): void {
