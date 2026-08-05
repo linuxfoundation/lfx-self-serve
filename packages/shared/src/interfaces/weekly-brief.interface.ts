@@ -38,6 +38,15 @@ export interface WeeklyBrief {
   last_edited_at?: string;
   /** LFX username of the caller who last edited the brief. */
   last_edited_by?: string;
+  /**
+   * Set when `state` is 'error' and upstream identified a specific cause.
+   * Currently only "no_sources" (committee had no activity in the lookback
+   * window) is meaningful to the UI; any other value or absence renders the
+   * generic failure state. Populated via extractBriefErrorReason() in
+   * weekly-brief.service.ts — see TODO(LFXV2-2989) there for the pinned field
+   * name once upstream ships it.
+   */
+  error_reason?: string;
 }
 
 export interface WeeklyBriefThrottle {

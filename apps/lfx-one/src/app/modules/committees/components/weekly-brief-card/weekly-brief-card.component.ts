@@ -116,6 +116,15 @@ export class WeeklyBriefCardComponent {
     return b && b.state !== 'empty' ? b : null;
   });
 
+  // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
+  // a committee with zero activity in the lookback window, not a genuine generation
+  // failure. Retrying it can never succeed and would just spend a regeneration slot,
+  // so this renders a calm empty state instead of the failure card's "Try again".
+  public readonly isQuietWeek: Signal<boolean> = computed(() => {
+    const b = this.brief();
+    return b?.state === 'error' && b?.error_reason === 'no_sources';
+  });
+
   public readonly canGenerate: Signal<boolean> = computed(() => {
     const t = this.throttle();
     return !t || t.generates_used < t.generates_limit;

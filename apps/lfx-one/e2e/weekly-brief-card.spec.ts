@@ -337,6 +337,65 @@ test.describe('WG Weekly Brief card — empty state (flag ON)', () => {
   });
 });
 
+test.describe('WG Weekly Brief card — error states (flag ON)', () => {
+  // LFXV2-3000: state:'error' + error_reason:'no_sources' means the committee had no
+  // activity in the lookback window, not a real generation failure — retrying can never
+  // succeed and would only spend a regeneration slot, so this renders a calm empty state
+  // with no retry button, distinct from the generic failure state below.
+  test('renders the quiet-week empty state with no retry button for error_reason: no_sources', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'no_sources' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const quietWeekState = page.getByTestId('weekly-brief-card-quiet-week-state');
+    await expect(quietWeekState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(quietWeekState).toContainText('Quiet week');
+
+    await expect(page.getByTestId('weekly-brief-card-error-state')).toHaveCount(0);
+    await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toHaveCount(0);
+  });
+
+  test('renders the generic failure state with a Try again button when error_reason is absent', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const errorState = page.getByTestId('weekly-brief-card-error-state');
+    await expect(errorState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(errorState).toContainText('Brief generation failed for this week.');
+
+    await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toBeVisible();
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
+  });
+
+  test('renders the generic failure state (not quiet-week) for an unrecognized error_reason', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'llm_timeout' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-error-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
+  });
+});
+
 test.describe('WG Weekly Brief card — generated state (flag ON)', () => {
   test('renders brief text, week label, throttle badge, and primary actions', async ({ page }) => {
     await mockCommitteeShell(page);

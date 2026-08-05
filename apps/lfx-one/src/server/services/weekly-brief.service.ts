@@ -5,6 +5,7 @@ import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
+  WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID,
   WEEKLY_BRIEF_SHAREABLE_STATES,
 } from '@lfx-one/shared/constants';
 import {
@@ -42,6 +43,22 @@ function briefTextToHtml(text: string): string {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${escape(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('');
+}
+
+/**
+ * Normalizes committee-service's not-yet-finalized error-reason field onto
+ * the envelope. LFXV2-2989 (committee-service) will add this to the API
+ * payload but the exact field name isn't settled — probe both candidates and
+ * fall back to undefined so an unrecognized/absent reason degrades to the
+ * existing generic failure state, not a crash.
+ * TODO(LFXV2-2989): once upstream merges, drop the `reason` fallback and read
+ * only the pinned field name.
+ */
+function extractBriefErrorReason(brief: unknown): string | undefined {
+  if (!brief || typeof brief !== 'object') return undefined;
+  const raw = brief as Record<string, unknown>;
+  const value = raw['error_reason'] ?? raw['reason'];
+  return typeof value === 'string' ? value : undefined;
 }
 
 /**
@@ -95,7 +112,14 @@ export function briefWindow(): { window_start: string; window_end: string } {
 const mockBriefByCommittee = new Map<string, WeeklyBrief>();
 
 function currentMockBrief(committeeId: string): WeeklyBrief {
-  return mockBriefByCommittee.get(committeeId) ?? buildMockBrief(committeeId);
+  const tracked = mockBriefByCommittee.get(committeeId);
+  if (tracked) return tracked;
+  // Deterministic quiet-week demo fixture — lets the calm empty state be exercised in
+  // mock/dev mode without a real committee-service generation run (LFXV2-3000).
+  if (committeeId === WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID) {
+    return buildMockBrief(committeeId, { state: 'error', error_reason: 'no_sources' });
+  }
+  return buildMockBrief(committeeId);
 }
 
 function storeMockBrief(committeeId: string, brief: WeeklyBrief): WeeklyBrief {
@@ -181,12 +205,16 @@ export class WeeklyBriefService {
     }
 
     logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-    return this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+    const response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
       'GET'
     );
+    if (response.brief) {
+      response.brief.error_reason = extractBriefErrorReason(response.brief);
+    }
+    return response;
   }
 
   /**

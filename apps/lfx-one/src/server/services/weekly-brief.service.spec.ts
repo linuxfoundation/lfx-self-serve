@@ -20,6 +20,7 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
+  WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID: 'wb-mock-quiet-week',
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
 }));
@@ -209,6 +210,12 @@ describe('WeeklyBriefService', () => {
       expect(after.throttle?.regenerations_used).toBe(1);
     });
 
+    it('getCurrentBrief returns a deterministic quiet-week (no_sources) error brief for the designated sentinel committee uid (LFXV2-3000)', async () => {
+      const result = await service.getCurrentBrief(req, 'wb-mock-quiet-week');
+      expect(result.brief?.state).toBe('error');
+      expect(result.brief?.error_reason).toBe('no_sources');
+    });
+
     it('refuses to serve mock data when NODE_ENV=production (LFXV2-2175 review: no auth in mock mode)', async () => {
       process.env['NODE_ENV'] = 'production';
       await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toThrow(/temporarily unavailable/);
@@ -243,6 +250,38 @@ describe('WeeklyBriefService', () => {
 
       expect(result).toBe(upstreamResult);
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/current', 'GET');
+    });
+
+    it('getCurrentBrief maps upstream error_reason onto the envelope (LFXV2-3000)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', error_reason: 'no_sources' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief?.error_reason).toBe('no_sources');
+    });
+
+    it('getCurrentBrief falls back to a `reason` field until LFXV2-2989 pins the upstream name', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', reason: 'no_sources' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief?.error_reason).toBe('no_sources');
+    });
+
+    it('getCurrentBrief leaves error_reason undefined when upstream sends neither candidate field', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief?.error_reason).toBeUndefined();
+    });
+
+    it('getCurrentBrief ignores a non-string error_reason/reason value', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', error_reason: 42 }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief?.error_reason).toBeUndefined();
     });
 
     it('getCurrentBrief propagates a 404 as a real error instead of normalizing it to an empty brief', async () => {
