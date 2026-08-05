@@ -54,7 +54,23 @@ import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, of, startWith, switchMap, take, tap, timer } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  exhaustMap,
+  filter,
+  finalize,
+  map,
+  Observable,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -75,6 +91,16 @@ const INVITE_DECLINE_UNDO_MS = 5000;
 
 /** Dedicated toast key so the inline undo template renders only for this component's decline toast. */
 const INVITE_TOAST_KEY = 'committee-view-invite';
+
+/**
+ * Bounded retry window for an authorization denial on the *initial* committee read, sized to
+ * absorb the FGA propagation lag after an invite accept. Same 400 ms cadence as
+ * `refreshCommitteeAfterMembershipChange`, fewer attempts because nothing is on screen yet and a
+ * genuine denial is waiting behind it. Counts retries after the immediate first read, so the
+ * worst-case added delay is ATTEMPTS * INTERVAL — keep that product at or under 1.5 s.
+ */
+const ACCESS_RETRY_ATTEMPTS = 3;
+const ACCESS_RETRY_INTERVAL_MS = 400;
 
 @Component({
   selector: 'lfx-committee-view',
@@ -128,6 +154,10 @@ export class CommitteeViewComponent {
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
 
+  // Set when a server-side read is denied and the terminal decision is left to the client. Only
+  // one read is ever in flight (switchMap), so a plain field is enough.
+  private deferredToClient = false;
+
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
   private readonly committeeId: Signal<string | null> = this.initCommitteeId();
@@ -141,6 +171,9 @@ export class CommitteeViewComponent {
   public committeeRefreshing = signal<boolean>(false);
   public error = signal<boolean>(false);
   public errorType = signal<'not-found' | 'access-denied' | 'server-error' | null>(null);
+  // True while an initial-load denial is being retried. The denial is provisional until the
+  // window is exhausted, so the view shows "finalizing access" rather than the error state.
+  public accessFinalizing = signal<boolean>(false);
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
@@ -827,27 +860,16 @@ export class CommitteeViewComponent {
             this.loading.set(true);
           }
           this.committeeRefreshing.set(true);
+          this.accessFinalizing.set(false);
+          this.deferredToClient = false;
 
-          return this.committeeService.getCommittee(committeeId).pipe(
-            catchError((err) => {
-              const status = err?.status;
-              if (status === 403) {
-                this.errorType.set('access-denied');
-              } else if (status === 404) {
-                this.errorType.set('not-found');
-              } else {
-                this.errorType.set('server-error');
-              }
-              this.error.set(true);
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: status === 404 ? 'Group not found' : 'Failed to load group details',
-              });
-              return of(null);
-            }),
+          return this.readCommitteeToleratingPropagation(committeeId).pipe(
             finalize(() => {
-              this.loading.set(false);
+              // On the server a denial leaves the spinner up: the terminal call belongs to the
+              // client, which re-fetches after hydration.
+              if (!this.deferredToClient) {
+                this.loading.set(false);
+              }
               this.committeeRefreshing.set(false);
             })
           );
@@ -855,6 +877,86 @@ export class CommitteeViewComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /**
+   * Reads the committee, treating an authorization denial as provisional rather than terminal.
+   *
+   * Accepting an invite writes the membership before the `committee:{uid}#member` FGA tuple is
+   * applied, so a cold arrival can be denied for a few hundred milliseconds. Retrying briefly
+   * absorbs that window; the denial only becomes terminal once the window is exhausted.
+   *
+   * Resolves on any non-403. It deliberately does not wait for `my_role` the way the sibling poll
+   * does — the committee read is available to non-members, and an auditor or viewer legitimately
+   * has no role, so requiring one would strand them in the retry.
+   *
+   * Two properties this relies on, both load-bearing:
+   * - It runs inside the `refresh`-driven pipeline, so Try Again re-engages a full window rather
+   *   than a single read, and `switchMap` cancels any window still in flight. That re-engagement
+   *   is what carries the guarantee past this bounded window.
+   * - Authenticated responses are not transfer-cached (`authentication.interceptor.ts:37-45` sets
+   *   `withCredentials` and a `Cookie` header, and `app.config.ts` does not set
+   *   `includeRequestsWithAuthHeaders`), so the client always re-fetches after hydration and gets
+   *   its own window. Enabling that option would suppress the re-fetch and silently weaken this.
+   */
+  private readCommitteeToleratingPropagation(committeeId: string): Observable<Committee | null> {
+    const attemptRead = (retriesLeft: number, deniedBefore: boolean): Observable<Committee | null> =>
+      this.committeeService.getCommittee(committeeId).pipe(
+        tap((committee) => {
+          this.accessFinalizing.set(false);
+          // Authorization cleared but the membership index hasn't caught up. Hand that second,
+          // separate wait to the mechanism already built for it instead of widening this retry.
+          if (deniedBefore && committee && !committee.my_role) {
+            this.refreshCommitteeAfterMembershipChange();
+          }
+        }),
+        catchError((err: HttpErrorResponse) => {
+          const status = err?.status;
+
+          // Only authorization denials are provisional; everything else keeps its existing
+          // immediate, terminal handling.
+          if (status !== 403) {
+            this.applyCommitteeLoadError(status);
+            return of(null);
+          }
+
+          if (!isPlatformBrowser(this.platformId)) {
+            this.deferredToClient = true;
+            return of(null);
+          }
+
+          if (retriesLeft > 0) {
+            if (!this.accessFinalizing()) {
+              this.accessFinalizing.set(true);
+              console.info('[committee-view] access retry window engaged', { committee_uid: committeeId });
+            }
+            return timer(ACCESS_RETRY_INTERVAL_MS).pipe(switchMap(() => attemptRead(retriesLeft - 1, true)));
+          }
+
+          this.accessFinalizing.set(false);
+          console.warn('[committee-view] access retry window exhausted', { committee_uid: committeeId });
+          this.applyCommitteeLoadError(status);
+          return of(null);
+        })
+      );
+
+    return attemptRead(ACCESS_RETRY_ATTEMPTS, false);
+  }
+
+  private applyCommitteeLoadError(status: number | undefined): void {
+    if (status === 403) {
+      this.errorType.set('access-denied');
+    } else if (status === 404) {
+      this.errorType.set('not-found');
+    } else {
+      this.errorType.set('server-error');
+    }
+    this.error.set(true);
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: status === 404 ? 'Group not found' : 'Failed to load group details',
+    });
   }
 
   private initializeMembers(): Signal<CommitteeMember[]> {
