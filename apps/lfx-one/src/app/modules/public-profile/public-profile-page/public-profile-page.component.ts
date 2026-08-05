@@ -88,6 +88,9 @@ export class PublicProfilePageComponent {
               if (typeof status === 'number' && [400, 404].includes(status)) {
                 this.router.navigate(['/u/not-found']);
               } else {
+                // 400/404 is the expected "no such profile" path (kept quiet); anything else is
+                // an unexpected failure, so log before falling back to the error state.
+                console.error('Failed to load public profile', err);
                 this.error.set(true);
               }
               this.loading.set(false);
