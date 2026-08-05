@@ -192,4 +192,3 @@ export interface MemberPendingChanges {
  * The `rowType` discriminant drives conditional template rendering without nested ternaries.
  */
 export type CommitteeTableRow = { rowType: 'member'; data: CommitteeMember } | { rowType: 'invite'; data: CommitteeInvite };
-
