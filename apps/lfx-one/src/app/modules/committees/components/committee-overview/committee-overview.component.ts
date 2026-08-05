@@ -93,6 +93,7 @@ export class CommitteeOverviewComponent {
   // True when the viewer has a pending invitation to this group — suppresses the visitor join CTA
   // (the Accept/Decline banner on the group page is the action; a "Request Access" CTA would be redundant).
   public hasPendingInvite = input<boolean>(false);
+  public hasPendingApplication = input<boolean>(false);
   // Passed down from committee-view, which already fetches this once for the page (both this tab
   // and About need it, and About's cadence card would otherwise cause a second, redundant fetch).
   public meetings = input<Meeting[]>([]);

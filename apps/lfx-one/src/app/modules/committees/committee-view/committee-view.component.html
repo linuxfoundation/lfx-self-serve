@@ -134,27 +134,7 @@
           </div>
         </div>
       }
-      <!-- Application-only join mode coming soon notice -->
-      @if (committee()?.join_mode === 'application') {
-        <div
-          class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4"
-          role="region"
-          aria-label="Join mode notice"
-          data-testid="committee-view-application-mode-banner">
-          <i class="fa-light fa-triangle-exclamation mt-0.5 text-lg text-amber-600 shrink-0" aria-hidden="true"></i>
-          <div class="flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-900">Apply to Join — Coming Soon</span>
-            <p class="text-sm text-gray-600">
-              This group uses "Apply to Join" mode, but join request management is not yet available in LFX. New join requests are currently disabled and
-              existing applications cannot be reviewed or approved.
-              @if (canEdit()) {
-                If you manage this group, consider changing the join mode to <strong>Open</strong>, <strong>Invite Only</strong>, or <strong>Closed</strong> in
-                the Settings tab below to continue letting members in while this feature is being built.
-              }
-            </p>
-          </div>
-        </div>
-      }
+      <!-- Application-only join mode notice removed — apply flow enabled (LFXV2-2690) -->
       <!-- Header Section -->
       <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-view-header">
         <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
@@ -172,9 +152,9 @@
             @if (!committee()?.public) {
               <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
             }
-            <!-- Join / Contact Admin / Leave actions.
+            <!-- Join / Apply / Contact Admin / Leave actions.
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
-                 Suppressed for invite-only and application-only groups — visitors must wait for an invitation or admin add. -->
+                 Invite-only visitors see no header action (must wait for invitation). -->
             <div class="ml-auto flex items-center gap-2">
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
@@ -186,6 +166,15 @@
                     [loading]="joiningOrLeaving()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-join-btn" />
+                } @else if (committee()?.join_mode === 'application' && !hasPendingApplication()) {
+                  <lfx-button
+                    label="Apply to Join"
+                    icon="fa-light fa-file-signature"
+                    severity="info"
+                    size="small"
+                    [loading]="joiningOrLeaving()"
+                    (onClick)="handleJoinRequest()"
+                    data-testid="committee-view-apply-btn" />
                 } @else if (committee()?.join_mode === 'closed') {
                   <lfx-button
                     label="Contact Admin"
@@ -389,6 +378,7 @@
             [myMemberUid]="myMemberUid()"
             [myRoleLoading]="myRoleLoading()"
             [hasPendingInvite]="!!pendingInvitation()"
+            [hasPendingApplication]="hasPendingApplication()"
             [meetings]="upcomingMeetings()"
             [upcomingMeetingsLoading]="meetingsLoading()"
             [engagementEnabled]="engagementMetricsEnabled()"
@@ -407,6 +397,7 @@
             [canEdit]="canEdit()"
             [isVisitor]="isVisitor()"
             [hasPendingInvite]="!!pendingInvitation()"
+            [hasPendingApplication]="hasPendingApplication()"
             [associatedMailingLists]="associatedMailingLists()"
             [subGroups]="subGroups()"
             [subGroupsLoading]="subGroupsLoading()"
@@ -428,6 +419,9 @@
               [membersLoading]="membersLoading()"
               [invites]="invites()"
               [invitesLoading]="invitesLoading()"
+              [applications]="applications()"
+              [applicationsLoading]="applicationsLoading()"
+              [canSendMemberInvites]="canSendMemberInvites()"
               [engagementEnabled]="engagementMetricsEnabled()"
               [engagementAccessible]="canAccessEngagement()"
               [engagement]="engagement()"
