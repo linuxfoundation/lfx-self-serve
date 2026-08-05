@@ -59,12 +59,14 @@ export interface PublicProfileTechnicalContribution {
 }
 
 // Backed by upstream `ProjectContribution` — JSON keys mix casing: `ID`/`LogoURL`/`Name`/`Slug`
-// are PascalCase, the rest (`affiliations`, `commits`, `added`, …) are lowercase. `ID` is
-// `omitempty` and the upstream transform does not populate it, so it may be absent.
+// are PascalCase, the rest (`affiliations`, `commits`, `added`, …) are lowercase. `ID`, `LogoURL`,
+// `Name`, and `Slug` are all `omitempty` upstream (the transform sets `Name`/`Slug` from source
+// project data that can be empty, and never populates `ID`), so each may be absent — render a
+// fallback rather than assuming `Name` is present.
 export interface PublicProfileProject {
   ID?: string;
   LogoURL?: string;
-  Name: string;
+  Name?: string;
   Slug?: string;
   affiliations?: PublicProfileAffiliation[];
   commits: number;

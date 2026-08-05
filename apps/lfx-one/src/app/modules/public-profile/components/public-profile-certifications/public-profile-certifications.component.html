@@ -15,7 +15,10 @@
         @if (cert.Type) {
           <p class="text-[13px] text-gray-500">{{ cert.Type }}</p>
         }
-        @if (cert.StartDate || cert.EndDate) {
+        <!-- Gate on the formatted range, not the raw dates: the pipe drops zero-time sentinels to '',
+             so testing the raw strings would render a lone calendar icon with no date text. -->
+        @let certDateRange = cert.StartDate | publicProfileDateRange: cert.EndDate;
+        @if (certDateRange) {
           <p class="flex items-center gap-1.5 text-xs text-gray-400">
             <svg
               width="12"
@@ -32,7 +35,7 @@
               <rect width="18" height="18" x="3" y="4" rx="2"></rect>
               <path d="M3 10h18"></path>
             </svg>
-            <span>{{ cert.StartDate | publicProfileDateRange: cert.EndDate }}</span>
+            <span>{{ certDateRange }}</span>
           </p>
         }
       </div>

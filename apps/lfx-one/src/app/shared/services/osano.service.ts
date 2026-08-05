@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Injectable } from '@angular/core';
+import { OsanoFunction } from '@lfx-one/shared/interfaces';
 
 /**
  * Loads the Osano Consent Management Platform (CMP) and drives the cookie
@@ -33,19 +34,41 @@ export class OsanoService {
     const script = document.createElement('script');
     script.src = this.scriptUrl;
     script.async = true;
-    script.onerror = () => console.error('Osano: failed to load cookie consent script');
+    script.onerror = () => {
+      console.error('Osano: failed to load cookie consent script');
+      // Clear the guard and drop the dead node so a later interaction can retry the load.
+      this.isLoaded = false;
+      script.remove();
+    };
     (document.head ?? document.body)?.appendChild(script);
 
     this.isLoaded = true;
   }
 
-  // Opens the Osano cookie-preferences drawer. No-op until the script has loaded.
+  // Opens the Osano cookie-preferences drawer. If the CMP is still initializing — e.g. the footer
+  // link is clicked before the async script settles — the request is queued through Osano's own
+  // command shim so it replays once the CMP is ready, instead of being silently dropped.
   public showPreferences(): void {
     if (typeof window === 'undefined') {
       return;
     }
-    if (window.Osano?.cm?.showDrawer) {
-      window.Osano.cm.showDrawer();
+
+    // Ensure the CMP is (re)loading even if the drawer is opened before afterNextRender's load().
+    this.load();
+
+    // `@linuxfoundation/lfx-ui-core` globally types `window.Osano` as a plain object (no call
+    // signature), but at runtime our bootstrap installs Osano's callable command-queue shim. Cast
+    // to the shared model that captures both so a pre-init click can be queued, not dropped.
+    const osano = window.Osano as OsanoFunction | undefined;
+    if (osano?.cm?.showDrawer) {
+      osano.cm.showDrawer();
+      return;
+    }
+
+    // The init script installs a command-queue shim (`window.Osano(...)`) before the real CMP
+    // loads; queueing `onInitialized` replays the drawer open once initialization completes.
+    if (osano) {
+      osano('onInitialized', () => window.Osano?.cm?.showDrawer?.());
     } else {
       console.warn('Osano: CMP not available for showing cookie preferences drawer');
     }

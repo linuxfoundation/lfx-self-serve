@@ -6,6 +6,7 @@ import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angula
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { PublicProfileBasic, PublicProfileSocialLink } from '@lfx-one/shared/interfaces';
+import { isValidUrl } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-public-profile-hero',
@@ -83,7 +84,7 @@ export class PublicProfileHeroComponent {
     if (!vanity) {
       return null;
     }
-    return this.isHttpUrl(vanity) ? vanity : `https://www.linkedin.com/in/${vanity}`;
+    return isValidUrl(vanity) ? vanity : `https://www.linkedin.com/in/${vanity}`;
   }
 
   private githubUsername(basic: PublicProfileBasic): string | null {
@@ -96,12 +97,6 @@ export class PublicProfileHeroComponent {
     if (!handle) {
       return null;
     }
-    return this.isHttpUrl(handle) ? handle : `https://twitter.com/${handle}`;
-  }
-
-  // Accept a pre-formed value as-is only when it is an explicit http(s) URL; reject any
-  // other scheme (e.g. javascript:) before it can reach an [href] binding in the template.
-  private isHttpUrl(value: string): boolean {
-    return value.startsWith('http://') || value.startsWith('https://');
+    return isValidUrl(handle) ? handle : `https://twitter.com/${handle}`;
   }
 }

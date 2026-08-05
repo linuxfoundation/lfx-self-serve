@@ -12,7 +12,10 @@
     @for (training of trainings(); track training) {
       <div class="flex flex-col gap-2 border-b border-gray-100 p-4 last:border-0" data-testid="training-item">
         <span class="break-words text-sm font-semibold text-gray-900">{{ training.Name }}</span>
-        @if (training.Type || training.StartDate || training.EndDate) {
+        <!-- Format once and gate on the result: the pipe drops zero-time sentinels to '', so testing
+             the raw dates would render an empty "Enrolled:" label (or an empty metadata row). -->
+        @let trainingDateRange = training.StartDate | publicProfileDateRange: training.EndDate;
+        @if (training.Type || trainingDateRange) {
           <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
             @if (training.Type) {
               <span
@@ -20,8 +23,8 @@
                 >{{ training.Type }}</span
               >
             }
-            @if (training.StartDate || training.EndDate) {
-              <span class="flex-none text-gray-400">Enrolled: {{ training.StartDate | publicProfileDateRange: training.EndDate }}</span>
+            @if (trainingDateRange) {
+              <span class="flex-none text-gray-400">Enrolled: {{ trainingDateRange }}</span>
             }
           </div>
         }

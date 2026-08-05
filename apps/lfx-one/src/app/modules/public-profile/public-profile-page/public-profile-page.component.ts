@@ -50,7 +50,10 @@ export class PublicProfilePageComponent {
   protected readonly trainings = computed(() => this.profile()?.training_activities ?? []);
 
   protected readonly hasContributions = computed(() => (this.technicalContribution()?.projects?.length ?? 0) > 0);
-  protected readonly hasBadges = computed(() => this.badges().length > 0);
+  // `Image` is omitempty upstream and the template only renders badges that have one, so gate the
+  // whole section on at least one renderable badge — otherwise a badge with only a `Url` (or none)
+  // would leave the heading above an empty grid.
+  protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image));
   protected readonly hasCertifications = computed(() => this.certifications().length > 0);
   protected readonly hasTrainings = computed(() => this.trainings().length > 0);
 

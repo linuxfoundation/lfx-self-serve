@@ -7,18 +7,21 @@
 
   <div class="overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="contributions-projects">
     @for (project of projects(); track project) {
+      <!-- `Name`/`Slug` are omitempty upstream and may be absent — fall back so the label and avatar
+           initials never render blank. -->
+      @let projectName = project.Name || project.Slug || 'Untitled project';
       <div
         class="flex flex-col gap-4 border-b border-gray-100 p-5 last:border-0 sm:flex-row sm:items-center sm:justify-between"
         data-testid="contribution-project">
         <div class="flex min-w-0 items-center gap-3.5">
           <lfx-avatar
             [image]="project.LogoURL || ''"
-            [label]="project.Name"
+            [label]="projectName"
             shape="circle"
             [style]="{ width: '36px', height: '36px' }"
             styleClass="bg-gray-100 text-gray-600 flex-shrink-0"></lfx-avatar>
           <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-gray-900">{{ project.Name }}</p>
+            <p class="truncate text-sm font-semibold text-gray-900">{{ projectName }}</p>
             @if (project.added || project.deleted) {
               <div class="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
                 <span class="text-emerald-600">+{{ project.added | number }}</span>

@@ -447,8 +447,8 @@ export const routes: Routes = [
     loadComponent: () => import('./modules/groups/group-detail/group-detail.component').then((m) => m.GroupDetailComponent),
   },
   // Public contributor profile (LFXV2-2631). Sibling of the authGuard'd root so /u/:username
-  // renders for anonymous visitors; the auth-aware header inside the page swaps chrome by state.
-  // `u/not-found` is declared first so the literal path wins over the `:username` param.
+  // renders for anonymous visitors; the page's sticky topbar reveals the contributor's identity
+  // on scroll. `u/not-found` is declared first so the literal path wins over the `:username` param.
   {
     path: 'u/not-found',
     loadComponent: () =>
