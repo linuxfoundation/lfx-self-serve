@@ -1028,11 +1028,13 @@ export class MeetingManageComponent {
         auto_email_reminder_enabled: new FormControl(false),
         reminderHours: new FormControl({ value: DEFAULT_EMAIL_REMINDER_HOURS, disabled: true }, [
           Validators.required,
+          Validators.pattern(/^\d+$/),
           Validators.min(MIN_EMAIL_REMINDER_HOURS),
           Validators.max(MAX_EMAIL_REMINDER_HOURS),
         ]),
         reminderMinutes: new FormControl({ value: DEFAULT_EMAIL_REMINDER_MINUTES, disabled: true }, [
           Validators.required,
+          Validators.pattern(/^\d+$/),
           Validators.min(0),
           Validators.max(59),
         ]),

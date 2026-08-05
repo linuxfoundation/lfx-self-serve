@@ -163,6 +163,9 @@
             @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
               <p class="text-sm text-red-600" data-testid="email-reminder-hours-required-error">Reminder hours is required</p>
             }
+            @if (form().get('reminderHours')?.errors?.['pattern'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
+            }
             @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
               <p class="text-sm text-red-600" data-testid="email-reminder-hours-min-error">Reminder must be at least 2 hours before the meeting starts</p>
             }
@@ -171,11 +174,12 @@
             }
             @if (
               (form().get('reminderMinutes')?.errors?.['required'] ||
+                form().get('reminderMinutes')?.errors?.['pattern'] ||
                 form().get('reminderMinutes')?.errors?.['min'] ||
                 form().get('reminderMinutes')?.errors?.['max']) &&
               form().get('reminderMinutes')?.touched
             ) {
-              <p class="text-sm text-red-600" data-testid="email-reminder-minutes-error">Minutes must be between 0 and 59</p>
+              <p class="text-sm text-red-600" data-testid="email-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
             }
           </div>
         }
