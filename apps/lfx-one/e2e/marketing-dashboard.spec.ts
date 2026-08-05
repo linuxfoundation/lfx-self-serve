@@ -3,6 +3,8 @@
 
 import { test, expect, Page } from '@playwright/test';
 
+import type { TrainingCertificationSummaryResponse } from '@lfx-one/shared/interfaces';
+
 /**
  * Marketing Dashboard E2E Tests
  *
@@ -199,6 +201,62 @@ test.describe('Marketing Metric Cards', () => {
   });
 });
 
+/**
+ * Stub the training-certification endpoint so a test can exercise a specific data
+ * shape instead of whatever TLF currently returns. Must be called before `page.goto`:
+ * the Education card is built during SSR, so a route registered after navigation
+ * would only affect subsequent client-side fetches and leave the card on live data.
+ */
+async function stubEducationSummary(page: Page, summary: TrainingCertificationSummaryResponse): Promise<void> {
+  await page.route('**/api/analytics/training-certification-summary*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(summary) })
+  );
+}
+
+/** Baseline fixture: every format active, revenue measured, no single format dominant. */
+const EDUCATION_BALANCED: TrainingCertificationSummaryResponse = {
+  projectId: 'tlf-test-project',
+  range: 'YTD',
+  enrollment: { instructorLed: 300, eLearning: 300, certExams: 250, edx: 150 },
+  revenue: { instructorLed: 120_000, eLearning: 60_000, certExams: 45_000 },
+};
+
+/**
+ * All-edX fixture: enrollments exist (so the card renders) but every revenue-bearing
+ * format is empty, making net revenue genuinely untracked rather than zero. This is
+ * the branch the card/drawer contradiction lived in and that live TLF data never hits.
+ */
+const EDUCATION_ALL_EDX: TrainingCertificationSummaryResponse = {
+  projectId: 'tlf-test-project',
+  range: 'YTD',
+  enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 900 },
+  revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
+};
+
+/**
+ * Measured-zero fixture: instructor-led enrollments exist but earned $0. Distinct from
+ * the all-edX case above — here revenue IS tracked and happens to be zero, so both card
+ * and drawer must render `$0` rather than the untracked em dash.
+ */
+const EDUCATION_MEASURED_ZERO: TrainingCertificationSummaryResponse = {
+  projectId: 'tlf-test-project',
+  range: 'YTD',
+  enrollment: { instructorLed: 120, eLearning: 40, certExams: 20, edx: 60 },
+  revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
+};
+
+/**
+ * Concentration-risk fixture: one format above the 70% threshold with zero cert exams,
+ * which drives both the "Diversify education formats" and "No certification exam
+ * activity" actions into Needs Your Attention deterministically.
+ */
+const EDUCATION_CONCENTRATED: TrainingCertificationSummaryResponse = {
+  projectId: 'tlf-test-project',
+  range: 'YTD',
+  enrollment: { instructorLed: 900, eLearning: 50, certExams: 0, edx: 50 },
+  revenue: { instructorLed: 250_000, eLearning: 5_000, certExams: 0 },
+};
+
 test.describe('Education Drawer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(DASHBOARD_URL);
@@ -319,6 +377,116 @@ test.describe('Education Drawer', () => {
     await openDrawer(page, 'ed-evo-education', 'education-drawer-content');
     await page.locator('[data-testid="education-drawer-close"]').click();
     await expect(page.locator('[data-testid="education-drawer-content"]')).not.toBeVisible();
+  });
+});
+
+/**
+ * Education branches that live TLF data does not reach.
+ *
+ * The suite above asserts invariants against whatever the API currently returns, which
+ * catches real integration breakage but leaves the interesting branches unexercised:
+ * TLF has revenue-bearing enrollments, so the untracked-revenue path never runs, and its
+ * format mix decides on its own whether the concentration-risk action fires. A rendering
+ * regression in either branch would pass unnoticed. These tests pin the response instead,
+ * so each branch fails deterministically when it breaks.
+ */
+test.describe('Education Drawer — fixture-driven branches', () => {
+  test('renders a measured $0 as $0 on both card and drawer', async ({ page }) => {
+    await stubEducationSummary(page, EDUCATION_MEASURED_ZERO);
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+
+    // Revenue is tracked (instructor-led enrollments exist) and happens to be zero, so
+    // the card must state the figure rather than fall back to the untracked wording.
+    const card = page.locator('[data-testid="ed-evo-education"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toContainText('$0');
+    await expect(card).not.toContainText('net revenue not tracked');
+
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-stats');
+    const netRevenueStat = page.locator('[data-testid="education-drawer-stats"] > *', { hasText: 'Net Revenue' });
+    await expect(netRevenueStat).toContainText('$0');
+    await expect(netRevenueStat).not.toContainText('—');
+  });
+
+  test('renders untracked revenue as a dash on both card and drawer', async ({ page }) => {
+    await stubEducationSummary(page, EDUCATION_ALL_EDX);
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+
+    // edX carries enrollments but no revenue column, so net revenue is untracked rather
+    // than zero. This is the case where the card previously read "$0.00 net revenue"
+    // while the drawer showed an em dash for the same figure.
+    const card = page.locator('[data-testid="ed-evo-education"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toContainText('net revenue not tracked');
+    await expect(card).not.toContainText('$0');
+
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-stats');
+    const netRevenueStat = page.locator('[data-testid="education-drawer-stats"] > *', { hasText: 'Net Revenue' });
+    await expect(netRevenueStat).toContainText('—');
+    await expect(netRevenueStat).not.toContainText('$');
+  });
+
+  test('routes a dominant format into Needs Your Attention only', async ({ page }) => {
+    await stubEducationSummary(page, EDUCATION_CONCENTRATED);
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-formats');
+
+    // 900 of 1000 enrollments clears the >70% concentration threshold, and zero cert
+    // exams triggers the credential-gap action — both are high priority.
+    const attention = page.locator('[data-testid="education-drawer-attention"]');
+    await expect(attention).toBeVisible();
+    await expect(attention).toContainText('Diversify education formats');
+    await expect(attention).toContainText('No certification exam activity');
+
+    // The same dominant format must not also be praised. It is reported as a neutral
+    // fact instead, which is the fix for the earlier flag-and-praise contradiction.
+    await expect(page.locator('[data-testid="education-drawer-facts"]')).toContainText('Instructor Led leads');
+    const performing = page.locator('[data-testid="education-drawer-performing"]');
+    if ((await performing.count()) > 0) {
+      await expect(performing).not.toContainText('Instructor Led');
+    }
+  });
+
+  test('routes a balanced mix into Performing Well without a concentration flag', async ({ page }) => {
+    await stubEducationSummary(page, EDUCATION_BALANCED);
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-formats');
+
+    // Four active formats, none above 50%, so the balanced-portfolio insight fires and
+    // the concentration-risk action must not.
+    const performing = page.locator('[data-testid="education-drawer-performing"]');
+    await expect(performing).toBeVisible();
+    await expect(performing).toContainText('Balanced format mix');
+
+    const attention = page.locator('[data-testid="education-drawer-attention"]');
+    if ((await attention.count()) > 0) {
+      await expect(attention).not.toContainText('Diversify education formats');
+    }
+  });
+
+  test('keeps edX untracked while other formats show measured revenue', async ({ page }) => {
+    await stubEducationSummary(page, EDUCATION_BALANCED);
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-formats');
+
+    // Four rows, one per format — a regression that dropped or merged rows would pass
+    // a mere visibility assertion on the container.
+    await expect(page.locator('[data-testid="education-drawer-format-row"]')).toHaveCount(4);
+
+    const edxRow = page.locator('[data-testid="education-drawer-format-row"]', { hasText: 'edX' });
+    await expect(edxRow).toContainText('not tracked');
+    await expect(edxRow).not.toContainText('$');
+
+    const instructorLedRow = page.locator('[data-testid="education-drawer-format-row"]', { hasText: 'Instructor Led' });
+    await expect(instructorLedRow).toContainText('$120,000');
+    await expect(instructorLedRow).not.toContainText('not tracked');
   });
 });
 
