@@ -369,6 +369,12 @@ The shape used by the UI per product:
 `ExtPaymentType` is derived client-side: `ExtPaymentID.split(':')[0]`
 (e.g. `ExtPaymentID = "stripe:ch_3abcXYZ..."` → `ExtPaymentType = "stripe"`).
 
+> **LFX One divergence:** the PascalCase shape above is what member-service (and legacy
+> myprofile) returns. LFX One normalizes it to camelCase at its server boundary —
+> `status`, `autoRenew`, `purchaseDate`, `endDate`, `price`, `id`, `extPaymentType` — while
+> keeping the raw wire shape (`RawMembership`) PascalCase. Canonical shape:
+> `EnrollmentMembership` in `packages/shared/src/interfaces/enrollment.interface.ts`.
+
 **Important distinctions:**
 
 - `HasAccountLFMembership` (from `user-service/v1/me?includeAccountMembershipCheck=true`)
@@ -600,6 +606,11 @@ Example response item (one entry per enrollable product):
 ```
 
 If the user has no membership, `"membership"` is `null`.
+
+> **LFX One divergence:** the shape above is the legacy myprofile backend response. LFX One
+> serves the equivalent item with `productName` (not `ProductName`) and camelCase `membership`
+> fields — see `IndividualEnrollment` / `EnrollmentMembership` in
+> `packages/shared/src/interfaces/enrollment.interface.ts`.
 
 ### POST /enrollment (membership-ui backend)
 
