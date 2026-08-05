@@ -10,13 +10,13 @@ This project has guided skills for common workflows, plus two Self Serve reviewe
 
 ## Skills
 
-| Skill                          | When to Suggest                                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `/setup`                       | Getting started, first-time setup, broken environments, install failures, missing env vars, 1Password, how to run the app         |
-| `/self-serve-dev`              | Add a feature, fix a bug, modify code, create components/services/endpoints/types, refactor, build, implement any code change     |
+| Skill                          | When to Suggest                                                                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/setup`                       | Getting started, first-time setup, broken environments, install failures, missing env vars, 1Password, how to run the app                                            |
+| `/self-serve-dev`              | Add a feature, fix a bug, modify code, create components/services/endpoints/types, refactor, build, implement any code change                                        |
 | `/lfx-self-serve-pr-readiness` | Before opening a PR — PR-shape sanity (branch, ticket reference [JIRA or GitHub Issue], conventional commits, rebase, DCO + GPG, diff size, protected files touched) |
-| `/preflight`                   | Mechanical pre-PR checks — license headers, format, lint, build, protected files, commit signoff                                  |
-| `/lfx-review-pr`               | Review an **existing** PR by number — audit a PR's diff, validate against standards, draft inline comments                        |
+| `/preflight`                   | Mechanical pre-PR checks — license headers, format, lint, build, protected files, commit signoff                                                                     |
+| `/lfx-review-pr`               | Review an **existing** PR by number — audit a PR's diff, validate against standards, draft inline comments                                                           |
 
 ## Reviewer Subagents
 
