@@ -36,11 +36,6 @@
       icon="fa-light fa-building"
       title="Select a company via Impersonate to view group participation."
       data-testid="org-groups-no-company-state" />
-  } @else if (!hasAnalyticsId()) {
-    <lfx-empty-state
-      icon="fa-light fa-triangle-exclamation"
-      title="Group data isn't available for this company right now. Please try again."
-      data-testid="org-groups-no-analytics-id-state" />
   } @else if (fetchError()) {
     <lfx-empty-state
       icon="fa-light fa-circle-exclamation"

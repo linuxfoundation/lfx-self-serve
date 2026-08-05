@@ -42,18 +42,16 @@ export class OrgGroupsComponent {
     () => this.hasNoOrgAccess() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
-  protected readonly hasCompany: Signal<boolean> = computed(
-    () => !!this.accountContext.selectedAccount().uid || !!this.accountContext.selectedAccount().accountId
-  );
-
-  protected readonly hasAnalyticsId: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().accountId);
+  // Committee-service B2B endpoints are scoped by org uid, not the Snowflake accountId — mirrors
+  // org-people/committee-members. Gate and fetch key both use uid.
+  protected readonly hasCompany: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().uid);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   protected readonly fetchError = signal(false);
-  protected readonly groupsLoading = computed(() => this.hasAnalyticsId() && this.groupsData() === undefined);
+  protected readonly groupsLoading = computed(() => this.hasCompany() && this.groupsData() === undefined);
 
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = toSignal(
-    toObservable(computed(() => this.accountContext.selectedAccount().accountId)).pipe(
+    toObservable(computed(() => this.accountContext.selectedAccount().uid)).pipe(
       filter((id): id is string => !!id),
       distinctUntilChanged(),
       tap(() => this.fetchError.set(false)),
