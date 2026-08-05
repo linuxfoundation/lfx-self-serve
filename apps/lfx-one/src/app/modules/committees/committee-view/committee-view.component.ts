@@ -26,9 +26,12 @@ import {
   TagSeverity,
 } from '@lfx-one/shared';
 import {
+  AcceptInviteOrganizationDialogData,
+  AcceptInviteOrganizationDialogResult,
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
+  CommitteeOrganizationReference,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
@@ -36,7 +39,12 @@ import {
   TabConfigEntry,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
-import { canManageCommitteeMembers, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import {
+  canManageCommitteeMembers,
+  committeeRequiresOrganization,
+  findPendingInvitationForCommittee,
+  invitationRequiresOrganization,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -58,6 +66,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, fil
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
+import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
 
 import { CommitteeAboutComponent } from '../components/committee-about/committee-about.component';
@@ -471,18 +480,27 @@ export class CommitteeViewComponent {
     });
   }
 
-  public handleJoinRequest(): void {
+  public async handleJoinRequest(): Promise<void> {
     const committee = this.committee();
     if (!committee || this.joiningOrLeaving()) {
       return;
     }
 
     const joinMode = committee.join_mode;
+    const requiresOrg = committeeRequiresOrganization(committee);
 
     if (joinMode === 'open') {
+      let organization: CommitteeOrganizationReference | undefined;
+      if (requiresOrg) {
+        const result = await this.openOrganizationDialog(committee.name);
+        if (!result?.organization) {
+          return;
+        }
+        organization = result.organization;
+      }
       this.joiningOrLeaving.set(true);
       this.committeeService
-        .joinCommittee(committee.uid)
+        .joinCommittee(committee.uid, organization)
         .pipe(finalize(() => this.joiningOrLeaving.set(false)))
         .subscribe({
           next: () => {
@@ -498,7 +516,15 @@ export class CommitteeViewComponent {
       if (this.hasPendingApplication()) {
         return;
       }
-      this.openApplicationDialog(committee.uid, committee.name);
+      let organization: CommitteeOrganizationReference | undefined;
+      if (requiresOrg) {
+        const result = await this.openOrganizationDialog(committee.name);
+        if (!result?.organization) {
+          return;
+        }
+        organization = result.organization;
+      }
+      this.openApplicationDialog(committee.uid, committee.name, organization);
     } else {
       // closed — no self-service action available
       this.messageService.add({ severity: 'info', summary: 'Contact Admin', detail: 'Contact a group admin to request membership.' });
@@ -704,7 +730,7 @@ export class CommitteeViewComponent {
       });
   }
 
-  private openApplicationDialog(committeeUid: string, committeeName: string): void {
+  private openApplicationDialog(committeeUid: string, committeeName: string, organization?: CommitteeOrganizationReference): void {
     if (this.joiningOrLeaving()) {
       return;
     }
@@ -727,7 +753,7 @@ export class CommitteeViewComponent {
       }
 
       this.committeeService
-        .submitApplication(committeeUid, result.message)
+        .submitApplication(committeeUid, result.message, organization)
         .pipe(finalize(() => this.joiningOrLeaving.set(false)))
         .subscribe({
           next: () => {
@@ -751,6 +777,22 @@ export class CommitteeViewComponent {
             this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
           },
         });
+    });
+  }
+
+  private openOrganizationDialog(committeeName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
+    const ref = this.dialogService.open(AcceptInviteOrganizationDialogComponent, {
+      header: 'Confirm Organization',
+      width: '32rem',
+      modal: true,
+      closable: true,
+      data: { committeeName, organization: null } satisfies AcceptInviteOrganizationDialogData,
+    });
+    if (!ref) {
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      ref.onClose.pipe(take(1)).subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
     });
   }
 
