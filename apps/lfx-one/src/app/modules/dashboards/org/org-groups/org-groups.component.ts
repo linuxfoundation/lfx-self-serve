@@ -5,7 +5,7 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import type { GroupBehavioralClass, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import type { GroupBehavioralClass, OrgLensGroupSummary, OrgLensGroupsResponse, OrgLensGroupVm } from '@lfx-one/shared/interfaces';
 import { getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, switchMap } from 'rxjs';
@@ -65,6 +65,9 @@ export class OrgGroupsComponent {
   );
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
+  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() =>
+    this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category) }))
+  );
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
@@ -84,11 +87,4 @@ export class OrgGroupsComponent {
     return counts;
   });
 
-  protected getBehavioralClass(category: string): GroupBehavioralClass {
-    return getGroupBehavioralClass(category);
-  }
-
-  protected groupDetailLink(uid: string): string {
-    return `/groups/${uid}`;
-  }
 }

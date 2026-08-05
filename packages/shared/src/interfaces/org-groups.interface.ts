@@ -28,3 +28,8 @@ export interface OrgLensGroupsResponse {
   /** Total seat rows (not deduped — one person in two committees = 2 seats). */
   total_seats: number;
 }
+
+/** View-model used by the org-groups list — extends the API summary with the pre-computed behavioral class. */
+export interface OrgLensGroupVm extends OrgLensGroupSummary {
+  cls: string;
+}

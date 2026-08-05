@@ -111,11 +111,10 @@
           data-testid="org-groups-empty-state" />
       } @else {
         <div class="flex flex-col gap-2" role="list" data-testid="org-groups-list-items">
-          @for (group of groups(); track group.uid) {
-            @let cls = getBehavioralClass(group.category);
-            @let config = behavioralClassConfig[cls];
+          @for (group of groupsWithClass(); track group.uid) {
+            @let config = behavioralClassConfig[group.cls];
             <a
-              [routerLink]="groupDetailLink(group.uid)"
+              [routerLink]="['/groups', group.uid]"
               role="listitem"
               class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
               [attr.data-testid]="'org-groups-item-' + group.uid"
