@@ -22,6 +22,7 @@ import {
   MemberRetentionResponse,
   MetricCategory,
   RevenueImpactResponse,
+  SocialReachResponse,
 } from '@lfx-one/shared/interfaces';
 
 import { AnalyticsService } from '@services/analytics.service';
@@ -136,19 +137,11 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     topPositiveMentions: [],
     topNegativeMentions: [],
   },
-  revenueImpact: {
-    pipelineInfluenced: 0,
-    revenueAttributed: 0,
-    matchRate: 0,
-    changePercentage: 0,
-    trend: 'up',
-    attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
-    engagementTypes: [],
-    paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
-    attributionChannels: [],
-    projectBreakdown: [],
-    eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
-  },
+  // Explicitly undefined rather than zero-filled: safe() reads EMPTY_ED_EVOLUTION_DATA[key]
+  // as the per-call error fallback, and the Attribution card renders an unavailable state
+  // on undefined. A zero-filled summary here would render the card at $0 on a failed
+  // request — reporting a fabricated figure as a measured one.
+  revenueImpact: undefined,
   emailCtr: {
     currentCtr: 0,
     changePercentage: 0,
@@ -160,18 +153,32 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     monthlySends: [],
     monthlyOpens: [],
   },
-  paidCampaign: {
-    totalReach: 0,
-    roas: 0,
-    totalSpend: 0,
-    totalRevenue: 0,
-    changePercentage: 0,
-    trend: 'up' as const,
-    monthlyData: [],
-    monthlyLabels: [],
-    monthlyRoas: [],
-    channelGroups: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact above — zero spend and
+  // 0.0x ROAS are real measurements, so the Paid Media card must not fall back to them.
+  paidCampaign: undefined,
+};
+
+/**
+ * Zero-filled revenue impact used ONLY to satisfy the drill-down drawers' non-nullable
+ * `RevenueImpactResponse` inputs when the summary request failed.
+ *
+ * This is deliberately not reachable from the Attribution card, which branches on the
+ * raw `undefined` and renders an explicit unavailable state instead. The drawers each
+ * fetch their own detail data on open and are only reachable by an explicit click, so
+ * this placeholder is never presented as a measured figure the way the card would be.
+ */
+const DRAWER_FALLBACK_REVENUE_IMPACT: RevenueImpactResponse = {
+  pipelineInfluenced: 0,
+  revenueAttributed: 0,
+  matchRate: 0,
+  changePercentage: 0,
+  trend: 'up',
+  attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
+  engagementTypes: [],
+  paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
+  attributionChannels: [],
+  projectBreakdown: [],
+  eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
 };
 
 @Component({
@@ -237,7 +244,11 @@ export class MarketingOverviewComponent {
     const mentions = this.brandHealthMentions();
     return mentions ? { ...base, ...mentions } : base;
   });
-  protected readonly revenueImpactData = computed<RevenueImpactResponse>(() => this.edEvolutionData().revenueImpact);
+  // Drawer-facing only. The Attribution card reads edEvolutionData().revenueImpact
+  // directly so it can distinguish a failed request from a genuine zero; the drawers
+  // take a non-nullable input and refetch their own detail data, so they get the
+  // placeholder rather than a widened contract.
+  protected readonly revenueImpactData = computed<RevenueImpactResponse>(() => this.edEvolutionData().revenueImpact ?? DRAWER_FALLBACK_REVENUE_IMPACT);
 
   // Rendered directly by the carousel, in array order — the category split that used
   // to sit here regrouped the cards and overrode the intended sequence.
@@ -327,9 +338,13 @@ export class MarketingOverviewComponent {
             // the period silently falls back to the previous completed month. MoM
             // KPIs are unaffected — both windows share the same period END.
             brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug, false, 'last-6')),
-            revenueImpact: safe('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
+            // Explicit `| undefined` type argument on these two: their error fallback
+            // is genuinely undefined (see EMPTY_ED_EVOLUTION_DATA), so letting safe()
+            // infer T from the observable alone would type away the failure case that
+            // the Paid Media and Attribution cards branch on.
+            revenueImpact: safe<RevenueImpactResponse | undefined>('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
             emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
-            paidCampaign: safe('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
+            paidCampaign: safe<SocialReachResponse | undefined>('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
           })
         )
       ),

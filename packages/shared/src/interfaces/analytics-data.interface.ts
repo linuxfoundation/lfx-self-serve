@@ -3470,9 +3470,26 @@ export interface EdEvolutionData {
   eventGrowth: EventGrowthResponse;
   brandReach: BrandReachResponse;
   brandHealth: BrandHealthResponse;
-  revenueImpact: RevenueImpactResponse;
+  /**
+   * Attribution card data. undefined means "request failed", not "zero revenue".
+   *
+   * Declared required-but-undefinable (not `revenueImpact?:`) so forkJoin's result type,
+   * which always supplies the key, stays assignable to this interface.
+   *
+   * $0 attributed revenue is a legitimate measurement, so the card cannot fall back to a
+   * zero-filled response on error — that would report a failed query as a factual "this
+   * foundation won nothing". The card renders an explicit unavailable state instead.
+   */
+  revenueImpact: RevenueImpactResponse | undefined;
   emailCtr: EmailCtrResponse;
-  paidCampaign: SocialReachResponse;
+  /**
+   * Paid Media card data. undefined means "request failed", not "zero spend".
+   *
+   * Same contract as revenueImpact above: zero spend, zero impressions and 0.0x ROAS are
+   * all legitimate measurements, so a zero-filled error fallback would be indistinguishable
+   * from real data.
+   */
+  paidCampaign: SocialReachResponse | undefined;
   attribution?: MarketingAttributionResponse;
 }
 
