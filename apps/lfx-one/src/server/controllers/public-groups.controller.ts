@@ -191,6 +191,7 @@ export class PublicGroupsController {
     const startTime = logger.startOperation(req, 'get_public_groups_by_foundation', { identifier });
 
     try {
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
@@ -223,6 +224,7 @@ export class PublicGroupsController {
     const startTime = logger.startOperation(req, 'get_public_groups_by_project', { identifier });
 
     try {
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
@@ -271,7 +273,7 @@ export class PublicGroupsController {
   }
 
   private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
-    const BATCH_LIMIT = 20;
+    const BATCH_LIMIT = 10;
     const uids = projectUids.slice(0, BATCH_LIMIT);
     const batches = await Promise.all(
       uids.map((uid) => this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }).catch(() => []))
@@ -291,11 +293,15 @@ export class PublicGroupsController {
 
   private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, any>> {
     const uids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
-    const projects = await Promise.all(uids.map((uid) => this.projectService.getProjectById(req, uid, false).catch(() => null)));
+    const BATCH_SIZE = 10;
     const map = new Map<string, any>();
-    for (let i = 0; i < uids.length; i++) {
-      const p = projects[i];
-      if (p) map.set(uids[i], p);
+    for (let i = 0; i < uids.length; i += BATCH_SIZE) {
+      const batch = uids.slice(i, i + BATCH_SIZE);
+      const projects = await Promise.all(batch.map((uid) => this.projectService.getProjectById(req, uid, false).catch(() => null)));
+      for (let j = 0; j < batch.length; j++) {
+        const p = projects[j];
+        if (p) map.set(batch[j], p);
+      }
     }
     return map;
   }
