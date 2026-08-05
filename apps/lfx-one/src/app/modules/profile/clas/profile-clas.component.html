@@ -33,7 +33,10 @@ SPDX-License-Identifier: MIT
       <lfx-empty-state
         icon="fa-light fa-file-signature"
         title="No CLAs on file yet"
-        subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities." />
+        subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities."
+        ctaLabel="Learn about My CLAs"
+        [ctaRoute]="['/docs', 'profile', 'my-clas']"
+        data-testid="my-clas-empty-state" />
     } @else {
       <lfx-table
         [value]="agreements()"
