@@ -213,7 +213,7 @@
                     <span class="text-sm font-inter text-gray-500">{{ row.data.organization?.name || '-' }}</span>
                   }
                 } @else {
-                  <span class="text-sm font-inter text-gray-500">{{ row.data.organization || '—' }}</span>
+                  <span class="text-sm font-inter text-gray-500">{{ row.data.organization?.name || '—' }}</span>
                 }
               </td>
               @if (committee()?.enable_voting) {
@@ -327,7 +327,7 @@
 
           <!-- Empty Message Template -->
           <ng-template #emptymessage>
-            @if (membersLoading()) {
+            @if (membersLoading() || (activeTab() === 'pending' && invitesLoading())) {
               <tr>
                 <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
                   <div class="flex flex-col gap-4 px-4">
@@ -348,7 +348,7 @@
                   <div class="text-center">
                     <i class="fa-light fa-users text-3xl text-gray-300 mb-2"></i>
                     <p class="text-sm font-medium text-gray-600">No members found</p>
-                    @if (canManageMembers()) {
+                    @if (canManageMembers() && activeTab() !== 'pending') {
                       <div class="mt-3">
                         <button class="text-xs text-blue-600 hover:text-blue-700 font-medium" (click)="openAddMemberDialog()">
                           <i class="fa-light fa-user-plus mr-1"></i>Add the first member
