@@ -36,6 +36,7 @@
         [id]="feature().key"
         [trueValue]="feature().trueValue || true"
         [falseValue]="feature().falseValue || false"
+        [ariaLabel]="feature().title"
         [attr.data-testid]="'toggle-' + feature().key">
       </lfx-toggle>
     }
