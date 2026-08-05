@@ -13,7 +13,8 @@ Before starting any new feature or task, always start from the latest `main`:
 ```bash
 git checkout main
 git pull
-git checkout -b <type>/LFXV2-<ticket-number>
+git checkout -b <type>/LFXV2-<ticket-number>   # JIRA-tracked work
+git checkout -b <type>/GH-<issue-number>       # GitHub Issue-tracked work
 ```
 
 If you already have a working branch, ensure it's rebased on the latest `main` before proceeding.
@@ -105,3 +106,9 @@ When editing files in `docs/`:
 
 - The JIRA project key for this is `LFXV2`. All tickets associated to this repo should generally be in there.
 - JIRA sprint field is `customfield_10020`. When creating tickets, assign to the current user and current sprint.
+
+## GitHub Issues
+
+- Some work is tracked directly as GitHub Issues on `linuxfoundation/lfx-self-serve` instead of JIRA — e.g. items filed under an epic (like the [August 2026 Bugs Epic](https://github.com/linuxfoundation/lfx-self-serve/issues/1294)) and tracked on the [LFX Self Serve Kanban board](https://github.com/orgs/linuxfoundation/projects/17).
+- File new issues with `gh issue create`, set `--type` (e.g. `Bug`), `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
+- Reference GitHub Issues in commits/branches as `GH-<issue-number>` (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.

@@ -11,7 +11,7 @@ description: >
   and repo conventions (rules, checklists, architecture).
   This skill body adds what only a post-PR skill can do: verifying prior
   review comments are addressed, walking the PR-shape checklist (branch/
-  JIRA/commits/DCO+GPG/rebase/diff-size/protected-files/PR-title/external-refs),
+  ticket-ref(JIRA or GH issue)/commits/DCO+GPG/rebase/diff-size/protected-files/PR-title/external-refs),
   applying new-contributor educational tone, presenting a draft for
   explicit approval, and posting via /review only after user go-ahead.
   NEVER auto-posts comments or submits reviews. Use when reviewing PRs,
@@ -113,7 +113,7 @@ The launched subagents return **markdown review reports**:
 1. **General reviewer report** — bugs / smells / correctness findings from the general reviewer, grouped under `### Critical (N)` and `### Important (N)`. Bullets of the form `- **<file>:<line>** (conf <N>) — <issue>. _Fix:_ <suggestion>.` (no `_Source:_` field).
 2. **Self Serve code-reviewer report** — `Upstream API / data-layer validation` plus `Repo conventions`. Repo-convention bullets include a `_Source:_` quoted rule citation.
 
-NOTE: the reviewer subagents do NOT do PR-shape (branch / JIRA / commits / DCO+GPG / rebase / diff-size / **protected files** / PR-title / external-refs) and do NOT fetch prior review comments — both are this skill's job (Phases 3 and 4).
+NOTE: the reviewer subagents do NOT do PR-shape (branch / ticket-ref / commits / DCO+GPG / rebase / diff-size / **protected files** / PR-title / external-refs) and do NOT fetch prior review comments — both are this skill's job (Phases 3 and 4).
 
 ## Phase 3 — Verify prior review comments (parallel with Phase 2)
 
@@ -156,7 +156,7 @@ Fetch the additional PR-level data this needs (PR title / body / headRefName / b
 ```bash
 BASE_REF=$(jq -r '.baseRefName' /tmp/pr-<N>-meta.json)
 git log --format='%H %s' "origin/$BASE_REF..refs/pr/<N>/head"   # commit subjects with SHAs
-git log --format=%B      "origin/$BASE_REF..refs/pr/<N>/head"   # commit bodies (for Signed-off-by trailers + JIRA refs)
+git log --format=%B      "origin/$BASE_REF..refs/pr/<N>/head"   # commit bodies (for Signed-off-by trailers + ticket refs)
 git log --format='%G? %h %s' "origin/$BASE_REF..refs/pr/<N>/head"  # GPG status per commit
 ```
 
@@ -165,7 +165,7 @@ Use `git log --format='%H %s'` (not `gh api .../commits --jq '.[].commit.message
 Then walk each rule ID from `.claude/skills/lfx-self-serve-pr-readiness/references/pr-shape.md`, using that file's severity and failure message as source of truth. The commands below are implementation notes, not a second checklist (inside Bash calls, re-derive `$BASE_REF` and reference the PR head as `refs/pr/<N>/head`):
 
 - `pr-shape/branch-name` → `jq -r .headRefName /tmp/pr-<N>-meta.json`; match the regex in `pr-shape.md`.
-- `pr-shape/jira` → grep `LFXV2-[0-9]+` over commit subjects + bodies + PR body.
+- `pr-shape/jira` → grep `LFXV2-[0-9]+|GH-[0-9]+` over commit subjects + bodies + PR body (JIRA or GitHub Issue).
 - `pr-shape/conventional-commit` → each commit subject (from `git log --format='%H %s'`) against the regex in `pr-shape.md`.
 - `pr-shape/pr-title` (PR-only) → `jq -r .title /tmp/pr-<N>-meta.json` against the rule in `pr-shape.md`.
 - `pr-shape/rebase` → `git merge-base --is-ancestor "origin/$BASE_REF" "refs/pr/<N>/head"`.
