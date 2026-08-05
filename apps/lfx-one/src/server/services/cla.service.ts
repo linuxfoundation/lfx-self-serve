@@ -163,13 +163,33 @@ export class ClaService {
     // load-bearing: a NATS/auth-service failure degrades to LF-username + session-primary-email
     // resolution rather than failing the whole page. getUserEmails already returns null on
     // failure; getUserIdentities throws, so its rejection is handled here.
+    // TEMP probe (query-param gated, no default behaviour change): `?__mode=seq`
+    // runs the two auth-service calls serially; anything else keeps the concurrent
+    // path. Used to compare resolved identity-key counts between the two orderings.
+    const probeMode = typeof req.query?.['__mode'] === 'string' ? (req.query['__mode'] as string) : null;
+    const sequentialFetch = probeMode === 'seq';
+    const runSettled = async <T>(p: Promise<T>): Promise<PromiseSettledResult<T>> => {
+      try {
+        return { status: 'fulfilled', value: await p };
+      } catch (reason) {
+        return { status: 'rejected', reason };
+      }
+    };
+
     let identities: Auth0Identity[] = [];
     let emailData: EmailManagementData | null = null;
     if (auth0Sub) {
-      const [identitiesResult, emailsResult] = await Promise.allSettled([
-        this.auth0Service.getUserIdentities(req, auth0Sub),
-        this.emailVerificationService.getUserEmails(req, auth0Sub),
-      ]);
+      let identitiesResult: PromiseSettledResult<Auth0Identity[]>;
+      let emailsResult: PromiseSettledResult<EmailManagementData | null>;
+      if (sequentialFetch) {
+        identitiesResult = await runSettled(this.auth0Service.getUserIdentities(req, auth0Sub));
+        emailsResult = await runSettled(this.emailVerificationService.getUserEmails(req, auth0Sub));
+      } else {
+        [identitiesResult, emailsResult] = await Promise.allSettled([
+          this.auth0Service.getUserIdentities(req, auth0Sub),
+          this.emailVerificationService.getUserEmails(req, auth0Sub),
+        ]);
+      }
 
       if (identitiesResult.status === 'fulfilled') {
         identities = identitiesResult.value;
@@ -194,6 +214,16 @@ export class ClaService {
     const githubIds = githubIdentities.map((i) => normalizeGithubId(i.user_id)).filter((id): id is string => id !== null);
     const githubUsernames = githubIdentities.map((i) => i.profileData?.nickname?.trim()).filter((name): name is string => !!name);
     const githubLinked = githubIdentities.length > 0;
+
+    if (probeMode) {
+      (req as unknown as Record<string, unknown>)['__claProbe'] = {
+        mode: sequentialFetch ? 'sequential' : 'concurrent',
+        github_identity_count: githubIdentities.length,
+        github_id_count: githubIds.length,
+        github_username_count: githubUsernames.length,
+        email_count: emails.length,
+      };
+    }
 
     const resolved: ResolvedClaIdentity = {
       lfUsername,

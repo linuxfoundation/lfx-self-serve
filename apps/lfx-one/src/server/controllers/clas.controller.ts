@@ -33,7 +33,8 @@ export class ClasController {
         matched_user_ids: result.identity.matchedUserIds,
         github_linked: result.identity.githubLinked,
       });
-      res.json(result);
+      const probe = (req as unknown as Record<string, unknown>)['__claProbe'];
+      res.json(probe ? { ...result, _probe: probe } : result);
     } catch (error) {
       next(error);
     }
