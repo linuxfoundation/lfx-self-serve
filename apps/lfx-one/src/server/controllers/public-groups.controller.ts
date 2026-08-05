@@ -233,15 +233,15 @@ export class PublicGroupsController {
 
       let parentFoundation = null;
       if (project.parent_uid) {
-        parentFoundation = await this.projectService.getProjectById(req, project.parent_uid, false).catch(() => null);
+        parentFoundation = await this.projectService.getProjectById(req, project.parent_uid, false);
       }
 
       const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
       const publicCommittees = committees.filter((c) => c.public);
 
-      const groups = publicCommittees.map((c) =>
-        this.buildGroupSummary(c, new Map([[projectUid, project]]), parentFoundation ?? project, project.parent_uid ? project : null)
-      );
+      const groups = publicCommittees
+        .map((c) => this.buildGroupSummary(c, new Map([[projectUid, project]]), parentFoundation ?? project, project.parent_uid ? project : null))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en'));
 
       const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
 
@@ -273,28 +273,24 @@ export class PublicGroupsController {
   }
 
   private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
-    const BATCH_LIMIT = 10;
-    if (projectUids.length > BATCH_LIMIT) {
-      logger.warning(req, 'fetch_public_committees_for_projects', 'Foundation has more child projects than batch limit; results may be incomplete', {
-        total_projects: projectUids.length,
-        batch_limit: BATCH_LIMIT,
-      });
-    }
-    const uids = projectUids.slice(0, BATCH_LIMIT);
-    const batches = await Promise.all(
-      uids.map((uid) => this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }).catch(() => []))
-    );
+    const BATCH_SIZE = 10;
     const seen = new Set<string>();
     const result: Committee[] = [];
-    for (const batch of batches) {
-      for (const c of batch) {
-        if (c.public && !seen.has(c.uid)) {
-          seen.add(c.uid);
-          result.push(c);
+    for (let i = 0; i < projectUids.length; i += BATCH_SIZE) {
+      const batch = projectUids.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map((uid) => this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }))
+      );
+      for (const committees of batchResults) {
+        for (const c of committees) {
+          if (c.public && !seen.has(c.uid)) {
+            seen.add(c.uid);
+            result.push(c);
+          }
         }
       }
     }
-    return result.sort((a, b) => a.name.localeCompare(b.name));
+    return result.sort((a, b) => a.name.localeCompare(b.name, 'en'));
   }
 
   private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, any>> {
@@ -303,10 +299,9 @@ export class PublicGroupsController {
     const map = new Map<string, any>();
     for (let i = 0; i < uids.length; i += BATCH_SIZE) {
       const batch = uids.slice(i, i + BATCH_SIZE);
-      const projects = await Promise.all(batch.map((uid) => this.projectService.getProjectById(req, uid, false).catch(() => null)));
+      const projects = await Promise.all(batch.map((uid) => this.projectService.getProjectById(req, uid, false)));
       for (let j = 0; j < batch.length; j++) {
-        const p = projects[j];
-        if (p) map.set(batch[j], p);
+        map.set(batch[j], projects[j]);
       }
     }
     return map;
@@ -342,7 +337,6 @@ export class PublicGroupsController {
       join_mode: committee.join_mode,
       total_members: committee.total_members,
       website: committee.website,
-      mailing_list: committee.mailing_list,
       chat_channel: committee.chat_channel,
       has_public_calendar: committee.calendar?.public ?? false,
     };
