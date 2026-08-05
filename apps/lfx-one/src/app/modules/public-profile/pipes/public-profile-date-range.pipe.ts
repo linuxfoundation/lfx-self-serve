@@ -33,6 +33,8 @@ export class PublicProfileDateRangePipe implements PipeTransform {
     if (Number.isNaN(date.getTime()) || date.getTime() <= 0) {
       return '';
     }
+    // Upstream emits UTC ISO-8601 timestamps (e.g. "2024-01-15T00:00:00Z"), so format in UTC —
+    // without `timeZone: 'UTC'` a midnight-UTC date shifts to the previous day west of UTC.
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   }
 }

@@ -31,7 +31,6 @@ export interface PublicProfile {
 export interface PublicProfileSocialLink {
   label: string;
   url: string;
-  icon: string;
 }
 
 export interface PublicProfileBasic {

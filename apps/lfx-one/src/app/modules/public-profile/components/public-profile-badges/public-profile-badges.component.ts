@@ -3,11 +3,11 @@
 
 import { Component, input } from '@angular/core';
 import { PublicProfileBadge } from '@lfx-one/shared/interfaces';
-import { SafeUrlPipe } from '@pipes/safe-url.pipe';
+import { ValidExternalUrlPipe } from '@pipes/valid-external-url.pipe';
 
 @Component({
   selector: 'lfx-public-profile-badges',
-  imports: [SafeUrlPipe],
+  imports: [ValidExternalUrlPipe],
   templateUrl: './public-profile-badges.component.html',
 })
 export class PublicProfileBadgesComponent {

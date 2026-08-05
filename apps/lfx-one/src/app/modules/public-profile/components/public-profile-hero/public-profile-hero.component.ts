@@ -6,7 +6,7 @@ import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angula
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { PublicProfileBasic, PublicProfileSocialLink } from '@lfx-one/shared/interfaces';
-import { isValidUrl } from '@lfx-one/shared/utils';
+import { isValidUrl, resolveAffiliationCompany } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-public-profile-hero',
@@ -26,10 +26,7 @@ export class PublicProfileHeroComponent {
   protected readonly accountLogo = computed(() => this.basic()?.AccountLogoURL?.trim() || '');
 
   // "Individual" is an upstream placeholder for "no employer" — hide it (matches myprofile).
-  protected readonly company = computed(() => {
-    const account = this.basic()?.AccountName?.trim();
-    return account && !account.includes('Individual') ? account : '';
-  });
+  protected readonly company = computed(() => resolveAffiliationCompany(this.basic()));
 
   protected readonly socials: Signal<PublicProfileSocialLink[]> = this.initSocials();
 
@@ -62,17 +59,17 @@ export class PublicProfileHeroComponent {
 
       const linkedIn = this.linkedInUrl(basic.LinkedInID);
       if (linkedIn) {
-        links.push({ label: 'LinkedIn', url: linkedIn, icon: 'linkedin' });
+        links.push({ label: 'LinkedIn', url: linkedIn });
       }
 
       const github = this.githubUsername(basic);
       if (github) {
-        links.push({ label: 'GitHub', url: `https://github.com/${github}`, icon: 'github' });
+        links.push({ label: 'GitHub', url: `https://github.com/${encodeURIComponent(github)}` });
       }
 
       const twitter = this.twitterUrl(basic.TwitterID);
       if (twitter) {
-        links.push({ label: 'X', url: twitter, icon: 'x' });
+        links.push({ label: 'X', url: twitter });
       }
 
       return links;
@@ -84,7 +81,7 @@ export class PublicProfileHeroComponent {
     if (!vanity) {
       return null;
     }
-    return isValidUrl(vanity) ? vanity : `https://www.linkedin.com/in/${vanity}`;
+    return isValidUrl(vanity) ? vanity : `https://www.linkedin.com/in/${encodeURIComponent(vanity)}`;
   }
 
   private githubUsername(basic: PublicProfileBasic): string | null {
@@ -97,6 +94,6 @@ export class PublicProfileHeroComponent {
     if (!handle) {
       return null;
     }
-    return isValidUrl(handle) ? handle : `https://twitter.com/${handle}`;
+    return isValidUrl(handle) ? handle : `https://twitter.com/${encodeURIComponent(handle)}`;
   }
 }
