@@ -344,11 +344,20 @@ test.describe('WG Weekly Brief card — error states (flag ON)', () => {
   // never succeed and would only spend a regeneration slot, so this renders a calm empty
   // state with a quota-free "Check again" refresh instead of the quota-spending "Try
   // again" the generic failure state below uses.
-  test('renders the quiet-week empty state with a quota-free refresh, not the retry button, for error_reason: no_sources', async ({ page }) => {
+  test('renders the quiet-week empty state, and "Check again" issues a plain GET without ever hitting the generate/regenerate endpoint', async ({ page }) => {
     await mockCommitteeShell(page);
-    await mockCurrentBrief(page, {
+    const briefMock = await mockCurrentBrief(page, {
       brief: { ...GENERATED_BRIEF, state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES },
       throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    // If "Check again" ever regresses to firing a generate/regenerate call (spending a
+    // throttle slot on a state a retry can never resolve), fail loudly instead of just
+    // silently 404ing against an unmocked route.
+    let generateCalled = false;
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/generate`, async (route) => {
+      generateCalled = true;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected generate call' }) });
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
@@ -358,10 +367,25 @@ test.describe('WG Weekly Brief card — error states (flag ON)', () => {
     const quietWeekState = page.getByTestId('weekly-brief-card-quiet-week-state');
     await expect(quietWeekState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(quietWeekState).toContainText('Quiet week');
-    await expect(page.getByTestId('weekly-brief-card-quiet-week-refresh-button')).toBeVisible();
 
     await expect(page.getByTestId('weekly-brief-card-error-state')).toHaveCount(0);
     await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toHaveCount(0);
+
+    // Still quiet-week on refresh — proves the click re-fetched (not a no-op) via a plain
+    // GET, distinctly from the generic failure state's "Try again", which calls onGenerate().
+    briefMock.setResponse({
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES, revision: GENERATED_BRIEF.revision + 1 },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+    const getPromise = page.waitForRequest(
+      (req) => req.method() === 'GET' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.getByTestId('weekly-brief-card-quiet-week-refresh-button').click();
+    await getPromise;
+
+    await expect(quietWeekState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    expect(generateCalled).toBe(false);
   });
 
   test('renders the generic failure state with a Try again button when error_reason is absent', async ({ page }) => {

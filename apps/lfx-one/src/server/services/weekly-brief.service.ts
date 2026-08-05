@@ -282,11 +282,12 @@ export class WeeklyBriefService {
         undefined,
         body
       );
-      // Normally 202/generating (see this method's docstring), but the card writes this
-      // envelope straight into its state (weekly-brief-card.component.ts's onGenerate) without
-      // going through getCurrentBrief's GET — if upstream ever returns a terminal `error` here
-      // instead, it must carry the same normalized error_reason, or the card would flash the
-      // generic failure state (with a quota-spending "Try again") until the next poll tick.
+      // Normally 202/generating (see this method's docstring) — the card's `generating()`
+      // signal masks any terminal state in the template until the first poll tick either
+      // way, so this isn't UI-visible today. Defense-in-depth: if upstream ever returns a
+      // terminal `error` in this envelope instead, it carries the same normalized
+      // error_reason as getCurrentBrief's GET, so both response shapes stay consistent for
+      // any future consumer (or a change to the template's branch ordering).
       if (response.data.brief?.state === 'error') {
         response.data.brief.error_reason = extractBriefErrorReason(response.data.brief);
       }

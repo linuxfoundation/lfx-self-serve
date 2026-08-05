@@ -288,12 +288,20 @@ describe('WeeklyBriefService', () => {
       expect(result.brief?.error_reason).toBeUndefined();
     });
 
-    it('getCurrentBrief does not populate error_reason on a non-error state, even if the field is present (contract: error_reason is only meaningful on state: error)', async () => {
+    it('getCurrentBrief does not consult the `reason` fallback on a non-error state (only error_reason/reason on state: error are normalized)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated', reason: 'no_sources' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.brief?.error_reason).toBeUndefined();
+    });
+
+    it('getCurrentBrief leaves an already-present error_reason untouched on a non-error state — normalization only runs on state: error', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated', error_reason: 'no_sources' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief?.error_reason).toBe('no_sources');
     });
 
     it('getCurrentBrief propagates a 404 as a real error instead of normalizing it to an empty brief', async () => {
