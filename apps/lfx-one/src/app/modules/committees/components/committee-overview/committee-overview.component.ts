@@ -37,7 +37,6 @@ import {
   assertNeverSilent,
   countVotingReps,
   formatRelativeTime,
-  formatShortDate,
   getSurveyDisplayStatus,
   isValidUrl,
   mapActivityEventsToFeedItems,
@@ -161,6 +160,16 @@ export class CommitteeOverviewComponent {
   // setTimeout handle for the in-flight grace/section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
   private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
 
+  // Lookup for the meeting-type/duration badge on `past_meeting` activity rows — keyed by
+  // PastMeeting.id, the same field `action.meetingId` carries (see handleActivityItemClick's
+  // 'past-meeting' case comment above: action.meetingId matches PastMeeting.id, not meeting_id).
+  // pastMeetings() is its own independently-windowed fetch (like votes()/surveys() below), so a
+  // meetingId with no entry here is an expected miss, not an error — activityMeetingBadge()
+  // returns null for it and the row renders unchanged. Not used by the template directly (only
+  // via activityMeetingBadge()), so this stays private rather than following the public-signal
+  // convention the rest of this "data fetches" section uses.
+  private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
+
   // Computed: chairs derived from members
   public chairs: Signal<CommitteeMember[]> = this.initChairs();
 
@@ -189,14 +198,6 @@ export class CommitteeOverviewComponent {
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
-
-  // Lookup for the meeting-type/duration badge on `past_meeting` activity rows — keyed by
-  // PastMeeting.id, the same field `action.meetingId` carries (see handleActivityItemClick's
-  // 'past-meeting' case comment above: action.meetingId matches PastMeeting.id, not meeting_id).
-  // pastMeetings() is its own independently-windowed fetch (like votes()/surveys() below), so a
-  // meetingId with no entry here is an expected miss, not an error — activityMeetingBadge()
-  // returns null for it and the row renders unchanged.
-  private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
@@ -480,9 +481,15 @@ export class CommitteeOverviewComponent {
 
   // Every ActivityFeedItem carries a timestamp (event.occurred_at), so this isn't scoped to
   // meeting_held rows the way the meeting-type badge below is — the absolute-date tooltip
-  // improvement applies to all row types.
+  // improvement applies to all row types. Deliberately NOT formatShortDate() — that util pins
+  // `timeZone: 'UTC'`, which is correct for the date-only range-preview strings it was written
+  // for but would show the wrong calendar day here for a full-instant timestamp in negative-UTC-
+  // offset zones (e.g. an evening event crossing into the next UTC day). Uses the same
+  // no-timezone-override Intl options this file already uses for vote/survey dates above
+  // (initPendingActionItems), which resolve in the viewer's local timezone instead.
   protected formatActivityTooltip(item: ActivityFeedItem): string {
-    return `${item.label} (${formatShortDate(new Date(item.timestamp))})`;
+    const date = new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${item.label} (${date})`;
   }
 
   // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical
