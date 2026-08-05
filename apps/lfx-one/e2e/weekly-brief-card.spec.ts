@@ -371,20 +371,21 @@ test.describe('WG Weekly Brief card — error states (flag ON)', () => {
     await expect(page.getByTestId('weekly-brief-card-error-state')).toHaveCount(0);
     await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toHaveCount(0);
 
-    // Still quiet-week on refresh — proves the click re-fetched (not a no-op) via a plain
-    // GET, distinctly from the generic failure state's "Try again", which calls onGenerate().
-    briefMock.setResponse({
-      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES, revision: GENERATED_BRIEF.revision + 1 },
-      throttle: USED_THROTTLE_AFTER_GENERATE,
-    });
-    const getPromise = page.waitForRequest(
-      (req) => req.method() === 'GET' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`),
+    // Swap the mocked GET to a visibly distinct state (generated, not quiet-week) before
+    // clicking — asserting the card actually re-renders to it is a stronger proof of a
+    // real re-fetch than waiting on the request alone (a stale DOM would still be showing
+    // quiet-week either way), and it stays distinct from the generic failure state's
+    // "Try again", which calls onGenerate() instead of this quota-free refresh.
+    briefMock.setResponse({ brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    const responsePromise = page.waitForResponse(
+      (res) => res.request().method() === 'GET' && res.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`),
       { timeout: DATA_LOAD_TIMEOUT }
     );
     await page.getByTestId('weekly-brief-card-quiet-week-refresh-button').click();
-    await getPromise;
+    await responsePromise;
 
-    await expect(quietWeekState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(quietWeekState).toHaveCount(0);
     expect(generateCalled).toBe(false);
   });
 
