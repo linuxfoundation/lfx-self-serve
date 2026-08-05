@@ -286,13 +286,22 @@
                 <button
                   type="button"
                   class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                  [title]="item.label"
+                  [title]="formatActivityTooltip(item)"
                   (click)="handleActivityItemClick(item)"
                   [attr.data-testid]="'committee-overview-activity-item-' + item.key">
                   <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
                     <i [class]="item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
                   </div>
                   <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ item.label }}</span>
+                  @if (activityMeetingBadge(item); as badge) {
+                    <lfx-tag
+                      [outlined]="true"
+                      [rounded]="true"
+                      [value]="badge.label"
+                      [icon]="badge.icon"
+                      class="shrink-0"
+                      [attr.data-testid]="'committee-overview-activity-item-badge-' + item.key" />
+                  }
                   <span class="text-xs text-gray-400 shrink-0">{{ formatActivityTimestamp(item.timestamp) }}</span>
                 </button>
               }

@@ -9,6 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  DEFAULT_MEETING_TYPE_CONFIG,
+  MEETING_TYPE_CONFIGS,
   PAST_MEETING_SORT,
   PENDING_ACTION_EMPTY_GRACE_MS,
   PENDING_ACTION_FADE_OUT_MS,
@@ -18,6 +20,7 @@ import {
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActivityFeedItem,
+  ActivityMeetingBadge,
   Committee,
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
@@ -34,6 +37,7 @@ import {
   assertNeverSilent,
   countVotingReps,
   formatRelativeTime,
+  formatShortDate,
   getSurveyDisplayStatus,
   isValidUrl,
   mapActivityEventsToFeedItems,
@@ -185,6 +189,14 @@ export class CommitteeOverviewComponent {
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
+
+  // Lookup for the meeting-type/duration badge on `past_meeting` activity rows — keyed by
+  // PastMeeting.id, the same field `action.meetingId` carries (see handleActivityItemClick's
+  // 'past-meeting' case comment above: action.meetingId matches PastMeeting.id, not meeting_id).
+  // pastMeetings() is its own independently-windowed fetch (like votes()/surveys() below), so a
+  // meetingId with no entry here is an expected miss, not an error — activityMeetingBadge()
+  // returns null for it and the row renders unchanged.
+  private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
@@ -466,6 +478,32 @@ export class CommitteeOverviewComponent {
     return formatRelativeTime(new Date(timestamp));
   }
 
+  // Every ActivityFeedItem carries a timestamp (event.occurred_at), so this isn't scoped to
+  // meeting_held rows the way the meeting-type badge below is — the absolute-date tooltip
+  // improvement applies to all row types.
+  protected formatActivityTooltip(item: ActivityFeedItem): string {
+    return `${item.label} (${formatShortDate(new Date(item.timestamp))})`;
+  }
+
+  // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical
+  // recurring-series rows (e.g. 8x "Meeting held: Identity & Trust Working Group") with the
+  // meeting's type + duration, sourced from pastMeetings() already loaded on this page — no
+  // BFF/mapper change. Narrowing on action.kind (not item.type) gives TS access to meetingId.
+  protected activityMeetingBadge(item: ActivityFeedItem): ActivityMeetingBadge | null {
+    if (item.action.kind !== 'past-meeting') return null;
+    const meeting = this.pastMeetingsById().get(item.action.meetingId);
+    if (!meeting) return null;
+
+    const config = meeting.meeting_type
+      ? (MEETING_TYPE_CONFIGS[meeting.meeting_type.toLowerCase()] ?? DEFAULT_MEETING_TYPE_CONFIG)
+      : DEFAULT_MEETING_TYPE_CONFIG;
+    // meeting.duration is minutes, not seconds — formatDuration() takes seconds and would
+    // misformat here; dashboard-meeting-card.component.ts's initFormattedTimeWithDuration
+    // establishes the plain `${duration}m` convention for this exact field, reused verbatim.
+    const label = meeting.duration > 0 ? `${config.label} · ${meeting.duration}m` : config.label;
+    return { label, icon: config.icon };
+  }
+
   private clearSectionFadeTimer(): void {
     if (this.sectionFadeTimerId !== null) {
       clearTimeout(this.sectionFadeTimerId);
@@ -513,6 +551,10 @@ export class CommitteeOverviewComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initPastMeetingsById(): Signal<Map<string, PastMeeting>> {
+    return computed(() => new Map(this.pastMeetings().map((meeting) => [meeting.id, meeting])));
   }
 
   private initVotes(): Signal<Vote[]> {

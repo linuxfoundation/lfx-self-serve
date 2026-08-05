@@ -69,3 +69,17 @@ export interface ActivityFeedItem {
   /** What clicking this row does — see `ActivityFeedAction` */
   action: ActivityFeedAction;
 }
+
+/**
+ * View-model for the meeting-type/duration chip rendered on `past_meeting` activity rows in the
+ * committee Overview "Recent Activity" widget — distinguishes otherwise-identical rows from the
+ * same recurring series (LFXV2-3009). `null` from the deriving method means "don't render a chip"
+ * (not a `past_meeting` row, or its `action.meetingId` has no match in the current `pastMeetings()`
+ * fetch window) — the row falls back to today's label+timestamp-only rendering, no placeholder.
+ */
+export interface ActivityMeetingBadge {
+  /** e.g. "Technical · 45m", or just "Technical" when duration is falsy */
+  label: string;
+  /** Font Awesome icon class from `MeetingTypeConfig.icon` */
+  icon: string;
+}
