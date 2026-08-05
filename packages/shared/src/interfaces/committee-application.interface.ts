@@ -16,9 +16,27 @@ export interface CommitteeJoinApplication {
   applicant_name?: string;
   applicant_uid?: string;
   status: CommitteeJoinApplicationStatus;
+  /** Application message from the applicant */
+  message?: string;
+  /** Notes left by the reviewer on approve/reject */
+  reviewer_notes?: string;
   reason?: string;
   created_at: string;
   updated_at?: string;
+}
+
+/** Request payload to approve a committee join application */
+export interface ApproveCommitteeJoinApplicationRequest {
+  reviewer_notes?: string;
+  /** When true, send an acceptance email to the applicant. Defaults to true from the BFF. */
+  notify?: boolean;
+}
+
+/** Request payload to reject a committee join application */
+export interface RejectCommitteeJoinApplicationRequest {
+  reviewer_notes?: string;
+  /** When true, send a rejection email to the applicant. Defaults to true from the BFF. */
+  notify?: boolean;
 }
 
 /**

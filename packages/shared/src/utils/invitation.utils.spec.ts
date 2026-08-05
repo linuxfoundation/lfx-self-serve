@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { PendingInvitation } from '../interfaces/committee.interface';
 import {
   buildCommitteeOrganizationPayload,
+  committeeOrganizationFormComplete,
   buildInvitationActions,
   buildInvitationSubtext,
   committeeRequiresOrganization,
@@ -204,6 +205,38 @@ describe('buildCommitteeOrganizationPayload', () => {
         organization_id: null,
       })
     ).toBeNull();
+  });
+});
+
+describe('committeeOrganizationFormComplete', () => {
+  it('returns false when name or https website is missing', () => {
+    expect(committeeOrganizationFormComplete({ organization: '', organization_url: '' })).toBe(false);
+    expect(committeeOrganizationFormComplete({ organization: 'Acme', organization_url: '' })).toBe(false);
+    expect(committeeOrganizationFormComplete({ organization: '', organization_url: 'https://acme.example' })).toBe(false);
+  });
+
+  it('returns true only for name plus https website', () => {
+    expect(
+      committeeOrganizationFormComplete({
+        organization: 'Acme Corp',
+        organization_url: 'https://acme.example',
+      })
+    ).toBe(true);
+  });
+
+  it('rejects non-https or malformed URLs', () => {
+    expect(
+      committeeOrganizationFormComplete({
+        organization: 'Acme Corp',
+        organization_url: 'http://acme.example',
+      })
+    ).toBe(false);
+    expect(
+      committeeOrganizationFormComplete({
+        organization: 'Acme Corp',
+        organization_url: 'not-a-url',
+      })
+    ).toBe(false);
   });
 });
 

@@ -11,6 +11,8 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
 import { isFileTypeAllowed } from '@lfx-one/shared/utils';
@@ -85,7 +87,8 @@ export class CommitteeController {
   /**
    * GET /committees/engagement-stats
    * Groups dashboard rollup for the caller's visible set (Active Members, Meetings This Month).
-   * Mocked pending the LFXV2-1705 dbt engagement model — see GroupsEngagementStatsService.
+   * active_members reads live from the LFXV2-1705 dbt engagement model; meetings_this_month stays
+   * null pending a calendar-month data source — see GroupsEngagementStatsService.
    */
   public async getGroupsEngagementStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_groups_engagement_stats', {});
@@ -1351,6 +1354,109 @@ export class CommitteeController {
 
       logger.success(req, 'submit_committee_application', startTime, { committee_id: id });
       res.status(201).json(application);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/:id/applications
+   * Lists join applications for a committee from the query index.
+   */
+  public async getCommitteeApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_committee_applications', { committee_id: id });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'get_committee_applications',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const applications = await this.committeeService.getCommitteeApplications(req, id, req.query);
+
+      logger.success(req, 'get_committee_applications', startTime, {
+        committee_id: id,
+        application_count: applications.length,
+      });
+      res.json(applications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/applications/:applicationId/approve
+   */
+  public async approveApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'approve_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      if (!id || !applicationId) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID are required', {
+            operation: 'approve_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const body = (req.body ?? {}) as ApproveCommitteeJoinApplicationRequest;
+      const member = await this.committeeService.approveApplication(req, id, applicationId, body);
+
+      logger.success(req, 'approve_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+        member_id: member.uid,
+      });
+      res.status(201).json(member);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/applications/:applicationId/reject
+   */
+  public async rejectApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'reject_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      if (!id || !applicationId) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID are required', {
+            operation: 'reject_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const body = (req.body ?? {}) as RejectCommitteeJoinApplicationRequest;
+      const application = await this.committeeService.rejectApplication(req, id, applicationId, body);
+
+      logger.success(req, 'reject_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+      });
+      res.json(application);
     } catch (error) {
       next(error);
     }

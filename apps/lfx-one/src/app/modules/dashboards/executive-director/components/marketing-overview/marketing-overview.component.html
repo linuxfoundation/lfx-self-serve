@@ -174,11 +174,10 @@
   <!-- Carousel Container -->
   <div class="relative overflow-hidden">
     <div lfxScrollShadow [scrollDistance]="320" class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="ed-evolution-carousel">
-      @for (card of northStarCards(); track card.testId) {
-        <ng-container *ngTemplateOutlet="metricCardTpl; context: { $implicit: card }"></ng-container>
-      }
-
-      @for (card of nonNorthStarCards(); track card.testId) {
+      <!-- Rendered in array order, not grouped by category — CAMPAIGN card order in
+           buildEdEvolutionMetrics() is the intended display sequence, and grouping
+           by category here would reorder it (pushing every brand card to the end). -->
+      @for (card of filteredCards(); track card.testId) {
         <ng-container *ngTemplateOutlet="metricCardTpl; context: { $implicit: card }"></ng-container>
       }
     </div>
@@ -251,6 +250,7 @@
 
 <lfx-paid-social-reach-drawer
   [visible]="activeDrawer() === DashboardDrawerType.MarketingPaidSocialReach"
+  [data]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-paid-social-reach-drawer>
 
 <lfx-social-media-drawer

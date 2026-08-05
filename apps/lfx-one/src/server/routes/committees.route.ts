@@ -3,6 +3,7 @@
 
 import express, { Router } from 'express';
 
+import { CommitteeActivityController } from '../controllers/committee-activity.controller';
 import { CommitteeController } from '../controllers/committee.controller';
 import { CommitteeEngagementController } from '../controllers/committee-engagement.controller';
 
@@ -10,6 +11,7 @@ const router = Router();
 
 const committeeController = new CommitteeController();
 const committeeEngagementController = new CommitteeEngagementController();
+const committeeActivityController = new CommitteeActivityController();
 
 // Committee CRUD routes - using new controller pattern
 router.get('/', (req, res, next) => committeeController.getCommittees(req, res, next));
@@ -31,6 +33,9 @@ router.delete('/:id/members/:memberId', (req, res, next) => committeeController.
 
 // ── Member engagement/attendance rollup (LFXV2-1705) ──────────────────────────
 router.get('/:uid/engagement', (req, res, next) => committeeEngagementController.getEngagement(req, res, next));
+
+// ── Activity feed aggregation (LFXV2-1707) ────────────────────────────────────
+router.get('/:uid/activity', (req, res, next) => committeeActivityController.getActivity(req, res, next));
 
 // ── Invite routes (invite-by-email add-member) ───────────────────────────────
 router.get('/:id/invites', (req, res, next) => committeeController.getCommitteeInvites(req, res, next));
@@ -57,5 +62,8 @@ router.delete('/:id/documents/:documentId', (req, res, next) => committeeControl
 router.post('/:id/join', (req, res, next) => committeeController.joinCommittee(req, res, next));
 router.delete('/:id/leave', (req, res, next) => committeeController.leaveCommittee(req, res, next));
 router.post('/:id/applications', (req, res, next) => committeeController.submitApplication(req, res, next));
+router.get('/:id/applications', (req, res, next) => committeeController.getCommitteeApplications(req, res, next));
+router.post('/:id/applications/:applicationId/approve', (req, res, next) => committeeController.approveApplication(req, res, next));
+router.post('/:id/applications/:applicationId/reject', (req, res, next) => committeeController.rejectApplication(req, res, next));
 
 export default router;

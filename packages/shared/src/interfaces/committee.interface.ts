@@ -64,6 +64,9 @@ export interface CommitteeOrganizationReference {
  */
 export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 
+/** Add-member dialog mode: admin direct-add vs member invite-by-email. */
+export type AddMemberDialogMode = 'direct-add' | 'invite';
+
 /**
  * Status of a committee invite. Mirrors the committee-service `committee_invite`
  * resource status enum (lfx-v2-committee-service): an invite is `pending` until the
@@ -586,8 +589,12 @@ export interface CommitteeSettingsData {
 /** Status of an open vote */
 export type CommitteeVoteStatus = 'open' | 'closed' | 'cancelled';
 
-/** Quick-filter chip keys for the committee Members tab; `'all'` is the default. */
-export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs';
+/**
+ * Quick-filter chip keys for the committee Members tab; `'all'` is the default. `'atRisk'` is only
+ * offered when the engagement rollup is available (LFXV2-1705, behind `wg-engagement-metrics`) —
+ * it filters on the per-member engagement classification, not on roster fields.
+ */
+export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs' | 'atRisk';
 
 /** A single chip entry in the committee Members quick-filter row. */
 export interface CommitteeMemberFilterChipConfig {

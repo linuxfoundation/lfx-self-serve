@@ -10,7 +10,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { formatNumber, hexToRgba, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatNumber, formatPercent, hexToRgba, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -236,7 +236,7 @@ export class SocialMediaDrawerComponent {
       if (changePercentage < -5) {
         actions.push({
           title: 'Address follower decline',
-          description: `Followers dropped ${Math.abs(changePercentage)}% — review content strategy and posting cadence`,
+          description: `Followers dropped ${formatPercent(Math.abs(changePercentage))}% — review content strategy and posting cadence`,
           priority: 'high',
 
           actionType: 'decline',
@@ -261,7 +261,7 @@ export class SocialMediaDrawerComponent {
       if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
           title: 'Continue growth strategy',
-          description: `${formatNumber(totalFollowers)} followers across ${platforms.length} platforms${changePercentage > 0 ? ` — growing ${changePercentage}%` : ''}`,
+          description: `${formatNumber(totalFollowers)} followers across ${platforms.length} platforms${changePercentage > 0 ? ` — growing ${formatPercent(changePercentage)}%` : ''}`,
           priority: 'low',
           actionType: 'growth',
         });
@@ -282,11 +282,14 @@ export class SocialMediaDrawerComponent {
 
       // Follower trend
       if (changePercentage > 5) {
-        insights.push({ text: `Followers grew ${changePercentage}% month-over-month`, type: 'driver' });
+        insights.push({ text: `Followers grew ${formatPercent(changePercentage)}% month-over-month`, type: 'driver' });
       } else if (changePercentage < -5) {
-        insights.push({ text: `Followers declined ${Math.abs(changePercentage)}% month-over-month`, type: 'warning' });
+        insights.push({ text: `Followers declined ${formatPercent(Math.abs(changePercentage))}% month-over-month`, type: 'warning' });
       } else if (changePercentage !== 0) {
-        insights.push({ text: `Followers ${changePercentage > 0 ? 'up' : 'down'} ${Math.abs(changePercentage)}% — relatively stable`, type: 'info' });
+        insights.push({
+          text: `Followers ${changePercentage > 0 ? 'up' : 'down'} ${formatPercent(Math.abs(changePercentage))}% — relatively stable`,
+          type: 'info',
+        });
       }
 
       // Best engagement platform
