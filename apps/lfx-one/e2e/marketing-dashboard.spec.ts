@@ -9,10 +9,17 @@ import type { TrainingCertificationSummaryResponse } from '@lfx-one/shared/inter
  * Marketing Dashboard E2E Tests
  *
  * Tests the Executive Director marketing overview section including:
- * - Marketing metric cards (Website Visits, Email CTR, Paid Social Reach)
- * - North Star metric cards (Flywheel Conversion, Member Growth, Engaged Community)
+ * - North Star metric cards (Events, Members, Adoption, Email, Paid Media, Attribution)
+ * - Brand metric cards (Social, Web, Sentiment) and the Education card
  * - Drill-down drawers for each metric
- * - Carousel navigation
+ * - Carousel navigation and filter pills
+ *
+ * Two layers of coverage, deliberately kept separate:
+ * - Live-data suites hit the real API and assert invariants that hold under any data
+ *   shape. They catch integration breakage — contract changes, serialization bugs.
+ * - Fixture-driven suites stub the endpoint to force a specific branch. They catch
+ *   rendering regressions in cases live data does not reach (see the Education
+ *   fixture-driven block for the untracked-revenue and concentration-risk branches).
  *
  * Prerequisites:
  * - Dev server running on localhost:4200
