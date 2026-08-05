@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PublicProfile } from '@lfx-one/shared/interfaces';
+import {
+  PublicProfile,
+  PublicProfileBadge,
+  PublicProfileBasic,
+  PublicProfileCertification,
+  PublicProfileTechnicalContribution,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { PUBLIC_PROFILE_FETCH_TIMEOUT_MS, PUBLIC_PROFILE_SERVICE_NAME, PUBLIC_PROFILE_USERNAME_PATTERN, PUBLIC_PROFILES_BUCKET_URL_ENV } from '../constants';
@@ -28,6 +34,103 @@ export function resolvePublicFlag(parsed: Record<string, unknown>): boolean {
   const keys = ['IsPublic', 'isPublic'] as const;
   const present = keys.filter((key) => Object.prototype.hasOwnProperty.call(parsed, key));
   return present.length > 0 && present.every((key) => parsed[key] === true);
+}
+
+/** Narrows an unknown to a string, or undefined when absent/non-string. */
+function pickString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Narrows an unknown to a finite number, defaulting contribution counts to 0. */
+function pickCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/** Narrows an unknown to a plain object for further field projection, or undefined. */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Narrows an unknown to an array of plain-object records, dropping non-object entries. */
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== undefined) : [];
+}
+
+function projectBasic(value: unknown): PublicProfileBasic | undefined {
+  const basic = asRecord(value);
+  if (!basic) {
+    return undefined;
+  }
+  const identities = asRecordArray(basic['Identities']).map((identity) => ({ Username: pickString(identity['Username']) }));
+  return {
+    Name: pickString(basic['Name']),
+    LogoURL: pickString(basic['LogoURL']),
+    TwitterID: pickString(basic['TwitterID']),
+    LinkedInID: pickString(basic['LinkedInID']),
+    GithubID: pickString(basic['GithubID']),
+    Title: pickString(basic['Title']),
+    Bio: pickString(basic['Bio']),
+    AccountName: pickString(basic['AccountName']),
+    AccountLogoURL: pickString(basic['AccountLogoURL']),
+    Identities: identities.length ? identities : undefined,
+  };
+}
+
+function projectTechnicalContribution(value: unknown): PublicProfileTechnicalContribution | undefined {
+  const contribution = asRecord(value);
+  if (!contribution) {
+    return undefined;
+  }
+  const projects = asRecordArray(contribution['projects']).map((project) => ({
+    LogoURL: pickString(project['LogoURL']),
+    Name: pickString(project['Name']),
+    Slug: pickString(project['Slug']),
+    commits: pickCount(project['commits']),
+    deleted: pickCount(project['deleted']),
+    added: pickCount(project['added']),
+    prs: pickCount(project['prs']),
+    issues: pickCount(project['issues']),
+  }));
+  return { projects };
+}
+
+/** Projects the shared upstream `Activity` shape rendered by both certifications and trainings. */
+function projectActivities(value: unknown): PublicProfileCertification[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return asRecordArray(value).map((activity) => ({
+    Name: pickString(activity['Name']),
+    Type: pickString(activity['Type']),
+    StartDate: pickString(activity['StartDate']),
+    EndDate: pickString(activity['EndDate']),
+  }));
+}
+
+function projectBadges(value: unknown): PublicProfileBadge[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return asRecordArray(value).map((badge) => ({
+    Image: pickString(badge['Image']),
+    Url: pickString(badge['Url']),
+  }));
+}
+
+/**
+ * Projects the raw S3 artifact down to the render-only allowlist — fail closed, so any field not
+ * listed here never reaches the client. This is the sole PII boundary for the anonymous endpoint.
+ */
+export function projectPublicProfile(record: Record<string, unknown>): PublicProfile {
+  return {
+    isPublic: resolvePublicFlag(record),
+    basic: projectBasic(record['basic']),
+    About: pickString(record['About']),
+    technical_contribution: projectTechnicalContribution(record['technical_contribution']),
+    certification_activities: projectActivities(record['certification_activities']),
+    training_activities: projectActivities(record['training_activities']),
+    badges: projectBadges(record['badges']),
+  };
 }
 
 /**
@@ -173,6 +276,6 @@ export class PublicProfileService {
     }
 
     const record = parsed as Record<string, unknown>;
-    return { ...record, isPublic: resolvePublicFlag(record) } as PublicProfile;
+    return projectPublicProfile(record);
   }
 }

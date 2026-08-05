@@ -32,13 +32,8 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public group detail - anonymous access with optional auth for membership enrichment
   { pattern: '/groups/', type: 'ssr', auth: 'optional' },
 
-  // Public contributor profile (LFXV2-2631) — anonymous visitors must reach the SSR page with no
-  // login redirect, and it must stay decoupled from impersonation. `public` (not `optional`) skips
-  // extractBearerToken, so an active impersonation session never sets req.bearerToken on this
-  // request; the auth-aware header still renders logged-in chrome from req.oidc in the SSR
-  // auth-context, independent of token extraction. Anchored regex (not a bare `/u/` string) so
-  // `startsWith` cannot fail-open onto a future protected `/u/...` route — matches `/u/<username>`
-  // and `/u/not-found`. Must precede the catch-all `/` row.
+  // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
+  // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
   { pattern: /^\/u\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
 
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
