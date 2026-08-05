@@ -66,9 +66,8 @@ export class PublicProfilePageComponent {
   protected readonly trainings = computed(() => this.profile()?.training_activities ?? []);
 
   protected readonly hasContributions = computed(() => (this.technicalContribution()?.projects?.length ?? 0) > 0);
-  // `Image` is omitempty upstream and the template only renders badges that have one, so gate the
-  // whole section on at least one renderable badge — otherwise a badge with only a `Url` (or none)
-  // would leave the heading above an empty grid.
+  // `Image` is omitempty upstream and the template only renders badges that have one — gate on at
+  // least one renderable badge so a `Url`-only badge can't leave the heading above an empty grid.
   protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image));
   protected readonly hasCertifications = computed(() => this.certifications().length > 0);
   protected readonly hasTrainings = computed(() => this.trainings().length > 0);
@@ -77,12 +76,8 @@ export class PublicProfilePageComponent {
     // Load the Osano CMP in the browser so the footer's cookie-preferences link works on this public page.
     afterNextRender(() => this.osanoService.load());
 
-    // SEO sync — re-applies head tags whenever `profile()` resolves so crawlers and link
-    // unfurlers get the contributor's name/bio/avatar (set during SSR since the profile is
-    // fetched server-side). We use `toObservable` + `takeUntilDestroyed` rather than `effect()`
-    // because the frontend convention checklist reserves `effect()` for logging/debugging
-    // (`docs/reviews/frontend-checklist.md` §5); the constructor's injection context lets
-    // `takeUntilDestroyed()` auto-bind the component's `DestroyRef`.
+    // SEO sync — re-apply head tags when `profile()` resolves; `toObservable` + `takeUntilDestroyed`
+    // instead of `effect()` per `docs/reviews/frontend-checklist.md` §5 (effect reserved for logging).
     toObservable(this.profile)
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.applyMetadata());
@@ -145,9 +140,8 @@ export class PublicProfilePageComponent {
     );
   }
 
-  // Sets the document title and Open Graph / Twitter card tags from the resolved profile.
-  // When no profile is resolved (loading, error, not-found, private) it restores the default
-  // head so the previous contributor's title/card never lingers after a client navigation.
+  // Sets title + Open Graph / Twitter tags from the resolved profile; when none is resolved it
+  // restores the default head so a prior contributor's card never lingers after a client navigation.
   private applyMetadata(): void {
     const basic = this.profile()?.basic;
     if (!basic) {
@@ -193,5 +187,7 @@ export class PublicProfilePageComponent {
     this.meta.updateTag({ name: 'twitter:description', content: description });
     this.meta.removeTag('property="og:image"');
     this.meta.removeTag('name="twitter:image"');
+    this.meta.removeTag('property="og:type"');
+    this.meta.removeTag('name="twitter:card"');
   }
 }

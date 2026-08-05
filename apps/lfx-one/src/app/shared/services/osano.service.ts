@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Injectable } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { OsanoFunction } from '@lfx-one/shared/interfaces';
 
 /**
@@ -14,6 +15,8 @@ import { OsanoFunction } from '@lfx-one/shared/interfaces';
   providedIn: 'root',
 })
 export class OsanoService {
+  private readonly platformId = inject(PLATFORM_ID);
+
   // Public Osano CMP script for the Linux Foundation (same source the <lfx-footer> uses).
   private readonly scriptUrl = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/d6ac078e-c71f-4b96-8c97-818cc1cc6632/osano.js';
 
@@ -21,7 +24,7 @@ export class OsanoService {
 
   // Injects the Osano consent script once. Safe to call repeatedly.
   public load(): void {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
+    if (!isPlatformBrowser(this.platformId)) {
       return;
     }
     if (this.isLoaded || document.querySelector(`script[src="${this.scriptUrl}"]`)) {
@@ -49,7 +52,7 @@ export class OsanoService {
   // link is clicked before the async script settles — the request is queued through Osano's own
   // command shim so it replays once the CMP is ready, instead of being silently dropped.
   public showPreferences(): void {
-    if (typeof window === 'undefined') {
+    if (!isPlatformBrowser(this.platformId)) {
       return;
     }
 

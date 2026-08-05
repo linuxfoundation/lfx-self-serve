@@ -30,9 +30,8 @@ export class PublicProfileTopbarComponent {
   // "{Title} at {Company}" — mirrors the hero, hiding the "Individual" no-employer placeholder.
   protected readonly headline = computed(() => formatAffiliation(this.basic()));
 
-  // Coalesces the burst of scroll events into one read per animation frame; the pending flag
-  // drops every scroll event fired before the queued frame runs (signal equality then keeps
-  // change detection to the single threshold crossing).
+  // Coalesces scroll bursts into one read per animation frame; the flag drops events queued
+  // before the frame runs, so change detection fires only on the threshold crossing.
   private scrollFramePending = false;
 
   // Window scroll only binds in the browser, so the read is SSR-safe; guard anyway per
