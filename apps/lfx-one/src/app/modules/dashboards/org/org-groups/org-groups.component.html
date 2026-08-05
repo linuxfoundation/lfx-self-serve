@@ -41,6 +41,12 @@
       icon="fa-light fa-triangle-exclamation"
       title="Group data isn't available for this company right now. Please try again."
       data-testid="org-groups-no-analytics-id-state" />
+  } @else if (fetchError()) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-exclamation"
+      title="Unable to load group participation"
+      description="Something went wrong while fetching group data. Please try refreshing the page."
+      data-testid="org-groups-error-state" />
   } @else {
     <!-- Stat strip -->
     <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-stat-strip">

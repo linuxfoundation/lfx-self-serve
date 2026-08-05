@@ -1,11 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** A single member representing the org in a working group / committee. */
-export interface OrgLensGroupRepresentative {
-  name: string;
-  role: string;
-}
+import type { GroupBehavioralClass } from './committee.interface';
 
 /** One working group / committee the org participates in (non-board committees only). */
 export interface OrgLensGroupSummary {
@@ -17,8 +13,6 @@ export interface OrgLensGroupSummary {
   project_slug?: string;
   /** Distinct org employees holding seats in this committee (deduped by email). */
   org_seat_count: number;
-  /** Up to 3 representatives — used for an avatar/name preview row in the UI. */
-  representative_members: OrgLensGroupRepresentative[];
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/groups`. */
@@ -31,5 +25,5 @@ export interface OrgLensGroupsResponse {
 
 /** View-model used by the org-groups list — extends the API summary with the pre-computed behavioral class. */
 export interface OrgLensGroupVm extends OrgLensGroupSummary {
-  cls: string;
+  cls: GroupBehavioralClass;
 }

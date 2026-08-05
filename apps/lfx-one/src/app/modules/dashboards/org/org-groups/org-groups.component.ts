@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { GroupBehavioralClass, OrgLensGroupSummary, OrgLensGroupsResponse, OrgLensGroupVm } from '@lfx-one/shared/interfaces';
 import { getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, of, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -49,13 +49,22 @@ export class OrgGroupsComponent {
   protected readonly hasAnalyticsId: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount().accountId);
 
   // ── Data ──────────────────────────────────────────────────────────────────
+  protected readonly fetchError = signal(false);
   protected readonly groupsLoading = computed(() => this.hasAnalyticsId() && this.groupsData() === undefined);
 
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = toSignal(
     toObservable(computed(() => this.accountContext.selectedAccount().accountId)).pipe(
       filter((id): id is string => !!id),
       distinctUntilChanged(),
-      switchMap((id) => this.groupsService.getGroups(id).pipe(catchError(() => of(null)))),
+      tap(() => this.fetchError.set(false)),
+      switchMap((id) =>
+        this.groupsService.getGroups(id).pipe(
+          catchError(() => {
+            this.fetchError.set(true);
+            return of(null);
+          })
+        )
+      ),
       takeUntilDestroyed()
     )
   );

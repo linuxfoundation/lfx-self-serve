@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeServiceOrgSeat, OrgLensGroupRepresentative, OrgLensGroupsResponse, OrgLensGroupSummary } from '@lfx-one/shared/interfaces';
+import type { CommitteeServiceOrgSeat, OrgLensGroupsResponse, OrgLensGroupSummary } from '@lfx-one/shared/interfaces';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
@@ -54,19 +54,14 @@ export class OrgLensGroupsService {
   private toGroupSummary(uid: string, seats: CommitteeServiceOrgSeat[]): OrgLensGroupSummary {
     // aggregateByCommittee only adds to the map on push, so this is always true — guard is defensive.
     if (seats.length === 0) {
-      return { uid, name: uid, category: '', org_seat_count: 0, representative_members: [] };
+      return { uid, name: uid, category: '', org_seat_count: 0 };
     }
     const first = seats[0];
 
     // Deduplicate by email so one person with multiple roles counts once for the seat count.
     const seenEmails = new Set<string>();
-    const representatives: OrgLensGroupRepresentative[] = [];
-
     for (const s of seats) {
-      if (!seenEmails.has(s.email)) {
-        seenEmails.add(s.email);
-        representatives.push({ name: `${s.first_name} ${s.last_name}`.trim(), role: s.role_name });
-      }
+      seenEmails.add(s.email);
     }
 
     return {
@@ -76,7 +71,6 @@ export class OrgLensGroupsService {
       ...(first.project_uid ? { project_uid: first.project_uid } : {}),
       ...(first.project_slug ? { project_slug: first.project_slug } : {}),
       org_seat_count: seenEmails.size,
-      representative_members: representatives.slice(0, 3),
     };
   }
 }
