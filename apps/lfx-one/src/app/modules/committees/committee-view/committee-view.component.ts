@@ -966,7 +966,6 @@ export class CommitteeViewComponent {
             return timer(ACCESS_RETRY_INTERVAL_MS).pipe(switchMap(() => attemptRead(retriesLeft - 1, true)));
           }
 
-          this.accessFinalizing.set(false);
           console.warn('[committee-view] access retry window exhausted', { committee_uid: committeeId });
           this.applyCommitteeLoadError(status);
           return of(null);
@@ -991,6 +990,11 @@ export class CommitteeViewComponent {
   }
 
   private applyCommitteeLoadError(status: number | undefined): void {
+    // Every terminal exit from the retry window must clear this itself: `accessFinalizing` can
+    // already be true from an earlier retry in the same window, and the template checks it before
+    // `error()`, so a stale true here would strand the page on "Finalizing your access" forever
+    // (Cursor Bugbot).
+    this.accessFinalizing.set(false);
     if (status === 403) {
       this.errorType.set('access-denied');
     } else if (status === 404) {
