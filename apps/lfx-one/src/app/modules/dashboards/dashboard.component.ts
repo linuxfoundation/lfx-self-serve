@@ -52,10 +52,10 @@ export class DashboardComponent {
   });
 
   protected readonly foundationDashboardType = computed(() => {
-    const persona = this.personaService.currentPersona();
-    if (persona === 'executive-director' || this.personaService.canViewExecutiveDashboards()) {
+    if (this.personaService.canViewExecutiveDashboards()) {
       return 'executive-director';
     }
+    const persona = this.personaService.currentPersona();
     return isBoardScopedPersona(persona) ? persona : 'board-member';
   });
 
