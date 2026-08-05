@@ -135,7 +135,7 @@ export class CommitteeMembersComponent implements OnInit {
   // linkedSignal: resets to 'all' when the Pending tab becomes invisible (all invites revoked /
   // none loaded) so the user is never left looking at an empty Pending table.
   public activeTab = linkedSignal<boolean, CommitteeMemberTab>({
-    source: () => this.showPendingTab(),
+    source: () => this.showPendingInvites(),
     computation: (pendingVisible, previous) => {
       if (previous && previous.value === 'pending' && !pendingVisible) {
         return 'all';
@@ -174,11 +174,9 @@ export class CommitteeMembersComponent implements OnInit {
   public readonly showPendingInvites = computed(
     () => this.canManageMembers() && this.joinMode() !== 'closed' && (this.invitesLoading() || this.invites().length > 0)
   );
-  /** Show the Pending tab only when there are (or are loading) pending invites a manager can see. */
-  public readonly showPendingTab = computed(() => this.showPendingInvites());
   public readonly tabOptions = computed<FilterPillOption[]>(() => {
     const opts: FilterPillOption[] = [{ id: 'all', label: 'All' }];
-    if (this.showPendingTab()) {
+    if (this.showPendingInvites()) {
       const count = this.invitesLoading() ? '' : ` (${this.invites().length})`;
       opts.push({ id: 'pending', label: `Pending${count}` });
     }
@@ -957,13 +955,13 @@ export class CommitteeMembersComponent implements OnInit {
 
   private initTableRows(): Signal<CommitteeTableRow[]> {
     return computed(() => {
-      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
-      if (this.activeTab() === 'pending') {
-        return inviteRows;
-      }
       const memberRows: CommitteeTableRow[] = this.filteredMembers().map((m) => ({ rowType: 'member' as const, data: m }));
       if (!this.canManageMembers() || this.joinMode() === 'closed') {
         return memberRows;
+      }
+      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
+      if (this.activeTab() === 'pending' && this.showPendingInvites()) {
+        return inviteRows;
       }
       return [...memberRows, ...inviteRows];
     });
