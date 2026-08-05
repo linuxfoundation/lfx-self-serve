@@ -4,7 +4,7 @@
 import { afterNextRender, Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { PublicProfilePageState } from '@lfx-one/shared/interfaces';
 import { formatAffiliation } from '@lfx-one/shared/utils';
 import { OsanoService } from '@services/osano.service';
@@ -17,6 +17,7 @@ import { PublicProfileContributionsComponent } from '../components/public-profil
 import { PublicProfileHeroComponent } from '../components/public-profile-hero/public-profile-hero.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
+import { PublicProfileNotFoundComponent } from '../public-profile-not-found/public-profile-not-found.component';
 import { PublicProfileService } from '../services/public-profile.service';
 
 @Component({
@@ -29,22 +30,24 @@ import { PublicProfileService } from '../services/public-profile.service';
     PublicProfileBadgesComponent,
     PublicProfileCertificationsComponent,
     PublicProfileTrainingsComponent,
+    PublicProfileNotFoundComponent,
   ],
   templateUrl: './public-profile-page.component.html',
 })
 export class PublicProfilePageComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly publicProfileService = inject(PublicProfileService);
   private readonly osanoService = inject(OsanoService);
   private readonly title = inject(Title);
   private readonly meta = inject(Meta);
 
-  // Single source of truth for the async page state; loading/error/profile derive from it.
+  // Single source of truth for the async page state; loading/error/notFound/profile derive from it.
   protected readonly state: Signal<PublicProfilePageState> = this.initProfile();
 
   protected readonly loading = computed(() => this.state().loading);
   protected readonly error = computed(() => this.state().error);
+  protected readonly notFound = computed(() => this.state().notFound);
+  protected readonly isPrivate = computed(() => this.state().isPrivate);
   protected readonly profile = computed(() => this.state().profile);
 
   // Section slices — each section is hidden when its slice is empty.
@@ -84,7 +87,7 @@ export class PublicProfilePageComponent {
   }
 
   private initProfile(): Signal<PublicProfilePageState> {
-    const initial: PublicProfilePageState = { loading: true, error: false, profile: null };
+    const initial: PublicProfilePageState = { loading: true, error: false, notFound: false, isPrivate: false, profile: null };
     return toSignal(
       this.activatedRoute.paramMap.pipe(
         map((params) => params.get('username')),
@@ -93,23 +96,22 @@ export class PublicProfilePageComponent {
         switchMap((username) =>
           this.publicProfileService.getPublicProfile(username).pipe(
             map((profile): PublicProfilePageState => {
-              // Private profiles respond 200 with only `{ isPublic: false }` — treat as not-found.
+              // Private profiles respond 200 with only `{ isPublic: false }` — render the private
+              // not-found view inline (no route change) so no `/u/...` username is reserved.
               if (!profile?.isPublic) {
-                this.router.navigate(['/u/not-found'], { queryParams: { reason: 'private' } });
-                return { loading: false, error: false, profile: null };
+                return { loading: false, error: false, notFound: true, isPrivate: true, profile: null };
               }
-              return { loading: false, error: false, profile };
+              return { loading: false, error: false, notFound: false, isPrivate: false, profile };
             }),
             catchError((err) => {
-              // 400/404 is the expected "no such profile" path (redirect quietly); anything else
-              // is an unexpected failure, so log before surfacing the error state.
+              // 400/404 is the expected "no such profile" path (show not-found inline); anything
+              // else is an unexpected failure, so log before surfacing the error state.
               const status = err?.status;
               if (typeof status === 'number' && [400, 404].includes(status)) {
-                this.router.navigate(['/u/not-found']);
-                return of<PublicProfilePageState>({ loading: false, error: false, profile: null });
+                return of<PublicProfilePageState>({ loading: false, error: false, notFound: true, isPrivate: false, profile: null });
               }
               console.error('Failed to load public profile', err);
-              return of<PublicProfilePageState>({ loading: false, error: true, profile: null });
+              return of<PublicProfilePageState>({ loading: false, error: true, notFound: false, isPrivate: false, profile: null });
             }),
             // Re-enter the loading state at the start of each username's fetch.
             startWith(initial)

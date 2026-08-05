@@ -1,13 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Component, computed, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
-import { map } from 'rxjs';
 
 @Component({
   selector: 'lfx-public-profile-not-found',
@@ -15,10 +13,8 @@ import { map } from 'rxjs';
   templateUrl: './public-profile-not-found.component.html',
 })
 export class PublicProfileNotFoundComponent {
-  private readonly route = inject(ActivatedRoute);
-
-  // A private profile responds 200 with `{ isPublic: false }`; the page routes here with reason=private.
-  protected readonly isPrivate = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('reason') === 'private')), { initialValue: false });
+  // A private profile responds 200 with `{ isPublic: false }`; the page renders this with isPrivate=true.
+  public readonly isPrivate = input(false);
 
   protected readonly icon = computed(() => (this.isPrivate() ? 'fa-light fa-lock' : 'fa-light fa-user-slash'));
   protected readonly title = computed(() => (this.isPrivate() ? 'Private Profile' : 'Profile Not Found'));

@@ -447,13 +447,8 @@ export const routes: Routes = [
     loadComponent: () => import('./modules/groups/group-detail/group-detail.component').then((m) => m.GroupDetailComponent),
   },
   // Public contributor profile (LFXV2-2631). Sibling of the authGuard'd root so /u/:username
-  // renders for anonymous visitors; the page's sticky topbar reveals the contributor's identity
-  // on scroll. `u/not-found` is declared first so the literal path wins over the `:username` param.
-  {
-    path: 'u/not-found',
-    loadComponent: () =>
-      import('./modules/public-profile/public-profile-not-found/public-profile-not-found.component').then((m) => m.PublicProfileNotFoundComponent),
-  },
+  // renders for anonymous visitors; a missing or private profile renders an inline not-found view
+  // (no reserved `/u/...` path), so a contributor whose username is e.g. `not-found` still resolves.
   {
     path: 'u/:username',
     loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),

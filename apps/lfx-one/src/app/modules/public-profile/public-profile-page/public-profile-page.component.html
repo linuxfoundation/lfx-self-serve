@@ -1,107 +1,111 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="min-h-screen bg-white text-gray-900">
-  <div class="mx-auto max-w-[1240px] px-4 pb-20 sm:px-10">
-    <lfx-public-profile-topbar [basic]="basic()" data-testid="public-profile-topbar"></lfx-public-profile-topbar>
+@if (notFound()) {
+  <lfx-public-profile-not-found [isPrivate]="isPrivate()" data-testid="public-profile-not-found"></lfx-public-profile-not-found>
+} @else {
+  <div class="min-h-screen bg-white text-gray-900">
+    <div class="mx-auto max-w-[1240px] px-4 pb-20 sm:px-10">
+      <lfx-public-profile-topbar [basic]="basic()" data-testid="public-profile-topbar"></lfx-public-profile-topbar>
 
-    @if (loading()) {
-      <!-- Skeleton loading state -->
-      <div class="flex flex-col gap-12">
-        <p-skeleton width="100%" height="320px" borderRadius="16px" />
-        <div class="grid grid-cols-1 gap-12 lg:grid-cols-[1.7fr_1fr]">
-          <p-skeleton width="100%" height="360px" borderRadius="12px" />
-          <p-skeleton width="100%" height="360px" borderRadius="12px" />
-        </div>
-      </div>
-    } @else if (error()) {
-      <!-- Error state for unexpected failures -->
-      <div class="rounded-xl border border-gray-200 bg-white" data-testid="public-profile-error-card">
-        <div class="flex flex-col items-center py-16 text-center">
-          <div class="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-red-50">
-            <svg
-              width="40"
-              height="40"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="text-red-400"
-              aria-hidden="true">
-              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
-              <path d="M12 9v4"></path>
-              <path d="M12 17h.01"></path>
-            </svg>
-          </div>
-          <h2 class="mb-2 text-lg font-semibold text-gray-900">Something went wrong</h2>
-          <p class="text-sm text-gray-600">We couldn't load this profile. Please try again later.</p>
-        </div>
-      </div>
-    } @else if (profile()) {
-      <div class="flex flex-col gap-12">
-        <!-- Hero -->
-        <lfx-public-profile-hero [basic]="basic()" [about]="about()" data-testid="public-profile-hero"></lfx-public-profile-hero>
-
-        <div class="grid grid-cols-1 gap-12 lg:grid-cols-[1.7fr_1fr]">
-          <!-- Main column -->
-          <div class="flex min-w-0 flex-col gap-12">
-            @if (hasContributions()) {
-              <lfx-public-profile-contributions
-                [technicalContribution]="technicalContribution()"
-                data-testid="public-profile-contributions"></lfx-public-profile-contributions>
-            }
-          </div>
-
-          <!-- Rail column -->
-          <div class="flex min-w-0 flex-col gap-12">
-            @if (hasBadges()) {
-              <lfx-public-profile-badges [badges]="badges()" data-testid="public-profile-badges"></lfx-public-profile-badges>
-            }
-
-            @if (hasCertifications()) {
-              <lfx-public-profile-certifications
-                [certifications]="certifications()"
-                data-testid="public-profile-certifications"></lfx-public-profile-certifications>
-            }
-
-            @if (hasTrainings()) {
-              <lfx-public-profile-trainings [trainings]="trainings()" data-testid="public-profile-trainings"></lfx-public-profile-trainings>
-            }
+      @if (loading()) {
+        <!-- Skeleton loading state -->
+        <div class="flex flex-col gap-12">
+          <p-skeleton width="100%" height="320px" borderRadius="16px" />
+          <div class="grid grid-cols-1 gap-12 lg:grid-cols-[1.7fr_1fr]">
+            <p-skeleton width="100%" height="360px" borderRadius="12px" />
+            <p-skeleton width="100%" height="360px" borderRadius="12px" />
           </div>
         </div>
+      } @else if (error()) {
+        <!-- Error state for unexpected failures -->
+        <div class="rounded-xl border border-gray-200 bg-white" data-testid="public-profile-error-card">
+          <div class="flex flex-col items-center py-16 text-center">
+            <div class="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-red-50">
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-red-400"
+                aria-hidden="true">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                <path d="M12 9v4"></path>
+                <path d="M12 17h.01"></path>
+              </svg>
+            </div>
+            <h2 class="mb-2 text-lg font-semibold text-gray-900">Something went wrong</h2>
+            <p class="text-sm text-gray-600">We couldn't load this profile. Please try again later.</p>
+          </div>
+        </div>
+      } @else if (profile()) {
+        <div class="flex flex-col gap-12">
+          <!-- Hero -->
+          <lfx-public-profile-hero [basic]="basic()" [about]="about()" data-testid="public-profile-hero"></lfx-public-profile-hero>
 
-        <!-- Footer — matches design markup: LF horizontal logo, three-line legal text, cookie link -->
-        <footer class="mt-[72px] border-t border-gray-200 pt-12 text-[13px] leading-[1.7] text-gray-500" data-testid="public-profile-footer">
-          <img src="/images/logo_lf_horizontal_color.png" alt="The Linux Foundation" class="mb-7 block h-4 w-auto opacity-[0.85]" />
-          <p class="mb-3.5 text-xs [text-wrap:pretty]">
-            Copyright © 2026 The Linux Foundation®. All rights reserved. <br />
-            The Linux Foundation has registered trademarks and uses trademarks. <br />
-            For more information, including terms of use,
-            <a
-              href="https://www.linuxfoundation.org/legal/platform-use-agreement"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-gray-700 hover:underline"
-              >Platform Usage</a
-            >,
-            <a href="https://www.linuxfoundation.org/legal/privacy-policy" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
-              >Privacy Policy</a
-            >, and
-            <a href="https://www.linuxfoundation.org/legal/trademark-usage" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
-              >Trademark Usage</a
-            >, please see our
-            <a href="https://www.linuxfoundation.org/legal/policies" target="_blank" rel="noopener noreferrer" class="text-gray-500 hover:underline"
-              >Policies</a
-            >
-            page.
-          </p>
-          <button type="button" (click)="manageCookies()" class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline">
-            Manage cookie preferences.
-          </button>
-        </footer>
-      </div>
-    }
+          <div class="grid grid-cols-1 gap-12 lg:grid-cols-[1.7fr_1fr]">
+            <!-- Main column -->
+            <div class="flex min-w-0 flex-col gap-12">
+              @if (hasContributions()) {
+                <lfx-public-profile-contributions
+                  [technicalContribution]="technicalContribution()"
+                  data-testid="public-profile-contributions"></lfx-public-profile-contributions>
+              }
+            </div>
+
+            <!-- Rail column -->
+            <div class="flex min-w-0 flex-col gap-12">
+              @if (hasBadges()) {
+                <lfx-public-profile-badges [badges]="badges()" data-testid="public-profile-badges"></lfx-public-profile-badges>
+              }
+
+              @if (hasCertifications()) {
+                <lfx-public-profile-certifications
+                  [certifications]="certifications()"
+                  data-testid="public-profile-certifications"></lfx-public-profile-certifications>
+              }
+
+              @if (hasTrainings()) {
+                <lfx-public-profile-trainings [trainings]="trainings()" data-testid="public-profile-trainings"></lfx-public-profile-trainings>
+              }
+            </div>
+          </div>
+
+          <!-- Footer — matches design markup: LF horizontal logo, three-line legal text, cookie link -->
+          <footer class="mt-[72px] border-t border-gray-200 pt-12 text-[13px] leading-[1.7] text-gray-500" data-testid="public-profile-footer">
+            <img src="/images/logo_lf_horizontal_color.png" alt="The Linux Foundation" class="mb-7 block h-4 w-auto opacity-[0.85]" />
+            <p class="mb-3.5 text-xs [text-wrap:pretty]">
+              Copyright © 2026 The Linux Foundation®. All rights reserved. <br />
+              The Linux Foundation has registered trademarks and uses trademarks. <br />
+              For more information, including terms of use,
+              <a
+                href="https://www.linuxfoundation.org/legal/platform-use-agreement"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-gray-700 hover:underline"
+                >Platform Usage</a
+              >,
+              <a href="https://www.linuxfoundation.org/legal/privacy-policy" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+                >Privacy Policy</a
+              >, and
+              <a href="https://www.linuxfoundation.org/legal/trademark-usage" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+                >Trademark Usage</a
+              >, please see our
+              <a href="https://www.linuxfoundation.org/legal/policies" target="_blank" rel="noopener noreferrer" class="text-gray-500 hover:underline"
+                >Policies</a
+              >
+              page.
+            </p>
+            <button type="button" (click)="manageCookies()" class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline">
+              Manage cookie preferences.
+            </button>
+          </footer>
+        </div>
+      }
+    </div>
   </div>
-</div>
+}

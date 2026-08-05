@@ -20,10 +20,15 @@ export interface PublicProfile {
   badges?: PublicProfileBadge[];
 }
 
-/** UI state for the public profile page: loading spinner, error fallback, or the resolved profile. */
+/**
+ * UI state for the public profile page: loading spinner, unexpected-error fallback, the resolved
+ * profile, or the inline not-found view (`isPrivate` selects the private vs. missing-profile copy).
+ */
 export interface PublicProfilePageState {
   loading: boolean;
   error: boolean;
+  notFound: boolean;
+  isPrivate: boolean;
   profile: PublicProfile | null;
 }
 
