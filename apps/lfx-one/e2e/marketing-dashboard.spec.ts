@@ -150,20 +150,12 @@ test.describe('Marketing Metric Cards', () => {
     await switchToExecutiveDirector(page);
   });
 
-  test('renders Website Visits card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-website-visits"]');
+  test('renders Email card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-campaign-performance"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
-    await expect(card).toContainText('Website Visits');
-  });
-
-  test('renders Email CTR card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-email-ctr"]');
-    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
-    await card.scrollIntoViewIfNeeded();
-    await expect(card).toBeVisible();
-    await expect(card).toContainText('Email CTR');
+    await expect(card).toContainText('Email');
   });
 
   test('renders Paid Media card', async ({ page }) => {
@@ -174,12 +166,25 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Paid Media');
   });
 
-  test('renders Social Media card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-social-media"]');
+  test('renders Social card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-brand-reach"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
-    await expect(card).toContainText('Social Media');
+    await expect(card).toContainText('Social');
+  });
+
+  test('renders Web card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-web-sessions"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Web');
+    // Assert the split itself, not just the card's presence: sessions must live on
+    // Web and no longer on Social. A title-only check would still pass if sessions
+    // had stayed on the Social card and Web were an empty duplicate.
+    await expect(card).toContainText('Sessions (30d)');
+    await expect(page.locator('[data-testid="ed-evo-brand-reach"]')).not.toContainText('Sessions (30d)');
   });
 
   test('renders filter pills', async ({ page }) => {
@@ -195,23 +200,23 @@ test.describe('Website Visits Drawer', () => {
   });
 
   test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await expect(page.locator('[data-testid="website-visits-drawer-title"]')).toContainText('Website Visits');
   });
 
   test('shows stats section with data', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-website-visits', 'website-visits-drawer-content', 'website-visits-drawer-stats');
+    await openDrawerAndWaitForData(page, 'ed-evo-web-sessions', 'website-visits-drawer-content', 'website-visits-drawer-stats');
     const statCards = page.locator('[data-testid="website-visits-drawer-stats"]').locator('lfx-card');
     await expect(statCards).toHaveCount(2);
   });
 
   test('shows trend chart section', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await expect(page.locator('[data-testid="website-visits-drawer-trend-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await page.locator('[data-testid="website-visits-drawer-close"]').click();
     await expect(page.locator('[data-testid="website-visits-drawer-content"]')).not.toBeVisible();
   });
@@ -224,17 +229,17 @@ test.describe('Email CTR Drawer', () => {
   });
 
   test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
+    await openDrawer(page, 'ed-evo-campaign-performance', 'email-ctr-drawer-content');
     await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email');
   });
 
   test('shows stats and email sections', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content', 'email-ctr-drawer-stats');
+    await openDrawerAndWaitForData(page, 'ed-evo-campaign-performance', 'email-ctr-drawer-content', 'email-ctr-drawer-stats');
     await expect(page.locator('[data-testid="email-ctr-drawer-email-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
+    await openDrawer(page, 'ed-evo-campaign-performance', 'email-ctr-drawer-content');
     await page.locator('[data-testid="email-ctr-drawer-close"]').click();
     await expect(page.locator('[data-testid="email-ctr-drawer-content"]')).not.toBeVisible();
   });
@@ -264,7 +269,12 @@ test.describe('Paid Social Reach Drawer', () => {
   });
 });
 
-test.describe('Social Media Drawer', () => {
+// The social-media drawer is still rendered by marketing-overview, but no card sets
+// drawerType: MarketingSocialMedia, so there is no way to open it from the UI. These
+// tests targeted 'marketing-card-social-media', a card that no longer exists. Skipped
+// rather than repointed: the Social card opens BrandReach, not this drawer, so no
+// rename makes them pass. Re-enable once a card routes to MarketingSocialMedia.
+test.describe.skip('Social Media Drawer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(DASHBOARD_URL);
     await switchToExecutiveDirector(page);
