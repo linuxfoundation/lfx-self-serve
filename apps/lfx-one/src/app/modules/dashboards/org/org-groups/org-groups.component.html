@@ -1,0 +1,152 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
+  <header class="flex flex-col gap-2" data-testid="org-groups-header">
+    <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">{{ committeeLabel.plural }}</h1>
+    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">
+      {{ committeeLabel.plural }} your organization's employees participate in across Linux Foundation projects.
+    </p>
+  </header>
+
+  @if (hasNoOrgAccess()) {
+    <section
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+      data-testid="org-groups-no-access-state">
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+        <i class="fa-light fa-lock text-2xl" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-base font-semibold text-gray-900" data-testid="org-groups-no-access-title">Organization Lens is not available</h2>
+      <p class="max-w-md text-sm text-gray-600" data-testid="org-groups-no-access-description">
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please contact us.
+      </p>
+    </section>
+  } @else if (!loaded()) {
+    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" data-testid="org-groups-skeleton">
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+          <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+          <p-skeleton width="3rem" height="1.75rem" />
+          <p-skeleton width="80%" height="0.75rem" />
+        </div>
+      }
+    </section>
+  } @else if (!hasCompany()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="Select a company via Impersonate to view group participation."
+      data-testid="org-groups-no-company-state" />
+  } @else if (!hasAnalyticsId()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Group data isn't available for this company right now. Please try again."
+      data-testid="org-groups-no-analytics-id-state" />
+  } @else {
+    <!-- Stat strip -->
+    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-stat-strip">
+      @if (groupsLoading()) {
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="3rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      } @else {
+        <!-- Total groups card -->
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-total">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
+            <i class="fa-light fa-users-rectangle text-gray-600 text-sm" aria-hidden="true"></i>
+          </div>
+          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ totalGroups() }}</p>
+          <p class="text-xs text-gray-500">Total {{ committeeLabel.plural }}</p>
+        </div>
+        <!-- Total seats card -->
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-seats">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
+            <i class="fa-light fa-user-check text-gray-600 text-sm" aria-hidden="true"></i>
+          </div>
+          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ totalSeats() }}</p>
+          <p class="text-xs text-gray-500">Total Seats</p>
+        </div>
+        <!-- Working groups card -->
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-wg">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-amber-50">
+            <i class="fa-light fa-users-gear text-amber-700 text-sm" aria-hidden="true"></i>
+          </div>
+          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ behavioralClassCounts()['working-group'] }}</p>
+          <p class="text-xs text-gray-500">Working Groups</p>
+        </div>
+        <!-- SIGs card -->
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-sig">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50">
+            <i class="fa-light fa-comments text-blue-700 text-sm" aria-hidden="true"></i>
+          </div>
+          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ behavioralClassCounts()['special-interest-group'] }}</p>
+          <p class="text-xs text-gray-500">SIGs</p>
+        </div>
+      }
+    </section>
+
+    <!-- Group list -->
+    <section aria-label="Group list" data-testid="org-groups-list">
+      @if (groupsLoading()) {
+        <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
+          @for (i of [1, 2, 3, 4, 5]; track i) {
+            <div class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4">
+              <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+              <div class="flex flex-col gap-1 flex-1">
+                <p-skeleton width="40%" height="1rem" />
+                <p-skeleton width="25%" height="0.75rem" />
+              </div>
+              <p-skeleton width="3rem" height="1.25rem" />
+            </div>
+          }
+        </div>
+      } @else if (groups().length === 0) {
+        <lfx-empty-state
+          icon="fa-light fa-users-rectangle"
+          title="No group participation found."
+          description="Your organization's employees are not listed as members of any working groups or committees."
+          data-testid="org-groups-empty-state" />
+      } @else {
+        <div class="flex flex-col gap-2" role="list" data-testid="org-groups-list-items">
+          @for (group of groups(); track group.uid) {
+            @let cls = getBehavioralClass(group.category);
+            @let config = behavioralClassConfig[cls];
+            <a
+              [routerLink]="groupDetailLink(group.uid)"
+              role="listitem"
+              class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              [attr.data-testid]="'org-groups-item-' + group.uid"
+              [attr.aria-label]="group.name + ', ' + config.label + ', ' + group.org_seat_count + ' seats'">
+              <!-- Icon -->
+              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
+                <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
+              </div>
+
+              <!-- Name + meta -->
+              <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                <p class="truncate text-sm font-medium text-gray-900" data-testid="org-groups-item-name">{{ group.name }}</p>
+                @if (group.project_slug) {
+                  <p class="truncate text-xs text-gray-400" data-testid="org-groups-item-project">{{ group.project_slug }}</p>
+                }
+              </div>
+
+              <!-- Behavioral class chip -->
+              <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
+
+              <!-- Seat count -->
+              <div class="flex items-center gap-1 shrink-0 text-sm text-gray-600" data-testid="org-groups-item-seats">
+                <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
+                <span>{{ group.org_seat_count }}</span>
+              </div>
+
+              <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
+            </a>
+          }
+        </div>
+      }
+    </section>
+  }
+</main>

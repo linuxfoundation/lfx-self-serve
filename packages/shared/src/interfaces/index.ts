@@ -288,6 +288,9 @@ export * from './create-picker.interface';
 export * from './org-meetings-insights.interface';
 export * from './org-meetings-insights.internal.interface';
 
+// Org Lens Groups (LFXV2-2014) interfaces
+export * from './org-groups.interface';
+
 // Committee Overview "Recent Activity" widget view-model (LFXV2-1707, formerly the LFXV2-1716 stop-gap)
 export * from './activity-feed.interface';
 
