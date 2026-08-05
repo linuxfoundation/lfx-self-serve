@@ -39,7 +39,12 @@ import {
   TabConfigEntry,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
-import { canManageCommitteeMembers, committeeRequiresOrganization, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import {
+  canManageCommitteeMembers,
+  committeeRequiresOrganization,
+  findPendingInvitationForCommittee,
+  invitationRequiresOrganization,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
