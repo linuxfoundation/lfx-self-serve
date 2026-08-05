@@ -768,7 +768,7 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
 /**
  * Build ED Evolution dashboard cards from live API data.
  * 6 North Star (Events, Members, Adoption, Email, Paid Media, Attribution)
- * + 2 Brand (Social, Sentiment) + Flywheel.
+ * + 3 Brand (Social, Web, Sentiment) + Flywheel.
  * Member Retention is merged into the Members drawer.
  *
  * Sparkline color semantics:
@@ -799,9 +799,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   return [
     // Card order is the display order in the Marketing Overview carousel, and the
     // filter pills preserve it within each category — so this array is the single
-    // source of truth for sequence. North Star cards lead (Events → Members →
-    // Adoption), then Social, then Campaign Performance, then the remaining Brand
-    // and Flywheel cards.
+    // source of truth for sequence: Events → Members → Adoption → Social → Web →
+    // Email → Paid Media → Attribution → Sentiment → Flywheel. Note the display
+    // order interleaves categories — Social and Web (Brand) sit between the North
+    // Star cards and Email/Paid Media/Attribution, and Sentiment (Brand) trails
+    // them — so this is not a category-grouped list.
     // === North Star ===
     {
       title: 'Events',

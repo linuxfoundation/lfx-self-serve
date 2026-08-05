@@ -180,6 +180,11 @@ test.describe('Marketing Metric Cards', () => {
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
     await expect(card).toContainText('Web');
+    // Assert the split itself, not just the card's presence: sessions must live on
+    // Web and no longer on Social. A title-only check would still pass if sessions
+    // had stayed on the Social card and Web were an empty duplicate.
+    await expect(card).toContainText('Sessions (30d)');
+    await expect(page.locator('[data-testid="ed-evo-brand-reach"]')).not.toContainText('Sessions (30d)');
   });
 
   test('renders filter pills', async ({ page }) => {
