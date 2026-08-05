@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformServer } from '@angular/common';
+import { isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
@@ -44,10 +44,8 @@ export class PublicProfilePageComponent {
   private readonly transferState = inject(TransferState);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // Persists the SSR-resolved page state so the client's first paint matches the server DOM for
-  // every branch (not-found / error / private / success). Failed HTTP responses aren't kept in
-  // Angular's HttpTransferCache, so without this the client would re-fetch, first render the
-  // loading branch, and hydration-mismatch the server's not-found/error branch.
+  // Persists the SSR-resolved page state so the client's first paint matches the server DOM on every
+  // branch — failed responses aren't in HttpTransferCache, so not-found/error would else mismatch.
   private readonly stateKey = makeStateKey<PublicProfilePageState>('publicProfileState');
 
   // Single source of truth for the async page state; loading/error/notFound/profile derive from it.
@@ -97,10 +95,14 @@ export class PublicProfilePageComponent {
 
   private initProfile(): Signal<PublicProfilePageState> {
     const initial: PublicProfilePageState = { loading: true, error: false, notFound: false, isPrivate: false, profile: null };
-    // On the client, seed from the SSR-serialized state so the first paint matches the server's
-    // resolved branch instead of flashing loading (which would mismatch on hydration). Null on the
-    // server and on client-side navigations that had no prior SSR state.
+    // Seed the client's first paint from the SSR-serialized state (matches the server's resolved
+    // branch, no loading flash). Null on the server and on client navigations with no prior SSR state.
     const transferred = this.transferState.get(this.stateKey, null);
+    // Consume the SSR state exactly once so a later re-creation of this component (e.g. a different
+    // `/u/:username`) can't paint the previous profile's state under the new URL — clients re-fetch fresh.
+    if (isPlatformBrowser(this.platformId) && transferred) {
+      this.transferState.remove(this.stateKey);
+    }
     return toSignal(
       this.activatedRoute.paramMap.pipe(
         map((params) => params.get('username')),
