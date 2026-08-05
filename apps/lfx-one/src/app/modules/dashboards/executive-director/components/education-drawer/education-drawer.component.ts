@@ -230,8 +230,21 @@ export class EducationDrawerComponent {
    * Returns the row with the highest `score`. A single pass states the intent —
    * find one maximum — where a full sort implies an ordering nothing consumes.
    * Callers must pass a non-empty array; every call site is already length-guarded.
+   *
+   * Scores each row exactly once by carrying the running best score, rather than
+   * re-deriving it from the incumbent on every comparison. Ties keep the earlier
+   * row, preserving the declaration order of `categoryRows`.
    */
   private maxBy(rows: EducationCategoryRow[], score: (row: EducationCategoryRow) => number): EducationCategoryRow {
-    return rows.reduce((top, row) => (score(row) > score(top) ? row : top), rows[0]);
+    let top = rows[0];
+    let topScore = score(top);
+    for (let i = 1; i < rows.length; i++) {
+      const rowScore = score(rows[i]);
+      if (rowScore > topScore) {
+        top = rows[i];
+        topScore = rowScore;
+      }
+    }
+    return top;
   }
 }

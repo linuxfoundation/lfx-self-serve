@@ -798,6 +798,15 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     ? education.enrollment.instructorLed + education.enrollment.eLearning + education.enrollment.certExams + education.enrollment.edx
     : 0;
   const educationTotalRevenue = education ? education.revenue.instructorLed + education.revenue.eLearning + education.revenue.certExams : 0;
+  // Whether net revenue is measured at all, as opposed to untracked. Gated on
+  // revenue-bearing enrollments rather than a non-zero total, mirroring the drawer's
+  // `hasTrackedRevenue`: a foundation with instructor-led/eLearning/cert enrollments
+  // has its revenue measured, so $0 is real data and must render as $0. Only the
+  // all-edX case is genuinely untracked. Without this the card would read
+  // "$0.00 net revenue" while the drawer it opens shows an em dash for the same figure.
+  const educationHasTrackedRevenue = education
+    ? education.enrollment.instructorLed + education.enrollment.eLearning + education.enrollment.certExams > 0
+    : false;
 
   // Pre-compute email open rate for the Campaign Performance card
   const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
@@ -867,7 +876,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
             testId: 'ed-evo-education',
             description: 'Training and certification enrollments across instructor-led, eLearning, cert exams, and edX.',
             value: formatNumber(educationTotalEnrollments),
-            subtitle: `${formatCurrency(educationTotalRevenue)} net revenue · ${education?.range === 'YTD' ? 'YTD' : 'selected year'}`,
+            subtitle: `${educationHasTrackedRevenue ? `${formatCurrency(educationTotalRevenue)} net revenue` : 'net revenue not tracked'} · ${education?.range === 'YTD' ? 'YTD' : 'selected year'}`,
             chartData: protoSparkline(flatSparklineData(educationTotalEnrollments), lfxColors.blue[500]),
             chartOptions: NO_TOOLTIP_CHART_OPTIONS,
             tooltipText:

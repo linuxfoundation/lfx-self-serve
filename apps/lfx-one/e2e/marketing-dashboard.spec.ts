@@ -239,6 +239,34 @@ test.describe('Education Drawer', () => {
     await expect(instructorLedRow).not.toContainText('not tracked');
   });
 
+  // The Net Revenue stat card is gated by `hasTrackedRevenue`, a separate signal from
+  // the per-row null check above, and the card subtitle is gated by an equivalent
+  // boolean in buildEdEvolutionMetrics. Live TLF data is not all-edX, so rather than
+  // asserting one branch this asserts the invariant that must hold under either data
+  // shape: the card and the drawer it opens never disagree about whether revenue is
+  // tracked. That is the contradiction that regressed — the card read "$0.00 net
+  // revenue" while the drawer showed an em dash for the same figure.
+  test('card and drawer agree on whether revenue is tracked', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-education"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    const cardSaysUntracked = (await card.textContent())?.includes('net revenue not tracked') ?? false;
+
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-stats');
+    const netRevenueStat = page.locator('[data-testid="education-drawer-stats"] > *', { hasText: 'Net Revenue' });
+    const drawerSaysUntracked = (await netRevenueStat.textContent())?.includes('—') ?? false;
+
+    expect(drawerSaysUntracked).toBe(cardSaysUntracked);
+
+    // And whichever way they agree, the rendering is the expected one on both sides.
+    if (cardSaysUntracked) {
+      await expect(netRevenueStat).not.toContainText('$');
+    } else {
+      await expect(card).toContainText('net revenue');
+      await expect(netRevenueStat).toContainText('$');
+    }
+  });
+
   // The attention/performing sections are driven by computed thresholds (concentration
   // risk >70%, cert attach rate, balanced-portfolio) and routed by splitByPriority.
   // TLF's live mix decides which of the two renders, so assert the invariant that holds
@@ -259,6 +287,31 @@ test.describe('Education Drawer', () => {
       if ((await section.count()) > 0) {
         await expect(section.first()).not.toBeEmpty();
       }
+    }
+  });
+
+  // Guards the specific regression Copilot caught in an earlier round: the leading and
+  // highest-earning formats were `info` insights, and splitByPriority routes every
+  // non-warning insight into "Performing Well" — so the same format was praised there
+  // while being flagged as a concentration risk under "Needs Your Attention". They now
+  // render as neutral facts carrying no verdict. Asserting the contradiction is absent
+  // works against any data shape, where asserting a specific threshold outcome would
+  // need an all-edX or concentration-risk fixture that live TLF data does not provide.
+  test('never flags and praises the same education format', async ({ page }) => {
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-formats');
+
+    const attention = page.locator('[data-testid="education-drawer-attention"]');
+    const performing = page.locator('[data-testid="education-drawer-performing"]');
+    if ((await attention.count()) === 0 || (await performing.count()) === 0) {
+      test.skip(true, 'Needs both sections rendered; TLF live mix produced only one.');
+    }
+
+    const attentionText = (await attention.first().textContent()) ?? '';
+    const performingText = (await performing.first().textContent()) ?? '';
+    for (const format of ['Instructor Led', 'eLearning', 'Cert Exams', 'edX']) {
+      const flagged = attentionText.includes(format);
+      const praised = performingText.includes(format);
+      expect(flagged && praised, `"${format}" appears in both Needs Your Attention and Performing Well`).toBe(false);
     }
   });
 
