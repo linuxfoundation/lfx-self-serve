@@ -3,12 +3,11 @@
 
 import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
-// Direct file imports (not the '../constants' barrel): the barrel transitively re-exports
-// dashboard-metrics.constants.ts, which imports the '../utils' barrel, which re-exports
-// meeting.utils.ts — which imports HttpParams from '@angular/common/http'. That chain needs the
-// Angular JIT compiler to load, which crashes any plain-Node Vitest run (e.g. this package's own
-// test suite) the moment something imports date-time.utils.ts. Importing the two underlying
-// constant files directly sidesteps that chain entirely — behaviorally identical re-exports.
+// Direct file imports (not the '../constants' barrel): this package must stay loadable in plain
+// Node (Vitest, jiti/Tailwind config loading), so files reachable from the constants barrel import
+// utils by file path, never via the '../utils' barrel — form.utils.ts and meeting.utils.ts both
+// pull in Angular packages that need the JIT compiler and crash a plain-Node import. Importing the
+// two underlying constant files directly sidesteps that hazard — behaviorally identical re-exports.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
