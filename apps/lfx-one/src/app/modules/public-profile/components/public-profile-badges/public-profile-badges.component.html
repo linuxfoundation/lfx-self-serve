@@ -8,9 +8,9 @@
   <div class="grid grid-cols-3 gap-4 sm:grid-cols-4" data-testid="badges-grid">
     @for (badge of badges(); track badge) {
       @if (badge.Image) {
-        @if (badge.Url) {
+        @if (safeUrl(badge.Url); as href) {
           <a
-            [href]="badge.Url"
+            [href]="href"
             target="_blank"
             rel="noopener noreferrer"
             class="flex aspect-square items-center justify-center rounded-xl border border-gray-200 bg-white transition-colors hover:bg-gray-50"

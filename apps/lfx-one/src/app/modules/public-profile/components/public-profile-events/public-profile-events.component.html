@@ -8,9 +8,9 @@
   <div class="overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="events-list">
     @for (event of events(); track event.ID) {
       <div class="flex flex-col gap-1 border-b border-gray-100 p-4 last:border-0" data-testid="event-item">
-        @if (event.EventURL) {
+        @if (safeUrl(event.EventURL); as href) {
           <a
-            [href]="event.EventURL"
+            [href]="href"
             target="_blank"
             rel="noopener noreferrer"
             class="break-words text-sm font-semibold text-blue-600 hover:underline"

@@ -3,6 +3,7 @@
 
 import { Component, input } from '@angular/core';
 import { PublicProfileEvent } from '@lfx-one/shared/interfaces';
+import { isValidUrl } from '@lfx-one/shared/utils';
 
 import { PublicProfileDateRangePipe } from '../../pipes/public-profile-date-range.pipe';
 
@@ -13,4 +14,10 @@ import { PublicProfileDateRangePipe } from '../../pipes/public-profile-date-rang
 })
 export class PublicProfileEventsComponent {
   public readonly events = input<PublicProfileEvent[]>([]);
+
+  // Surface an [href] only when the upstream URL is a safe http(s) link; reject
+  // javascript:/data: schemes and missing values so they never reach the binding.
+  protected safeUrl(url: string | undefined): string | null {
+    return url && isValidUrl(url) ? url : null;
+  }
 }
