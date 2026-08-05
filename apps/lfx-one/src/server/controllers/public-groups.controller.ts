@@ -17,7 +17,7 @@ import {
 import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
@@ -56,14 +56,13 @@ export class PublicGroupsController {
           page_size: 1,
         });
         if (resources.length === 0) {
-          throw new AuthorizationError('Group not found', {
+          throw new ResourceNotFoundError('Group', id, {
             operation: 'get_public_group_by_id',
             service: 'public_groups_controller',
             path: `/groups/${id}`,
-            code: 'GROUP_NOT_FOUND',
           });
         }
-        committeeUid = resources[0].id;
+        committeeUid = resources[0].data.uid;
       }
 
       const committee = await this.committeeService.getCommitteeById(req, committeeUid);
