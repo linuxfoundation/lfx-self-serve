@@ -108,7 +108,7 @@ describe('projectPublicProfile', () => {
         Name: 'Jane',
         Title: 'Engineer',
         Username: 'jane-secret',
-        Identities: [{ Username: 'jane-gh', Avatar: 'https://avatar.example/jane.png' }],
+        Identities: [{ Username: '  ' }, { Username: 'jane-gh', Avatar: 'https://avatar.example/jane.png' }, { Username: 'jane-twitter' }],
       },
       About: 'Hello',
       technical_contribution: {
@@ -148,6 +148,7 @@ describe('projectPublicProfile', () => {
     expect(projected).not.toHaveProperty('skills');
     expect(projected).not.toHaveProperty('presentations');
     expect(wire).not.toContain('jane-secret'); // basic.Username
+    expect(wire).not.toContain('jane-twitter'); // only the first non-empty identity username projected
     expect(wire).not.toContain('avatar.example'); // Identities[].Avatar
     expect(wire).not.toContain('affiliations');
     expect(wire).not.toContain('contributions');

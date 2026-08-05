@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, inject, Signal } from '@angular/core';
+import { isPlatformServer } from '@angular/common';
+import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
@@ -9,7 +10,7 @@ import { PublicProfilePageState } from '@lfx-one/shared/interfaces';
 import { formatAffiliation } from '@lfx-one/shared/utils';
 import { OsanoService } from '@services/osano.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { PublicProfileBadgesComponent } from '../components/public-profile-badges/public-profile-badges.component';
 import { PublicProfileCertificationsComponent } from '../components/public-profile-certifications/public-profile-certifications.component';
@@ -40,6 +41,14 @@ export class PublicProfilePageComponent {
   private readonly osanoService = inject(OsanoService);
   private readonly title = inject(Title);
   private readonly meta = inject(Meta);
+  private readonly transferState = inject(TransferState);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  // Persists the SSR-resolved page state so the client's first paint matches the server DOM for
+  // every branch (not-found / error / private / success). Failed HTTP responses aren't kept in
+  // Angular's HttpTransferCache, so without this the client would re-fetch, first render the
+  // loading branch, and hydration-mismatch the server's not-found/error branch.
+  private readonly stateKey = makeStateKey<PublicProfilePageState>('publicProfileState');
 
   // Single source of truth for the async page state; loading/error/notFound/profile derive from it.
   protected readonly state: Signal<PublicProfilePageState> = this.initProfile();
@@ -88,12 +97,16 @@ export class PublicProfilePageComponent {
 
   private initProfile(): Signal<PublicProfilePageState> {
     const initial: PublicProfilePageState = { loading: true, error: false, notFound: false, isPrivate: false, profile: null };
+    // On the client, seed from the SSR-serialized state so the first paint matches the server's
+    // resolved branch instead of flashing loading (which would mismatch on hydration). Null on the
+    // server and on client-side navigations that had no prior SSR state.
+    const transferred = this.transferState.get(this.stateKey, null);
     return toSignal(
       this.activatedRoute.paramMap.pipe(
         map((params) => params.get('username')),
         filter((username): username is string => !!username),
         distinctUntilChanged(),
-        switchMap((username) =>
+        switchMap((username, index) =>
           this.publicProfileService.getPublicProfile(username).pipe(
             map((profile): PublicProfilePageState => {
               // Private profiles respond 200 with only `{ isPublic: false }` — render the private
@@ -113,12 +126,20 @@ export class PublicProfilePageComponent {
               console.error('Failed to load public profile', err);
               return of<PublicProfilePageState>({ loading: false, error: true, notFound: false, isPrivate: false, profile: null });
             }),
-            // Re-enter the loading state at the start of each username's fetch.
-            startWith(initial)
+            // During SSR, persist each resolved (non-loading) state so the client can hydrate to the
+            // same branch. Angular defers serialization until this tracked HTTP call settles.
+            tap((state) => {
+              if (isPlatformServer(this.platformId) && !state.loading) {
+                this.transferState.set(this.stateKey, state);
+              }
+            }),
+            // Seed the first client emission from the SSR state to avoid a loading flash and a
+            // hydration mismatch; every later fetch (and each client-side navigation) re-enters loading.
+            startWith(index === 0 && transferred ? transferred : initial)
           )
         )
       ),
-      { initialValue: initial }
+      { initialValue: transferred ?? initial }
     );
   }
 

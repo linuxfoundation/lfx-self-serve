@@ -61,7 +61,12 @@ function projectBasic(value: unknown): PublicProfileBasic | undefined {
   if (!basic) {
     return undefined;
   }
-  const identities = asRecordArray(basic['Identities']).map((identity) => ({ Username: pickString(identity['Username']) }));
+  // The public page renders at most one identity username (the hero's GitHub link picks the first
+  // non-empty one), so project only that single username — never the full connected-identity list —
+  // to keep this endpoint's render-only PII boundary intact.
+  const firstUsername = asRecordArray(basic['Identities'])
+    .map((identity) => pickString(identity['Username']))
+    .find((username) => !!username && !!username.trim());
   return {
     Name: pickString(basic['Name']),
     LogoURL: pickString(basic['LogoURL']),
@@ -72,7 +77,7 @@ function projectBasic(value: unknown): PublicProfileBasic | undefined {
     Bio: pickString(basic['Bio']),
     AccountName: pickString(basic['AccountName']),
     AccountLogoURL: pickString(basic['AccountLogoURL']),
-    Identities: identities.length ? identities : undefined,
+    Identities: firstUsername ? [{ Username: firstUsername }] : undefined,
   };
 }
 
