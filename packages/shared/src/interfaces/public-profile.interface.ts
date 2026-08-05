@@ -2,31 +2,40 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Shape of the S3 public profile artifact proxied by `/public/api/profile/:username`.
- * Mirrors the artifact's own mixed-case field names; the server passes it through verbatim.
+ * Client-facing public profile shape. The proxy projects the S3 artifact down to only the fields
+ * the public page renders (see `projectPublicProfile`), so unrendered PII never ships to the client.
  */
 export interface PublicProfile {
   /**
-   * Normalized public gate written by the proxy. `true` only when the upstream artifact's
-   * public flag is explicitly boolean `true`; a missing or non-boolean flag resolves to
-   * `false` (fail closed — the proxy withholds the payload for anything but an explicit opt-in).
+   * Normalized public gate written by the proxy. `true` only when the upstream artifact's public
+   * flag is explicitly boolean `true`; a missing or non-boolean flag fails closed to `false`.
    */
   isPublic: boolean;
-  /** Raw upstream public flag, preserved as-is for reference. */
-  IsPublic?: boolean;
   basic?: PublicProfileBasic;
   /** Long-form bio / about section (HTML or markdown). */
   About?: string;
   technical_contribution?: PublicProfileTechnicalContribution;
-  community_roles?: PublicProfileCommunityRole[];
-  event_activities?: PublicProfileEvent[];
-  /** Best-effort shape — absent from the reference sample; reconfirm against a live artifact. */
   training_activities?: PublicProfileTraining[] | null;
   certification_activities?: PublicProfileCertification[];
   badges?: PublicProfileBadge[];
-  skills?: PublicProfileSkill[];
-  /** Best-effort shape — absent from the reference sample; reconfirm against a live artifact. */
-  presentations?: PublicProfilePresentation[];
+}
+
+/**
+ * UI state for the public profile page: loading spinner, unexpected-error fallback, the resolved
+ * profile, or the inline not-found view (`isPrivate` selects the private vs. missing-profile copy).
+ */
+export interface PublicProfilePageState {
+  loading: boolean;
+  error: boolean;
+  notFound: boolean;
+  isPrivate: boolean;
+  profile: PublicProfile | null;
+}
+
+/** View-model for a rendered social link in the public profile hero. */
+export interface PublicProfileSocialLink {
+  label: string;
+  url: string;
 }
 
 export interface PublicProfileBasic {
@@ -35,115 +44,54 @@ export interface PublicProfileBasic {
   TwitterID?: string;
   LinkedInID?: string;
   GithubID?: string;
-  Username?: string;
   Title?: string;
   Bio?: string;
+  /** Current employer/affiliation shown as "{Title} at {AccountName}"; a value containing "Individual" is a placeholder and is hidden. */
+  AccountName?: string;
   AccountLogoURL?: string;
   Identities?: PublicProfileIdentity[];
 }
 
 export interface PublicProfileIdentity {
   Username?: string;
-  Avatar?: string;
 }
 
 export interface PublicProfileTechnicalContribution {
   projects: PublicProfileProject[];
 }
 
+// Backed by upstream `ProjectContribution` — `Name`/`Slug`/`LogoURL` are PascalCase and `omitempty`
+// (render a fallback rather than assuming `Name`), while the contribution counts are lowercase.
 export interface PublicProfileProject {
-  ID: string;
-  LogoURL?: string;
-  Name: string;
-  Slug?: string;
-  affiliations?: PublicProfileAffiliation[];
-  commits: number;
-  deleted: number;
-  added: number;
-  prs: number;
-  issues: number;
-  docs: number;
-  contributions?: PublicProfileContribution[];
-}
-
-export interface PublicProfileAffiliation {
-  ID?: string;
-  Level?: string;
-  Organization?: PublicProfileAffiliationOrganization;
-  StartDate?: string;
-  EndDate?: string;
-}
-
-export interface PublicProfileAffiliationOrganization {
-  ID?: string;
   LogoURL?: string;
   Name?: string;
-}
-
-export interface PublicProfileContribution {
-  date: string;
+  Slug?: string;
   commits: number;
-  added: number;
   deleted: number;
+  added: number;
   prs: number;
   issues: number;
-  docs: number;
-  count: number;
 }
 
-export interface PublicProfileCommunityRole {
-  ID: string;
-  LogoURL?: string;
-  roles: PublicProfileCommunityRoleEntry[];
-}
-
-export interface PublicProfileCommunityRoleEntry {
-  Name: string;
-  Role: string;
-  RoleStartDate?: string;
-  RoleEndDate?: string;
-}
-
-export interface PublicProfileEvent {
-  ID: string;
-  Name: string;
+// Backed by the upstream `Activity` struct (shared with PublicProfileTraining) — PascalCase keys,
+// all `omitempty`. The raw S3 artifact is consumed without transformation, so the casing must match.
+export interface PublicProfileCertification {
+  Name?: string;
   StartDate?: string;
   EndDate?: string;
-  EventURL?: string;
-  LocationName?: string;
-}
-
-export interface PublicProfileCertification {
-  id: string;
-  name: string;
-  status: string;
-  startDate?: string;
-  endDate?: string;
-  type?: string;
+  Type?: string;
 }
 
 export interface PublicProfileTraining {
   Name?: string;
-  Status?: string;
   Type?: string;
   StartDate?: string;
   EndDate?: string;
 }
 
+// Upstream Badge (user-service preference.Badge): both fields carry `omitempty`, so each may be
+// absent. JSON keys are PascalCase `Image` / `Url`, consumed without transformation.
 export interface PublicProfileBadge {
-  image: string;
-  url?: string;
-}
-
-export interface PublicProfileSkill {
-  ID: string;
-  Name: string;
-}
-
-export interface PublicProfilePresentation {
-  Name?: string;
-  EventURL?: string;
-  StartDate?: string;
-  EndDate?: string;
-  LocationName?: string;
+  Image?: string;
+  Url?: string;
 }
