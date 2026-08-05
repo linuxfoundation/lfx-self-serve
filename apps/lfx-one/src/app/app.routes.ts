@@ -449,6 +449,13 @@ export const routes: Routes = [
     path: 'groups/:id',
     loadComponent: () => import('./modules/groups/group-detail/group-detail.component').then((m) => m.GroupDetailComponent),
   },
+  // Public contributor profile (LFXV2-2631). Sibling of the authGuard'd root so /u/:username
+  // renders for anonymous visitors; a missing or private profile renders an inline not-found view
+  // (no reserved `/u/...` path), so a contributor whose username is e.g. `not-found` still resolves.
+  {
+    path: 'u/:username',
+    loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),
+  },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',

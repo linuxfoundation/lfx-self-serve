@@ -6,6 +6,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   CommitteeCreateData,
+  CommitteeOrganizationReference,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
@@ -1328,10 +1329,11 @@ export class CommitteeController {
    */
   public async joinCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
+    const { organization } = req.body as { organization?: CommitteeOrganizationReference };
     const startTime = logger.startOperation(req, 'join_committee', { committee_id: id });
 
     try {
-      const member = await this.committeeService.joinCommittee(req, id);
+      const member = await this.committeeService.joinCommittee(req, id, organization);
 
       logger.success(req, 'join_committee', startTime, { committee_id: id });
       res.status(201).json(member);
