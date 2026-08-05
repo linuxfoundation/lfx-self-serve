@@ -11,11 +11,16 @@ import {
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
   DEFAULT_EARLY_JOIN_TIME,
+  DEFAULT_EMAIL_REMINDER_HOURS,
+  DEFAULT_EMAIL_REMINDER_MINUTES,
   DEFAULT_MEETING_TOOL,
   DEFAULT_MEETING_TYPE,
   MAX_EARLY_JOIN_TIME,
+  MAX_EMAIL_REMINDER_HOURS,
+  MAX_EMAIL_REMINDER_TIME,
   MEETING_STEP_TITLES,
   MIN_EARLY_JOIN_TIME,
+  MIN_EMAIL_REMINDER_HOURS,
   STEPPER_SCROLL_OFFSET,
   TOTAL_STEPS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
@@ -552,6 +557,17 @@ export class MeetingManageComponent {
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
+      auto_email_reminder_enabled: formValue.auto_email_reminder_enabled || false,
+      // Total minutes before start, clamped to the upstream 120-1440 range; omitted when disabled so upstream resets the stored value
+      auto_email_reminder_time: formValue.auto_email_reminder_enabled
+        ? Math.min(
+            Math.max(
+              Number(formValue.reminderHours || DEFAULT_EMAIL_REMINDER_HOURS) * 60 + Number(formValue.reminderMinutes || 0),
+              MIN_EMAIL_REMINDER_HOURS * 60
+            ),
+            MAX_EMAIL_REMINDER_TIME
+          )
+        : undefined,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
       committees: formValue.committees || [],
@@ -795,6 +811,19 @@ export class MeetingManageComponent {
       this.form().get('youtube_upload_enabled')?.enable();
     }
 
+    // Map the stored reminder time (total minutes) back to the hours/minutes helper controls
+    let reminderTotalMinutes = DEFAULT_EMAIL_REMINDER_HOURS * 60;
+    if (meeting.auto_email_reminder_enabled && meeting.auto_email_reminder_time) {
+      reminderTotalMinutes = meeting.auto_email_reminder_time;
+    }
+    const reminderHours = Math.floor(reminderTotalMinutes / 60);
+    if (meeting.auto_email_reminder_enabled) {
+      this.form().get('reminderHours')?.enable();
+      if (reminderHours !== MAX_EMAIL_REMINDER_HOURS) {
+        this.form().get('reminderMinutes')?.enable();
+      }
+    }
+
     this.form().patchValue({
       title: meeting.title,
       description: meeting.description,
@@ -814,6 +843,9 @@ export class MeetingManageComponent {
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
+      auto_email_reminder_enabled: meeting.auto_email_reminder_enabled ?? false,
+      reminderHours: reminderHours,
+      reminderMinutes: reminderTotalMinutes % 60,
       recurrenceType: finalRecurrenceValue,
       committees: meeting.committees || [],
     });
@@ -934,7 +966,8 @@ export class MeetingManageComponent {
         );
 
       case 3: // Platform & Features
-        return form.get('platform')?.valid ?? false;
+        // Reminder controls are checked via !invalid so their disabled state (toggle off) doesn't block the step
+        return (form.get('platform')?.valid ?? false) && !form.get('reminderHours')?.invalid && !form.get('reminderMinutes')?.invalid;
 
       case 4: // Resources & Summary (optional)
       case 5: // Manage Guests (optional)
@@ -991,6 +1024,12 @@ export class MeetingManageComponent {
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
+        auto_email_reminder_enabled: new FormControl(false),
+        reminderHours: new FormControl({ value: DEFAULT_EMAIL_REMINDER_HOURS, disabled: true }, [
+          Validators.min(MIN_EMAIL_REMINDER_HOURS),
+          Validators.max(MAX_EMAIL_REMINDER_HOURS),
+        ]),
+        reminderMinutes: new FormControl({ value: DEFAULT_EMAIL_REMINDER_MINUTES, disabled: true }, [Validators.min(0), Validators.max(59)]),
 
         // Step 4: Resources & Summary
         attachments: new FormControl<PendingAttachment[]>([]),
