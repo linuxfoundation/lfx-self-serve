@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_AGENTS } from '@lfx-one/shared/constants';
-import { MktgChatRequest, MktgChatResponse, MktgHistoryResponse } from '@lfx-one/shared/interfaces';
+import { BrandKitPersistReceipt, BrandKitPersistRequest, MktgChatRequest, MktgChatResponse, MktgHistoryResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { getStringQueryParam } from '../helpers/validation.helper';
+import { BrandKitService } from '../services/brand-kit.service';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -14,6 +15,7 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 
 export class MktgAgentsController {
   private readonly guildService = new GuildService();
+  private readonly brandKitService = new BrandKitService();
 
   /**
    * POST /api/mktg-agents/chat
@@ -136,6 +138,58 @@ export class MktgAgentsController {
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
       const response: MktgHistoryResponse = { messages };
       res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/brand-kit/persist
+   * Validates the session's final Brand Kit envelope (contract
+   * brand-kit-output/v1) and persists the document to object storage.
+   * Only the session's creator may persist — same owner-token proof as
+   * posting a follow-up.
+   */
+  public async persistBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { sessionId, ownerToken } = req.body as BrandKitPersistRequest;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'brand_kit_persist',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'brand_kit_persist',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (!verifySessionOwnerToken(ownerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to persist this session.', { operation: 'brand_kit_persist', service: 'mktg_agents_controller' })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'brand_kit_persist', {});
+
+    try {
+      const receipt: BrandKitPersistReceipt = await this.brandKitService.persistFromSession(req, validSessionId);
+      logger.success(req, 'brand_kit_persist', startTime, { s3_key: receipt.s3_key, version: receipt.version });
+      res.json(receipt);
     } catch (error) {
       next(error);
     }

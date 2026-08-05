@@ -14,4 +14,7 @@ router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, nex
 // GET /api/mktg-agents/history - fetch mapped session history
 router.get('/history', (req, res, next) => mktgAgentsController.history(req, res, next));
 
+// POST /api/mktg-agents/brand-kit/persist - validate + persist a session's final Brand Kit document
+router.post('/brand-kit/persist', (req, res, next) => mktgAgentsController.persistBrandKit(req, res, next));
+
 export default router;

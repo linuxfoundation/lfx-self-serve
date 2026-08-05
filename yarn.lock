@@ -13502,6 +13502,7 @@ __metadata:
     "@angular/platform-server": "npm:^20.3.15"
     "@angular/router": "npm:^20.3.15"
     "@angular/ssr": "npm:^20.3.13"
+    "@aws-sdk/client-s3": "npm:^3.726.0"
     "@datadog/browser-rum": "npm:6.25.4"
     "@eslint/js": "npm:^9.39.1"
     "@fullcalendar/angular": "npm:6.1.20"
