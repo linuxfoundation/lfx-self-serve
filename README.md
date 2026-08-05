@@ -1,6 +1,6 @@
-# LFX One
+# LFX Self Serve
 
-This is a monorepo for the LFX One application, built
+This is a monorepo for the LFX Self Serve application, built
 with Angular 20 and stable zoneless change detection.
 
 ## What's inside?
