@@ -28,6 +28,7 @@ import {
 import {
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
+  CommitteeJoinApplication,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
@@ -37,6 +38,7 @@ import {
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import { canManageCommitteeMembers, findPendingInvitationForCommittee, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
@@ -118,6 +120,7 @@ export class CommitteeViewComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly invitationService = inject(InvitationService);
+  private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
@@ -142,6 +145,7 @@ export class CommitteeViewComponent {
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
+  public applicationsLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
   // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
   // summary stay in sync across tab switches (tab panels unmount in the @switch below).
@@ -171,6 +175,7 @@ export class CommitteeViewComponent {
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
   // Pending invites share the members refresh trigger so adding/revoking refreshes both.
   public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
+  public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
   // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
   // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
   public readonly engagementMetricsEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
@@ -186,6 +191,11 @@ export class CommitteeViewComponent {
   // committee response carrying the new my_role.
   public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  /** True when the visitor submitted an application for the current committee this session. */
+  public hasPendingApplication: Signal<boolean> = computed(() => {
+    const uid = this.committee()?.uid;
+    return !!uid && this.joinApplicationSession.pendingCommitteeUids().has(uid);
+  });
 
   // Pending invitation for THIS committee, surfaced from the shared cross-surface cache so a user
   // landing on a group they were invited to can accept/decline right here. Excludes invites already
@@ -193,7 +203,7 @@ export class CommitteeViewComponent {
   public readonly inviteToastKey = INVITE_TOAST_KEY;
   public pendingInvitation: Signal<PendingInvitation | null> = computed(() => {
     const committee = this.committee();
-    if (!committee?.uid || !this.isVisitor()) {
+    if (!committee?.uid || !this.isVisitor() || committee.join_mode !== 'invite_only') {
       return null;
     }
     return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
@@ -216,6 +226,13 @@ export class CommitteeViewComponent {
   public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
+  public canSendMemberInvites: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    if (!committee || this.canEdit() || this.isVisitor() || this.myRoleLoading()) return false;
+    return committee.join_mode === 'invite_only';
+  });
 
   public canReview: Signal<boolean> = computed(() => {
     if (this.canEdit()) return false;
@@ -302,7 +319,7 @@ export class CommitteeViewComponent {
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(
-    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit()
+    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
   );
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
@@ -354,6 +371,17 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+
+    toObservable(this.committee)
+      .pipe(
+        filter((committee): committee is Committee => !!committee?.uid && !!committee.my_role),
+        map((committee) => committee.uid),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((committeeUid) => {
+        this.joinApplicationSession.clearPending(committeeUid);
+      });
 
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
@@ -467,6 +495,9 @@ export class CommitteeViewComponent {
           },
         });
     } else if (joinMode === 'application') {
+      if (this.hasPendingApplication()) {
+        return;
+      }
       this.openApplicationDialog(committee.uid, committee.name);
     } else {
       // closed — no self-service action available
@@ -674,6 +705,12 @@ export class CommitteeViewComponent {
   }
 
   private openApplicationDialog(committeeUid: string, committeeName: string): void {
+    if (this.joiningOrLeaving()) {
+      return;
+    }
+
+    this.joiningOrLeaving.set(true);
+
     const ref = this.dialogService.open(JoinApplicationDialogComponent, {
       header: 'Request to Join',
       width: '520px',
@@ -684,14 +721,17 @@ export class CommitteeViewComponent {
     }) as DynamicDialogRef;
 
     ref.onClose.pipe(take(1)).subscribe((result: JoinApplicationDialogResult | null) => {
-      if (!result) return;
+      if (!result) {
+        this.joiningOrLeaving.set(false);
+        return;
+      }
 
-      this.joiningOrLeaving.set(true);
       this.committeeService
         .submitApplication(committeeUid, result.message)
         .pipe(finalize(() => this.joiningOrLeaving.set(false)))
         .subscribe({
           next: () => {
+            this.joinApplicationSession.markPending(committeeUid);
             this.messageService.add({
               severity: 'success',
               summary: 'Application Submitted',
@@ -703,6 +743,7 @@ export class CommitteeViewComponent {
             const upstream = err.error?.message as string | undefined;
             let detail: string;
             if (err.status === 409) {
+              this.joinApplicationSession.markPending(committeeUid);
               detail = 'You already have a pending application for this group.';
             } else {
               detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
@@ -841,8 +882,8 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          // Only managers can see pending invites — gate the fetch (not just the display) so
-          // non-managers never request invitee emails and we don't rely on upstream authz to reject.
+          // Writers need pending invites for direct-add stale-invite cleanup even in closed mode;
+          // the Pending Invitations card is hidden separately in committee-members.
           if (!committee?.uid || !canManageCommitteeMembers(committee)) {
             this.invitesLoading.set(false);
             return of([] as CommitteeInvite[]);
@@ -861,6 +902,27 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] as CommitteeInvite[] }
+    );
+  }
+
+  private initializeApplications(): Signal<CommitteeJoinApplication[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
+        switchMap(([committee]) => {
+          if (!committee?.uid || !canManageCommitteeMembers(committee) || committee.join_mode !== 'application') {
+            this.applicationsLoading.set(false);
+            return of([] as CommitteeJoinApplication[]);
+          }
+
+          this.applicationsLoading.set(true);
+
+          return this.committeeService.getCommitteeApplications(committee.uid).pipe(
+            catchError(() => of([] as CommitteeJoinApplication[])),
+            finalize(() => this.applicationsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as CommitteeJoinApplication[] }
     );
   }
 
