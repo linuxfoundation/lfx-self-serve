@@ -1,28 +1,28 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card>
-  <div class="flex items-center gap-2 mb-4">
-    <i class="fa-light fa-award text-gray-500 text-xs"></i>
-    <h2 class="text-gray-600 text-sm font-normal">Badges</h2>
-  </div>
+<section data-testid="badges-section">
+  <h2 class="m-0 text-lg font-bold text-gray-900">Badges</h2>
+  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Recognitions and credentials earned across the community.</p>
 
-  <div class="grid grid-cols-3 gap-4 place-items-center" data-testid="badges-grid">
+  <div class="grid grid-cols-3 gap-4 sm:grid-cols-4" data-testid="badges-grid">
     @for (badge of badges(); track badge) {
-      @if (badge.url) {
-        <a
-          [href]="badge.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center justify-center hover:opacity-80 transition-opacity"
-          data-testid="badge-link">
-          <img [src]="badge.image" alt="Badge" class="w-16 h-16 object-contain" loading="lazy" />
-        </a>
-      } @else {
-        <div class="flex items-center justify-center" data-testid="badge-item">
-          <img [src]="badge.image" alt="Badge" class="w-16 h-16 object-contain" loading="lazy" />
-        </div>
+      @if (badge.Image) {
+        @if (badge.Url) {
+          <a
+            [href]="badge.Url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex aspect-square items-center justify-center rounded-xl border border-gray-200 bg-white transition-colors hover:bg-gray-50"
+            data-testid="badge-link">
+            <img [src]="badge.Image" alt="Badge" class="h-[58px] w-[58px] object-contain" loading="lazy" />
+          </a>
+        } @else {
+          <div class="flex aspect-square items-center justify-center rounded-xl border border-gray-200 bg-white" data-testid="badge-item">
+            <img [src]="badge.Image" alt="Badge" class="h-[58px] w-[58px] object-contain" loading="lazy" />
+          </div>
+        }
       }
     }
   </div>
-</lfx-card>
+</section>

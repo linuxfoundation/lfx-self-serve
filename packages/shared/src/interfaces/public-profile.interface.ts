@@ -60,17 +60,11 @@ export interface PublicProfileTechnicalContribution {
   projects: PublicProfileProject[];
 }
 
-/** Aggregated contribution counts across all projects, shown in the contributions summary. */
-export interface PublicProfileContributionTotals {
-  commits: number;
-  prs: number;
-  issues: number;
-  added: number;
-  deleted: number;
-}
-
+// Backed by upstream `ProjectContribution` — JSON keys mix casing: `ID`/`LogoURL`/`Name`/`Slug`
+// are PascalCase, the rest (`affiliations`, `commits`, `added`, …) are lowercase. `ID` is
+// `omitempty` and the upstream transform does not populate it, so it may be absent.
 export interface PublicProfileProject {
-  ID: string;
+  ID?: string;
   LogoURL?: string;
   Name: string;
   Slug?: string;
@@ -137,13 +131,16 @@ export interface PublicProfileEvent {
   LocationName?: string;
 }
 
+// Backed by the same upstream `Activity` struct as PublicProfileTraining — JSON keys
+// are PascalCase (`ID`, `Name`, `Status`, `StartDate`, `EndDate`, `Type`), all `omitempty`.
+// The raw S3 artifact is consumed without transformation, so the casing must match.
 export interface PublicProfileCertification {
-  id: string;
-  name: string;
-  status: string;
-  startDate?: string;
-  endDate?: string;
-  type?: string;
+  ID?: string;
+  Name?: string;
+  Status?: string;
+  StartDate?: string;
+  EndDate?: string;
+  Type?: string;
 }
 
 export interface PublicProfileTraining {
@@ -154,9 +151,12 @@ export interface PublicProfileTraining {
   EndDate?: string;
 }
 
+// Upstream Badge (user-service preference.Badge): both fields carry `omitempty`,
+// so each may be absent. JSON keys are PascalCase `Image` / `Url` — the raw S3
+// artifact is consumed without transformation, so the casing must match exactly.
 export interface PublicProfileBadge {
-  image: string;
-  url?: string;
+  Image?: string;
+  Url?: string;
 }
 
 export interface PublicProfileSkill {

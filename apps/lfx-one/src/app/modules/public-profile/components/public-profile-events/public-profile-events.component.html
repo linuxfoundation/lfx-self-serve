@@ -1,42 +1,64 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card>
-  <div class="flex items-center gap-2 mb-4">
-    <i class="fa-light fa-calendar-days text-gray-500 text-xs"></i>
-    <h2 class="text-gray-600 text-sm font-normal">Events</h2>
-  </div>
+<section data-testid="events-section">
+  <h2 class="m-0 text-lg font-bold text-gray-900">Events</h2>
+  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Linux Foundation events attended.</p>
 
-  <div class="flex flex-col gap-3" data-testid="events-list">
+  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="events-list">
     @for (event of events(); track event.ID) {
-      <div class="flex items-start gap-3" data-testid="event-item">
-        <div class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <i class="fa-light fa-calendar-days text-emerald-500 text-sm"></i>
-        </div>
-        <div class="flex flex-col gap-0.5 min-w-0">
-          @if (event.EventURL) {
-            <a
-              [href]="event.EventURL"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-sm font-medium text-blue-600 hover:underline break-words"
-              data-testid="event-link"
-              >{{ event.Name }}</a
-            >
-          } @else {
-            <p class="text-sm font-medium text-gray-900 break-words">{{ event.Name }}</p>
-          }
-          @if (event.StartDate || event.EndDate) {
-            <p class="text-xs text-gray-400">{{ event.StartDate | publicProfileDateRange: event.EndDate }}</p>
-          }
-          @if (event.LocationName) {
-            <p class="text-xs text-gray-500 flex items-center gap-1">
-              <i class="fa-light fa-location-dot"></i>
-              <span class="break-words">{{ event.LocationName }}</span>
-            </p>
-          }
-        </div>
+      <div class="flex flex-col gap-1 border-b border-gray-100 p-4 last:border-0" data-testid="event-item">
+        @if (event.EventURL) {
+          <a
+            [href]="event.EventURL"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="break-words text-sm font-semibold text-blue-600 hover:underline"
+            data-testid="event-link"
+            >{{ event.Name }}</a
+          >
+        } @else {
+          <p class="break-words text-sm font-semibold text-gray-900">{{ event.Name }}</p>
+        }
+        @if (event.StartDate || event.EndDate) {
+          <p class="flex items-center gap-1.5 text-xs text-gray-400">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true">
+              <path d="M8 2v4"></path>
+              <path d="M16 2v4"></path>
+              <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+              <path d="M3 10h18"></path>
+            </svg>
+            <span>{{ event.StartDate | publicProfileDateRange: event.EndDate }}</span>
+          </p>
+        }
+        @if (event.LocationName) {
+          <p class="flex items-center gap-1.5 text-xs text-gray-500">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            <span class="break-words">{{ event.LocationName }}</span>
+          </p>
+        }
       </div>
     }
   </div>
-</lfx-card>
+</section>
