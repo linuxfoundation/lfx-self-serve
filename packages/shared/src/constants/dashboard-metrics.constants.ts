@@ -908,6 +908,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       // over a fixed six-month range. Label them separately so the 30-day figure is not
       // read as a six-month number. weeklyTrend only holds weeks WITH rows, so its
       // length is not the reporting window and the window is labeled directly.
+      // When weeklyTrend is empty, flatSparklineData renders a placeholder at the
+      // current total (see the Social card above), not a trend.
       subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)',
       chartData: protoSparkline(
         brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
