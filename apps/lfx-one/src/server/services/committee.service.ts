@@ -10,6 +10,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
@@ -1103,8 +1104,9 @@ export class CommitteeService {
 
   // ── Join / Leave Methods ────────────────────────────────────────────────────
 
-  public async joinCommittee(req: Request, committeeId: string): Promise<CommitteeMember> {
-    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST');
+  public async joinCommittee(req: Request, committeeId: string, organization?: CommitteeOrganizationReference): Promise<CommitteeMember> {
+    const body = organization ? { organization } : undefined;
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST', {}, body);
   }
 
   public async leaveCommittee(req: Request, committeeId: string): Promise<void> {
