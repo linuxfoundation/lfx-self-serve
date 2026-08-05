@@ -3,11 +3,12 @@
 
 import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
-// Direct file imports (not the '../constants' barrel): this package must stay loadable in plain
-// Node (Vitest, jiti/Tailwind config loading), so files reachable from the constants barrel import
-// utils by file path, never via the '../utils' barrel — form.utils.ts and meeting.utils.ts both
-// pull in Angular packages that need the JIT compiler and crash a plain-Node import. Importing the
-// two underlying constant files directly sidesteps that hazard — behaviorally identical re-exports.
+// Direct file imports (not the '../constants' barrel): importing the constants barrel from a
+// utils file would route back through this file's own utils barrel if any constants file ever
+// re-acquires a '../utils' edge — so utils files pin constants by file path to keep that cycle
+// impossible by construction (see activity-feed.utils.ts for the concrete hazard a live edge
+// creates). Importing the two underlying constant files directly sidesteps that entirely —
+// behaviorally identical re-exports.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
