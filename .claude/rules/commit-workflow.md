@@ -77,5 +77,5 @@ Before starting any work or commits:
 
 1. **Check if there is a tracking ticket** — always track work, in either the `LFXV2` JIRA project or a GitHub Issue on `linuxfoundation/lfx-self-serve`. Do not use discarded or resolved tickets/issues.
 2. **Create a ticket if needed** for untracked work — JIRA for most work; GitHub Issues for issues filed directly on GitHub (e.g. bug reports, epics tracked on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17)) where a JIRA ticket doesn't already exist. Don't create both for the same piece of work.
-3. **Include the ticket reference in the commit message** — `LFXV2-XXX` for JIRA, or `GH-XXX` for a GitHub Issue (bare issue number, e.g. `GH-1331`)
-4. **Link the PR to the ticket** — JIRA ticket link, or `Closes #XXX` / `Refs #XXX` for a GitHub Issue, in the PR body
+3. **Include the ticket reference in the commit message** — `LFXV2-XXX` for JIRA, or for a GitHub Issue either `GH-XXX` (bare issue number, e.g. `GH-1331`) or the fully-qualified `org/repo#XXX` path (e.g. `linuxfoundation/lfx-self-serve#1331`) — prefer the fully-qualified path when the ticket isn't in this repo
+4. **Link the PR to the ticket** — JIRA ticket link, or `Closes #XXX` / `Refs #XXX` (or the fully-qualified `org/repo#XXX` form for a ticket in another repo) for a GitHub Issue, in the PR body

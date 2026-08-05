@@ -111,4 +111,4 @@ When editing files in `docs/`:
 
 - Some work is tracked directly as GitHub Issues on `linuxfoundation/lfx-self-serve` instead of JIRA — e.g. items filed under an epic (like the [August 2026 Bugs Epic](https://github.com/linuxfoundation/lfx-self-serve/issues/1294)) and tracked on the [LFX Self Serve Kanban board](https://github.com/orgs/linuxfoundation/projects/17).
 - File new issues with `gh issue create`, set `--type` (e.g. `Bug`), `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
-- Reference GitHub Issues in commits/branches as `GH-<issue-number>` (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.
+- Reference GitHub Issues in commits/branches as `GH-<issue-number>`, or in commit/PR bodies as the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the ticket isn't in this repo (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.

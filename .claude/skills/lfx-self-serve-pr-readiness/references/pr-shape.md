@@ -21,11 +21,11 @@ Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/(LFXV2-[0-9]+|
 
 ## 2. `pr-shape/jira` — SHOULD_FIX
 
-**Check:** at least one commit subject, commit body, or PR body contains a `LFXV2-XXX` reference or a `GH-XXX` GitHub Issue reference. Extract with `grep -oE 'LFXV2-[0-9]+|GH-[0-9]+'`.
+**Check:** at least one commit subject, commit body, or PR body contains a `LFXV2-XXX` reference, a `GH-XXX` GitHub Issue reference, or a fully-qualified `org/repo#XXX` GitHub Issue reference (e.g. `linuxfoundation/lfx-self-serve#1331`). Extract with `grep -oE 'LFXV2-[0-9]+|GH-[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'`.
 
-**Failure message:** `No LFXV2-XXX or GH-XXX reference found in commit messages or PR body. All work must be tracked in JIRA or a GitHub Issue.`
+**Failure message:** `No LFXV2-XXX, GH-XXX, or org/repo#XXX reference found in commit messages or PR body. All work must be tracked in JIRA or a GitHub Issue.`
 
-**Suggestion:** Add the ticket reference to a commit message (`git commit --amend`) or to the PR body (post-PR) — `LFXV2-XXX` for JIRA, `GH-XXX` for a GitHub Issue.
+**Suggestion:** Add the ticket reference to a commit message (`git commit --amend`) or to the PR body (post-PR) — `LFXV2-XXX` for JIRA, `GH-XXX` or `org/repo#XXX` for a GitHub Issue.
 
 ## 3. `pr-shape/conventional-commit` — SHOULD_FIX
 

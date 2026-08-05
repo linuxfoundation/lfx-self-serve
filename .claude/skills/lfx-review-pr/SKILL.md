@@ -165,7 +165,7 @@ Use `git log --format='%H %s'` (not `gh api .../commits --jq '.[].commit.message
 Then walk each rule ID from `.claude/skills/lfx-self-serve-pr-readiness/references/pr-shape.md`, using that file's severity and failure message as source of truth. The commands below are implementation notes, not a second checklist (inside Bash calls, re-derive `$BASE_REF` and reference the PR head as `refs/pr/<N>/head`):
 
 - `pr-shape/branch-name` → `jq -r .headRefName /tmp/pr-<N>-meta.json`; match the regex in `pr-shape.md`.
-- `pr-shape/jira` → grep `LFXV2-[0-9]+|GH-[0-9]+` over commit subjects + bodies + PR body (JIRA or GitHub Issue).
+- `pr-shape/jira` → grep `LFXV2-[0-9]+|GH-[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+` over commit subjects + bodies + PR body (JIRA, GitHub Issue, or fully-qualified `org/repo#issue`).
 - `pr-shape/conventional-commit` → each commit subject (from `git log --format='%H %s'`) against the regex in `pr-shape.md`.
 - `pr-shape/pr-title` (PR-only) → `jq -r .title /tmp/pr-<N>-meta.json` against the rule in `pr-shape.md`.
 - `pr-shape/rebase` → `git merge-base --is-ancestor "origin/$BASE_REF" "refs/pr/<N>/head"`.
