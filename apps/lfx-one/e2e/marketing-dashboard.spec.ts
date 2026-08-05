@@ -174,12 +174,12 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Paid Media');
   });
 
-  test('renders Social Media card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-social-media"]');
+  test('renders Social card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-brand-reach"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
-    await expect(card).toContainText('Social Media');
+    await expect(card).toContainText('Social');
   });
 
   test('renders filter pills', async ({ page }) => {
