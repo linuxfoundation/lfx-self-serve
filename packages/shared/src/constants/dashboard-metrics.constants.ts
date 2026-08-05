@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { BrandReachPlatformType, DashboardDrawerType, MarketingActionType } from '../interfaces';
+// By-file imports, not the '../utils' barrel — see constants/index.spec.ts for the invariant.
 import { hexToRgba } from '../utils/color.utils';
 import { formatCurrency, formatNumber } from '../utils/number.utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
