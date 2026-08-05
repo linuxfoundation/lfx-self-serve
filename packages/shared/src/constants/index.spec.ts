@@ -39,10 +39,13 @@ describe('tailwind.config.js', () => {
   it('imports only the plain-Node-safe @lfx-one/shared/constants subpath', () => {
     const configPath = join(__dirname, '../../../../apps/lfx-one/tailwind.config.js');
     const source = readFileSync(configPath, 'utf-8');
-    const specifiers = [...source.matchAll(/from\s+['"](@lfx-one\/shared[^'"]*)['"]/g)].map((m) => m[1]);
+    // Matches any quoted specifier, not just `from '...'`, so a mixed file that keeps a
+    // compliant static import while adding require('@lfx-one/shared/utils') or
+    // await import('@lfx-one/shared/utils') still gets caught.
+    const specifiers = [...source.matchAll(/['"](@lfx-one\/shared[^'"]*)['"]/g)].map((m) => m[1]);
 
     // Fails loudly (not vacuously) if the import shape ever changes so much that no
-    // @lfx-one/shared specifier is found at all — e.g. a codemod to require() or a dynamic import.
+    // @lfx-one/shared specifier is found at all — e.g. a codemod to a non-string-literal import.
     expect(specifiers).not.toHaveLength(0);
     for (const specifier of specifiers) {
       expect(specifier).toBe('@lfx-one/shared/constants');
