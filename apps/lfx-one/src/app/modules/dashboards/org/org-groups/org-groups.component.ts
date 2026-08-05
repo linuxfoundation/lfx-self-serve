@@ -48,17 +48,25 @@ export class OrgGroupsComponent {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   protected readonly fetchError = signal(false);
-  protected readonly groupsLoading = computed(() => this.hasCompany() && this.groupsData() === undefined);
+  private readonly groupsLoadingState = signal(false);
+  // Loading: initial (undefined) OR explicit flag set during org-switch (null stays after an error,
+  // so groupsData() === undefined alone would miss the reload-after-error skeleton).
+  protected readonly groupsLoading = computed(() => this.hasCompany() && (this.groupsData() === undefined || this.groupsLoadingState()));
 
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = toSignal(
     toObservable(computed(() => this.accountContext.selectedAccount().uid)).pipe(
       filter((id): id is string => !!id),
       distinctUntilChanged(),
-      tap(() => this.fetchError.set(false)),
+      tap(() => {
+        this.groupsLoadingState.set(true);
+        this.fetchError.set(false);
+      }),
       switchMap((id) =>
         this.groupsService.getGroups(id).pipe(
+          tap(() => this.groupsLoadingState.set(false)),
           catchError(() => {
             this.fetchError.set(true);
+            this.groupsLoadingState.set(false);
             return of(null);
           })
         )
