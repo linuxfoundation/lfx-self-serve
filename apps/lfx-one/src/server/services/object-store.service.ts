@@ -87,12 +87,21 @@ export class ObjectStoreService {
 
   private wrap(error: unknown, operation: string, key: string): MicroserviceError {
     // Preserve non-Error throws (theoretical with AWS SDK v3, but never drop diagnostics).
-    const original = error instanceof Error ? error : new Error(`Non-Error thrown by object store client: ${JSON.stringify(error)}`);
+    const original = error instanceof Error ? error : new Error(`Non-Error thrown by object store client: ${safeStringify(error)}`);
     return new MicroserviceError('Object storage request failed.', 502, 'object_store_error', {
       service: 'object_store',
       path: key,
       operation,
       originalError: original,
     });
+  }
+}
+
+/** Stringify defensively — JSON.stringify throws on circular values and yields undefined for symbols/functions. */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
   }
 }

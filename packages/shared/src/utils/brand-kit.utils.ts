@@ -71,7 +71,11 @@ export function validateBrandKitEnvelope(candidate: unknown): BrandKitValidation
     if (intake.mode !== 'form' && intake.mode !== 'conversational') {
       errors.push('intake.mode must be "form" or "conversational"');
     }
-    if (typeof intake.completed_at !== 'string' || !BRAND_KIT_ISO_TIMESTAMP_REGEX.test(intake.completed_at) || Number.isNaN(new Date(intake.completed_at).getTime())) {
+    if (
+      typeof intake.completed_at !== 'string' ||
+      !BRAND_KIT_ISO_TIMESTAMP_REGEX.test(intake.completed_at) ||
+      Number.isNaN(new Date(intake.completed_at).getTime())
+    ) {
       errors.push('intake.completed_at must be an ISO-8601 timestamp');
     }
     if (!Array.isArray(intake.answers) || intake.answers.length !== BRAND_KIT_INTAKE_ANSWER_COUNT) {

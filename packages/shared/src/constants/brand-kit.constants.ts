@@ -50,7 +50,7 @@ export const BRAND_KIT_INTAKE_ANSWER_COUNT = 7;
 /** Minimum document length (chars) per the contract schema. */
 export const BRAND_KIT_MIN_DOCUMENT_LENGTH = 1000;
 
-/** ISO-8601 timestamp shape gate (date-time with time part; offset or Z). */
+/** ISO-8601 timestamp shape gate: date + time part required; offset/Z optional (shape gate, not a UTC enforcer). */
 export const BRAND_KIT_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?$/;
 
 /** Max recursion depth when scanning event payloads for envelope candidates. */
