@@ -132,7 +132,17 @@ export class CommitteeMembersComponent implements OnInit {
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
   public processingApplicationUid = signal<string | null>(null);
-  public activeTab = signal<CommitteeMemberTab>('all');
+  // linkedSignal: resets to 'all' when the Pending tab becomes invisible (all invites revoked /
+  // none loaded) so the user is never left looking at an empty Pending table.
+  public activeTab = linkedSignal<boolean, CommitteeMemberTab>({
+    source: () => this.showPendingTab(),
+    computation: (pendingVisible, previous) => {
+      if (previous && previous.value === 'pending' && !pendingVisible) {
+        return 'all';
+      }
+      return previous?.value ?? 'all';
+    },
+  });
   // linkedSignal, not signal: the At Risk chip is only offered while a real engagement response is
   // present, so if it's selected when the data degrades (window switch, fetch failure) the
   // selection resets to 'all' — otherwise no chip would render as pressed and the at-risk filter
