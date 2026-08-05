@@ -44,6 +44,22 @@ export class EducationDrawerComponent {
   protected readonly totalEnrollmentsLabel: Signal<string> = computed(() => formatNumber(this.totalEnrollments()));
   protected readonly totalRevenueLabel: Signal<string> = computed(() => formatCurrency(this.totalRevenue()));
 
+  /**
+   * Whether net revenue is a measured figure at all, as opposed to untracked.
+   *
+   * Gates the revenue stats on the presence of revenue-bearing enrollments rather than
+   * on a non-zero total. A foundation with instructor-led/eLearning/cert enrollments has
+   * its revenue measured, so a $0 result is real data and must render as $0 — showing a
+   * dash there would report a measured zero as "no data". The dash is reserved for the
+   * all-edX case, where COURSE_PURCHASES carries no revenue column and the figure is
+   * genuinely untracked. This also keeps the stat cards consistent with the format rows,
+   * which already distinguish null (untracked) from 0.
+   */
+  protected readonly hasTrackedRevenue: Signal<boolean> = computed(() => {
+    const e = this.data().enrollment;
+    return e.instructorLed + e.eLearning + e.certExams > 0;
+  });
+
   /** Revenue per enrollment across revenue-bearing categories only (edX excluded from both sides). */
   protected readonly revenuePerEnrollmentLabel: Signal<string> = computed(() => {
     const e = this.data().enrollment;
@@ -51,6 +67,14 @@ export class EducationDrawerComponent {
     if (revenueBearingEnrollments === 0) return '—';
     return formatCurrency(this.totalRevenue() / revenueBearingEnrollments);
   });
+
+  /**
+   * The leading format is a neutral fact, not an achievement — it is reported as a plain
+   * statement rather than an insight so it cannot be routed into "Performing Well" while
+   * the same format is simultaneously flagged as a concentration risk. Same for the
+   * highest-earning format below.
+   */
+  protected readonly neutralFacts: Signal<string[]> = this.initNeutralFacts();
 
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
@@ -159,16 +183,10 @@ export class EducationDrawerComponent {
 
       const rows = this.categoryRows();
 
-      // Leading format
-      const top = [...rows].sort((a, b) => b.enrollments - a.enrollments)[0];
-      if (top.enrollments > 0) {
-        insights.push({
-          text: `${top.label} leads with ${formatNumber(top.enrollments)} enrollments (${top.enrollmentSharePct.toFixed(0)}% of total)`,
-          type: 'info',
-        });
-      }
-
-      // Balanced portfolio — the genuine performing-well signal
+      // Balanced portfolio — the only genuine performing-well signal here. The leading
+      // and highest-earning formats are reported as neutral facts instead: splitByPriority
+      // routes every non-warning insight into "Performing Well", so emitting them here
+      // would praise the same format the concentration-risk action is flagging.
       const activeFormats = rows.filter((row) => row.enrollments > 0);
       if (activeFormats.length >= 3 && activeFormats.every((row) => row.enrollmentSharePct < 50)) {
         insights.push({
@@ -177,17 +195,33 @@ export class EducationDrawerComponent {
         });
       }
 
+      return insights;
+    });
+  }
+
+  private initNeutralFacts(): Signal<string[]> {
+    return computed(() => {
+      if (this.totalEnrollments() === 0) {
+        return [];
+      }
+
+      const rows = this.categoryRows();
+      const facts: string[] = [];
+
+      // Leading format
+      const top = [...rows].sort((a, b) => b.enrollments - a.enrollments)[0];
+      if (top.enrollments > 0) {
+        facts.push(`${top.label} leads with ${formatNumber(top.enrollments)} enrollments (${top.enrollmentSharePct.toFixed(0)}% of total)`);
+      }
+
       // Highest-earning format, which is often not the highest-enrolling one
       const revenueRows = rows.filter((row) => (row.revenue ?? 0) > 0);
       if (revenueRows.length > 0) {
         const topRevenue = [...revenueRows].sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))[0];
-        insights.push({
-          text: `${topRevenue.label} generates the most net revenue at ${formatCurrency(topRevenue.revenue ?? 0)}`,
-          type: 'info',
-        });
+        facts.push(`${topRevenue.label} generates the most net revenue at ${formatCurrency(topRevenue.revenue ?? 0)}`);
       }
 
-      return insights;
+      return facts;
     });
   }
 }

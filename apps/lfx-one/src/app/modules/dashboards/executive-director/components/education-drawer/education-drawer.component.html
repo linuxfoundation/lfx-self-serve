@@ -43,7 +43,8 @@
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
           <span class="text-sm text-gray-500">Net Revenue</span>
-          @if (totalRevenue() > 0) {
+          <!-- A measured $0 is data; the dash is only for the all-edX case where revenue is untracked. -->
+          @if (hasTrackedRevenue()) {
             <span class="text-2xl font-semibold text-gray-900">{{ totalRevenueLabel() }}</span>
           } @else {
             <span class="text-2xl font-semibold text-gray-400">—</span>
@@ -114,6 +115,19 @@
           <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
             <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
             <span>{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Neutral facts: reported without a performing/attention verdict, since the leading
+         format may be the same one flagged as a concentration risk above. -->
+    @if (neutralFacts().length > 0) {
+      <div class="flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden" data-testid="education-drawer-facts">
+        @for (fact of neutralFacts(); track fact) {
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 last:border-b-0 text-sm text-gray-700">
+            <i class="fa-light fa-circle-info text-gray-400 flex-shrink-0"></i>
+            <span>{{ fact }}</span>
           </div>
         }
       </div>

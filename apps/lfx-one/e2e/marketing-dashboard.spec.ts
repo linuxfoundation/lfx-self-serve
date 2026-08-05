@@ -182,8 +182,9 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Web');
   });
 
-  // The Education card is suppressed when the foundation reports zero enrollments, so
-  // assert on attachment rather than a hard failure if TLF ever drops to no training.
+  // The card is conditional on non-zero enrollments upstream, so it is asserted on
+  // attachment first — it renders off-screen in the carousel until scrolled to. TLF
+  // always reports training activity, so an absent card is a real regression here.
   test('renders Education card', async ({ page }) => {
     const card = page.locator('[data-testid="ed-evo-education"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });

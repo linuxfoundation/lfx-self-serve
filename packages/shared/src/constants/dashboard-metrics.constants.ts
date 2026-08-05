@@ -820,10 +820,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     // Card order is the display order in the Marketing Overview carousel, and the
     // filter pills preserve it within each category — so this array is the single
     // source of truth for sequence. Agreed sequence:
-    // Events → Education → Members → Adoption → Social → Email → Paid Media →
+    // Events → Education → Members → Adoption → Social → Web → Email → Paid Media →
     // Attribution → Sentiment → Flywheel.
-    // Note: Education is grouped with the North Star cards by position only; it keeps
-    // its own section marker below because it is not a North Star metric.
+    // Note: Education sits second by position only. Its category is 'education', not
+    // 'memberships' — the 'memberships' pill is labelled "North Star", and the filter
+    // matches on exact category equality, so reusing it here would list Education as a
+    // North Star metric.
     // === North Star ===
     {
       title: 'Events',
@@ -861,7 +863,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
             title: 'Education',
             icon: 'fa-light fa-graduation-cap',
             chartType: 'line',
-            category: 'memberships',
+            category: 'education',
             testId: 'ed-evo-education',
             description: 'Training and certification enrollments across instructor-led, eLearning, cert exams, and edX.',
             value: formatNumber(educationTotalEnrollments),
