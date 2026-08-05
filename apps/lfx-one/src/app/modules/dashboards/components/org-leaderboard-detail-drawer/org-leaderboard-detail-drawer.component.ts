@@ -10,7 +10,13 @@ import {
   ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
   ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES,
 } from '@lfx-one/shared/constants';
-import type { LeaderboardDimension, OrgLeaderboardDetailCategoryRow, OrgLeaderboardDetailCompany, OrgLeaderboardDetailLevel } from '@lfx-one/shared/interfaces';
+import type {
+  LeaderboardDimension,
+  OrgLeaderboardDetailCategoryRow,
+  OrgLeaderboardDetailCompany,
+  OrgLeaderboardDetailLevel,
+  OrgLensProjectBand,
+} from '@lfx-one/shared/interfaces';
 import { orgLeaderboardDetailCategoryRows, orgLeaderboardDetailLevelFor } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -41,6 +47,16 @@ export class OrgLeaderboardDetailDrawerComponent {
   protected readonly hasData: Signal<boolean> = computed(() => this.company() !== null);
   protected readonly totalCompanies: Signal<number> = this.initTotalCompanies();
   protected readonly level: Signal<OrgLeaderboardDetailLevel | null> = this.initLevel();
+  protected readonly levelTextClass: Signal<string> = computed(() => {
+    const band = this.level()?.toLowerCase() as OrgLensProjectBand | undefined;
+    const classByBand: Record<OrgLensProjectBand, string> = {
+      leading: 'text-emerald-600',
+      contributing: 'text-blue-600',
+      participating: 'text-amber-600',
+      silent: 'text-gray-600',
+    };
+    return band ? classByBand[band] : 'text-gray-600';
+  });
   protected readonly categoryRows: Signal<OrgLeaderboardDetailCategoryRow[]> = this.initCategoryRows();
 
   // === Protected methods ===
