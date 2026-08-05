@@ -20,6 +20,7 @@ import {
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActivityFeedItem,
+  ActivityFeedRow,
   ActivityMeetingBadge,
   Committee,
   CommitteeEngagementResponse,
@@ -207,6 +208,12 @@ export class CommitteeOverviewComponent {
   // Server-merged "Recent Activity" feed (LFXV2-1707): fetched as one call, mapped to the UI
   // view-model client-side. See mapActivityEventsToFeedItems for the label/icon/action mapping.
   public activityItems: Signal<ActivityFeedItem[]> = this.initActivityItems();
+
+  // Per-row display fields (timestamp label, tooltip, meeting-type/duration badge), precomputed
+  // here rather than via template method calls — docs/reviews/frontend-checklist.md §4 only
+  // allows signal reads, computed values, and pipes in templates. Mirrors
+  // my-groups-card-grid.component.ts's initCards() precomputed-view-model pattern.
+  public activityFeedRows: Signal<ActivityFeedRow[]> = this.initActivityFeedRows();
 
   // Feature flag: WG Weekly Brief AI Assistant card
   public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
@@ -474,43 +481,6 @@ export class CommitteeOverviewComponent {
     });
   }
 
-  // `item.timestamp` is an ISO string (event.occurred_at); formatRelativeTime takes a Date.
-  protected formatActivityTimestamp(timestamp: string): string {
-    return formatRelativeTime(new Date(timestamp));
-  }
-
-  // Every ActivityFeedItem carries a timestamp (event.occurred_at), so this isn't scoped to
-  // meeting_held rows the way the meeting-type badge below is — the absolute-date tooltip
-  // improvement applies to all row types. Deliberately NOT formatShortDate() — that util pins
-  // `timeZone: 'UTC'`, which is correct for the date-only range-preview strings it was written
-  // for but would show the wrong calendar day here for a full-instant timestamp in negative-UTC-
-  // offset zones (e.g. an evening event crossing into the next UTC day). Uses the same
-  // no-timezone-override Intl options this file already uses for vote/survey dates above
-  // (initPendingActionItems), which resolve in the viewer's local timezone instead.
-  protected formatActivityTooltip(item: ActivityFeedItem): string {
-    const date = new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return `${item.label} (${date})`;
-  }
-
-  // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical
-  // recurring-series rows (e.g. 8x "Meeting held: Identity & Trust Working Group") with the
-  // meeting's type + duration, sourced from pastMeetings() already loaded on this page — no
-  // BFF/mapper change. Narrowing on action.kind (not item.type) gives TS access to meetingId.
-  protected activityMeetingBadge(item: ActivityFeedItem): ActivityMeetingBadge | null {
-    if (item.action.kind !== 'past-meeting') return null;
-    const meeting = this.pastMeetingsById().get(item.action.meetingId);
-    if (!meeting) return null;
-
-    const config = meeting.meeting_type
-      ? (MEETING_TYPE_CONFIGS[meeting.meeting_type.toLowerCase()] ?? DEFAULT_MEETING_TYPE_CONFIG)
-      : DEFAULT_MEETING_TYPE_CONFIG;
-    // meeting.duration is minutes, not seconds — formatDuration() takes seconds and would
-    // misformat here; dashboard-meeting-card.component.ts's initFormattedTimeWithDuration
-    // establishes the plain `${duration}m` convention for this exact field, reused verbatim.
-    const label = meeting.duration > 0 ? `${config.label} · ${meeting.duration}m` : config.label;
-    return { label, icon: config.icon };
-  }
-
   private clearSectionFadeTimer(): void {
     if (this.sectionFadeTimerId !== null) {
       clearTimeout(this.sectionFadeTimerId);
@@ -705,5 +675,44 @@ export class CommitteeOverviewComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initActivityFeedRows(): Signal<ActivityFeedRow[]> {
+    return computed(() =>
+      this.activityItems().map((item) => ({
+        item,
+        // item.timestamp is an ISO string (event.occurred_at); formatRelativeTime takes a Date.
+        timestampLabel: formatRelativeTime(new Date(item.timestamp)),
+        // Every ActivityFeedItem carries a timestamp, so this isn't scoped to meeting_held rows
+        // the way deriveMeetingBadge() is — the absolute-date tooltip applies to all row types.
+        // Deliberately NOT formatShortDate() — that util pins timeZone: 'UTC', which is correct
+        // for the date-only range-preview strings it was written for but would show the wrong
+        // calendar day here for a full-instant timestamp in negative-UTC-offset zones (e.g. an
+        // evening event crossing into the next UTC day). Uses the same no-timezone-override Intl
+        // options this file already uses for vote/survey dates above (initPendingActionItems),
+        // which resolve in the viewer's local timezone instead.
+        tooltip: `${item.label} (${new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`,
+        meetingBadge: this.deriveMeetingBadge(item),
+      }))
+    );
+  }
+
+  // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical
+  // recurring-series rows (e.g. 8x "Meeting held: Identity & Trust Working Group") with the
+  // meeting's type + duration, sourced from pastMeetings() already loaded on this page — no
+  // BFF/mapper change. Narrowing on action.kind (not item.type) gives TS access to meetingId.
+  private deriveMeetingBadge(item: ActivityFeedItem): ActivityMeetingBadge | null {
+    if (item.action.kind !== 'past-meeting') return null;
+    const meeting = this.pastMeetingsById().get(item.action.meetingId);
+    if (!meeting) return null;
+
+    const config = meeting.meeting_type
+      ? (MEETING_TYPE_CONFIGS[meeting.meeting_type.toLowerCase()] ?? DEFAULT_MEETING_TYPE_CONFIG)
+      : DEFAULT_MEETING_TYPE_CONFIG;
+    // meeting.duration is minutes, not seconds — formatDuration() takes seconds and would
+    // misformat here; dashboard-meeting-card.component.ts's initFormattedTimeWithDuration
+    // establishes the plain `${duration}m` convention for this exact field, reused verbatim.
+    const label = meeting.duration > 0 ? `${config.label} · ${meeting.duration}m` : config.label;
+    return { label, icon: config.icon };
   }
 }

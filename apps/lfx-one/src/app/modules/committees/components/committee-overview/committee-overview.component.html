@@ -280,29 +280,29 @@
                 }
               </div>
             </lfx-card>
-          } @else if (activityItems().length) {
+          } @else if (activityFeedRows().length) {
             <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200">
-              @for (item of activityItems(); track item.key) {
+              @for (row of activityFeedRows(); track row.item.key) {
                 <button
                   type="button"
                   class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                  [title]="formatActivityTooltip(item)"
-                  (click)="handleActivityItemClick(item)"
-                  [attr.data-testid]="'committee-overview-activity-item-' + item.key">
+                  [title]="row.tooltip"
+                  (click)="handleActivityItemClick(row.item)"
+                  [attr.data-testid]="'committee-overview-activity-item-' + row.item.key">
                   <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <i [class]="item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
+                    <i [class]="row.item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
                   </div>
-                  <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ item.label }}</span>
-                  @if (activityMeetingBadge(item); as badge) {
+                  <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ row.item.label }}</span>
+                  @if (row.meetingBadge; as badge) {
                     <lfx-tag
                       [outlined]="true"
                       [rounded]="true"
                       [value]="badge.label"
                       [icon]="badge.icon"
                       class="shrink-0"
-                      [attr.data-testid]="'committee-overview-activity-item-badge-' + item.key" />
+                      [attr.data-testid]="'committee-overview-activity-item-badge-' + row.item.key" />
                   }
-                  <span class="text-xs text-gray-400 shrink-0">{{ formatActivityTimestamp(item.timestamp) }}</span>
+                  <span class="text-xs text-gray-400 shrink-0">{{ row.timestampLabel }}</span>
                 </button>
               }
             </div>

@@ -83,3 +83,21 @@ export interface ActivityMeetingBadge {
   /** Font Awesome icon class from `MeetingTypeConfig.icon` */
   icon: string;
 }
+
+/**
+ * Precomputed display view-model for one row of the committee Overview "Recent Activity" widget.
+ * Wraps an `ActivityFeedItem` with its formatted timestamp/tooltip/badge fields, computed once per
+ * `activityItems()`/`pastMeetings()` change rather than via template method calls (repo rule:
+ * `docs/reviews/frontend-checklist.md` §4 — only signal reads, computed values, and pipes allowed
+ * in templates, no methods that execute formatting/lookup logic). Mirrors `MyGroupsCardVm`'s
+ * entity-plus-precomputed-fields shape (`committee.interface.ts`).
+ */
+export interface ActivityFeedRow {
+  item: ActivityFeedItem;
+  /** e.g. "3 days ago" — see `formatRelativeTime` */
+  timestampLabel: string;
+  /** `item.label` plus an absolute date, for the row's `[title]` tooltip */
+  tooltip: string;
+  /** `null` when `item` isn't a `past_meeting` row, or its meeting has no match in `pastMeetings()` */
+  meetingBadge: ActivityMeetingBadge | null;
+}
