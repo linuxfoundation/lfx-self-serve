@@ -43,6 +43,7 @@ export interface PublicGroupContext {
 export interface PublicGroupDetail {
   uid: string;
   name: string;
+  public_name?: string;
   description?: string;
   category: string;
   join_mode?: JoinMode;
