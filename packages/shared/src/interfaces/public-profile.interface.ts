@@ -18,8 +18,6 @@ export interface PublicProfile {
   /** Long-form bio / about section (HTML or markdown). */
   About?: string;
   technical_contribution?: PublicProfileTechnicalContribution;
-  community_roles?: PublicProfileCommunityRole[];
-  event_activities?: PublicProfileEvent[];
   /** Best-effort shape — absent from the reference sample; reconfirm against a live artifact. */
   training_activities?: PublicProfileTraining[] | null;
   certification_activities?: PublicProfileCertification[];
@@ -101,34 +99,6 @@ export interface PublicProfileContribution {
   issues: number;
   docs: number;
   count: number;
-}
-
-export interface PublicProfileCommunityRole {
-  ID: string;
-  LogoURL?: string;
-  /** Owning project; its `Name` is the card header fallback when no `LogoURL` is present. */
-  Project?: PublicProfileCommunityProject;
-  roles: PublicProfileCommunityRoleEntry[];
-}
-
-export interface PublicProfileCommunityProject {
-  Name?: string;
-}
-
-export interface PublicProfileCommunityRoleEntry {
-  Name: string;
-  Role: string;
-  RoleStartDate?: string;
-  RoleEndDate?: string;
-}
-
-export interface PublicProfileEvent {
-  ID: string;
-  Name: string;
-  StartDate?: string;
-  EndDate?: string;
-  EventURL?: string;
-  LocationName?: string;
 }
 
 // Backed by the same upstream `Activity` struct as PublicProfileTraining — JSON keys
