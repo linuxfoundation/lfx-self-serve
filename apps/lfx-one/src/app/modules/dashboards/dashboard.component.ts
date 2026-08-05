@@ -53,6 +53,9 @@ export class DashboardComponent {
 
   protected readonly foundationDashboardType = computed(() => {
     const persona = this.personaService.currentPersona();
+    if (persona === 'executive-director' || this.personaService.canViewExecutiveDashboards()) {
+      return 'executive-director';
+    }
     return isBoardScopedPersona(persona) ? persona : 'board-member';
   });
 
