@@ -768,7 +768,7 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
 /**
  * Build ED Evolution dashboard cards from live API data.
  * 6 North Star (Events, Members, Adoption, Email, Paid Media, Attribution)
- * + 2 Brand (Social, Sentiment) + Flywheel.
+ * + 3 Brand (Social, Web, Sentiment) + Flywheel.
  * Member Retention is merged into the Members drawer.
  *
  * Sparkline color semantics:
@@ -831,6 +831,9 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     // source of truth for sequence. Agreed sequence:
     // Events → Education → Members → Adoption → Social → Web → Email → Paid Media →
     // Attribution → Sentiment → Flywheel.
+    // The display order interleaves categories — Social and Web (Brand) sit between
+    // the North Star cards and Email/Paid Media/Attribution, and Sentiment (Brand)
+    // trails them — so this is not a category-grouped list.
     // Note: Education sits second by position only. Its category is 'education', not
     // 'memberships' — the 'memberships' pill is labelled "North Star", and the filter
     // matches on exact category equality, so reusing it here would list Education as a
@@ -969,6 +972,8 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       // over a fixed six-month range. Label them separately so the 30-day figure is not
       // read as a six-month number. weeklyTrend only holds weeks WITH rows, so its
       // length is not the reporting window and the window is labeled directly.
+      // When weeklyTrend is empty, flatSparklineData renders a placeholder at the
+      // current total (see the Social card above), not a trend.
       subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)',
       chartData: protoSparkline(
         brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
