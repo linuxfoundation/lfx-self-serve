@@ -221,6 +221,47 @@ test.describe('Education Drawer', () => {
     await expect(page.locator('[data-testid="education-drawer-formats"]')).toBeVisible();
   });
 
+  // Guards the null-vs-zero distinction: edX revenue is hardcoded null (COURSE_PURCHASES
+  // carries no revenue column) and must render "not tracked", while every other format
+  // has measured revenue and renders a currency figure — $0 included. A refactor that
+  // coalesced null to 0 would silently report edX as having earned nothing.
+  test('distinguishes untracked revenue from a measured zero', async ({ page }) => {
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-formats');
+
+    const edxRow = page.locator('[data-testid="education-drawer-format-row"]', { hasText: 'edX' });
+    await expect(edxRow).toContainText('not tracked');
+    await expect(edxRow).not.toContainText('$');
+
+    // Instructor Led revenue is measured, so it must show a currency value rather than
+    // the untracked placeholder — $0 is a legitimate reading here.
+    const instructorLedRow = page.locator('[data-testid="education-drawer-format-row"]', { hasText: 'Instructor Led' });
+    await expect(instructorLedRow).toContainText('$');
+    await expect(instructorLedRow).not.toContainText('not tracked');
+  });
+
+  // The attention/performing sections are driven by computed thresholds (concentration
+  // risk >70%, cert attach rate, balanced-portfolio) and routed by splitByPriority.
+  // TLF's live mix decides which of the two renders, so assert the invariant that holds
+  // either way: at least one section renders, and whichever renders carries content.
+  test('renders a priority-routed insight section', async ({ page }) => {
+    await openDrawerAndWaitForData(page, 'ed-evo-education', 'education-drawer-content', 'education-drawer-formats');
+
+    const attention = page.locator('[data-testid="education-drawer-attention"]');
+    const performing = page.locator('[data-testid="education-drawer-performing"]');
+    const facts = page.locator('[data-testid="education-drawer-facts"]');
+
+    const sectionCount = (await attention.count()) + (await performing.count()) + (await facts.count());
+    expect(sectionCount).toBeGreaterThan(0);
+
+    // Whichever sections rendered must be non-empty — an empty shell means the
+    // computed logic produced a section with nothing routed into it.
+    for (const section of [attention, performing, facts]) {
+      if ((await section.count()) > 0) {
+        await expect(section.first()).not.toBeEmpty();
+      }
+    }
+  });
+
   test('closes when close button is clicked', async ({ page }) => {
     await openDrawer(page, 'ed-evo-education', 'education-drawer-content');
     await page.locator('[data-testid="education-drawer-close"]').click();

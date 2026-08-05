@@ -127,7 +127,7 @@ export class EducationDrawerComponent {
       const { enrollment } = this.data();
 
       // Concentration risk — one format carrying the programme
-      const top = [...rows].sort((a, b) => b.enrollments - a.enrollments)[0];
+      const top = this.maxBy(rows, (row) => row.enrollments);
       if (top.enrollments > 0 && top.enrollmentSharePct > 70) {
         actions.push({
           title: 'Diversify education formats',
@@ -209,7 +209,7 @@ export class EducationDrawerComponent {
       const facts: string[] = [];
 
       // Leading format
-      const top = [...rows].sort((a, b) => b.enrollments - a.enrollments)[0];
+      const top = this.maxBy(rows, (row) => row.enrollments);
       if (top.enrollments > 0) {
         facts.push(`${top.label} leads with ${formatNumber(top.enrollments)} enrollments (${top.enrollmentSharePct.toFixed(0)}% of total)`);
       }
@@ -217,11 +217,21 @@ export class EducationDrawerComponent {
       // Highest-earning format, which is often not the highest-enrolling one
       const revenueRows = rows.filter((row) => (row.revenue ?? 0) > 0);
       if (revenueRows.length > 0) {
-        const topRevenue = [...revenueRows].sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))[0];
+        const topRevenue = this.maxBy(revenueRows, (row) => row.revenue ?? 0);
         facts.push(`${topRevenue.label} generates the most net revenue at ${formatCurrency(topRevenue.revenue ?? 0)}`);
       }
 
       return facts;
     });
+  }
+
+  // === Private Helpers ===
+  /**
+   * Returns the row with the highest `score`. A single pass states the intent —
+   * find one maximum — where a full sort implies an ordering nothing consumes.
+   * Callers must pass a non-empty array; every call site is already length-guarded.
+   */
+  private maxBy(rows: EducationCategoryRow[], score: (row: EducationCategoryRow) => number): EducationCategoryRow {
+    return rows.reduce((top, row) => (score(row) > score(top) ? row : top), rows[0]);
   }
 }
