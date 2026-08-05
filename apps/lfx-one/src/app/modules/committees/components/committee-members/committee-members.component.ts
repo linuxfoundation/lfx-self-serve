@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TitleCasePipe } from '@angular/common';
+import { DatePipe, TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -27,6 +27,7 @@ import {
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
   CommitteeInvite,
+  CommitteeJoinApplication,
   CommitteeMember,
   CommitteeMemberEngagement,
   CommitteeMemberEngagementRowView,
@@ -35,6 +36,7 @@ import {
   CommitteeMemberPermissionInfo,
   CommitteePermissionLevel,
   CommitteeUser,
+  JoinMode,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -53,15 +55,17 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, of, startWith, take } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
+import { RejectApplicationDialogComponent } from '../reject-application-dialog/reject-application-dialog.component';
 
 @Component({
   selector: 'lfx-committee-members',
   imports: [
+    DatePipe,
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
@@ -88,6 +92,9 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Bound committee UID stream — created in the constructor injection context for reuse in async callbacks. */
+  private readonly committeeUid$: Observable<string | null>;
 
   // Input signals
   public committee = input.required<Committee | null>();
@@ -95,6 +102,10 @@ export class CommitteeMembersComponent implements OnInit {
   public membersLoading = input<boolean>(true);
   public invites = input<CommitteeInvite[]>([]);
   public invitesLoading = input<boolean>(false);
+  public applications = input<CommitteeJoinApplication[]>([]);
+  public applicationsLoading = input<boolean>(false);
+  /** Non-writer members in invite_only groups may send invites. */
+  public canSendMemberInvites = input<boolean>(false);
   // Engagement rollup (LFXV2-1705, behind wg-engagement-metrics). Fetched once at the page level
   // (committee-view) and shared with the Overview summary; flag off = no engagement UI at all.
   public engagementEnabled = input<boolean>(false);
@@ -114,6 +125,7 @@ export class CommitteeMembersComponent implements OnInit {
   public selectedMember = signal<CommitteeMember | null>(null);
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
+  public processingApplicationUid = signal<string | null>(null);
   // linkedSignal, not signal: the At Risk chip is only offered while a real engagement response is
   // present, so if it's selected when the data degrades (window switch, fetch failure) the
   // selection resets to 'all' — otherwise no chip would render as pressed and the at-risk filter
@@ -139,14 +151,25 @@ export class CommitteeMembersComponent implements OnInit {
   // `writer from project`). No separate inherited check is needed here — a foundation-level
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
-  // Fail-closed: only show members when visibility is explicitly set to basic_profile.
+  public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
+  /** Invites are forbidden in closed mode (LFXV2-2690). */
+  public readonly showPendingInvites = computed(
+    () => this.canManageMembers() && this.joinMode() !== 'closed' && (this.invitesLoading() || this.invites().length > 0)
+  );
+  public readonly showPendingApplications = computed(
+    () => this.canManageMembers() && this.joinMode() === 'application' && (this.applicationsLoading() || this.pendingApplications().length > 0)
+  );
+  public readonly pendingApplications = computed(() => this.applications().filter((app) => (app.status ?? '').toLowerCase() === 'pending'));
+  // Fail-closed: only show the roster when visibility is explicitly set to basic_profile.
   // Undefined/null/unknown values default to hidden so committees without a persisted
   // setting don't inadvertently expose the member list.
-  public readonly isMembersVisible = computed(() => {
+  public readonly showMemberRoster = computed(() => {
     const committee = this.committee();
     if (!committee) return false;
     return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canManageMembers();
   });
+  /** Roster and/or invite-only member actions (LFXV2-2690: invite path when roster is hidden). */
+  public readonly showMembersSection = computed(() => this.showMemberRoster() || this.canSendMemberInvites());
   public readonly votingRepCount: Signal<number> = computed(() => countVotingReps(this.members()));
   public readonly observerCount: Signal<number> = computed(
     () => this.members().filter((m) => m.voting?.status === CommitteeMemberVotingStatus.OBSERVER).length
@@ -217,6 +240,17 @@ export class CommitteeMembersComponent implements OnInit {
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.organizationOptions = this.initializeOrganizationOptions();
     this.filteredMembers = this.initializeFilteredMembers();
+
+    this.committeeUid$ = toObservable(computed(() => this.committee()?.uid ?? null));
+
+    // Route-reused `/groups/:id` can bind a new committee while an approve/reject poll is in flight.
+    let previousCommitteeUid: string | null | undefined;
+    this.committeeUid$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((uid) => {
+      if (previousCommitteeUid !== undefined && uid !== previousCommitteeUid) {
+        this.processingApplicationUid.set(null);
+      }
+      previousCommitteeUid = uid;
+    });
   }
 
   public ngOnInit(): void {
@@ -277,6 +311,7 @@ export class CommitteeMembersComponent implements OnInit {
         committee: this.committee(),
         existingMembers: this.members(),
         existingInvites: this.invites(),
+        mode: 'direct-add',
       },
     });
 
@@ -284,6 +319,128 @@ export class CommitteeMembersComponent implements OnInit {
       if (result === true) {
         this.refreshMembers();
       }
+    });
+  }
+
+  public openInviteMemberDialog(): void {
+    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
+      header: 'Invite Someone',
+      width: '540px',
+      modal: true,
+      closable: true,
+      data: {
+        committee: this.committee(),
+        existingMembers: this.members(),
+        existingInvites: this.invites(),
+        mode: 'invite',
+      },
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+      if (result === true) {
+        this.refreshMembers();
+      }
+    });
+  }
+
+  public approveApplication(application: CommitteeJoinApplication): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.processingApplicationUid()) return;
+
+    const committeeUid = committee.uid;
+
+    this.confirmationService.confirm({
+      message: `Approve ${application.applicant_email}'s request to join this group?`,
+      header: 'Approve Application',
+      acceptLabel: 'Approve',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-success p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        if (this.committee()?.uid !== committeeUid) {
+          return;
+        }
+        if (this.processingApplicationUid()) return;
+
+        this.processingApplicationUid.set(application.uid);
+        this.committeeService.approveApplication(committeeUid, application.uid).subscribe({
+          next: () => {
+            if (this.committee()?.uid !== committeeUid) {
+              return;
+            }
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Application Approved',
+              detail: `${application.applicant_email} has been added to the group.`,
+            });
+            this.refreshAfterApplicationReview(committeeUid, application.uid);
+          },
+          error: (err: HttpErrorResponse) => {
+            if (this.committee()?.uid !== committeeUid) {
+              return;
+            }
+            if (this.processingApplicationUid() === application.uid) {
+              this.processingApplicationUid.set(null);
+            }
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to Approve',
+              detail: getHttpErrorDetail(err, 'Failed to approve the application. Please try again.'),
+            });
+          },
+        });
+      },
+    });
+  }
+
+  public rejectApplication(application: CommitteeJoinApplication): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.processingApplicationUid()) return;
+
+    const committeeUid = committee.uid;
+
+    const dialogRef = this.dialogService.open(RejectApplicationDialogComponent, {
+      header: 'Reject Application',
+      width: '480px',
+      modal: true,
+      closable: true,
+      data: { applicantEmail: application.applicant_email },
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((reviewerNotes: string | null | undefined) => {
+      if (reviewerNotes === undefined) return;
+      if (this.committee()?.uid !== committeeUid) {
+        return;
+      }
+      if (this.processingApplicationUid()) return;
+
+      this.processingApplicationUid.set(application.uid);
+      this.committeeService.rejectApplication(committeeUid, application.uid, reviewerNotes || undefined).subscribe({
+        next: () => {
+          if (this.committee()?.uid !== committeeUid) {
+            return;
+          }
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Application Rejected',
+            detail: `The request from ${application.applicant_email} has been rejected.`,
+          });
+          this.refreshAfterApplicationReview(committeeUid, application.uid);
+        },
+        error: (err: HttpErrorResponse) => {
+          if (this.committee()?.uid !== committeeUid) {
+            return;
+          }
+          if (this.processingApplicationUid() === application.uid) {
+            this.processingApplicationUid.set(null);
+          }
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Reject',
+            detail: getHttpErrorDetail(err, 'Failed to reject the application. Please try again.'),
+          });
+        },
+      });
     });
   }
 
@@ -438,6 +595,70 @@ export class CommitteeMembersComponent implements OnInit {
 
   private refreshMembers(): void {
     this.refresh.emit();
+  }
+
+  /**
+   * Refreshes members/applications after approve/reject. The query index can lag the upstream
+   * write, so poll until the application is no longer pending before giving up.
+   */
+  private refreshAfterApplicationReview(committeeUid: string, applicationUid: string): void {
+    const isActiveReview = (): boolean => this.committee()?.uid === committeeUid;
+
+    const refreshIfActive = (): void => {
+      if (isActiveReview()) {
+        this.refreshMembers();
+      }
+    };
+
+    const releaseReviewLock = (): void => {
+      if (isActiveReview() && this.processingApplicationUid() === applicationUid) {
+        this.processingApplicationUid.set(null);
+      }
+    };
+
+    refreshIfActive();
+
+    const committeeChanged$ = this.committeeUid$.pipe(
+      filter((uid) => uid !== committeeUid),
+      take(1)
+    );
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        takeUntil(committeeChanged$),
+        exhaustMap(() => this.committeeService.getCommitteeApplications(committeeUid).pipe(catchError(() => of(null as CommitteeJoinApplication[] | null)))),
+        filter((applications): applications is CommitteeJoinApplication[] => {
+          if (applications === null) {
+            return false;
+          }
+          const application = applications.find((app) => app.uid === applicationUid);
+          return !application || (application.status ?? '').toLowerCase() !== 'pending';
+        }),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          if (!isActiveReview()) {
+            return;
+          }
+          pollSucceeded = true;
+          refreshIfActive();
+          releaseReviewLock();
+        },
+        complete: () => {
+          if (!isActiveReview() || this.destroyRef.destroyed) {
+            return;
+          }
+          if (!pollSucceeded) {
+            refreshIfActive();
+          }
+          releaseReviewLock();
+        },
+      });
   }
 
   private getMemberDisplayName(member: CommitteeMember): string {

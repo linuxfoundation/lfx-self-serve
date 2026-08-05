@@ -62,5 +62,8 @@ router.delete('/:id/documents/:documentId', (req, res, next) => committeeControl
 router.post('/:id/join', (req, res, next) => committeeController.joinCommittee(req, res, next));
 router.delete('/:id/leave', (req, res, next) => committeeController.leaveCommittee(req, res, next));
 router.post('/:id/applications', (req, res, next) => committeeController.submitApplication(req, res, next));
+router.get('/:id/applications', (req, res, next) => committeeController.getCommitteeApplications(req, res, next));
+router.post('/:id/applications/:applicationId/approve', (req, res, next) => committeeController.approveApplication(req, res, next));
+router.post('/:id/applications/:applicationId/reject', (req, res, next) => committeeController.rejectApplication(req, res, next));
 
 export default router;

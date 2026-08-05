@@ -17,6 +17,8 @@ import {
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   MyCommittee,
@@ -32,7 +34,7 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
@@ -1117,6 +1119,71 @@ export class CommitteeService {
     return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/applications`, 'POST', {}, body);
   }
 
+  /**
+   * Fetches join applications for a committee from the query index.
+   */
+  public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'get_committee_applications');
+
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_application',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+  }
+
+  public async approveApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: ApproveCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeMember> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'approve_committee_application');
+
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/approve`,
+      'POST',
+      {},
+      payload
+    );
+  }
+
+  public async rejectApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: RejectCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeJoinApplication> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'reject_committee_application');
+
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/reject`,
+      'POST',
+      {},
+      payload
+    );
+  }
+
   // ── Committee Documents ────────────────────────────────────────────────────
 
   public async getCommitteeDocuments(req: Request, committeeId: string): Promise<CommitteeDocument[]> {
@@ -1447,6 +1514,18 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     });
     return count > 0;
+  }
+
+  /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */
+  private async assertCommitteeApplicationWriter(req: Request, committeeId: string, operation: string): Promise<void> {
+    const committee = await this.getCommitteeById(req, committeeId);
+    if (committee.writer !== true) {
+      throw new AuthorizationError('You do not have permission to manage join applications for this group.', {
+        operation,
+        service: 'committee_service',
+        path: `/committees/${committeeId}/applications`,
+      });
+    }
   }
 
   /**
