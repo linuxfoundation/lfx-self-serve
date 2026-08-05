@@ -14,7 +14,7 @@ import {
   lfxColors,
   lfxFontSizes,
   ORG_MEETINGS_KPI_ICON_CLASS,
-} from '@lfx-one/shared';
+} from '@lfx-one/shared/constants';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
