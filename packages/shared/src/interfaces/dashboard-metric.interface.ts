@@ -228,7 +228,6 @@ export enum DashboardDrawerType {
   MarketingWebsiteVisits = 'marketing-website-visits',
   MarketingEmailCtr = 'marketing-email-ctr',
   MarketingPaidSocialReach = 'marketing-paid-social-reach',
-  MarketingSocialMedia = 'marketing-social-media',
   NorthStarEngagedCommunity = 'north-star-engaged-community',
   NorthStarMemberAcquisition = 'north-star-member-acquisition',
   NorthStarMemberRetention = 'north-star-member-retention',
