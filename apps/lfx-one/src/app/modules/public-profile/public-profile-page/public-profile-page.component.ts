@@ -146,11 +146,12 @@ export class PublicProfilePageComponent {
   }
 
   // Sets the document title and Open Graph / Twitter card tags from the resolved profile.
-  // Skips while the profile is null (initial load, error, or the private→not-found redirect)
-  // so a stale card never lingers on the next navigation.
+  // When no profile is resolved (loading, error, not-found, private) it restores the default
+  // head so the previous contributor's title/card never lingers after a client navigation.
   private applyMetadata(): void {
     const basic = this.profile()?.basic;
     if (!basic) {
+      this.resetMetadata();
       return;
     }
 
@@ -178,5 +179,19 @@ export class PublicProfilePageComponent {
       this.meta.removeTag('property="og:image"');
       this.meta.removeTag('name="twitter:image"');
     }
+  }
+
+  // Restores the neutral default head (matching index.html) and drops the profile-specific
+  // Open Graph / Twitter tags so no prior contributor's card survives a client navigation.
+  private resetMetadata(): void {
+    const description = 'Public contributor profiles on LFX.';
+    this.title.setTitle('LFX');
+    this.meta.updateTag({ name: 'description', content: description });
+    this.meta.updateTag({ property: 'og:title', content: 'LFX' });
+    this.meta.updateTag({ property: 'og:description', content: description });
+    this.meta.updateTag({ name: 'twitter:title', content: 'LFX' });
+    this.meta.updateTag({ name: 'twitter:description', content: description });
+    this.meta.removeTag('property="og:image"');
+    this.meta.removeTag('name="twitter:image"');
   }
 }
