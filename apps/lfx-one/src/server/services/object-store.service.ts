@@ -88,15 +88,21 @@ export class ObjectStoreService {
           Key: key,
           Body: buffer,
           ContentType: contentType,
-          CacheControl: 'public, max-age=31536000',
+          // Short TTL, not long-lived/immutable: the `?v=` query param below is a cache-busting
+          // hint, not a content-addressed version. A stale copy of the URL persisted elsewhere
+          // (e.g. Auth0 user_metadata, a denormalized search-index field) must converge back to
+          // current bytes within this window on its own — a long max-age defeats that and pins
+          // any such copy to stale bytes indefinitely. See lfx-skills PR #67.
+          CacheControl: 'public, max-age=86400',
         })
       );
 
       // Percent-encode the same key segment used for storage — a single decode hop in transit
       // reconstructs `keySegment` exactly (including any literal `%2F`/`%25` text from
       // toAvatarKeySegment), so the URL always resolves back to the stored key.
-      const cdnPrefix = process.env['CDN_URL_PREFIX'];
-      const url = cdnPrefix ? `${cdnPrefix.replace(/\/+$/, '')}/avatars/${encodeURIComponent(keySegment)}?v=${Date.now()}` : null;
+      const cdnPrefix = this.getCdnPrefix();
+      const versionHint = Math.floor(Date.now() / 1000);
+      const url = cdnPrefix ? `${cdnPrefix}/avatars/${encodeURIComponent(keySegment)}?v=${versionHint}` : null;
 
       logger.success(req, 'object_store_upload_profile_picture', startTime, { key, has_cdn_url: !!url });
 
@@ -111,7 +117,7 @@ export class ObjectStoreService {
     if (!this.client) {
       const endpoint = process.env['S3_ENDPOINT_URL'] || undefined;
       this.client = new S3Client({
-        region: process.env['AWS_REGION'] || 'us-east-1',
+        region: this.getRegion(),
         ...(endpoint && { endpoint }),
         forcePathStyle: true,
       });
@@ -125,6 +131,36 @@ export class ObjectStoreService {
       throw new Error('S3_BUCKET environment variable is required');
     }
     return bucket;
+  }
+
+  // No fallback: every provisioned bucket is us-west-2, so defaulting to another region (e.g.
+  // us-east-1) would sign requests against the wrong region and surface as an opaque
+  // PermanentRedirect instead of a clear config error if this var is ever missing.
+  private getRegion(): string {
+    const region = process.env['AWS_REGION'];
+    if (!region) {
+      throw new Error('AWS_REGION environment variable is required');
+    }
+    return region;
+  }
+
+  /**
+   * Returns the normalized CDN prefix (trailing slashes stripped), or null when CDN_URL_PREFIX is
+   * unset — that's degraded mode (callers fall back to no public_url), not a fatal error. When
+   * set, it must be an absolute http(s) URL: infra sometimes hands back a bare hostname (e.g.
+   * `avatars-public.dev.downloads.lfx.community`), and interpolating that verbatim would silently
+   * produce a relative URL that then gets persisted (e.g. into Auth0 user_metadata) as if it were
+   * absolute.
+   */
+  private getCdnPrefix(): string | null {
+    const cdnPrefix = process.env['CDN_URL_PREFIX'];
+    if (!cdnPrefix) {
+      return null;
+    }
+    if (!/^https?:\/\//i.test(cdnPrefix)) {
+      throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
+    }
+    return cdnPrefix.replace(/\/+$/, '');
   }
 
   private async doEnsureBucket(): Promise<void> {

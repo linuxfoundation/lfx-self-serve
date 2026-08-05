@@ -133,7 +133,7 @@ describe('ObjectStoreService', () => {
         Bucket: 'avatars-bucket',
         Key: 'avatars/some.user@example.com',
         ContentType: 'image/png',
-        CacheControl: 'public, max-age=31536000',
+        CacheControl: 'public, max-age=86400',
       });
     });
 
@@ -170,6 +170,15 @@ describe('ObjectStoreService', () => {
       sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(putError);
 
       await expect(service.uploadProfilePicture(buildReq(), 'user1', Buffer.from('img'), 'image/png')).rejects.toThrow('put failed');
+    });
+
+    it('rejects a bare-hostname CDN_URL_PREFIX instead of silently producing a relative public URL', async () => {
+      process.env['CDN_URL_PREFIX'] = 'avatars-public.dev.downloads.lfx.community';
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+
+      await expect(service.uploadProfilePicture(buildReq(), 'user1', Buffer.from('img'), 'image/png')).rejects.toThrow(
+        /CDN_URL_PREFIX must be an absolute http\(s\) URL/
+      );
     });
 
     it('escapes "/" in the username into the key instead of erroring, and the URL round-trips back to the exact stored key with a single decode', async () => {
@@ -218,6 +227,14 @@ describe('ObjectStoreService', () => {
       const config = s3ClientCtor.mock.calls[0][0];
       expect(config.endpoint).toBe('http://localhost:5222');
       expect(config.forcePathStyle).toBe(true);
+    });
+
+    it('rejects with no S3 call when AWS_REGION is unset — never falls back to a default region', async () => {
+      delete process.env['AWS_REGION'];
+
+      await expect(service.ensureBucket()).rejects.toThrow('AWS_REGION environment variable is required');
+      expect(sendMock).not.toHaveBeenCalled();
+      expect(s3ClientCtor).not.toHaveBeenCalled();
     });
   });
 });
