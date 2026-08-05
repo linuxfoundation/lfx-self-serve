@@ -3,13 +3,11 @@
 
 import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
-// Direct file imports (not the '../constants' barrel): importing the constants barrel from a
-// utils file would route back through this file's own utils barrel if any constants file ever
-// imports the '../utils' barrel (by-file '../utils/x.utils' imports are fine — this only guards
-// against the barrel) — so utils files pin constants by file path to keep that cycle impossible
-// by construction (see activity-feed.utils.ts for the concrete hazard a live barrel edge
-// creates). Importing the two underlying constant files directly sidesteps that entirely —
-// behaviorally identical re-exports.
+// Direct file imports (not the '../constants' barrel): defensive, same reasoning as
+// activity-feed.utils.ts — this file is re-exported by the utils barrel, so importing the
+// constants barrel here would add a utils->constants edge on top of the existing
+// constants->utils by-file edges. Importing the two underlying constant files directly sidesteps
+// that entirely — behaviorally identical re-exports.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';

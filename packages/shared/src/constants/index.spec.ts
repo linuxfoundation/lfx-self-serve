@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Guards the constants barrel (this file's own directory) against re-importing the '../utils'
-// barrel, which re-exports form.utils.ts (@angular/forms) and meeting.utils.ts
+// Guards the constants barrel (this file's own directory) against Angular runtime code becoming
+// reachable from it — whether via the '../utils' barrel or a direct file import to an
+// Angular-touching utils file, e.g. form.utils.ts (@angular/forms) or meeting.utils.ts
 // (@angular/common/http). Either one crashes any plain-Node evaluation of this barrel — Vitest
 // here, but also jiti (apps/lfx-one's tailwind.config.js loads `@lfx-one/shared/constants`) — with
 // a JIT-compiler error that surfaces far from its real cause (e.g. as an unrelated sass error on
