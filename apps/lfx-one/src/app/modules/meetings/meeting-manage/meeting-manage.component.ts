@@ -967,8 +967,10 @@ export class MeetingManageComponent {
         );
 
       case 3: // Platform & Features
-        // Reminder controls are checked via !invalid so their disabled state (toggle off) doesn't block the step
-        return (form.get('platform')?.valid ?? false) && !form.get('reminderHours')?.invalid && !form.get('reminderMinutes')?.invalid;
+        // Reminder controls use `invalid ?? true` (not `.valid`) because a disabled control (toggle off,
+        // or minutes locked at the 24h max) reports valid === false and would wrongly block the step;
+        // the ?? true fallback still fails closed if the controls are ever missing from the form.
+        return (form.get('platform')?.valid ?? false) && !(form.get('reminderHours')?.invalid ?? true) && !(form.get('reminderMinutes')?.invalid ?? true);
 
       case 4: // Resources & Summary (optional)
       case 5: // Manage Guests (optional)
