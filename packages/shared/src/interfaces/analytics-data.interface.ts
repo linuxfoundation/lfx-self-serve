@@ -2692,6 +2692,28 @@ export interface PaidCampaignPerformance {
 }
 
 /** Project-level paid performance breakdown. */
+/** Paid campaign row with display strings precomputed for the template. */
+export interface PaidCampaignPerformanceView extends PaidCampaignPerformance {
+  formattedSpend: string;
+  formattedRevenue: string;
+  formattedConversions: string;
+}
+
+/**
+ * Paid project row with display strings, expansion state and severity precomputed.
+ * Angular templates must not call functions, so the drawer derives all of this in a
+ * computed signal — including `expanded`, so the template never calls Set.has().
+ */
+export interface PaidProjectBreakdownView extends PaidProjectBreakdown {
+  formattedSpend: string;
+  formattedRevenue: string;
+  formattedConversions: string;
+  severity: 'danger' | 'warn' | 'success' | 'secondary';
+  hasCampaigns: boolean;
+  expanded: boolean;
+  campaignRows: PaidCampaignPerformanceView[];
+}
+
 export interface PaidProjectBreakdown {
   projectName: string;
   funnelStage: string;
@@ -3305,6 +3327,45 @@ export interface RevenueImpactProjectBreakdownView extends RevenueImpactProjectB
 export interface RevenueImpactAttributionChannelView extends RevenueImpactAttributionChannel {
   label: string;
   formattedPercentage: string;
+}
+
+/**
+ * Marketing-attribution channel row with its display strings precomputed.
+ * Angular templates must not call formatting functions, so the drawer builds
+ * these in a computed signal and the template only reads them.
+ */
+export interface MarketingAttributionChannelView extends MarketingAttributionChannel {
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+  formattedRevPerSession: string;
+  /** Project drill-down rows for this channel, already formatted. */
+  projects: MarketingAttributionProjectView[];
+}
+
+/** Project drill-down row under a channel, with display strings precomputed. */
+export interface MarketingAttributionProjectView extends MarketingAttributionProject {
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+}
+
+/** Attribution totals with display strings precomputed alongside the raw numbers. */
+export interface MarketingAttributionTotalsView {
+  sessions: number;
+  linearRevenue: number;
+  firstTouchRevenue: number;
+  lastTouchRevenue: number;
+  timeDecayRevenue: number;
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
 }
 
 /**

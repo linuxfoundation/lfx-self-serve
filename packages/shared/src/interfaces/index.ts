@@ -48,6 +48,7 @@ export * from './meeting-attachment.interface';
 
 // Dashboard metric interfaces (unified)
 export * from './dashboard-metric.interface';
+export * from './metric-trend.interface';
 
 // AI interfaces
 export * from './ai.interface';
@@ -57,6 +58,9 @@ export * from './access-check.interface';
 
 // User profile interfaces
 export * from './user-profile.interface';
+
+// Public profile interfaces (S3 artifact proxied by /public/api/profile/:username)
+export * from './public-profile.interface';
 
 // User statistics interfaces
 export * from './user-statistics.interface';
@@ -119,6 +123,12 @@ export * from './committee-application.interface';
 
 // Public committee interfaces
 export * from './public-committee.interface';
+
+// Groups dashboard engagement-stats rollup (LFXV2-1711)
+export * from './groups-engagement-stats.interface';
+
+// Public group interfaces
+export * from './public-group.interface';
 
 // Lens interfaces
 export * from './lens.interface';
@@ -254,6 +264,9 @@ export * from './linux-email.interface';
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
 
+// EasyCLA "My CLAs" interfaces (Me lens)
+export * from './cla.interface';
+
 // Country, state, t-shirt size, tag, and timezone interfaces
 export * from './countries.interface';
 export * from './states.interface';
@@ -275,5 +288,16 @@ export * from './create-picker.interface';
 export * from './org-meetings-insights.interface';
 export * from './org-meetings-insights.internal.interface';
 
-// Group Overview activity feed stop-gap (LFXV2-1716)
+// Committee Overview "Recent Activity" widget view-model (LFXV2-1707, formerly the LFXV2-1716 stop-gap)
 export * from './activity-feed.interface';
+
+// Committee activity feed aggregation wire contract (LFXV2-1707)
+export * from './activity-event.interface';
+export * from './activity-event.internal.interface';
+
+// Committee member engagement/attendance rollup (LFXV2-1705)
+export * from './committee-engagement.interface';
+export * from './committee-engagement.internal.interface';
+
+// Weekly Brief interfaces
+export * from './weekly-brief.interface';

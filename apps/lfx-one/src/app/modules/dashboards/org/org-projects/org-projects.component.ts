@@ -23,6 +23,7 @@ import {
   INFLUENCE_TREND_COLOR,
   INFLUENCE_TREND_TEXT_CLASS,
   ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
+  ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   PD_CONTRIBUTORS_CARD_KEY,
@@ -108,6 +109,8 @@ export class OrgProjectsComponent {
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
   protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
+  /** Label for metrics a "no activity yet" row cannot report (influence, trend). */
+  protected readonly metricUnavailableLabel = ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL;
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -146,6 +149,8 @@ export class OrgProjectsComponent {
   protected readonly error = computed(() => this.workspaceError() || this.projectsError());
   protected readonly addProjectsSearchLoading = signal(false);
   protected readonly addProjectsSearchError = signal(false);
+  /** True when the last search matched only projects already in the workspace (so the empty panel can say so). */
+  protected readonly addProjectsMatchesAlreadyInWorkspace = signal(false);
   protected readonly addProjectsSaving = signal(false);
   protected readonly addProjectsSaveError = signal(false);
   protected readonly workspaceNameError = signal<string | null>(null);
@@ -213,7 +218,39 @@ export class OrgProjectsComponent {
   protected readonly addProjectSelectOptions = computed(() =>
     this.mergeAddableOptions([...this.selectedAddableProjectOptions(), ...this.addableProjectOptions()])
   );
-  protected readonly addProjectsSearchEmptyTitle = computed(() => this.initAddProjectsSearchEmptyTitle());
+  /**
+   * Always-visible panel status (searching / load error / all-matches-already-added / min-length). Rendered in the
+   * multi-select FOOTER, which shows regardless of list emptiness — so a still-selected option matching the filter
+   * can't keep the list non-empty and swallow the status (returns undefined when there's nothing to say).
+   */
+  protected readonly addProjectsPanelStatus = computed<string | undefined>(() => {
+    if (this.addProjectsSearchLoading()) {
+      return 'Searching projects…';
+    }
+    if (this.addProjectsSearchError()) {
+      return 'Couldn’t load matches. Edit your search to try again.';
+    }
+    // The query DID match, but every match is already in this workspace — say so rather than the
+    // misleading "No projects match your search." (only reachable when there are no addable results).
+    if (this.addProjectsMatchesAlreadyInWorkspace() && this.addableProjectOptions().length === 0) {
+      return 'Matching projects are already in this workspace.';
+    }
+    const query = this.addProjectsSearchQuery().trim();
+    if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
+      return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
+    }
+    return undefined;
+  });
+  /**
+   * Plain empty-list title for PrimeNG's emptyMessage/emptyFilterMessage. Blank while an always-visible status is
+   * active so the footer status isn't duplicated in the empty body; otherwise the ordinary "no matches" copy.
+   */
+  protected readonly addProjectsEmptyMessage = computed(() => {
+    if (this.addProjectsPanelStatus()) {
+      return '';
+    }
+    return this.addProjectsSearchQuery().trim() ? 'No projects match your search.' : 'No projects available to add.';
+  });
   protected readonly tableEmptyState = computed<OrgProjectsEmptyState>(() => this.initTableEmptyState());
   protected readonly canDeleteEditingWorkspace = computed(() => {
     const editing = this.editingWorkspace();
@@ -321,6 +358,7 @@ export class OrgProjectsComponent {
     this.addableProjectOptions.set([]);
     this.selectedAddableProjectOptions.set([]);
     this.addProjectsSearchError.set(false);
+    this.addProjectsMatchesAlreadyInWorkspace.set(false);
     this.addProjectsSaveError.set(false);
     this.addProjectsDialogOpen.set(true);
     void this.runAddableProjectsSearch('');
@@ -334,10 +372,6 @@ export class OrgProjectsComponent {
     } else if (action === 'retry') {
       this.retry();
     }
-  }
-
-  protected retryAddableProjectsSearch(): void {
-    void this.runAddableProjectsSearch(this.addProjectsSearchQuery());
   }
 
   protected async confirmAddProjects(): Promise<void> {
@@ -490,15 +524,18 @@ export class OrgProjectsComponent {
       return;
     }
     const header = ['Project', 'Health Score', 'Technical Influence', 'Ecosystem Influence', 'Influence Trend (1y) %', 'Our Contributors', 'Our Participants'];
-    const body = rows.map((p) => [
-      p.name,
-      HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
-      INFLUENCE_BAND_LABELS[p.technicalInfluence],
-      INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
-      p.trend.deltaPct,
-      p.contributors.length,
-      p.participants.length,
-    ]);
+    const body = rows.map((p) => {
+      const orgMetricsUnavailable = this.isOrgMetricsUnavailable(p);
+      return [
+        p.name,
+        HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
+        orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
+        orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
+        orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : p.trend.deltaPct,
+        p.contributors.length,
+        p.participants.length,
+      ];
+    });
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const slug = this.response()?.orgSlug ?? 'org';
     downloadCsv(`org-lens-projects-${slug}-${date}.csv`, [header, ...body]);
@@ -570,15 +607,30 @@ export class OrgProjectsComponent {
   /** The "Add project(s)" multi-select filter box drives the debounced server-side project search. */
   protected onAddProjectsFilter(query: string): void {
     this.addProjectsSearchQuery.set(query);
+    // Flip loading synchronously (ahead of the 300ms debounce) when a search will actually run, so the panel
+    // shows "Searching…" rather than PrimeNG's instantly-emptied list flashing a false "No projects match".
+    const trimmed = query.trim();
+    const shouldSearch = !!this.accountContext.selectedAccount()?.uid && !(trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH);
+    this.addProjectsSearchLoading.set(shouldSearch);
+    if (!shouldSearch) {
+      // Clear stale error / already-in-workspace flags AND the previous query's options now (not after the
+      // debounce), so below the min length the panel doesn't keep offering stale search hits as pickable rows.
+      this.addableProjectOptions.set([]);
+      this.addProjectsSearchError.set(false);
+      this.addProjectsMatchesAlreadyInWorkspace.set(false);
+    }
     this.searchAddableProjects(query);
   }
 
   protected searchAddableProjects(query: string): void {
+    // Advance the request token now (not after the debounce) so any in-flight response is immediately stale
+    // and cannot repopulate options or clear the loading flag late, re-flashing the false empty state.
+    const requestId = ++this.addableProjectsSearchRequestId;
     if (this.addableProjectsSearchDebounceTimer) {
       clearTimeout(this.addableProjectsSearchDebounceTimer);
     }
     this.addableProjectsSearchDebounceTimer = setTimeout(() => {
-      void this.runAddableProjectsSearch(query);
+      void this.runAddableProjectsSearch(query, requestId);
     }, 300);
   }
 
@@ -599,13 +651,13 @@ export class OrgProjectsComponent {
     return `${sign}${body}%`;
   }
 
-  private async runAddableProjectsSearch(query: string): Promise<void> {
+  private async runAddableProjectsSearch(query: string, requestId = ++this.addableProjectsSearchRequestId): Promise<void> {
     const account = this.accountContext.selectedAccount();
     const trimmed = query.trim();
-    const requestId = ++this.addableProjectsSearchRequestId;
     if (!account?.uid || (trimmed.length > 0 && trimmed.length < ORG_PROJECTS_SEARCH_MIN_LENGTH)) {
       this.addableProjectOptions.set([]);
       this.addProjectsSearchError.set(false);
+      this.addProjectsMatchesAlreadyInWorkspace.set(false);
       this.addProjectsSearchLoading.set(false);
       return;
     }
@@ -619,17 +671,19 @@ export class OrgProjectsComponent {
       // trimmed but the client did not, a stray leading/trailing space would let the client hide rows
       // the API already returned, leaving the panel misleadingly empty. `trimmed` is used only for the
       // min-length gate above.
-      const { results } = await firstValueFrom(this.projectsService.searchProjects(account.uid, query, excludeSlugs));
+      const { results, hasMatchesAlreadyInWorkspace } = await firstValueFrom(this.projectsService.searchProjects(account.uid, query, excludeSlugs));
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }
       this.addableProjectOptions.set(this.mapAddableOptions(results));
+      this.addProjectsMatchesAlreadyInWorkspace.set(hasMatchesAlreadyInWorkspace ?? false);
     } catch (err) {
       if (requestId !== this.addableProjectsSearchRequestId) {
         return;
       }
       console.error('Failed to search addable org projects', err);
       this.addableProjectOptions.set([]);
+      this.addProjectsMatchesAlreadyInWorkspace.set(false);
       this.addProjectsSearchError.set(true);
     } finally {
       if (requestId === this.addableProjectsSearchRequestId) {
@@ -733,30 +787,40 @@ export class OrgProjectsComponent {
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
   private initRows(): Signal<OrgProjectsTableRow[]> {
     return computed(() =>
-      this.sortedProjects().map((project) => ({
-        ...project,
-        insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
-        technicalBars: this.bandBars(project.technicalInfluence),
-        ecosystemBars: this.bandBars(project.ecosystemInfluence),
-        technicalBandLabel: INFLUENCE_BAND_LABELS[project.technicalInfluence],
-        ecosystemBandLabel: INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
-        healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
-        healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
-        sparklineDataset: {
-          labels: project.trend.series.map((_, i) => String(i)),
-          datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
-        },
-        trendTooltipHtml: this.trendTooltip(project),
-        trendAriaLabel: this.trendAriaLabel(project),
-        trendDeltaLabel: this.formatTrendDeltaPct(project.trend.deltaPct),
-        showTrendArrow: Math.abs(project.trend.deltaPct) > 1,
-        trendArrowIcon: INFLUENCE_TREND_ARROW_ICON[project.trend.direction],
-        trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
-        trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
-        healthAriaLabel: this.healthAriaLabel(project),
-        contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
-        participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
-      }))
+      this.sortedProjects().map((project) => {
+        // Fallback rows (org has no metrics row for the project) render org-relative metrics as "Unavailable".
+        // A `full` row — including a participating project with no code activity — renders every metric for real.
+        const orgMetricsUnavailable = this.isOrgMetricsUnavailable(project);
+        return {
+          ...project,
+          orgMetricsUnavailable,
+          insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
+          // Fallback rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather
+          // than mapProject's active-row fallbacks, which would misreport "Silent" / "Non-LF Project".
+          technicalBars: orgMetricsUnavailable ? [] : this.bandBars(project.technicalInfluence),
+          ecosystemBars: orgMetricsUnavailable ? [] : this.bandBars(project.ecosystemInfluence),
+          technicalBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.technicalInfluence],
+          ecosystemBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
+          healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
+          healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
+          // Need ≥2 samples to draw a line; a shorter series renders a flat baseline placeholder instead.
+          hasTrendData: project.trend.series.length > 1,
+          sparklineDataset: {
+            labels: project.trend.series.map((_, i) => String(i)),
+            datasets: [{ data: project.trend.series, borderColor: INFLUENCE_TREND_COLOR[project.trend.direction], fill: false }],
+          },
+          trendTooltipHtml: this.trendTooltip(project),
+          trendAriaLabel: this.trendAriaLabel(project),
+          trendDeltaLabel: this.formatTrendDeltaPct(project.trend.deltaPct),
+          showTrendArrow: Math.abs(project.trend.deltaPct) > 1,
+          trendArrowIcon: INFLUENCE_TREND_ARROW_ICON[project.trend.direction],
+          trendDeltaTextClass: INFLUENCE_TREND_TEXT_CLASS[project.trend.direction],
+          trendArrowBadgeClass: INFLUENCE_TREND_ARROW_BADGE_CLASS[project.trend.direction],
+          healthAriaLabel: this.healthAriaLabel(project),
+          contributorsAriaLabel: this.countAriaLabel(project.contributors.length, 'contributor', project.name),
+          participantsAriaLabel: this.countAriaLabel(project.participants.length, 'participant', project.name),
+        };
+      })
     );
   }
 
@@ -834,14 +898,6 @@ export class OrgProjectsComponent {
     if (this.error()) return 'Resolve the loading error first';
     if (!this.selectedWorkspace()) return 'No workspace is selected';
     return undefined;
-  }
-
-  private initAddProjectsSearchEmptyTitle(): string {
-    const query = this.addProjectsSearchQuery().trim();
-    if (query.length > 0 && query.length < ORG_PROJECTS_SEARCH_MIN_LENGTH) {
-      return `Type at least ${ORG_PROJECTS_SEARCH_MIN_LENGTH} characters to search projects.`;
-    }
-    return query ? 'No projects match your search.' : 'No projects available to add.';
   }
 
   private initTableEmptyState(): OrgProjectsEmptyState {
@@ -935,6 +991,12 @@ export class OrgProjectsComponent {
         return availability;
       }
     }
+    if (field === 'technicalInfluence' || field === 'ecosystemInfluence' || field === 'influenceTrend') {
+      const availability = this.compareInfluenceAvailability(a, b);
+      if (availability !== 0) {
+        return availability;
+      }
+    }
     const primary = this.compareByField(a, b, field);
     const directed = dir === 'asc' ? primary : -primary;
     if (directed !== 0) {
@@ -968,6 +1030,34 @@ export class OrgProjectsComponent {
 
   private normalizeHealth(health: HealthScore): HealthScore {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
+  }
+
+  // Fallback rows (explicit health-only/unavailable, influence/trend "Unavailable") always sort after measured rows,
+  // both directions — mirroring how health availability sinks unavailable rows. Participating no-activity rows are `full`.
+  private compareInfluenceAvailability(a: OrgLensProject, b: OrgLensProject): number {
+    const aUnavailable = this.isOrgMetricsUnavailable(a);
+    const bUnavailable = this.isOrgMetricsUnavailable(b);
+    if (aUnavailable === bUnavailable) {
+      return 0;
+    }
+    return aUnavailable ? 1 : -1;
+  }
+
+  /**
+   * True for explicit fallback rows. Honors either discriminator so rolling-deploy skew is safe in both directions:
+   * - new FE + old BFF fallback (`noActivityYet: true`, no `metricsState`) → unavailable
+   * - new FE + old BFF full row (neither flag) → full
+   * - new FE + new BFF → `metricsState` wins
+   */
+  private isOrgMetricsUnavailable(project: { metricsState?: OrgLensProject['metricsState']; noActivityYet?: boolean }): boolean {
+    if (project.metricsState === 'health-only' || project.metricsState === 'unavailable') {
+      return true;
+    }
+    if (project.metricsState === 'full') {
+      return false;
+    }
+    // Missing metricsState (pre-close-out BFF): honor the legacy flag.
+    return project.noActivityYet === true;
   }
 
   private compareHealthAvailability(a: OrgLensProject['health'], b: OrgLensProject['health']): number {

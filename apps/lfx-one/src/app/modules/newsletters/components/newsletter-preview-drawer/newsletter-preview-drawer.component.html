@@ -11,8 +11,10 @@
   <ng-template #header>
     <div class="flex items-center justify-between w-full pr-4" data-testid="newsletter-preview-drawer-header">
       <div class="flex flex-col gap-0.5">
-        <h2 class="text-lg font-semibold text-slate-900">Preview</h2>
-        <p class="text-xs text-slate-500">As your recipients will see it</p>
+        <h2 class="text-lg font-semibold text-slate-900">{{ headerTitle() }}</h2>
+        @if (headerSubtitle()) {
+          <p class="text-xs text-slate-500">{{ headerSubtitle() }}</p>
+        }
       </div>
       <button
         type="button"

@@ -5,6 +5,7 @@ import { MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
+import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -323,6 +324,7 @@ export const routes: Routes = [
       },
       {
         path: 'groups',
+        canMatch: [authenticatedMatchGuard],
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
@@ -343,7 +345,12 @@ export const routes: Routes = [
       },
       {
         path: 'newsletters',
-        canActivate: [lensRedirectGuard, newsletterAccessGuard, projectQueryParamGuard],
+        // No newsletterAccessGuard at the mount: the Me-lens member feed
+        // (/newsletters/my) must be reachable by regular committee members.
+        // Every manager child route (list/create/edit/analytics) applies the
+        // guard itself in newsletters.routes.ts, and the /foundation and
+        // /project mounts above keep it — so manager surfaces stay gated.
+        canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
@@ -430,6 +437,14 @@ export const routes: Routes = [
   {
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
+  },
+  {
+    path: 'groups/not-found',
+    loadComponent: () => import('./modules/groups/group-not-found/group-not-found.component').then((m) => m.GroupNotFoundComponent),
+  },
+  {
+    path: 'groups/:id',
+    loadComponent: () => import('./modules/groups/group-detail/group-detail.component').then((m) => m.GroupDetailComponent),
   },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {

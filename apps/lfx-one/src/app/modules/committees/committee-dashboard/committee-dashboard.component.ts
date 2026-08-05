@@ -9,18 +9,21 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
+import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, GROUPS_VIEW_MODE_STORAGE_KEY, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeFoundationGroup,
   GroupBehavioralClass,
+  GroupsEngagementStats,
   GroupsViewMode,
   MyCommittee,
   ProjectContext,
+  StatCardGridColumns,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
+import { buildEngagementStatCards, getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationService } from '@services/invitation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -75,6 +78,7 @@ export class CommitteeDashboardComponent {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly invitationService = inject(InvitationService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -89,7 +93,9 @@ export class CommitteeDashboardComponent {
   public projectFilter = signal<string | null>(null);
   public behavioralClassFilter = signal<GroupBehavioralClass | null>(null);
   public viewMode = signal<GroupsViewMode>('list');
+  public engagementStatsLoading = signal<boolean>(true);
   private readonly groupExpansion = signal<Record<string, boolean>>({});
+  private readonly engagementStatsSignal = signal<GroupsEngagementStats | null>(null);
 
   protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
   protected readonly behavioralClassKeys = Object.keys(BEHAVIORAL_CLASS_CONFIG) as GroupBehavioralClass[];
@@ -115,6 +121,7 @@ export class CommitteeDashboardComponent {
   private readonly isFoundationContext: Signal<boolean> = this.projectContextService.isFoundationContext;
   protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly personaLoaded = this.personaService.personaLoaded;
+  protected readonly isEngagementMetricsEnabled = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
@@ -144,6 +151,11 @@ export class CommitteeDashboardComponent {
   // Stat card arrays for the shared <lfx-stat-card-grid> component
   public foundationStatCards: Signal<StatCardItem[]>;
   public myStatCards: Signal<StatCardItem[]>;
+  /** Me-lens stat grid only — the engagement cards (Foundation/Project lens stays a fixed 3). */
+  public readonly myStatCardColumns: Signal<StatCardGridColumns> = computed(() => (this.isEngagementMetricsEnabled() ? 5 : 3));
+
+  // Engagement rollup (LFXV2-1711) — flag-gated; active_members live, meetings_this_month pending a calendar-month data source
+  public engagementStats: Signal<GroupsEngagementStats | null>;
 
   private searchTerm: Signal<string>;
 
@@ -185,7 +197,15 @@ export class CommitteeDashboardComponent {
     this.myPublicGroups = computed(() => this.myCommittees().filter((c) => c.public).length);
     this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting).length);
 
-    // Stat card arrays consumed by <lfx-stat-card-grid>
+    // Engagement rollup — fetched once the flag first turns on; failures degrade to null and never
+    // block the group-count cards or the groups list below (independent HTTP call).
+    this.engagementStats = this.initializeEngagementStats();
+
+    // Stat card arrays consumed by <lfx-stat-card-grid>. The engagement cards are Me-lens only:
+    // GroupsEngagementStatsService is explicitly "mine semantics, no scope param" (caller-wide, not
+    // project/foundation-scoped), so surfacing it in the Foundation/Project lens row — which is
+    // otherwise entirely scoped to the active project — would misrepresent an all-groups personal
+    // number as if it belonged to the foundation/project being viewed.
     this.foundationStatCards = computed<StatCardItem[]>(() => [
       { value: this.totalCommittees(), label: 'Total Groups', icon: 'fa-light fa-users-rectangle', iconContainerClass: 'bg-gray-200 text-gray-500' },
       { value: this.publicCommittees(), label: 'Public Groups', icon: 'fa-light fa-globe', iconContainerClass: 'bg-blue-100 text-blue-600' },
@@ -200,6 +220,7 @@ export class CommitteeDashboardComponent {
         icon: 'fa-light fa-check-to-slot',
         iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
+      ...(this.isEngagementMetricsEnabled() ? buildEngagementStatCards(this.engagementStats(), this.engagementStatsLoading()) : []),
     ]);
 
     this.behavioralClassCounts = this.initializeBehavioralClassCounts();
@@ -409,6 +430,30 @@ export class CommitteeDashboardComponent {
       ),
       { initialValue: new Set<string>() }
     );
+  }
+
+  /**
+   * Fetches the engagement rollup once the flag is on AND the Me lens is active (browser-only,
+   * one-shot — mirrors the `loadPendingInvitations()` gate above). Gating on `isMeLens()` too, not
+   * just the flag, matters because the cards it feeds only render in `myStatCards` — without it,
+   * every Foundation/Project-lens visit would fire a request whose result can never be displayed.
+   * `CommitteeService.getGroupsEngagementStats()` is the single error-handling site (logs, resolves
+   * to `null`) — `buildEngagementStatCards` renders the degraded "Unavailable" state on a `null`, and
+   * the always-on group-count cards / groups list below are on entirely separate HTTP calls, so a
+   * stats failure here never blocks them.
+   */
+  private initializeEngagementStats(): Signal<GroupsEngagementStats | null> {
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(computed(() => this.isMeLens() && this.isEngagementMetricsEnabled()))
+        .pipe(
+          filter((ready) => ready),
+          take(1),
+          switchMap(() => this.committeeService.getGroupsEngagementStats().pipe(finalize(() => this.engagementStatsLoading.set(false)))),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe((stats) => this.engagementStatsSignal.set(stats));
+    }
+    return this.engagementStatsSignal;
   }
 
   private initializeSearchForm(): FormGroup {

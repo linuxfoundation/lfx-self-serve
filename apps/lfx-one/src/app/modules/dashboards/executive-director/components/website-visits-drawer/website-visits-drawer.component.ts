@@ -8,7 +8,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatNumber, formatPercent, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
@@ -199,7 +199,7 @@ export class WebsiteVisitsDrawerComponent {
           const decline = Math.round(((firstAvg - secondAvg) / firstAvg) * 100);
           actions.push({
             title: 'Investigate traffic decline',
-            description: `Sessions dropped ~${decline}% over recent weeks — review traffic sources and content changes`,
+            description: `Sessions dropped ~${formatPercent(decline)}% over recent weeks — review traffic sources and content changes`,
             priority: 'high',
 
             actionType: 'decline',
@@ -290,10 +290,10 @@ export class WebsiteVisitsDrawerComponent {
           insights.push({ text: 'No session activity over the last 6 months', type: 'info' });
         } else if (secondAvg > firstAvg * 1.1) {
           const growth = Math.round(((secondAvg - firstAvg) / firstAvg) * 100);
-          insights.push({ text: `Sessions trending up ~${growth}% over the last 6 months`, type: 'driver' });
+          insights.push({ text: `Sessions trending up ~${formatPercent(growth)}% over the last 6 months`, type: 'driver' });
         } else if (secondAvg < firstAvg * 0.9) {
           const decline = Math.round(((firstAvg - secondAvg) / firstAvg) * 100);
-          insights.push({ text: `Sessions trending down ~${decline}% over the last 6 months`, type: 'warning' });
+          insights.push({ text: `Sessions trending down ~${formatPercent(decline)}% over the last 6 months`, type: 'warning' });
         } else {
           insights.push({ text: 'Session volume stable over the last 6 months', type: 'info' });
         }

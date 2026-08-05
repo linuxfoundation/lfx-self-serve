@@ -3,15 +3,20 @@
 
 import express, { Router } from 'express';
 
+import { CommitteeActivityController } from '../controllers/committee-activity.controller';
 import { CommitteeController } from '../controllers/committee.controller';
+import { CommitteeEngagementController } from '../controllers/committee-engagement.controller';
 
 const router = Router();
 
 const committeeController = new CommitteeController();
+const committeeEngagementController = new CommitteeEngagementController();
+const committeeActivityController = new CommitteeActivityController();
 
 // Committee CRUD routes - using new controller pattern
 router.get('/', (req, res, next) => committeeController.getCommittees(req, res, next));
 router.get('/count', (req, res, next) => committeeController.getCommitteesCount(req, res, next));
+router.get('/engagement-stats', (req, res, next) => committeeController.getGroupsEngagementStats(req, res, next));
 router.get('/my-committees', (req, res, next) => committeeController.getMyCommittees(req, res, next));
 router.get('/my-committee-uids', (req, res, next) => committeeController.getMyCommitteeUids(req, res, next));
 router.get('/:id', (req, res, next) => committeeController.getCommitteeById(req, res, next));
@@ -25,6 +30,12 @@ router.get('/:id/members/:memberId', (req, res, next) => committeeController.get
 router.post('/:id/members', (req, res, next) => committeeController.createCommitteeMember(req, res, next));
 router.put('/:id/members/:memberId', (req, res, next) => committeeController.updateCommitteeMember(req, res, next));
 router.delete('/:id/members/:memberId', (req, res, next) => committeeController.deleteCommitteeMember(req, res, next));
+
+// ── Member engagement/attendance rollup (LFXV2-1705) ──────────────────────────
+router.get('/:uid/engagement', (req, res, next) => committeeEngagementController.getEngagement(req, res, next));
+
+// ── Activity feed aggregation (LFXV2-1707) ────────────────────────────────────
+router.get('/:uid/activity', (req, res, next) => committeeActivityController.getActivity(req, res, next));
 
 // ── Invite routes (invite-by-email add-member) ───────────────────────────────
 router.get('/:id/invites', (req, res, next) => committeeController.getCommitteeInvites(req, res, next));
@@ -51,5 +62,8 @@ router.delete('/:id/documents/:documentId', (req, res, next) => committeeControl
 router.post('/:id/join', (req, res, next) => committeeController.joinCommittee(req, res, next));
 router.delete('/:id/leave', (req, res, next) => committeeController.leaveCommittee(req, res, next));
 router.post('/:id/applications', (req, res, next) => committeeController.submitApplication(req, res, next));
+router.get('/:id/applications', (req, res, next) => committeeController.getCommitteeApplications(req, res, next));
+router.post('/:id/applications/:applicationId/approve', (req, res, next) => committeeController.approveApplication(req, res, next));
+router.post('/:id/applications/:applicationId/reject', (req, res, next) => committeeController.rejectApplication(req, res, next));
 
 export default router;

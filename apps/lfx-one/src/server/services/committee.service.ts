@@ -13,9 +13,12 @@ import {
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
+  AuditUserProfile,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   MyCommittee,
@@ -31,11 +34,11 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
-import { cleanUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -46,8 +49,8 @@ interface CommitteeFolder {
   uid: string;
   committee_uid?: string;
   name: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -61,8 +64,8 @@ interface CommitteeLink {
   url?: string;
   description?: string;
   folder_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -79,6 +82,8 @@ interface CommitteeDocumentUpstreamResponse {
   committee_uid?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   uploaded_by_username?: string;
 }
 
@@ -109,6 +114,8 @@ interface CommitteeDocumentQueryResult {
   folder_uid?: string;
   created_at?: string;
   updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   uploaded_by_username?: string;
 }
 
@@ -336,8 +343,16 @@ export class CommitteeService {
        *  write paths (e.g. accept invite) where an unknown business_email_required must not
        *  be treated as false (fail-closed). */
       throwOnSettingsError?: boolean;
+      includeMailingListStatus?: boolean;
     } = {}
   ): Promise<Committee> {
+    // `/committees/{uid}` (get-committee-base) does NOT reliably populate
+    // `has_mailing_list` in practice, despite an illustrative example in the
+    // upstream OpenAPI spec suggesting otherwise (verified false against 5/5
+    // prod committees, including ones with real, populated mailing lists —
+    // LFXV2-2914). Compute it the same way the query-service-backed list
+    // endpoints (getCommittees/getMyCommittees) do: a direct count against
+    // the mailing-list index.
     const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
     if (!committee) {
@@ -348,13 +363,14 @@ export class CommitteeService {
       });
     }
 
-    // Fetch settings, optional caller membership, access, and optional inherited
-    // (parent-project) permissions in parallel.
-    const [settings, membership, withAccess, inheritedPermissions] = await Promise.all([
+    // Fetch settings, optional caller membership, access, optional inherited
+    // (parent-project) permissions, and optional mailing-list status in parallel.
+    const [settings, membership, withAccess, inheritedPermissions, mlCount] = await Promise.all([
       this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
       options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
+      options.includeMailingListStatus ? this.getMailingListCountByCommittee(req, committeeId) : Promise.resolve(null),
     ]);
 
     const merged = {
@@ -362,6 +378,7 @@ export class CommitteeService {
       ...settings,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
+      ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
     };
 
     if (!options.includeProjectMetadata) {
@@ -1102,6 +1119,71 @@ export class CommitteeService {
     return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/applications`, 'POST', {}, body);
   }
 
+  /**
+   * Fetches join applications for a committee from the query index.
+   */
+  public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'get_committee_applications');
+
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_application',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+  }
+
+  public async approveApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: ApproveCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeMember> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'approve_committee_application');
+
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/approve`,
+      'POST',
+      {},
+      payload
+    );
+  }
+
+  public async rejectApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: RejectCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeJoinApplication> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'reject_committee_application');
+
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/reject`,
+      'POST',
+      {},
+      payload
+    );
+  }
+
   // ── Committee Documents ────────────────────────────────────────────────────
 
   public async getCommitteeDocuments(req: Request, committeeId: string): Promise<CommitteeDocument[]> {
@@ -1148,8 +1230,7 @@ export class CommitteeService {
       name: f.name,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      created_by: f.created_by_uid,
-      uploaded_by: cleanUserDisplayName(f.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
       committee_uid: f.committee_uid,
     }));
 
@@ -1162,8 +1243,7 @@ export class CommitteeService {
       description: l.description,
       created_at: l.created_at,
       updated_at: l.updated_at,
-      created_by: l.created_by_uid,
-      uploaded_by: cleanUserDisplayName(l.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
       parent_uid: l.folder_uid,
       committee_uid: l.committee_uid,
     }));
@@ -1178,7 +1258,7 @@ export class CommitteeService {
       mime_type: f.content_type,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      uploaded_by: cleanUserDisplayName(f.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       parent_uid: f.folder_uid,
       committee_uid: f.committee_uid,
     }));
@@ -1204,7 +1284,6 @@ export class CommitteeService {
         {},
         {
           name: data.name,
-          created_by_name: data.created_by_name,
         }
       );
 
@@ -1219,8 +1298,7 @@ export class CommitteeService {
         name: folder.name,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
-        created_by: folder.created_by_uid,
-        uploaded_by: cleanUserDisplayName(folder.created_by_username),
+        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
         committee_uid: folder.committee_uid,
       };
     }
@@ -1237,7 +1315,6 @@ export class CommitteeService {
         url: data.url,
         description: data.description,
         folder_uid: data.parent_uid,
-        created_by_name: data.created_by_name,
       }
     );
 
@@ -1254,8 +1331,7 @@ export class CommitteeService {
       description: link.description,
       created_at: link.created_at,
       updated_at: link.updated_at,
-      created_by: link.created_by_uid,
-      uploaded_by: cleanUserDisplayName(link.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
       parent_uid: link.folder_uid,
       committee_uid: link.committee_uid,
     };
@@ -1342,7 +1418,7 @@ export class CommitteeService {
       mime_type: result.content_type,
       created_at: result.created_at,
       updated_at: result.updated_at,
-      uploaded_by: cleanUserDisplayName(result.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(result.created_by, result.uploaded_by_username),
       committee_uid: result.committee_uid,
     };
   }
@@ -1423,6 +1499,33 @@ export class CommitteeService {
       document_uid: documentId,
       document_type: documentType,
     });
+  }
+
+  /**
+   * Strict single-committee mailing-list check — unlike {@link getMailingListCountByCommittee}
+   * (fail-open-to-false via the batch/Promise.allSettled path, acceptable for a cosmetic list
+   * badge), this propagates a query-service failure instead of silently reporting "no mailing
+   * list". Used by `shareBrief`, where a false negative would misattribute a transient outage
+   * as a real precondition failure (409 NO_MAILING_LIST) instead of a retryable error.
+   */
+  public async hasMailingListStrict(req: Request, committeeId: string): Promise<boolean> {
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
+      type: 'groupsio_mailing_list',
+      tags: `committee_uid:${committeeId}`,
+    });
+    return count > 0;
+  }
+
+  /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */
+  private async assertCommitteeApplicationWriter(req: Request, committeeId: string, operation: string): Promise<void> {
+    const committee = await this.getCommitteeById(req, committeeId);
+    if (committee.writer !== true) {
+      throw new AuthorizationError('You do not have permission to manage join applications for this group.', {
+        operation,
+        service: 'committee_service',
+        path: `/committees/${committeeId}/applications`,
+      });
+    }
   }
 
   /**
@@ -1781,6 +1884,24 @@ export class CommitteeService {
     }
 
     return found;
+  }
+
+  /**
+   * Single-committee count wrapper around {@link getCommitteesWithMailingList} — used by
+   * `getCommitteeById`'s `includeMailingListStatus` option, which needs a boolean-ish
+   * result rather than the batch method's `Set`. `/committees/{uid}` does not reliably
+   * populate `has_mailing_list` itself (verified false against real, populated
+   * committees — LFXV2-2914), so this recomputes it the same way the list endpoints do.
+   *
+   * Inherits `getCommitteesWithMailingList`'s fail-open-to-false behavior on a transient
+   * query-service failure — acceptable here since this only feeds a cosmetic list/detail
+   * badge. Callers with a real precondition riding on the answer (e.g. `shareBrief`, which
+   * would otherwise misreport an outage as "no mailing list configured") should use
+   * {@link hasMailingListStrict} instead.
+   */
+  private async getMailingListCountByCommittee(req: Request, committeeId: string): Promise<number> {
+    const found = await this.getCommitteesWithMailingList(req, [committeeId]);
+    return found.has(committeeId) ? 1 : 0;
   }
 
   /**

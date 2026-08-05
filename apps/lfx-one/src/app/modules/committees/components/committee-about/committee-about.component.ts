@@ -58,6 +58,7 @@ export class CommitteeAboutComponent {
   public readonly canEdit = input<boolean>(false);
   public readonly isVisitor = input<boolean>(false);
   public readonly hasPendingInvite = input<boolean>(false);
+  public readonly hasPendingApplication = input<boolean>(false);
   // Passed down from committee-view, which already computes/fetches these for the header —
   // avoids a second, redundant round-trip for data the page has already loaded.
   public readonly associatedMailingLists = input<GroupsIOMailingList[]>([]);

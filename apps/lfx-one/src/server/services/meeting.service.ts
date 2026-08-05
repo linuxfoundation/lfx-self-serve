@@ -27,6 +27,7 @@ import {
   PastMeetingSummary,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
+  PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
   QueryServiceCountResponse,
@@ -287,6 +288,68 @@ export class MeetingService {
     });
 
     return meeting;
+  }
+
+  /**
+   * Fetches all past occurrences of a meeting series as a minimal timestamp projection.
+   *
+   * Each past occurrence is its own v1_past_meeting record keyed by the series UID
+   * (`meeting_id`). No `filter_grants` — callers run this in a public/M2M context and
+   * the projection carries timestamps only. Completeness is not guaranteed: a later-page
+   * fetch failure returns the pages already accumulated (acceptable for navigation).
+   */
+  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string): Promise<PastOccurrenceSummary[]> {
+    logger.debug(req, 'get_past_occurrences_for_meeting', 'Fetching past occurrences', {
+      meeting_id: meetingUid,
+    });
+
+    const records = await fetchAllQueryResources<PastMeeting>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'v1_past_meeting',
+        filters: [`meeting_id:${meetingUid}`],
+        page_size: 500,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    ).catch((error) => {
+      logger.warning(req, 'get_past_occurrences_for_meeting', 'Failed to fetch past occurrences, returning empty list', {
+        meeting_id: meetingUid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return [] as PastMeeting[];
+    });
+
+    // The indexed v1_past_meeting projection never carries scheduled_start_time — its source
+    // struct (upstream PastMeetingEventData) has no such field, only start_time (verified against
+    // `lfx-v2-meeting-service`'s internal/domain/models/event_models.go and
+    // cmd/meeting-api/eventing/past_meeting_event_handler.go; see the "Meetings" paragraph in
+    // committee-activity.service.ts's fetchSize comment) — but this code still accepts either,
+    // matching sortPastMeetingsDescending's defensive shape rather than assuming the verified
+    // absence holds forever.
+    const dropped = records.filter((r) => !r.meeting_and_occurrence_id || !(r.scheduled_start_time || r.start_time));
+    if (dropped.length > 0) {
+      logger.warning(req, 'get_past_occurrences_for_meeting', 'Dropping past occurrences missing composite id or start time', {
+        meeting_id: meetingUid,
+        dropped_count: dropped.length,
+      });
+    }
+
+    const summaries = records
+      .filter((r): r is PastMeeting & { meeting_and_occurrence_id: string } => !!r.meeting_and_occurrence_id && !!(r.scheduled_start_time || r.start_time))
+      .map(
+        (r): PastOccurrenceSummary => ({
+          meeting_and_occurrence_id: r.meeting_and_occurrence_id,
+          scheduled_start_time: r.scheduled_start_time || r.start_time,
+          scheduled_end_time: r.scheduled_end_time || undefined,
+        })
+      )
+      .sort((a, b) => new Date(a.scheduled_start_time).getTime() - new Date(b.scheduled_start_time).getTime());
+
+    logger.debug(req, 'get_past_occurrences_for_meeting', 'Completed past occurrences fetch', {
+      meeting_id: meetingUid,
+      count: summaries.length,
+    });
+
+    return summaries;
   }
 
   /**

@@ -6,16 +6,6 @@
     <h2 class="flex shrink-0 items-center gap-2 text-base font-medium text-gray-900">
       <i class="fa-light fa-arrow-trend-up text-lg" aria-hidden="true"></i>
       <span>How attendance impacts project influence</span>
-      <button
-        type="button"
-        class="cursor-help text-xs text-gray-500 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-        [pTooltip]="infoTooltip"
-        tooltipPosition="top"
-        tooltipEvent="both"
-        aria-label="How attendance relates to the Ecosystem Influence Score"
-        data-testid="org-meetings-influence-info">
-        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
-      </button>
     </h2>
     <div class="flex-1 self-center border-t border-gray-200"></div>
   </div>
@@ -40,13 +30,14 @@
       <span>Project influence couldn't be loaded. Please try again.</span>
     </div>
   } @else if (!rows().length) {
-    <!-- Roughly a third of orgs with meeting activity land here, so the copy explains the scope of
-         the section rather than implying the organization has no project influence at all. -->
+    <!-- Between roughly half and two-thirds of orgs with meeting activity land here depending on the
+         window, so the copy names both the score-availability limit and the selected window. Copy
+         that mentions only score availability reads as "you have no project influence at all". -->
     <div class="flex flex-col gap-1 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm" data-testid="org-meetings-influence-empty">
-      <span class="text-gray-900">No ecosystem influence data for your projects yet.</span>
+      <span class="text-gray-900">No ecosystem influence data for your projects in the {{ windowLabel() }}.</span>
       <span class="text-gray-600">
-        This section covers only projects with a published Ecosystem Influence Score. Your organization's meeting activity still counts towards the totals
-        above.
+        This section covers only projects with a published Ecosystem Influence Score for the selected time range. Try another time range — your organization's
+        meeting activity still counts towards the totals above.
       </span>
     </div>
   } @else {
@@ -58,8 +49,7 @@
             <th class="px-4 py-2 font-medium">Rank among companies</th>
             <th class="px-4 py-2 font-medium">Ecosystem Influence</th>
             <th class="px-4 py-2 font-medium">Attendance's contribution</th>
-            <!-- "Year over year", not "this period": this section ignores the time-range dropdown. -->
-            <th class="px-4 py-2 font-medium">Δ year over year</th>
+            <th class="px-4 py-2 font-medium">Δ vs. prior period</th>
             <th class="px-4 py-2 font-medium"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -92,7 +82,19 @@
                 </div>
               </td>
               <td class="px-4 py-3 align-middle">
-                <span class="text-xs font-medium text-gray-900">{{ row.rankLabel }}</span>
+                <!-- The denominator dropped by three orders of magnitude when it was re-based on
+                     project-specific engagement, so "#1 of 29" next to a remembered "#1 of 11,688"
+                     reads as data loss without this. -->
+                <span
+                  class="cursor-help text-xs font-medium text-gray-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                  tabindex="0"
+                  [pTooltip]="row.rankTooltip"
+                  [attr.aria-label]="row.rankLabel + '. ' + row.rankTooltip"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug + '-rank'"
+                  >{{ row.rankLabel }}</span
+                >
               </td>
               <td class="px-4 py-3 align-middle">
                 <span [class]="row.bandChipClass" [attr.data-testid]="'org-meetings-influence-row-' + row.projectSlug + '-band'">
@@ -126,14 +128,13 @@
                 </span>
               </td>
               <td class="px-4 py-3 text-right align-middle">
-                <!-- The Project-lens meetings page is addressed by slug via a query param, not by uid
-                   on a path segment. It renders for any authenticated user, so the link needs no
-                   per-row access hint. -->
+                <!-- Sibling child of the same 'org' route parent as this page, so it is reachable by
+                   anyone who can see this table and needs no per-row access hint. Addressed by slug
+                   on a path segment, not by uid. -->
                 <a
                   class="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
-                  routerLink="/project/meetings"
-                  [queryParams]="{ project: row.projectSlug }"
-                  [attr.aria-label]="'View ' + row.project + ' in Projects'"
+                  [routerLink]="['/org/projects', row.projectSlug]"
+                  [attr.aria-label]="'View ' + row.project + ' project detail'"
                   (click)="$event.stopPropagation()">
                   Projects
                   <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i>
@@ -148,7 +149,12 @@
                       @for (segment of row.breakdown; track segment.label) {
                         <div class="grid grid-cols-[1fr_2.5rem] items-center gap-2.5">
                           <div class="flex flex-col gap-1">
-                            <span class="text-xs" [class]="segment.isAttendance ? 'font-medium text-gray-900' : 'text-gray-500'">{{ segment.label }}</span>
+                            <!-- Board and committee membership are standing states counted across
+                                 the whole platform, so their bars barely move when the window does.
+                                 The qualifier is what makes that legible rather than suspicious. -->
+                            <span class="text-xs" [class]="segment.isAttendance ? 'font-medium text-gray-900' : 'text-gray-500'">{{
+                              segment.displayLabel
+                            }}</span>
                             <div class="h-1.5 w-full overflow-hidden rounded-full" [class]="segment.isAttendance ? 'bg-blue-100' : 'bg-gray-100'">
                               <div
                                 class="h-1.5 rounded-full"
@@ -162,9 +168,13 @@
                         </div>
                       }
                     </div>
+                    <!-- The percentage is a share of the nine displayed categories, so the total it
+                         is quoted against has to be that same nine-category figure. The headline
+                         ecosystem influence also carries the membership-tier component, which the
+                         breakdown never shows. -->
                     <p class="text-sm text-gray-600">
-                      {{ row.fromAttendancePct }}% of {{ row.project }}'s ecosystem influence score of {{ row.ecosystemInfluence }} comes from {{ orgName() }}'s
-                      meeting attendance.
+                      {{ row.fromAttendancePct }}% of the {{ row.displayedInfluence }} influence points {{ row.project }} attributes to companies in this period
+                      comes from {{ orgName() }}'s meeting attendance.
                     </p>
                   </div>
                 </td>

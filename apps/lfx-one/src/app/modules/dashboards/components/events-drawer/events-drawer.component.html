@@ -63,7 +63,10 @@
 
         <!-- Metric Value -->
         @if (!dataLoading() && hasQuarterlyData()) {
-          <span class="text-xl font-semibold text-gray-900" data-testid="events-drawer-metric">{{ metricValue() }}</span>
+          <div class="flex items-baseline gap-2">
+            <span class="text-xl font-semibold text-gray-900" data-testid="events-drawer-metric">{{ metricValue() }}</span>
+            <lfx-metric-delta [delta]="delta()" testid="events-drawer-delta" />
+          </div>
         }
       </div>
 
@@ -99,7 +102,6 @@
             <i class="fa-light fa-circle-info"></i>
           </button>
         </div>
-        <p class="text-sm text-gray-500">Foundation events segmented by attendance</p>
       </div>
 
       @if (drawerLoading()) {

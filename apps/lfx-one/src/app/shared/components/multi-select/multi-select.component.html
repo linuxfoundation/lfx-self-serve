@@ -11,6 +11,7 @@
     [showToggleAll]="showToggleAll()"
     [appendTo]="appendTo()"
     [filter]="filter()"
+    [autofocusFilter]="autofocusFilter()"
     [resetFilterOnHide]="resetFilterOnHide()"
     [filterBy]="filterBy()"
     [filterPlaceHolder]="filterPlaceHolder()"
@@ -18,8 +19,39 @@
     [styleClass]="styleClass()"
     [panelStyleClass]="panelStyleClass()"
     [scrollHeight]="scrollHeight()"
+    [loading]="loading()"
+    [emptyMessage]="emptyMessage()"
+    [emptyFilterMessage]="emptyFilterMessage()"
     (onFilter)="filterChange.emit($event.filter ?? '')"
+    (onPanelShow)="onPanelShow()"
     class="w-full">
+    @if (panelStatus(); as status) {
+      <!-- Footer renders regardless of whether the option list is empty, so a selected option matching the filter can't hide the status. -->
+      <ng-template #footer>
+        <!-- role="status" (aria-live polite) so screen readers announce searching / error / min-length changes. -->
+        <div
+          class="border-t border-gray-100 px-3 py-2 text-center text-sm text-gray-500"
+          role="status"
+          aria-live="polite"
+          data-testid="multi-select-panel-status">
+          {{ status }}
+        </div>
+      </ng-template>
+      <!-- Opt-in with panelStatus only. Unconditional #empty/#emptyfilter templates would override PrimeNG's
+           default empty rendering for every lfx-multi-select caller via @ContentChild. Here we need them so a
+           FALSY emptyMessage (blank during in-flight search) stays blank instead of PrimeNG's built-in
+           "No results found" — footer status is the single source of truth. -->
+      <ng-template #empty>
+        @if (emptyMessage()) {
+          <div class="px-3 py-2 text-center text-sm text-gray-500">{{ emptyMessage() }}</div>
+        }
+      </ng-template>
+      <ng-template #emptyfilter>
+        @if (emptyFilterMessage()) {
+          <div class="px-3 py-2 text-center text-sm text-gray-500">{{ emptyFilterMessage() }}</div>
+        }
+      </ng-template>
+    }
     @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">
         <div class="flex items-center gap-2">

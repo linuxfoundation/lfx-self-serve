@@ -36,19 +36,27 @@ export interface OrgMeetingsSpendWarehouseRow {
   OTHER_OVERFLOW_COUNT: number | null;
 }
 
-/** One row of `ORG_LENS_MEETINGS_INFLUENCE`, grain `(ACCOUNT_ID, PROJECT_SLUG)` — range-independent. */
+/** One row of `ORG_LENS_MEETINGS_INFLUENCE`, grain `(ACCOUNT_ID, PROJECT_SLUG, TIME_RANGE_TYPE)`. */
 export interface OrgMeetingsInfluenceWarehouseRow {
   PROJECT_SLUG: string;
   PROJECT_NAME: string;
   ECOSYSTEM_INFLUENCE: number;
+  /** The nine displayed categories summed — the denominator every percentage on the row derives from. */
+  DISPLAYED_INFLUENCE: number;
   BAND: string;
   RANK: number;
   RANK_TOTAL: number;
+  /**
+   * Foundation-wide population at the fixed `last_2_years` window, carried so the figure the
+   * Organization Dashboard publishes stays reconcilable. Does NOT vary with the requested range, and
+   * is null for projects with no `last_2_years` row — those must omit the reference, not show zero.
+   */
+  RANK_TOTAL_ALL: number | null;
   FROM_ATTENDANCE_PCT: number;
   DELTA_PCT: number;
   /** Zero-baseline detector for the "New" delta rule; `TREND_DIRECTION` cannot identify it. */
-  PRIOR_YEAR_SCORE: number;
+  PRIOR_WINDOW_SCORE: number;
   TREND_DIRECTION: string;
-  /** The nine displayed `{label, pct}` categories, renormalized to 100% and sorted descending. */
+  /** The nine displayed `{label, pct}` categories, summing to exactly 100.0 and sorted descending. */
   BREAKDOWN: unknown;
 }

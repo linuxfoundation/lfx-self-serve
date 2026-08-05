@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
+import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -88,8 +89,7 @@ export class SnowflakeService {
   }
 
   public static isMissingObjectError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /does not exist or not authorized/i.test(message);
+    return isMissingObjectError(error);
   }
 
   private constructor() {
@@ -216,25 +216,43 @@ export class SnowflakeService {
 
             return result;
           } catch (error) {
-            span.setStatus({
-              code: SpanStatusCode.ERROR,
-              message: error instanceof Error ? error.message : String(error),
-            });
-            span.recordException(error instanceof Error ? error : new Error(String(error)));
-
+            // `expectMissingObject` callers (LFXV2-1705's not-yet-deployed committee-engagement
+            // table, and the pre-existing project.service.ts / org-lens-project-detail.service.ts
+            // callers) still need this to throw — they distinguish the missing-object case in their
+            // own catch block via `isMissingObjectError` — but the span/log severity below must not
+            // mark this as a failure, or every request against a not-yet-deployed table (a normal,
+            // anticipated state, not an incident) emits an ERROR-level log and an errored trace span
+            // for as long as the table stays undeployed, polluting error tracking and any alerting
+            // keyed on this operation.
             const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
-            if (expectedMissing) {
-              this.recordSuccess();
-            } else {
-              this.recordFailure();
-            }
 
-            logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
-              query_hash: queryHash,
-              sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
-              circuit_state: this.circuitState,
-              consecutive_failures: this.consecutiveFailures,
-            });
+            if (expectedMissing) {
+              span.setStatus({ code: SpanStatusCode.OK });
+              span.setAttribute('snowflake.expected_missing_object', true);
+              this.recordSuccess();
+              logger.warning(undefined, 'snowflake_query', 'Query hit an expected missing-object/not-authorized error', {
+                query_hash: queryHash,
+                sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+                // The regex this checks also matches a missing GRANT, not just a missing table —
+                // `err` is what lets a reader (or an alert on this field) tell those apart instead
+                // of assuming every hit here is the expected pre-deploy state.
+                err: error,
+              });
+            } else {
+              span.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: error instanceof Error ? error.message : String(error),
+              });
+              span.recordException(error instanceof Error ? error : new Error(String(error)));
+              this.recordFailure();
+
+              logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
+                query_hash: queryHash,
+                sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+                circuit_state: this.circuitState,
+                consecutive_failures: this.consecutiveFailures,
+              });
+            }
 
             // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
             const errorMessage = error instanceof Error ? error.message : String(error);

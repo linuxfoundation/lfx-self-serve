@@ -3,9 +3,9 @@ title: Profile
 description: Manage your LFX user profile, account settings, and personal information.
 audience: [all]
 product_area: Profile
-tags: [profile, account, email, password, affiliations, developer]
+tags: [profile, account, email, password, affiliations, developer, cla, easycla]
 last_generated: 2026-05-22
-last_updated: 2026-06-22
+last_updated: 2026-08-04
 intercom_collection: Profile
 ---
 
@@ -19,6 +19,7 @@ The information below covers **your individual** LFX account — the profile tie
 
 - View and update your work history and project affiliations
 - Manage the identities used to attribute your contributions
+- View your Individual CLAs (ICLAs) and Employee CLA (ECLA) coverage
 - Enroll in the Linux Foundation Individual Supporter plan
 - View your Linux Foundation purchase history
 - Manage your email addresses, password, and developer API token
@@ -31,13 +32,14 @@ All authenticated users have a profile. Every user can view and edit their own p
 
 Go to **app.lfx.dev** and select **Profile** from the left navigation sidebar, or navigate directly to `/profile`. The profile section uses a tabbed layout with the following tabs:
 
-| Tab                         | Route                            | Description                                                 |
-| --------------------------- | -------------------------------- | ----------------------------------------------------------- |
-| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                  |
-| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work |
-| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan    |
-| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                      |
-| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token          |
+| Tab                         | Route                            | Description                                                    |
+| --------------------------- | -------------------------------- | -------------------------------------------------------------- |
+| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                     |
+| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work    |
+| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan       |
+| My CLAs                     | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage (read-only) |
+| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                         |
+| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token             |
 
 `/profile` opens the **Work history & Affiliations** tab by default.
 
@@ -63,6 +65,7 @@ Viewing your organization's profile in Org Lens requires **admin access** to you
 
 ## Related sections
 
+- [My CLAs](./my-clas/) — view your signed ICLAs and Employee CLA coverage
 - [Settings](../settings/) — application-level preferences
 - [Badges](../badges/) — view your earned credentials
 - [Trainings](../trainings/) — view your enrolled training programs

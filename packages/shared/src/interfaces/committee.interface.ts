@@ -64,6 +64,9 @@ export interface CommitteeOrganizationReference {
  */
 export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 
+/** Add-member dialog mode: admin direct-add vs member invite-by-email. */
+export type AddMemberDialogMode = 'direct-add' | 'invite';
+
 /**
  * Status of a committee invite. Mirrors the committee-service `committee_invite`
  * resource status enum (lfx-v2-committee-service): an invite is `pending` until the
@@ -586,8 +589,12 @@ export interface CommitteeSettingsData {
 /** Status of an open vote */
 export type CommitteeVoteStatus = 'open' | 'closed' | 'cancelled';
 
-/** Quick-filter chip keys for the committee Members tab; `'all'` is the default. */
-export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs';
+/**
+ * Quick-filter chip keys for the committee Members tab; `'all'` is the default. `'atRisk'` is only
+ * offered when the engagement rollup is available (LFXV2-1705, behind `wg-engagement-metrics`) —
+ * it filters on the per-member engagement classification, not on roster fields.
+ */
+export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs' | 'atRisk';
 
 /** A single chip entry in the committee Members quick-filter row. */
 export interface CommitteeMemberFilterChipConfig {
@@ -772,6 +779,29 @@ export type DocumentFormMode = CreateCommitteeDocumentType | 'file';
 export type DocumentFormEntityType = 'committee' | 'project';
 
 /**
+ * Upload status of a single file staged in the document form dialog's multi-file file-mode flow.
+ * No `'success'` state — a successfully uploaded file is removed from the pending list entirely
+ * rather than rendered with a terminal status.
+ */
+export type PendingDocumentFileStatus = 'pending' | 'uploading' | 'error';
+
+/**
+ * A file staged for upload in the document form dialog, tracked independently through parallel
+ * upload. The editable display name is not modeled here — it lives in a per-item Angular
+ * `FormGroup` on the component (this package has no Angular Forms dependency, and is consumed
+ * by the Express BFF too).
+ */
+export interface PendingDocumentFile {
+  /** Client-generated identifier — not a server UID, used for list tracking before upload. */
+  id: string;
+  /** The actual File object to be uploaded. */
+  file: File;
+  status: PendingDocumentFileStatus;
+  /** Set when status is 'error' — surfaced inline under this file's row. */
+  errorMessage?: string;
+}
+
+/**
  * A document or resource link associated with a committee.
  */
 export interface CommitteeDocument {
@@ -808,8 +838,6 @@ export interface CreateCommitteeDocumentRequest {
   description?: string;
   /** Parent folder UID (to place a link inside a folder) */
   parent_uid?: string;
-  /** Display name of the creator (populated by BFF from session) */
-  created_by_name?: string;
 }
 
 /**

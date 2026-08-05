@@ -10,6 +10,12 @@ export type HealthScore = 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'cri
 /** Direction of a one-year influence trend, used for color-coding the sparkline + delta. */
 export type InfluenceTrendDirection = 'up' | 'down' | 'flat';
 
+/**
+ * Which metrics the org has for a row (drives "Unavailable" renders): `full` = org metrics row (org-dashboard parity, incl. `activity_count = 0`);
+ * `health-only` = no org row but project-global health exists (health renders, org metrics Unavailable); `unavailable` = no org row and no health.
+ */
+export type OrgLensProjectMetricsState = 'full' | 'health-only' | 'unavailable';
+
 /** A person (employee) associated with a project in a maintainer/contributor/participant role. */
 export interface OrgLensProjectPerson {
   /** Stable identifier for the person. */
@@ -88,6 +94,17 @@ export interface OrgLensProject {
   description: string;
   /** CHAOSS-style health sub-scores (0–100) shown in the health-detail popover. */
   healthMetrics: ProjectHealthMetric[];
+  /**
+   * Which metrics the org has for this project: `full` rows render every metric for real; `health-only`/`unavailable`
+   * fallback rows (no org metrics row) drive the "Unavailable" renders and "No activity yet" treatment.
+   */
+  metricsState: OrgLensProjectMetricsState;
+  /**
+   * Transitional wire flag for rolling-deploy compat with pre-close-out frontends that still read `noActivityYet`.
+   * New BFF sets `true` on fallback rows alongside `metricsState`; omit (or false) on `full` rows. Do not use this
+   * as the primary discriminator in new code — prefer `metricsState` / `orgMetricsUnavailable`.
+   */
+  noActivityYet?: boolean;
 }
 
 /** A single CHAOSS health sub-score (0–100) shown in the health-detail popover. */
@@ -119,6 +136,11 @@ export interface OrgLensProjectSearchResult {
 
 export interface OrgLensProjectSearchResponse {
   results: OrgLensProjectSearchResult[];
+  /**
+   * True when the query matched onboarded projects omitted from `results` only because they're already in the workspace.
+   * Lets the UI distinguish "already added" from a genuine no-match so the empty panel isn't mislabelled "No projects match".
+   */
+  hasMatchesAlreadyInWorkspace?: boolean;
 }
 
 export interface AddableProjectOption {
@@ -171,6 +193,12 @@ export interface OrgProjectsSignalBar {
 /** Projects-table row: the project plus presentation values precomputed off the template hot path. */
 export interface OrgProjectsTableRow extends OrgLensProject {
   insightsUrl: string;
+  /**
+   * True for explicit fallback rows (`health-only` / `unavailable`, or legacy `noActivityYet` when `metricsState`
+   * is missing): drives the "Unavailable" band/trend/count treatment, the plain-text (non-linked) name, and the
+   * "No activity yet" pill. Real rows (incl. participating no-activity) are false.
+   */
+  orgMetricsUnavailable: boolean;
   technicalBars: OrgProjectsSignalBar[];
   ecosystemBars: OrgProjectsSignalBar[];
   /** Display label for the technical influence band (e.g. "Leading"). */
@@ -180,6 +208,12 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   /** Health badge display label (e.g. "Excellent"). */
   healthLabel: string;
   healthBadge: { bg: string; text: string };
+  /**
+   * True when there are at least two score samples to draw a line. False for a `full` row with no monthly
+   * influence history (e.g. an ecosystem-only participation with zero activity) — the template then renders a
+   * flat baseline placeholder instead of an empty Chart.js canvas that reads as broken.
+   */
+  hasTrendData: boolean;
   /** Pre-built Chart.js dataset for the sparkline; stable reference avoids re-allocation on recompute. */
   sparklineDataset: { labels: string[]; datasets: { data: number[]; borderColor: string; fill: boolean }[] };
   /**

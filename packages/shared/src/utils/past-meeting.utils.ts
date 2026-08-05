@@ -1,10 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EnrichedPastMeetingParticipant, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
+import { EnrichedPastMeetingParticipant, Meeting, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
 import { firstValidTimestampMs } from './iso-timestamp.utils';
 
-// Zoom/ITX rows sometimes carry a Go zero-date on scheduled_start_time; fall back to start_time.
+// scheduled_start_time can be absent or a Go zero-date depending on the row's source — fall back to
+// start_time. (For rows sourced from the v1_past_meeting query-service index specifically,
+// scheduled_start_time is verified always absent, never just zero-dated — see the "Meetings"
+// paragraph in apps/lfx-one/src/server/services/committee-activity.service.ts's fetchSize comment.
+// This function is shared across callers beyond that one leg, so it stays defensive here rather
+// than assuming every caller's data shares that same guarantee.)
 export function getPastMeetingStartTimeMs(meeting: Pick<PastMeeting, 'scheduled_start_time' | 'start_time'>): number | null {
   return firstValidTimestampMs(meeting.scheduled_start_time, meeting.start_time);
 }
@@ -23,6 +28,21 @@ export function getLargestSessionShareUrl(recording: PastMeetingRecording | null
 // still expose a distinct id while Me-lens rows normalize id to the composite value.
 export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meeting_and_occurrence_id'>): string {
   return meeting.meeting_and_occurrence_id ?? meeting.id;
+}
+
+/** Past-meeting list rows carry scheduled_start_time and/or past-only identity fields. */
+export function isPastMeetingCalendarRow(meeting: Meeting | PastMeeting): meeting is PastMeeting {
+  const row = meeting as PastMeeting;
+  if (typeof row.scheduled_start_time === 'string') {
+    return true;
+  }
+  if (row.meeting_and_occurrence_id) {
+    return true;
+  }
+  if ('meeting_id' in meeting && typeof row.meeting_id === 'string' && row.meeting_id) {
+    return true;
+  }
+  return false;
 }
 
 /**

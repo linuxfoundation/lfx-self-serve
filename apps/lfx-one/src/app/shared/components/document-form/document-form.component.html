@@ -5,55 +5,69 @@
   @if (isFile()) {
     <!-- File picker -->
     <div>
-      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1"> File <span class="text-red-500">*</span> </label>
-      @if (!selectedFile()) {
-        <lfx-file-upload
-          [multiple]="false"
-          [accept]="acceptString"
-          [maxFileSize]="MAX_FILE_SIZE_BYTES"
-          (onSelect)="onFileSelect($event)"
-          [customUpload]="true"
-          [showUploadButton]="false"
-          [showCancelButton]="false"
-          chooseLabel="Click to upload a file or drag and drop"
-          dataTest="document-form-file-upload">
-        </lfx-file-upload>
-      } @else {
-        <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50" data-testid="document-form-selected-file">
-          <div class="flex items-center gap-2 min-w-0">
-            <i class="fa-light fa-file-lines text-blue-500 flex-shrink-0"></i>
-            <span class="text-sm text-gray-700 truncate">{{ selectedFile()!.name }}</span>
-          </div>
-          <button
-            type="button"
-            class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
-            aria-label="Clear selected file"
-            title="Clear selected file"
-            (click)="clearSelectedFile()"
-            data-testid="document-form-clear-file">
-            <i class="fa-light fa-xmark"></i>
-          </button>
-        </div>
-      }
+      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1"> Files <span class="text-red-500">*</span> </label>
+      <lfx-file-upload
+        [multiple]="true"
+        [accept]="acceptString"
+        [maxFileSize]="MAX_FILE_SIZE_BYTES"
+        (onSelect)="onFileSelect($event)"
+        [customUpload]="true"
+        [showUploadButton]="false"
+        [showCancelButton]="false"
+        [disabled]="submitting()"
+        chooseLabel="Click to upload files or drag and drop"
+        dataTest="document-form-file-upload">
+      </lfx-file-upload>
       @if (fileError()) {
         <p class="mt-1 text-xs text-red-600">{{ fileError() }}</p>
       }
     </div>
 
-    <!-- Name -->
-    <div>
-      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Name <span class="text-red-500">*</span></label>
-      <lfx-input-text
-        size="small"
-        [form]="form"
-        control="name"
-        placeholder="Display name for the document"
-        styleClass="w-full"
-        dataTest="document-form-name"></lfx-input-text>
-      @if (form.get('name')?.errors?.['required'] && form.get('name')?.touched) {
-        <p class="mt-1 text-xs text-red-600">Name is required</p>
-      }
-    </div>
+    <!-- Pending files -->
+    @if (pendingFiles().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="document-form-pending-files">
+        @for (item of pendingFiles(); track item.id) {
+          <div class="flex flex-col gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50" data-testid="document-form-pending-file">
+            <div class="flex items-center gap-2">
+              <i class="fa-light fa-file-lines text-blue-500 flex-shrink-0"></i>
+              <div class="flex-1 min-w-0">
+                <label class="sr-only" [attr.for]="'pending-file-name-' + item.id">Document name for {{ item.file.name }}</label>
+                <lfx-input-text
+                  size="small"
+                  [id]="'pending-file-name-' + item.id"
+                  [form]="item.nameForm"
+                  control="name"
+                  placeholder="Document name"
+                  styleClass="w-full"
+                  [dataTest]="'document-form-pending-file-name-' + item.id"></lfx-input-text>
+              </div>
+              @if (item.status === 'uploading') {
+                <i class="fa-light fa-spinner-third fa-spin text-gray-400 flex-shrink-0"></i>
+              } @else {
+                <button
+                  type="button"
+                  class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                  aria-label="Remove file {{ item.file.name }}"
+                  title="Remove file"
+                  (click)="removePendingFile(item.id)"
+                  data-testid="document-form-remove-file">
+                  <i class="fa-light fa-xmark"></i>
+                </button>
+              }
+            </div>
+            @if (item.nameForm.get('name')?.errors?.['required'] && item.nameForm.get('name')?.touched) {
+              <p class="text-xs text-red-600 pl-6">Name is required</p>
+            } @else if (item.nameForm.get('name')?.errors?.['maxlength'] && item.nameForm.get('name')?.touched) {
+              <p class="text-xs text-red-600 pl-6">Name must be 500 characters or less</p>
+            }
+            <span class="text-xs text-gray-400 truncate pl-6">{{ item.file.name }}</span>
+            @if (item.status === 'error' && item.errorMessage) {
+              <p class="text-xs text-red-600 pl-6">{{ item.errorMessage }}</p>
+            }
+          </div>
+        }
+      </div>
+    }
 
     <!-- Folder (optional) -->
     @if (folderOptions.length > 0) {
@@ -68,7 +82,7 @@
           [showClear]="true"
           styleClass="w-full"
           data-testid="document-form-folder"></lfx-select>
-        <p class="mt-1 text-[11px] text-gray-400">Place this file inside a folder</p>
+        <p class="mt-1 text-[11px] text-gray-400">Place these files inside a folder</p>
       </div>
     }
   } @else if (isLink()) {
@@ -155,7 +169,14 @@
 
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-4 border-t">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>
+    <lfx-button
+      [label]="cancelLabel()"
+      severity="secondary"
+      [outlined]="true"
+      [disabled]="submitting()"
+      (onClick)="onCancel()"
+      size="small"
+      type="button"></lfx-button>
     <lfx-button [label]="submitLabel()" [loading]="submitting()" [disabled]="submitting()" type="submit" size="small"></lfx-button>
   </div>
 </form>

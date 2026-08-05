@@ -241,6 +241,8 @@ export const MEMBER_ROLES = [
   { label: 'None', value: CommitteeMemberRole.NONE },
 ];
 
+export const CHAIR_ROLES = new Set<string>([CommitteeMemberRole.CHAIR, CommitteeMemberRole.VICE_CHAIR]);
+
 /**
  * Available voting status types for committee members
  * @description Defines the voting rights and status of committee members
@@ -515,7 +517,7 @@ export const JOIN_MODE_LABELS: Record<JoinMode, string> = {
 export const JOIN_MODE_OPTIONS = [
   { label: 'Open — anyone can join', value: 'open' },
   { label: 'Invite Only — members send invites', value: 'invite_only' },
-  { label: 'Apply to Join — Coming Soon', value: 'application', disabled: true },
+  { label: 'Apply & Review', value: 'application' },
   { label: 'Closed — admin adds members', value: 'closed' },
 ];
 
@@ -620,3 +622,15 @@ export const OTHER_GROUPS_LABEL = 'Other Groups';
 
 /** Cards revealed per "Show more" click on the My Groups card grid — a grid-friendly count (divisible by 1/2/3/4 columns). */
 export const GROUPS_CARD_GRID_PAGE_SIZE = 12;
+
+/**
+ * Icon-tile tints for the Groups dashboard engagement stat cards (LFXV2-1711). A dedicated constant
+ * rather than reusing `ORG_MEETINGS_KPI_ICON_CLASS`'s coincidentally-identical values: this package's
+ * classes aren't scanned by `apps/lfx-one/tailwind.config.js`'s `content` glob, so they must be
+ * spread into its `safelist` explicitly (see the Tailwind config comment) — coupling to an unrelated
+ * constant's values would silently break if that constant ever changed.
+ */
+export const GROUPS_ENGAGEMENT_ICON_CLASS = {
+  activeMembers: 'bg-violet-100 text-violet-600',
+  meetingsThisMonth: 'bg-amber-100 text-amber-600',
+} as const;

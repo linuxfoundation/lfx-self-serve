@@ -45,7 +45,9 @@ import personaRouter from './routes/persona.route';
 import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicCommitteesRouter from './routes/public-committees.route';
+import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
@@ -54,11 +56,14 @@ import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import enrollmentRouter from './routes/enrollment.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
+import clasRouter from './routes/clas.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
+import userNewslettersRouter from './routes/user-newsletters.route';
 import votesRouter from './routes/votes.route';
 import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
+import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -271,8 +276,9 @@ if (sessionStoreEnabled) {
 
 app.use(auth(authConfig));
 
-// Meeting join pages are optional-auth; silent login picks up any existing SSO session.
+// Public pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
+app.use('/groups/', attemptSilentLogin());
 
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
@@ -302,11 +308,14 @@ app.use('/login', authRateLimiter);
 
 app.use('/public/api/meetings', publicMeetingsRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
+app.use('/public/api/groups', publicGroupsRouter);
+app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/create-picker', createPickerRouter);
+app.use('/api/committees', weeklyBriefRouter);
 app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);
@@ -331,8 +340,12 @@ app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/crowdfunding', crowdfundingRouter);
+app.use('/api/me', clasRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
+// User-scoped newsletter feed (Me lens). Mounted alongside the project-scoped
+// manager router below — different prefixes, no overlap.
+app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).

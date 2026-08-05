@@ -3,9 +3,17 @@
 
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import { CommitteeMember } from '../interfaces/member.interface';
 import { BadgeSeverity } from '../interfaces/components.interface';
-import { CATEGORY_BEHAVIORAL_CLASS, FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL, OTHER_GROUPS_LABEL } from '../constants/committees.constants';
+import { StatCardItem } from '../interfaces/stat-card.interface';
+import {
+  CATEGORY_BEHAVIORAL_CLASS,
+  FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
+  GROUPS_ENGAGEMENT_ICON_CLASS,
+  OTHER_GROUPS_LABEL,
+} from '../constants/committees.constants';
+import { formatRelativeTime } from './date-time.utils';
 import { slugify } from './string.utils';
 
 /**
@@ -336,4 +344,78 @@ function compareCodeUnits(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;
   return 0;
+}
+
+// ── Groups dashboard engagement stat cards (LFXV2-1711) ─────────────────────
+
+/**
+ * Builds the Active Members / Meetings This Month stat cards from the engagement-stats rollup.
+ * Extracted as a pure function (no Angular component-test runner exists in this repo — see
+ * `resolveGroupsCardRoleSeverity` above) so all render states are unit-tested directly: loading
+ * (em-dash, no sub-line), populated (value + relative-time freshness label), mock-sourced (value +
+ * a "Sample data" marker instead of a freshness label, so fabricated fixture numbers can never be
+ * mistaken for live ones), degraded (fetch failed, or the count is null — em-dash + "Unavailable",
+ * never throws, never blocks the rest of the dashboard), and partial-coverage (LFXV2-2978 — Active
+ * Members only, since `active_members` is the only field whose count can be real-but-incomplete:
+ * its sub-line gains "· across N of M groups" alongside the freshness/mock label; Meetings This
+ * Month never carries this qualifier).
+ */
+export function buildEngagementStatCards(stats: GroupsEngagementStats | null, loading: boolean): StatCardItem[] {
+  const activeMembersCard: StatCardItem = {
+    label: 'Active Members',
+    icon: 'fa-light fa-user-group',
+    iconContainerClass: GROUPS_ENGAGEMENT_ICON_CLASS.activeMembers,
+    value: '—',
+  };
+  const meetingsThisMonthCard: StatCardItem = {
+    label: 'Meetings This Month',
+    icon: 'fa-light fa-calendar-check',
+    iconContainerClass: GROUPS_ENGAGEMENT_ICON_CLASS.meetingsThisMonth,
+    value: '—',
+  };
+
+  if (loading) {
+    return [activeMembersCard, meetingsThisMonthCard];
+  }
+
+  // Mock-sourced values get "Sample data" instead of a freshness label — deliberately more visible
+  // than a subtle provenance flag, since the whole point is that a fabricated fixture number must
+  // never be mistaken for live data during manual validation (including against synced prod data,
+  // where NODE_ENV isn't 'production' but a stray ENGAGEMENT_BACKEND=mock could still be set).
+  const subLineForValue = resolveEngagementSubLine(stats);
+
+  // Each card degrades independently: active_members and meetings_this_month are separate
+  // aggregates (trailing-30-day attendance vs. current-month occurrences), so a partially-deployed
+  // dbt model could plausibly resolve one without the other — neither field's availability implies
+  // the other's.
+  const resolveCard = (base: StatCardItem, value: number | null, subLine: string | undefined): StatCardItem =>
+    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine };
+
+  return [
+    resolveCard(activeMembersCard, stats?.active_members ?? null, resolveActiveMembersSubLine(stats, subLineForValue)),
+    resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null, subLineForValue),
+  ];
+}
+
+/** Extracted to avoid nesting a ternary inside another ternary's branch (`stats && source === 'mock' ? … : stats ? … : …`). */
+function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string | undefined {
+  if (!stats) return undefined;
+  if (stats.source === 'mock') return 'Sample data';
+  return `Updated ${formatRelativeTime(new Date(stats.computed_at))}`;
+}
+
+/**
+ * Active Members is the only card whose count can be a real-but-partial one (LFXV2-2978) — coverage
+ * is a property of *which committees* fed the count, not of meetings-this-month, so this qualifier
+ * is deliberately not shared with the sibling card via `resolveEngagementSubLine`. Appends to the
+ * base sub-line (rather than replacing it) so the freshness/mock provenance stays visible alongside
+ * the disclosure. Full coverage (`covered === total`, always true for mock) renders no qualifier —
+ * identical to the sibling card's plain sub-line. `stats.coverage` is optional-chained (not just a
+ * `stats` null check) — a rolling deploy can put this client bundle in front of a pre-upgrade server
+ * instance whose response predates `coverage`, and that shape drift must degrade to the plain
+ * sub-line, not throw inside the `computed()` this feeds (which would blank the whole stat-card row).
+ */
+function resolveActiveMembersSubLine(stats: GroupsEngagementStats | null, baseSubLine: string | undefined): string | undefined {
+  if (!stats?.coverage || stats.coverage.covered >= stats.coverage.total) return baseSubLine;
+  return `${baseSubLine} · across ${stats.coverage.covered} of ${stats.coverage.total} groups`;
 }

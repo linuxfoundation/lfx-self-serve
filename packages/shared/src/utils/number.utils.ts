@@ -38,6 +38,20 @@ export function formatValueLost(value: number): string {
   return formatCompact(Math.abs(value), value < 0 ? '-' : '', '$');
 }
 
+/**
+ * Format a percentage for display to a single decimal place.
+ * Raw rates arrive from Snowflake at full float precision (e.g. 94.919659091),
+ * so anything interpolated into user-facing copy must go through this.
+ * - Handles NaN and Infinity gracefully
+ * - Normalizes negative zero so "-0.0%" never renders
+ * - Returns the number only; callers add the "%" suffix
+ */
+export function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return '0.0';
+  const rounded = Number(value.toFixed(1));
+  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(1);
+}
+
 /** Centralized compact formatter — thresholds, scales, and rounding in one place.
  *  Locale is pinned to en-US: this runs during SSR (Node) and in the browser,
  *  and an unpinned toLocaleString() renders different separators per client
