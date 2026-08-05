@@ -21,6 +21,7 @@
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "e2e:headed": "playwright test --headed",
+    "e2e:live": "playwright test newsletter-live-send",
     "docs:build": "node scripts/build-docs.mjs",
     "docs:validate": "node scripts/validate-manifest.mjs",
     "docs:check-coverage": "node scripts/check-coverage.mjs",

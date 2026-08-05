@@ -270,6 +270,40 @@ For a new feature, write both specs together:
 4. If the feature has an error path, mock the relevant API with `page.route()` and cover the error-state component.
 5. Verify locally with `yarn e2e` before opening a PR.
 
+## Live-Service Exception
+
+Every spec above stubs the newsletter/committee/project APIs with `page.route()`. `newsletter-live-send.spec.ts` and `newsletter-live-send-robust.spec.ts` are a deliberate, narrowly-scoped exception: they drive the newsletter compose → send → analytics flow against the real `lfx-v2-newsletter-service`, `lfx-v2-committee-service`, and `lfx-v2-email-service` stack, with zero `page.route()` mocking of those APIs. A mock encodes the same assumption the frontend contract makes about the backend response shape — it can't catch a genuine wiring gap between the two. These specs can.
+
+This exception is scoped narrowly on purpose:
+
+- Only these two files skip mocking. Every other spec keeps the standard `page.route()` convention.
+- They run via a separate script, `yarn e2e:live`, and are **not** part of the default `yarn e2e` gate — CI has no job yet that stands up the full local platform stack, so they're opt-in and local-only for now.
+- The happy path asserts that Analytics loads and correlates to the send's `group_id` — it does **not** assert a nonzero open count. Email opens are triggered by a mail client loading a tracking pixel; there's no deterministic way to fire one from a Playwright run.
+- The error-path spec re-sends an already-`sent` newsletter and asserts the real no-op behavior (an info toast + navigation back to the Sent tab), not a generic error — see `handleSendError()` in `newsletter-manage.component.ts`.
+
+### Required environment
+
+Beyond `TEST_USERNAME` / `TEST_PASSWORD`, these specs need a seeded project and committee to target. Set these in `apps/lfx-one/.env` (documented in full, with rationale, in `e2e/helpers/live-env.helper.ts`):
+
+| Var                   | Purpose                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `LIVE_PROJECT_SLUG`    | Slug of a seeded project the test user can manage newsletters for.                   |
+| `LIVE_PROJECT_UID`     | That project's UID (newsletter edit/analytics routes are UID-keyed, not slug-keyed). |
+| `LIVE_COMMITTEE_UID`   | UID of a committee under that project with at least one member.                      |
+| `LIVE_COMMITTEE_NAME`  | That committee's display name, used to select it from the audience picker's options. |
+
+All four are required together. `skipWhenLiveEnvMissing()` mirrors the existing `skipWhenAuthMissing()` pattern — gated on explicit env-var presence rather than URL sniffing, so a genuinely broken live stack still fails loudly instead of silently skipping. A partially-configured environment skips cleanly rather than failing on a missing fixture.
+
+### Running locally
+
+```bash
+# bring up the full local platform stack first (see lfx-v2-helm), with
+# lfx-v2-newsletter-service, lfx-v2-committee-service, and lfx-v2-email-service
+# reachable, and the four LIVE_* vars + TEST_USERNAME/TEST_PASSWORD set
+
+yarn e2e:live
+```
+
 ## Related
 
 - [Testing Best Practices](testing-best-practices.md) — deeper treatment of dual architecture and `data-testid` conventions.
