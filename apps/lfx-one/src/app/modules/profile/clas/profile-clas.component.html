@@ -76,7 +76,7 @@ SPDX-License-Identifier: MIT
                   <span class="truncate text-sm font-semibold text-slate-900" [attr.data-testid]="'agreement-project-' + agreement.id">
                     {{ agreement.projectName || agreement.claGroupName }}
                   </span>
-                  @if (agreement.projectName && agreement.claGroupName && agreement.claGroupName !== agreement.projectName) {
+                  @if (agreement.projectName && agreement.claGroupName) {
                     <span class="truncate text-xs text-slate-500" [attr.data-testid]="'agreement-cla-group-' + agreement.id">{{ agreement.claGroupName }}</span>
                   }
                 </div>
