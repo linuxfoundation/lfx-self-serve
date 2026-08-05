@@ -16,7 +16,7 @@ const stripeActiveMembership = [
   {
     projectName: 'The Linux Foundation',
     projectSlug: 'tlf',
-    ProductName: 'The Linux Foundation Individual Supporter',
+    productName: 'The Linux Foundation Individual Supporter',
     projectDesc: 'Test project description.',
     enrollButton: 'Enroll as an Individual Supporter',
     price: 99,
@@ -29,19 +29,19 @@ const stripeActiveMembership = [
     activeButtonText: '',
     activeButtonURL: '',
     membership: {
-      Status: 'Active',
-      AutoRenew: true,
-      PurchaseDate: '2025-06-01',
-      EndDate: '2027-06-01',
-      Price: 99,
-      ID: MEMBERSHIP_ID,
-      ExtPaymentType: 'stripe',
+      status: 'Active',
+      autoRenew: true,
+      purchaseDate: '2025-06-01',
+      endDate: '2027-06-01',
+      price: 99,
+      id: MEMBERSHIP_ID,
+      extPaymentType: 'stripe',
     },
   },
 ];
 
-/** Same membership but AutoRenew: false. */
-const stripeActiveMembershipAutoRenewOff = [{ ...stripeActiveMembership[0], membership: { ...stripeActiveMembership[0].membership, AutoRenew: false } }];
+/** Same membership but autoRenew: false. */
+const stripeActiveMembershipAutoRenewOff = [{ ...stripeActiveMembership[0], membership: { ...stripeActiveMembership[0].membership, autoRenew: false } }];
 
 /** Builds a local YYYY-MM-DD string N days from today — keeps date-sensitive fixtures from going stale.
  *  Uses local getters to match parseLocalDateString, which builds dates as local midnight. */
@@ -58,15 +58,15 @@ function daysFromNow(n: number): string {
 const expiredMembership = [
   {
     ...stripeActiveMembership[0],
-    membership: { ...stripeActiveMembership[0].membership, Status: 'Expired' as const, AutoRenew: false, EndDate: '2024-01-01' },
+    membership: { ...stripeActiveMembership[0].membership, status: 'Expired' as const, autoRenew: false, endDate: '2024-01-01' },
   },
 ];
 
-/** Expiring-soon Stripe membership (EndDate ~14 days out) — displayStatus: 'Expiring Soon'. */
+/** Expiring-soon Stripe membership (endDate ~14 days out) — displayStatus: 'Expiring Soon'. */
 const expiringSoonMembership = [
   {
     ...stripeActiveMembership[0],
-    membership: { ...stripeActiveMembership[0].membership, Status: 'Active' as const, AutoRenew: false, EndDate: daysFromNow(14) },
+    membership: { ...stripeActiveMembership[0].membership, status: 'Active' as const, autoRenew: false, endDate: daysFromNow(14) },
   },
 ];
 
@@ -216,7 +216,7 @@ test.describe('Individual Enrollment — Content Tests', () => {
     });
 
     test('the card does not change until the dialog is confirmed', async ({ page }) => {
-      await setupStripeEnrollmentMock(page, true); // AutoRenew: true → "Disable auto-renew"
+      await setupStripeEnrollmentMock(page, true); // autoRenew: true → "Disable auto-renew"
       await gotoAndWaitForCard(page);
 
       await expect(autoRenewControl(page)).toContainText('Disable auto-renew');
@@ -254,7 +254,7 @@ test.describe('Individual Enrollment — Content Tests', () => {
     });
 
     test('reverts the button to its original label on PATCH failure', async ({ page }) => {
-      await setupStripeEnrollmentMock(page, true); // AutoRenew: true
+      await setupStripeEnrollmentMock(page, true); // autoRenew: true
       await setupPatchMock(page, 500);
       await gotoAndWaitForCard(page);
 
@@ -274,7 +274,7 @@ test.describe('Individual Enrollment — Content Tests', () => {
 
   test.describe('Enable auto-renew path (false → true)', () => {
     test('confirm dialog shows the Enable action when turning on', async ({ page }) => {
-      await setupStripeEnrollmentMock(page, false); // AutoRenew: false → "Enable auto-renew"
+      await setupStripeEnrollmentMock(page, false); // autoRenew: false → "Enable auto-renew"
       await setupPatchMock(page);
       await gotoAndWaitForCard(page);
 

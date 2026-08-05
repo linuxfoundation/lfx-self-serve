@@ -10,15 +10,15 @@ import { EnrollmentDisplayStatus, IndividualEnrollment } from '../interfaces/enr
 export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDisplayStatus {
   const { membership, price } = item;
   if (!membership) return 'Not Enrolled';
-  if (membership.Status === 'Expired') return 'Expired';
+  if (membership.status === 'Expired') return 'Expired';
   if (price === null || price === undefined) return 'Active';
-  const endDateString = membership.EndDate.length >= 10 ? membership.EndDate.slice(0, 10) : membership.EndDate;
+  const endDateString = membership.endDate.length >= 10 ? membership.endDate.slice(0, 10) : membership.endDate;
   let endDate: Date;
   if (/^\d{4}-\d{2}-\d{2}$/.test(endDateString)) {
     const [y, m, d] = endDateString.split('-').map(Number);
     endDate = new Date(Date.UTC(y, m - 1, d));
   } else {
-    endDate = new Date(membership.EndDate);
+    endDate = new Date(membership.endDate);
   }
   const now = new Date();
   const isExpired = endDate < now;
@@ -26,7 +26,7 @@ export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDi
   // "Expiring Soon") WHILE STILL CURRENT. Guard on !isExpired so a lapsed subscription (failed
   // charge / paused) whose Status upstream hasn't flipped to Expired falls through to the date
   // logic below instead of falsely showing Active.
-  if (membership.AutoRenew && membership.ExtPaymentType === 'stripe' && !isExpired) return 'Active';
+  if (membership.autoRenew && membership.extPaymentType === 'stripe' && !isExpired) return 'Active';
   if (isExpired) return 'Expired';
   const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   if (endDate < thirtyDaysFromNow) return 'Expiring Soon';

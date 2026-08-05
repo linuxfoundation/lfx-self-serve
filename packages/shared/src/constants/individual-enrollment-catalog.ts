@@ -8,7 +8,7 @@ import { IndividualEnrollment } from '../interfaces';
 export const TLF_INDIVIDUAL_SUPPORTER = {
   projectName: 'The Linux Foundation',
   projectSlug: 'tlf',
-  ProductName: 'The Linux Foundation Individual Supporter',
+  productName: 'The Linux Foundation Individual Supporter',
   projectDesc:
     'The Linux Foundation is dedicated to building sustainable ecosystems around open source projects to accelerate technology development and industry adoption.\r\nFounded in 2000, the Linux Foundation provides unparalleled support for open source communities through financial and intellectual resources, infrastructure, services, events, and training. Working together, the Linux Foundation and its projects form the most ambitious and successful investment in the creation of shared technology.',
   enrollButton: 'Enroll as an Individual Supporter',
