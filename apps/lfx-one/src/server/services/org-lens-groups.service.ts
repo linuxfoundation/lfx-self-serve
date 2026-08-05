@@ -54,6 +54,10 @@ export class OrgLensGroupsService {
   }
 
   private toGroupSummary(uid: string, seats: CommitteeServiceOrgSeat[]): OrgLensGroupSummary {
+    // aggregateByCommittee only adds to the map on push, so this is always true — guard is defensive.
+    if (seats.length === 0) {
+      return { uid, name: uid, category: '', org_seat_count: 0, representative_members: [] };
+    }
     const first = seats[0];
 
     // Deduplicate by email so one person with multiple roles counts once for the seat count.
