@@ -113,6 +113,21 @@ describe('validateBrandKitEnvelope', () => {
     (badMode.intake as { mode: string }).mode = 'batch';
     expect(validateBrandKitEnvelope(badMode).valid).toBe(false);
   });
+
+  it('rejects out-of-order or duplicated intake question numbers', () => {
+    const dupes = buildEnvelope();
+    dupes.intake.answers = dupes.intake.answers.map((a) => ({ ...a, question_number: 1 }));
+    expect(validateBrandKitEnvelope(dupes).valid).toBe(false);
+  });
+
+  it('rejects non-ISO completed_at strings that Date() would accept', () => {
+    const loose = buildEnvelope();
+    loose.intake.completed_at = 'Aug 5 2026';
+    expect(validateBrandKitEnvelope(loose).valid).toBe(false);
+    const slash = buildEnvelope();
+    slash.intake.completed_at = '08/05/2026';
+    expect(validateBrandKitEnvelope(slash).valid).toBe(false);
+  });
 });
 
 describe('findMissingBrandKitHeadings', () => {

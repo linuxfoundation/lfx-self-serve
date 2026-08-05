@@ -154,8 +154,21 @@ export class GuildService {
     const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
     await this.assertOk(response, 'guild_get_raw_events', path);
 
-    const data = (await response.json()) as { items?: unknown[] };
-    return (data.items || []).map((item) => JSON.stringify(item));
+    const data = (await response.json()) as { items?: { created_at?: string }[] };
+    const items = data.items || [];
+
+    // Last-valid-wins selection downstream depends on chronological order —
+    // normalize it here instead of trusting the API's ordering.
+    const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
+
+    // Truncation guard: a full page means the session may have more events than
+    // the cap, so the terminal envelope could be missing (or a stale draft could
+    // win). Surface it loudly; pagination is a follow-up if real sessions hit it.
+    if (items.length >= GUILD_RAW_EVENTS_LIMIT) {
+      logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', { count: items.length, limit: GUILD_RAW_EVENTS_LIMIT });
+    }
+
+    return sorted.map((item) => JSON.stringify(item));
   }
 
   /**

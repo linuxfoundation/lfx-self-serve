@@ -4,7 +4,7 @@
 import { BRAND_KIT_MAX_DOCUMENT_BYTES } from '@lfx-one/shared/constants';
 import { BrandKitEnvelope, BrandKitPersistReceipt } from '@lfx-one/shared/interfaces';
 import { buildBrandKitObjectKey, extractBrandKitEnvelopeCandidates, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -57,8 +57,8 @@ export class BrandKitService {
       });
     }
 
-    // Contract §3 step 4: size gate (defense in depth — also checked pre-hash
-    // by the shared validator on string length).
+    // Contract §3 step 4: size gate (defense in depth — also checked byte-accurately
+    // by the shared validator via TextEncoder).
     if (documentBytes.length > BRAND_KIT_MAX_DOCUMENT_BYTES) {
       throw ServiceValidationError.forField('document_markdown', 'Document exceeds the 20 MB object size cap.', {
         operation: 'brand_kit_persist',
@@ -90,9 +90,10 @@ export class BrandKitService {
   }
 
   /**
-   * Scan raw event payloads for envelope candidates and return the LAST one
-   * that passes the shared contract validation (later events supersede earlier
-   * drafts within a session).
+   * Scan raw event payloads (chronologically ordered by the Guild service)
+   * for envelope candidates and return the authoritative one: the highest
+   * `version` among valid candidates, with the latest occurrence winning ties
+   * (later events supersede earlier drafts within a session).
    */
   private findAuthoritativeEnvelope(req: Request, payloads: string[]): BrandKitEnvelope | null {
     let best: BrandKitEnvelope | null = null;
@@ -104,7 +105,9 @@ export class BrandKitService {
         candidateCount++;
         const result = validateBrandKitEnvelope(candidate);
         if (result.valid) {
-          best = candidate;
+          if (!best || candidate.version >= best.version) {
+            best = candidate;
+          }
         } else {
           invalidCount++;
           logger.debug(req, 'brand_kit_persist', 'Rejected envelope candidate', { errors: result.errors });

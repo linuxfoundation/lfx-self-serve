@@ -153,6 +153,9 @@ export class MktgAgentsController {
   public async persistBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { sessionId, ownerToken } = req.body as BrandKitPersistRequest;
 
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
       next(
@@ -177,7 +180,7 @@ export class MktgAgentsController {
       return;
     }
 
-    if (!verifySessionOwnerToken(ownerToken, userId, validSessionId)) {
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
       next(
         new AuthorizationError('You do not have permission to persist this session.', { operation: 'brand_kit_persist', service: 'mktg_agents_controller' })
       );

@@ -16,10 +16,13 @@ export interface BrandKitIntakeAnswer {
   answer: string;
 }
 
+/** How the intake answers were collected. */
+export type BrandKitIntakeMode = 'form' | 'conversational';
+
 /** Machine-readable log of the 7-question intake. */
 export interface BrandKitIntake {
   /** How the 7 answers were collected. */
-  mode: 'form' | 'conversational';
+  mode: BrandKitIntakeMode;
   /** ISO-8601 UTC timestamp when intake completed. */
   completed_at: string;
   /** Exactly 7 entries, in Paul's fixed question order. */
@@ -79,7 +82,7 @@ export interface BrandKitPersistReceipt {
   /** Document draft version from the envelope. */
   version: number;
   /** How the intake answers were collected. */
-  intake_mode: 'form' | 'conversational';
+  intake_mode: BrandKitIntakeMode;
 }
 
 /** Request body for `POST /api/mktg-agents/brand-kit/persist`. */

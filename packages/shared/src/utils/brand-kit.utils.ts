@@ -8,7 +8,9 @@
 
 import {
   BRAND_KIT_CONTRACT_ID,
+  BRAND_KIT_EXTRACTION_MAX_DEPTH,
   BRAND_KIT_INTAKE_ANSWER_COUNT,
+  BRAND_KIT_ISO_TIMESTAMP_REGEX,
   BRAND_KIT_KEY_PREFIX,
   BRAND_KIT_KIND,
   BRAND_KIT_MAX_DOCUMENT_BYTES,
@@ -69,15 +71,16 @@ export function validateBrandKitEnvelope(candidate: unknown): BrandKitValidation
     if (intake.mode !== 'form' && intake.mode !== 'conversational') {
       errors.push('intake.mode must be "form" or "conversational"');
     }
-    if (typeof intake.completed_at !== 'string' || Number.isNaN(new Date(intake.completed_at).getTime())) {
+    if (typeof intake.completed_at !== 'string' || !BRAND_KIT_ISO_TIMESTAMP_REGEX.test(intake.completed_at) || Number.isNaN(new Date(intake.completed_at).getTime())) {
       errors.push('intake.completed_at must be an ISO-8601 timestamp');
     }
     if (!Array.isArray(intake.answers) || intake.answers.length !== BRAND_KIT_INTAKE_ANSWER_COUNT) {
       errors.push(`intake.answers must contain exactly ${BRAND_KIT_INTAKE_ANSWER_COUNT} entries`);
     } else {
       intake.answers.forEach((entry, index) => {
-        const positionOk =
-          typeof entry?.question_number === 'number' && Number.isInteger(entry.question_number) && entry.question_number >= 1 && entry.question_number <= 7;
+        // Contract: exactly 7 entries in Paul's fixed question order — the
+        // position field must match its index, closing duplicate/reordered logs.
+        const positionOk = entry?.question_number === index + 1;
         const textOk = typeof entry?.question === 'string' && entry.question.length > 0 && typeof entry?.answer === 'string' && entry.answer.length > 0;
         if (!positionOk || !textOk) {
           errors.push(`intake.answers[${index}] is malformed`);
@@ -143,12 +146,17 @@ export function extractBrandKitEnvelopeCandidates(payload: string): BrandKitEnve
 
   const candidates: BrandKitEnvelope[] = [];
 
-  const consider = (value: unknown): void => {
+  const consider = (value: unknown, depth: number): void => {
+    if (depth > BRAND_KIT_EXTRACTION_MAX_DEPTH) {
+      // Guard against pathological deeply-nested payloads; real Guild event
+      // wrappers are only a few levels deep.
+      return;
+    }
     if (typeof value === 'string') {
       // envelope_json double-encoding: a string that itself parses to an envelope.
       if (value.includes(BRAND_KIT_CONTRACT_ID)) {
         try {
-          consider(JSON.parse(value));
+          consider(JSON.parse(value), depth + 1);
         } catch {
           // Not valid JSON — scan it for embedded objects instead.
           candidates.push(...scanForEnvelopeObjects(value));
@@ -165,19 +173,21 @@ export function extractBrandKitEnvelopeCandidates(payload: string): BrandKitEnve
       return;
     }
     if (typeof record['envelope_json'] === 'string') {
-      consider(record['envelope_json']);
+      consider(record['envelope_json'], depth + 1);
       return;
     }
-    // Recurse one level into common wrapper shapes ({content: ...}, {data: ...}, arrays).
+    // Recurse into wrapper shapes ({content: ...}, {data: ...}, arrays) — full
+    // depth up to the cap; only branches that can contain the contract id are
+    // followed (string branches are pre-filtered by the includes() check).
     for (const child of Object.values(record)) {
       if (child && (typeof child === 'object' || (typeof child === 'string' && child.includes(BRAND_KIT_CONTRACT_ID)))) {
-        consider(child);
+        consider(child, depth + 1);
       }
     }
   };
 
   try {
-    consider(JSON.parse(payload));
+    consider(JSON.parse(payload), 0);
   } catch {
     candidates.push(...scanForEnvelopeObjects(payload));
   }
