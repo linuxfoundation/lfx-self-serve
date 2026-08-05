@@ -152,17 +152,29 @@
               <span class="text-sm text-neutral-950">minutes before the meeting starts</span>
               <i
                 class="fa-light fa-info-circle text-gray-400 cursor-help"
+                tabindex="0"
+                role="img"
+                [attr.aria-label]="emailReminderTooltip"
                 [pTooltip]="emailReminderTooltip"
                 tooltipPosition="right"
-                tooltipStyleClass="text-xs max-w-xs"></i>
+                tooltipStyleClass="text-xs max-w-xs"
+                data-testid="email-reminder-tooltip"></i>
             </div>
+            @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-hours-required-error">Reminder hours is required</p>
+            }
             @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
               <p class="text-sm text-red-600" data-testid="email-reminder-hours-min-error">Reminder must be at least 2 hours before the meeting starts</p>
             }
             @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
               <p class="text-sm text-red-600" data-testid="email-reminder-hours-max-error">Reminder cannot be more than 24 hours before the meeting starts</p>
             }
-            @if (form().get('reminderMinutes')?.errors?.['min'] || form().get('reminderMinutes')?.errors?.['max']) {
+            @if (
+              (form().get('reminderMinutes')?.errors?.['required'] ||
+                form().get('reminderMinutes')?.errors?.['min'] ||
+                form().get('reminderMinutes')?.errors?.['max']) &&
+              form().get('reminderMinutes')?.touched
+            ) {
               <p class="text-sm text-red-600" data-testid="email-reminder-minutes-error">Minutes must be between 0 and 59</p>
             }
           </div>

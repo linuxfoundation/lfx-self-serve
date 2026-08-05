@@ -558,11 +558,12 @@ export class MeetingManageComponent {
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
       auto_email_reminder_enabled: formValue.auto_email_reminder_enabled || false,
-      // Total minutes before start, clamped to the upstream 120-1440 range; omitted when disabled so upstream resets the stored value
+      // Total whole minutes before start, clamped to the upstream 120-1440 range. Omitted when disabled:
+      // ITX resets the stored time to 0 whenever enabled is explicitly false, so no time value is needed.
       auto_email_reminder_time: formValue.auto_email_reminder_enabled
         ? Math.min(
             Math.max(
-              Number(formValue.reminderHours || DEFAULT_EMAIL_REMINDER_HOURS) * 60 + Number(formValue.reminderMinutes || 0),
+              Math.round(Number(formValue.reminderHours || DEFAULT_EMAIL_REMINDER_HOURS) * 60 + Number(formValue.reminderMinutes || 0)),
               MIN_EMAIL_REMINDER_HOURS * 60
             ),
             MAX_EMAIL_REMINDER_TIME
@@ -1026,10 +1027,15 @@ export class MeetingManageComponent {
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
         auto_email_reminder_enabled: new FormControl(false),
         reminderHours: new FormControl({ value: DEFAULT_EMAIL_REMINDER_HOURS, disabled: true }, [
+          Validators.required,
           Validators.min(MIN_EMAIL_REMINDER_HOURS),
           Validators.max(MAX_EMAIL_REMINDER_HOURS),
         ]),
-        reminderMinutes: new FormControl({ value: DEFAULT_EMAIL_REMINDER_MINUTES, disabled: true }, [Validators.min(0), Validators.max(59)]),
+        reminderMinutes: new FormControl({ value: DEFAULT_EMAIL_REMINDER_MINUTES, disabled: true }, [
+          Validators.required,
+          Validators.min(0),
+          Validators.max(59),
+        ]),
 
         // Step 4: Resources & Summary
         attachments: new FormControl<PendingAttachment[]>([]),
