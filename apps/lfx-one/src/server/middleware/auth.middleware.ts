@@ -32,6 +32,10 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public group detail - anonymous access with optional auth for membership enrichment
   { pattern: '/groups/', type: 'ssr', auth: 'optional' },
 
+  // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
+  // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
+  { pattern: /^\/u\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 

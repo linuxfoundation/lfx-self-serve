@@ -16,6 +16,7 @@ export class ToggleComponent {
   public form = input.required<FormGroup>();
   public control = input.required<string>();
   public label = input<string>();
+  public ariaLabel = input<string>();
   public id = input<string>();
   public readonly = input<boolean>(false);
   public styleClass = input<string>();
