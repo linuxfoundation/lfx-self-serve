@@ -57,5 +57,4 @@ export class PublicFoundationGroupsComponent {
 
   protected readonly total: Signal<number> = computed(() => this.directoryData()?.total ?? 0);
   protected readonly foundationName: Signal<string> = computed(() => this.directoryData()?.groups[0]?.context?.foundation_name ?? '');
-  protected readonly foundationLogoUrl: Signal<string | undefined> = computed(() => this.directoryData()?.groups[0]?.context?.foundation_logo_url);
 }

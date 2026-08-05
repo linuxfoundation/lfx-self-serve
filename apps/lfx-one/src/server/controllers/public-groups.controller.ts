@@ -274,6 +274,12 @@ export class PublicGroupsController {
 
   private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
     const BATCH_LIMIT = 10;
+    if (projectUids.length > BATCH_LIMIT) {
+      logger.warning(req, 'fetch_public_committees_for_projects', 'Foundation has more child projects than batch limit; results may be incomplete', {
+        total_projects: projectUids.length,
+        batch_limit: BATCH_LIMIT,
+      });
+    }
     const uids = projectUids.slice(0, BATCH_LIMIT);
     const batches = await Promise.all(
       uids.map((uid) => this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }).catch(() => []))
