@@ -863,7 +863,7 @@ export class CommitteeViewComponent {
           this.accessFinalizing.set(false);
           this.deferredToClient = false;
 
-          return this.readCommitteeToleratingPropagation(committeeId).pipe(
+          return this.readCommitteeToleratingPropagation(committeeId, !this.committee()).pipe(
             finalize(() => {
               // On the server a denial leaves the spinner up: the terminal call belongs to the
               // client, which re-fetches after hydration.
@@ -880,7 +880,12 @@ export class CommitteeViewComponent {
   }
 
   /**
-   * Reads the committee, treating an authorization denial as provisional rather than terminal.
+   * Reads the committee, treating an authorization denial as provisional rather than terminal —
+   * but only on the initial load (`isInitialLoad`). A silent refresh (e.g. after `handleLeaveRequest`
+   * calls `refreshCommittee()`) reaches this same pipeline with a committee already on screen; a 403
+   * there is far more likely a real, deliberate access change than propagation lag, and retrying it
+   * would flash "Finalizing your access" — copy aimed at users who just joined — over an intentional
+   * leave (Cursor Bugbot).
    *
    * Accepting an invite writes the membership before the `committee:{uid}#member` FGA tuple is
    * applied, so a cold arrival can be denied for a few hundred milliseconds. Retrying briefly
@@ -899,7 +904,7 @@ export class CommitteeViewComponent {
    *   `includeRequestsWithAuthHeaders`), so the client always re-fetches after hydration and gets
    *   its own window. Enabling that option would suppress the re-fetch and silently weaken this.
    */
-  private readCommitteeToleratingPropagation(committeeId: string): Observable<Committee | null> {
+  private readCommitteeToleratingPropagation(committeeId: string, isInitialLoad: boolean): Observable<Committee | null> {
     const attemptRead = (retriesLeft: number, deniedBefore: boolean): Observable<Committee | null> =>
       this.committeeService.getCommittee(committeeId).pipe(
         tap((committee) => {
@@ -913,9 +918,9 @@ export class CommitteeViewComponent {
         catchError((err: HttpErrorResponse) => {
           const status = err?.status;
 
-          // Only authorization denials are provisional; everything else keeps its existing
-          // immediate, terminal handling.
-          if (status !== 403) {
+          // Only an authorization denial on the initial load is provisional; everything else
+          // (including a 403 on a silent refresh) keeps its existing immediate, terminal handling.
+          if (status !== 403 || !isInitialLoad) {
             this.applyCommitteeLoadError(status);
             return of(null);
           }
