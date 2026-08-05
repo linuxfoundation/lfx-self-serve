@@ -1,17 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Specific-file imports (not the '../constants' barrel): this file is itself re-exported by the
-// utils barrel, so importing the constants barrel here would add a utils->constants edge on top of
-// the existing constants->utils by-file edges (dashboard-metrics.constants.ts,
-// committees.constants.ts) — avoided defensively, not because a cycle exists today. The concrete
-// hazard `constants/index.spec.ts` guards against is Angular runtime code becoming reachable from
-// the constants barrel: form.utils.ts (`@angular/forms`) and meeting.utils.ts
-// (`@angular/common/http`) both throw a JIT-compiler error outside an Angular context (plain
-// Node/Vitest, or jiti loading apps/lfx-one's tailwind.config.js). This isn't a repo-wide rule
-// every utils file follows — meeting.utils.ts imports the constants barrel directly, since nothing
-// in constants reaches it. The '../interfaces' import below is `import type`, so it can't
-// reintroduce a runtime edge even if a future interface file adds one.
+// Specific-file imports (not the '../constants' barrel): this file is re-exported by the utils
+// barrel, so importing the constants barrel here would add a utils->constants edge — avoided
+// defensively (no cycle exists today; see constants/index.spec.ts for the invariant this protects).
+// The '../interfaces' import below is `import type`, so it can't introduce a runtime edge.
 import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
