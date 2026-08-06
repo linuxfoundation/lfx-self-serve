@@ -87,6 +87,10 @@ export class ProfileVisibilityDrawerComponent {
   // toggles are only meaningful for a public profile). Updated from seedForm and the cascade.
   public readonly isPublic = signal<boolean>(false);
 
+  // True when the public-profile link section should render (profile public + username known). Drives
+  // the connected top/bottom corner + seam styling on the visibility card.
+  public readonly showPublicUrl: Signal<boolean> = computed(() => this.isPublic() && Boolean(this.publicProfileUrl()));
+
   public constructor() {
     // Fires once per drawer open (context is the username, or '' when unknown — both non-null).
     const open$ = toObservable(this.drawer.context).pipe(filter((context): context is string => context !== null));

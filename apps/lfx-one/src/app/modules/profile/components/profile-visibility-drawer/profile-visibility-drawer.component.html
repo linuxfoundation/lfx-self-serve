@@ -29,9 +29,13 @@
       </div>
     } @else {
       <form [formGroup]="visibilityForm" class="flex flex-col gap-8">
-        <!-- Profile visibility card: master Private/Public control + the public-profile link inline -->
-        <div class="flex flex-col gap-4 rounded-lg border border-slate-200 p-4" data-testid="profile-visibility-drawer-master">
-          <div class="flex items-start justify-between gap-4">
+        <!-- Profile visibility card: master control on top, public-profile link as a connected bottom section -->
+        <!-- (banner+table "connected card" pattern: shared seam via rounded-t/rounded-b + -mb-px) -->
+        <div class="flex flex-col" data-testid="profile-visibility-drawer-master">
+          <div
+            class="flex items-start justify-between gap-4 rounded-t-lg border border-slate-200 p-4"
+            [class.rounded-b-lg]="!showPublicUrl()"
+            [class.-mb-px]="showPublicUrl()">
             <div class="flex flex-col gap-0.5">
               <span class="text-sm font-medium text-slate-900">Profile visibility</span>
               <span class="text-xs text-slate-500">When private, your profile is hidden and no sections are exposed.</span>
@@ -45,26 +49,25 @@
               data-testid="profile-visibility-drawer-mode" />
           </div>
 
-          <!-- Public link row — only when the profile is public and the username is known -->
-          @if (isPublic() && publicProfileUrl()) {
-            <div class="flex items-center gap-2" data-testid="profile-visibility-drawer-url">
-              <div class="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                <i class="fa-light fa-link text-sm text-slate-400" aria-hidden="true"></i>
-                <span class="min-w-0 flex-1 truncate text-sm text-slate-700">{{ publicProfileUrl() }}</span>
-                <button
-                  type="button"
-                  (click)="onCopyUrl()"
-                  aria-label="Copy public profile link"
-                  class="text-slate-400 transition-colors hover:text-slate-600"
-                  data-testid="profile-visibility-drawer-copy-button">
-                  <i class="fa-light fa-copy text-sm"></i>
-                </button>
-              </div>
+          <!-- Public link — connected bottom section, only when the profile is public and the username is known -->
+          @if (showPublicUrl()) {
+            <div class="flex items-center gap-2 rounded-b-lg border border-slate-200 bg-slate-50 px-3 py-2.5" data-testid="profile-visibility-drawer-url">
+              <i class="fa-light fa-link text-sm text-slate-400" aria-hidden="true"></i>
+              <span class="min-w-0 flex-1 truncate text-sm text-slate-700">{{ publicProfileUrl() }}</span>
+              <button
+                type="button"
+                (click)="onCopyUrl()"
+                aria-label="Copy public profile link"
+                class="text-slate-400 transition-colors hover:text-slate-600"
+                data-testid="profile-visibility-drawer-copy-button">
+                <i class="fa-light fa-copy text-sm"></i>
+              </button>
+              <span class="h-4 w-px bg-slate-200" aria-hidden="true"></span>
               <a
                 [href]="publicProfileUrl()"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-slate-50"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700"
                 data-testid="profile-visibility-drawer-open-link">
                 <i class="fa-light fa-arrow-up-right-from-square text-sm" aria-hidden="true"></i>
                 Open
