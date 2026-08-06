@@ -5,7 +5,6 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import {
@@ -15,11 +14,11 @@ import {
   PROFILE_VISIBILITY_PUBLIC_DEFAULT_KEYS,
   PROFILE_VISIBILITY_SECTIONS,
 } from '@lfx-one/shared/constants';
-import { ProfileVisibility, ProfileVisibilitySections, ProfileVisibilityUpdateRequest } from '@lfx-one/shared/interfaces';
+import { ProfileVisibility, ProfileVisibilitySaveState, ProfileVisibilitySections, ProfileVisibilityUpdateRequest } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, filter, finalize, of, switchMap } from 'rxjs';
+import { catchError, debounceTime, EMPTY, filter, finalize, merge, of, Subject, switchMap } from 'rxjs';
 
 import { ProfileVisibilityDrawerService } from './profile-visibility-drawer.service';
 
@@ -29,7 +28,7 @@ import { ProfileVisibilityDrawerService } from './profile-visibility-drawer.serv
  */
 @Component({
   selector: 'lfx-profile-visibility-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, ToggleComponent, ButtonComponent, SelectButtonComponent],
+  imports: [DrawerModule, ReactiveFormsModule, ToggleComponent, SelectButtonComponent],
   templateUrl: './profile-visibility-drawer.component.html',
   styleUrl: './profile-visibility-drawer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -60,8 +59,19 @@ export class ProfileVisibilityDrawerComponent {
 
   // Form/loading state
   public readonly loadingVisibility = signal<boolean>(true);
-  public readonly saving = signal<boolean>(false);
-  public readonly hasChanges = signal<boolean>(false);
+
+  // Auto-save status for the inline indicator (there is no explicit Save button — changes persist on
+  // change, debounced, and are flushed when the drawer closes).
+  public readonly saveState = signal<ProfileVisibilitySaveState>('idle');
+
+  // Debounce window before an auto-save fires; coalesces rapid toggles (and the master cascade burst).
+  private readonly autosaveDebounceMs = 600;
+
+  // True when the form has unpersisted changes. Gates auto-save and the close-time flush.
+  private dirty = false;
+
+  // Emits to force an immediate save (bypassing the debounce) when the drawer is dismissed.
+  private readonly flush$ = new Subject<void>();
 
   // The public-profile URL for the copy/open row. Empty on the server or when the username is
   // unknown, which hides the row.
@@ -87,6 +97,7 @@ export class ProfileVisibilityDrawerComponent {
       .pipe(
         switchMap(() => {
           this.loadingVisibility.set(true);
+          this.saveState.set('idle');
           return this.userService.getProfileVisibility().pipe(
             catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load visibility settings.' });
@@ -100,53 +111,15 @@ export class ProfileVisibilityDrawerComponent {
       .subscribe((visibility) => this.seedForm(visibility));
 
     this.wireCascade();
+    this.wireAutoSave();
   }
 
   public onVisibleChange(visible: boolean): void {
-    // Don't let a dismissal (close icon, backdrop, Esc) close the drawer mid-save.
-    if (!visible && !this.saving()) {
+    if (!visible) {
+      // Flush any pending (debounced) change before closing so nothing is lost.
+      this.flush$.next();
       this.drawer.close();
     }
-  }
-
-  public onCancel(): void {
-    this.drawer.close();
-  }
-
-  public onSubmit(): void {
-    if (this.saving()) {
-      return;
-    }
-
-    const raw = this.visibilityForm.getRawValue();
-    const sections = PROFILE_VISIBILITY_KEYS.reduce((acc, key) => {
-      acc[key] = Boolean(raw[key]);
-      return acc;
-    }, {} as ProfileVisibilitySections);
-
-    const payload: ProfileVisibilityUpdateRequest = {
-      isPublic: Boolean(raw.isPublic),
-      sections,
-    };
-
-    this.saving.set(true);
-    this.userService
-      .updateProfileVisibility(payload)
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.saving.set(false))
-      )
-      .subscribe({
-        next: (visibility) => {
-          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Visibility settings updated successfully!' });
-          // Re-seed from the persisted response, resetting the pristine/changed baseline, then close.
-          this.seedForm(visibility);
-          this.drawer.close();
-        },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update visibility settings. Please try again.' });
-        },
-      });
   }
 
   public async onCopyUrl(): Promise<void> {
@@ -177,9 +150,19 @@ export class ProfileVisibilityDrawerComponent {
     return this.fb.group(controls);
   }
 
+  /** Resolve the current form into the update payload the BFF persists (raw includes disabled keys). */
+  private buildPayload(): ProfileVisibilityUpdateRequest {
+    const raw = this.visibilityForm.getRawValue();
+    const sections = PROFILE_VISIBILITY_KEYS.reduce((acc, key) => {
+      acc[key] = Boolean(raw[key]);
+      return acc;
+    }, {} as ProfileVisibilitySections);
+    return { isPublic: Boolean(raw.isPublic), sections };
+  }
+
   /**
    * Seed the form from the fetched (or saved) visibility, or all-private defaults on load failure.
-   * Resets the pristine/changed baseline and aligns section-control enabled state to the flag.
+   * Clears the dirty flag (emitEvent:false, so it never re-triggers a save) and aligns enabled state.
    */
   private seedForm(visibility: ProfileVisibility | null): void {
     const isPublic = visibility?.isPublic ?? false;
@@ -195,13 +178,46 @@ export class ProfileVisibilityDrawerComponent {
     this.visibilityForm.patchValue(patch, { emitEvent: false });
     this.setSectionsEnabled(isPublic);
     this.isPublic.set(isPublic);
-    this.visibilityForm.markAsPristine();
-    this.hasChanges.set(false);
+    this.dirty = false;
+  }
+
+  /**
+   * Debounced auto-save: any user change marks the form dirty; a debounced tick (or the close-time
+   * flush) persists the resolved map. switchMap cancels an in-flight save when a newer change lands.
+   */
+  private wireAutoSave(): void {
+    this.visibilityForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.dirty = true;
+    });
+
+    merge(this.visibilityForm.valueChanges.pipe(debounceTime(this.autosaveDebounceMs)), this.flush$)
+      .pipe(
+        filter(() => this.dirty && !this.loadingVisibility()),
+        switchMap(() => {
+          this.dirty = false;
+          this.saveState.set('saving');
+          return this.userService.updateProfileVisibility(this.buildPayload()).pipe(
+            catchError(() => {
+              // Re-arm dirty so the next change (or a close flush) retries the failed save.
+              this.dirty = true;
+              this.saveState.set('error');
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
+              return EMPTY;
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((visibility) => {
+        // Re-seed from the persisted response (syncs preferenceId) without re-triggering a save.
+        this.seedForm(visibility);
+        this.saveState.set('saved');
+      });
   }
 
   /**
    * Client-side cascade: master off zeroes+disables all sections, on enables them + the basic group;
-   * `basic`↔children mirror via OR. emitEvent:false writes avoid feedback loops.
+   * `basic`↔children mirror via OR. emitEvent:false writes avoid feedback loops (and extra saves).
    */
   private wireCascade(): void {
     const control = (key: string) => this.visibilityForm.get(key);
@@ -221,7 +237,6 @@ export class ProfileVisibilityDrawerComponent {
           }
           this.setSectionsEnabled(false);
         }
-        this.hasChanges.set(true);
       });
 
     control('basic')
@@ -229,7 +244,6 @@ export class ProfileVisibilityDrawerComponent {
       .subscribe((value: boolean) => {
         control('aboutMe')?.setValue(value, { emitEvent: false });
         control('personalInfo')?.setValue(value, { emitEvent: false });
-        this.hasChanges.set(true);
       });
 
     for (const childKey of ['aboutMe', 'personalInfo']) {
@@ -238,15 +252,7 @@ export class ProfileVisibilityDrawerComponent {
         .subscribe(() => {
           const anyChildOn = Boolean(control('aboutMe')?.value) || Boolean(control('personalInfo')?.value);
           control('basic')?.setValue(anyChildOn, { emitEvent: false });
-          this.hasChanges.set(true);
         });
-    }
-
-    // Any remaining (standalone) section toggle just marks the form as changed.
-    for (const section of this.activitySections) {
-      control(section.key)
-        ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => this.hasChanges.set(true));
     }
   }
 

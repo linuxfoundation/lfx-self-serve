@@ -25,6 +25,9 @@ export interface ProfileVisibilityUpdateRequest {
   sections: ProfileVisibilitySections;
 }
 
+/** Drawer auto-save status, driving the inline "Saving… / Saved" indicator (no explicit Save button). */
+export type ProfileVisibilitySaveState = 'idle' | 'saving' | 'saved' | 'error';
+
 /**
  * A single user-service preference record. PascalCase matches the upstream `preferences` contract
  * (casing must be preserved). `Value` is a string — for `Type: 'json'` it holds stringified JSON.

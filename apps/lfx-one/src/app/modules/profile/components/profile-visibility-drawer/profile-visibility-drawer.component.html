@@ -7,9 +7,9 @@
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
-  [showCloseIcon]="!saving()"
-  [dismissible]="!saving()"
-  [closeOnEscape]="!saving()"
+  [showCloseIcon]="true"
+  [dismissible]="true"
+  [closeOnEscape]="true"
   styleClass="lg:w-[560px] md:w-[70%] sm:w-[90%] w-full"
   data-testid="profile-visibility-drawer">
   <ng-template #header>
@@ -28,7 +28,7 @@
         <span>Loading visibility settings...</span>
       </div>
     } @else {
-      <form [formGroup]="visibilityForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+      <form [formGroup]="visibilityForm" class="flex flex-col gap-8">
         <!-- Profile visibility card: master Private/Public control + the public-profile link inline -->
         <div class="flex flex-col gap-4 rounded-lg border border-slate-200 p-4" data-testid="profile-visibility-drawer-master">
           <div class="flex items-start justify-between gap-4">
@@ -144,25 +144,25 @@
           }
         </div>
 
-        <!-- Actions -->
-        <div class="flex justify-end gap-3 border-t border-slate-200 pt-6 mt-2" data-testid="profile-visibility-drawer-actions">
-          <lfx-button
-            type="button"
-            variant="outlined"
-            label="Cancel"
-            (onClick)="onCancel()"
-            [disabled]="saving()"
-            size="small"
-            data-testid="profile-visibility-drawer-cancel-button" />
-          <lfx-button
-            type="submit"
-            severity="info"
-            [label]="saving() ? 'Saving...' : 'Save Changes'"
-            [loading]="saving()"
-            [disabled]="!hasChanges() || saving()"
-            size="small"
-            data-testid="profile-visibility-drawer-save-button" />
-        </div>
+        <!-- Auto-save status (changes persist on change; there is no explicit Save button) -->
+        @if (saveState() !== 'idle') {
+          <div class="flex items-center gap-2 text-xs" data-testid="profile-visibility-drawer-status">
+            @switch (saveState()) {
+              @case ('saving') {
+                <i class="pi pi-spinner pi-spin text-slate-400"></i>
+                <span class="text-slate-500">Saving changes…</span>
+              }
+              @case ('saved') {
+                <i class="fa-light fa-circle-check text-emerald-500" aria-hidden="true"></i>
+                <span class="text-slate-500">All changes saved</span>
+              }
+              @case ('error') {
+                <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+                <span class="text-red-600">Couldn't save changes</span>
+              }
+            }
+          </div>
+        }
       </form>
     }
   </div>
