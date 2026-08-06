@@ -484,4 +484,10 @@ export const routes: Routes = [
     path: 'auth-error',
     loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
   },
+  // Generic 404 — catches all unrecognized URLs and renders a branded not-found page. Must be
+  // last so it never shadows real routes. Outside the auth guard so anonymous users see it too.
+  {
+    path: '**',
+    loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
+  },
 ];
