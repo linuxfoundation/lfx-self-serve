@@ -542,6 +542,9 @@ export class CommitteeViewComponent {
         if (!result?.organization) {
           return;
         }
+        if (this.committeeId() !== committee.uid) {
+          return;
+        }
         organization = result.organization;
       }
       this.joiningOrLeaving.set(true);
@@ -567,6 +570,9 @@ export class CommitteeViewComponent {
         this.resolvingOrg.set(true);
         const result = await this.openOrganizationDialog(committee.name).finally(() => this.resolvingOrg.set(false));
         if (!result?.organization) {
+          return;
+        }
+        if (this.committeeId() !== committee.uid) {
           return;
         }
         organization = result.organization;
