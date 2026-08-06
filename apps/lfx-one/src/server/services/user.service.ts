@@ -1214,7 +1214,9 @@ export class UserService {
 
     if (raw && typeof raw === 'object') {
       for (const key of PROFILE_VISIBILITY_KEYS) {
-        sections[key] = Boolean(raw[key]);
+        // Accept only strict booleans; any other value (a stringified "false", {}, …) falls back to
+        // the all-false default so a malformed payload fails closed rather than flipping a section on.
+        sections[key] = typeof raw[key] === 'boolean' ? (raw[key] as boolean) : sections[key];
       }
     }
 
