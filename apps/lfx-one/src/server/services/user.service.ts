@@ -7,8 +7,12 @@ import {
   NATS_CONFIG,
   PENDING_ACTION_SEVERITY,
   PROFILE_BIO_MAX_LENGTH,
+  PROFILE_VISIBILITY_DEFAULTS,
+  PROFILE_VISIBILITY_KEYS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   TSHIRT_SIZES,
+  VISIBILITY_PREFERENCE_APP_NAME,
+  VISIBILITY_PREFERENCE_NAME,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
 import {
@@ -25,6 +29,9 @@ import {
   PastMeetingParticipant,
   PendingActionItem,
   PendingInvitation,
+  ProfileVisibility,
+  ProfileVisibilitySections,
+  ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
@@ -33,6 +40,8 @@ import {
   UserMetadataUpdateResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
+  UserServicePreference,
+  UserServicePreferenceList,
   Vote,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -47,6 +56,8 @@ import {
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
+import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -1028,6 +1039,157 @@ export class UserService {
     logger.debug(req, 'get_api_gateway_profile', 'API Gateway profile received', { salesforce_id: Boolean(profile.ID) });
 
     return profile;
+  }
+
+  /**
+   * Reads the master `IsPublic` flag (from the API Gateway profile) plus the section `visibility`
+   * preference. Missing/unknown keys fail closed to defaults; `preferenceId` is null until first save.
+   */
+  public async getProfileVisibility(req: Request): Promise<ProfileVisibility> {
+    const profile = await this.getApiGatewayProfile(req);
+    const sfid = profile.ID;
+
+    if (!sfid) {
+      throw new MicroserviceError('User Salesforce ID not available', 502, 'API_GATEWAY_INVALID_RESPONSE', {
+        operation: 'get_profile_visibility',
+        service: 'user_service',
+      });
+    }
+
+    const pref = await this.fetchVisibilityPreference(req, sfid, 'get_profile_visibility');
+
+    return {
+      isPublic: Boolean(profile.IsPublic),
+      sections: this.parseVisibilitySections(pref?.Value),
+      preferenceId: pref?.ID ?? null,
+    };
+  }
+
+  /**
+   * Updates visibility: patches `IsPublic` only when changed, then upserts the section `visibility`
+   * preference. The client sends the resolved map (cascade is client-side); the server sanitizes it.
+   */
+  public async updateProfileVisibility(req: Request, body: ProfileVisibilityUpdateRequest): Promise<ProfileVisibility> {
+    const profile = await this.getApiGatewayProfile(req);
+    const sfid = profile.ID;
+
+    if (!sfid) {
+      throw new MicroserviceError('User Salesforce ID not available', 502, 'API_GATEWAY_INVALID_RESPONSE', {
+        operation: 'update_profile_visibility',
+        service: 'user_service',
+      });
+    }
+
+    const baseUrl = getUserServiceBaseUrl('update_profile_visibility', 'user_service');
+    const sections = this.sanitizeVisibilitySections(body?.sections);
+    const nextIsPublic = Boolean(body?.isPublic);
+
+    if (nextIsPublic !== Boolean(profile.IsPublic)) {
+      logger.debug(req, 'update_profile_visibility', 'Updating IsPublic flag', { is_public: nextIsPublic });
+      await gatewayFetch<unknown>(req, `${baseUrl}/me`, {
+        operation: 'update_profile_visibility',
+        service: 'user_service',
+        errorMessage: 'Profile public flag update failed',
+        errorCode: 'PROFILE_ISPUBLIC_UPDATE_FAILED',
+        method: 'PATCH',
+        body: { IsPublic: nextIsPublic, AccountID: profile.Account?.ID },
+      });
+    }
+
+    // Read-first upsert: only the preference's Value changes; AppName/Name/Type/System are preserved.
+    const existing = await this.fetchVisibilityPreference(req, sfid, 'update_profile_visibility');
+    const value = JSON.stringify(sections);
+    let preferenceId = existing?.ID ?? null;
+
+    if (existing) {
+      await gatewayFetch<unknown>(req, `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences/${encodeURIComponent(existing.ID)}`, {
+        operation: 'update_profile_visibility',
+        service: 'user_service',
+        errorMessage: 'Visibility preference update failed',
+        errorCode: 'VISIBILITY_PREFERENCE_UPDATE_FAILED',
+        method: 'PATCH',
+        body: { AppName: existing.AppName, Name: existing.Name, Type: existing.Type, System: existing.System, Value: value },
+      });
+    } else {
+      const created = await gatewayFetch<UserServicePreference>(req, `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences`, {
+        operation: 'update_profile_visibility',
+        service: 'user_service',
+        errorMessage: 'Visibility preference creation failed',
+        errorCode: 'VISIBILITY_PREFERENCE_CREATE_FAILED',
+        method: 'POST',
+        body: { AppName: VISIBILITY_PREFERENCE_APP_NAME, Name: VISIBILITY_PREFERENCE_NAME, Type: 'json', System: false, Value: value },
+      });
+      preferenceId = created?.ID ?? null;
+    }
+
+    return { isPublic: nextIsPublic, sections, preferenceId };
+  }
+
+  /**
+   * Fetches the user's `visibility` preference record, or null when none exists. Filters by name
+   * upstream and defensively re-checks the name on the returned rows.
+   */
+  private async fetchVisibilityPreference(req: Request, sfid: string, operation: string): Promise<UserServicePreference | null> {
+    const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
+    const filter = encodeURIComponent(`Name eq '${VISIBILITY_PREFERENCE_NAME}'`);
+    const url = `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences?$filter=${filter}`;
+
+    logger.debug(req, operation, 'Fetching visibility preference');
+
+    const list = await gatewayFetch<UserServicePreferenceList>(req, url, {
+      operation,
+      service: 'user_service',
+      errorMessage: 'Visibility preference fetch failed',
+      errorCode: 'VISIBILITY_PREFERENCE_FETCH_FAILED',
+    });
+
+    return list?.Data?.find((p) => p.Name === VISIBILITY_PREFERENCE_NAME) ?? null;
+  }
+
+  /**
+   * Parses the stored preference `Value` (stringified JSON boolean map) into a full section map,
+   * merged over the all-false defaults. A missing or malformed value fails closed to defaults.
+   */
+  private parseVisibilitySections(rawValue: string | undefined): ProfileVisibilitySections {
+    const sections: ProfileVisibilitySections = { ...PROFILE_VISIBILITY_DEFAULTS };
+
+    if (!rawValue) {
+      return sections;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawValue);
+    } catch {
+      return sections;
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const map = parsed as Record<string, unknown>;
+      for (const key of PROFILE_VISIBILITY_KEYS) {
+        if (typeof map[key] === 'boolean') {
+          sections[key] = map[key] as boolean;
+        }
+      }
+    }
+
+    return sections;
+  }
+
+  /**
+   * Coerces a client-supplied section map to the known keys as strict booleans, filling any missing
+   * key from the all-false defaults. Unknown keys are dropped.
+   */
+  private sanitizeVisibilitySections(raw: Partial<ProfileVisibilitySections> | undefined): ProfileVisibilitySections {
+    const sections: ProfileVisibilitySections = { ...PROFILE_VISIBILITY_DEFAULTS };
+
+    if (raw && typeof raw === 'object') {
+      for (const key of PROFILE_VISIBILITY_KEYS) {
+        sections[key] = Boolean(raw[key]);
+      }
+    }
+
+    return sections;
   }
 
   /**
