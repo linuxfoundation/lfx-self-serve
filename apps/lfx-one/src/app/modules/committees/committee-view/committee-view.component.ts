@@ -62,7 +62,23 @@ import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, firstValueFrom, map, of, startWith, switchMap, take, tap, timer } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  exhaustMap,
+  filter,
+  finalize,
+  firstValueFrom,
+  map,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -788,7 +804,11 @@ export class CommitteeViewComponent {
   private async openOrganizationDialog(committeeName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
     // Pre-fill from the user's profile work experiences — same pre-resolution the invite
     // accept flow uses so the user doesn't have to re-enter an org they've already set.
-    const prefillOrg = await firstValueFrom(this.invitationAcceptFlow.resolveCurrentEmployer());
+    // takeUntilDestroyed cancels the observable if the component is destroyed while the
+    // profile/domain lookup (≤2 s) is still in flight, preventing dangling subscriptions.
+    const prefillOrg = await firstValueFrom(this.invitationAcceptFlow.resolveCurrentEmployer().pipe(takeUntilDestroyed(this.destroyRef)), {
+      defaultValue: null,
+    });
 
     const ref = this.dialogService.open(AcceptInviteOrganizationDialogComponent, {
       header: 'Confirm Organization',

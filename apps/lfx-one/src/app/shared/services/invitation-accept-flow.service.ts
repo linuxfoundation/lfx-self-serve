@@ -41,14 +41,16 @@ export class InvitationAcceptFlowService {
       return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, { fromLfidInvite: context.fromLfidInvite });
     }
 
-    // Resolve the pre-fill org: use the invite's org when present, otherwise fall back to
-    // the user's current employer from their profile (fails silently — dialog opens blank).
+    // Resolve the pre-fill org:
+    // - Invite supplied an org → pre-resolve its domain (may be missing id/website).
+    // - No invite org → employer fallback via resolveCurrentEmployer(), which already calls
+    //   resolveOrgDomain() internally; skip preResolveOrganization to avoid a duplicate
+    //   CDP lookup that doubles latency and can repeat a find-or-create POST.
     const contextReady$: Observable<InvitationAcceptContext> = context.organization
-      ? of(context)
+      ? of(context).pipe(switchMap((ctx) => this.preResolveOrganization(ctx)))
       : this.resolveCurrentEmployer().pipe(map((org) => ({ ...context, organization: org ?? undefined })));
 
     return contextReady$.pipe(
-      switchMap((ctx) => this.preResolveOrganization(ctx)),
       switchMap((ctx) =>
         from(this.openOrganizationDialog(ctx)).pipe(
           switchMap((result) => {

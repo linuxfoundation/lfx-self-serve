@@ -43,13 +43,12 @@ export class AcceptInviteOrganizationDialogComponent {
   private readonly formValue = this.initFormValue();
   private readonly urlStatus = signal<FormControlStatus>(this.urlControl.status);
 
+  // URL validators must stay active whenever an org name is present — not just while the
+  // URL field is empty — because clearing them on the first URL keystroke allowed any
+  // non-empty string (e.g. "not-a-url") to pass urlStatus as VALID and enable Confirm.
   protected readonly isNewOrg = computed(() => {
     const value = this.formValue();
-    // URL is always required because organization_id is stripped before the payload reaches
-    // committee-service — the server must receive either an SFID (which we don't have) or
-    // name + domain. Treat any org without a confirmed website as requiring URL input.
-    const hasUrl = !!(value?.organization_url ?? '').trim();
-    return !hasUrl && !!value?.organization?.trim();
+    return !!value?.organization?.trim();
   });
 
   private readonly orgInvalid = computed(() => {
