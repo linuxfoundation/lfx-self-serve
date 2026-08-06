@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { BrandReachPlatformType, DashboardDrawerType, MarketingActionType } from '../interfaces';
-import { formatCurrency, formatNumber, hexToRgba } from '../utils';
+// By-file imports, not the '../utils' barrel — see constants/index.spec.ts for the invariant.
+import { hexToRgba } from '../utils/color.utils';
+import { formatCurrency, formatNumber } from '../utils/number.utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
 
@@ -768,7 +770,7 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
 /**
  * Build ED Evolution dashboard cards from live API data.
  * 6 North Star (Events, Members, Adoption, Email, Paid Media, Attribution)
- * + 2 Brand (Social, Sentiment) + Flywheel.
+ * + 3 Brand (Social, Web, Sentiment) + Flywheel.
  * Member Retention is merged into the Members drawer.
  *
  * Sparkline color semantics:
@@ -799,9 +801,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   return [
     // Card order is the display order in the Marketing Overview carousel, and the
     // filter pills preserve it within each category — so this array is the single
-    // source of truth for sequence. North Star cards lead (Events → Members →
-    // Adoption), then Social, then Campaign Performance, then the remaining Brand
-    // and Flywheel cards.
+    // source of truth for sequence: Events → Members → Adoption → Social → Web →
+    // Email → Paid Media → Attribution → Sentiment → Flywheel. Note the display
+    // order interleaves categories — Social and Web (Brand) sit between the North
+    // Star cards and Email/Paid Media/Attribution, and Sentiment (Brand) trails
+    // them — so this is not a category-grouped list.
     // === North Star ===
     {
       title: 'Events',
@@ -875,35 +879,49 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'brand',
       testId: 'ed-evo-brand-reach',
-      description: 'Social followers across all platforms and rolling 30-day website sessions.',
-      customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          'Social Followers',
-          formatNumber(brandReach.totalSocialFollowers),
-          // No historical follower series available — leave the sparkline empty rather than reuse
-          // website-session data (they are different metrics).
-          [],
-          lfxColors.blue[500],
-          formatMomChange(brandReach.changePercentage),
-          normalizeTrend(brandReach.changePercentage, brandReach.trend)
-        ),
-        protoDualSignal(
-          'Sessions (30d)',
-          formatNumber(brandReach.totalMonthlySessions),
-          brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : [],
-          lfxColors.violet[500],
-          formatMomChange(brandReach.sessionMomChangePct),
-          normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down')
-        ),
-      ],
-      // weeklyTrend only holds weeks WITH rows, so its length is not the
-      // reporting window — the endpoint covers a fixed six-month range, so
-      // the window is labeled directly rather than estimated from row count.
-      caption: brandReach.weeklyTrend.length > 0 ? `${brandReach.activePlatforms} platforms · Last 6 months` : `${brandReach.activePlatforms} platforms`,
-      tooltipText:
-        'Social followers across all platforms (stock) and rolling 30-day website sessions (flow). Shown separately — these are different metric types.',
+      description: 'Social followers across all platforms.',
+      value: formatNumber(brandReach.totalSocialFollowers),
+      changePercentage: formatMomChange(brandReach.changePercentage),
+      trend: normalizeTrend(brandReach.changePercentage, brandReach.trend),
+      subtitle: `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}`,
+      // No historical follower series available. flatSparklineData renders a nearly
+      // flat line at the current total (a constant array collapses Chart.js's Y range
+      // and hides the line entirely) — it is a placeholder, not a trend. Website
+      // sessions are deliberately not reused here: different metric, different card.
+      chartData: protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText: 'Social followers across all platforms, with month-over-month change.',
       drawerType: DashboardDrawerType.BrandReach,
+    } as DashboardMetricCard,
+
+    // === Web ===
+    // Website sessions were previously the second dual-signal on the Social card.
+    // Split out so followers (a stock) and sessions (a flow) each get their own card
+    // rather than sharing one, and so web activity gets a dedicated drill-down.
+    {
+      title: 'Web',
+      icon: 'fa-light fa-globe',
+      chartType: 'line',
+      category: 'brand',
+      testId: 'ed-evo-web-sessions',
+      description: 'Rolling 30-day sessions across foundation web properties.',
+      value: formatNumber(brandReach.totalMonthlySessions),
+      changePercentage: formatMomChange(brandReach.sessionMomChangePct),
+      trend: normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down'),
+      // The value is a rolling 30-day total; the sparkline is a separate weekly series
+      // over a fixed six-month range. Label them separately so the 30-day figure is not
+      // read as a six-month number. weeklyTrend only holds weeks WITH rows, so its
+      // length is not the reporting window and the window is labeled directly.
+      // When weeklyTrend is empty, flatSparklineData renders a placeholder at the
+      // current total (see the Social card above), not a trend.
+      subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)',
+      chartData: protoSparkline(
+        brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
+        lfxColors.violet[500]
+      ),
+      chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+      tooltipText: 'Rolling 30-day website sessions across foundation web properties, with month-over-month change.',
+      drawerType: DashboardDrawerType.MarketingWebsiteVisits,
     } as DashboardMetricCard,
 
     // === Email ===

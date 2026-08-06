@@ -10,6 +10,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
@@ -123,6 +124,15 @@ interface CommitteeDocumentQueryResult {
  * Service for handling committee business logic
  */
 export class CommitteeService {
+  /**
+   * Budget for the post-acceptance membership confirmation. `pollEndpoint` probes immediately and
+   * sleeps only between attempts, so an already-propagated tuple costs one round trip and the
+   * worst case adds (attempts - 1) * delay ≈ 2 s. Deliberately shorter than a guarantee would
+   * need: anything slower is absorbed by the committee view rather than by holding this open.
+   */
+  private static readonly membershipConfirmMaxAttempts = 5;
+  private static readonly membershipConfirmDelayMs = 500;
+
   private accessCheckService: AccessCheckService;
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
@@ -883,6 +893,11 @@ export class CommitteeService {
             id: invite.organization?.id?.trim() || null,
             website: invite.organization?.website?.trim() || null,
           };
+          // No confirmMembership here, deliberately. This legacy path already sleeps 3 s before
+          // every attempt waiting on FGA (InviteController.fgaPropagationDelayMs) and can accept
+          // several invites per call, so a per-invite wait would compound to ~11-15 s for the
+          // least benefit — the existing sleeps have usually already covered propagation. Its
+          // tail is covered by the committee view's initial-load retry like any other arrival.
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: orgPayload });
         } else {
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
@@ -907,8 +922,24 @@ export class CommitteeService {
    * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
    * invitee-authenticated (committee-service enforces principal == invitee_email).
    */
-  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string, body?: AcceptCommitteeInviteRequest): Promise<void> {
+  public async acceptCommitteeInvite(
+    req: Request,
+    committeeId: string,
+    inviteId: string,
+    body?: AcceptCommitteeInviteRequest,
+    options: {
+      /** When true, wait briefly for the new membership to become readable before returning.
+       *  Enable only where the caller navigates the user to the committee page on success —
+       *  anywhere else it just delays a success toast. Fails open: the committee view's own
+       *  initial-load retry, not this wait, is what guarantees the user never lands on an error. */
+      confirmMembership?: boolean;
+    } = {}
+  ): Promise<void> {
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST', {}, body ?? {});
+
+    if (options.confirmMembership) {
+      await this.waitForCommitteeMembership(req, committeeId);
+    }
 
     logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
       committee_uid: committeeId,
@@ -1103,8 +1134,9 @@ export class CommitteeService {
 
   // ── Join / Leave Methods ────────────────────────────────────────────────────
 
-  public async joinCommittee(req: Request, committeeId: string): Promise<CommitteeMember> {
-    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST');
+  public async joinCommittee(req: Request, committeeId: string, organization?: CommitteeOrganizationReference): Promise<CommitteeMember> {
+    const body = organization ? { organization } : undefined;
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST', {}, body);
   }
 
   public async leaveCommittee(req: Request, committeeId: string): Promise<void> {
@@ -1526,6 +1558,41 @@ export class CommitteeService {
         path: `/committees/${committeeId}/applications`,
       });
     }
+  }
+
+  /**
+   * Waits, briefly and best-effort, for the caller's new committee membership to be readable.
+   *
+   * Probes the same read the committee detail page depends on rather than a separate
+   * authorization service: a different service evaluating a correlated decision behind its own
+   * cache can report ready while the page's own read still fails. Membership role populated is a
+   * stronger signal than a bare 200, and it is the right condition *here* because this runs
+   * immediately after a known user accepted a known invite, so the role is guaranteed to arrive.
+   * (The committee view's retry deliberately does not require it — it serves any reader, including
+   * non-members who never get a role.)
+   *
+   * Never throws: `pollEndpoint` swallows a `pollFn` throw and returns false, so acceptance is
+   * reported successful whether the membership showed up, the budget ran out, or the probe failed.
+   */
+  private async waitForCommitteeMembership(req: Request, committeeId: string): Promise<void> {
+    await pollEndpoint({
+      req,
+      operation: 'accept_committee_invite_membership_poll',
+      maxRetries: CommitteeService.membershipConfirmMaxAttempts,
+      retryDelayMs: CommitteeService.membershipConfirmDelayMs,
+      pollFn: async () => {
+        try {
+          const committee = await this.getCommitteeById(req, committeeId, { includeMembership: true });
+          return !!committee?.my_role;
+        } catch (error: any) {
+          // Still propagating — not an error, just not ready yet.
+          const is403 = error?.statusCode === 403 || error?.status === 403;
+          if (is403) return false;
+          throw error;
+        }
+      },
+      metadata: { committee_uid: committeeId },
+    });
   }
 
   /**

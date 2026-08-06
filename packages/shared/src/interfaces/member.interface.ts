@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
-import { CommitteePermissionLevel } from './committee.interface';
+import { CommitteeInvite, CommitteePermissionLevel } from './committee.interface';
 
 /**
  * Committee member entity with complete profile and role information
@@ -185,3 +185,10 @@ export interface MemberPendingChanges {
   /** Member UIDs to be deleted via API */
   toDelete: string[];
 }
+
+/**
+ * Unified table row for the committee Members list.
+ * Member rows carry a `CommitteeMember`; invite rows carry a `CommitteeInvite`.
+ * The `rowType` discriminant drives conditional template rendering without nested ternaries.
+ */
+export type CommitteeTableRow = { rowType: 'member'; data: CommitteeMember } | { rowType: 'invite'; data: CommitteeInvite };

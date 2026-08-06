@@ -61,6 +61,7 @@ snowflake.log
 .claude/tasks
 .claude/settings.local.json
 .claude/*.lock
+.claude/worktrees/
 
 # Serena
 .serena/
