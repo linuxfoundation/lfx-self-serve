@@ -256,48 +256,8 @@ describe('WeeklyBriefService', () => {
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/current', 'GET');
     });
 
-    it('getCurrentBrief maps upstream error_reason onto the envelope (LFXV2-3000)', async () => {
+    it('getCurrentBrief forwards a real upstream error_reason to the client unchanged (LFXV2-3000)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', error_reason: 'no_sources' }, throttle: null });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.brief?.error_reason).toBe('no_sources');
-    });
-
-    it('getCurrentBrief ignores an unpinned `reason` field — only `error_reason` is normalized', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', reason: 'no_sources' }, throttle: null });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.brief?.error_reason).toBeUndefined();
-    });
-
-    it('getCurrentBrief leaves error_reason undefined when upstream sends no error_reason field', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error' }, throttle: null });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.brief?.error_reason).toBeUndefined();
-    });
-
-    it('getCurrentBrief ignores a non-string error_reason value', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', error_reason: 42 }, throttle: null });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.brief?.error_reason).toBeUndefined();
-    });
-
-    it('getCurrentBrief does not normalize a `reason` field on a non-error state (only error_reason on state: error is normalized)', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated', reason: 'no_sources' }, throttle: null });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.brief?.error_reason).toBeUndefined();
-    });
-
-    it('getCurrentBrief leaves an already-present error_reason untouched on a non-error state — normalization only runs on state: error', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated', error_reason: 'no_sources' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
@@ -322,15 +282,6 @@ describe('WeeklyBriefService', () => {
       expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/generate', 'POST', undefined, {
         force: true,
       });
-    });
-
-    it('generateBrief maps error_reason onto the 202 envelope too, in case upstream ever returns a terminal error there instead of `generating` (LFXV2-3000)', async () => {
-      const data = { brief: { uid: 'b1', state: 'error', error_reason: 'no_sources' }, throttle: {} };
-      proxyRequestWithResponse.mockResolvedValueOnce({ status: 202, data, statusText: 'Accepted', headers: {} });
-
-      const result = await service.generateBrief(req, 'committee-1', { force: true });
-
-      expect(result.data.brief?.error_reason).toBe('no_sources');
     });
 
     it('generateBrief forwards the upstream 429 throttle body instead of dropping it', async () => {

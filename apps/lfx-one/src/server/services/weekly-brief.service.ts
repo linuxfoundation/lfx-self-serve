@@ -47,20 +47,6 @@ function briefTextToHtml(text: string): string {
 }
 
 /**
- * Normalizes committee-service's error-reason onto the envelope. `error_reason` is a
- * pinned part of the upstream contract (LFXV2-2989), present only when `state` is
- * 'error' — known values today are "no_sources" and "ai_error" — so this is live
- * against real traffic, not just the WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID mock
- * sentinel.
- */
-function extractBriefErrorReason(brief: unknown): string | undefined {
-  if (!brief || typeof brief !== 'object') return undefined;
-  const raw = brief as Record<string, unknown>;
-  const value = raw['error_reason'];
-  return typeof value === 'string' ? value : undefined;
-}
-
-/**
  * Returns the ISO timestamp for the upcoming Sunday at 00:00:00 UTC. Mirrors upstream's
  * `NextWindowReset()` — the advisory `window_resets_at` value surfaced in throttle bodies
  * and 429s. This is a display timestamp, not the actual counter-reset boundary: upstream
@@ -207,16 +193,12 @@ export class WeeklyBriefService {
     }
 
     logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-    const response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+    return this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
       'GET'
     );
-    if (response.brief?.state === 'error') {
-      response.brief.error_reason = extractBriefErrorReason(response.brief);
-    }
-    return response;
   }
 
   /**
@@ -279,15 +261,6 @@ export class WeeklyBriefService {
         undefined,
         body
       );
-      // Normally 202/generating (see this method's docstring) — the card's `generating()`
-      // signal masks any terminal state in the template until the first poll tick either
-      // way, so this isn't UI-visible today. Defense-in-depth: if upstream ever returns a
-      // terminal `error` in this envelope instead, it carries the same normalized
-      // error_reason as getCurrentBrief's GET, so both response shapes stay consistent for
-      // any future consumer (or a change to the template's branch ordering).
-      if (response.data.brief?.state === 'error') {
-        response.data.brief.error_reason = extractBriefErrorReason(response.data.brief);
-      }
       return { status: response.status, data: response.data };
     } catch (error) {
       throw this.withConflictBody(error);

@@ -47,8 +47,8 @@ export interface WeeklyBrief {
    * Set when `state` is 'error' and upstream identified a specific cause. `error_reason`
    * is a pinned part of the upstream contract (LFXV2-2989) — known values today are
    * "no_sources" and "ai_error". `WeeklyBriefErrorReason` values are the only ones the UI
-   * treats specially; any other string or absence renders the generic failure state.
-   * Populated via extractBriefErrorReason() in weekly-brief.service.ts.
+   * treats specially; any other string or absence renders the generic failure state. The
+   * BFF forwards this field through unchanged — no server-side mapping needed.
    *
    * `& {}` is the "open enum" idiom: it keeps `WeeklyBriefErrorReason`'s
    * literals as editor-suggested autocomplete without collapsing the whole

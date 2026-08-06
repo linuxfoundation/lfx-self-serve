@@ -408,10 +408,35 @@ test.describe('WG Weekly Brief card — error states (flag ON)', () => {
     await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
   });
 
+  // ai_error is the other documented upstream value (docs/indexer-contract.md) — the
+  // genuinely retryable failure path, unlike no_sources above. Pins that a real
+  // generation failure still renders the failure card with an active retry, not the
+  // quiet-week treatment.
+  test('renders the generic failure state with an enabled Try again for an ai_error', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'ai_error' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-error-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
+
+    const retryBtn = page.getByTestId('weekly-brief-card-error-retry-button');
+    await expect(retryBtn).toBeVisible();
+    await expect(retryBtn.locator('button')).toBeEnabled();
+  });
+
+  // Covers the open-enum fallback for a value upstream has never documented — distinct
+  // from the ai_error case above, which pins a real contract value's behavior.
   test('renders the generic failure state (not quiet-week) for an unrecognized error_reason', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, {
-      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'llm_timeout' },
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'some_future_upstream_value' },
       throttle: USED_THROTTLE_AFTER_GENERATE,
     });
 
