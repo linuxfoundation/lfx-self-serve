@@ -61,8 +61,11 @@ function extractBriefErrorReason(brief: unknown): string | undefined {
 }
 
 /**
- * Returns the ISO timestamp for the upcoming Sunday at 00:00:00 UTC.
- * Used as the rolling window-reset for the WG Weekly Brief throttle.
+ * Returns the ISO timestamp for the upcoming Sunday at 00:00:00 UTC. Mirrors upstream's
+ * `NextWindowReset()` — the advisory `window_resets_at` value surfaced in throttle bodies
+ * and 429s. This is a display timestamp, not the actual counter-reset boundary: upstream
+ * keys the throttle entry on the same `window_start` as the brief, so counters actually
+ * reset at the Friday→Saturday 00:00 UTC window rollover (see `briefWindow()`).
  */
 function nextSundayIso(): string {
   const now = new Date();
