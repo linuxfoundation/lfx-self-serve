@@ -18,7 +18,7 @@ import { ProfileVisibility, ProfileVisibilitySaveState, ProfileVisibilitySection
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, debounceTime, EMPTY, filter, finalize, merge, of, Subject, switchMap } from 'rxjs';
+import { catchError, concatMap, debounceTime, filter, finalize, map, merge, of, Subject, switchMap } from 'rxjs';
 
 import { ProfileVisibilityDrawerService } from './profile-visibility-drawer.service';
 
@@ -81,6 +81,10 @@ export class ProfileVisibilityDrawerComponent {
 
   // True when the form has unpersisted changes. Gates auto-save and the close-time flush.
   private dirty = false;
+
+  // Count of saves currently in flight or queued (concatMap serializes them). Only the last one to
+  // settle re-seeds the form, so an intermediate response can't revert edits a queued save still holds.
+  private pendingSaves = 0;
 
   // Emits to force an immediate save (bypassing the debounce) when the drawer is dismissed.
   private readonly flush$ = new Subject<void>();
@@ -245,7 +249,9 @@ export class ProfileVisibilityDrawerComponent {
 
   /**
    * Debounced auto-save: any user change marks the form dirty; a debounced tick (or the close-time
-   * flush) persists the resolved map. switchMap cancels an in-flight save when a newer change lands.
+   * flush) persists the resolved map. concatMap serializes the writes — switchMap would only cancel
+   * the client subscription while the upstream PATCH keeps writing, letting overlapping saves persist
+   * out of order.
    */
   private wireAutoSave(): void {
     this.visibilityForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
@@ -255,30 +261,38 @@ export class ProfileVisibilityDrawerComponent {
     merge(this.visibilityForm.valueChanges.pipe(debounceTime(this.autosaveDebounceMs)), this.flush$)
       .pipe(
         filter(() => this.dirty && !this.loadingVisibility() && !this.loadError()),
-        switchMap(() => {
+        // Serialize saves: each PATCH to /me + the preference completes before the next starts, so a
+        // slower earlier write can't land after (and overwrite) a newer one.
+        concatMap(() => {
           this.dirty = false;
+          this.pendingSaves++;
           this.saveState.set('saving');
           return this.userService.updateProfileVisibility(this.buildPayload()).pipe(
+            map((visibility) => ({ ok: true, visibility: visibility as ProfileVisibility | null })),
             catchError(() => {
               // Re-arm dirty so the next change (or a close flush) retries the failed save.
               this.dirty = true;
               this.saveState.set('error');
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
-              return EMPTY;
+              return of({ ok: false, visibility: null as ProfileVisibility | null });
             })
           );
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((visibility) => {
-        // Re-seed from the persisted response, but only when no newer edit landed mid-flight (dirty is
-        // true again) — otherwise re-seeding reverts those edits and drops the pending debounced save.
-        if (!this.dirty) {
-          this.seedForm(visibility);
+      .subscribe((result) => {
+        this.pendingSaves--;
+        if (!result.ok) {
+          // Error already surfaced and dirty re-armed for retry; leave the indicator on 'error'.
+          return;
         }
-        // If a newer edit landed mid-flight, a follow-up save is already queued — keep the indicator
-        // on 'saving' so it doesn't flash "saved" between the two writes.
-        this.saveState.set(this.dirty ? 'saving' : 'saved');
+        // Re-seed from the persisted response only when this is the last settled save (nothing dirty,
+        // nothing still queued) — otherwise re-seeding would revert edits a queued save still holds.
+        const busy = this.dirty || this.pendingSaves > 0;
+        if (!busy) {
+          this.seedForm(result.visibility);
+        }
+        this.saveState.set(busy ? 'saving' : 'saved');
       });
   }
 
