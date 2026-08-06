@@ -387,11 +387,8 @@ html {
   white-space: normal !important;
 }
 
-// Public-profile visibility drawer — Private/Public master control. The drawer appends its content
-// to <body> (PrimeNG default appendTo="body"), so component-scoped styles never reach the select
-// button; it must be styled globally via its wrapper data-testid. Render it as one segmented pill:
-// a single rounded track holding both options, with the selected option as an inset white chip
-// (matching the redesign) rather than two separate pills.
+// Public-profile visibility drawer Private/Public master control. PrimeNG appends the drawer to <body>,
+// so the select button is styled globally via its wrapper data-testid as one segmented pill.
 [data-testid='profile-visibility-drawer-mode'] .p-selectbutton {
   @apply gap-0 rounded-full border border-slate-200 bg-slate-100 p-0.5;
 }

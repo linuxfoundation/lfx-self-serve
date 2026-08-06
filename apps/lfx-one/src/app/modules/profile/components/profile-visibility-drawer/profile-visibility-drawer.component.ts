@@ -45,9 +45,8 @@ export class ProfileVisibilityDrawerComponent {
   // Sections tab: the standalone activity sections (everything outside the basic group).
   protected readonly activitySections = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.key !== 'basic' && !section.parent);
 
-  // Personal Data tab: the `basic` parent (General Profile Information) and its indented children
-  // (About Me / Personal Information). Toggling the parent mirrors to the children; toggling any
-  // child ORs back into the parent (see wireCascade), matching myprofile.
+  // Personal Data tab: the `basic` parent (General Profile Information) and its children (About Me /
+  // Personal Information). Parent↔child cascade lives in wireCascade, matching myprofile.
   protected readonly basicSection = PROFILE_VISIBILITY_SECTIONS.find((section) => section.key === 'basic');
   protected readonly basicChildSections = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.parent === 'basic');
 
@@ -210,9 +209,8 @@ export class ProfileVisibilityDrawerComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((visibility) => {
-        // Re-seed from the persisted response without re-triggering a save — but only when no newer
-        // edit landed while this save was in flight. If it did (dirty is true again), re-seeding would
-        // revert those edits and clear dirty, dropping the pending debounced save. Leave them to persist.
+        // Re-seed from the persisted response, but only when no newer edit landed mid-flight (dirty is
+        // true again) — otherwise re-seeding reverts those edits and drops the pending debounced save.
         if (!this.dirty) {
           this.seedForm(visibility);
         }
@@ -221,12 +219,8 @@ export class ProfileVisibilityDrawerComponent {
   }
 
   /**
-   * Client-side cascade (matches myprofile). Master flag: going public enables every section control
-   * and defaults the basic group (general info / about / personal) on; going private zeroes and
-   * disables all of them. Basic group: the `basic` parent mirrors its value to both children, and
-   * either child ORs back into the parent — so the parent is on iff any child is on. Defaulting the
-   * basic group on is only a starting point; the user can then toggle any of the three off. Server
-   * trusts whatever map results. emitEvent:false writes avoid feedback loops (and extra saves).
+   * Client-side cascade (matches myprofile): going public enables all sections and defaults the basic
+   * group on, going private zeroes all; the basic parent mirrors to its children and ORs back from them.
    */
   private wireCascade(): void {
     const control = (key: string) => this.visibilityForm.get(key);

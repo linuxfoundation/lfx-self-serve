@@ -1082,10 +1082,8 @@ export class UserService {
 
     const baseUrl = getUserServiceBaseUrl('update_profile_visibility', 'user_service');
     const nextIsPublic = Boolean(body?.isPublic);
-    // Trust the client's resolved section map (sanitized to known keys). The basic group defaults on
-    // when a profile is made public, but that is a client-side cascade — users can then toggle
-    // General Profile Information / About Me / Personal Information off individually, mirroring
-    // myprofile, so the server persists exactly what it is sent.
+    // Trust the client's resolved section map (sanitized to known keys) — the basic-group cascade is
+    // client-side (myprofile-style), so the server persists exactly what it is sent.
     const sections = this.sanitizeVisibilitySections(body?.sections);
 
     if (nextIsPublic !== Boolean(profile.IsPublic)) {
@@ -1109,9 +1107,8 @@ export class UserService {
   }
 
   /**
-   * Writes the section `visibility` preference: PATCH when it already exists, else POST. A POST that
-   * races into a 409 (already created, or missed by the read) falls back to a fetch + PATCH so the
-   * auto-saving client stays idempotent.
+   * Writes the section `visibility` preference: PATCH when it exists, else POST; a POST that races into
+   * a 409 falls back to fetch + PATCH so the auto-saving client stays idempotent.
    */
   private async upsertVisibilityPreference(req: Request, sfid: string, existing: UserServicePreference | null, value: string): Promise<string | null> {
     if (existing) {
@@ -1161,9 +1158,8 @@ export class UserService {
    */
   private async fetchVisibilityPreference(req: Request, sfid: string, operation: string): Promise<UserServicePreference | null> {
     const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
-    // Upstream $filter values are unquoted (`Name eq visibility`); quoting compares against the
-    // literal `'visibility'` and matches nothing. A failed filter returns everything, so the find below
-    // is the real guard — it also disambiguates by AppName (the upstream uniqueness key is AppName+Name).
+    // Upstream $filter values are unquoted (`Name eq visibility`) — quoting matches nothing. A failed
+    // filter returns everything, so the find below (by AppName+Name, the uniqueness key) is the real guard.
     const filter = encodeURIComponent(`Name eq ${VISIBILITY_PREFERENCE_NAME}`);
     const url = `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences?$filter=${filter}`;
 
