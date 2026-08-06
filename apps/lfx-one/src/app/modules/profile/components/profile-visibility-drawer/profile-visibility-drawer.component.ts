@@ -71,13 +71,7 @@ export class ProfileVisibilityDrawerComponent {
 
   // The public-profile URL for the copy/open row. Empty on the server or when the username is
   // unknown, which hides the row.
-  public readonly publicProfileUrl: Signal<string> = computed(() => {
-    const username = this.drawer.context();
-    if (!username || !isPlatformBrowser(this.platformId)) {
-      return '';
-    }
-    return `${window.location.origin}/u/${encodeURIComponent(username)}`;
-  });
+  public readonly publicProfileUrl: Signal<string> = this.initPublicProfileUrl();
 
   // Mirrors the master `isPublic` form control as a signal so the template can react (section
   // toggles are only meaningful for a public profile). Updated from seedForm and the cascade.
@@ -269,5 +263,21 @@ export class ProfileVisibilityDrawerComponent {
         control.disable({ emitEvent: false });
       }
     }
+  }
+
+  // Private initializer functions
+
+  /**
+   * Derive the public-profile URL from the drawer's username context. Empty on the server or when the
+   * username is unknown, which hides the copy/open row (and gates {@link showPublicUrl}).
+   */
+  private initPublicProfileUrl(): Signal<string> {
+    return computed(() => {
+      const username = this.drawer.context();
+      if (!username || !isPlatformBrowser(this.platformId)) {
+        return '';
+      }
+      return `${window.location.origin}/u/${encodeURIComponent(username)}`;
+    });
   }
 }

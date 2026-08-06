@@ -22,14 +22,6 @@ export const PROFILE_VISIBILITY_KEYS = [
 ] as const;
 
 /**
- * Parent → children map for the drawer cascade: `basic` mirrors to its children; a child recomputes
- * `basic` as the OR of its children. One source of truth for client and any future server logic.
- */
-export const PROFILE_VISIBILITY_CASCADE: Readonly<Record<string, readonly string[]>> = {
-  basic: ['aboutMe', 'personalInfo'],
-};
-
-/**
  * Sections enabled when a profile is switched to public (the `basic` group), matching myprofile's
  * `updatePreferenceOnUpdateIsPublic`. Making a profile private zeroes everything.
  */
