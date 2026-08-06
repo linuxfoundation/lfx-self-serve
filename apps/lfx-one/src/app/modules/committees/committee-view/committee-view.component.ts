@@ -806,9 +806,22 @@ export class CommitteeViewComponent {
     // accept flow uses so the user doesn't have to re-enter an org they've already set.
     // takeUntilDestroyed cancels the observable if the component is destroyed while the
     // profile/domain lookup (≤2 s) is still in flight, preventing dangling subscriptions.
+    // We track destruction explicitly because firstValueFrom's defaultValue: null causes
+    // the await to resolve successfully even when takeUntilDestroyed completed early due
+    // to component teardown — without this guard the dialog would open over a new route.
+    let destroyed = false;
+    const cleanupDestroyListener = this.destroyRef.onDestroy(() => {
+      destroyed = true;
+    });
+
     const prefillOrg = await firstValueFrom(this.invitationAcceptFlow.resolveCurrentEmployer().pipe(takeUntilDestroyed(this.destroyRef)), {
       defaultValue: null,
     });
+
+    cleanupDestroyListener();
+    if (destroyed) {
+      return null;
+    }
 
     const ref = this.dialogService.open(AcceptInviteOrganizationDialogComponent, {
       header: 'Confirm Organization',
