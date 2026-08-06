@@ -42,10 +42,17 @@ export class ProfileVisibilityDrawerComponent {
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly drawer = inject(ProfileVisibilityDrawerService);
 
-  // Section toggles shown in the drawer: the standalone activity sections only. The `basic` group
-  // (general info / about / personal) is not user-toggleable per the redesign — its keys are still
-  // persisted and driven by the master flag cascade (a public profile always exposes them).
+  // Sections tab: the standalone activity sections (everything outside the basic group).
   protected readonly activitySections = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.key !== 'basic' && !section.parent);
+
+  // Personal Data tab: the `basic` parent (General Profile Information) and its indented children
+  // (About Me / Personal Information). Toggling the parent mirrors to the children; toggling any
+  // child ORs back into the parent (see wireCascade), matching myprofile.
+  protected readonly basicSection = PROFILE_VISIBILITY_SECTIONS.find((section) => section.key === 'basic');
+  protected readonly basicChildSections = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.parent === 'basic');
+
+  // Active drawer tab. Sections first, then Personal Data.
+  public readonly activeTab = signal<'sections' | 'personal'>('sections');
 
   // Segmented Private/Public options for the master-flag control (mutable copy for the p-selectbutton input).
   protected readonly modeOptions = [...PROFILE_VISIBILITY_MODE_OPTIONS];
@@ -210,11 +217,12 @@ export class ProfileVisibilityDrawerComponent {
   }
 
   /**
-   * Master-flag cascade: turning the profile public enables every section control and forces the
-   * basic group (general info / about / personal) on; turning it private zeroes and disables all of
-   * them. The basic group has no UI toggle — it is driven entirely from here and re-enforced
-   * server-side in `enforcePublicDefaults`. emitEvent:false writes avoid feedback loops (and extra
-   * saves).
+   * Client-side cascade (matches myprofile). Master flag: going public enables every section control
+   * and defaults the basic group (general info / about / personal) on; going private zeroes and
+   * disables all of them. Basic group: the `basic` parent mirrors its value to both children, and
+   * either child ORs back into the parent — so the parent is on iff any child is on. Defaulting the
+   * basic group on is only a starting point; the user can then toggle any of the three off. Server
+   * trusts whatever map results. emitEvent:false writes avoid feedback loops (and extra saves).
    */
   private wireCascade(): void {
     const control = (key: string) => this.visibilityForm.get(key);
@@ -235,6 +243,22 @@ export class ProfileVisibilityDrawerComponent {
           this.setSectionsEnabled(false);
         }
       });
+
+    control('basic')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value: boolean) => {
+        control('aboutMe')?.setValue(value, { emitEvent: false });
+        control('personalInfo')?.setValue(value, { emitEvent: false });
+      });
+
+    for (const childKey of ['aboutMe', 'personalInfo']) {
+      control(childKey)
+        ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => {
+          const anyChildOn = Boolean(control('aboutMe')?.value) || Boolean(control('personalInfo')?.value);
+          control('basic')?.setValue(anyChildOn, { emitEvent: false });
+        });
+    }
   }
 
   /** Enable or disable every section control (the master flag gates them), without emitting events. */

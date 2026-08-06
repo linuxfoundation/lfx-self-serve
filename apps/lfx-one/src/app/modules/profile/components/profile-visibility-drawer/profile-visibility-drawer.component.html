@@ -76,19 +76,85 @@
           }
         </div>
 
-        <!-- Public-profile section map -->
-        <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-sections">
-          @for (section of activitySections; track section.key) {
-            <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
-              <div class="flex flex-col gap-0.5">
-                <span class="text-sm text-slate-900">{{ section.name }}</span>
-                <span class="text-xs text-slate-500">{{ section.description }}</span>
-              </div>
-              <lfx-toggle
-                [form]="visibilityForm"
-                [control]="section.key"
-                [ariaLabel]="section.name"
-                [dataTest]="'profile-visibility-drawer-toggle-' + section.key" />
+        <!-- Tab bar: Sections (activity toggles) + Personal Data (basic group) -->
+        <div class="flex flex-col gap-6">
+          <div role="tablist" aria-label="Visibility settings" class="flex gap-1 border-b border-slate-200">
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="activeTab() === 'sections'"
+              (click)="activeTab.set('sections')"
+              class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors"
+              [class.border-blue-600]="activeTab() === 'sections'"
+              [class.text-blue-600]="activeTab() === 'sections'"
+              [class.border-transparent]="activeTab() !== 'sections'"
+              [class.text-slate-500]="activeTab() !== 'sections'"
+              data-testid="profile-visibility-drawer-tab-sections">
+              <i class="fa-light fa-grid-2" aria-hidden="true"></i>
+              Sections
+            </button>
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="activeTab() === 'personal'"
+              (click)="activeTab.set('personal')"
+              class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors"
+              [class.border-blue-600]="activeTab() === 'personal'"
+              [class.text-blue-600]="activeTab() === 'personal'"
+              [class.border-transparent]="activeTab() !== 'personal'"
+              [class.text-slate-500]="activeTab() !== 'personal'"
+              data-testid="profile-visibility-drawer-tab-personal">
+              <i class="fa-light fa-address-card" aria-hidden="true"></i>
+              Personal Data
+            </button>
+          </div>
+
+          @if (activeTab() === 'sections') {
+            <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-sections">
+              @for (section of activitySections; track section.key) {
+                <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm text-slate-900">{{ section.name }}</span>
+                    <span class="text-xs text-slate-500">{{ section.description }}</span>
+                  </div>
+                  <lfx-toggle
+                    [form]="visibilityForm"
+                    [control]="section.key"
+                    [ariaLabel]="section.name"
+                    [dataTest]="'profile-visibility-drawer-toggle-' + section.key" />
+                </div>
+              }
+            </div>
+          }
+
+          @if (activeTab() === 'personal') {
+            <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-personal">
+              @if (basicSection; as basic) {
+                <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + basic.key">
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm text-slate-900">{{ basic.name }}</span>
+                    <span class="text-xs text-slate-500">{{ basic.description }}</span>
+                  </div>
+                  <lfx-toggle
+                    [form]="visibilityForm"
+                    [control]="basic.key"
+                    [ariaLabel]="basic.name"
+                    [dataTest]="'profile-visibility-drawer-toggle-' + basic.key" />
+                </div>
+              }
+              @for (child of basicChildSections; track child.key) {
+                <div class="flex items-start justify-between gap-4 pl-4" [attr.data-testid]="'profile-visibility-drawer-section-' + child.key">
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm text-slate-900">{{ child.name }}</span>
+                    <span class="text-xs text-slate-500">{{ child.description }}</span>
+                  </div>
+                  <lfx-toggle
+                    [form]="visibilityForm"
+                    [control]="child.key"
+                    [ariaLabel]="child.name"
+                    [dataTest]="'profile-visibility-drawer-toggle-' + child.key" />
+                </div>
+              }
             </div>
           }
         </div>
