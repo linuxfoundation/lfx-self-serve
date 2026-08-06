@@ -12,3 +12,12 @@ export function isMissingObjectError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /does not exist or not authorized/i.test(message);
 }
+
+/**
+ * True when Snowflake rejects a column reference (error 904 / "invalid identifier").
+ * Used for temporary old/new platinum-schema fallbacks during dbt rollouts.
+ */
+export function isInvalidIdentifierError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid identifier/i.test(message) || /\berror code:\s*904\b/i.test(message);
+}

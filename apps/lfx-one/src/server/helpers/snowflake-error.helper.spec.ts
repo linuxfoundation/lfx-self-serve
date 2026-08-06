@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isMissingObjectError } from './snowflake-error.helper';
+import { isInvalidIdentifierError, isMissingObjectError } from './snowflake-error.helper';
 
 describe('isMissingObjectError', () => {
   it('matches a realistically wrapped missing-table error', () => {
@@ -25,5 +25,22 @@ describe('isMissingObjectError', () => {
   it('stringifies a non-Error value before matching', () => {
     expect(isMissingObjectError('Object X does not exist or not authorized.')).toBe(true);
     expect(isMissingObjectError({ some: 'object' })).toBe(false);
+  });
+});
+
+describe('isInvalidIdentifierError', () => {
+  it('matches invalid identifier compilation errors', () => {
+    const error = new Error("Snowflake query execution failed: SQL compilation error: error line 2 at position 13\ninvalid identifier 'CONV'");
+    expect(isInvalidIdentifierError(error)).toBe(true);
+  });
+
+  it('matches explicit Snowflake error code 904', () => {
+    const error = new Error('SQL compilation error: error code: 904');
+    expect(isInvalidIdentifierError(error)).toBe(true);
+  });
+
+  it('does not match missing-object errors', () => {
+    const error = new Error("Object 'ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_ATTRIBUTION' does not exist or not authorized.");
+    expect(isInvalidIdentifierError(error)).toBe(false);
   });
 });

@@ -200,7 +200,7 @@ export interface PlatformPerformanceRow {
   impressions: string;
   ctr: string;
   cpc: string;
-  convRate: string;
+  conversionRate: string;
   conversions: string;
   performance: PaidProjectPerformance;
   performanceClass: string;
@@ -232,7 +232,7 @@ export interface KeywordRow {
   ctr: string;
   cpc: string;
   conversions: string;
-  convRate: string;
+  conversionRate: string;
   revenue: string;
   roas: string;
   searchTerms: SearchTermRow[];
@@ -247,5 +247,5 @@ export interface SearchTermRow {
   impressions: string;
   ctr: string;
   cpc: string;
-  conversions: string;
+  conversions: string | null;
 }

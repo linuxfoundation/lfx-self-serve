@@ -2683,8 +2683,9 @@ export interface PaidCampaignPerformance {
   spend: number;
   revenue: number;
   roas: number;
+  /** Segment last-touch conversion credits for the row grain. */
   conversions: number;
-  convRate: number;
+  conversionRate: number;
   cpc: number;
   sessions: number;
   impressions: number;
@@ -2720,8 +2721,9 @@ export interface PaidProjectBreakdown {
   spend: number;
   revenue: number;
   roas: number;
+  /** Segment last-touch conversion credits for the row grain. */
   conversions: number;
-  convRate: number;
+  conversionRate: number;
   cpc: number;
   sessions: number;
   impressions: number;
@@ -2740,7 +2742,8 @@ export interface PaidPlatformBreakdown {
   impressions: number;
   ctr: number;
   cpc: number;
-  convRate: number;
+  /** Segment last-touch conversion credits for the row grain. */
+  conversionRate: number;
   conversions: number;
   performance: PaidProjectPerformance;
   campaigns: PaidCampaignPerformance[];
@@ -3482,7 +3485,7 @@ export interface EdEvolutionData {
 
 /**
  * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE (daily grain).
- * One row per keyword/search-term per day.
+ * Traffic metrics only — authoritative conversions come from keyword attribution.
  */
 export interface KeywordPerformanceRow {
   RECORD_TYPE: 'keyword' | 'search_term';
@@ -3493,11 +3496,8 @@ export interface KeywordPerformanceRow {
   CLICKS: number;
   SPEND: number;
   IMPRESSIONS: number;
-  CONVERSIONS: number;
-  CONVERSIONS_VALUE: number;
   CTR: number;
   CPC: number;
-  CONVERSION_RATE: number;
 }
 
 /**
@@ -3524,6 +3524,7 @@ export interface KeywordSummary {
   impressions: number;
   ctr: number;
   cpc: number;
+  /** Segment last-touch conversion credits aggregated at keyword-month grain. */
   conversions: number;
   conversionRate: number;
   attributedRevenue: number;
@@ -3540,7 +3541,8 @@ export interface SearchTermSummary {
   impressions: number;
   ctr: number;
   cpc: number;
-  conversions: number;
+  /** Unavailable at search-term grain — Segment attribution is keyword-month only. */
+  conversions: number | null;
 }
 
 /** API response for the keyword performance endpoint. */

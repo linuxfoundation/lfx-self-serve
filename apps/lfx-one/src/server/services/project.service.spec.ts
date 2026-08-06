@@ -9,10 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService` — none of the methods
 // under test here touch them, so they're stubbed to trivial classes to keep construction cheap.
-const { proxyRequest, addAccessToResources, checkAccess } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
+  execute: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -65,14 +66,23 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
-vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({}) } }));
+vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
 
 import type { Request } from 'express';
 
+import { getDefaultMarketingImpactMonth, resolvePeriodRange } from '@lfx-one/shared/utils';
+
 import { ProjectService } from './project.service';
+
+const defaultPeriod = {
+  type: 'month' as const,
+  label: '2025-07',
+  startDate: '2025-07-01',
+  endDate: '2025-08-01',
+};
 
 const req = {} as unknown as Request;
 
@@ -261,5 +271,218 @@ describe('ProjectService — create picker methods', () => {
     for (const params of calls) {
       expect(params['filter_grants'] === 'direct' || typeof params['parent'] === 'string' || typeof params['name'] === 'string').toBe(true);
     }
+  });
+});
+
+describe('ProjectService — DL-1286 paid ads compatibility', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    vi.mocked(getDefaultMarketingImpactMonth).mockReturnValue('2025-07');
+    vi.mocked(resolvePeriodRange).mockReturnValue(defaultPeriod);
+    service = new ProjectService();
+  });
+
+  it('getRevenueImpact succeeds without removed paid-ads conversion-rate columns', async () => {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            TOTAL_PIPELINE_YTD: 100,
+            WON_REVENUE_YTD: 50,
+            LOST_REVENUE_YTD: 10,
+            OPEN_PIPELINE_YTD: 40,
+            TOTAL_DEALS_YTD: 10,
+            WON_DEALS_YTD: 5,
+            LOST_DEALS_YTD: 2,
+            OPEN_DEALS_YTD: 3,
+            AVG_WON_DEAL_SIZE_YTD: 10,
+            CONVERSION_RATE_YTD: 50,
+            WON_REVENUE_PRIOR_YEAR: 40,
+            WON_REVENUE_YOY_CHANGE_PCT: 25,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            TOTAL_SPEND_YTD: 1000,
+            TOTAL_IMPRESSIONS_YTD: 5000,
+            LINEAR_ROAS_YTD: 2,
+            FIRST_TOUCH_REVENUE_YTD: 1500,
+            LAST_TOUCH_REVENUE_YTD: 1800,
+            LINEAR_REVENUE_YTD: 2000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getRevenueImpact('cncf');
+
+    expect(result.paidMedia.adSpend).toBe(1000);
+    expect(result.attributionModels.linear).toBe(2000);
+    expect(execute.mock.calls.some(([sql]) => String(sql).includes('CONVERSION_RATE_YTD') && String(sql).includes('PIPELINE_SUMMARY'))).toBe(true);
+    expect(execute.mock.calls.some(([sql]) => String(sql).includes('PAID_ADS_ATTRIBUTION') && !String(sql).includes('CONVERSION_RATE_YTD'))).toBe(true);
+  });
+
+  it('getRevenueImpact uses channel-month YTD aggregation when classification is selected', async () => {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            TOTAL_PIPELINE_YTD: 0,
+            WON_REVENUE_YTD: 0,
+            LOST_REVENUE_YTD: 0,
+            OPEN_PIPELINE_YTD: 0,
+            TOTAL_DEALS_YTD: 0,
+            WON_DEALS_YTD: 0,
+            LOST_DEALS_YTD: 0,
+            OPEN_DEALS_YTD: 0,
+            AVG_WON_DEAL_SIZE_YTD: 0,
+            CONVERSION_RATE_YTD: 0,
+            WON_REVENUE_PRIOR_YEAR: 0,
+            WON_REVENUE_YOY_CHANGE_PCT: 0,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            TOTAL_SPEND_YTD: 250,
+            TOTAL_IMPRESSIONS_YTD: 900,
+            LINEAR_ROAS_YTD: 1.5,
+            FIRST_TOUCH_REVENUE_YTD: 300,
+            LAST_TOUCH_REVENUE_YTD: 350,
+            LINEAR_REVENUE_YTD: 375,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await service.getRevenueImpact('cncf', 'Core');
+
+    const paidAdsCall = execute.mock.calls.find(([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH'));
+    expect(paidAdsCall).toBeDefined();
+    expect(String(paidAdsCall?.[0])).toContain('LF_SUB_DOMAIN_CLASSIFICATION');
+    expect(String(paidAdsCall?.[0])).not.toContain('PAID_ADS_ATTRIBUTION');
+  });
+
+  it('getSocialReach retries legacy conversion columns only for invalid identifier errors', async () => {
+    execute.mockImplementation(async (sql: unknown) => {
+      const query = String(sql);
+      if (query.includes('SUM(IMPRESSIONS) AS TOTAL_IMPRESSIONS')) {
+        return { rows: [{ TOTAL_IMPRESSIONS: 0, TOTAL_SPEND: 0, TOTAL_REVENUE: 0 }] };
+      }
+      if (query.includes('PROJECT_NAME') && query.includes('LAST_TOUCH_CONVERSIONS')) {
+        throw new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS'");
+      }
+      if (query.includes('PROJECT_NAME') && query.includes('SUM(CONV)')) {
+        return {
+          rows: [
+            {
+              PROJECT_NAME: 'Proj',
+              CAMPAIGN_NAME: 'Camp',
+              FUNNEL_STAGE: 'ToFU',
+              SPEND: 100,
+              REVENUE: 200,
+              ROAS: 2,
+              CONVERSIONS: 3,
+              CONVERSION_RATE: 1.5,
+              CPC: 1,
+              SESSIONS: 10,
+              IMPRESSIONS: 1000,
+              CLICKS: 200,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const result = await service.getSocialReach('cncf');
+
+    expect(result.projectBreakdown?.[0]?.conversions).toBe(3);
+    expect(result.projectBreakdown?.[0]?.conversionRate).toBe(1.5);
+    expect(execute.mock.calls.some(([sql]) => String(sql).includes('LAST_TOUCH_CONVERSIONS'))).toBe(true);
+    expect(execute.mock.calls.some(([sql]) => String(sql).includes('SUM(CONV)'))).toBe(true);
+  });
+
+  it('getSocialReach surfaces non-identifier breakdown failures', async () => {
+    execute.mockImplementation(async (sql: unknown) => {
+      const query = String(sql);
+      if (query.includes('SUM(IMPRESSIONS) AS TOTAL_IMPRESSIONS')) {
+        return { rows: [{ TOTAL_IMPRESSIONS: 0, TOTAL_SPEND: 0, TOTAL_REVENUE: 0 }] };
+      }
+      if (query.includes('PROJECT_NAME')) {
+        throw new Error('Snowflake warehouse unavailable');
+      }
+      return { rows: [] };
+    });
+
+    await expect(service.getSocialReach('cncf')).rejects.toThrow('Snowflake warehouse unavailable');
+  });
+
+  it('getKeywordPerformance maps conversions from attributed last-touch credits', async () => {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            RECORD_TYPE: 'keyword',
+            KEYWORD_TEXT: 'kubernetes',
+            KEYWORD_MATCH_TYPE: 'BROAD',
+            SEARCH_TERM: null,
+            SEARCH_TERM_MATCH_TYPE: null,
+            CLICKS: 100,
+            SPEND: 50,
+            IMPRESSIONS: 1000,
+            CTR: 10,
+            CPC: 0.5,
+          },
+          {
+            RECORD_TYPE: 'search_term',
+            KEYWORD_TEXT: 'kubernetes',
+            KEYWORD_MATCH_TYPE: 'BROAD',
+            SEARCH_TERM: 'k8s training',
+            SEARCH_TERM_MATCH_TYPE: 'BROAD',
+            CLICKS: 20,
+            SPEND: 10,
+            IMPRESSIONS: 200,
+            CTR: 10,
+            CPC: 0.5,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            KEYWORD_TEXT: 'kubernetes',
+            KEYWORD_MATCH_TYPE: 'BROAD',
+            KEYWORD_CLICKS: 100,
+            KEYWORD_SPEND: 50,
+            KEYWORD_IMPRESSIONS: 1000,
+            ATTRIBUTED_LT_REVENUE: 500,
+            ATTRIBUTED_LT_CONVERSIONS: 4,
+            ATTRIBUTED_LT_ROAS: 10,
+          },
+        ],
+      });
+
+    const result = await service.getKeywordPerformance('cncf');
+
+    expect(result.keywords).toHaveLength(1);
+    expect(result.keywords[0].conversions).toBe(4);
+    expect(result.keywords[0].conversionRate).toBe(4);
+    expect(result.totals.conversions).toBe(4);
+    expect(result.keywords[0].searchTerms[0].conversions).toBeNull();
+    expect(String(execute.mock.calls[0][0])).not.toContain('CONVERSIONS_VALUE');
   });
 });

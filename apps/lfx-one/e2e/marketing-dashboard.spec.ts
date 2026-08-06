@@ -692,4 +692,67 @@ test.describe('API Response Validation', () => {
   });
 });
 
+test.describe('DL-1286 paid ads API smoke tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+  });
+
+  test('revenue-impact returns a successful paid-media payload', async ({ page }) => {
+    const response = await page.waitForResponse((resp) => resp.url().includes('/api/analytics/revenue-impact') && resp.status() === 200, {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+
+    const body = await response.json();
+    expect(body).toHaveProperty('paidMedia');
+    expect(body.paidMedia).toHaveProperty('adSpend');
+    expect(body.paidMedia).toHaveProperty('impressions');
+    expect(body.paidMedia).toHaveProperty('roas');
+    expect(body).toHaveProperty('attributionModels');
+    expect(body.attributionModels).toHaveProperty('linear');
+    expect(body.attributionModels).toHaveProperty('firstTouch');
+    expect(body.attributionModels).toHaveProperty('lastTouch');
+  });
+
+  test('social-reach exposes conversionRate on platform breakdown rows when present', async ({ page }) => {
+    const response = await page.waitForResponse((resp) => resp.url().includes('/api/analytics/social-reach') && resp.status() === 200, {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+
+    const body = await response.json();
+    expect(body).toHaveProperty('platformBreakdown');
+    expect(Array.isArray(body.platformBreakdown)).toBe(true);
+
+    if (body.platformBreakdown.length > 0) {
+      const row = body.platformBreakdown[0];
+      expect(row).toHaveProperty('conversions');
+      expect(row).toHaveProperty('conversionRate');
+      expect(typeof row.conversions).toBe('number');
+      expect(typeof row.conversionRate).toBe('number');
+    }
+  });
+
+  test('keyword-performance returns fully spelled conversion properties', async ({ page }) => {
+    const response = await page.waitForResponse((resp) => resp.url().includes('/api/analytics/keyword-performance') && resp.status() === 200, {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+
+    const body = await response.json();
+    expect(body).toHaveProperty('keywords');
+    expect(body).toHaveProperty('totals');
+    expect(Array.isArray(body.keywords)).toBe(true);
+    expect(body.totals).toHaveProperty('conversions');
+    expect(typeof body.totals.conversions).toBe('number');
+
+    if (body.keywords.length > 0) {
+      const keyword = body.keywords[0];
+      expect(keyword).toHaveProperty('conversionRate');
+      expect(keyword).toHaveProperty('conversions');
+      expect(typeof keyword.conversionRate).toBe('number');
+      expect(typeof keyword.conversions).toBe('number');
+      expect(keyword).not.toHaveProperty('convRate');
+    }
+  });
+});
+
 // Generated with [Claude Code](https://claude.ai/code)

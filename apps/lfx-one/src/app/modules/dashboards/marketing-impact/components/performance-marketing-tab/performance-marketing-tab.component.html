@@ -123,7 +123,7 @@
                 <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
                 <span class="w-14 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
                 <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CPC</span>
-                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONV. RATE</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONVERSION RATE</span>
                 <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONVERSIONS</span>
                 <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PERFORMANCE</span>
               </div>
@@ -157,7 +157,7 @@
                   <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.impressions }}</span>
                   <span class="w-14 text-right text-xs text-gray-500" role="cell">{{ row.ctr }}</span>
                   <span class="w-16 text-right text-xs text-gray-500" role="cell">{{ row.cpc }}</span>
-                  <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.convRate }}</span>
+                  <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.conversionRate }}</span>
                   <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.conversions }}</span>
                   <div class="flex flex-1 justify-end" role="cell">
                     <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" [class]="row.performanceClass">
@@ -201,7 +201,7 @@
                   <span class="w-24 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.impressions }}</span>
                   <span class="w-14 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.ctr }}</span>
                   <span class="w-16 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.cpc }}</span>
-                  <span class="w-20 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.convRate }}</span>
+                  <span class="w-20 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.conversionRate }}</span>
                   <span class="w-24 text-right text-xs font-semibold text-gray-900" role="cell">{{ totals.conversions }}</span>
                   <div class="flex flex-1 justify-end" role="cell">
                     <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" [class]="totals.performanceClass">
@@ -246,8 +246,8 @@
                 <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
                 <span class="w-14 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
                 <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CPC</span>
-                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONV.</span>
-                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONV. RATE</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONVERSIONS</span>
+                <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CONVERSION RATE</span>
                 <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
                 <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
               </div>
@@ -282,7 +282,7 @@
                   <span class="w-14 text-right text-xs text-gray-500" role="cell">{{ row.ctr }}</span>
                   <span class="w-16 text-right text-xs text-gray-500" role="cell">{{ row.cpc }}</span>
                   <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.conversions }}</span>
-                  <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.convRate }}</span>
+                  <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.conversionRate }}</span>
                   <span class="w-24 text-right text-xs font-medium text-gray-900" role="cell">{{ row.revenue }}</span>
                   <span class="flex-1 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
                 </div>
@@ -301,7 +301,7 @@
                       <span class="w-24 text-right text-[11px] text-gray-400" role="cell">{{ st.impressions }}</span>
                       <span class="w-14 text-right text-[11px] text-gray-400" role="cell">{{ st.ctr }}</span>
                       <span class="w-16 text-right text-[11px] text-gray-400" role="cell">{{ st.cpc }}</span>
-                      <span class="w-20 text-right text-[11px] text-gray-500" role="cell">{{ st.conversions }}</span>
+                      <span class="w-20 text-right text-[11px] text-gray-500" role="cell">{{ st.conversions ?? '—' }}</span>
                       <span class="w-20" role="cell"></span>
                       <span class="w-24" role="cell"></span>
                       <div class="flex-1" role="cell"></div>
