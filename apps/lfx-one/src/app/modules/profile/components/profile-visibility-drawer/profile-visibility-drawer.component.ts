@@ -6,10 +6,12 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import {
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
+  PROFILE_VISIBILITY_MODE_OPTIONS,
   PROFILE_VISIBILITY_PUBLIC_DEFAULT_KEYS,
   PROFILE_VISIBILITY_SECTIONS,
 } from '@lfx-one/shared/constants';
@@ -27,7 +29,7 @@ import { ProfileVisibilityDrawerService } from './profile-visibility-drawer.serv
  */
 @Component({
   selector: 'lfx-profile-visibility-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, ToggleComponent, ButtonComponent],
+  imports: [DrawerModule, ReactiveFormsModule, ToggleComponent, ButtonComponent, SelectButtonComponent],
   templateUrl: './profile-visibility-drawer.component.html',
   styleUrl: './profile-visibility-drawer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -45,6 +47,13 @@ export class ProfileVisibilityDrawerComponent {
   // first, then the standalone activity sections.
   protected readonly basicGroup = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.key === 'basic' || section.parent === 'basic');
   protected readonly activitySections = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.key !== 'basic' && !section.parent);
+
+  // Segmented Private/Public options for the master-flag control (mutable copy for the p-selectbutton input).
+  protected readonly modeOptions = [...PROFILE_VISIBILITY_MODE_OPTIONS];
+
+  // Which drawer tab is active. `contact` (Contact & Social links) has no backing store yet and
+  // renders disabled ("Coming soon"); only `sections` is interactive.
+  public readonly activeTab = signal<'sections' | 'contact'>('sections');
 
   // One boolean control per visibility key, plus the master `isPublic` flag.
   public readonly visibilityForm: FormGroup = this.buildForm();

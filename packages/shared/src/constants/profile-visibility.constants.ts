@@ -74,6 +74,15 @@ export const PROFILE_VISIBILITY_SECTIONS: readonly {
   { key: 'skills', name: 'Skills', description: 'Skills listed on your profile.' },
 ];
 
+/**
+ * Segmented Private/Public options for the drawer's master-flag control. `value` is the boolean the
+ * `isPublic` form control binds to (false = Private, true = Public).
+ */
+export const PROFILE_VISIBILITY_MODE_OPTIONS: readonly { label: string; value: boolean }[] = [
+  { label: 'Private', value: false },
+  { label: 'Public', value: true },
+];
+
 /** user-service preference `Name` for the section-visibility map. The S3 pipeline matches on this. */
 export const VISIBILITY_PREFERENCE_NAME = 'visibility';
 
