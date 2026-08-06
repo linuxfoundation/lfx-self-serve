@@ -264,15 +264,15 @@ describe('WeeklyBriefService', () => {
       expect(result.brief?.error_reason).toBe('no_sources');
     });
 
-    it('getCurrentBrief falls back to a `reason` field until LFXV2-2989 pins the upstream name', async () => {
+    it('getCurrentBrief ignores an unpinned `reason` field — only `error_reason` is normalized', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', reason: 'no_sources' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.brief?.error_reason).toBe('no_sources');
+      expect(result.brief?.error_reason).toBeUndefined();
     });
 
-    it('getCurrentBrief leaves error_reason undefined when upstream sends neither candidate field', async () => {
+    it('getCurrentBrief leaves error_reason undefined when upstream sends no error_reason field', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -280,7 +280,7 @@ describe('WeeklyBriefService', () => {
       expect(result.brief?.error_reason).toBeUndefined();
     });
 
-    it('getCurrentBrief ignores a non-string error_reason/reason value', async () => {
+    it('getCurrentBrief ignores a non-string error_reason value', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'error', error_reason: 42 }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -288,7 +288,7 @@ describe('WeeklyBriefService', () => {
       expect(result.brief?.error_reason).toBeUndefined();
     });
 
-    it('getCurrentBrief does not consult the `reason` fallback on a non-error state (only error_reason/reason on state: error are normalized)', async () => {
+    it('getCurrentBrief does not normalize a `reason` field on a non-error state (only error_reason on state: error is normalized)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated', reason: 'no_sources' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');

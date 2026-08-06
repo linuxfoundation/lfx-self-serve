@@ -44,13 +44,11 @@ export interface WeeklyBrief {
   /** LFX username of the caller who last edited the brief. */
   last_edited_by?: string;
   /**
-   * Set when `state` is 'error' and upstream identified a specific cause.
-   * As of LFXV2-2989 filing, committee-service's finalizeError() logs the
-   * reason (e.g. "no_sources") but does not yet persist or expose it on the
-   * wire — this is always undefined against live traffic until that ships.
-   * `WeeklyBriefErrorReason` values are the only ones the UI treats
-   * specially; any other string or absence renders the generic failure
-   * state. Populated via extractBriefErrorReason() in weekly-brief.service.ts.
+   * Set when `state` is 'error' and upstream identified a specific cause. `error_reason`
+   * is a pinned part of the upstream contract (LFXV2-2989) — known values today are
+   * "no_sources" and "ai_error". `WeeklyBriefErrorReason` values are the only ones the UI
+   * treats specially; any other string or absence renders the generic failure state.
+   * Populated via extractBriefErrorReason() in weekly-brief.service.ts.
    *
    * `& {}` is the "open enum" idiom: it keeps `WeeklyBriefErrorReason`'s
    * literals as editor-suggested autocomplete without collapsing the whole

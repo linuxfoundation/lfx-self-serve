@@ -47,22 +47,16 @@ function briefTextToHtml(text: string): string {
 }
 
 /**
- * Normalizes committee-service's error-reason onto the envelope. As of
- * LFXV2-2989 filing, committee-service's finalizeError() logs the reason
- * (e.g. "no_sources") but does not yet persist or expose it on the wire —
- * neither `error_reason` nor `reason` exists in the current API contract, so
- * this always returns undefined against live traffic today, and the
- * quiet-week UI branch is reachable only via
- * WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID in mock mode. Probing both
- * candidate field names lets this activate automatically, with no second
- * consumer-side change, once upstream ships whichever name it lands on.
- * TODO(LFXV2-2989): once upstream merges, drop the `reason` fallback and read
- * only the pinned field name.
+ * Normalizes committee-service's error-reason onto the envelope. `error_reason` is a
+ * pinned part of the upstream contract (LFXV2-2989), present only when `state` is
+ * 'error' — known values today are "no_sources" and "ai_error" — so this is live
+ * against real traffic, not just the WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID mock
+ * sentinel.
  */
 function extractBriefErrorReason(brief: unknown): string | undefined {
   if (!brief || typeof brief !== 'object') return undefined;
   const raw = brief as Record<string, unknown>;
-  const value = raw['error_reason'] ?? raw['reason'];
+  const value = raw['error_reason'];
   return typeof value === 'string' ? value : undefined;
 }
 
