@@ -386,3 +386,25 @@ html {
   max-width: 100% !important;
   white-space: normal !important;
 }
+
+// Public-profile visibility drawer — Private/Public master control. The drawer appends its content
+// to <body> (PrimeNG default appendTo="body"), so component-scoped styles never reach the select
+// button; it must be styled globally via its wrapper data-testid. Render it as one segmented pill:
+// a single rounded track holding both options, with the selected option as an inset white chip
+// (matching the redesign) rather than two separate pills.
+[data-testid='profile-visibility-drawer-mode'] .p-selectbutton {
+  @apply gap-0 rounded-full border border-slate-200 bg-slate-100 p-0.5;
+}
+
+[data-testid='profile-visibility-drawer-mode'] .p-togglebutton {
+  @apply rounded-full border-0 bg-transparent;
+}
+
+[data-testid='profile-visibility-drawer-mode'] .p-togglebutton .p-togglebutton-content {
+  @apply rounded-full;
+}
+
+// Selected option — the inset white chip.
+[data-testid='profile-visibility-drawer-mode'] .p-togglebutton.p-togglebutton-checked {
+  @apply bg-white shadow-sm;
+}
