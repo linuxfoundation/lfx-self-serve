@@ -45,7 +45,11 @@ export class AcceptInviteOrganizationDialogComponent {
 
   protected readonly isNewOrg = computed(() => {
     const value = this.formValue();
-    return !value?.organization_id && !!value?.organization?.trim();
+    // URL is always required because organization_id is stripped before the payload reaches
+    // committee-service — the server must receive either an SFID (which we don't have) or
+    // name + domain. Treat any org without a confirmed website as requiring URL input.
+    const hasUrl = !!(value?.organization_url ?? '').trim();
+    return !hasUrl && !!value?.organization?.trim();
   });
 
   private readonly orgInvalid = computed(() => {
@@ -59,11 +63,11 @@ export class AcceptInviteOrganizationDialogComponent {
     }
     const hasName = !!(vals?.organization ?? '').trim();
     if (!hasName) return true;
-    if (!vals?.organization_id) {
-      const urlValue = (vals?.organization_url ?? '').trim();
-      if (!urlValue) return true;
-      return this.urlStatus() !== 'VALID';
-    }
+    // URL is always required — organization_id is stripped before forwarding to committee-service,
+    // so committee-service must receive name + domain regardless of whether CDP resolved the org.
+    const urlValue = (vals?.organization_url ?? '').trim();
+    if (!urlValue) return true;
+    if (this.urlStatus() !== 'VALID') return true;
     // Block if visible search term was edited without a new selection — confirmed name/id may be stale.
     const searchTerm = search?.searchTerm() ?? '';
     const orgName = (vals?.organization ?? '').trim();
