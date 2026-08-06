@@ -415,8 +415,6 @@ export interface Committee {
   // ── Join & Invite fields ──
   /** How users can join this group (default: 'invite_only') */
   join_mode?: JoinMode;
-  /** SSO group name, also used as slug for public URLs */
-  sso_group_name?: string;
 
   // ── Communication Channels ──
   /** Whether the committee has any associated mailing lists (enriched by BFF via query-service association counts) */
