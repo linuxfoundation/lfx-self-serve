@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormControlStatus, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
@@ -43,9 +43,15 @@ export class AcceptInviteOrganizationDialogComponent {
   private readonly formValue = this.initFormValue();
   private readonly urlStatus = signal<FormControlStatus>(this.urlControl.status);
 
-  protected readonly isNewOrg = computed(() => {
+  // URL validators must stay active whenever an org name is present — not just while the
+  // URL field is empty — because clearing them on the first URL keystroke allowed any
+  // non-empty string (e.g. "not-a-url") to pass urlStatus as VALID and enable Confirm.
+  // Named hasOrgName (not isNewOrg) because it is true for CDP-resolved orgs too —
+  // organization_id is stripped before forwarding to committee-service, so the URL
+  // is required regardless of whether the org already exists in CDP.
+  protected readonly hasOrgName = computed(() => {
     const value = this.formValue();
-    return !value?.organization_id && !!value?.organization?.trim();
+    return !!value?.organization?.trim();
   });
 
   private readonly orgInvalid = computed(() => {
@@ -59,11 +65,11 @@ export class AcceptInviteOrganizationDialogComponent {
     }
     const hasName = !!(vals?.organization ?? '').trim();
     if (!hasName) return true;
-    if (!vals?.organization_id) {
-      const urlValue = (vals?.organization_url ?? '').trim();
-      if (!urlValue) return true;
-      return this.urlStatus() !== 'VALID';
-    }
+    // URL is always required — organization_id is stripped before forwarding to committee-service,
+    // so committee-service must receive name + domain regardless of whether CDP resolved the org.
+    const urlValue = (vals?.organization_url ?? '').trim();
+    if (!urlValue) return true;
+    if (this.urlStatus() !== 'VALID') return true;
     // Block if visible search term was edited without a new selection — confirmed name/id may be stale.
     const searchTerm = search?.searchTerm() ?? '';
     const orgName = (vals?.organization ?? '').trim();
@@ -97,17 +103,21 @@ export class AcceptInviteOrganizationDialogComponent {
       this.urlStatus.set(status);
     });
 
-    effect(() => {
-      if (this.isNewOrg()) {
-        this.urlControl.setValidators([trimmedRequired(), httpsUrlValidator()]);
-      } else {
-        this.urlControl.clearValidators();
-      }
-      this.urlControl.updateValueAndValidity({ emitEvent: false });
-      // Manually sync after updateValueAndValidity({ emitEvent: false }) since
-      // suppressing the event means statusChanges won't fire for validator changes.
-      this.urlStatus.set(this.urlControl.status);
-    });
+    // toObservable (not effect) so we can write urlStatus inside the callback —
+    // effect() forbids signal writes without allowSignalWrites: true.
+    toObservable(this.hasOrgName)
+      .pipe(takeUntilDestroyed())
+      .subscribe((hasName) => {
+        if (hasName) {
+          this.urlControl.setValidators([trimmedRequired(), httpsUrlValidator()]);
+        } else {
+          this.urlControl.clearValidators();
+        }
+        this.urlControl.updateValueAndValidity({ emitEvent: false });
+        // Manually sync after updateValueAndValidity({ emitEvent: false }) since
+        // suppressing the event means statusChanges won't fire for validator changes.
+        this.urlStatus.set(this.urlControl.status);
+      });
   }
 
   public onOrgResolved(result: OrganizationResolveResult): void {
@@ -121,7 +131,7 @@ export class AcceptInviteOrganizationDialogComponent {
 
   public onConfirm(): void {
     this.organizationControl.markAsTouched();
-    if (this.isNewOrg()) {
+    if (this.hasOrgName()) {
       this.urlControl.markAsTouched();
     }
     if (!this.form.valid) {
