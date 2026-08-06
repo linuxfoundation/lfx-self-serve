@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormControlStatus, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
@@ -101,17 +101,19 @@ export class AcceptInviteOrganizationDialogComponent {
       this.urlStatus.set(status);
     });
 
-    effect(() => {
-      if (this.isNewOrg()) {
-        this.urlControl.setValidators([trimmedRequired(), httpsUrlValidator()]);
-      } else {
-        this.urlControl.clearValidators();
-      }
-      this.urlControl.updateValueAndValidity({ emitEvent: false });
-      // Manually sync after updateValueAndValidity({ emitEvent: false }) since
-      // suppressing the event means statusChanges won't fire for validator changes.
-      this.urlStatus.set(this.urlControl.status);
-    });
+    toObservable(this.isNewOrg)
+      .pipe(takeUntilDestroyed())
+      .subscribe((isNew) => {
+        if (isNew) {
+          this.urlControl.setValidators([trimmedRequired(), httpsUrlValidator()]);
+        } else {
+          this.urlControl.clearValidators();
+        }
+        this.urlControl.updateValueAndValidity({ emitEvent: false });
+        // Manually sync after updateValueAndValidity({ emitEvent: false }) since
+        // suppressing the event means statusChanges won't fire for validator changes.
+        this.urlStatus.set(this.urlControl.status);
+      });
   }
 
   public onOrgResolved(result: OrganizationResolveResult): void {

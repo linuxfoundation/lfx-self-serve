@@ -45,11 +45,7 @@ export class InvitationAcceptFlowService {
     // the user's current employer from their profile (fails silently — dialog opens blank).
     const contextReady$: Observable<InvitationAcceptContext> = context.organization
       ? of(context)
-      : this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
-          take(1),
-          map((experiences) => ({ ...context, organization: currentEmployerFromWorkExperiences(experiences) })),
-          catchError(() => of(context))
-        );
+      : this.resolveCurrentEmployer().pipe(map((org) => ({ ...context, organization: org ?? undefined })));
 
     return contextReady$.pipe(
       switchMap((ctx) => this.preResolveOrganization(ctx)),
@@ -83,7 +79,10 @@ export class InvitationAcceptFlowService {
       take(1),
       map((experiences) => currentEmployerFromWorkExperiences(experiences)),
       switchMap((org) => (org ? this.resolveOrgDomain(org) : of(null))),
-      catchError(() => of(null))
+      catchError((error) => {
+        console.warn('[InvitationAcceptFlowService] resolveCurrentEmployer failed; opening dialog blank', error);
+        return of(null);
+      })
     );
   }
 

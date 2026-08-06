@@ -156,6 +156,9 @@ export class CommitteeViewComponent {
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
+  // Blocks the join/apply CTA during the async org-prefetch window so a second tap
+  // doesn't fire a parallel resolveCurrentEmployer() + dialog pair.
+  private readonly resolvingOrg = signal(false);
   // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
   // summary stay in sync across tab switches (tab panels unmount in the @switch below).
   // linkedSignal, not signal: resets to the default window whenever committeeId() changes, the same
@@ -482,7 +485,7 @@ export class CommitteeViewComponent {
 
   public async handleJoinRequest(): Promise<void> {
     const committee = this.committee();
-    if (!committee || this.joiningOrLeaving()) {
+    if (!committee || this.joiningOrLeaving() || this.resolvingOrg()) {
       return;
     }
 
@@ -492,7 +495,8 @@ export class CommitteeViewComponent {
     if (joinMode === 'open') {
       let organization: CommitteeOrganizationReference | undefined;
       if (requiresOrg) {
-        const result = await this.openOrganizationDialog(committee.name);
+        this.resolvingOrg.set(true);
+        const result = await this.openOrganizationDialog(committee.name).finally(() => this.resolvingOrg.set(false));
         if (!result?.organization) {
           return;
         }
@@ -518,7 +522,8 @@ export class CommitteeViewComponent {
       }
       let organization: CommitteeOrganizationReference | undefined;
       if (requiresOrg) {
-        const result = await this.openOrganizationDialog(committee.name);
+        this.resolvingOrg.set(true);
+        const result = await this.openOrganizationDialog(committee.name).finally(() => this.resolvingOrg.set(false));
         if (!result?.organization) {
           return;
         }
