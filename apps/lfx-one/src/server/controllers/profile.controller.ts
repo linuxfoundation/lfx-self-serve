@@ -9,6 +9,7 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
 import {
@@ -2068,9 +2069,18 @@ export class ProfileController {
     try {
       const { isPublic, sections }: ProfileVisibilityUpdateRequest = req.body ?? {};
 
-      if (typeof isPublic !== 'boolean' || !sections || typeof sections !== 'object' || Array.isArray(sections)) {
+      // Require a fully-resolved map (the client always sends every key). A partial/empty map is
+      // malformed: silently zero-filling missing keys would erase settings the caller didn't intend
+      // to touch, so reject it here rather than fail closed to all-private downstream.
+      const sectionsResolved =
+        Boolean(sections) &&
+        typeof sections === 'object' &&
+        !Array.isArray(sections) &&
+        PROFILE_VISIBILITY_KEYS.every((key) => typeof (sections as Record<string, unknown>)[key] === 'boolean');
+
+      if (typeof isPublic !== 'boolean' || !sectionsResolved) {
         return next(
-          ServiceValidationError.forField('body', 'isPublic (boolean) and sections (object) are required', {
+          ServiceValidationError.forField('body', 'isPublic (boolean) and a fully-resolved sections map (every visibility key a boolean) are required', {
             operation: 'update_profile_visibility',
             service: 'profile_controller',
             path: req.path,

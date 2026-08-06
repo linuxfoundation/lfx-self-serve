@@ -277,4 +277,69 @@ test.describe('Profile visibility drawer', () => {
     });
     await expect(page.getByTestId('profile-visibility-drawer-tab-sections'), 'the tablist should render after retry').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
+
+  test('S6: a flush queued behind an in-flight save keeps the close-time edit after reopen', async ({ page }) => {
+    const patchSections: Sections[] = [];
+    let releaseFirstPatch: (() => void) | null = null;
+    const firstPatchGate = new Promise<void>((resolve) => {
+      releaseFirstPatch = resolve;
+    });
+    let patchCount = 0;
+    // The GET returns the current stored map; it only advances once a PATCH is fulfilled.
+    let storedSections = sectionsMap({ basic: true, aboutMe: true, personalInfo: true });
+
+    await page.route('**/api/profile/visibility', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ isPublic: true, sections: storedSections, preferenceId: 'pref-1' }),
+        });
+        return;
+      }
+      if (request.method() === 'PATCH') {
+        const body = request.postDataJSON();
+        patchCount += 1;
+        patchSections.push(body.sections);
+        // Hold the first save in flight so the close-time flush must queue behind it (concatMap).
+        if (patchCount === 1) {
+          await firstPatchGate;
+        }
+        storedSections = body.sections;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ isPublic: body.isPublic, sections: body.sections, preferenceId: 'pref-1' }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+    await openDrawer(page);
+
+    // Save A: toggle badges → the debounced PATCH fires and is held open by the gate above.
+    const firstPatch = page.waitForRequest((r) => r.url().includes('/api/profile/visibility') && r.method() === 'PATCH');
+    await page.locator('[data-test="profile-visibility-drawer-toggle-badges"]').click();
+    await firstPatch;
+
+    // Edit B + close while save A is still in flight → the flush is queued behind A.
+    await page.locator('[data-test="profile-visibility-drawer-toggle-skills"]').click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('profile-visibility-drawer-body'), 'drawer should close').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+
+    // Reopen while A is still held → the GET re-seeds the form from the (pre-A) stored map, dropping
+    // skills back to false in the live form. The queued flush must still carry the close-time edit.
+    await openDrawer(page);
+
+    // Release A; the queued flush now drains and issues the second PATCH.
+    releaseFirstPatch?.();
+    await expect.poll(() => patchSections.length, { timeout: ELEMENT_TIMEOUT }).toBeGreaterThanOrEqual(2);
+
+    // The flushed (second) PATCH must serialize the state at close (skills on), not the reloaded map.
+    expect(patchSections[1]?.skills, 'the queued flush should serialize the close-time edit').toBe(true);
+    expect(patchSections[1]?.badges, 'the queued flush should also retain the earlier toggle').toBe(true);
+  });
 });

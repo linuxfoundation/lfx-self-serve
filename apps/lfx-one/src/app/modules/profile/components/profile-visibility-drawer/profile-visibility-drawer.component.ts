@@ -261,13 +261,21 @@ export class ProfileVisibilityDrawerComponent {
     merge(this.visibilityForm.valueChanges.pipe(debounceTime(this.autosaveDebounceMs)), this.flush$)
       .pipe(
         filter(() => this.dirty && !this.loadingVisibility() && !this.loadError()),
-        // Serialize saves: each PATCH to /me + the preference completes before the next starts, so a
-        // slower earlier write can't land after (and overwrite) a newer one.
-        concatMap(() => {
+        // Snapshot the payload the moment the save is accepted — NOT inside concatMap. concatMap
+        // defers a queued inner's projection until the prior save completes, and by then a reopen's
+        // seedForm() could have replaced the form: building the payload late would serialize the
+        // reloaded state and drop the close-time edit. Counting the queued save here (pendingSaves)
+        // also gates the post-save re-seed against still-queued work.
+        map(() => {
           this.dirty = false;
           this.pendingSaves++;
           this.saveState.set('saving');
-          return this.userService.updateProfileVisibility(this.buildPayload()).pipe(
+          return this.buildPayload();
+        }),
+        // Serialize saves: each PATCH to /me + the preference completes before the next starts, so a
+        // slower earlier write can't land after (and overwrite) a newer one.
+        concatMap((payload) =>
+          this.userService.updateProfileVisibility(payload).pipe(
             map((visibility) => ({ ok: true, visibility: visibility as ProfileVisibility | null })),
             catchError(() => {
               // Re-arm dirty so the next change (or a close flush) retries the failed save.
@@ -276,8 +284,8 @@ export class ProfileVisibilityDrawerComponent {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
               return of({ ok: false, visibility: null as ProfileVisibility | null });
             })
-          );
-        }),
+          )
+        ),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((result) => {
