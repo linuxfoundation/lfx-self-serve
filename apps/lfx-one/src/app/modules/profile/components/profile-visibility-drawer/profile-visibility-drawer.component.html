@@ -1,0 +1,132 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Public-profile visibility drawer (LFXV2-2629) — master IsPublic flag + section visibility. -->
+<p-drawer
+  [visible]="drawer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="!saving()"
+  [dismissible]="!saving()"
+  [closeOnEscape]="!saving()"
+  styleClass="lg:w-[560px] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="profile-visibility-drawer">
+  <ng-template #header>
+    <h2 class="text-lg font-semibold text-slate-900" data-testid="profile-visibility-drawer-header">Public Profile settings</h2>
+  </ng-template>
+
+  <div class="flex flex-col gap-8" data-testid="profile-visibility-drawer-body">
+    <p class="text-sm text-slate-500" data-testid="profile-visibility-drawer-description">
+      Control whether your contributor profile is publicly visible and which sections it exposes. Changes take effect the next time your public profile is
+      regenerated.
+    </p>
+
+    @if (loadingVisibility()) {
+      <div class="flex items-center gap-2 text-sm text-slate-500" data-testid="profile-visibility-drawer-loading">
+        <i class="pi pi-spinner pi-spin"></i>
+        <span>Loading visibility settings...</span>
+      </div>
+    } @else {
+      <form [formGroup]="visibilityForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+        <!-- Master flag -->
+        <div class="flex items-start justify-between gap-4 rounded-md border border-slate-200 p-4" data-testid="profile-visibility-drawer-master">
+          <div class="flex flex-col gap-0.5">
+            <span class="text-sm font-medium text-slate-900">Public profile</span>
+            <span class="text-xs text-slate-500">When off, your profile is hidden and no sections are exposed.</span>
+          </div>
+          <lfx-toggle [form]="visibilityForm" control="isPublic" ariaLabel="Public profile" dataTest="profile-visibility-drawer-master-toggle" />
+        </div>
+
+        <!-- Public URL row — only when the profile is public and the username is known -->
+        @if (isPublic() && publicProfileUrl()) {
+          <div class="flex flex-col gap-2" data-testid="profile-visibility-drawer-url">
+            <span class="text-xs font-medium text-slate-500">Public profile link</span>
+            <div class="flex items-center gap-2">
+              <span class="min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                {{ publicProfileUrl() }}
+              </span>
+              <lfx-button
+                type="button"
+                variant="outlined"
+                size="small"
+                icon="fa-light fa-copy"
+                ariaLabel="Copy public profile link"
+                (onClick)="onCopyUrl()"
+                data-testid="profile-visibility-drawer-copy-button" />
+              <a
+                [href]="publicProfileUrl()"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                data-testid="profile-visibility-drawer-open-link">
+                <i class="fa-light fa-arrow-up-right-from-square"></i>
+                Open
+              </a>
+            </div>
+          </div>
+        }
+
+        <!-- Sections -->
+        <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-sections">
+          <h3 class="text-base font-semibold text-slate-900">Visible sections</h3>
+
+          <!-- Basic group: parent + indented children -->
+          @for (section of basicGroup; track section.key) {
+            <div
+              class="flex items-start justify-between gap-4"
+              [class.pl-6]="section.parent"
+              [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm text-slate-900">{{ section.name }}</span>
+                <span class="text-xs text-slate-500">{{ section.description }}</span>
+              </div>
+              <lfx-toggle
+                [form]="visibilityForm"
+                [control]="section.key"
+                [ariaLabel]="section.name"
+                [dataTest]="'profile-visibility-drawer-toggle-' + section.key" />
+            </div>
+          }
+
+          <div class="h-px bg-slate-200"></div>
+
+          <!-- Standalone activity sections -->
+          @for (section of activitySections; track section.key) {
+            <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm text-slate-900">{{ section.name }}</span>
+                <span class="text-xs text-slate-500">{{ section.description }}</span>
+              </div>
+              <lfx-toggle
+                [form]="visibilityForm"
+                [control]="section.key"
+                [ariaLabel]="section.name"
+                [dataTest]="'profile-visibility-drawer-toggle-' + section.key" />
+            </div>
+          }
+        </div>
+
+        <!-- Actions -->
+        <div class="flex justify-end gap-3 border-t border-slate-200 pt-6 mt-2" data-testid="profile-visibility-drawer-actions">
+          <lfx-button
+            type="button"
+            variant="outlined"
+            label="Cancel"
+            (onClick)="onCancel()"
+            [disabled]="saving()"
+            size="small"
+            data-testid="profile-visibility-drawer-cancel-button" />
+          <lfx-button
+            type="submit"
+            severity="info"
+            [label]="saving() ? 'Saving...' : 'Save Changes'"
+            [loading]="saving()"
+            [disabled]="!hasChanges() || saving()"
+            size="small"
+            data-testid="profile-visibility-drawer-save-button" />
+        </div>
+      </form>
+    }
+  </div>
+</p-drawer>
