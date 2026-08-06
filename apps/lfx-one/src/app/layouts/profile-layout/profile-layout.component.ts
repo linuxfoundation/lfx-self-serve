@@ -239,10 +239,10 @@ export class ProfileLayoutComponent {
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
     // Stored as one of: { savedAt, userMetadata } (drawer's mapped text-field save),
-    // { savedAt, avatarPending, form? } (avatar-upload redirect, form is raw and optional), or the
-    // pre-LFXV2-2933 legacy { savedAt, form } (raw, no avatarPending). Discard past the TTL so a
-    // stale or abandoned profile-edit authorization isn't silently replayed by a later, unrelated
-    // profile-auth return.
+    // { savedAt, avatarPending, userMetadata? } (avatar-upload redirect, mapped and optional), or the
+    // pre-LFXV2-2933 legacy { savedAt, form } (raw, no avatarPending — mapLegacyFormEnvelope below
+    // preserves its original non-clearing semantics). Discard past the TTL so a stale or abandoned
+    // profile-edit authorization isn't silently replayed by a later, unrelated profile-auth return.
     let userMetadata: Partial<UserMetadata> | undefined;
     let avatarPending = false;
     try {

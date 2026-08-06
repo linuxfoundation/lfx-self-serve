@@ -230,29 +230,7 @@ export class ProfileEditDrawerComponent {
     }
 
     this.saving.set(true);
-    const formValue = this.profileForm.value;
-
-    // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
-    // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
-    const metadataLoaded = this.combinedProfile()?.profile != null;
-    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
-
-    // organization_domain is resolved server-side from the organization name, so we only send the
-    // organization. Name/selects keep `|| undefined` (empty = unchanged, not clearable per product).
-    const userMetadata: Partial<UserMetadata> = {
-      given_name: formValue.given_name || undefined,
-      family_name: formValue.family_name || undefined,
-      job_title: freeText(formValue.job_title),
-      organization: formValue.organization || undefined,
-      country: formValue.country || undefined,
-      state_province: formValue.state_province || undefined,
-      city: freeText(formValue.city),
-      address: freeText(formValue.address),
-      postal_code: freeText(formValue.postal_code),
-      phone_number: freeText(formValue.phone_number),
-      t_shirt_size: formValue.t_shirt_size || undefined,
-      bio: freeText(formValue.bio),
-    };
+    const userMetadata = this.buildUserMetadataPayload(this.profileForm.value);
 
     const updateData: ProfileUpdateRequest = {
       user_metadata: userMetadata as UserMetadata,
@@ -375,7 +353,11 @@ export class ProfileEditDrawerComponent {
 
           const url = response.public_url;
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Profile picture updated!' });
-          this.combinedProfile.update((profile) => (profile ? { ...profile, profile: { ...(profile.profile ?? {}), picture: url } } : profile));
+          // A null profile means metadata never loaded — merging would fabricate a non-null profile
+          // and flip metadataLoaded true, letting a later save wipe unloaded fields. Skip the local
+          // preview in that case; the host's own optimistic update (from `saved` below) still refreshes
+          // the avatar shown elsewhere in the Me lens.
+          this.combinedProfile.update((profile) => (profile?.profile == null ? profile : { ...profile, profile: { ...profile.profile, picture: url } }));
           this.saved.emit({ picture: url });
         },
         error: (error: HttpErrorResponse) => {
@@ -384,16 +366,17 @@ export class ProfileEditDrawerComponent {
           // so the user re-selects and re-uploads after authorizing rather than an auto-resumed upload.
           if (error.status === 403 && error.error?.error === 'management_token_required') {
             if (isPlatformBrowser(this.platformId)) {
-              // Stash an avatarPending marker (plus any unsaved text-field edits, same as onSubmit) so
-              // ProfileLayoutComponent.handleProfileAuthReturn can tell the user to re-select their
-              // image once we're back — a toast added here would be wiped by the synchronous
-              // window.location.href below before it ever renders.
+              // Stash an avatarPending marker (plus any unsaved text-field edits, mapped the same way
+              // onSubmit does) so ProfileLayoutComponent.handleProfileAuthReturn can tell the user to
+              // re-select their image once we're back — a toast added here would be wiped by the
+              // synchronous window.location.href below before it ever renders. Stashing the mapped
+              // payload rather than the raw form keeps clear-to-empty edits intact on replay.
               sessionStorage.setItem(
                 PENDING_PROFILE_SAVE_KEY,
                 JSON.stringify({
                   savedAt: Date.now(),
                   avatarPending: true,
-                  ...(this.profileForm.dirty ? { form: this.profileForm.value } : {}),
+                  ...(this.profileForm.dirty ? { userMetadata: this.buildUserMetadataPayload(this.profileForm.value) } : {}),
                 })
               );
               window.location.href = error.error.authorize_url;
@@ -412,6 +395,33 @@ export class ProfileEditDrawerComponent {
   }
 
   // Private methods
+
+  // Shared by onSubmit and the avatar-upload Flow C stash above, so both apply the same
+  // clear-to-empty rules — stashing the raw form value instead would silently drop intentional
+  // clears on replay, since the legacy mapper doesn't know about metadataLoaded/freeText.
+  private buildUserMetadataPayload(formValue: any): Partial<UserMetadata> {
+    // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
+    // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
+    const metadataLoaded = this.combinedProfile()?.profile != null;
+    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
+
+    // organization_domain is resolved server-side from the organization name, so we only send the
+    // organization. Name/selects keep `|| undefined` (empty = unchanged, not clearable per product).
+    return {
+      given_name: formValue.given_name || undefined,
+      family_name: formValue.family_name || undefined,
+      job_title: freeText(formValue.job_title),
+      organization: formValue.organization || undefined,
+      country: formValue.country || undefined,
+      state_province: formValue.state_province || undefined,
+      city: freeText(formValue.city),
+      address: freeText(formValue.address),
+      postal_code: freeText(formValue.postal_code),
+      phone_number: freeText(formValue.phone_number),
+      t_shirt_size: formValue.t_shirt_size || undefined,
+      bio: freeText(formValue.bio),
+    };
+  }
 
   /** Seed the form from the opened profile and reset its pristine/saving state. */
   private seedForm(profile: CombinedProfile): void {
