@@ -100,6 +100,17 @@ export interface GenericChoiceVotes {
 }
 
 /**
+ * Comment prompt on a vote's read model
+ * @description Aligns with upstream poll_comment_prompts entries
+ */
+export interface PollCommentPrompt {
+  /** Comment prompt identifier */
+  prompt_id: string;
+  /** Comment prompt text */
+  prompt: string;
+}
+
+/**
  * Extended vote details for the vote drawer view
  * @description Contains full vote information including questions, options, and results
  */
@@ -112,6 +123,8 @@ export interface VoteDetails extends UserVote {
   discussion_link?: string;
   /** Questions in this poll */
   poll_questions: PollQuestion[];
+  /** Optional comment prompts for voter feedback */
+  poll_comment_prompts?: PollCommentPrompt[];
   /** User's submitted answers (null if not voted) */
   poll_answers?: PollAnswer[];
   /** Total number of voting invitations sent */
@@ -213,6 +226,8 @@ export interface Vote {
   allow_abstain?: boolean;
   /** Questions in this poll */
   poll_questions?: PollQuestion[];
+  /** Optional comment prompts for voter feedback */
+  poll_comment_prompts?: PollCommentPrompt[];
   /** Total number of voting request invitations sent */
   total_voting_request_invitations?: number;
   /** Number of responses received */
@@ -326,6 +341,28 @@ export interface QuestionFormData {
 }
 
 /**
+ * Form data structure for a comment prompt in the vote creation/edit form
+ * @description Used for template iteration with properly typed form controls
+ */
+export interface CommentPromptFormData {
+  /** The FormGroup for this comment prompt */
+  group: import('@angular/forms').FormGroup;
+  /** The prompt text control */
+  promptControl: import('@angular/forms').AbstractControl;
+}
+
+/**
+ * Form data structure for a voter's response to a single comment prompt on the ballot
+ * @description Used for template iteration when casting a vote; pairs the read-only prompt with its response control
+ */
+export interface CommentResponseFormData {
+  /** The comment prompt being answered */
+  prompt: PollCommentPrompt;
+  /** The FormControl holding the voter's response text */
+  control: import('@angular/forms').FormControl<string>;
+}
+
+/**
  * Form value structure for a question in the vote form
  * @description Represents the raw form values extracted from the question FormGroup
  */
@@ -336,6 +373,17 @@ export interface QuestionFormValue {
   response_type: 'single' | 'multiple';
   /** Array of option texts */
   options: string[];
+}
+
+/**
+ * Form value structure for a comment prompt in the vote creation/edit form
+ * @description Represents the raw form values extracted from a comment-prompt FormGroup
+ */
+export interface CommentPromptFormValue {
+  /** Existing prompt identifier — present when editing an existing prompt */
+  prompt_id?: string;
+  /** Comment prompt text */
+  prompt: string;
 }
 
 /**
@@ -355,6 +403,8 @@ export interface VoteFormValue {
   close_date: Date | null;
   /** Array of question form values */
   questions: QuestionFormValue[];
+  /** Array of comment-prompt form values (optional, creator authoring only) */
+  commentPrompts: CommentPromptFormValue[];
 }
 
 /**
@@ -504,14 +554,33 @@ export interface PollQuestionResult {
 }
 
 /**
+ * Single voter's response to a comment prompt in results
+ * @description `user_name` is absent (not empty) when the vote is pseudo-anonymous
+ */
+export interface PollCommentResponse {
+  /** Vote response (ballot) identifier */
+  vote_id: string;
+  /** Voter's user identifier */
+  user_id: string;
+  /** Submitted comment text */
+  comment_text: string;
+  /** Voter's display name — absent when the vote is pseudo-anonymous */
+  user_name?: string;
+  /** Timestamp when the voter submitted their vote */
+  vote_creation_time: string;
+  /** Whether the voter abstained from voting */
+  abstained: boolean;
+}
+
+/**
  * Comment results for a poll comment prompt
- * @description Contains the prompt text and all submitted comments
+ * @description Contains the prompt definition and all submitted voter responses
  */
 export interface PollCommentResult {
-  /** Comment prompt text */
-  prompt: string;
-  /** Submitted voter comments */
-  comments: string[];
+  /** Comment prompt definition */
+  prompt: PollCommentPrompt;
+  /** Submitted voter responses */
+  responses: PollCommentResponse[];
 }
 
 /**
@@ -561,6 +630,8 @@ export interface CreatePollQuestion {
  * @description Used in CreateVoteRequest to define optional comment prompts
  */
 export interface CreatePollCommentPrompt {
+  /** Existing prompt identifier — present when editing an existing prompt, absent for a newly authored one */
+  prompt_id?: string;
   /** Comment prompt text */
   prompt: string;
 }
@@ -630,6 +701,17 @@ export interface VoteAnswerInput {
 }
 
 /**
+ * Voter's response to a single comment prompt on a ballot submission
+ * @description Aligns with upstream comment_responses entries
+ */
+export interface CommentResponseInput {
+  /** Comment prompt identifier (UUID) */
+  prompt_id: string;
+  /** Voter's comment text */
+  comment_text: string;
+}
+
+/**
  * Request body for submitting a vote response (ballot)
  * @description Aligns with upstream POST /vote_responses
  * @see https://github.com/linuxfoundation/lfx-v2-voting-service
@@ -643,6 +725,8 @@ export interface CreateVoteResponseRequest {
   abstain: boolean;
   /** Voter's answers — required when not abstaining */
   user_vote_content?: VoteAnswerInput[];
+  /** Voter's responses to optional comment prompts */
+  comment_responses?: CommentResponseInput[];
 }
 
 /**

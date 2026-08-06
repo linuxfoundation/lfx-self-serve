@@ -5,6 +5,7 @@ import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http'
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { INVITATION_NOT_FOUND } from '@lfx-one/shared/constants';
 import {
+  CommentResponseInput,
   CreateVoteRequest,
   CreateVoteResponseRequest,
   MyVoteResponse,
@@ -141,7 +142,10 @@ export class VoteService {
   }
 
   /** Wraps getMyVoteResponse + createVoteResponse; throws INVITATION_NOT_FOUND if no row exists. */
-  public submitMyResponse(voteUid: string, params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined }): Observable<void> {
+  public submitMyResponse(
+    voteUid: string,
+    params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[] }
+  ): Observable<void> {
     return this.getMyVoteResponse(voteUid).pipe(
       take(1),
       switchMap((myResponse) => {
@@ -151,6 +155,7 @@ export class VoteService {
           vote_uid: voteUid,
           abstain: params.abstain,
           user_vote_content: params.userVoteContent,
+          comment_responses: params.commentResponses,
         };
         return this.createVoteResponse(payload);
       })

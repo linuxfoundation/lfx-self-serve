@@ -5,7 +5,18 @@ import { addDays } from 'date-fns';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION } from '../constants/poll.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { CommitteeReference } from '../interfaces/committee.interface';
-import { CreatePollQuestion, CreateVoteRequest, PollQuestion, QuestionFormValue, UpdateVoteRequest, Vote, VoteFormValue } from '../interfaces/poll.interface';
+import {
+  CommentPromptFormValue,
+  CreatePollCommentPrompt,
+  CreatePollQuestion,
+  CreateVoteRequest,
+  PollCommentPrompt,
+  PollQuestion,
+  QuestionFormValue,
+  UpdateVoteRequest,
+  Vote,
+  VoteFormValue,
+} from '../interfaces/poll.interface';
 
 /**
  * Maps UI eligibility value to API committee_filters
@@ -79,6 +90,18 @@ export function mapApiQuestionToFormValue(question: PollQuestion): QuestionFormV
 }
 
 /**
+ * Maps an API PollCommentPrompt back to the form's CommentPromptFormValue
+ * @param prompt - PollCommentPrompt from the API response
+ * @returns CommentPromptFormValue for the form
+ */
+export function mapApiCommentPromptToFormValue(prompt: PollCommentPrompt): CommentPromptFormValue {
+  return {
+    prompt_id: prompt.prompt_id,
+    prompt: prompt.prompt,
+  };
+}
+
+/**
  * Maps a Vote API response to a VoteFormValue for populating the edit form
  * @param vote - Vote entity from the API
  * @returns VoteFormValue to patch into the form
@@ -93,6 +116,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: vote.end_time ? new Date(vote.end_time) : null,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
+    commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
 }
 
@@ -110,6 +134,25 @@ export function mapQuestionToApiFormat(question: QuestionFormValue): CreatePollQ
       .filter((option) => option !== '')
       .map((option) => ({ choice_text: option })),
   };
+}
+
+/**
+ * Maps the form's comment-prompt array to the API's poll_comment_prompts, dropping blanks
+ * @param commentPrompts - Comment prompt form values
+ * @returns poll_comment_prompts for the API request, or undefined when there are none to send
+ */
+export function mapCommentPromptsToApiFormat(commentPrompts: CommentPromptFormValue[]): CreatePollCommentPrompt[] | undefined {
+  const nonBlank: CreatePollCommentPrompt[] = (commentPrompts ?? [])
+    .filter((commentPrompt) => (commentPrompt.prompt?.trim().length ?? 0) > 0)
+    .map((commentPrompt) => {
+      const mapped: CreatePollCommentPrompt = { prompt: commentPrompt.prompt.trim() };
+      if (commentPrompt.prompt_id) {
+        mapped.prompt_id = commentPrompt.prompt_id;
+      }
+      return mapped;
+    });
+
+  return nonBlank.length > 0 ? nonBlank : undefined;
 }
 
 const DRAFT_OPTION_PAD_LABELS = DRAFT_VOTE_PLACEHOLDER_QUESTION.choices.map((choice) => choice.choice_text);
@@ -157,6 +200,7 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+    poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
@@ -173,6 +217,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     poll_questions,
+    poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
@@ -191,6 +236,7 @@ export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: str
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+    poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
@@ -207,5 +253,6 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     poll_questions,
+    poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }

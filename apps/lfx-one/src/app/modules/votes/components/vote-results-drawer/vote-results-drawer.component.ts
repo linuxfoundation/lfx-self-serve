@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { DatePipe, formatDate, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -28,7 +28,17 @@ import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, sha
 
 @Component({
   selector: 'lfx-vote-results-drawer',
-  imports: [DrawerModule, TagComponent, DatePipe, PollStatusLabelPipe, PollStatusSeverityPipe, SkeletonModule, ButtonComponent, TooltipModule],
+  imports: [
+    DrawerModule,
+    TagComponent,
+    DatePipe,
+    NgTemplateOutlet,
+    PollStatusLabelPipe,
+    PollStatusSeverityPipe,
+    SkeletonModule,
+    ButtonComponent,
+    TooltipModule,
+  ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
 })
@@ -296,7 +306,7 @@ export class VoteResultsDrawerComponent {
         return [];
       }
 
-      return results.comment_results.filter((cr) => cr.comments.length > 0);
+      return results.comment_results.filter((cr) => cr.responses.length > 0);
     });
   }
 

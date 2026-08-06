@@ -30,6 +30,37 @@
     }
   </div>
 
+  @if (commentPromptsData().length > 0) {
+    <div class="flex flex-col gap-2" [formGroup]="commentForm" data-testid="dashboard-pending-actions-vote-comments">
+      @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
+        <div class="flex flex-col gap-1" [attr.data-testid]="'dashboard-pending-actions-vote-comment-' + commentData.prompt.prompt_id">
+          <label [for]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id" class="text-xs font-medium text-gray-700">
+            {{ commentData.prompt.prompt }}
+          </label>
+          <lfx-textarea
+            [form]="commentForm"
+            [control]="commentData.prompt.prompt_id"
+            [id]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id"
+            [rows]="2"
+            [maxlength]="commentPromptMaxLength"
+            styleClass="w-full text-xs"
+            [dataTest]="'dashboard-pending-actions-vote-comment-textarea-' + commentData.prompt.prompt_id">
+          </lfx-textarea>
+          <div class="flex justify-between">
+            @if (commentData.control.touched && commentData.control.errors?.['maxlength']) {
+              <p class="text-red-500 text-xs">Comment must be {{ commentPromptMaxLength }} characters or fewer.</p>
+            } @else {
+              <span></span>
+            }
+            <span class="text-xs text-gray-400" [attr.data-testid]="'dashboard-pending-actions-vote-comment-counter-' + commentData.prompt.prompt_id">
+              {{ commentData.control.value.length }}/{{ commentPromptMaxLength }}
+            </span>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
   <div class="flex items-center justify-end gap-2 pt-1">
     @if (allowAbstain()) {
       <label class="flex items-center gap-1.5 text-xs text-gray-600" data-testid="dashboard-pending-actions-vote-abstain-label">

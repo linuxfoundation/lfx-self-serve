@@ -9,6 +9,28 @@
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-results-drawer"
   data-testid="vote-results-drawer">
   @if (vote(); as voteData) {
+    <!-- Shared comment-results list — rendered in voter + creator + admin + ED views via ngTemplateOutlet. -->
+    <ng-template #commentResultsList>
+      @for (commentResult of commentResults(); track $index) {
+        <div class="flex flex-col gap-2">
+          <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt.prompt }}</h3>
+          @for (response of commentResult.responses; track $index) {
+            <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
+              <p class="text-sm text-slate-700">{{ response.comment_text }}</p>
+              <div class="flex items-center gap-2 text-xs text-slate-500">
+                <span>{{ response.user_name || 'Anonymous' }}</span>
+                <span>•</span>
+                <span>{{ response.vote_creation_time | date: 'MMM d, y' }}</span>
+                @if (response.abstained) {
+                  <span class="text-slate-400">(Abstained)</span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </ng-template>
+
     <ng-template #header>
       <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-results-drawer-header">
         <div class="flex items-center justify-between gap-2">
@@ -289,16 +311,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-voter-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track $index) {
-                <div class="flex flex-col gap-2">
-                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                  @for (comment of commentResult.comments; track $index) {
-                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p class="text-sm text-slate-700">{{ comment }}</p>
-                    </div>
-                  }
-                </div>
-              }
+              <ng-container [ngTemplateOutlet]="commentResultsList" />
             </div>
           }
           @if (voteData.description) {
@@ -430,16 +443,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track $index) {
-                <div class="flex flex-col gap-2">
-                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                  @for (comment of commentResult.comments; track $index) {
-                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p class="text-sm text-slate-700">{{ comment }}</p>
-                    </div>
-                  }
-                </div>
-              }
+              <ng-container [ngTemplateOutlet]="commentResultsList" />
             </div>
           }
 
@@ -526,16 +530,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track $index) {
-                <div class="flex flex-col gap-2">
-                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                  @for (comment of commentResult.comments; track $index) {
-                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p class="text-sm text-slate-700">{{ comment }}</p>
-                    </div>
-                  }
-                </div>
-              }
+              <ng-container [ngTemplateOutlet]="commentResultsList" />
             </div>
           }
         </div>
@@ -644,16 +639,7 @@
         @if (commentResults().length > 0) {
           <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
             <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-            @for (commentResult of commentResults(); track $index) {
-              <div class="flex flex-col gap-2">
-                <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                @for (comment of commentResult.comments; track $index) {
-                  <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                    <p class="text-sm text-slate-700">{{ comment }}</p>
-                  </div>
-                }
-              </div>
-            }
+            <ng-container [ngTemplateOutlet]="commentResultsList" />
           </div>
         }
 
