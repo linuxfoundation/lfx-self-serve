@@ -6268,20 +6268,17 @@ export class ProjectService {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving child projects for foundation', { foundation_uid: foundationUid });
     const uids = [foundationUid];
     try {
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
+      const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'project',
           parent: `project:${foundationUid}`,
-        }
+          ...(pageToken && { page_token: pageToken }),
+        })
       );
       for (const r of resources) {
         // Skip ROOT — administrative pseudo-project, never a real foundation child.
-        if (r.data?.uid && r.data.slug !== ROOT_PROJECT_SLUG) {
-          uids.push(r.data.uid);
+        if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
+          uids.push(r.uid);
         }
       }
     } catch (error) {
