@@ -210,8 +210,12 @@ export class ProfileVisibilityDrawerComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((visibility) => {
-        // Re-seed from the persisted response (syncs preferenceId) without re-triggering a save.
-        this.seedForm(visibility);
+        // Re-seed from the persisted response without re-triggering a save — but only when no newer
+        // edit landed while this save was in flight. If it did (dirty is true again), re-seeding would
+        // revert those edits and clear dirty, dropping the pending debounced save. Leave them to persist.
+        if (!this.dirty) {
+          this.seedForm(visibility);
+        }
         this.saveState.set('saved');
       });
   }
