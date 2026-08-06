@@ -435,10 +435,10 @@ ping your-microservice-host
 
 ### Support Channels
 
-- **JIRA Project**: LFXV2 - Create tickets for bugs and issues
+- **Ticket Tracking**: JIRA project `LFXV2` or GitHub Issues on [`linuxfoundation/lfx-self-serve`](https://github.com/linuxfoundation/lfx-self-serve/issues) — file bugs and issues in whichever tracker fits the work (see `.claude/rules/commit-workflow.md` § Ticket Tracking)
 - **Architecture Questions**: Refer to architecture documentation
 - **Environment Issues**: Check environment configuration guide
 
 ---
 
-_This troubleshooting guide is specific to LFX One. For questions or additional issues, create a JIRA ticket using project key LFXV2._
+_This troubleshooting guide is specific to LFX One. For questions or additional issues, file a JIRA ticket in the `LFXV2` project or a GitHub Issue on [`linuxfoundation/lfx-self-serve`](https://github.com/linuxfoundation/lfx-self-serve/issues)._
