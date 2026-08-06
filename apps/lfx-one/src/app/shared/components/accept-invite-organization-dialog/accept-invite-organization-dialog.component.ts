@@ -46,7 +46,10 @@ export class AcceptInviteOrganizationDialogComponent {
   // URL validators must stay active whenever an org name is present — not just while the
   // URL field is empty — because clearing them on the first URL keystroke allowed any
   // non-empty string (e.g. "not-a-url") to pass urlStatus as VALID and enable Confirm.
-  protected readonly isNewOrg = computed(() => {
+  // Named hasOrgName (not isNewOrg) because it is true for CDP-resolved orgs too —
+  // organization_id is stripped before forwarding to committee-service, so the URL
+  // is required regardless of whether the org already exists in CDP.
+  protected readonly hasOrgName = computed(() => {
     const value = this.formValue();
     return !!value?.organization?.trim();
   });
@@ -100,10 +103,12 @@ export class AcceptInviteOrganizationDialogComponent {
       this.urlStatus.set(status);
     });
 
-    toObservable(this.isNewOrg)
+    // toObservable (not effect) so we can write urlStatus inside the callback —
+    // effect() forbids signal writes without allowSignalWrites: true.
+    toObservable(this.hasOrgName)
       .pipe(takeUntilDestroyed())
-      .subscribe((isNew) => {
-        if (isNew) {
+      .subscribe((hasName) => {
+        if (hasName) {
           this.urlControl.setValidators([trimmedRequired(), httpsUrlValidator()]);
         } else {
           this.urlControl.clearValidators();
@@ -126,7 +131,7 @@ export class AcceptInviteOrganizationDialogComponent {
 
   public onConfirm(): void {
     this.organizationControl.markAsTouched();
-    if (this.isNewOrg()) {
+    if (this.hasOrgName()) {
       this.urlControl.markAsTouched();
     }
     if (!this.form.valid) {

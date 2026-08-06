@@ -82,6 +82,10 @@ export class InvitationAcceptFlowService {
       timeout(2000),
       map((experiences) => currentEmployerFromWorkExperiences(experiences)),
       switchMap((org) => (org ? this.resolveOrgDomain(org) : of(null))),
+      // Only prefill when a domain was actually resolved — an org with name but no website
+      // would cause the dialog to open with the URL field empty yet show a red validation
+      // warning immediately (orgInvalid=true + hasName=true → showOrgWarning=true).
+      map((org) => (org?.website?.trim() ? org : null)),
       catchError((error) => {
         console.warn('[InvitationAcceptFlowService] resolveCurrentEmployer failed; opening dialog blank', error);
         return of(null);
@@ -97,27 +101,30 @@ export class InvitationAcceptFlowService {
    *
    * Skips the search only when both id AND website are already present.
    * Times out after 2 s and silently returns the unmodified org on any failure.
+   * (resolveCurrentEmployer's preceding 2 s GET timeout means the total worst-case
+   * prefill window is ~4 s, not 2 s.)
    */
   private resolveOrgDomain(org: CommitteeOrganizationReference): Observable<CommitteeOrganizationReference> {
-    if (!org?.name?.trim() || (org.id && org.website?.trim())) {
+    const name = (org?.name ?? '').trim();
+    if (!name || (org.id && org.website?.trim())) {
       return of(org);
     }
-    return this.organizationService.searchOrganizations(org.name!).pipe(
+    return this.organizationService.searchOrganizations(name).pipe(
       take(1),
-      switchMap((suggestions) => {
-        const match = suggestions.find((s) => s.name.toLowerCase() === org.name!.toLowerCase().trim());
+      map((suggestions) => {
+        const match = suggestions.find((s) => s.name.toLowerCase() === name.toLowerCase());
         if (!match) {
-          return of(org);
+          return org;
         }
-        return this.organizationService.resolveOrganization(match.name, match.domain).pipe(
-          take(1),
-          map((resolved) => ({
-            ...org,
-            id: resolved.id || null,
-            name: resolved.name || org.name,
-            website: normalizeToUrl(match.domain) ?? org.website,
-          }))
-        );
+        // Build the prefill directly from the search result — the canonical name and
+        // normalised domain are all committee-service needs (organization_id is stripped
+        // before forwarding). Avoids an unnecessary find-or-create POST.
+        return {
+          ...org,
+          id: null,
+          name: match.name,
+          website: normalizeToUrl(match.domain) ?? org.website,
+        };
       }),
       timeout(2000),
       catchError((error) => {
@@ -127,6 +134,7 @@ export class InvitationAcceptFlowService {
     );
   }
 
+  /** Adapts resolveOrgDomain to the invite-accept-context shape, threading the resolved org back into ctx. */
   private preResolveOrganization(ctx: InvitationAcceptContext): Observable<InvitationAcceptContext> {
     const org = ctx.organization;
     if (!org) {

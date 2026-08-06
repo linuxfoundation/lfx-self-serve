@@ -198,8 +198,9 @@ export class CommitteeViewComponent {
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
   public joiningOrLeaving = signal(false);
-  // Blocks the join/apply CTA during the async org-prefetch window so a second tap
-  // doesn't fire a parallel resolveCurrentEmployer() + dialog pair.
+  // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
+  // is open (signal stays true until .finally() resolves when the dialog closes) so a
+  // second tap can't open a parallel resolveCurrentEmployer() + dialog pair.
   protected readonly resolvingOrg = signal(false);
   // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
   // summary stay in sync across tab switches (tab panels unmount in the @switch below).
@@ -837,7 +838,8 @@ export class CommitteeViewComponent {
     // Pre-fill from the user's profile work experiences — same pre-resolution the invite
     // accept flow uses so the user doesn't have to re-enter an org they've already set.
     // takeUntilDestroyed cancels the observable if the component is destroyed while the
-    // profile/domain lookup (≤2 s) is still in flight, preventing dangling subscriptions.
+    // profile/domain lookup (≤4 s worst case — 2 s for the work-experiences GET + 2 s for
+    // the CDP domain resolve) is still in flight, preventing dangling subscriptions.
     // We track destruction explicitly because firstValueFrom's defaultValue: null causes
     // the await to resolve successfully even when takeUntilDestroyed completed early due
     // to component teardown — without this guard the dialog would open over a new route.
