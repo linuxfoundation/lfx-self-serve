@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CommitteeOrganizationReference } from './committee.interface';
+
 /**
  * Status of a committee join application
  */
@@ -45,4 +47,5 @@ export interface RejectCommitteeJoinApplicationRequest {
 export interface CreateCommitteeJoinApplicationRequest {
   /** Message from the applicant (max 2000 chars) */
   message: string;
+  organization?: CommitteeOrganizationReference;
 }

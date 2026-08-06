@@ -5,10 +5,16 @@ import { Component, DestroyRef, inject, input, OnInit, output } from '@angular/c
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
+import { InputNumberComponent } from '@components/input-number/input-number.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import {
   ARTIFACT_VISIBILITY_OPTIONS,
+  DEFAULT_EMAIL_REMINDER_HOURS,
+  DEFAULT_EMAIL_REMINDER_MINUTES,
+  EMAIL_REMINDER_FEATURE,
+  EMAIL_REMINDER_TOOLTIP,
+  MAX_EMAIL_REMINDER_HOURS,
   MEETING_DETAILS_STEP,
   MEETING_FEATURES,
   MEETING_PLATFORMS,
@@ -19,7 +25,7 @@ import { map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-platform-features',
-  imports: [ReactiveFormsModule, FeatureToggleComponent, SelectComponent, ToggleComponent, TooltipModule],
+  imports: [ReactiveFormsModule, FeatureToggleComponent, InputNumberComponent, SelectComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-platform-features.component.html',
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {
@@ -51,6 +57,8 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
   public readonly transcriptFeature = MEETING_FEATURES.find((f) => f.key === 'transcript_enabled')!;
   public readonly youtubeFeature = MEETING_FEATURES.find((f) => f.key === 'youtube_upload_enabled')!;
   public readonly aiSummaryFeature = MEETING_FEATURES.find((f) => f.key === 'zoom_ai_enabled')!;
+  public readonly emailReminderFeature = EMAIL_REMINDER_FEATURE;
+  public readonly emailReminderTooltip = EMAIL_REMINDER_TOOLTIP;
 
   // Transform platforms into dropdown options (only available platforms)
   public readonly platformDropdownOptions = MEETING_PLATFORMS.map((platform) => ({
@@ -84,6 +92,52 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
             control.updateValueAndValidity();
           }
         });
+      });
+
+    // Watch the reminder toggle to enable/disable the hours and minutes inputs
+    this.form()
+      .get('auto_email_reminder_enabled')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((reminderEnabled: boolean) => {
+        const hoursControl = this.form().get('reminderHours');
+        const minutesControl = this.form().get('reminderMinutes');
+        if (!hoursControl || !minutesControl) {
+          return;
+        }
+
+        if (reminderEnabled) {
+          hoursControl.enable({ emitEvent: false });
+          // Minutes stay locked at 0 while hours is at the 24-hour maximum
+          if (Number(hoursControl.value) === MAX_EMAIL_REMINDER_HOURS) {
+            minutesControl.setValue(DEFAULT_EMAIL_REMINDER_MINUTES, { emitEvent: false });
+            minutesControl.disable({ emitEvent: false });
+          } else {
+            minutesControl.enable({ emitEvent: false });
+          }
+        } else {
+          hoursControl.setValue(DEFAULT_EMAIL_REMINDER_HOURS, { emitEvent: false });
+          hoursControl.disable({ emitEvent: false });
+          minutesControl.setValue(DEFAULT_EMAIL_REMINDER_MINUTES, { emitEvent: false });
+          minutesControl.disable({ emitEvent: false });
+        }
+      });
+
+    // When set to 24 hours, minutes are automatically set to 0
+    this.form()
+      .get('reminderHours')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((hours) => {
+        const minutesControl = this.form().get('reminderMinutes');
+        if (!minutesControl || !this.form().get('auto_email_reminder_enabled')?.value) {
+          return;
+        }
+
+        if (Number(hours) === MAX_EMAIL_REMINDER_HOURS) {
+          minutesControl.setValue(DEFAULT_EMAIL_REMINDER_MINUTES, { emitEvent: false });
+          minutesControl.disable({ emitEvent: false });
+        } else {
+          minutesControl.enable({ emitEvent: false });
+        }
       });
   }
 

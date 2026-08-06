@@ -596,6 +596,9 @@ export type CommitteeVoteStatus = 'open' | 'closed' | 'cancelled';
  */
 export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs' | 'atRisk';
 
+/** Tab selector for the committee Members card: 'all' shows members + pending invites; 'pending' shows invites only. */
+export type CommitteeMemberTab = 'all' | 'pending';
+
 /** A single chip entry in the committee Members quick-filter row. */
 export interface CommitteeMemberFilterChipConfig {
   key: CommitteeMemberFilterChip;

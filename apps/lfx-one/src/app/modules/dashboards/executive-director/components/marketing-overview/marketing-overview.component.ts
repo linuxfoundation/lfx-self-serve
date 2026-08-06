@@ -39,7 +39,6 @@ import { FlywheelConversionDrawerComponent } from '../flywheel-conversion-drawer
 import { MemberAcquisitionDrawerComponent } from '../member-acquisition-drawer/member-acquisition-drawer.component';
 import { PaidSocialReachDrawerComponent } from '../paid-social-reach-drawer/paid-social-reach-drawer.component';
 import { RevenueImpactDrawerComponent } from '../revenue-impact-drawer/revenue-impact-drawer.component';
-import { SocialMediaDrawerComponent } from '../social-media-drawer/social-media-drawer.component';
 import { WebsiteVisitsDrawerComponent } from '../website-visits-drawer/website-visits-drawer.component';
 
 const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
@@ -190,7 +189,6 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     WebsiteVisitsDrawerComponent,
     EmailCtrDrawerComponent,
     PaidSocialReachDrawerComponent,
-    SocialMediaDrawerComponent,
     EngagedCommunityDrawerComponent,
     MemberAcquisitionDrawerComponent,
     FlywheelConversionDrawerComponent,

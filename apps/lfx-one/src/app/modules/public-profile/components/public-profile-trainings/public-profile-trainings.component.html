@@ -1,0 +1,34 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="trainings-section">
+  <h2 class="m-0 text-lg font-bold text-gray-900">Training enrollment</h2>
+  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">
+    Courses and learning paths enrolled through the Linux Foundation. Visit the
+    <a href="https://trainingportal.linuxfoundation.org/" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">Training Portal</a>.
+  </p>
+
+  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="trainings-list">
+    @for (training of trainings(); track training) {
+      <div class="flex flex-col gap-2 border-b border-gray-100 p-4 last:border-0" data-testid="training-item">
+        <span class="break-words text-sm font-semibold text-gray-900">{{ training.Name }}</span>
+        <!-- Format once and gate on the result: the pipe drops zero-time sentinels to '', so testing
+             the raw dates would render an empty "Enrolled:" label (or an empty metadata row). -->
+        @let trainingDateRange = training.StartDate | publicProfileDateRange: training.EndDate;
+        @if (training.Type || trainingDateRange) {
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+            @if (training.Type) {
+              <span
+                class="inline-flex flex-none items-center rounded-md bg-gray-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600"
+                >{{ training.Type }}</span
+              >
+            }
+            @if (trainingDateRange) {
+              <span class="flex-none text-gray-400">Enrolled: {{ trainingDateRange }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+</section>

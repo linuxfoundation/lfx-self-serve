@@ -32,13 +32,13 @@ const daysFromNow = (days: number): string => isoDate(new Date(Date.now() + days
 /** Minimal membership builder — only the fields the resolver reads. */
 function membership(overrides: Partial<EnrollmentMembership> = {}): EnrollmentMembership {
   return {
-    Status: 'Active',
-    AutoRenew: false,
-    PurchaseDate: daysFromNow(-365),
-    EndDate: daysFromNow(60),
-    Price: 100,
-    ID: 'mem-1',
-    ExtPaymentType: '',
+    status: 'Active',
+    autoRenew: false,
+    purchaseDate: daysFromNow(-365),
+    endDate: daysFromNow(60),
+    price: 100,
+    id: 'mem-1',
+    extPaymentType: '',
     ...overrides,
   };
 }
@@ -48,7 +48,7 @@ function enrollment(overrides: Partial<IndividualEnrollment> = {}): IndividualEn
   return {
     projectName: 'Example Project',
     projectSlug: 'example-project',
-    ProductName: 'Individual Supporter',
+    productName: 'Individual Supporter',
     projectDesc: '',
     enrollButton: 'Enroll',
     price: 100,
@@ -71,12 +71,12 @@ describe('deriveEnrollmentStatus', () => {
   });
 
   it('returns Expired when Status is Expired, even for stripe + autoRenew', () => {
-    const item = enrollment({ membership: membership({ Status: 'Expired', AutoRenew: true, ExtPaymentType: 'stripe', EndDate: daysFromNow(60) }) });
+    const item = enrollment({ membership: membership({ status: 'Expired', autoRenew: true, extPaymentType: 'stripe', endDate: daysFromNow(60) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expired');
   });
 
   it('returns Active for a free-tier item (no price) regardless of EndDate', () => {
-    const item = enrollment({ price: undefined, membership: membership({ EndDate: daysFromNow(-10) }) });
+    const item = enrollment({ price: undefined, membership: membership({ endDate: daysFromNow(-10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
@@ -84,49 +84,49 @@ describe('deriveEnrollmentStatus', () => {
     // `price` is typed as `number | undefined`, but the resolver also guards against a runtime
     // `null` — cast through `number` (not `undefined`) so the test doesn't misrepresent the value
     // it's actually passing.
-    const item = enrollment({ price: null as unknown as number, membership: membership({ EndDate: daysFromNow(-10) }) });
+    const item = enrollment({ price: null as unknown as number, membership: membership({ endDate: daysFromNow(-10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
   it('returns Active for stripe + autoRenew with a future EndDate', () => {
-    const item = enrollment({ membership: membership({ AutoRenew: true, ExtPaymentType: 'stripe', EndDate: daysFromNow(60) }) });
+    const item = enrollment({ membership: membership({ autoRenew: true, extPaymentType: 'stripe', endDate: daysFromNow(60) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
   it('suppresses Expiring Soon for stripe + autoRenew within the 30-day window', () => {
-    const item = enrollment({ membership: membership({ AutoRenew: true, ExtPaymentType: 'stripe', EndDate: daysFromNow(10) }) });
+    const item = enrollment({ membership: membership({ autoRenew: true, extPaymentType: 'stripe', endDate: daysFromNow(10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
   it('returns Expired for stripe + autoRenew with a past EndDate (regression guard)', () => {
-    const item = enrollment({ membership: membership({ AutoRenew: true, ExtPaymentType: 'stripe', EndDate: daysFromNow(-5) }) });
+    const item = enrollment({ membership: membership({ autoRenew: true, extPaymentType: 'stripe', endDate: daysFromNow(-5) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expired');
   });
 
   it('returns Expired for a non-stripe membership with a past EndDate', () => {
-    const item = enrollment({ membership: membership({ AutoRenew: false, ExtPaymentType: 'paypal', EndDate: daysFromNow(-5) }) });
+    const item = enrollment({ membership: membership({ autoRenew: false, extPaymentType: 'paypal', endDate: daysFromNow(-5) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expired');
   });
 
   it('returns Active when EndDate is more than 30 days out', () => {
-    const item = enrollment({ membership: membership({ EndDate: daysFromNow(60) }) });
+    const item = enrollment({ membership: membership({ endDate: daysFromNow(60) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
   it('returns Expiring Soon when EndDate lands exactly on the 30-day mark', () => {
     // EndDate is normalized to UTC midnight while `now` (and the 30-day cutoff derived from it)
     // carries a time-of-day, so midnight-of-day+30 is still strictly less than now+30d.
-    const item = enrollment({ membership: membership({ EndDate: daysFromNow(30) }) });
+    const item = enrollment({ membership: membership({ endDate: daysFromNow(30) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expiring Soon');
   });
 
   it('returns Active when EndDate is 31 days out (first day fully outside the window)', () => {
-    const item = enrollment({ membership: membership({ EndDate: daysFromNow(31) }) });
+    const item = enrollment({ membership: membership({ endDate: daysFromNow(31) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Active');
   });
 
   it('returns Expiring Soon when EndDate is within 30 days and not stripe-autoRenew', () => {
-    const item = enrollment({ membership: membership({ EndDate: daysFromNow(10) }) });
+    const item = enrollment({ membership: membership({ endDate: daysFromNow(10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expiring Soon');
   });
 });

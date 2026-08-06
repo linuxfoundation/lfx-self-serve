@@ -7,7 +7,7 @@ import { test, expect, Page } from '@playwright/test';
  * Marketing Dashboard E2E Tests
  *
  * Tests the Executive Director marketing overview section including:
- * - Marketing metric cards (Website Visits, Email CTR, Paid Social Reach, Social Media)
+ * - Marketing metric cards (Website Visits, Email CTR, Paid Social Reach)
  * - North Star metric cards (Flywheel Conversion, Member Growth, Engaged Community)
  * - Drill-down drawers for each metric
  * - Carousel navigation
@@ -150,20 +150,12 @@ test.describe('Marketing Metric Cards', () => {
     await switchToExecutiveDirector(page);
   });
 
-  test('renders Website Visits card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-website-visits"]');
+  test('renders Email card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-campaign-performance"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
-    await expect(card).toContainText('Website Visits');
-  });
-
-  test('renders Email CTR card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-email-ctr"]');
-    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
-    await card.scrollIntoViewIfNeeded();
-    await expect(card).toBeVisible();
-    await expect(card).toContainText('Email CTR');
+    await expect(card).toContainText('Email');
   });
 
   test('renders Paid Media card', async ({ page }) => {
@@ -174,12 +166,25 @@ test.describe('Marketing Metric Cards', () => {
     await expect(card).toContainText('Paid Media');
   });
 
-  test('renders Social Media card', async ({ page }) => {
-    const card = page.locator('[data-testid="marketing-card-social-media"]');
+  test('renders Social card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-brand-reach"]');
     await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
-    await expect(card).toContainText('Social Media');
+    await expect(card).toContainText('Social');
+  });
+
+  test('renders Web card', async ({ page }) => {
+    const card = page.locator('[data-testid="ed-evo-web-sessions"]');
+    await expect(card).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Web');
+    // Assert the split itself, not just the card's presence: sessions must live on
+    // Web and no longer on Social. A title-only check would still pass if sessions
+    // had stayed on the Social card and Web were an empty duplicate.
+    await expect(card).toContainText('Sessions (30d)');
+    await expect(page.locator('[data-testid="ed-evo-brand-reach"]')).not.toContainText('Sessions (30d)');
   });
 
   test('renders filter pills', async ({ page }) => {
@@ -195,23 +200,23 @@ test.describe('Website Visits Drawer', () => {
   });
 
   test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await expect(page.locator('[data-testid="website-visits-drawer-title"]')).toContainText('Website Visits');
   });
 
   test('shows stats section with data', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-website-visits', 'website-visits-drawer-content', 'website-visits-drawer-stats');
+    await openDrawerAndWaitForData(page, 'ed-evo-web-sessions', 'website-visits-drawer-content', 'website-visits-drawer-stats');
     const statCards = page.locator('[data-testid="website-visits-drawer-stats"]').locator('lfx-card');
     await expect(statCards).toHaveCount(2);
   });
 
   test('shows trend chart section', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await expect(page.locator('[data-testid="website-visits-drawer-trend-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-website-visits', 'website-visits-drawer-content');
+    await openDrawer(page, 'ed-evo-web-sessions', 'website-visits-drawer-content');
     await page.locator('[data-testid="website-visits-drawer-close"]').click();
     await expect(page.locator('[data-testid="website-visits-drawer-content"]')).not.toBeVisible();
   });
@@ -224,17 +229,17 @@ test.describe('Email CTR Drawer', () => {
   });
 
   test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
+    await openDrawer(page, 'ed-evo-campaign-performance', 'email-ctr-drawer-content');
     await expect(page.locator('[data-testid="email-ctr-drawer-title"]')).toContainText('Email');
   });
 
   test('shows stats and email sections', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content', 'email-ctr-drawer-stats');
+    await openDrawerAndWaitForData(page, 'ed-evo-campaign-performance', 'email-ctr-drawer-content', 'email-ctr-drawer-stats');
     await expect(page.locator('[data-testid="email-ctr-drawer-email-section"]')).toBeVisible();
   });
 
   test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-email-ctr', 'email-ctr-drawer-content');
+    await openDrawer(page, 'ed-evo-campaign-performance', 'email-ctr-drawer-content');
     await page.locator('[data-testid="email-ctr-drawer-close"]').click();
     await expect(page.locator('[data-testid="email-ctr-drawer-content"]')).not.toBeVisible();
   });
@@ -261,29 +266,6 @@ test.describe('Paid Social Reach Drawer', () => {
     await openDrawer(page, 'ed-evo-paid-media', 'paid-social-reach-drawer-content');
     await page.locator('[data-testid="paid-social-reach-drawer-close"]').click();
     await expect(page.locator('[data-testid="paid-social-reach-drawer-content"]')).not.toBeVisible();
-  });
-});
-
-test.describe('Social Media Drawer', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto(DASHBOARD_URL);
-    await switchToExecutiveDirector(page);
-  });
-
-  test('opens and shows title when card is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-content');
-    await expect(page.locator('[data-testid="social-media-drawer-title"]')).toContainText('Social Media');
-  });
-
-  test('shows stats and platform breakdown', async ({ page }) => {
-    await openDrawerAndWaitForData(page, 'marketing-card-social-media', 'social-media-drawer-content', 'social-media-drawer-stats');
-    await expect(page.locator('[data-testid="social-media-drawer-platforms-section"]')).toBeVisible();
-  });
-
-  test('closes when close button is clicked', async ({ page }) => {
-    await openDrawer(page, 'marketing-card-social-media', 'social-media-drawer-content');
-    await page.locator('[data-testid="social-media-drawer-close"]').click();
-    await expect(page.locator('[data-testid="social-media-drawer-content"]')).not.toBeVisible();
   });
 });
 

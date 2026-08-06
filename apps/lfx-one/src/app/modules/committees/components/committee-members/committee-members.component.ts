@@ -9,6 +9,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -34,8 +35,11 @@ import {
   CommitteeMemberFilterChip,
   CommitteeMemberFilterChipConfig,
   CommitteeMemberPermissionInfo,
+  CommitteeMemberTab,
   CommitteePermissionLevel,
+  CommitteeTableRow,
   CommitteeUser,
+  FilterPillOption,
   JoinMode,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
@@ -69,6 +73,7 @@ import { RejectApplicationDialogComponent } from '../reject-application-dialog/r
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
+    CardTabsBarComponent,
     FilterPillsComponent,
     FullNamePipe,
     MenuComponent,
@@ -123,9 +128,21 @@ export class CommitteeMembersComponent implements OnInit {
 
   // Simple writable signals
   public selectedMember = signal<CommitteeMember | null>(null);
+  public selectedInvite = signal<CommitteeInvite | null>(null);
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
   public processingApplicationUid = signal<string | null>(null);
+  // linkedSignal: resets to 'all' when the Pending tab becomes invisible (all invites revoked /
+  // none loaded) so the user is never left looking at an empty Pending table.
+  public activeTab = linkedSignal<boolean, CommitteeMemberTab>({
+    source: () => this.showPendingInvites(),
+    computation: (pendingVisible, previous) => {
+      if (previous && previous.value === 'pending' && !pendingVisible) {
+        return 'all';
+      }
+      return previous?.value ?? 'all';
+    },
+  });
   // linkedSignal, not signal: the At Risk chip is only offered while a real engagement response is
   // present, so if it's selected when the data degrades (window switch, fetch failure) the
   // selection resets to 'all' — otherwise no chip would render as pressed and the at-risk filter
@@ -140,6 +157,7 @@ export class CommitteeMembersComponent implements OnInit {
     },
   });
   public memberActionMenuItems: MenuItem[] = [];
+  public inviteActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
   // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
   public readonly noRoleSentinel = CommitteeMemberRole.NONE;
@@ -156,6 +174,14 @@ export class CommitteeMembersComponent implements OnInit {
   public readonly showPendingInvites = computed(
     () => this.canManageMembers() && this.joinMode() !== 'closed' && (this.invitesLoading() || this.invites().length > 0)
   );
+  public readonly tabOptions = computed<FilterPillOption[]>(() => {
+    const opts: FilterPillOption[] = [{ id: 'all', label: 'All' }];
+    if (this.showPendingInvites()) {
+      const count = this.invitesLoading() ? '' : ` (${this.invites().length})`;
+      opts.push({ id: 'pending', label: `Pending${count}` });
+    }
+    return opts;
+  });
   public readonly showPendingApplications = computed(
     () => this.canManageMembers() && this.joinMode() === 'application' && (this.applicationsLoading() || this.pendingApplications().length > 0)
   );
@@ -205,6 +231,7 @@ export class CommitteeMembersComponent implements OnInit {
   // Complex computed signals — use private init functions
   public readonly chipConfig: Signal<CommitteeMemberFilterChipConfig[]> = this.initChipConfig();
   private readonly chipFilteredMembers: Signal<CommitteeMember[]> = this.initChipFilteredMembers();
+  public readonly tableRows: Signal<CommitteeTableRow[]> = this.initTableRows();
   // Both empty-state rows must span every rendered column: 5 base, +2 when the voting columns
   // render, +2 when the flag-gated engagement columns render.
   public readonly emptyStateColspan: Signal<number> = computed(() => {
@@ -255,6 +282,13 @@ export class CommitteeMembersComponent implements OnInit {
 
   public ngOnInit(): void {
     this.memberActionMenuItems = this.initializeMemberActionMenuItems();
+    this.inviteActionMenuItems = this.initializeInviteActionMenuItems();
+  }
+
+  public onTabChange(tab: string): void {
+    if (tab === 'all' || tab === 'pending') {
+      this.activeTab.set(tab);
+    }
   }
 
   public toggleMemberActionMenu(event: Event, member: CommitteeMember, menuComponent: MenuComponent): void {
@@ -262,6 +296,13 @@ export class CommitteeMembersComponent implements OnInit {
     this.selectedMember.set(member);
     // Rebuild menu items so MenuItem.url reflects the selected member's email
     this.memberActionMenuItems = this.initializeMemberActionMenuItems(member);
+    menuComponent.toggle(event);
+  }
+
+  public toggleInviteActionMenu(event: Event, invite: CommitteeInvite, menuComponent: MenuComponent): void {
+    event.stopPropagation();
+    this.selectedInvite.set(invite);
+    this.inviteActionMenuItems = this.initializeInviteActionMenuItems(invite);
     menuComponent.toggle(event);
   }
 
@@ -910,5 +951,36 @@ export class CommitteeMembersComponent implements OnInit {
       return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;
     }
     return '';
+  }
+
+  private initTableRows(): Signal<CommitteeTableRow[]> {
+    return computed(() => {
+      const memberRows: CommitteeTableRow[] = this.filteredMembers().map((m) => ({ rowType: 'member' as const, data: m }));
+      if (!this.canManageMembers() || this.joinMode() === 'closed') {
+        return memberRows;
+      }
+      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
+      if (this.activeTab() === 'pending' && this.showPendingInvites()) {
+        return inviteRows;
+      }
+      return [...memberRows, ...inviteRows];
+    });
+  }
+
+  private initializeInviteActionMenuItems(invite?: CommitteeInvite): MenuItem[] {
+    return [
+      {
+        label: 'Revoke invitation',
+        icon: 'fa-light fa-ban',
+        styleClass: 'text-red-500',
+        disabled: !!this.revokingInviteUid(),
+        command: () => {
+          const target = invite ?? this.selectedInvite();
+          if (target) {
+            this.revokeInvite(target);
+          }
+        },
+      },
+    ];
   }
 }

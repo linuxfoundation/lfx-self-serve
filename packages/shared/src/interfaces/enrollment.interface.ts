@@ -4,19 +4,19 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 export interface EnrollmentMembership {
-  Status: 'Active' | 'Purchased' | 'Expired';
-  AutoRenew: boolean;
-  PurchaseDate: string;
-  EndDate: string;
-  Price: number;
-  ID: string;
-  ExtPaymentType: string;
+  status: 'Active' | 'Purchased' | 'Expired';
+  autoRenew: boolean;
+  purchaseDate: string;
+  endDate: string;
+  price: number;
+  id: string;
+  extPaymentType: string;
 }
 
 export interface IndividualEnrollment {
   projectName: string;
   projectSlug: string;
-  ProductName: string;
+  productName: string;
   projectDesc: string;
   enrollButton: string;
   price?: number;
