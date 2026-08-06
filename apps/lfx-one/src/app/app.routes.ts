@@ -456,6 +456,16 @@ export const routes: Routes = [
     path: 'u/:username',
     loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),
   },
+  // Public foundation groups directory — lists all public groups for a foundation (no auth required).
+  {
+    path: 'foundations/:foundationSlug/groups',
+    loadComponent: () => import('./modules/groups/public-foundation-groups/public-foundation-groups.component').then((m) => m.PublicFoundationGroupsComponent),
+  },
+  // Public project groups directory — lists all public groups for a project (no auth required).
+  {
+    path: 'projects/:projectSlug/groups',
+    loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
+  },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',
