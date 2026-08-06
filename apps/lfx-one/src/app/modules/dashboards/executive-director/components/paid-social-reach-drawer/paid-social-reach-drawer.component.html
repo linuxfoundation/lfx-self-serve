@@ -229,7 +229,7 @@
               <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.formattedRevenue }}</span>
               <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.roas | number: '1.1-1' }}x</span>
               <span class="flex-1 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.formattedConversions }}</span>
-              <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.conversionRate | number: '1.1-1' }}%</span>
+              <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">{{ project.convRate | number: '1.1-1' }}%</span>
               <span class="w-14 text-right text-sm font-semibold text-gray-900" role="cell">${{ project.cpc | number: '1.2-2' }}</span>
               <span class="w-20 flex justify-end" role="cell">
                 <lfx-tag [value]="project.performance" [severity]="project.severity" [rounded]="true" />
@@ -247,7 +247,7 @@
                   <span class="flex-1 text-right text-xs text-gray-600" role="cell">{{ campaign.formattedRevenue }}</span>
                   <span class="w-14 text-right text-xs text-gray-600" role="cell">{{ campaign.roas | number: '1.1-1' }}x</span>
                   <span class="flex-1 text-right text-xs text-gray-600" role="cell">{{ campaign.formattedConversions }}</span>
-                  <span class="w-14 text-right text-xs text-gray-600" role="cell">{{ campaign.conversionRate | number: '1.1-1' }}%</span>
+                  <span class="w-14 text-right text-xs text-gray-600" role="cell">{{ campaign.convRate | number: '1.1-1' }}%</span>
                   <span class="w-14 text-right text-xs text-gray-600" role="cell">${{ campaign.cpc | number: '1.2-2' }}</span>
                   <span class="w-20" role="cell" aria-hidden="true"></span>
                 </div>

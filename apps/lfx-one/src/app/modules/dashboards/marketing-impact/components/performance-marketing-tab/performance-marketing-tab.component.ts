@@ -255,7 +255,7 @@ export class PerformanceMarketingTabComponent {
           impressions: formatNumber(p.impressions),
           ctr: `${(p.ctr ?? 0).toFixed(2)}%`,
           cpc: formatCurrency(p.cpc),
-          conversionRate: `${(p.conversionRate ?? 0).toFixed(2)}%`,
+          convRate: `${(p.convRate ?? 0).toFixed(2)}%`,
           conversions: formatNumber(p.conversions),
           performance: perf,
           performanceClass: this.getPerformanceClass(perf),
@@ -297,7 +297,7 @@ export class PerformanceMarketingTabComponent {
         impressions: formatNumber(totals.impressions),
         ctr: `${totalCtr.toFixed(2)}%`,
         cpc: formatCurrency(totalCpc),
-        conversionRate: `${totalConvRate.toFixed(2)}%`,
+        convRate: `${totalConvRate.toFixed(2)}%`,
         conversions: formatNumber(totals.conversions),
         performance: totalPerf,
         performanceClass: this.getPerformanceClass(totalPerf),
@@ -344,7 +344,7 @@ export class PerformanceMarketingTabComponent {
           ctr: `${(k.ctr ?? 0).toFixed(2)}%`,
           cpc: formatCurrency(k.cpc),
           conversions: formatNumber(k.conversions),
-          conversionRate: `${(k.conversionRate ?? 0).toFixed(2)}%`,
+          convRate: `${(k.conversionRate ?? 0).toFixed(2)}%`,
           revenue: formatCurrency(k.attributedRevenue),
           roas: `${(k.roas ?? 0).toFixed(2)}x`,
           searchTerms: (k.searchTerms ?? []).map(
@@ -356,7 +356,7 @@ export class PerformanceMarketingTabComponent {
               impressions: formatNumber(st.impressions),
               ctr: `${(st.ctr ?? 0).toFixed(2)}%`,
               cpc: formatCurrency(st.cpc),
-              conversions: st.conversions != null ? formatNumber(st.conversions) : '—',
+              conversions: formatNumber(st.conversions),
             })
           ),
         })
