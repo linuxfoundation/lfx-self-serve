@@ -109,27 +109,6 @@
 
           @if (activeTab() === 'sections') {
             <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-sections">
-              <!-- Basic group: parent + indented children -->
-              @for (section of basicGroup; track section.key) {
-                <div
-                  class="flex items-start justify-between gap-4"
-                  [class.pl-6]="section.parent"
-                  [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
-                  <div class="flex flex-col gap-0.5">
-                    <span class="text-sm text-slate-900">{{ section.name }}</span>
-                    <span class="text-xs text-slate-500">{{ section.description }}</span>
-                  </div>
-                  <lfx-toggle
-                    [form]="visibilityForm"
-                    [control]="section.key"
-                    [ariaLabel]="section.name"
-                    [dataTest]="'profile-visibility-drawer-toggle-' + section.key" />
-                </div>
-              }
-
-              <div class="h-px bg-slate-200"></div>
-
-              <!-- Standalone activity sections -->
               @for (section of activitySections; track section.key) {
                 <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
                   <div class="flex flex-col gap-0.5">

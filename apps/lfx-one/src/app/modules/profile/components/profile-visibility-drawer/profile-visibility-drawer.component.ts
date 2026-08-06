@@ -42,9 +42,9 @@ export class ProfileVisibilityDrawerComponent {
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly drawer = inject(ProfileVisibilityDrawerService);
 
-  // Section metadata split for the template: the `basic` group (parent + indented children) renders
-  // first, then the standalone activity sections.
-  protected readonly basicGroup = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.key === 'basic' || section.parent === 'basic');
+  // Section toggles shown in the drawer: the standalone activity sections only. The `basic` group
+  // (general info / about / personal) is not user-toggleable per the redesign — its keys are still
+  // persisted and driven by the master flag cascade (a public profile always exposes them).
   protected readonly activitySections = PROFILE_VISIBILITY_SECTIONS.filter((section) => section.key !== 'basic' && !section.parent);
 
   // Segmented Private/Public options for the master-flag control (mutable copy for the p-selectbutton input).
