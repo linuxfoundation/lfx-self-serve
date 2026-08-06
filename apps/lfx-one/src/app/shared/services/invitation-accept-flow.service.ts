@@ -79,6 +79,7 @@ export class InvitationAcceptFlowService {
   public resolveCurrentEmployer(): Observable<CommitteeOrganizationReference | null> {
     return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
       take(1),
+      timeout(2000),
       map((experiences) => currentEmployerFromWorkExperiences(experiences)),
       switchMap((org) => (org ? this.resolveOrgDomain(org) : of(null))),
       catchError((error) => {
