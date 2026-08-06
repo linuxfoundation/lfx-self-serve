@@ -11,6 +11,10 @@
  *      Information children in the persisted map.
  *   4. Closing the drawer flushes a pending (debounced) change so nothing is lost.
  *   5. A failed load shows the error + retry affordance, and retry recovers into the form.
+ *   6. Dismissing the drawer while a save is in flight keeps it open (busy-close guard) and closes
+ *      only once the queued flush drains, still carrying the close-time edit.
+ *   7. A superseded failed save (an older write that fails while a newer one is already queued) does
+ *      not pin the inline indicator on "Saving".
  *
  * Every test stubs GET and PATCH /api/profile/visibility so the real account is never mutated — the
  * assertions are on the seeded state, the drawer behaviour, and the PATCH payloads.
@@ -278,14 +282,13 @@ test.describe('Profile visibility drawer', () => {
     await expect(page.getByTestId('profile-visibility-drawer-tab-sections'), 'the tablist should render after retry').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
-  test('S6: a flush queued behind an in-flight save keeps the close-time edit after reopen', async ({ page }) => {
+  test('S6: a dismissal during an in-flight save keeps the drawer open, then closes once it drains', async ({ page }) => {
     const patchSections: Sections[] = [];
     let releaseFirstPatch: (() => void) | null = null;
     const firstPatchGate = new Promise<void>((resolve) => {
       releaseFirstPatch = resolve;
     });
     let patchCount = 0;
-    // The GET returns the current stored map; it only advances once a PATCH is fulfilled.
     let storedSections = sectionsMap({ basic: true, aboutMe: true, personalInfo: true });
 
     await page.route('**/api/profile/visibility', async (route) => {
@@ -325,21 +328,88 @@ test.describe('Profile visibility drawer', () => {
     await page.locator('[data-test="profile-visibility-drawer-toggle-badges"]').click();
     await firstPatch;
 
-    // Edit B + close while save A is still in flight → the flush is queued behind A.
+    // Edit B + dismiss while save A is still in flight → the flush queues B behind A, and the busy-close
+    // guard keeps the drawer open (the dismissal can't cancel the write) rather than closing immediately.
     await page.locator('[data-test="profile-visibility-drawer-toggle-skills"]').click();
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('profile-visibility-drawer-body'), 'drawer should close').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-visibility-drawer-body'), 'drawer stays open while a save is pending').toBeVisible();
+    await expect(page.getByTestId('profile-visibility-drawer-status'), 'the indicator reflects the pending save').toContainText('Saving', {
+      timeout: ELEMENT_TIMEOUT,
+    });
 
-    // Reopen while A is still held → the GET re-seeds the form from the (pre-A) stored map, dropping
-    // skills back to false in the live form. The queued flush must still carry the close-time edit.
+    // Release A → it drains, the queued flush issues the second PATCH, and the deferred close fires.
+    releaseFirstPatch?.();
+    await expect.poll(() => patchSections.length, { timeout: ELEMENT_TIMEOUT }).toBeGreaterThanOrEqual(2);
+    await expect(page.getByTestId('profile-visibility-drawer-body'), 'drawer closes once the deferred save drains').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+
+    // The queued flush serializes the state at dismissal (skills on), retaining both edits.
+    expect(patchSections[1]?.skills, 'the queued flush should carry the close-time edit').toBe(true);
+    expect(patchSections[1]?.badges, 'the queued flush should also retain the earlier toggle').toBe(true);
+  });
+
+  test('S7: a superseded failed save does not pin the indicator on "Saving"', async ({ page }) => {
+    const patchSections: Sections[] = [];
+    let releaseFirstPatch: (() => void) | null = null;
+    const firstPatchGate = new Promise<void>((resolve) => {
+      releaseFirstPatch = resolve;
+    });
+    let patchCount = 0;
+    const storedSections = sectionsMap({ basic: true, aboutMe: true, personalInfo: true });
+
+    await page.route('**/api/profile/visibility', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ isPublic: true, sections: storedSections, preferenceId: 'pref-1' }),
+        });
+        return;
+      }
+      if (request.method() === 'PATCH') {
+        const body = request.postDataJSON();
+        patchCount += 1;
+        patchSections.push(body.sections);
+        if (patchCount === 1) {
+          // Hold the older save in flight so the newer one queues behind it, then fail it.
+          await firstPatchGate;
+          await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+          return;
+        }
+        // The newer (superseding) save succeeds.
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ isPublic: body.isPublic, sections: body.sections, preferenceId: 'pref-1' }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
     await openDrawer(page);
 
-    // Release A; the queued flush now drains and issues the second PATCH.
+    // Save A: toggle badges → the debounced PATCH fires and is held (it will 500).
+    const firstPatch = page.waitForRequest((r) => r.url().includes('/api/profile/visibility') && r.method() === 'PATCH');
+    await page.locator('[data-test="profile-visibility-drawer-toggle-badges"]').click();
+    await firstPatch;
+
+    // Save B: toggle skills → let the debounce elapse so B is accepted and queued behind A (concatMap
+    // won't fire B's request until A settles, so waiting on the debounce is the only observable signal).
+    await page.locator('[data-test="profile-visibility-drawer-toggle-skills"]').click();
+    await page.waitForTimeout(1_000);
+
+    // Release A → it fails, but a newer save (B) is already queued, so the failure is superseded: no
+    // error toast, no sticky dirty. B drains successfully and the indicator settles on "saved".
     releaseFirstPatch?.();
     await expect.poll(() => patchSections.length, { timeout: ELEMENT_TIMEOUT }).toBeGreaterThanOrEqual(2);
 
-    // The flushed (second) PATCH must serialize the state at close (skills on), not the reloaded map.
-    expect(patchSections[1]?.skills, 'the queued flush should serialize the close-time edit').toBe(true);
-    expect(patchSections[1]?.badges, 'the queued flush should also retain the earlier toggle').toBe(true);
+    await expect(page.getByTestId('profile-visibility-drawer-status'), 'a superseded failure must not pin the indicator on Saving').toContainText(
+      'All changes saved',
+      { timeout: ELEMENT_TIMEOUT }
+    );
+    expect(patchSections[1]?.skills, 'the superseding save carries the newer edit').toBe(true);
+    expect(patchSections[1]?.badges, 'the superseding save retains the earlier toggle').toBe(true);
   });
 });

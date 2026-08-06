@@ -86,6 +86,11 @@ export class ProfileVisibilityDrawerComponent {
   // settle re-seeds the form, so an intermediate response can't revert edits a queued save still holds.
   private pendingSaves = 0;
 
+  // Set when a dismissal (Esc/backdrop/close icon) arrives while a save is still pending: the drawer
+  // stays open and closes once the save machine drains (busy-close guard, mirrors profile-edit-drawer).
+  // A fresh user edit cancels it so a later auto-save can't yank the drawer shut mid-edit.
+  private closeRequested = false;
+
   // Emits to force an immediate save (bypassing the debounce) when the drawer is dismissed.
   private readonly flush$ = new Subject<void>();
 
@@ -136,11 +141,20 @@ export class ProfileVisibilityDrawerComponent {
   }
 
   public onVisibleChange(visible: boolean): void {
-    if (!visible) {
-      // Flush any pending (debounced) change before closing so nothing is lost.
-      this.flush$.next();
-      this.drawer.close();
+    if (visible) {
+      return;
     }
+    // Flush any pending (debounced) change so the dismissal persists it immediately.
+    this.flush$.next();
+    // Busy-close guard (mirrors profile-edit-drawer): if that flush left a save in flight/queued, keep
+    // the drawer open and defer the close until the machine drains (see wireAutoSave's subscribe), so a
+    // dismissal can't cancel the write or hide a save failure. Leaving the layout before the debounce
+    // tick fires (sub-600ms navigate-away) remains inherently best-effort.
+    if (this.pendingSaves > 0) {
+      this.closeRequested = true;
+      return;
+    }
+    this.drawer.close();
   }
 
   public async onCopyUrl(): Promise<void> {
@@ -256,6 +270,8 @@ export class ProfileVisibilityDrawerComponent {
   private wireAutoSave(): void {
     this.visibilityForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.dirty = true;
+      // A fresh edit cancels a deferred close so a later auto-save can't yank the drawer shut mid-edit.
+      this.closeRequested = false;
     });
 
     merge(this.visibilityForm.valueChanges.pipe(debounceTime(this.autosaveDebounceMs)), this.flush$)
@@ -278,10 +294,17 @@ export class ProfileVisibilityDrawerComponent {
           this.userService.updateProfileVisibility(payload).pipe(
             map((visibility) => ({ ok: true, visibility: visibility as ProfileVisibility | null })),
             catchError(() => {
-              // Re-arm dirty so the next change (or a close flush) retries the failed save.
-              this.dirty = true;
-              this.saveState.set('error');
-              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
+              // Only the last queued save owns the terminal state. If a newer save is already queued
+              // behind this one (pendingSaves > 1), this failure is superseded — re-arming dirty or
+              // flipping the indicator to 'error' here would pin the UI on a stale result while the
+              // newer save (carrying fresher data) still settles. Let that newer save set the final
+              // state instead. pendingSaves is only decremented downstream, so it still counts this save.
+              if (this.pendingSaves <= 1) {
+                // Last save failed: re-arm dirty so the next change (or a close flush) retries, and surface it.
+                this.dirty = true;
+                this.saveState.set('error');
+                this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
+              }
               return of({ ok: false, visibility: null as ProfileVisibility | null });
             })
           )
@@ -291,7 +314,8 @@ export class ProfileVisibilityDrawerComponent {
       .subscribe((result) => {
         this.pendingSaves--;
         if (!result.ok) {
-          // Error already surfaced and dirty re-armed for retry; leave the indicator on 'error'.
+          // Error already surfaced (or superseded by a newer queued save); leave any deferred close
+          // pending so a failed save keeps the drawer open instead of closing and losing the edit.
           return;
         }
         // Re-seed from the persisted response only when this is the last settled save (nothing dirty,
@@ -301,6 +325,12 @@ export class ProfileVisibilityDrawerComponent {
           this.seedForm(result.visibility);
         }
         this.saveState.set(busy ? 'saving' : 'saved');
+        // Busy-close guard: a dismissal deferred while this save was in flight closes now that the
+        // machine has fully drained.
+        if (!busy && this.closeRequested) {
+          this.closeRequested = false;
+          this.drawer.close();
+        }
       });
   }
 
