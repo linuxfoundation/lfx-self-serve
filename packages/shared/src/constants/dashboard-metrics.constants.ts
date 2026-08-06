@@ -699,6 +699,15 @@ function protoDualSignal(label: string, value: string, data: number[], color: st
 const DATA_UNAVAILABLE_CAPTION = 'Data unavailable — could not be loaded';
 
 /**
+ * Caption for a card whose request is still in flight.
+ *
+ * Kept separate from DATA_UNAVAILABLE_CAPTION so the initial loading window does not
+ * announce a failure that has not happened. Both render em-dash values, but only the
+ * unavailable state asserts that the fetch was attempted and failed.
+ */
+const DATA_LOADING_CAPTION = 'Loading…';
+
+/**
  * A dual-signal row for a card whose data could not be fetched.
  *
  * Renders an em-dash instead of a number, with no sparkline and no trend pill, so a
@@ -804,6 +813,11 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
  */
 export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricCard[] {
   const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign, revenueImpact } = data;
+
+  // Paid Media and Attribution render em-dashes both while loading and after a failed
+  // request, but only the latter may claim the data "could not be loaded". Anything
+  // else reports a failure during the initial in-flight window.
+  const placeholderCaption = data.pending ? DATA_LOADING_CAPTION : DATA_UNAVAILABLE_CAPTION;
 
   // Pre-compute email open rate for the Campaign Performance card
   const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
@@ -1024,7 +1038,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
             ),
           ]
         : [unavailableDualSignal('Impressions · spend', lfxColors.blue[500]), unavailableDualSignal('ROAS', lfxColors.violet[500])],
-      caption: paidCampaign ? trendWindow(paidCampaign.monthlyData.length) : DATA_UNAVAILABLE_CAPTION,
+      caption: paidCampaign ? trendWindow(paidCampaign.monthlyData.length) : placeholderCaption,
       tooltipText: 'Paid campaign impressions with total spend, and return on ad spend over the same window.',
       drawerType: DashboardDrawerType.MarketingPaidSocialReach,
     } as DashboardMetricCard,
@@ -1060,7 +1074,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
             protoDualSignal('Paid ads · linear', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
           ]
         : [unavailableDualSignal('Won revenue · YTD', lfxColors.blue[500]), unavailableDualSignal('Paid ads · linear', lfxColors.violet[500])],
-      caption: revenueImpact ? attributionCaption(revenueImpact) : DATA_UNAVAILABLE_CAPTION,
+      caption: revenueImpact ? attributionCaption(revenueImpact) : placeholderCaption,
       tooltipText:
         "Won revenue year-to-date (WON_REVENUE_YTD) with paid-ads linear-attributed revenue alongside. Deal conversion is the YTD close rate. These are pipeline figures — the drawer's multi-touch models cover a separate six-month window.",
       drawerType: DashboardDrawerType.RevenueImpact,

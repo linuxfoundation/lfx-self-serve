@@ -159,6 +159,20 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
 };
 
 /**
+ * Initial value for the forkJoin signal, used only while the first requests are in flight.
+ *
+ * Structurally identical to EMPTY_ED_EVOLUTION_DATA except for `pending: true`. The two
+ * must stay distinct: EMPTY_ED_EVOLUTION_DATA encodes "the request failed" (undefined
+ * revenueImpact/paidCampaign render an explicit unavailable state), whereas this encodes
+ * "not answered yet". Reusing the error object as the initial value made both cards
+ * announce "could not be loaded" before any request had failed.
+ */
+const PENDING_ED_EVOLUTION_DATA: EdEvolutionData = {
+  ...EMPTY_ED_EVOLUTION_DATA,
+  pending: true,
+};
+
+/**
  * Zero-filled revenue impact used ONLY to satisfy the drill-down drawers' non-nullable
  * `RevenueImpactResponse` inputs when the summary request failed.
  *
@@ -348,7 +362,11 @@ export class MarketingOverviewComponent {
           })
         )
       ),
-      { initialValue: EMPTY_ED_EVOLUTION_DATA }
+      // Distinct pending sentinel, NOT EMPTY_ED_EVOLUTION_DATA: that object carries
+      // `undefined` for revenueImpact/paidCampaign as its *error* fallback, so reusing
+      // it here would make both cards announce "could not be loaded" during the initial
+      // in-flight window — reporting a failure before one has occurred.
+      { initialValue: PENDING_ED_EVOLUTION_DATA }
     ) as Signal<EdEvolutionData>;
   }
 }

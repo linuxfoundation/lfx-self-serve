@@ -3491,6 +3491,15 @@ export interface EdEvolutionData {
    */
   paidCampaign: SocialReachResponse | undefined;
   attribution?: MarketingAttributionResponse;
+  /**
+   * True only while the initial request is in flight, before any response or error.
+   *
+   * Distinguishes "not answered yet" from "answered with a failure". Both leave
+   * revenueImpact and paidCampaign undefined, but only the latter may be reported to
+   * the user as unavailable — announcing a failure during loading claims a request
+   * failed before it has.
+   */
+  pending?: boolean;
 }
 
 // ============================================
