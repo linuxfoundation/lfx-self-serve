@@ -26,6 +26,7 @@ export class OrgLensGroupsController {
 
       const response = await this.service.getGroups(req, orgUid);
       logger.success(req, operation, startTime, { org_uid: orgUid, total_groups: response.total_groups, total_seats: response.total_seats });
+      res.setHeader('Cache-Control', 'no-store');
       res.json(response);
     } catch (error) {
       return next(error);

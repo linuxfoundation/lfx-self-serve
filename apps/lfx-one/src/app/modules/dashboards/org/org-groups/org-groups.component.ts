@@ -53,46 +53,53 @@ export class OrgGroupsComponent {
   // so groupsData() === undefined alone would miss the reload-after-error skeleton).
   protected readonly groupsLoading = computed(() => this.hasCompany() && (this.groupsData() === undefined || this.groupsLoadingState()));
 
-  private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = toSignal(
-    toObservable(computed(() => this.accountContext.selectedAccount().uid)).pipe(
-      filter((id): id is string => !!id),
-      distinctUntilChanged(),
-      tap(() => {
-        this.groupsLoadingState.set(true);
-        this.fetchError.set(false);
-      }),
-      switchMap((id) =>
-        this.groupsService.getGroups(id).pipe(
-          tap(() => this.groupsLoadingState.set(false)),
-          catchError(() => {
-            this.fetchError.set(true);
-            this.groupsLoadingState.set(false);
-            return of(null);
-          })
-        )
-      ),
-      takeUntilDestroyed()
-    )
-  );
+  private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = this.initGroupsData();
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
   protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() => this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category) })));
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
-  protected readonly behavioralClassCounts: Signal<Record<GroupBehavioralClass, number>> = computed(() => {
-    const counts: Record<GroupBehavioralClass, number> = {
-      'governing-board': 0,
-      'oversight-committee': 0,
-      'working-group': 0,
-      'special-interest-group': 0,
-      'ambassador-program': 0,
-      other: 0,
-    };
-    for (const g of this.groups()) {
-      const cls = getGroupBehavioralClass(g.category);
-      counts[cls]++;
-    }
-    return counts;
-  });
+  protected readonly behavioralClassCounts: Signal<Record<GroupBehavioralClass, number>> = this.initBehavioralClassCounts();
+
+  private initGroupsData(): Signal<OrgLensGroupsResponse | null | undefined> {
+    return toSignal(
+      toObservable(computed(() => this.accountContext.selectedAccount().uid)).pipe(
+        filter((id): id is string => !!id),
+        distinctUntilChanged(),
+        tap(() => {
+          this.groupsLoadingState.set(true);
+          this.fetchError.set(false);
+        }),
+        switchMap((id) =>
+          this.groupsService.getGroups(id).pipe(
+            tap(() => this.groupsLoadingState.set(false)),
+            catchError(() => {
+              this.fetchError.set(true);
+              this.groupsLoadingState.set(false);
+              return of(null);
+            })
+          )
+        ),
+        takeUntilDestroyed()
+      )
+    );
+  }
+
+  private initBehavioralClassCounts(): Signal<Record<GroupBehavioralClass, number>> {
+    return computed(() => {
+      const counts: Record<GroupBehavioralClass, number> = {
+        'governing-board': 0,
+        'oversight-committee': 0,
+        'working-group': 0,
+        'special-interest-group': 0,
+        'ambassador-program': 0,
+        other: 0,
+      };
+      for (const g of this.groupsWithClass()) {
+        counts[g.cls]++;
+      }
+      return counts;
+    });
+  }
 }
