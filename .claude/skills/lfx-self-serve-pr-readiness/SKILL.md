@@ -2,9 +2,10 @@
 name: lfx-self-serve-pr-readiness
 description: >
   Pre-PR shape check on local lfx-self-serve work. Audits PR-shape
-  sanity (branch name, JIRA reference, conventional-commit format,
-  rebase status, DCO + GPG signing per commit, total diff size, and
-  protected files touched) against the target base branch. Does NOT
+  sanity (branch name, ticket reference — JIRA or GitHub Issue —,
+  conventional-commit format, rebase status, DCO + GPG signing per
+  commit, total diff size, and protected files touched) against the
+  target base branch. Does NOT
   audit code, code audits run post-commit via the central reviewer
   trio (see `.claude/rules/skill-guidance.md` for canonical post-commit
   reviewer-trio launch instructions). Use once before opening a PR,
@@ -15,7 +16,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 # LFX Self-Serve PR Readiness
 
-You are checking whether **local commits are shaped correctly to open as a PR** — branch name, JIRA references in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
+You are checking whether **local commits are shaped correctly to open as a PR** — branch name, ticket references (JIRA or GitHub Issue) in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
 This skill does NOT audit code. Code audits run post-commit via the central reviewer trio. See `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions (the three `subagent_type` names, parallel-launch convention, and `run_in_background: true` flag). By the time you run, every running review in the trio must have returned, the full-branch sweep must have run on multi-commit branches (`branch` arg), and any Critical or reasonable Important findings must already be addressed in a fix commit.
 
@@ -78,7 +79,7 @@ Emit each finding:
 Reference Phase 2 outputs:
 
 - Branch name → `git rev-parse --abbrev-ref HEAD`
-- JIRA reference → `grep -oE 'LFXV2-[0-9]+'` over commit subjects + bodies
+- Ticket reference → `grep -oE 'LFXV2-[0-9]+|GH-[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'` over commit subjects + bodies (JIRA, GitHub Issue, or fully-qualified `org/repo#issue`)
 - Conventional commits → check each commit subject against the regex in `pr-shape.md`
 - Rebase → `git merge-base --is-ancestor <base> HEAD` exit code (0 = rebased)
 - DCO + GPG → `%G?` codes + `Signed-off-by:` trailer presence per commit
@@ -103,7 +104,7 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 | Check               | Status     | Detail                                                 |
 | ------------------- | ---------- | ------------------------------------------------------ |
 | Branch name         | PASS       | feat/LFXV2-1234                                        |
-| JIRA ticket         | PASS       | Found LFXV2-1234 in commits                            |
+| Ticket reference    | PASS       | Found LFXV2-1234 in commits                            |
 | Conventional commit | PASS       | All 3 commits valid                                    |
 | Branch rebased      | PASS       | origin/main is an ancestor                             |
 | Diff size           | PASS       | 342 additions                                          |

@@ -9,10 +9,11 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TooltipModule],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {

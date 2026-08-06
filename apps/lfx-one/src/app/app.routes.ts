@@ -180,11 +180,14 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
           },
           {
-            // INFO: Future Epic implementation — the Groups page is hidden; deep links fall
-            // back to the org overview until the org groups feature is built.
             path: 'groups',
-            redirectTo: 'overview',
-            pathMatch: 'full',
+            data: {
+              lens: 'org',
+              title: 'Groups',
+              description: "Working groups and committees your organization's employees participate in.",
+              icon: 'fa-light fa-users-rectangle',
+            },
+            loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
           },
           {
             path: 'profile',
@@ -452,6 +455,16 @@ export const routes: Routes = [
   {
     path: 'u/:username',
     loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),
+  },
+  // Public foundation groups directory — lists all public groups for a foundation (no auth required).
+  {
+    path: 'foundations/:foundationSlug/groups',
+    loadComponent: () => import('./modules/groups/public-foundation-groups/public-foundation-groups.component').then((m) => m.PublicFoundationGroupsComponent),
+  },
+  // Public project groups directory — lists all public groups for a project (no auth required).
+  {
+    path: 'projects/:projectSlug/groups',
+    loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
   },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {

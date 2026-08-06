@@ -32,13 +32,13 @@ Default to small, atomic changes. If a request spans more than one module or tou
 
 Follow the "Starting New Work" rule in `development-rules.md` — checkout `main`, pull latest, and create a feature branch before writing any code.
 
-### JIRA Ticket
+### Tracking Ticket (JIRA or GitHub Issue)
 
 Before writing code, ensure the work is tracked:
 
-1. **Check for an existing JIRA ticket** in the `LFXV2` project
-2. **Create one if needed** — assign to the current user and current sprint
-3. **Branch name must include the ticket:** `feat/LFXV2-<number>`, `fix/LFXV2-<number>`, etc.
+1. **Check for an existing ticket** — a JIRA ticket in the `LFXV2` project, or a GitHub Issue on `linuxfoundation/lfx-self-serve` (e.g. under an epic on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17))
+2. **Create one if needed** — JIRA ticket (assign to the current user and current sprint) or a GitHub Issue via `gh issue create`; don't create both for the same work
+3. **Branch name must include the ticket:** `feat/LFXV2-<number>`, `fix/LFXV2-<number>` for JIRA, or `feat/GH-<number>`, `fix/GH-<number>` for a GitHub Issue
 4. Reference `.claude/rules/commit-workflow.md` for naming conventions
 
 ## Step 2: Plan the Feature (Ideation)
