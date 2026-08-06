@@ -200,7 +200,7 @@ export class CommitteeViewComponent {
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA during the async org-prefetch window so a second tap
   // doesn't fire a parallel resolveCurrentEmployer() + dialog pair.
-  private readonly resolvingOrg = signal(false);
+  protected readonly resolvingOrg = signal(false);
   // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
   // summary stay in sync across tab switches (tab panels unmount in the @switch below).
   // linkedSignal, not signal: resets to the default window whenever committeeId() changes, the same
