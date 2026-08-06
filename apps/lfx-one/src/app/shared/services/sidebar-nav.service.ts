@@ -485,9 +485,7 @@ export class SidebarNavService {
           routerLink: '/org/training',
         },
         { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
-        // INFO: Future Epic implementation — the Groups page is hidden until the org
-        // groups feature is built. Restore the entry below to re-enable it.
-        // { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
+        { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
       ],
     },
     // Org admin — divider only (no section label); Profile sits under it.

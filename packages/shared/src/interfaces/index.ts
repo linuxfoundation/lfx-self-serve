@@ -188,6 +188,9 @@ export * from './stat-card.interface';
 // Intercom interfaces
 export * from './intercom.interface';
 
+// Osano cookie-consent (CMP) interfaces
+export * from './osano.interface';
+
 // Org involvement interfaces (cross-foundation org overview)
 export * from './org-involvement.interface';
 
@@ -287,6 +290,9 @@ export * from './create-picker.interface';
 // Org Lens Meetings insights (LFXV2-2735) interfaces
 export * from './org-meetings-insights.interface';
 export * from './org-meetings-insights.internal.interface';
+
+// Org Lens Groups (LFXV2-2014) interfaces
+export * from './org-groups.interface';
 
 // Committee Overview "Recent Activity" widget view-model (LFXV2-1707, formerly the LFXV2-1716 stop-gap)
 export * from './activity-feed.interface';
