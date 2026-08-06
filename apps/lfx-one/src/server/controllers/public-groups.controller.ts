@@ -52,7 +52,7 @@ export class PublicGroupsController {
       if (!UUID_REGEX.test(id)) {
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'committee',
-          tags: `public_name:${id}`,
+          tags: `sso_group_name:${id}`,
           page_size: 1,
         });
         if (resources.length === 0) {
@@ -156,7 +156,7 @@ export class PublicGroupsController {
       const detail: PublicGroupDetail = {
         uid: committee.uid,
         name: committee.name,
-        public_name: committee.public_name || undefined,
+        sso_group_name: committee.sso_group_name || undefined,
         description: committee.description ?? undefined,
         category: committee.category,
         join_mode: committee.join_mode,
