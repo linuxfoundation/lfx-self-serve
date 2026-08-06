@@ -338,12 +338,13 @@ export class ProfileEditDrawerComponent {
     }
 
     this.avatarUploading.set(true);
+    // No takeUntilDestroyed here, deliberately: the upload itself (not just its data) is the
+    // user-visible operation, and unsubscribing on destroy would abort the underlying HTTP
+    // request. uploadProfilePicture() already applies take(1), so this still satisfies the
+    // no-bare-subscribe rule without risking a silently-dropped in-flight upload on navigation.
     this.userService
       .uploadProfilePicture(file)
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.avatarUploading.set(false))
-      )
+      .pipe(finalize(() => this.avatarUploading.set(false)))
       .subscribe({
         next: (response) => {
           if (!response.public_url) {
