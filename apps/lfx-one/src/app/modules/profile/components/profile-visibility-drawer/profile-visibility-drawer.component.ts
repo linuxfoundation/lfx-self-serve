@@ -53,6 +53,9 @@ export class ProfileVisibilityDrawerComponent {
   // Active drawer tab. Sections first, then Personal Data.
   public readonly activeTab = signal<'sections' | 'personal'>('sections');
 
+  // Tab order for roving-focus keyboard nav (matches the rendered tablist order).
+  private readonly tabOrder = ['sections', 'personal'] as const;
+
   // Segmented Private/Public options for the master-flag control (mutable copy for the p-selectbutton input).
   protected readonly modeOptions = [...PROFILE_VISIBILITY_MODE_OPTIONS];
 
@@ -61,6 +64,13 @@ export class ProfileVisibilityDrawerComponent {
 
   // Form/loading state
   public readonly loadingVisibility = signal<boolean>(true);
+
+  // True when the last load failed; the template shows an error + retry block instead of the form,
+  // and auto-save stays gated off so an unseeded form can't overwrite the stored map.
+  public readonly loadError = signal<boolean>(false);
+
+  // Emits to re-run the load after a failure (the "Try again" action).
+  private readonly retry$ = new Subject<void>();
 
   // Auto-save status for the inline indicator (there is no explicit Save button — changes persist on
   // change, debounced, and are flushed when the drawer closes).
@@ -91,15 +101,18 @@ export class ProfileVisibilityDrawerComponent {
     // Fires once per drawer open (context is the username, or '' when unknown — both non-null).
     const open$ = toObservable(this.drawer.context).pipe(filter((context): context is string => context !== null));
 
-    // Load the current visibility on each open. switchMap cancels a prior open's in-flight request so
-    // a slow earlier response can't overwrite a later one; the reset clears stale state on failure.
-    open$
+    // Load the current visibility on each open (or on an explicit retry). switchMap cancels a prior
+    // in-flight request so a slow earlier response can't overwrite a later one. On failure loadError
+    // gates the form off; only a successful (non-null) response seeds the form.
+    merge(open$, this.retry$)
       .pipe(
         switchMap(() => {
           this.loadingVisibility.set(true);
+          this.loadError.set(false);
           this.saveState.set('idle');
           return this.userService.getProfileVisibility().pipe(
             catchError(() => {
+              this.loadError.set(true);
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load visibility settings.' });
               return of(null);
             }),
@@ -108,7 +121,11 @@ export class ProfileVisibilityDrawerComponent {
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((visibility) => this.seedForm(visibility));
+      .subscribe((visibility) => {
+        if (visibility) {
+          this.seedForm(visibility);
+        }
+      });
 
     this.wireCascade();
     this.wireAutoSave();
@@ -136,7 +153,52 @@ export class ProfileVisibilityDrawerComponent {
     }
   }
 
+  /** Re-run the visibility load after a failure (the "Try again" action). */
+  public onRetry(): void {
+    this.retry$.next();
+  }
+
+  /**
+   * Roving-focus keyboard nav for the tablist: arrows/Home/End move between tabs (with wraparound),
+   * activating and focusing the target. Other keys fall through untouched.
+   */
+  public onTabKeydown(event: KeyboardEvent, current: 'sections' | 'personal'): void {
+    const order = this.tabOrder;
+    const index = order.indexOf(current);
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        nextIndex = (index + 1) % order.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        nextIndex = (index - 1 + order.length) % order.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = order.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const next = order[nextIndex];
+    this.activeTab.set(next);
+    this.focusTab(next);
+  }
+
   // Private helpers
+
+  /** Move DOM focus to a tab button by id (the drawer is appended to <body>, so query the document). */
+  private focusTab(tab: 'sections' | 'personal'): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    document.getElementById(`profile-visibility-drawer-tab-${tab}`)?.focus();
+  }
 
   /** Build the reactive form: one boolean control per visibility key plus the master `isPublic`. */
   private buildForm(): FormGroup {
@@ -192,7 +254,7 @@ export class ProfileVisibilityDrawerComponent {
 
     merge(this.visibilityForm.valueChanges.pipe(debounceTime(this.autosaveDebounceMs)), this.flush$)
       .pipe(
-        filter(() => this.dirty && !this.loadingVisibility()),
+        filter(() => this.dirty && !this.loadingVisibility() && !this.loadError()),
         switchMap(() => {
           this.dirty = false;
           this.saveState.set('saving');
@@ -214,7 +276,9 @@ export class ProfileVisibilityDrawerComponent {
         if (!this.dirty) {
           this.seedForm(visibility);
         }
-        this.saveState.set('saved');
+        // If a newer edit landed mid-flight, a follow-up save is already queued — keep the indicator
+        // on 'saving' so it doesn't flash "saved" between the two writes.
+        this.saveState.set(this.dirty ? 'saving' : 'saved');
       });
   }
 

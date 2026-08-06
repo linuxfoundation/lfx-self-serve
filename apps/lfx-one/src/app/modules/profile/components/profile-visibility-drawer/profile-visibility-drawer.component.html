@@ -27,6 +27,21 @@
         <i class="pi pi-spinner pi-spin"></i>
         <span>Loading visibility settings...</span>
       </div>
+    } @else if (loadError()) {
+      <div class="flex flex-col items-start gap-3 text-sm" data-testid="profile-visibility-drawer-error">
+        <div class="flex items-center gap-2 text-slate-600">
+          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+          <span>Couldn't load your visibility settings.</span>
+        </div>
+        <button
+          type="button"
+          (click)="onRetry()"
+          class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          data-testid="profile-visibility-drawer-retry-button">
+          <i class="fa-light fa-rotate-right text-sm" aria-hidden="true"></i>
+          Try again
+        </button>
+      </div>
     } @else {
       <form [formGroup]="visibilityForm" class="flex flex-col gap-8">
         <!-- Profile visibility card: master control on top, public-profile link as a connected bottom section -->
@@ -82,8 +97,12 @@
             <button
               type="button"
               role="tab"
+              id="profile-visibility-drawer-tab-sections"
+              aria-controls="profile-visibility-drawer-panel-sections"
               [attr.aria-selected]="activeTab() === 'sections'"
+              [attr.tabindex]="activeTab() === 'sections' ? 0 : -1"
               (click)="activeTab.set('sections')"
+              (keydown)="onTabKeydown($event, 'sections')"
               class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors"
               [class.border-blue-600]="activeTab() === 'sections'"
               [class.text-blue-600]="activeTab() === 'sections'"
@@ -96,8 +115,12 @@
             <button
               type="button"
               role="tab"
+              id="profile-visibility-drawer-tab-personal"
+              aria-controls="profile-visibility-drawer-panel-personal"
               [attr.aria-selected]="activeTab() === 'personal'"
+              [attr.tabindex]="activeTab() === 'personal' ? 0 : -1"
               (click)="activeTab.set('personal')"
+              (keydown)="onTabKeydown($event, 'personal')"
               class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors"
               [class.border-blue-600]="activeTab() === 'personal'"
               [class.text-blue-600]="activeTab() === 'personal'"
@@ -110,7 +133,13 @@
           </div>
 
           @if (activeTab() === 'sections') {
-            <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-sections">
+            <div
+              role="tabpanel"
+              id="profile-visibility-drawer-panel-sections"
+              aria-labelledby="profile-visibility-drawer-tab-sections"
+              tabindex="0"
+              class="flex flex-col gap-4"
+              data-testid="profile-visibility-drawer-sections">
               @for (section of activitySections; track section.key) {
                 <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + section.key">
                   <div class="flex flex-col gap-0.5">
@@ -128,7 +157,13 @@
           }
 
           @if (activeTab() === 'personal') {
-            <div class="flex flex-col gap-4" data-testid="profile-visibility-drawer-personal">
+            <div
+              role="tabpanel"
+              id="profile-visibility-drawer-panel-personal"
+              aria-labelledby="profile-visibility-drawer-tab-personal"
+              tabindex="0"
+              class="flex flex-col gap-4"
+              data-testid="profile-visibility-drawer-personal">
               @if (basicSection; as basic) {
                 <div class="flex items-start justify-between gap-4" [attr.data-testid]="'profile-visibility-drawer-section-' + basic.key">
                   <div class="flex flex-col gap-0.5">

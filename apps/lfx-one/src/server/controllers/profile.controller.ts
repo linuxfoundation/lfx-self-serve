@@ -2068,7 +2068,7 @@ export class ProfileController {
     try {
       const { isPublic, sections }: ProfileVisibilityUpdateRequest = req.body ?? {};
 
-      if (typeof isPublic !== 'boolean' || !sections || typeof sections !== 'object') {
+      if (typeof isPublic !== 'boolean' || !sections || typeof sections !== 'object' || Array.isArray(sections)) {
         return next(
           ServiceValidationError.forField('body', 'isPublic (boolean) and sections (object) are required', {
             operation: 'update_profile_visibility',
