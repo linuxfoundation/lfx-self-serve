@@ -232,15 +232,23 @@ export class InviteController {
             organization: orgId || orgWebsite ? { id: orgId, name: null, website: orgWebsite } : null,
           };
         }
-        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, {
-          organization: {
-            name: orgName,
-            id: typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null,
-            website: typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null,
+        // confirmMembership: this path redirects the user straight to the committee page, so wait
+        // briefly for the membership to be readable rather than landing them mid-propagation.
+        await this.committeeService.acceptCommitteeInvite(
+          req,
+          committeeUid,
+          committeeInviteUid,
+          {
+            organization: {
+              name: orgName,
+              id: typeof payload.organization_id === 'string' ? payload.organization_id.trim() || null : null,
+              website: typeof payload.organization_website === 'string' ? payload.organization_website.trim() || null : null,
+            },
           },
-        });
+          { confirmMembership: true }
+        );
       } else {
-        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid);
+        await this.committeeService.acceptCommitteeInvite(req, committeeUid, committeeInviteUid, undefined, { confirmMembership: true });
       }
 
       logger.info(req, 'accept_invite', 'Committee invite accepted directly after LFID invite', {

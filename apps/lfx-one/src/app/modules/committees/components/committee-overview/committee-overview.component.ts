@@ -9,6 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  DEFAULT_MEETING_TYPE_CONFIG,
+  MEETING_TYPE_CONFIGS,
   PAST_MEETING_SORT,
   PENDING_ACTION_EMPTY_GRACE_MS,
   PENDING_ACTION_FADE_OUT_MS,
@@ -18,6 +20,8 @@ import {
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActivityFeedItem,
+  ActivityFeedRow,
+  ActivityMeetingBadge,
   Committee,
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
@@ -30,7 +34,14 @@ import {
   Vote,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
-import { assertNeverSilent, countVotingReps, getSurveyDisplayStatus, isValidUrl, mapActivityEventsToFeedItems } from '@lfx-one/shared/utils';
+import {
+  assertNeverSilent,
+  countVotingReps,
+  formatRelativeTime,
+  getSurveyDisplayStatus,
+  isValidUrl,
+  mapActivityEventsToFeedItems,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -150,6 +161,16 @@ export class CommitteeOverviewComponent {
   // setTimeout handle for the in-flight grace/section-fade; cleared when actions repopulate or on destroy to prevent stale hides.
   private sectionFadeTimerId: ReturnType<typeof setTimeout> | null = null;
 
+  // Lookup for the meeting-type/duration badge on `past_meeting` activity rows — keyed by
+  // PastMeeting.id, the same field `action.meetingId` carries (see handleActivityItemClick's
+  // 'past-meeting' case comment above: action.meetingId matches PastMeeting.id, not meeting_id).
+  // pastMeetings() is its own independently-windowed fetch (like votes()/surveys() below), so a
+  // meetingId with no entry here is an expected miss, not an error — activityMeetingBadge()
+  // returns null for it and the row renders unchanged. Not used by the template directly (only
+  // via activityMeetingBadge()), so this stays private rather than following the public-signal
+  // convention the rest of this "data fetches" section uses.
+  private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
+
   // Computed: chairs derived from members
   public chairs: Signal<CommitteeMember[]> = this.initChairs();
 
@@ -187,6 +208,12 @@ export class CommitteeOverviewComponent {
   // Server-merged "Recent Activity" feed (LFXV2-1707): fetched as one call, mapped to the UI
   // view-model client-side. See mapActivityEventsToFeedItems for the label/icon/action mapping.
   public activityItems: Signal<ActivityFeedItem[]> = this.initActivityItems();
+
+  // Per-row display fields (timestamp label, tooltip, meeting-type/duration badge), precomputed
+  // here rather than via template method calls — docs/reviews/frontend-checklist.md §4 only
+  // allows signal reads, computed values, and pipes in templates. Mirrors
+  // my-groups-card-grid.component.ts's initCards() precomputed-view-model pattern.
+  public activityFeedRows: Signal<ActivityFeedRow[]> = this.initActivityFeedRows();
 
   // Feature flag: WG Weekly Brief AI Assistant card
   public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
@@ -503,6 +530,10 @@ export class CommitteeOverviewComponent {
     );
   }
 
+  private initPastMeetingsById(): Signal<Map<string, PastMeeting>> {
+    return computed(() => new Map(this.pastMeetings().map((meeting) => [meeting.id, meeting])));
+  }
+
   private initVotes(): Signal<Vote[]> {
     return toSignal(
       toObservable(this.committee).pipe(
@@ -644,5 +675,44 @@ export class CommitteeOverviewComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initActivityFeedRows(): Signal<ActivityFeedRow[]> {
+    return computed(() =>
+      this.activityItems().map((item) => ({
+        item,
+        // item.timestamp is an ISO string (event.occurred_at); formatRelativeTime takes a Date.
+        timestampLabel: formatRelativeTime(new Date(item.timestamp)),
+        // Every ActivityFeedItem carries a timestamp, so this isn't scoped to meeting_held rows
+        // the way deriveMeetingBadge() is — the absolute-date tooltip applies to all row types.
+        // Deliberately NOT formatShortDate() — that util pins timeZone: 'UTC', which is correct
+        // for the date-only range-preview strings it was written for but would show the wrong
+        // calendar day here for a full-instant timestamp in negative-UTC-offset zones (e.g. an
+        // evening event crossing into the next UTC day). Uses the same no-timezone-override Intl
+        // options this file already uses for vote/survey dates above (initPendingActionItems),
+        // which resolve in the viewer's local timezone instead.
+        tooltip: `${item.label} (${new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`,
+        meetingBadge: this.deriveMeetingBadge(item),
+      }))
+    );
+  }
+
+  // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical
+  // recurring-series rows (e.g. 8x "Meeting held: Identity & Trust Working Group") with the
+  // meeting's type + duration, sourced from pastMeetings() already loaded on this page — no
+  // BFF/mapper change. Narrowing on action.kind (not item.type) gives TS access to meetingId.
+  private deriveMeetingBadge(item: ActivityFeedItem): ActivityMeetingBadge | null {
+    if (item.action.kind !== 'past-meeting') return null;
+    const meeting = this.pastMeetingsById().get(item.action.meetingId);
+    if (!meeting) return null;
+
+    const config = meeting.meeting_type
+      ? (MEETING_TYPE_CONFIGS[meeting.meeting_type.toLowerCase()] ?? DEFAULT_MEETING_TYPE_CONFIG)
+      : DEFAULT_MEETING_TYPE_CONFIG;
+    // meeting.duration is minutes, not seconds — formatDuration() takes seconds and would
+    // misformat here; dashboard-meeting-card.component.ts's initFormattedTimeWithDuration
+    // establishes the plain `${duration}m` convention for this exact field, reused verbatim.
+    const label = meeting.duration > 0 ? `${config.label} · ${meeting.duration}m` : config.label;
+    return { label, icon: config.icon };
   }
 }

@@ -1,0 +1,56 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="sticky top-0 z-50 flex items-start justify-between border-b bg-white px-0.5 py-5 transition-colors"
+  [class.border-transparent]="!scrolled()"
+  [class.border-gray-200]="scrolled()"
+  data-testid="public-profile-topbar">
+  <div class="relative min-h-[40px] flex-1">
+    <!-- Default state: "Powered by" branding pill -->
+    <a
+      href="https://app.lfx.dev/"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="absolute left-0 top-1 inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12.5px] text-gray-500 transition-opacity hover:bg-gray-50"
+      [class.opacity-0]="scrolled()"
+      [class.pointer-events-none]="scrolled()"
+      [attr.aria-hidden]="scrolled()"
+      [attr.tabindex]="scrolled() ? -1 : null"
+      data-testid="topbar-powered-by">
+      <span>Powered by</span>
+      <img src="/images/logo_lfx.svg" alt="LFX" class="h-[13px] w-auto" />
+    </a>
+
+    <!-- Scroll-revealed state: contributor identity -->
+    <div
+      class="absolute left-0 top-0 flex items-center gap-3.5 transition-opacity"
+      [class.opacity-0]="!scrolled()"
+      [class.pointer-events-none]="!scrolled()"
+      [attr.aria-hidden]="!scrolled()"
+      data-testid="topbar-identity">
+      <a
+        href="https://app.lfx.dev/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex-none rounded-lg p-0.5 transition-colors hover:bg-gray-50"
+        [attr.tabindex]="scrolled() ? null : -1"
+        aria-label="The Linux Foundation">
+        <img src="/images/logo_lf_icon.png" alt="The Linux Foundation" class="block h-[34px] w-[34px] rounded-[7px] object-contain" />
+      </a>
+      <span class="h-[30px] w-px flex-none bg-gray-200"></span>
+      <lfx-avatar
+        [image]="avatarImage()"
+        [label]="name()"
+        shape="circle"
+        [style]="{ width: '34px', height: '34px' }"
+        styleClass="bg-gray-100 text-gray-600"></lfx-avatar>
+      <div class="flex flex-col gap-0.5 leading-tight">
+        <span class="whitespace-nowrap text-[17px] font-bold text-gray-900">{{ name() }}</span>
+        @if (headline()) {
+          <span class="whitespace-nowrap text-xs text-gray-500">{{ headline() }}</span>
+        }
+      </div>
+    </div>
+  </div>
+</div>

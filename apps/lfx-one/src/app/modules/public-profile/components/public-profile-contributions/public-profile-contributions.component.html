@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="contributions-section">
+  <h2 class="m-0 text-lg font-bold text-gray-900">Project contributions</h2>
+  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Open source contributions across Linux Foundation projects.</p>
+
+  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="contributions-projects">
+    @for (project of projects(); track project) {
+      <!-- `Name`/`Slug` are omitempty upstream and may be absent — fall back so the label and avatar
+           initials never render blank. -->
+      @let projectName = project.Name || project.Slug || 'Untitled project';
+      <div
+        class="flex flex-col gap-4 border-b border-gray-100 p-5 last:border-0 sm:flex-row sm:items-center sm:justify-between"
+        data-testid="contribution-project">
+        <div class="flex min-w-0 items-center gap-3.5">
+          <lfx-avatar
+            [image]="project.LogoURL || ''"
+            [label]="projectName"
+            shape="circle"
+            [style]="{ width: '36px', height: '36px' }"
+            styleClass="bg-gray-100 text-gray-600 flex-shrink-0"></lfx-avatar>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-gray-900">{{ projectName }}</p>
+            @if (project.added || project.deleted) {
+              <div class="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
+                <span class="text-emerald-600">+{{ project.added | number }}</span>
+                <span class="text-red-500">−{{ project.deleted | number }}</span>
+                <span>lines</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="flex flex-none items-center gap-6 pl-[50px] sm:pl-0">
+          <div class="min-w-[52px]">
+            <div class="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-gray-400"
+                aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <line x1="3" x2="9" y1="12" y2="12"></line>
+                <line x1="15" x2="21" y1="12" y2="12"></line>
+              </svg>
+              <span>{{ project.commits | number }}</span>
+            </div>
+            <p class="mt-0.5 text-xs text-gray-400">Commits</p>
+          </div>
+          <div class="min-w-[52px]">
+            <div class="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-gray-400"
+                aria-hidden="true">
+                <circle cx="18" cy="18" r="3"></circle>
+                <circle cx="6" cy="6" r="3"></circle>
+                <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+                <line x1="6" x2="6" y1="9" y2="21"></line>
+              </svg>
+              <span>{{ project.prs | number }}</span>
+            </div>
+            <p class="mt-0.5 text-xs text-gray-400">Pull requests</p>
+          </div>
+          <div class="min-w-[52px]">
+            <div class="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-gray-400"
+                aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="1"></circle>
+              </svg>
+              <span>{{ project.issues | number }}</span>
+            </div>
+            <p class="mt-0.5 text-xs text-gray-400">Issues</p>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+</section>

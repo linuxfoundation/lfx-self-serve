@@ -164,7 +164,7 @@ Utilities split into **generic** helpers (date/time, string, url, file, form, ht
 - Commit header targets **≤72 characters** as a team style. Commitlint hard-fails at >100 (`@commitlint/config-angular` default; the repo doesn't override `header-max-length`). 73–100 will land but is a SHOULD_FIX in the PR-shape check.
 - Always use `git commit --signoff -S` — both DCO sign-off (`--signoff`) and GPG signing (`-S`) are enforced by repo policy. See `.claude/rules/commit-workflow.md` for setup.
 - Pre-commit runs `./check-headers.sh`, `npx lint-staged` (prettier + lint on staged files), then repo-wide `yarn format:check`, `yarn lint:check`, and `yarn check-types`. Only `lint-staged` is scoped to staged files — the rest run on the whole repo. You don't need to run `yarn format` manually; `lint-staged` already prettifies staged files. If a commit fails, fix the reported issue and retry.
-- See `.claude/rules/commit-workflow.md` for PR title / sizing / JIRA details.
+- See `.claude/rules/commit-workflow.md` for PR title / sizing / ticket-tracking (JIRA or GitHub Issue) details.
 
 For missing sign-off recovery (single-commit amend, or older commits / cherry-picks / rebases), invoke the `/dco` skill.
 
@@ -259,7 +259,7 @@ When the work is "done" — no more code commits planned:
 
    Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit trio. Address any new findings, then re-run the sweep until clean.
 
-4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, JIRA, conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit trio and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
+4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, ticket reference (JIRA or GitHub Issue), conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit trio and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
 5. **Run `/preflight`** for license / format / lint / build / protected-file mechanical checks.
 6. **Only then push and open the PR.** (Reviewers run `/lfx-review-pr` against the open PR — that should not be your first standards check.)
 
