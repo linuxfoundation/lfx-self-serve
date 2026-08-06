@@ -193,7 +193,7 @@
                     icon="fa-light fa-user-plus"
                     severity="info"
                     size="small"
-                    [loading]="joiningOrLeaving()"
+                    [loading]="joiningOrLeaving() || resolvingOrg()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-join-btn" />
                 } @else if (committee()?.join_mode === 'application' && !hasPendingApplication()) {
@@ -202,7 +202,7 @@
                     icon="fa-light fa-file-signature"
                     severity="info"
                     size="small"
-                    [loading]="joiningOrLeaving()"
+                    [loading]="joiningOrLeaving() || resolvingOrg()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-apply-btn" />
                 } @else if (committee()?.join_mode === 'closed') {
