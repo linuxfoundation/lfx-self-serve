@@ -5,6 +5,7 @@ import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
+  WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
 } from '@lfx-one/shared/constants';
 import {
@@ -20,6 +21,7 @@ import {
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveEmail } from '../utils/auth-helper';
 
@@ -45,8 +47,11 @@ function briefTextToHtml(text: string): string {
 }
 
 /**
- * Returns the ISO timestamp for the upcoming Sunday at 00:00:00 UTC.
- * Used as the rolling window-reset for the WG Weekly Brief throttle.
+ * Returns the ISO timestamp for the upcoming Sunday at 00:00:00 UTC. Mirrors upstream's
+ * `NextWindowReset()` — the advisory `window_resets_at` value surfaced in throttle bodies
+ * and 429s. This is a display timestamp, not the actual counter-reset boundary: upstream
+ * keys the throttle entry on the same `window_start` as the brief, so counters actually
+ * reset at the Friday→Saturday 00:00 UTC window rollover (see `briefWindow()`).
  */
 function nextSundayIso(): string {
   const now = new Date();
@@ -95,7 +100,15 @@ export function briefWindow(): { window_start: string; window_end: string } {
 const mockBriefByCommittee = new Map<string, WeeklyBrief>();
 
 function currentMockBrief(committeeId: string): WeeklyBrief {
-  return mockBriefByCommittee.get(committeeId) ?? buildMockBrief(committeeId);
+  const tracked = mockBriefByCommittee.get(committeeId);
+  if (tracked) return tracked;
+  // Deterministic quiet-week fixture for WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID — see its
+  // own docstring for why this is exercised only by weekly-brief.service.spec.ts, not reachable
+  // through the running app (LFXV2-3000).
+  if (committeeId === WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID) {
+    return buildMockBrief(committeeId, { state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES });
+  }
+  return buildMockBrief(committeeId);
 }
 
 function storeMockBrief(committeeId: string, brief: WeeklyBrief): WeeklyBrief {
