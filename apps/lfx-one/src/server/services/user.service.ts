@@ -1099,18 +1099,23 @@ export class UserService {
     // Read-first upsert: only the preference's Value changes; AppName/Name/Type/System are preserved.
     const existing = await this.fetchVisibilityPreference(req, sfid, 'update_profile_visibility');
     const value = JSON.stringify(sections);
-    let preferenceId = existing?.ID ?? null;
+    const preferenceId = await this.upsertVisibilityPreference(req, sfid, existing, value);
 
+    return { isPublic: nextIsPublic, sections, preferenceId };
+  }
+
+  /**
+   * Writes the section `visibility` preference: PATCH when it already exists, else POST. A POST that
+   * races into a 409 (already created, or missed by the read) falls back to a fetch + PATCH so the
+   * auto-saving client stays idempotent.
+   */
+  private async upsertVisibilityPreference(req: Request, sfid: string, existing: UserServicePreference | null, value: string): Promise<string | null> {
     if (existing) {
-      await gatewayFetch<unknown>(req, `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences/${encodeURIComponent(existing.ID)}`, {
-        operation: 'update_profile_visibility',
-        service: 'user_service',
-        errorMessage: 'Visibility preference update failed',
-        errorCode: 'VISIBILITY_PREFERENCE_UPDATE_FAILED',
-        method: 'PATCH',
-        body: { AppName: existing.AppName, Name: existing.Name, Type: existing.Type, System: existing.System, Value: value },
-      });
-    } else {
+      return this.patchVisibilityPreference(req, sfid, existing, value);
+    }
+
+    const baseUrl = getUserServiceBaseUrl('update_profile_visibility', 'user_service');
+    try {
       const created = await gatewayFetch<UserServicePreference>(req, `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences`, {
         operation: 'update_profile_visibility',
         service: 'user_service',
@@ -1119,10 +1124,31 @@ export class UserService {
         method: 'POST',
         body: { AppName: VISIBILITY_PREFERENCE_APP_NAME, Name: VISIBILITY_PREFERENCE_NAME, Type: 'json', System: false, Value: value },
       });
-      preferenceId = created?.ID ?? null;
+      return created?.ID ?? null;
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 409) {
+        logger.warning(req, 'update_profile_visibility', 'Visibility preference already exists; falling back to update', {});
+        const current = await this.fetchVisibilityPreference(req, sfid, 'update_profile_visibility');
+        if (current) {
+          return this.patchVisibilityPreference(req, sfid, current, value);
+        }
+      }
+      throw error;
     }
+  }
 
-    return { isPublic: nextIsPublic, sections, preferenceId };
+  /** PATCH an existing `visibility` preference's `Value`, preserving AppName/Name/Type/System. */
+  private async patchVisibilityPreference(req: Request, sfid: string, existing: UserServicePreference, value: string): Promise<string> {
+    const baseUrl = getUserServiceBaseUrl('update_profile_visibility', 'user_service');
+    await gatewayFetch<unknown>(req, `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences/${encodeURIComponent(existing.ID)}`, {
+      operation: 'update_profile_visibility',
+      service: 'user_service',
+      errorMessage: 'Visibility preference update failed',
+      errorCode: 'VISIBILITY_PREFERENCE_UPDATE_FAILED',
+      method: 'PATCH',
+      body: { AppName: existing.AppName, Name: existing.Name, Type: existing.Type, System: existing.System, Value: value },
+    });
+    return existing.ID;
   }
 
   /**
@@ -1131,7 +1157,10 @@ export class UserService {
    */
   private async fetchVisibilityPreference(req: Request, sfid: string, operation: string): Promise<UserServicePreference | null> {
     const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
-    const filter = encodeURIComponent(`Name eq '${VISIBILITY_PREFERENCE_NAME}'`);
+    // Upstream $filter values are unquoted (`Name eq visibility`); quoting compares against the
+    // literal `'visibility'` and matches nothing. A failed filter returns everything, so the find below
+    // is the real guard — it also disambiguates by AppName (the upstream uniqueness key is AppName+Name).
+    const filter = encodeURIComponent(`Name eq ${VISIBILITY_PREFERENCE_NAME}`);
     const url = `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences?$filter=${filter}`;
 
     logger.debug(req, operation, 'Fetching visibility preference');
@@ -1143,7 +1172,7 @@ export class UserService {
       errorCode: 'VISIBILITY_PREFERENCE_FETCH_FAILED',
     });
 
-    return list?.Data?.find((p) => p.Name === VISIBILITY_PREFERENCE_NAME) ?? null;
+    return list?.Data?.find((p) => p.Name === VISIBILITY_PREFERENCE_NAME && p.AppName === VISIBILITY_PREFERENCE_APP_NAME) ?? null;
   }
 
   /**
