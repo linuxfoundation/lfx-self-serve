@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { BucketLocationConstraint, CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -182,7 +182,16 @@ export class ObjectStoreService {
         throw error;
       }
 
-      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+      // us-east-1 is the one region S3 rejects an explicit LocationConstraint for (it must be
+      // omitted, not set to 'us-east-1') — every other region needs it or CreateBucket defaults
+      // to us-east-1 regardless of the client's configured region.
+      const region = this.getRegion();
+      await client.send(
+        new CreateBucketCommand({
+          Bucket: bucket,
+          ...(region !== 'us-east-1' && { CreateBucketConfiguration: { LocationConstraint: region as BucketLocationConstraint } }),
+        })
+      );
       logger.success(undefined, 'object_store_ensure_bucket', startTime, { bucket, created: true });
     }
   }
