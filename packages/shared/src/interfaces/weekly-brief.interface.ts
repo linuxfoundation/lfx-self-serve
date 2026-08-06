@@ -63,6 +63,11 @@ export interface WeeklyBriefThrottle {
   generates_limit: number;
   regenerations_used: number;
   regenerations_limit: number;
+  /**
+   * Advisory display timestamp only (upstream `NextWindowReset()` — next Sunday 00:00 UTC).
+   * Counters actually reset at the Fri→Sat window rollover, since upstream keys the throttle
+   * entry on the same `window_start` as the brief itself.
+   */
   window_resets_at: string;
 }
 
