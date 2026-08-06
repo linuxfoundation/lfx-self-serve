@@ -102,8 +102,9 @@ const mockBriefByCommittee = new Map<string, WeeklyBrief>();
 function currentMockBrief(committeeId: string): WeeklyBrief {
   const tracked = mockBriefByCommittee.get(committeeId);
   if (tracked) return tracked;
-  // Deterministic quiet-week demo fixture — lets the calm empty state be exercised in
-  // mock/dev mode without a real committee-service generation run (LFXV2-3000).
+  // Deterministic quiet-week fixture for WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID — see its
+  // own docstring for why this is exercised only by weekly-brief.service.spec.ts, not reachable
+  // through the running app (LFXV2-3000).
   if (committeeId === WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID) {
     return buildMockBrief(committeeId, { state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES });
   }
