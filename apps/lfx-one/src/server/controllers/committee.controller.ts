@@ -817,7 +817,12 @@ export class CommitteeController {
         };
       }
 
-      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
+      // The LFID flow redirects to the committee page on success, so wait briefly for the
+      // membership to be readable. Translated into a server-side option rather than forwarded as
+      // a client claim; the strict `=== true` check matches the pre-check gate above. Safe as a
+      // client-influenced latency decision — the worst a caller can do is lengthen or skip their
+      // own bounded wait, and no authorization outcome depends on it.
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData, { confirmMembership: body.from_lfid_invite === true });
 
       logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
       res.status(204).send();
