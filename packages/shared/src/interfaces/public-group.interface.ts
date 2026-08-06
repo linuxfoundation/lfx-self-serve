@@ -68,7 +68,6 @@ export interface PublicGroupSummary {
   total_members?: number;
   website?: string | null;
   mailing_list?: string | null;
-  chat_channel?: string | null;
   has_public_calendar?: boolean;
   external_sources?: PublicGroupExternalSource[];
 }

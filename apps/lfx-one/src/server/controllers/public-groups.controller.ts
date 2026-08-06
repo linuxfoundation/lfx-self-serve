@@ -233,7 +233,19 @@ export class PublicGroupsController {
 
       let parentFoundation = null;
       if (project.parent_uid) {
-        parentFoundation = await this.projectService.getProjectById(req, project.parent_uid, false);
+        try {
+          const candidate = await this.projectService.getProjectById(req, project.parent_uid, false);
+          // ROOT is an administrative pseudo-project — treat its children as top-level foundations
+          if (candidate?.slug !== 'ROOT') {
+            parentFoundation = candidate;
+          }
+        } catch (error) {
+          logger.warning(req, 'get_public_groups_by_project', 'Parent foundation lookup failed, treating project as top-level', {
+            project_uid: projectUid,
+            parent_uid: project.parent_uid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
@@ -279,7 +291,15 @@ export class PublicGroupsController {
     for (let i = 0; i < projectUids.length; i += BATCH_SIZE) {
       const batch = projectUids.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
-        batch.map((uid) => this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }))
+        batch.map((uid) =>
+          this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }).catch((error) => {
+            logger.warning(req, 'fetch_public_committees_for_projects', 'getCommittees failed for project, skipping', {
+              project_uid: uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [] as Committee[];
+          })
+        )
       );
       for (const committees of batchResults) {
         for (const c of committees) {
@@ -299,7 +319,17 @@ export class PublicGroupsController {
     const map = new Map<string, any>();
     for (let i = 0; i < uids.length; i += BATCH_SIZE) {
       const batch = uids.slice(i, i + BATCH_SIZE);
-      const projects = await Promise.all(batch.map((uid) => this.projectService.getProjectById(req, uid, false)));
+      const projects = await Promise.all(
+        batch.map((uid) =>
+          this.projectService.getProjectById(req, uid, false).catch((error) => {
+            logger.warning(req, 'resolve_context_projects', 'getProjectById failed for project, context will be incomplete', {
+              project_uid: uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          })
+        )
+      );
       for (let j = 0; j < batch.length; j++) {
         map.set(batch[j], projects[j]);
       }
@@ -337,7 +367,6 @@ export class PublicGroupsController {
       join_mode: committee.join_mode,
       total_members: committee.total_members,
       website: committee.website,
-      chat_channel: committee.chat_channel,
       has_public_calendar: committee.calendar?.public ?? false,
     };
   }
