@@ -32,7 +32,7 @@
       <lfx-empty-state
         icon="fa-light fa-circle-exclamation"
         title="Unable to load groups"
-        description="Something went wrong while fetching group data. Please try refreshing the page."
+        subtitle="Something went wrong while fetching group data. Please try refreshing the page."
         data-testid="public-project-groups-error" />
     } @else if (loading()) {
       <!-- Loading skeleton -->
@@ -54,7 +54,7 @@
       <lfx-empty-state
         icon="fa-light fa-users-rectangle"
         title="No public groups found"
-        description="This project has no publicly visible working groups or committees yet."
+        subtitle="This project has no publicly visible working groups or committees yet."
         data-testid="public-project-groups-empty" />
     } @else {
       <!-- Group count -->

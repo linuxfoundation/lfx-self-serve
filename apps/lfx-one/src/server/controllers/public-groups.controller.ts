@@ -288,17 +288,26 @@ export class PublicGroupsController {
     const BATCH_SIZE = 10;
     const seen = new Set<string>();
     const result: Committee[] = [];
+    let successCount = 0;
+    let lastError: unknown;
     for (let i = 0; i < projectUids.length; i += BATCH_SIZE) {
       const batch = projectUids.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map((uid) =>
-          this.committeeService.getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true }).catch((error) => {
-            logger.warning(req, 'fetch_public_committees_for_projects', 'getCommittees failed for project, skipping', {
-              project_uid: uid,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return [] as Committee[];
-          })
+          this.committeeService
+            .getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true })
+            .then((committees) => {
+              successCount++;
+              return committees;
+            })
+            .catch((error) => {
+              lastError = error;
+              logger.warning(req, 'fetch_public_committees_for_projects', 'getCommittees failed for project, skipping', {
+                project_uid: uid,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return [] as Committee[];
+            })
         )
       );
       for (const committees of batchResults) {
@@ -309,6 +318,10 @@ export class PublicGroupsController {
           }
         }
       }
+    }
+    // If every call failed, the upstream is down — propagate rather than returning an empty directory
+    if (successCount === 0 && projectUids.length > 0) {
+      throw lastError;
     }
     return result.sort((a, b) => a.name.localeCompare(b.name, 'en'));
   }
