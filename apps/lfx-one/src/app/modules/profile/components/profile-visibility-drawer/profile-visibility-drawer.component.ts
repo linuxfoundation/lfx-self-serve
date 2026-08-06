@@ -210,8 +210,11 @@ export class ProfileVisibilityDrawerComponent {
   }
 
   /**
-   * Client-side cascade: master off zeroes+disables all sections, on enables them + the basic group;
-   * `basic`↔children mirror via OR. emitEvent:false writes avoid feedback loops (and extra saves).
+   * Master-flag cascade: turning the profile public enables every section control and forces the
+   * basic group (general info / about / personal) on; turning it private zeroes and disables all of
+   * them. The basic group has no UI toggle — it is driven entirely from here and re-enforced
+   * server-side in `enforcePublicDefaults`. emitEvent:false writes avoid feedback loops (and extra
+   * saves).
    */
   private wireCascade(): void {
     const control = (key: string) => this.visibilityForm.get(key);
@@ -232,22 +235,6 @@ export class ProfileVisibilityDrawerComponent {
           this.setSectionsEnabled(false);
         }
       });
-
-    control('basic')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((value: boolean) => {
-        control('aboutMe')?.setValue(value, { emitEvent: false });
-        control('personalInfo')?.setValue(value, { emitEvent: false });
-      });
-
-    for (const childKey of ['aboutMe', 'personalInfo']) {
-      control(childKey)
-        ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          const anyChildOn = Boolean(control('aboutMe')?.value) || Boolean(control('personalInfo')?.value);
-          control('basic')?.setValue(anyChildOn, { emitEvent: false });
-        });
-    }
   }
 
   /** Enable or disable every section control (the master flag gates them), without emitting events. */
