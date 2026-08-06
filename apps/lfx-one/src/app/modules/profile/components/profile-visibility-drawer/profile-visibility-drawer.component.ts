@@ -50,10 +50,6 @@ export class ProfileVisibilityDrawerComponent {
   // Segmented Private/Public options for the master-flag control (mutable copy for the p-selectbutton input).
   protected readonly modeOptions = [...PROFILE_VISIBILITY_MODE_OPTIONS];
 
-  // Which drawer tab is active. `contact` (Contact & Social links) has no backing store yet and
-  // renders disabled ("Coming soon"); only `sections` is interactive.
-  public readonly activeTab = signal<'sections' | 'contact'>('sections');
-
   // One boolean control per visibility key, plus the master `isPublic` flag.
   public readonly visibilityForm: FormGroup = this.buildForm();
 

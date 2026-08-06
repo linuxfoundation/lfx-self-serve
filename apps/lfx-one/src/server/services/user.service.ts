@@ -9,6 +9,7 @@ import {
   PROFILE_BIO_MAX_LENGTH,
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
+  PROFILE_VISIBILITY_PUBLIC_DEFAULT_KEYS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   TSHIRT_SIZES,
   VISIBILITY_PREFERENCE_APP_NAME,
@@ -1081,8 +1082,10 @@ export class UserService {
     }
 
     const baseUrl = getUserServiceBaseUrl('update_profile_visibility', 'user_service');
-    const sections = this.sanitizeVisibilitySections(body?.sections);
     const nextIsPublic = Boolean(body?.isPublic);
+    // A public profile always exposes the basic group (General Profile Information / About Me /
+    // Personal Information). Enforce that server-side so it holds regardless of what the client sends.
+    const sections = this.enforcePublicDefaults(this.sanitizeVisibilitySections(body?.sections), nextIsPublic);
 
     if (nextIsPublic !== Boolean(profile.IsPublic)) {
       logger.debug(req, 'update_profile_visibility', 'Updating IsPublic flag', { is_public: nextIsPublic });
@@ -1219,6 +1222,24 @@ export class UserService {
     }
 
     return sections;
+  }
+
+  /**
+   * When the profile is public, force the basic group (`basic` / `aboutMe` / `personalInfo`) on — a
+   * public profile always exposes General Profile Information, About Me, and Personal Information.
+   * A private profile is left untouched (its section map is otherwise unexposed).
+   */
+  private enforcePublicDefaults(sections: ProfileVisibilitySections, isPublic: boolean): ProfileVisibilitySections {
+    if (!isPublic) {
+      return sections;
+    }
+
+    const enforced = { ...sections };
+    for (const key of PROFILE_VISIBILITY_PUBLIC_DEFAULT_KEYS) {
+      enforced[key] = true;
+    }
+
+    return enforced;
   }
 
   /**
