@@ -421,6 +421,15 @@ export class ProfileController {
         }
         token = mgmtToken;
       } else {
+        if (!issuerBaseUrl) {
+          return next(
+            new MicroserviceError('M2M_AUTH_ISSUER_BASE_URL is not configured; cannot generate an auth-service token', 500, 'M2M_ISSUER_NOT_CONFIGURED', {
+              operation: 'upload_profile_picture',
+              service: 'profile_controller',
+              path: req.path,
+            })
+          );
+        }
         const authServiceAudience = new URL('api/v2/', issuerBaseUrl).toString();
         token = await generateM2MToken(req, { audience: authServiceAudience });
       }
