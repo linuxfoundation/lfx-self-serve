@@ -10,7 +10,7 @@ vi.mock('./logger.service', () => ({
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
-import { getPublicProfilesBucketUrl, PublicProfileService, resolvePublicFlag } from './public-profile.service';
+import { getPublicProfilesBucketUrl, projectPublicProfile, PublicProfileService, resolvePublicFlag } from './public-profile.service';
 
 const req = {} as unknown as Request;
 const BUCKET_ENV = 'PUBLIC_PROFILES_BUCKET_URL';
@@ -99,6 +99,75 @@ describe('resolvePublicFlag', () => {
   });
 });
 
+describe('projectPublicProfile', () => {
+  it('keeps only render-allowlisted fields and drops unrendered PII (fail closed)', () => {
+    const raw = {
+      IsPublic: true,
+      isPublic: true,
+      basic: {
+        Name: 'Jane',
+        Title: 'Engineer',
+        Username: 'jane-secret',
+        Identities: [{ Username: '  ' }, { Username: 'jane-gh', Avatar: 'https://avatar.example/jane.png' }, { Username: 'jane-twitter' }],
+      },
+      About: 'Hello',
+      technical_contribution: {
+        projects: [
+          {
+            ID: 'proj-1',
+            Name: 'Kubernetes',
+            Slug: 'k8s',
+            commits: 12,
+            docs: 3,
+            affiliations: [{ Organization: { Name: 'Acme' }, StartDate: '2020', EndDate: '2022' }],
+            contributions: [{ date: '2024-01-01', commits: 2 }],
+          },
+        ],
+      },
+      certification_activities: [{ ID: 'c1', Name: 'CKA', Status: 'active', Type: 'cert', StartDate: '2024', EndDate: '2025' }],
+      training_activities: [{ Name: 'Intro', Status: 'done', Type: 'course' }],
+      badges: [{ Image: 'https://img.example/b.png', Url: 'https://b.example' }],
+      skills: [{ ID: 's1', Name: 'Go' }],
+      presentations: [{ Name: 'Talk', LocationName: '123 Main St, Springfield' }],
+    };
+
+    const projected = projectPublicProfile(raw);
+
+    // Allowlisted fields survive.
+    expect(projected.isPublic).toBe(true);
+    expect(projected.basic).toMatchObject({ Name: 'Jane', Title: 'Engineer', Identities: [{ Username: 'jane-gh' }] });
+    expect(projected.About).toBe('Hello');
+    expect(projected.technical_contribution?.projects[0]).toEqual({ Name: 'Kubernetes', Slug: 'k8s', commits: 12, deleted: 0, added: 0, prs: 0, issues: 0 });
+    expect(projected.certification_activities).toEqual([{ Name: 'CKA', Type: 'cert', StartDate: '2024', EndDate: '2025' }]);
+    expect(projected.training_activities).toEqual([{ Name: 'Intro', Type: 'course' }]);
+    expect(projected.badges).toEqual([{ Image: 'https://img.example/b.png', Url: 'https://b.example' }]);
+
+    // Unrendered / PII fields never ship — assert on the serialized wire form.
+    const wire = JSON.stringify(projected);
+    expect(projected).not.toHaveProperty('IsPublic');
+    expect(projected).not.toHaveProperty('skills');
+    expect(projected).not.toHaveProperty('presentations');
+    expect(wire).not.toContain('jane-secret'); // basic.Username
+    expect(wire).not.toContain('jane-twitter'); // only the first non-empty identity username projected
+    expect(wire).not.toContain('avatar.example'); // Identities[].Avatar
+    expect(wire).not.toContain('affiliations');
+    expect(wire).not.toContain('contributions');
+    expect(wire).not.toContain('Acme'); // employment history
+    expect(wire).not.toContain('proj-1'); // project.ID
+    expect(wire).not.toContain('"docs"'); // project.docs
+    expect(wire).not.toContain('Springfield'); // presentation location
+    expect(wire).not.toContain('active'); // certification Status
+    expect(wire).not.toContain('"done"'); // training Status
+  });
+
+  it('fails closed to isPublic false and omits absent optional sections', () => {
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } });
+    expect(projected.isPublic).toBe(false);
+    // Round-trip through JSON to drop undefined keys, mirroring the wire payload.
+    expect(JSON.parse(JSON.stringify(projected))).toEqual({ isPublic: false, basic: { Name: 'Jane' } });
+  });
+});
+
 describe('PublicProfileService.getPublicProfile', () => {
   const service = new PublicProfileService();
   const TEST_BUCKET = 'https://test-bucket.example.com';
@@ -155,10 +224,12 @@ describe('PublicProfileService.getPublicProfile', () => {
     expect(await service.getPublicProfile(req, 'ghost')).toBeNull();
   });
 
-  it('returns the parsed profile with isPublic true for a public artifact', async () => {
+  it('returns the projected profile with isPublic true for a public artifact (raw IsPublic dropped)', async () => {
     fetchMock.mockResolvedValue(mockResponse(200, JSON.stringify({ IsPublic: true, basic: { Name: 'Jane Apple' } })));
     const result = await service.getPublicProfile(req, 'jane');
-    expect(result).toEqual({ IsPublic: true, basic: { Name: 'Jane Apple' }, isPublic: true });
+    // The raw `IsPublic` flag is not re-exposed — only the normalized `isPublic` gate ships.
+    expect(result).toEqual({ basic: { Name: 'Jane Apple' }, isPublic: true });
+    expect(result).not.toHaveProperty('IsPublic');
   });
 
   it('normalizes isPublic to false for a private artifact and preserves the payload', async () => {

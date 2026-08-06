@@ -81,15 +81,15 @@ export class ProfileIndividualEnrollmentComponent {
   }
 
   protected isPending(item: DisplayEnrollment): boolean {
-    return item.membership ? this.pendingIds().has(item.membership.ID) : false;
+    return item.membership ? this.pendingIds().has(item.membership.id) : false;
   }
 
   protected onToggleAutoRenew(item: DisplayEnrollment, newValue: boolean): void {
     if (!item.membership || this.isPending(item)) return;
 
-    const membershipId = item.membership.ID;
+    const membershipId = item.membership.id;
 
-    const endDate = item.membership.EndDate ? formatDate(item.membership.EndDate, 'mediumDate', 'en-US', 'UTC') : '';
+    const endDate = item.membership.endDate ? formatDate(item.membership.endDate, 'mediumDate', 'en-US', 'UTC') : '';
     const message = newValue
       ? `This will enable auto-renew for your membership; your next payment will be charged on ${endDate}.`
       : `This will disable auto-renew for your membership; your current membership will expire on ${endDate}.`;
@@ -153,8 +153,8 @@ export class ProfileIndividualEnrollmentComponent {
     this.enrollments.update((list) => {
       if (!list) return list;
       return list.map((item) => {
-        if (item.membership?.ID === membershipId) {
-          const updatedMembership = { ...item.membership, AutoRenew: autoRenew };
+        if (item.membership?.id === membershipId) {
+          const updatedMembership = { ...item.membership, autoRenew };
           const updatedItem = { ...item, membership: updatedMembership };
           const displayStatus = deriveEnrollmentStatus(updatedItem);
           return { ...updatedItem, displayStatus, severity: enrollmentStatusSeverity(displayStatus) };
@@ -179,11 +179,11 @@ export class ProfileIndividualEnrollmentComponent {
       const pending = this.pendingIds();
       if (!list) return list;
       return list.map((item) => {
-        const membershipId = item.membership?.ID;
+        const membershipId = item.membership?.id;
         const isPending = membershipId ? pending.has(membershipId) : false;
         if (membershipId && overrides.has(membershipId)) {
           const autoRenew = overrides.get(membershipId)!;
-          const updatedMembership = { ...item.membership!, AutoRenew: autoRenew };
+          const updatedMembership = { ...item.membership!, autoRenew };
           const displayStatus = deriveEnrollmentStatus({ ...item, membership: updatedMembership });
           return { ...item, membership: updatedMembership, displayStatus, severity: enrollmentStatusSeverity(displayStatus), pending: isPending };
         }
