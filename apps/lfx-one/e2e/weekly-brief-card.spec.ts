@@ -408,10 +408,10 @@ test.describe('WG Weekly Brief card — error states (flag ON)', () => {
     await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
   });
 
-  // ai_error is the other documented upstream value (LFXV2-2989) — the genuinely
-  // retryable failure path, unlike no_sources above. Pins that a real generation
-  // failure still renders the failure card with an active retry, not the quiet-week
-  // treatment.
+  // ai_error is the other documented upstream value (lfx-v2-committee-service
+  // docs/indexer-contract.md; LFXV2-2989) — the genuinely retryable failure path,
+  // unlike no_sources above. Pins that a real generation failure still renders the
+  // failure card with an active retry, not the quiet-week treatment.
   test('renders the generic failure state with an enabled Try again for an ai_error', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, {
