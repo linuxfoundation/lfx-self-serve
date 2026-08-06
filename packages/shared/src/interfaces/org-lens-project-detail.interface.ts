@@ -211,11 +211,26 @@ export interface OrgLensInfluenceBlock {
   isNonLfProject: boolean;
   /** Viewing org's precomputed tiers for the section-title band chips; null when it has no leaderboard row. */
   levels: { technical: OrgLensProjectBand | null; ecosystem: OrgLensProjectBand | null };
+  /**
+   * Axis labels for the plotted points, one entry per point, oldest → newest, aligned 1:1 with each
+   * card's `sparkline` / `projectSparkline`. Emitted for the `all` range, where the axis is a variable
+   * number of adaptive buckets (monthly `Jan 2016`, quarterly `Q1 2016`, yearly `2016`, multi-year
+   * `2013–2015`) that the client cannot reconstruct locally. Absent for 1y/2y, where the client keeps
+   * deriving the fixed trailing monthly grid itself.
+   */
+  periods?: string[];
 }
 
 /** B6 Influence Trend block — the per-org monthly combined-influence series. Range-scoped (client slices). */
 export interface OrgLensTrendBlock {
   trend: OrgLensProjectTrendSeries[];
+  /**
+   * Axis labels for the stacked trend, one entry per plotted point, oldest → newest, aligned 1:1 with
+   * every series' `combined[]`. Emitted for the `all` range (variable-length adaptive buckets — see
+   * {@link OrgLensInfluenceBlock.periods}); absent for 1y/2y, where the client derives the fixed
+   * trailing monthly grid itself.
+   */
+  periods?: string[];
 }
 
 /**

@@ -103,7 +103,15 @@ export const PD_TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: st
   { id: 'all', label: 'All time' },
 ];
 
-export const PD_TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: 36 };
+/**
+ * Trailing monthly window per range for the recent-monthly representation. `1y`/`2y` slice the
+ * trailing 12 / 24 monthly points client-side. `all` is NO LONGER a fixed length (was 36): under
+ * "All time" the payload carries a variable, adaptively-bucketed series (hard cap ≤ 12 points) with
+ * its own `periods[]` axis labels (see `OrgLensTrendBlock.periods`), so the client renders the
+ * payload as-is instead of slicing to a fixed count. The `all` entry is a defensive upper-bound
+ * sentinel only — any residual `slice(-months)` on an already-≤12 all-time array is a no-op.
+ */
+export const PD_TIME_RANGE_MONTHS: Record<OrgLensLeaderboardTimeRange, number> = { '1y': 12, '2y': 24, all: Number.MAX_SAFE_INTEGER };
 
 /** 11-slot palette for the stacked trend chart — top-10 companies + "All others". */
 export const PD_STACKED_PALETTE: string[] = [
