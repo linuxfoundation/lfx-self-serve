@@ -10,13 +10,13 @@ This project has guided skills for common workflows, plus two Self Serve reviewe
 
 ## Skills
 
-| Skill                          | When to Suggest                                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `/setup`                       | Getting started, first-time setup, broken environments, install failures, missing env vars, 1Password, how to run the app         |
-| `/self-serve-dev`              | Add a feature, fix a bug, modify code, create components/services/endpoints/types, refactor, build, implement any code change     |
-| `/lfx-self-serve-pr-readiness` | Before opening a PR — PR-shape sanity (branch, JIRA, conventional commits, rebase, DCO + GPG, diff size, protected files touched) |
-| `/preflight`                   | Mechanical pre-PR checks — license headers, format, lint, build, protected files, commit signoff                                  |
-| `/lfx-review-pr`               | Review an **existing** PR by number — audit a PR's diff, validate against standards, draft inline comments                        |
+| Skill                          | When to Suggest                                                                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/setup`                       | Getting started, first-time setup, broken environments, install failures, missing env vars, 1Password, how to run the app                                            |
+| `/self-serve-dev`              | Add a feature, fix a bug, modify code, create components/services/endpoints/types, refactor, build, implement any code change                                        |
+| `/lfx-self-serve-pr-readiness` | Before opening a PR — PR-shape sanity (branch, ticket reference [JIRA or GitHub Issue], conventional commits, rebase, DCO + GPG, diff size, protected files touched) |
+| `/preflight`                   | Mechanical pre-PR checks — license headers, format, lint, build, protected files, commit signoff                                                                     |
+| `/lfx-review-pr`               | Review an **existing** PR by number — audit a PR's diff, validate against standards, draft inline comments                                                           |
 
 ## Reviewer Subagents
 
@@ -68,7 +68,7 @@ Launch the trio in parallel via the Agent tool (`subagent_type: lfx-skills:lfx-g
 
 - "PR readiness", "Is this ready to open as a PR?"
 - "Check PR shape", "Validate my commits", "Are my commits signed?"
-- "Did I forget the JIRA ticket?", "Is my branch named right?"
+- "Did I forget the JIRA ticket?", "Did I forget the GitHub Issue reference?", "Is my branch named right?"
 - "Diff size OK?", "Is my branch rebased?"
 
 **`/preflight`** — mechanical checks; usually after pr-readiness passes. Match any of these intents:

@@ -70,7 +70,18 @@
                       {{ committee.name || '-' }}
                     </a>
                   }
-                  @if (!committee.public) {
+                  @if (committee.public) {
+                    <button
+                      type="button"
+                      class="inline-flex items-center text-blue-400 hover:text-blue-600"
+                      pTooltip="Public · Copy shareable group link"
+                      tooltipPosition="top"
+                      aria-label="Public group — copy shareable link"
+                      [attr.data-testid]="'public-group-copy-link-' + committee.uid"
+                      (click)="$event.stopPropagation(); copyPublicGroupLink(committee.uid)">
+                      <i class="fa-light fa-copy w-3 h-3" aria-hidden="true"></i>
+                    </button>
+                  } @else {
                     <i class="fa-light fa-lock w-3 h-3 text-gray-500" pTooltip="Private" tooltipPosition="top"></i>
                   }
                 </div>

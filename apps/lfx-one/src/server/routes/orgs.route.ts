@@ -16,6 +16,7 @@ import { OrgLensMembershipsController } from '../controllers/org-lens-membership
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
 import { OrgLensProjectDetailController } from '../controllers/org-lens-project-detail.controller';
 import { OrgLensProjectsController } from '../controllers/org-lens-projects.controller';
+import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 
 function buildOrgsRouter(): Router {
@@ -28,6 +29,7 @@ function buildOrgsRouter(): Router {
   const orgLensPeopleController = new OrgLensPeopleController();
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
   const orgLensAccessController = new OrgLensAccessController();
+  const orgLensGroupsController = new OrgLensGroupsController();
   const orgLensTrainingController = new OrgLensTrainingController();
   const orgLensContributionsController = new OrgLensContributionsController();
   const orgLensMeetingsController = new OrgLensMeetingsController();
@@ -118,6 +120,9 @@ function buildOrgsRouter(): Router {
   // LFXV2-1897 — Trainings tab table + drill-down rosters.
   router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
   router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
+
+  // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
+  router.get('/:orgUid/lens/groups', (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
 
   // LFXV2-2735 — Org Lens Meetings insights. Unlike the sibling org-lens routes these carry an
   // org-membership read gate (`assertOrgLensRead`) inside each handler, ahead of any data access.
