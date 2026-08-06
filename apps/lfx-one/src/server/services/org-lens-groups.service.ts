@@ -61,7 +61,7 @@ export class OrgLensGroupsService {
     // Deduplicate by email so one person with multiple roles counts once for the seat count.
     const seenEmails = new Set<string>();
     for (const s of seats) {
-      seenEmails.add(s.email.trim().toLowerCase());
+      seenEmails.add((s.email ?? '').trim().toLowerCase());
     }
 
     return {
