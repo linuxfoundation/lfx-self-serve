@@ -484,15 +484,21 @@ export const routes: Routes = [
     path: 'auth-error',
     loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
   },
-  // Branded 404 page — public named route so unauthenticated users can reach it directly
-  // (e.g. after login redirect returns them to an unrecognized URL). Anchored to /not-found
-  // following the same pattern as auth-error and invite/error.
+  // Branded 404 page — public named route so the /not-found destination is reachable without a
+  // session (auth.middleware.ts classifies it as 'public'). Following the same pattern as
+  // auth-error and invite/error.
+  // Note: for authenticated users this page is reached directly via the ** wildcard below.
+  // For anonymous users the Express auth middleware classifies unrecognized paths as required-auth
+  // and redirects to login first; after login the returnTo URL is honoured and the ** wildcard
+  // then redirects here — so the branded 404 is always shown, just after authentication for
+  // anonymous deep-links rather than before.
   {
     path: 'not-found',
     loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
   },
-  // Generic catch-all — redirects unrecognized URLs to /not-found so they get a proper HTTP 404
-  // status and a branded page regardless of whether the user arrived authenticated or not.
+  // Generic catch-all — redirects unrecognized URLs to /not-found so authenticated users get a
+  // proper HTTP 404 status and a branded page. Also handles post-login returnTo redirects for
+  // anonymous users who followed a stale or mistyped URL (see /not-found comment above).
   // Must be last so it never shadows real routes.
   {
     path: '**',
