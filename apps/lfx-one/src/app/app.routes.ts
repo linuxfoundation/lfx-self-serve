@@ -484,10 +484,18 @@ export const routes: Routes = [
     path: 'auth-error',
     loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
   },
-  // Generic 404 — catches all unrecognized URLs and renders a branded not-found page. Must be
-  // last so it never shadows real routes. Outside the auth guard so anonymous users see it too.
+  // Branded 404 page — public named route so unauthenticated users can reach it directly
+  // (e.g. after login redirect returns them to an unrecognized URL). Anchored to /not-found
+  // following the same pattern as auth-error and invite/error.
+  {
+    path: 'not-found',
+    loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
+  },
+  // Generic catch-all — redirects unrecognized URLs to /not-found so they get a proper HTTP 404
+  // status and a branded page regardless of whether the user arrived authenticated or not.
+  // Must be last so it never shadows real routes.
   {
     path: '**',
-    loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
+    redirectTo: '/not-found',
   },
 ];
