@@ -182,7 +182,7 @@
                 <h3 class="text-gray-600 text-sm font-normal">External Sources</h3>
               </div>
               <div class="flex flex-col gap-2">
-                @for (source of safeExternalSources(); track $index + ':' + source.url) {
+                @for (source of safeExternalSources(); track source.url) {
                   <a
                     [href]="source.url"
                     target="_blank"
