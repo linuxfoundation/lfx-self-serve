@@ -39,6 +39,11 @@ describe('isInvalidIdentifierError', () => {
     expect(isInvalidIdentifierError(error)).toBe(true);
   });
 
+  it('matches Snowflake error code 904 with leading zeros', () => {
+    const error = new Error('SQL compilation error: error code: 000904');
+    expect(isInvalidIdentifierError(error)).toBe(true);
+  });
+
   it('matches only the expected identifier when one is provided', () => {
     const error = new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS'");
     expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(true);

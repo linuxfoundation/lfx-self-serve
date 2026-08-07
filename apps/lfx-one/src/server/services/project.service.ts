@@ -2862,94 +2862,49 @@ export class ProjectService {
           ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService
-          .execute<{
-            PROJECT_NAME: string;
-            CAMPAIGN_NAME: string;
-            FUNNEL_STAGE: string;
-            SPEND: number;
-            REVENUE: number;
-            ROAS: number;
-            CONVERSIONS: number;
-            CONV_RATE: number;
-            CPC: number;
-            SESSIONS: number;
-            IMPRESSIONS: number;
-            CLICKS: number;
-          }>(projectPerfQuery('LAST_TOUCH_CONVERSIONS'), breakdownParams, { expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS' })
-          .catch(async (error) => {
-            if (isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')) {
-              logger.warning(undefined, 'get_social_reach', 'Retrying project breakdown with legacy conversion column', {
-                foundation_slug: foundationSlug,
-                err: error,
-              });
-              const legacyResult = await this.snowflakeService.execute(projectPerfQuery('CONV'), breakdownParams);
-              return { rows: legacyResult.rows };
-            }
-            logger.warning(undefined, 'get_social_reach', 'Optional project breakdown query failed, degrading gracefully', {
-              foundation_slug: foundationSlug,
-              err: error,
-            });
-            return {
-              rows: [] as {
-                PROJECT_NAME: string;
-                CAMPAIGN_NAME: string;
-                FUNNEL_STAGE: string;
-                SPEND: number;
-                REVENUE: number;
-                ROAS: number;
-                CONVERSIONS: number;
-                CONV_RATE: number;
-                CPC: number;
-                SESSIONS: number;
-                IMPRESSIONS: number;
-                CLICKS: number;
-              }[],
-            };
-          }),
-        this.snowflakeService
-          .execute<{
-            CHANNEL: string;
-            CAMPAIGN_NAME: string;
-            SPEND: number;
-            REVENUE: number;
-            ROAS: number;
-            CLICKS: number;
-            IMPRESSIONS: number;
-            CTR: number;
-            CPC: number;
-            CONV_RATE: number;
-            CONVERSIONS: number;
-          }>(platformPerfQuery('LAST_TOUCH_CONVERSIONS'), breakdownParams, { expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS' })
-          .catch(async (error) => {
-            if (isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')) {
-              logger.warning(undefined, 'get_social_reach', 'Retrying platform breakdown with legacy conversion column', {
-                foundation_slug: foundationSlug,
-                err: error,
-              });
-              const legacyResult = await this.snowflakeService.execute(platformPerfQuery('CONV'), breakdownParams);
-              return { rows: legacyResult.rows };
-            }
-            logger.warning(undefined, 'get_social_reach', 'Optional platform breakdown query failed, degrading gracefully', {
-              foundation_slug: foundationSlug,
-              err: error,
-            });
-            return {
-              rows: [] as {
-                CHANNEL: string;
-                CAMPAIGN_NAME: string;
-                SPEND: number;
-                REVENUE: number;
-                ROAS: number;
-                CLICKS: number;
-                IMPRESSIONS: number;
-                CTR: number;
-                CPC: number;
-                CONV_RATE: number;
-                CONVERSIONS: number;
-              }[],
-            };
-          }),
+        this.executeWithLegacyConversionFallback<{
+          PROJECT_NAME: string;
+          CAMPAIGN_NAME: string;
+          FUNNEL_STAGE: string;
+          SPEND: number;
+          REVENUE: number;
+          ROAS: number;
+          CONVERSIONS: number;
+          CONV_RATE: number;
+          CPC: number;
+          SESSIONS: number;
+          IMPRESSIONS: number;
+          CLICKS: number;
+        }>({
+          primaryQuery: projectPerfQuery('LAST_TOUCH_CONVERSIONS'),
+          legacyQuery: projectPerfQuery('CONV'),
+          params: breakdownParams,
+          operation: 'get_social_reach',
+          foundationSlug,
+          retryMessage: 'Retrying project breakdown with legacy conversion column',
+          degradeMessage: 'Optional project breakdown query failed, degrading gracefully',
+        }),
+        this.executeWithLegacyConversionFallback<{
+          CHANNEL: string;
+          CAMPAIGN_NAME: string;
+          SPEND: number;
+          REVENUE: number;
+          ROAS: number;
+          CLICKS: number;
+          IMPRESSIONS: number;
+          CTR: number;
+          CPC: number;
+          CONV_RATE: number;
+          CONVERSIONS: number;
+        }>({
+          primaryQuery: platformPerfQuery('LAST_TOUCH_CONVERSIONS'),
+          legacyQuery: platformPerfQuery('CONV'),
+          params: breakdownParams,
+          operation: 'get_social_reach',
+          foundationSlug,
+          retryMessage: 'Retrying platform breakdown with legacy conversion column',
+          degradeMessage: 'Optional platform breakdown query failed, degrading gracefully',
+        }),
       ]);
 
       const totalReach = impressionsResult.rows[0]?.TOTAL_IMPRESSIONS ?? 0;
@@ -6861,7 +6816,15 @@ export class ProjectService {
           resolved.endDate,
           ...foundationParams,
         ]),
-        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams]),
+        this.snowflakeService
+          .execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams])
+          .catch((error) => {
+            logger.warning(undefined, 'get_keyword_performance', 'Optional keyword attribution query failed, degrading attributed fields', {
+              foundation_slug: foundationSlug,
+              err: error,
+            });
+            return { rows: [] as KeywordAttributionRow[] };
+          }),
       ]);
 
       const attrMap = new Map<string, KeywordAttributionRow>();
@@ -6948,11 +6911,11 @@ export class ProjectService {
         },
       };
     } catch (error) {
-      logger.warning(undefined, 'get_keyword_performance', 'Failed to fetch keyword performance, returning empty', {
+      logger.warning(undefined, 'get_keyword_performance', 'Failed to fetch keyword performance', {
         foundation_slug: foundationSlug,
         err: error,
       });
-      return { keywords: [], totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 } };
+      throw error;
     }
   }
 
@@ -7082,6 +7045,51 @@ export class ProjectService {
     });
 
     return { totalProjectsBySlug, totalMembersBySlug, totalValueBySlug, healthScoresBySlug };
+  }
+
+  /**
+   * Optional social-reach breakdowns try LAST_TOUCH_CONVERSIONS first, then retry with legacy
+   * CONV during schema rollout. Both attempts degrade to empty rows so headline KPIs that already
+   * succeeded are preserved when either query fails.
+   */
+  private async executeWithLegacyConversionFallback<T>(args: {
+    primaryQuery: string;
+    legacyQuery: string;
+    params: (string | number)[];
+    operation: string;
+    foundationSlug: string;
+    retryMessage: string;
+    degradeMessage: string;
+  }): Promise<{ rows: T[] }> {
+    try {
+      const result = await this.snowflakeService.execute<T>(args.primaryQuery, args.params, {
+        expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS',
+      });
+      return { rows: result.rows };
+    } catch (error) {
+      if (isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')) {
+        logger.warning(undefined, args.operation, args.retryMessage, {
+          foundation_slug: args.foundationSlug,
+          err: error,
+        });
+        try {
+          const legacyResult = await this.snowflakeService.execute<T>(args.legacyQuery, args.params);
+          return { rows: legacyResult.rows };
+        } catch (legacyError) {
+          logger.warning(undefined, args.operation, args.degradeMessage, {
+            foundation_slug: args.foundationSlug,
+            err: legacyError,
+          });
+          return { rows: [] };
+        }
+      }
+
+      logger.warning(undefined, args.operation, args.degradeMessage, {
+        foundation_slug: args.foundationSlug,
+        err: error,
+      });
+      return { rows: [] };
+    }
   }
 
   private trendStartDate(resolved: ResolvedPeriodRange): string {
