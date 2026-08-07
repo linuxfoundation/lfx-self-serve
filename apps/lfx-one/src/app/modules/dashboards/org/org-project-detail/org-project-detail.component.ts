@@ -14,6 +14,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { OrgLeaderboardDetailDrawerComponent } from '../../components/org-leaderboard-detail-drawer/org-leaderboard-detail-drawer.component';
 import { OrgProjectDetailTabBarComponent } from './org-project-detail-tab-bar.component';
 import {
   BAND_CHIP_CLASS,
@@ -82,6 +83,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     ChartComponent,
     EmptyStateComponent,
     InputTextComponent,
+    OrgLeaderboardDetailDrawerComponent,
     OrgProjectDetailTabBarComponent,
     TableComponent,
     TagComponent,
@@ -123,6 +125,13 @@ export class OrgProjectDetailComponent {
   private readonly selectedCardKey = signal<string | null>(null);
   protected readonly drawerOpen = signal(false);
 
+  // Leaderboard row detail drawer (LFXV2-2934) — opened by clicking a technical/ecosystem row;
+  // renders that org's category score breakdown (demo data pending a real data-source integration).
+  protected readonly leaderboardDetailOpen = signal(false);
+  protected readonly leaderboardDetailDimension = signal<LeaderboardDimension>('technical');
+  protected readonly leaderboardDetailOrgName = signal('');
+  protected readonly leaderboardDetailIsViewingOrg = signal(false);
+
   // B5 drawer state + per-(card, range) cache so re-opening the same card at the same range is
   // instant (no spinner flash); a range change closes the drawer and its cache key differs.
   protected readonly drawerState = signal<BlockState<OrgLensCardDetailSection>>({ status: 'loading', data: null });
@@ -147,7 +156,7 @@ export class OrgProjectDetailComponent {
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
-  private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), { initialValue: null });
   private readonly drawerCardParam = computed<string | null>(() => {
     const raw = this.queryParamMap().get(PD_DRAWER_QUERY_PARAM);
@@ -414,6 +423,15 @@ export class OrgProjectDetailComponent {
 
   protected onDrawerVisibleChange(visible: boolean): void {
     if (!visible) this.closeCardDetail();
+  }
+
+  /** Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op in activity mode — the breakdown is influence-score only. */
+  protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
+    if (this.isActivityMode()) return;
+    this.leaderboardDetailDimension.set(dimension);
+    this.leaderboardDetailOrgName.set(row.orgName);
+    this.leaderboardDetailIsViewingOrg.set(row.isViewingOrg);
+    this.leaderboardDetailOpen.set(true);
   }
 
   /** lfx-table lazy-load callback: fetch the requested page (and page size) of the open card's roster. */
