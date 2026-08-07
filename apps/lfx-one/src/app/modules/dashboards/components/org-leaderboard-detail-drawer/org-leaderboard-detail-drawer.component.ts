@@ -40,8 +40,8 @@ export class OrgLeaderboardDetailDrawerComponent {
   public readonly dimension = input.required<LeaderboardDimension>();
   public readonly orgName = input.required<string>();
   public readonly projectName = input.required<string>();
-  /** The viewer's own org, used to decide whether privacy-restricted categories are unmasked. */
-  public readonly viewerOrgName = input<string>('');
+  /** Server-computed flag for whether the clicked row is the viewer's own org — authoritative, not derived from name matching. */
+  public readonly isViewingOrg = input<boolean>(false);
 
   // === Model signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -62,10 +62,6 @@ export class OrgLeaderboardDetailDrawerComponent {
       silent: 'text-gray-600',
     };
     return band ? classByBand[band] : 'text-gray-600';
-  });
-  protected readonly isViewerOrg: Signal<boolean> = computed(() => {
-    const viewer = this.viewerOrgName().trim().toLowerCase();
-    return viewer.length > 0 && viewer === this.orgName().trim().toLowerCase();
   });
   protected readonly categoryRows: Signal<OrgLeaderboardDetailCategoryRow[]> = this.initCategoryRows();
 
@@ -106,7 +102,7 @@ export class OrgLeaderboardDetailDrawerComponent {
       const company = this.company();
       if (!company) return [];
       const categories = this.dimension() === 'technical' ? ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES : ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES;
-      const maskedKeys = this.isViewerOrg() ? [] : ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS;
+      const maskedKeys = this.isViewingOrg() ? [] : ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS;
       return orgLeaderboardDetailCategoryRows(categories, company.points, company.counts, company.score, maskedKeys);
     });
   }

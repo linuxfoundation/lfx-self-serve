@@ -130,6 +130,7 @@ export class OrgProjectDetailComponent {
   protected readonly leaderboardDetailOpen = signal(false);
   protected readonly leaderboardDetailDimension = signal<LeaderboardDimension>('technical');
   protected readonly leaderboardDetailOrgName = signal('');
+  protected readonly leaderboardDetailIsViewingOrg = signal(false);
 
   // B5 drawer state + per-(card, range) cache so re-opening the same card at the same range is
   // instant (no spinner flash); a range change closes the drawer and its cache key differs.
@@ -429,6 +430,7 @@ export class OrgProjectDetailComponent {
     if (this.isActivityMode()) return;
     this.leaderboardDetailDimension.set(dimension);
     this.leaderboardDetailOrgName.set(row.orgName);
+    this.leaderboardDetailIsViewingOrg.set(row.isViewingOrg);
     this.leaderboardDetailOpen.set(true);
   }
 
