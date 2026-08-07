@@ -103,16 +103,6 @@ function resolveBackend(): 'mock' | 'live' {
  * (LFXV2-2961 tracks adding one). Defaults to `live` (never fabricated numbers) unless
  * `ENGAGEMENT_BACKEND=mock` is explicitly set, and `mock` is additionally hard-blocked when
  * `NODE_ENV=production`.
- *
- * Deliberately NOT gated on `show_meeting_attendees` (LFXV2-3004, wired into the per-committee
- * detail page's `committee-engagement.service.ts`): that setting is only readable per-committee
- * today (`GET /committees/{id}/settings`, merged into `getCommitteeById` — there is no batched
- * settings endpoint, unlike the batched *committee* read `getCommitteesByIds` already uses), so
- * honoring it here would mean one settings fetch per visible committee — exactly the N+1 this
- * rollup exists to avoid, for the same reason member-id resolution is skipped above. A committee
- * with attendance hidden can still contribute to this aggregate's `active_members` count as a
- * result. Left as a follow-up (see LFXV2-3004's ticket) pending a batched committee-settings read
- * upstream, rather than building the N+1 or silently mismatching the detail page's guarantee.
  */
 export class GroupsEngagementStatsService {
   private readonly snowflakeService = SnowflakeService.getInstance();

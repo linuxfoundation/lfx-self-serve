@@ -93,12 +93,10 @@ export interface CommitteeEngagementResponse {
    * and returned zero rows for this `committee_uid` (the model is roster-anchored and retains
    * zero-activity members, so a real, currently-populated committee should always yield >=1 row;
    * zero rows most likely means this committee isn't covered by the model yet, not that engagement
-   * is genuinely zero for everyone), it returned rows but none of them key to any roster member at
+   * is genuinely zero for everyone), or it returned rows but none of them key to any roster member at
    * all (a total join-key mismatch — the warehouse's `MEMBER_USER_ID` values don't correspond to any
-   * `CommitteeMember.uid` for this committee), or the committee's `show_meeting_attendees` setting is
-   * `false` (see `show_meeting_attendees` below — a chair's deliberate opt-out, not a data-quality
-   * issue). All four degrade identically from the caller's point of view. Every member then shows
-   * zeroed counts and classifies `Inactive` — except a roster
+   * `CommitteeMember.uid` for this committee). All three degrade identically from the caller's point
+   * of view. Every member then shows zeroed counts and classifies `Inactive` — except a roster
    * member with a real `Emeritus` voting status, which still classifies `Emeritus` (a seat-type
    * fact independent of whether any engagement data exists). The tenure-grace `High` exception
    * (a member who genuinely joined within the requested window, classified `High` instead of
@@ -138,18 +136,6 @@ export interface CommitteeEngagementResponse {
    * `data_available`, before presenting the numbers as real.
    */
   data_source: CommitteeEngagementDataSource;
-  /**
-   * Echoes the committee's `show_meeting_attendees` setting. `false` means a chair has explicitly
-   * hidden meeting attendance data for this committee — `data_available` is also forced `false` in
-   * this case (a fourth cause alongside the three `data_available`'s own doc comment already
-   * covers), applied even to `committee#auditor`-tier callers who would otherwise be granted this
-   * data by role (defense-in-depth over the FGA read gate, not a fix for a leak — LFXV2-3004). The
-   * UI should check this field first, before falling back to `data_available`'s generic "not
-   * available yet" message, so a chair's deliberate choice reads as "hidden" rather than "not
-   * synced yet". `true` (including when the underlying committee setting is unset) is the default,
-   * unchanged-from-today behavior.
-   */
-  show_meeting_attendees: boolean;
 }
 
 /**

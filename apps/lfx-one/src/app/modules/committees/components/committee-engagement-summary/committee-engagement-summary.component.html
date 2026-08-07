@@ -27,15 +27,6 @@
         <p class="text-sm font-medium text-gray-500">Attendance data unavailable</p>
         <p class="text-xs text-gray-400 mt-1">Engagement metrics can't be shown right now.</p>
       </div>
-    } @else if (attendeesHidden()) {
-      <!-- Chair has hidden attendance data (show_meeting_attendees: false, LFXV2-3004): checked
-           before the generic degraded state, since a hidden committee also reports
-           data_available: false. -->
-      <div class="flex flex-col items-center py-4 text-center" data-testid="committee-engagement-summary-hidden-state">
-        <i class="fa-light fa-chart-line text-2xl text-gray-300 mb-2" aria-hidden="true"></i>
-        <p class="text-sm font-medium text-gray-500">Attendance data hidden</p>
-        <p class="text-xs text-gray-400 mt-1">This group has hidden meeting attendance data.</p>
-      </div>
     } @else if (!dataAvailable()) {
       <!-- Live read degraded (model not deployed yet): calm coming-soon state, not an error -->
       <div class="flex flex-col items-center py-4 text-center" data-testid="committee-engagement-summary-coming-soon-state">
