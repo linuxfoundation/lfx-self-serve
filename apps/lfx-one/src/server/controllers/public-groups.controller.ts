@@ -152,6 +152,7 @@ export class PublicGroupsController {
         cadence: cadence !== 'No recurring meetings scheduled' ? cadence : undefined,
         calendar_url: links.calendar ?? undefined,
         member_visibility: visibility,
+        external_sources: committee.external_sources,
       };
 
       const isAuthenticated = req.oidc?.isAuthenticated();

@@ -49,6 +49,7 @@ export interface PublicGroupExternalSource {
   external_id?: string;
   external_category?: string;
   external_region?: string;
+  external_event_category?: string;
 }
 
 /** Public-safe group summary returned by the directory endpoints. */
@@ -100,4 +101,5 @@ export interface PublicGroupDetail {
   member_visibility?: CommitteeMemberVisibility;
   is_member?: boolean;
   my_role?: string;
+  external_sources?: PublicGroupExternalSource[];
 }

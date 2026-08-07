@@ -79,6 +79,8 @@ export class GroupDetailComponent {
 
   protected readonly hasUpcomingMeetings = computed(() => (this.group()?.upcoming_meetings?.length ?? 0) > 0);
 
+  protected readonly hasExternalSources = computed(() => (this.group()?.external_sources?.length ?? 0) > 0);
+
   protected readonly projectLogoUrl = computed(() => {
     const ctx = this.group()?.context;
     return ctx?.project_logo_url || ctx?.foundation_logo_url || null;
