@@ -28,14 +28,22 @@ export function orgLeaderboardDetailLevelFor(dimension: LeaderboardDimension, sc
 /**
  * Builds the sorted (descending by points), percentage-computed category rows rendered in the
  * drawer's breakdown list. Returns an empty array when the score is 0 to avoid a divide-by-zero.
+ *
+ * `maskedCategoryKeys` flags rows whose count, points, and share percentage must be withheld from
+ * the viewer (see `ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS`). Masked rows are grouped at the
+ * bottom of the list — since their figures are hidden, ranking them among the visible rows would
+ * only leak the position. Their values are zeroed out here rather than merely hidden in the
+ * template, so masked figures never reach the rendered payload.
  */
 export function orgLeaderboardDetailCategoryRows(
   categories: OrgLeaderboardDetailCategory[],
   points: Record<string, number>,
   counts: Record<string, number>,
-  score: number
+  score: number,
+  maskedCategoryKeys: readonly string[] = []
 ): OrgLeaderboardDetailCategoryRow[] {
   if (score <= 0) return [];
+  const masked = new Set(maskedCategoryKeys);
   const rows = categories
     .map((category) => ({
       key: category.key,
@@ -43,9 +51,14 @@ export function orgLeaderboardDetailCategoryRows(
       count: counts[category.key] ?? 0,
       points: points[category.key] ?? 0,
       pct: Math.round(((points[category.key] ?? 0) / score) * 100),
-      isTop: false,
+      masked: masked.has(category.key),
     }))
-    .sort((a, b) => b.points - a.points);
-  if (rows.length > 0) rows[0].isTop = true;
-  return rows;
+    .sort((a, b) => {
+      if (a.masked !== b.masked) return a.masked ? 1 : -1;
+      return b.points - a.points;
+    });
+  return rows.map((row) => {
+    if (!row.masked) return row;
+    return { ...row, count: 0, points: 0, pct: 0 };
+  });
 }

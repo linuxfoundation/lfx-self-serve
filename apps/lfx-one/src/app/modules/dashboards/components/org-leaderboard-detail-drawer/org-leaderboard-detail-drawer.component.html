@@ -49,21 +49,40 @@
         <p class="text-xs font-semibold text-gray-500">The % of {{ orgName() }}'s score that each category contributes, and the points it earned</p>
 
         @for (row of categoryRows(); track row.key) {
-          <div class="flex flex-col gap-1.5">
+          <div class="flex flex-col gap-1.5" [attr.data-testid]="'org-leaderboard-detail-category-' + row.key">
             <div class="flex items-baseline justify-between gap-3 text-sm">
-              <span class="font-semibold" [class.text-emerald-600]="row.isTop" [class.text-gray-900]="!row.isTop">
-                {{ row.name }} ({{ row.count | number }})
-              </span>
+              @if (row.masked) {
+                <span class="min-w-0 truncate font-semibold text-gray-900">{{ row.name }}</span>
+              } @else {
+                <span class="font-semibold text-gray-900">{{ row.name }} ({{ row.count | number }})</span>
+              }
               <span class="flex shrink-0 items-baseline gap-2.5">
-                <span class="min-w-[2.5rem] text-right font-bold text-gray-900">{{ row.pct }}%</span>
-                <span class="min-w-[3rem] text-right font-bold tabular-nums" [class.text-emerald-600]="row.isTop" [class.text-gray-500]="!row.isTop">
-                  {{ row.points }} pts
-                </span>
+                @if (row.masked) {
+                  <span
+                    class="flex min-w-[3rem] items-baseline justify-end gap-1 font-bold text-gray-400"
+                    data-testid="org-leaderboard-detail-category-masked-points">
+                    <i class="fa-light fa-lock text-xs" aria-hidden="true"></i>
+                    <span>pts</span>
+                    <i
+                      class="fa-light fa-circle-info cursor-help text-xs text-gray-400"
+                      [pTooltip]="maskedTooltipFor(row.key)"
+                      tooltipPosition="left"
+                      [attr.aria-label]="maskedTooltipFor(row.key)"
+                      tabindex="0"
+                      data-testid="org-leaderboard-detail-category-masked-info"></i>
+                  </span>
+                } @else {
+                  <span class="min-w-[3rem] text-right font-bold tabular-nums text-gray-500">{{ row.points }} pts</span>
+                }
               </span>
             </div>
-            <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-              <div class="h-full rounded-full" [class.bg-emerald-600]="row.isTop" [class.bg-gray-400]="!row.isTop" [style.width.%]="row.pct"></div>
-            </div>
+            @if (row.masked) {
+              <div class="h-2 w-full rounded-full bg-gray-100"></div>
+            } @else {
+              <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                <div class="h-full rounded-full bg-gray-400" [style.width.%]="row.pct"></div>
+              </div>
+            }
           </div>
         }
 

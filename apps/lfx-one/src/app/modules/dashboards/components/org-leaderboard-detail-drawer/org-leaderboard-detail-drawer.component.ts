@@ -6,6 +6,9 @@ import { Component, computed, input, model, Signal } from '@angular/core';
 import {
   ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
   ORG_LEADERBOARD_DETAIL_ECOSYSTEM_COMPANIES,
+  ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS,
+  ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIP_FALLBACK,
+  ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIPS,
   ORG_LEADERBOARD_DETAIL_METHODOLOGY,
   ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
   ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES,
@@ -19,6 +22,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { orgLeaderboardDetailCategoryRows, orgLeaderboardDetailLevelFor } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 
 /**
  * Score-breakdown drawer opened by clicking an Org Lens Project Detail leaderboard row (LFXV2-2934).
@@ -28,7 +32,7 @@ import { DrawerModule } from 'primeng/drawer';
  */
 @Component({
   selector: 'lfx-org-leaderboard-detail-drawer',
-  imports: [DecimalPipe, DrawerModule],
+  imports: [DecimalPipe, DrawerModule, TooltipModule],
   templateUrl: './org-leaderboard-detail-drawer.component.html',
 })
 export class OrgLeaderboardDetailDrawerComponent {
@@ -36,6 +40,8 @@ export class OrgLeaderboardDetailDrawerComponent {
   public readonly dimension = input.required<LeaderboardDimension>();
   public readonly orgName = input.required<string>();
   public readonly projectName = input.required<string>();
+  /** The viewer's own org, used to decide whether privacy-restricted categories are unmasked. */
+  public readonly viewerOrgName = input<string>('');
 
   // === Model signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -57,9 +63,18 @@ export class OrgLeaderboardDetailDrawerComponent {
     };
     return band ? classByBand[band] : 'text-gray-600';
   });
+  protected readonly isViewerOrg: Signal<boolean> = computed(() => {
+    const viewer = this.viewerOrgName().trim().toLowerCase();
+    return viewer.length > 0 && viewer === this.orgName().trim().toLowerCase();
+  });
   protected readonly categoryRows: Signal<OrgLeaderboardDetailCategoryRow[]> = this.initCategoryRows();
 
   // === Protected methods ===
+  /** Tooltip copy naming the non-public data source behind a masked row's withheld figures. */
+  protected maskedTooltipFor(key: string): string {
+    return ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIPS[key] ?? ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIP_FALLBACK;
+  }
+
   protected onClose(): void {
     this.visible.set(false);
   }
@@ -91,7 +106,8 @@ export class OrgLeaderboardDetailDrawerComponent {
       const company = this.company();
       if (!company) return [];
       const categories = this.dimension() === 'technical' ? ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES : ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES;
-      return orgLeaderboardDetailCategoryRows(categories, company.points, company.counts, company.score);
+      const maskedKeys = this.isViewerOrg() ? [] : ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS;
+      return orgLeaderboardDetailCategoryRows(categories, company.points, company.counts, company.score, maskedKeys);
     });
   }
 }

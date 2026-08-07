@@ -155,7 +155,7 @@ export class OrgProjectDetailComponent {
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
-  private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), { initialValue: null });
   private readonly drawerCardParam = computed<string | null>(() => {
     const raw = this.queryParamMap().get(PD_DRAWER_QUERY_PARAM);

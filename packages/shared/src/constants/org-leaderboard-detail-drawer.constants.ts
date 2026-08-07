@@ -41,6 +41,33 @@ export const ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES: OrgLeaderboardDetailCa
   { key: 'certified', name: 'Certified Individuals' },
 ];
 
+/**
+ * Category keys whose counts, points, and share percentages are only shown for the viewer's own org.
+ *
+ * These are the categories backed by data that is NOT publicly available — individual-level
+ * participation records held by LFX (meeting, event, and meetup attendance; certifications). The
+ * unmasked categories are all derivable from public sources: technical activity from public GitHub
+ * repos, and committee/board rosters, event speakers, and event sponsorships from published
+ * governance pages, conference schedules, and sponsor listings.
+ */
+export const ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS: readonly string[] = ['certified', 'event', 'meetup', 'meeting'];
+
+/**
+ * Per-category tooltip copy naming the specific non-public data source behind each masked row.
+ * Keyed by category key; `ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIP_FALLBACK` covers any key
+ * added to the masked list without its own copy.
+ */
+export const ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIPS: Record<string, string> = {
+  meeting: 'Meeting attendance comes from private LFX Meetings attendance records, so these figures are only shown for your own organization.',
+  event: 'Event attendance comes from private event registration records, so these figures are only shown for your own organization.',
+  meetup: 'Meetup attendance comes from private registration records, so these figures are only shown for your own organization.',
+  certified: 'Certification records identify individuals, so these figures are only shown for your own organization.',
+};
+
+/** Tooltip copy for a masked category with no specific entry in `ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIPS`. */
+export const ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIP_FALLBACK =
+  'This category is based on data that is not publicly available, so these figures are only shown for your own organization.';
+
 /** DEMO DATA — illustrative per-company technical-influence breakdown, keyed by org display name. */
 export const ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES: Record<string, OrgLeaderboardDetailCompany> = {
   Google: {

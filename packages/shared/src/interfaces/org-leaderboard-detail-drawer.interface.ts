@@ -54,5 +54,9 @@ export interface OrgLeaderboardDetailCategoryRow {
   count: number;
   points: number;
   pct: number;
-  isTop: boolean;
+  /**
+   * When true the row's raw count and share percentage must not be rendered — the category is
+   * privacy-restricted for the viewing org (see `ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS`).
+   */
+  masked: boolean;
 }
