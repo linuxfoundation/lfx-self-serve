@@ -88,7 +88,12 @@
     <lfx-org-roi-kpi-cards [summary]="summary()" />
 
     <lfx-org-roi-annual-trend [method]="method()" />
+  }
 
+  <!-- Mounted outside the branches above, on the same condition as its trigger. Inside the
+       success branch it would not exist on the empty state — the trigger would set `visible`
+       and nothing would open, which is the state the method control has to rescue. -->
+  @if (canChooseMethod()) {
     <lfx-org-roi-assumptions-drawer [(visible)]="drawerVisible" [method]="method()" (methodChange)="setMethod($event)" />
   }
 </main>
