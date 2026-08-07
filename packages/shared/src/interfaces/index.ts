@@ -310,3 +310,7 @@ export * from './weekly-brief.interface';
 
 // Public-profile section visibility (LFXV2-2629)
 export * from './profile-visibility.interface';
+
+// Org Lens ROI Metrics (LFXV2-2980) interfaces
+export * from './org-lens-roi.interface';
+export * from './org-lens-roi.internal.interface';

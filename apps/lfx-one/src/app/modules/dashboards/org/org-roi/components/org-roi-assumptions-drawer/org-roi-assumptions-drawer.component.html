@@ -1,0 +1,97 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="org-roi-assumptions-drawer">
+  <ng-template #header>
+    <div class="flex w-full items-start justify-between gap-4" data-testid="org-roi-assumptions-drawer-header">
+      <div class="flex flex-1 flex-col gap-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="org-roi-assumptions-drawer-title">Model assumptions</h2>
+        <p class="text-sm text-gray-500">How these ROI figures are produced.</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="flex-shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+        aria-label="Close panel"
+        data-testid="org-roi-assumptions-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-8 pb-2" data-testid="org-roi-assumptions-drawer-content">
+    <section class="flex flex-col gap-3" data-testid="org-roi-assumptions-method">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Estimation method</h3>
+        <p class="text-sm text-gray-500">Applies to every figure on this page and is remembered on this device.</p>
+      </div>
+      <div class="flex flex-col gap-2">
+        @for (option of methods; track option) {
+          <button
+            type="button"
+            (click)="onSelectMethod(option)"
+            [class]="
+              option === method()
+                ? 'flex items-center gap-3 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left text-sm text-gray-900'
+                : 'flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'
+            "
+            [attr.aria-pressed]="option === method()"
+            [attr.data-testid]="'org-roi-assumptions-method-' + option">
+            <i [class]="option === method() ? 'fa-solid fa-circle-dot text-blue-600' : 'fa-light fa-circle text-gray-400'" aria-hidden="true"></i>
+            {{ methodLabels[option] }}
+          </button>
+        }
+      </div>
+      <p class="text-xs text-gray-500" data-testid="org-roi-assumptions-method-note">
+        Both methods draw on the same investment base and the same target distribution, so switching moves the figures modestly rather than dramatically.
+      </p>
+    </section>
+
+    <!-- Rates must render as stated values, never as inputs. -->
+    <section class="flex flex-col gap-3" data-testid="org-roi-assumptions-rates">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Cost rates used by the model</h3>
+        <p class="text-sm text-gray-500" data-testid="org-roi-assumptions-rates-scope">
+          These are global constants — one rate per contribution type, applied identically to every organization across the Linux Foundation. They are not
+          specific to your organization, and they are not derived from anyone's actual or reported compensation.
+        </p>
+      </div>
+
+      <dl class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+        <div class="flex items-baseline justify-between gap-4 px-3 py-2.5">
+          <dt class="text-sm text-gray-700">Code contribution rate</dt>
+          <dd class="text-sm font-medium text-gray-900">{{ assumptions.codeSalaryUsd | currency: 'USD' : 'symbol' : '1.0-0' }} per FTE-year</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-3 py-2.5">
+          <dt class="text-sm text-gray-700">Community contribution rate</dt>
+          <dd class="text-sm font-medium text-gray-900">{{ assumptions.communitySalaryUsd | currency: 'USD' : 'symbol' : '1.0-0' }} per FTE-year</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-3 py-2.5">
+          <dt class="text-sm text-gray-700">Overhead multiplier</dt>
+          <dd class="text-sm font-medium text-gray-900">{{ assumptions.overheadMultiplier }}×</dd>
+        </div>
+      </dl>
+
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-assumptions-rates-readonly-note">
+        <i class="fa-light fa-lock mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span>
+          Shown for transparency only. These rates are set in the data pipeline, so the figures on this page cannot be recalculated with different values here.
+        </span>
+      </p>
+    </section>
+
+    <section class="flex flex-col gap-2" data-testid="org-roi-assumptions-derivation">
+      <h3 class="text-sm font-semibold text-gray-900">How investment is derived</h3>
+      <p class="text-sm text-gray-600">
+        Your organization's public contribution activity is converted to full-time-equivalent effort using a standard time allowance per activity, multiplied by
+        the overhead above, and priced at the rate for that contribution type. Contributor identity is not part of this calculation at any stage.
+      </p>
+    </section>
+  </div>
+</p-drawer>
