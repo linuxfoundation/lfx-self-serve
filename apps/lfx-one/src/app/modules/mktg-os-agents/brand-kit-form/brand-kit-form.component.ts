@@ -16,6 +16,8 @@ import { BrandKitService } from '@services/brand-kit.service';
 /** Client-side poll cadence and cap for the generation session (~5 min). */
 const RESULT_POLL_INTERVAL_MS = 10_000;
 const RESULT_POLL_MAX_ATTEMPTS = 30;
+/** Consecutive transient poll failures tolerated before giving up. */
+const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
 
 /**
  * One-page Brand Kit intake form (dec-brand-kit-intake-form): all 7 of Paul's
@@ -50,6 +52,10 @@ export class BrandKitFormComponent implements OnDestroy {
   protected readonly result = signal<BrandKitResultResponse | null>(null);
 
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  // Generation epoch: incremented on submit/cancel/reset so stale in-flight
+  // poll responses (which a cleared timer cannot cancel) are discarded instead
+  // of resurrecting a cancelled generation.
+  private pollEpoch = 0;
 
   public ngOnDestroy(): void {
     this.clearPollTimer();
@@ -57,7 +63,10 @@ export class BrandKitFormComponent implements OnDestroy {
 
   // === Protected methods ===
   protected onSubmit(): void {
-    if (this.intakeForm.invalid || this.generating()) {
+    if (this.generating()) {
+      return;
+    }
+    if (this.intakeForm.invalid) {
       this.intakeForm.markAllAsTouched();
       return;
     }
@@ -67,22 +76,35 @@ export class BrandKitFormComponent implements OnDestroy {
     this.generating.set(true);
     this.errorMessage.set('');
     this.result.set(null);
+    const epoch = ++this.pollEpoch;
 
     this.brandKitService
       .generate(answers)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (response) => this.pollResult(response.sessionId, response.ownerToken, 1),
-        error: () => this.failGeneration('Could not start the Brand Kit generation. Please try again.'),
+        next: (response) => {
+          if (epoch !== this.pollEpoch) {
+            return;
+          }
+          this.pollResult(epoch, response.sessionId, response.ownerToken, 1, 0);
+        },
+        error: () => {
+          if (epoch !== this.pollEpoch) {
+            return;
+          }
+          this.failGeneration('Could not start the Brand Kit generation. Please try again.');
+        },
       });
   }
 
   protected onBack(): void {
+    this.pollEpoch++;
     this.clearPollTimer();
     this.back.emit();
   }
 
   protected onStartOver(): void {
+    this.pollEpoch++;
     this.clearPollTimer();
     this.generating.set(false);
     this.errorMessage.set('');
@@ -105,12 +127,15 @@ export class BrandKitFormComponent implements OnDestroy {
   }
 
   // === Private methods ===
-  private pollResult(sessionId: string, ownerToken: string, attempt: number): void {
+  private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number): void {
     this.brandKitService
       .getResult(sessionId, ownerToken)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
+          if (epoch !== this.pollEpoch) {
+            return;
+          }
           if (response.status === 'ready') {
             this.generating.set(false);
             this.result.set(response);
@@ -120,9 +145,20 @@ export class BrandKitFormComponent implements OnDestroy {
             this.failGeneration('The generation is taking longer than expected. Please try again later.');
             return;
           }
-          this.pollTimer = setTimeout(() => this.pollResult(sessionId, ownerToken, attempt + 1), RESULT_POLL_INTERVAL_MS);
+          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0), RESULT_POLL_INTERVAL_MS);
         },
-        error: () => this.failGeneration('Could not fetch the generation result. Please try again.'),
+        error: () => {
+          if (epoch !== this.pollEpoch) {
+            return;
+          }
+          // Tolerate transient failures — a multi-minute generation should not be
+          // lost to a single network blip; the attempt budget still applies.
+          if (consecutiveErrors + 1 >= RESULT_POLL_MAX_CONSECUTIVE_ERRORS || attempt >= RESULT_POLL_MAX_ATTEMPTS) {
+            this.failGeneration('Could not fetch the generation result. Please try again.');
+            return;
+          }
+          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, consecutiveErrors + 1), RESULT_POLL_INTERVAL_MS);
+        },
       });
   }
 
