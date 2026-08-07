@@ -15,11 +15,11 @@
  * `ATTENDED_COUNT_* / INVITED_COUNT_*` — see `committee-engagement-classifier.utils.ts`).
  *
  * No `COMPUTED_AT` — the real model doesn't expose one yet (pipeline-freshness is a separate
- * follow-up); the BFF always returns `computed_at: null` until that lands.
+ * follow-up, LFXV2-2930); the BFF always returns `computed_at: null` until that lands.
  *
- * The live Snowflake read for this shape doesn't exist yet (the table isn't deployed, and the read
- * surface — query-service vs. direct Snowflake — is still an open question); today only the mock
- * generator (`committee-engagement-mock.helper.ts`) produces rows in this shape.
+ * Produced by both the mock generator (`committee-engagement-mock.helper.ts`) and the live direct
+ * Snowflake read (`committee-engagement.service.ts`'s `queryEngagementRows`, against
+ * `PLATINUM_LFX_ONE.COMMITTEE_MEETING_ATTENDANCE`) — the two paths share this exact shape.
  */
 export interface CommitteeEngagementWarehouseRow {
   /** `CommitteeMember.uid` this row corresponds to. */
@@ -47,24 +47,14 @@ export interface CommitteeEngagementQueryResult {
   /**
    * Only meaningful for the live path — mock mode always constructs this type directly with `true`
    * and synchronously-generated rows, no query involved (`committee-engagement.service.ts`'s
-   * `getCommitteeEngagement`). Within the live path: `false` when the read produced no usable rows
-   * (the table isn't deployed / not authorized, or the query succeeded but returned rows in the
-   * pre-finalization placeholder shape — can't map to `CommitteeEngagementWarehouseRow`); `true` on
-   * a cache hit, or a genuinely successful query returning zero (or, once the real model ships,
-   * real) rows.
+   * `getCommitteeEngagement`). Within the live path: `false` when the read produced no usable rows —
+   * either the query errored (table not yet synced / not authorized, never cached) or it succeeded
+   * but returned zero rows for this `committee_uid` (most likely a committee the model doesn't cover
+   * yet, since the model is roster-anchored and retains zero-activity members — a real,
+   * currently-populated committee should always yield >=1 row; this outcome IS cached, under a short
+   * TTL). `true` when the query (or a cache hit reading back that same outcome) returned >=1 row —
+   * a cache hit derives this from the cached array's length, not a hardcoded `true`, since both
+   * outcomes are cached under the same key.
    */
   dataAvailable: boolean;
-}
-
-/**
- * The live SQL in `committee-engagement.service.ts`'s `queryEngagementRows` still selects these
- * pre-finalization placeholder columns, not `CommitteeEngagementWarehouseRow`'s real fields — a
- * distinct type (rather than casting to the finalized interface) so the compiler, not just a
- * comment, reflects that the two shapes share no fields and there's no honest mapping between them.
- */
-export interface LegacyEngagementPlaceholderRow {
-  MEMBER_EMAIL: string;
-  ATTENDED_COUNT: number;
-  INVITED_COUNT: number;
-  COMPUTED_AT: string | Date | null;
 }

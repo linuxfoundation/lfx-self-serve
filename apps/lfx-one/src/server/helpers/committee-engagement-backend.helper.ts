@@ -3,7 +3,7 @@
 
 /**
  * `ENGAGEMENT_BACKEND` gates `GET /api/committees/:uid/engagement` (LFXV2-1705) between the
- * deterministic mock generator and the real (not-yet-finalized) Snowflake read. Defaults to
+ * deterministic mock generator and the real Snowflake read. Defaults to
  * `live` — mock is explicit opt-in (`ENGAGEMENT_BACKEND=mock`) and additionally hard-blocked
  * whenever `NODE_ENV=production`, so an unconfigured or production environment fails to
  * `data_available:false` ("no data yet"), never to fabricated-looking data attached to real,

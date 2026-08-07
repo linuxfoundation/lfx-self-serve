@@ -154,7 +154,7 @@ export class CommitteeDashboardComponent {
   /** Me-lens stat grid only — the engagement cards (Foundation/Project lens stays a fixed 3). */
   public readonly myStatCardColumns: Signal<StatCardGridColumns> = computed(() => (this.isEngagementMetricsEnabled() ? 5 : 3));
 
-  // Engagement rollup (LFXV2-1711) — flag-gated, mocked pending the LFXV2-1705 dbt model
+  // Engagement rollup (LFXV2-1711) — flag-gated; active_members live, meetings_this_month pending a calendar-month data source
   public engagementStats: Signal<GroupsEngagementStats | null>;
 
   private searchTerm: Signal<string>;

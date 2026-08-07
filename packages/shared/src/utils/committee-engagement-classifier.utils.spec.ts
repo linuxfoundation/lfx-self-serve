@@ -9,6 +9,7 @@ import {
   computeCommitteeEngagementRate,
   isCommitteeMemberActive,
   isCommitteeMemberAtRisk,
+  isJoinedWithinWindow,
 } from './committee-engagement-classifier.utils';
 
 const VOTING_REP = CommitteeMemberVotingStatus.VOTING_REP;
@@ -147,5 +148,37 @@ describe('isCommitteeMemberActive', () => {
 
   it('is always false for Emeritus, even with real attendance or a fresh join', () => {
     expect(isCommitteeMemberActive({ attended: 5, invited: 5, votingStatus: EMERITUS, joinedWithinWindow: true })).toBe(false);
+  });
+});
+
+describe('isJoinedWithinWindow', () => {
+  const windowStart = new Date('2024-06-01T00:00:00.000Z');
+
+  it('is true for a date after the window start', () => {
+    expect(isJoinedWithinWindow('2024-06-15T00:00:00.000Z', windowStart)).toBe(true);
+  });
+
+  it('is false for a date before the window start', () => {
+    expect(isJoinedWithinWindow('2024-01-01T00:00:00.000Z', windowStart)).toBe(false);
+  });
+
+  it('is false for a date exactly at the window start (strictly after, not on-or-after)', () => {
+    expect(isJoinedWithinWindow(windowStart.toISOString(), windowStart)).toBe(false);
+  });
+
+  it('is false (fail-safe) for null', () => {
+    expect(isJoinedWithinWindow(null, windowStart)).toBe(false);
+  });
+
+  it('is false (fail-safe) for an empty string', () => {
+    expect(isJoinedWithinWindow('', windowStart)).toBe(false);
+  });
+
+  it('is false (fail-safe) for an unparseable date string', () => {
+    expect(isJoinedWithinWindow('not-a-real-date', windowStart)).toBe(false);
+  });
+
+  it('accepts a Date instance directly, not just a string', () => {
+    expect(isJoinedWithinWindow(new Date('2024-06-15T00:00:00.000Z'), windowStart)).toBe(true);
   });
 });

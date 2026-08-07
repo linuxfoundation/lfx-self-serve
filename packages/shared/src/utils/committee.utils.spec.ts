@@ -410,7 +410,13 @@ describe('countVotingReps', () => {
 });
 
 describe('buildEngagementStatCards', () => {
-  const stats: GroupsEngagementStats = { active_members: 12, meetings_this_month: 3, computed_at: new Date().toISOString(), source: 'live' };
+  const stats: GroupsEngagementStats = {
+    active_members: 12,
+    meetings_this_month: 3,
+    computed_at: new Date().toISOString(),
+    source: 'live',
+    coverage: { covered: 3, total: 3 },
+  };
 
   it('renders em-dash placeholders with no sub-line while loading, regardless of stats', () => {
     const cards = buildEngagementStatCards(stats, true);
@@ -445,7 +451,13 @@ describe('buildEngagementStatCards', () => {
   });
 
   it('degrades to "Unavailable" em-dash cards when the live backend returns null engagement fields', () => {
-    const liveStub: GroupsEngagementStats = { active_members: null, meetings_this_month: null, computed_at: new Date().toISOString(), source: 'live' };
+    const liveStub: GroupsEngagementStats = {
+      active_members: null,
+      meetings_this_month: null,
+      computed_at: new Date().toISOString(),
+      source: 'live',
+      coverage: { covered: 0, total: 0 },
+    };
     const cards = buildEngagementStatCards(liveStub, false);
     cards.forEach((card) => {
       expect(card.value).toBe('—');
@@ -454,10 +466,60 @@ describe('buildEngagementStatCards', () => {
   });
 
   it('degrades each card independently — one null field does not blank the other', () => {
-    const partial: GroupsEngagementStats = { active_members: 9, meetings_this_month: null, computed_at: new Date().toISOString(), source: 'live' };
+    const partial: GroupsEngagementStats = {
+      active_members: 9,
+      meetings_this_month: null,
+      computed_at: new Date().toISOString(),
+      source: 'live',
+      coverage: { covered: 3, total: 3 },
+    };
     const cards = buildEngagementStatCards(partial, false);
     expect(cards[0]).toMatchObject({ label: 'Active Members', value: 9 });
     expect(cards[0].subLine).toMatch(/^Updated /);
     expect(cards[1]).toMatchObject({ label: 'Meetings This Month', value: '—', subLine: 'Unavailable' });
+  });
+
+  it('appends a coverage qualifier to the Active Members sub-line only, when coverage is partial', () => {
+    const partialCoverage: GroupsEngagementStats = { ...stats, coverage: { covered: 2, total: 3 } };
+    const cards = buildEngagementStatCards(partialCoverage, false);
+    expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
+    expect(cards[0].subLine).toMatch(/^Updated .* · across 2 of 3 groups$/);
+    expect(cards[1]).toMatchObject({ label: 'Meetings This Month', value: 3 });
+    expect(cards[1].subLine).toMatch(/^Updated /);
+    expect(cards[1].subLine).not.toContain('across');
+  });
+
+  it('renders no coverage qualifier when coverage is full', () => {
+    const fullCoverage: GroupsEngagementStats = { ...stats, coverage: { covered: 3, total: 3 } };
+    const cards = buildEngagementStatCards(fullCoverage, false);
+    expect(cards[0].subLine).toMatch(/^Updated /);
+    expect(cards[0].subLine).not.toContain('across');
+  });
+
+  it('keeps mock-sourced "Sample data" free of a coverage qualifier even with a (fabricated) full-coverage shape', () => {
+    const mockStats: GroupsEngagementStats = { ...stats, source: 'mock', coverage: { covered: 3, total: 3 } };
+    const cards = buildEngagementStatCards(mockStats, false);
+    expect(cards[0]).toMatchObject({ subLine: 'Sample data' });
+  });
+
+  it('keeps the existing "Unavailable" state for a null active_members even when coverage reports partial totals', () => {
+    // coverage.covered is always 0 whenever active_members is null (LFXV2-2978 contract), but this
+    // proves the qualifier logic doesn't independently override the null-value branch even if that
+    // invariant were ever violated upstream.
+    const nullWithCoverage: GroupsEngagementStats = { ...stats, active_members: null, coverage: { covered: 0, total: 3 } };
+    const cards = buildEngagementStatCards(nullWithCoverage, false);
+    expect(cards[0]).toMatchObject({ value: '—', subLine: 'Unavailable' });
+  });
+
+  it('does not throw and degrades to the plain sub-line when `coverage` is absent from the response (pre-upgrade server during a rolling deploy)', () => {
+    // Simulates a client bundle ahead of the server: a response shaped like the pre-LFXV2-2978
+    // contract, with no `coverage` field at all. `stats` is deliberately typed loosely here (not
+    // `GroupsEngagementStats`) since the whole point is that runtime shape can drift from the type.
+    const staleShape = { active_members: 12, meetings_this_month: 3, computed_at: new Date().toISOString(), source: 'live' };
+    expect(() => buildEngagementStatCards(staleShape as GroupsEngagementStats, false)).not.toThrow();
+    const cards = buildEngagementStatCards(staleShape as GroupsEngagementStats, false);
+    expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
+    expect(cards[0].subLine).toMatch(/^Updated /);
+    expect(cards[0].subLine).not.toContain('across');
   });
 });

@@ -2692,6 +2692,28 @@ export interface PaidCampaignPerformance {
 }
 
 /** Project-level paid performance breakdown. */
+/** Paid campaign row with display strings precomputed for the template. */
+export interface PaidCampaignPerformanceView extends PaidCampaignPerformance {
+  formattedSpend: string;
+  formattedRevenue: string;
+  formattedConversions: string;
+}
+
+/**
+ * Paid project row with display strings, expansion state and severity precomputed.
+ * Angular templates must not call functions, so the drawer derives all of this in a
+ * computed signal — including `expanded`, so the template never calls Set.has().
+ */
+export interface PaidProjectBreakdownView extends PaidProjectBreakdown {
+  formattedSpend: string;
+  formattedRevenue: string;
+  formattedConversions: string;
+  severity: 'danger' | 'warn' | 'success' | 'secondary';
+  hasCampaigns: boolean;
+  expanded: boolean;
+  campaignRows: PaidCampaignPerformanceView[];
+}
+
 export interface PaidProjectBreakdown {
   projectName: string;
   funnelStage: string;
@@ -3308,6 +3330,45 @@ export interface RevenueImpactAttributionChannelView extends RevenueImpactAttrib
 }
 
 /**
+ * Marketing-attribution channel row with its display strings precomputed.
+ * Angular templates must not call formatting functions, so the drawer builds
+ * these in a computed signal and the template only reads them.
+ */
+export interface MarketingAttributionChannelView extends MarketingAttributionChannel {
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+  formattedRevPerSession: string;
+  /** Project drill-down rows for this channel, already formatted. */
+  projects: MarketingAttributionProjectView[];
+}
+
+/** Project drill-down row under a channel, with display strings precomputed. */
+export interface MarketingAttributionProjectView extends MarketingAttributionProject {
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+}
+
+/** Attribution totals with display strings precomputed alongside the raw numbers. */
+export interface MarketingAttributionTotalsView {
+  sessions: number;
+  linearRevenue: number;
+  firstTouchRevenue: number;
+  lastTouchRevenue: number;
+  timeDecayRevenue: number;
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+}
+
+/**
  * API response for Revenue Impact (Marketing Attribution) metric
  * Pipeline, revenue, attribution models, engagement channels, paid media
  */
@@ -3421,7 +3482,7 @@ export interface EdEvolutionData {
 
 /**
  * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE (daily grain).
- * One row per keyword/search-term per day.
+ * Traffic metrics only; authoritative conversions come from keyword attribution.
  */
 export interface KeywordPerformanceRow {
   RECORD_TYPE: 'keyword' | 'search_term';
@@ -3432,11 +3493,8 @@ export interface KeywordPerformanceRow {
   CLICKS: number;
   SPEND: number;
   IMPRESSIONS: number;
-  CONVERSIONS: number;
-  CONVERSIONS_VALUE: number;
   CTR: number;
   CPC: number;
-  CONVERSION_RATE: number;
 }
 
 /**
@@ -3479,7 +3537,7 @@ export interface SearchTermSummary {
   impressions: number;
   ctr: number;
   cpc: number;
-  conversions: number;
+  conversions: number | null;
 }
 
 /** API response for the keyword performance endpoint. */

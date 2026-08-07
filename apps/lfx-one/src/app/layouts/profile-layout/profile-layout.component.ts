@@ -16,6 +16,8 @@ import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchM
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
 import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
+import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
+import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
 
 // Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
@@ -41,10 +43,10 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent],
-  // ProfileEditDrawerService is layout-scoped (not root) so its retained profile context is torn
-  // down when the hub is left; the drawer child shares this injector and resolves the same instance.
-  providers: [MessageService, ProfileEditDrawerService],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
+  // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
+  // is left; each drawer child shares this injector instance via the providers below.
+  providers: [MessageService, ProfileEditDrawerService, ProfileVisibilityDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -61,6 +63,7 @@ export class ProfileLayoutComponent {
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
+  private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -175,6 +178,11 @@ export class ProfileLayoutComponent {
     this.editDrawer.open(this.combinedProfile);
   }
 
+  public openVisibilityDrawer(): void {
+    // The drawer fetches its own state; it only needs the username to build the public-profile URL.
+    this.visibilityDrawer.open(this.displayUsername() ?? '');
+  }
+
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
     this.applyOptimisticProfileUpdate(metadata);
@@ -194,9 +202,15 @@ export class ProfileLayoutComponent {
       return;
     }
 
-    // The drawer builds metadata with `key: undefined` for empty fields; those keys are omitted
-    // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
-    // optimistic view would clear fields that were never actually persisted as cleared.
+    // A null profile means the GET never loaded; merging would fabricate a non-null profile and flip
+    // the drawer's metadataLoaded true, letting a later save wipe unloaded fields. Refetch instead.
+    if (this.combinedProfile.profile == null) {
+      this.refreshProfile$.next();
+      return;
+    }
+
+    // Drop `key: undefined` entries (omitted from the PATCH, so unchanged upstream) so the optimistic
+    // view mirrors what was persisted. Cleared free-text fields send '' and are kept.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
 
     const mergedProfile: CombinedProfile = {
@@ -232,32 +246,27 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
-    // authorization isn't silently replayed by a later, unrelated profile-auth return.
-    let formData: Partial<UserMetadata>;
+    // Stored as { savedAt, userMetadata } — replay the drawer's already-mapped payload verbatim (its
+    // clear-to-empty decision), discarding it past the TTL so a stale return isn't silently replayed.
+    // A pre-LFXV2-2933 bundle wrote { savedAt, form } (raw form value); accept that legacy shape during
+    // the rollout window and map it with the prior omit-empties rules so a save started just before a
+    // mid-Flow-C deploy isn't silently dropped by the new parser.
+    let userMetadata: Partial<UserMetadata>;
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
-      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+      const envelope = JSON.parse(savedState) as { savedAt?: unknown; userMetadata?: Partial<UserMetadata>; form?: Partial<UserMetadata> };
+      if (typeof envelope?.savedAt !== 'number' || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
         return;
       }
-      formData = envelope.form;
+      if (envelope.userMetadata) {
+        userMetadata = envelope.userMetadata;
+      } else if (envelope.form) {
+        userMetadata = this.mapLegacyFormEnvelope(envelope.form);
+      } else {
+        return;
+      }
     } catch {
       return;
     }
-    const userMetadata: Partial<UserMetadata> = {
-      given_name: formData.given_name || undefined,
-      family_name: formData.family_name || undefined,
-      job_title: formData.job_title || undefined,
-      organization: formData.organization || undefined,
-      country: formData.country || undefined,
-      state_province: formData.state_province || undefined,
-      city: formData.city || undefined,
-      address: formData.address || undefined,
-      postal_code: formData.postal_code || undefined,
-      phone_number: formData.phone_number || undefined,
-      t_shirt_size: formData.t_shirt_size || undefined,
-      bio: formData.bio || undefined,
-    };
 
     const updateData: ProfileUpdateRequest = {
       user_metadata: userMetadata as UserMetadata,
@@ -283,6 +292,27 @@ export class ProfileLayoutComponent {
         });
       },
     });
+  }
+
+  // Legacy { savedAt, form } envelope (pre-LFXV2-2933 bundle) stored the raw form value. Map it with
+  // the prior `|| undefined` omit-empties rules so a save started before a mid-Flow-C deploy replays
+  // with its original (non-clearing) semantics rather than being silently dropped by the new parser.
+  // Removable once no pre-2933 bundle can still be serving the write path (past the pending-save TTL).
+  private mapLegacyFormEnvelope(form: Partial<UserMetadata>): Partial<UserMetadata> {
+    return {
+      given_name: form.given_name || undefined,
+      family_name: form.family_name || undefined,
+      job_title: form.job_title || undefined,
+      organization: form.organization || undefined,
+      country: form.country || undefined,
+      state_province: form.state_province || undefined,
+      city: form.city || undefined,
+      address: form.address || undefined,
+      postal_code: form.postal_code || undefined,
+      phone_number: form.phone_number || undefined,
+      t_shirt_size: form.t_shirt_size || undefined,
+      bio: form.bio || undefined,
+    };
   }
 
   // Strip the Flow C query params (success/error) while staying on the current tab.

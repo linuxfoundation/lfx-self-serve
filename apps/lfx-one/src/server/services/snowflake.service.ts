@@ -17,7 +17,7 @@ import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
-import { isMissingObjectError } from '../helpers/snowflake-error.helper';
+import { isInvalidIdentifierError, isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -119,7 +119,7 @@ export class SnowflakeService {
     this.checkCircuit();
 
     // Generate query hash for deduplication
-    const queryHash = this.lockManager.hashQuery(sqlText, binds);
+    const queryHash = this.lockManager.hashQuery(sqlText, binds, options);
 
     const sqlOp = sqlText.trim().split(/\s+/)[0]?.toUpperCase() || 'QUERY';
     // Strip string literals from SQL for span attributes to avoid PII leaks
@@ -216,26 +216,24 @@ export class SnowflakeService {
 
             return result;
           } catch (error) {
-            // `expectMissingObject` callers (LFXV2-1705's not-yet-deployed committee-engagement
-            // table, and the pre-existing project.service.ts / org-lens-project-detail.service.ts
-            // callers) still need this to throw — they distinguish the missing-object case in their
-            // own catch block via `isMissingObjectError` — but the span/log severity below must not
-            // mark this as a failure, or every request against a not-yet-deployed table (a normal,
-            // anticipated state, not an incident) emits an ERROR-level log and an errored trace span
-            // for as long as the table stays undeployed, polluting error tracking and any alerting
-            // keyed on this operation.
+            // Expected schema-rollout errors still reject so callers can use their fallback,
+            // but they must not emit error telemetry or count toward the global circuit breaker.
             const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
+            const expectedIdentifier = options?.expectInvalidIdentifier;
+            const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
 
-            if (expectedMissing) {
+            if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
-              span.setAttribute('snowflake.expected_missing_object', true);
+              if (expectedMissing) {
+                span.setAttribute('snowflake.expected_missing_object', true);
+              }
+              if (expectedInvalidIdentifier) {
+                span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);
+              }
               this.recordSuccess();
-              logger.warning(undefined, 'snowflake_query', 'Query hit an expected missing-object/not-authorized error', {
+              logger.warning(undefined, 'snowflake_query', 'Query hit an expected schema compatibility error', {
                 query_hash: queryHash,
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
-                // The regex this checks also matches a missing GRANT, not just a missing table —
-                // `err` is what lets a reader (or an alert on this field) tell those apart instead
-                // of assuming every hit here is the expected pre-deploy state.
                 err: error,
               });
             } else {

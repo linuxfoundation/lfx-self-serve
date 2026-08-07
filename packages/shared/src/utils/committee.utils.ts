@@ -351,11 +351,14 @@ function compareCodeUnits(a: string, b: string): number {
 /**
  * Builds the Active Members / Meetings This Month stat cards from the engagement-stats rollup.
  * Extracted as a pure function (no Angular component-test runner exists in this repo — see
- * `resolveGroupsCardRoleSeverity` above) so all four render states are unit-tested directly:
- * loading (em-dash, no sub-line), populated (value + relative-time freshness label), mock-sourced
- * (value + a "Sample data" marker instead of a freshness label, so fabricated fixture numbers can
- * never be mistaken for live ones), and degraded (fetch failed, or the `live` backend hasn't got a
- * dbt read path yet — em-dash + "Unavailable", never throws, never blocks the rest of the dashboard).
+ * `resolveGroupsCardRoleSeverity` above) so all render states are unit-tested directly: loading
+ * (em-dash, no sub-line), populated (value + relative-time freshness label), mock-sourced (value +
+ * a "Sample data" marker instead of a freshness label, so fabricated fixture numbers can never be
+ * mistaken for live ones), degraded (fetch failed, or the count is null — em-dash + "Unavailable",
+ * never throws, never blocks the rest of the dashboard), and partial-coverage (LFXV2-2978 — Active
+ * Members only, since `active_members` is the only field whose count can be real-but-incomplete:
+ * its sub-line gains "· across N of M groups" alongside the freshness/mock label; Meetings This
+ * Month never carries this qualifier).
  */
 export function buildEngagementStatCards(stats: GroupsEngagementStats | null, loading: boolean): StatCardItem[] {
   const activeMembersCard: StatCardItem = {
@@ -385,10 +388,13 @@ export function buildEngagementStatCards(stats: GroupsEngagementStats | null, lo
   // aggregates (trailing-30-day attendance vs. current-month occurrences), so a partially-deployed
   // dbt model could plausibly resolve one without the other — neither field's availability implies
   // the other's.
-  const resolveCard = (base: StatCardItem, value: number | null): StatCardItem =>
-    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine: subLineForValue };
+  const resolveCard = (base: StatCardItem, value: number | null, subLine: string | undefined): StatCardItem =>
+    value === null ? { ...base, subLine: 'Unavailable' } : { ...base, value, subLine };
 
-  return [resolveCard(activeMembersCard, stats?.active_members ?? null), resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null)];
+  return [
+    resolveCard(activeMembersCard, stats?.active_members ?? null, resolveActiveMembersSubLine(stats, subLineForValue)),
+    resolveCard(meetingsThisMonthCard, stats?.meetings_this_month ?? null, subLineForValue),
+  ];
 }
 
 /** Extracted to avoid nesting a ternary inside another ternary's branch (`stats && source === 'mock' ? … : stats ? … : …`). */
@@ -396,4 +402,20 @@ function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string |
   if (!stats) return undefined;
   if (stats.source === 'mock') return 'Sample data';
   return `Updated ${formatRelativeTime(new Date(stats.computed_at))}`;
+}
+
+/**
+ * Active Members is the only card whose count can be a real-but-partial one (LFXV2-2978) — coverage
+ * is a property of *which committees* fed the count, not of meetings-this-month, so this qualifier
+ * is deliberately not shared with the sibling card via `resolveEngagementSubLine`. Appends to the
+ * base sub-line (rather than replacing it) so the freshness/mock provenance stays visible alongside
+ * the disclosure. Full coverage (`covered === total`, always true for mock) renders no qualifier —
+ * identical to the sibling card's plain sub-line. `stats.coverage` is optional-chained (not just a
+ * `stats` null check) — a rolling deploy can put this client bundle in front of a pre-upgrade server
+ * instance whose response predates `coverage`, and that shape drift must degrade to the plain
+ * sub-line, not throw inside the `computed()` this feeds (which would blank the whole stat-card row).
+ */
+function resolveActiveMembersSubLine(stats: GroupsEngagementStats | null, baseSubLine: string | undefined): string | undefined {
+  if (!stats?.coverage || stats.coverage.covered >= stats.coverage.total) return baseSubLine;
+  return `${baseSubLine} · across ${stats.coverage.covered} of ${stats.coverage.total} groups`;
 }

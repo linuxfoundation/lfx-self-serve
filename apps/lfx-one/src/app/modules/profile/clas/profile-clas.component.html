@@ -33,7 +33,10 @@ SPDX-License-Identifier: MIT
       <lfx-empty-state
         icon="fa-light fa-file-signature"
         title="No CLAs on file yet"
-        subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities." />
+        subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities."
+        ctaLabel="Learn about My CLAs"
+        [ctaRoute]="['/docs', 'profile', 'my-clas']"
+        data-testid="my-clas-empty-state" />
     } @else {
       <lfx-table
         [value]="agreements()"
@@ -76,7 +79,7 @@ SPDX-License-Identifier: MIT
                   <span class="truncate text-sm font-semibold text-slate-900" [attr.data-testid]="'agreement-project-' + agreement.id">
                     {{ agreement.projectName || agreement.claGroupName }}
                   </span>
-                  @if (agreement.projectName && agreement.claGroupName && agreement.claGroupName !== agreement.projectName) {
+                  @if (agreement.projectName && agreement.claGroupName) {
                     <span class="truncate text-xs text-slate-500" [attr.data-testid]="'agreement-cla-group-' + agreement.id">{{ agreement.claGroupName }}</span>
                   }
                 </div>
@@ -106,7 +109,7 @@ SPDX-License-Identifier: MIT
                   size="small"
                   [text]="true"
                   [loading]="downloadingId() === agreement.id"
-                  (onClick)="onDownload(agreement.id)" />
+                  (onClick)="onDownload(agreement)" />
               } @else if (agreement.kind === 'ECLA') {
                 <span class="text-xs text-slate-400">Covered by Corporate CLA (CCLA)</span>
               } @else {

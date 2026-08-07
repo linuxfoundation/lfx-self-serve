@@ -4,117 +4,128 @@
 <div class="flex flex-col gap-6 pt-2">
   <!-- Two-column layout: Stats+Chairs | Meetings+Actions -->
   <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start" data-testid="committee-overview-stats">
-    <!-- LEFT: Stats list + Chairs -->
-    <lfx-card styleClass="[&_.p-card-body]:!p-0">
-      <!-- Stats rows -->
-      <div class="flex flex-col divide-y divide-gray-100">
-        <!-- Members -->
-        <div class="flex items-center gap-3 px-4 py-3">
-          <i class="fa-light fa-users text-gray-400 w-4 text-center flex-shrink-0"></i>
-          <span class="text-sm text-gray-700 flex-1">Members</span>
-          @if (membersLoading()) {
-            <p-skeleton width="24px" height="1rem" />
-          } @else {
-            <span class="text-sm font-semibold text-gray-900">{{ members().length }}</span>
-          }
-        </div>
-        <!-- Organizations -->
-        <div class="flex items-center gap-3 px-4 py-3">
-          <i class="fa-light fa-building text-gray-400 w-4 text-center flex-shrink-0"></i>
-          <span class="text-sm text-gray-700 flex-1">Organizations</span>
-          @if (membersLoading()) {
-            <p-skeleton width="24px" height="1rem" />
-          } @else {
-            <span class="text-sm font-semibold text-gray-900">{{ orgCount() }}</span>
-          }
-        </div>
-        <!-- Meetings YTD -->
-        <div class="flex items-center gap-3 px-4 py-3">
-          <i class="fa-light fa-calendar text-gray-400 w-4 text-center flex-shrink-0"></i>
-          <span class="text-sm text-gray-700 flex-1">Meetings</span>
-          @if (meetingsLoading()) {
-            <p-skeleton width="24px" height="1rem" />
-          } @else {
-            <span class="text-sm font-semibold text-gray-900">{{ meetingsCount() }}</span>
-          }
-        </div>
-        <!-- Voting Reps -->
-        <div class="flex items-center gap-3 px-4 py-3" data-testid="committee-overview-voting-reps">
-          <i class="fa-light fa-square-check text-gray-400 w-4 text-center flex-shrink-0"></i>
-          <span class="text-sm text-gray-700 flex-1">Voting Reps</span>
-          @if (membersLoading()) {
-            <p-skeleton width="24px" height="1rem" />
-          } @else {
-            <span class="text-sm font-semibold text-gray-900">{{ votingRepsCount() }}</span>
-          }
-        </div>
-        <!-- Active Votes -->
-        <div class="flex items-center gap-3 px-4 py-3">
-          <i class="fa-light fa-check-to-slot text-gray-400 w-4 text-center flex-shrink-0"></i>
-          <span class="text-sm text-gray-700 flex-1">Active Votes</span>
-          @if (votesLoading()) {
-            <p-skeleton width="24px" height="1rem" />
-          } @else {
-            <span class="text-sm font-semibold text-gray-900">{{ activeVotesCount() }}</span>
-          }
-        </div>
-        <!-- Open Surveys -->
-        <div class="flex items-center gap-3 px-4 py-3">
-          <i class="fa-light fa-clipboard-list text-gray-400 w-4 text-center flex-shrink-0"></i>
-          <span class="text-sm text-gray-700 flex-1">Open Surveys</span>
-          @if (surveysLoading()) {
-            <p-skeleton width="24px" height="1rem" />
-          } @else {
-            <span class="text-sm font-semibold text-gray-900">{{ openSurveysCount() }}</span>
-          }
-        </div>
-      </div>
-
-      <!-- Chairs -->
-      <div class="border-t border-gray-100 px-4 py-3" data-testid="committee-overview-chairs">
-        <div class="flex items-center justify-between mb-2">
-          <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Chairs</p>
-          @if (canEdit() && !membersLoading()) {
-            <lfx-button
-              icon="fa-light fa-pen-to-square"
-              [text]="true"
-              [rounded]="true"
-              size="small"
-              severity="secondary"
-              tooltip="Edit chairs"
-              data-testid="committee-overview-edit-chairs-btn"
-              (onClick)="startEditChairs()"></lfx-button>
-          }
-        </div>
-        @if (membersLoading()) {
-          <div class="flex flex-col gap-1.5">
-            <p-skeleton width="100%" height="1.75rem" />
-            <p-skeleton width="100%" height="1.75rem" />
-          </div>
-        } @else if (chairs().length) {
-          <div class="flex flex-col gap-1.5">
-            @for (chair of chairs(); track chair.uid) {
-              <div class="flex items-center gap-2">
-                <div
-                  class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-                  [style.background-color]="chair.role?.name === 'Chair' ? '#6366f1' : '#f59e0b'">
-                  {{ (chair.first_name[0] || '') + (chair.last_name[0] || '') }}
-                </div>
-                <div class="min-w-0">
-                  <p class="text-[13px] font-medium text-gray-900 truncate">{{ chair.first_name }} {{ chair.last_name }}</p>
-                  <p class="text-[10.5px] text-gray-500">{{ chair.role?.name ?? 'Member' }}</p>
-                </div>
-              </div>
+    <!-- LEFT: Stats list + Chairs (+ flag-gated engagement summary) -->
+    <div class="flex flex-col gap-6">
+      <lfx-card styleClass="[&_.p-card-body]:!p-0">
+        <!-- Stats rows -->
+        <div class="flex flex-col divide-y divide-gray-100">
+          <!-- Members -->
+          <div class="flex items-center gap-3 px-4 py-3">
+            <i class="fa-light fa-users text-gray-400 w-4 text-center flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 flex-1">Members</span>
+            @if (membersLoading()) {
+              <p-skeleton width="24px" height="1rem" />
+            } @else {
+              <span class="text-sm font-semibold text-gray-900">{{ members().length }}</span>
             }
           </div>
-        } @else {
-          <div class="flex items-center gap-2 py-1">
-            <i class="fa-light fa-user-crown text-gray-300"></i>
-            <p class="text-xs text-gray-400">No chairs assigned</p>
+          <!-- Organizations -->
+          <div class="flex items-center gap-3 px-4 py-3">
+            <i class="fa-light fa-building text-gray-400 w-4 text-center flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 flex-1">Organizations</span>
+            @if (membersLoading()) {
+              <p-skeleton width="24px" height="1rem" />
+            } @else {
+              <span class="text-sm font-semibold text-gray-900">{{ orgCount() }}</span>
+            }
           </div>
-        }
-      </div>
-    </lfx-card>
+          <!-- Meetings YTD -->
+          <div class="flex items-center gap-3 px-4 py-3">
+            <i class="fa-light fa-calendar text-gray-400 w-4 text-center flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 flex-1">Meetings</span>
+            @if (meetingsLoading()) {
+              <p-skeleton width="24px" height="1rem" />
+            } @else {
+              <span class="text-sm font-semibold text-gray-900">{{ meetingsCount() }}</span>
+            }
+          </div>
+          <!-- Voting Reps -->
+          <div class="flex items-center gap-3 px-4 py-3" data-testid="committee-overview-voting-reps">
+            <i class="fa-light fa-square-check text-gray-400 w-4 text-center flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 flex-1">Voting Reps</span>
+            @if (membersLoading()) {
+              <p-skeleton width="24px" height="1rem" />
+            } @else {
+              <span class="text-sm font-semibold text-gray-900">{{ votingRepsCount() }}</span>
+            }
+          </div>
+          <!-- Active Votes -->
+          <div class="flex items-center gap-3 px-4 py-3">
+            <i class="fa-light fa-check-to-slot text-gray-400 w-4 text-center flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 flex-1">Active Votes</span>
+            @if (votesLoading()) {
+              <p-skeleton width="24px" height="1rem" />
+            } @else {
+              <span class="text-sm font-semibold text-gray-900">{{ activeVotesCount() }}</span>
+            }
+          </div>
+          <!-- Open Surveys -->
+          <div class="flex items-center gap-3 px-4 py-3">
+            <i class="fa-light fa-clipboard-list text-gray-400 w-4 text-center flex-shrink-0"></i>
+            <span class="text-sm text-gray-700 flex-1">Open Surveys</span>
+            @if (surveysLoading()) {
+              <p-skeleton width="24px" height="1rem" />
+            } @else {
+              <span class="text-sm font-semibold text-gray-900">{{ openSurveysCount() }}</span>
+            }
+          </div>
+        </div>
+
+        <!-- Chairs -->
+        <div class="border-t border-gray-100 px-4 py-3" data-testid="committee-overview-chairs">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Chairs</p>
+            @if (canEdit() && !membersLoading()) {
+              <lfx-button
+                icon="fa-light fa-pen-to-square"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                tooltip="Edit chairs"
+                data-testid="committee-overview-edit-chairs-btn"
+                (onClick)="startEditChairs()"></lfx-button>
+            }
+          </div>
+          @if (membersLoading()) {
+            <div class="flex flex-col gap-1.5">
+              <p-skeleton width="100%" height="1.75rem" />
+              <p-skeleton width="100%" height="1.75rem" />
+            </div>
+          } @else if (chairs().length) {
+            <div class="flex flex-col gap-1.5">
+              @for (chair of chairs(); track chair.uid) {
+                <div class="flex items-center gap-2">
+                  <div
+                    class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+                    [style.background-color]="chair.role?.name === 'Chair' ? '#6366f1' : '#f59e0b'">
+                    {{ (chair.first_name[0] || '') + (chair.last_name[0] || '') }}
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-gray-900 truncate">{{ chair.first_name }} {{ chair.last_name }}</p>
+                    <p class="text-[10.5px] text-gray-500">{{ chair.role?.name ?? 'Member' }}</p>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="flex items-center gap-2 py-1">
+              <i class="fa-light fa-user-crown text-gray-300"></i>
+              <p class="text-xs text-gray-400">No chairs assigned</p>
+            </div>
+          }
+        </div>
+      </lfx-card>
+
+      @if (engagementEnabled() && engagementAccessible()) {
+        <lfx-committee-engagement-summary
+          [engagement]="engagement()"
+          [loading]="engagementLoading()"
+          [engagementWindow]="engagementWindow()"
+          (windowChange)="engagementWindowChange.emit($event)"
+          data-testid="committee-overview-engagement-summary" />
+      }
+    </div>
 
     <!-- RIGHT: Meetings + Pending Actions stacked -->
     <div class="flex flex-col gap-5 min-w-0">
@@ -269,19 +280,29 @@
                 }
               </div>
             </lfx-card>
-          } @else if (activityItems().length) {
+          } @else if (activityFeedRows().length) {
             <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200">
-              @for (item of activityItems(); track item.key) {
+              @for (row of activityFeedRows(); track row.item.key) {
                 <button
                   type="button"
                   class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                  [title]="item.label"
-                  (click)="handleActivityItemClick(item)"
-                  [attr.data-testid]="'committee-overview-activity-item-' + item.key">
+                  [title]="row.tooltip"
+                  (click)="handleActivityItemClick(row.item)"
+                  [attr.data-testid]="'committee-overview-activity-item-' + row.item.key">
                   <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <i [class]="item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
+                    <i [class]="row.item.icon" class="text-gray-500 text-xs" aria-hidden="true"></i>
                   </div>
-                  <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ item.label }}</span>
+                  <span class="text-sm text-gray-700 flex-1 min-w-0 truncate">{{ row.item.label }}</span>
+                  @if (row.meetingBadge; as badge) {
+                    <lfx-tag
+                      [outlined]="true"
+                      [rounded]="true"
+                      [value]="badge.label"
+                      [icon]="badge.icon"
+                      class="shrink-0"
+                      [attr.data-testid]="'committee-overview-activity-item-badge-' + row.item.key" />
+                  }
+                  <span class="text-xs text-gray-400 shrink-0">{{ row.timestampLabel }}</span>
                 </button>
               }
             </div>
@@ -300,6 +321,7 @@
           [committee]="committee()"
           [isVisitor]="isVisitor()"
           [hasPendingInvite]="hasPendingInvite()"
+          [hasPendingApplication]="hasPendingApplication()"
           (joinRequested)="joinRequested.emit()" />
       }
     </div>

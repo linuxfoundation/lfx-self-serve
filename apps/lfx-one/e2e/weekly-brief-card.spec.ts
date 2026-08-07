@@ -40,6 +40,7 @@
  */
 
 import { expect, Page, Route, test } from '@playwright/test';
+import { WEEKLY_BRIEF_ERROR_REASON } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 
@@ -334,6 +335,117 @@ test.describe('WG Weekly Brief card — empty state (flag ON)', () => {
 
     const generateBtn = page.getByTestId('weekly-brief-card-generate-button');
     await expect(generateBtn.locator('button')).toBeDisabled();
+  });
+});
+
+test.describe('WG Weekly Brief card — error states (flag ON)', () => {
+  // LFXV2-3000: state:'error' + error_reason:NO_SOURCES means the committee had no
+  // activity in the lookback window, not a real generation failure — regenerating can
+  // never succeed and would only spend a regeneration slot, so this renders a calm empty
+  // state with a quota-free "Check again" refresh instead of the quota-spending "Try
+  // again" the generic failure state below uses.
+  test('renders the quiet-week empty state, and "Check again" issues a plain GET without ever hitting the generate/regenerate endpoint', async ({ page }) => {
+    await mockCommitteeShell(page);
+    const briefMock = await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    // If "Check again" ever regresses to firing a generate/regenerate call (spending a
+    // throttle slot on a state a retry can never resolve), fail loudly instead of just
+    // silently 404ing against an unmocked route.
+    let generateCalled = false;
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/generate`, async (route) => {
+      generateCalled = true;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected generate call' }) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const quietWeekState = page.getByTestId('weekly-brief-card-quiet-week-state');
+    await expect(quietWeekState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(quietWeekState).toContainText('Quiet week');
+
+    await expect(page.getByTestId('weekly-brief-card-error-state')).toHaveCount(0);
+    await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toHaveCount(0);
+
+    // Swap the mocked GET to a visibly distinct state (generated, not quiet-week) before
+    // clicking — asserting the card actually re-renders to it is a stronger proof of a
+    // real re-fetch than waiting on the request alone (a stale DOM would still be showing
+    // quiet-week either way), and it stays distinct from the generic failure state's
+    // "Try again", which calls onGenerate() instead of this quota-free refresh.
+    briefMock.setResponse({ brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+    const responsePromise = page.waitForResponse(
+      (res) => res.request().method() === 'GET' && res.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.getByTestId('weekly-brief-card-quiet-week-refresh-button').click();
+    await responsePromise;
+
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(quietWeekState).toHaveCount(0);
+    expect(generateCalled).toBe(false);
+  });
+
+  test('renders the generic failure state with a Try again button when error_reason is absent', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const errorState = page.getByTestId('weekly-brief-card-error-state');
+    await expect(errorState).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(errorState).toContainText('Brief generation failed for this week.');
+
+    await expect(page.getByTestId('weekly-brief-card-error-retry-button')).toBeVisible();
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
+  });
+
+  // ai_error is the other documented upstream value (lfx-v2-committee-service
+  // docs/indexer-contract.md; LFXV2-2989) — the genuinely retryable failure path,
+  // unlike no_sources above. Pins that a real generation failure still renders the
+  // failure card with an active retry, not the quiet-week treatment.
+  test('renders the generic failure state with an enabled Try again for an ai_error', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'ai_error' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-error-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
+
+    const retryBtn = page.getByTestId('weekly-brief-card-error-retry-button');
+    await expect(retryBtn).toBeVisible();
+    await expect(retryBtn.locator('button')).toBeEnabled();
+  });
+
+  // Covers the open-enum fallback for a value upstream has never documented — distinct
+  // from the ai_error case above, which pins a real contract value's behavior.
+  test('renders the generic failure state (not quiet-week) for an unrecognized error_reason', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, {
+      brief: { ...GENERATED_BRIEF, state: 'error', error_reason: 'some_future_upstream_value' },
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-error-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-quiet-week-state')).toHaveCount(0);
   });
 });
 

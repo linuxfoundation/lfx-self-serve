@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, input, model, Signal } fr
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatPercent, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { MarketingKeyInsight, MarketingRecommendedAction, MemberRetentionResponse } from '@lfx-one/shared/interfaces';
@@ -72,7 +72,7 @@ export class MemberRetentionDrawerComponent {
       if (netRevenueRetention > 0 && netRevenueRetention < 90) {
         actions.push({
           title: 'Improve net revenue retention',
-          description: `NRR at ${netRevenueRetention}% — significant revenue loss from existing members. Review downgrades and churn`,
+          description: `NRR at ${formatPercent(netRevenueRetention)}% — significant revenue loss from existing members. Review downgrades and churn`,
           priority: 'high',
 
           actionType: 'revenue',
@@ -80,7 +80,7 @@ export class MemberRetentionDrawerComponent {
       } else if (netRevenueRetention >= 90 && netRevenueRetention < 98) {
         actions.push({
           title: 'Monitor net revenue retention',
-          description: `NRR at ${netRevenueRetention}% — revenue contraction from existing members. Explore upsell opportunities`,
+          description: `NRR at ${formatPercent(netRevenueRetention)}% — revenue contraction from existing members. Explore upsell opportunities`,
           priority: 'medium',
 
           actionType: 'revenue',
@@ -91,7 +91,7 @@ export class MemberRetentionDrawerComponent {
       if (changePercentage < -3) {
         actions.push({
           title: 'Address retention decline',
-          description: `Renewal rate dropped ${Math.abs(changePercentage)}% — review member satisfaction and renewal outreach timing`,
+          description: `Renewal rate dropped ${formatPercent(Math.abs(changePercentage))}% — review member satisfaction and renewal outreach timing`,
           priority: 'high',
 
           actionType: 'decline',
@@ -101,7 +101,7 @@ export class MemberRetentionDrawerComponent {
       if (actions.length === 0 && !this.hasNoData()) {
         actions.push({
           title: 'Maintain retention excellence',
-          description: `${renewalRate}% renewal rate${netRevenueRetention > 100 ? ` with ${netRevenueRetention}% NRR` : ''}`,
+          description: `${formatPercent(renewalRate)}% renewal rate${netRevenueRetention > 100 ? ` with ${formatPercent(netRevenueRetention)}% NRR` : ''}`,
           priority: 'low',
 
           actionType: 'growth',
@@ -123,9 +123,9 @@ export class MemberRetentionDrawerComponent {
 
       // NRR insight
       if (netRevenueRetention > 100) {
-        insights.push({ text: `NRR above 100% at ${netRevenueRetention}% — successful upsell to higher tiers`, type: 'driver' });
+        insights.push({ text: `NRR above 100% at ${formatPercent(netRevenueRetention)}% — successful upsell to higher tiers`, type: 'driver' });
       } else if (netRevenueRetention > 0 && netRevenueRetention < 100) {
-        insights.push({ text: `NRR at ${netRevenueRetention}% — revenue declining from existing members`, type: 'warning' });
+        insights.push({ text: `NRR at ${formatPercent(netRevenueRetention)}% — revenue declining from existing members`, type: 'warning' });
       }
 
       // Monthly trend

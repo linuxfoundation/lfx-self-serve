@@ -58,6 +58,18 @@
       Edit profile
     </button>
 
+    <!-- Public profile visibility (LFXV2-2629) -->
+    <button
+      type="button"
+      (click)="onVisibility()"
+      [disabled]="impersonating()"
+      [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+      class="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="profile-visibility-button">
+      <i class="fa-light fa-eye text-xs"></i>
+      Public profile settings
+    </button>
+
     <div class="my-5 h-px bg-slate-200"></div>
 
     <!-- Fields — each renders only when its value is present -->

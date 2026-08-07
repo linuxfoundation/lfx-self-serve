@@ -38,6 +38,11 @@ vi.mock('../services/meeting.service', () => ({
     return {};
   }),
 }));
+vi.mock('../services/groups-engagement-stats.service', () => ({
+  GroupsEngagementStatsService: vi.fn(function () {
+    return {};
+  }),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
@@ -109,6 +114,29 @@ describe('CommitteeController.acceptCommitteeInvite — from_lfid_invite flag', 
 
       // A string 'true' must not bypass the pre-check — only the literal boolean true does.
       expect(committeeSvc.getPendingInviteForUser).toHaveBeenCalledOnce();
+    });
+
+    it('requests the membership confirmation, since this path redirects to the committee page', async () => {
+      const res = buildRes();
+
+      await controller.acceptCommitteeInvite(buildReq({ from_lfid_invite: true }), res, vi.fn());
+
+      expect(committeeSvc.acceptCommitteeInvite).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, INVITE_ID, expect.anything(), {
+        confirmMembership: true,
+      });
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it('does not request the confirmation for a truthy non-boolean flag', async () => {
+      committeeSvc.getPendingInviteForUser.mockResolvedValue({ organization_required: false });
+      const res = buildRes();
+
+      await controller.acceptCommitteeInvite(buildReq({ from_lfid_invite: 'true' as any }), res, vi.fn());
+
+      expect(committeeSvc.acceptCommitteeInvite).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, INVITE_ID, expect.anything(), {
+        confirmMembership: false,
+      });
+      expect(res.status).toHaveBeenCalledWith(204);
     });
   });
 
