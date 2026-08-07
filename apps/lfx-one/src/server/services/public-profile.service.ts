@@ -7,10 +7,20 @@ import {
   PublicProfileBasic,
   PublicProfileCertification,
   PublicProfileTechnicalContribution,
+  PublicProfileTraining,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { PUBLIC_PROFILE_FETCH_TIMEOUT_MS, PUBLIC_PROFILE_SERVICE_NAME, PUBLIC_PROFILE_USERNAME_PATTERN, PUBLIC_PROFILES_BUCKET_URL_ENV } from '../constants';
+import {
+  PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST,
+  PUBLIC_PROFILE_EPOCH_PLACEHOLDER,
+  PUBLIC_PROFILE_FETCH_TIMEOUT_MS,
+  PUBLIC_PROFILE_SERVICE_NAME,
+  PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST,
+  PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST,
+  PUBLIC_PROFILE_USERNAME_PATTERN,
+  PUBLIC_PROFILES_BUCKET_URL_ENV,
+} from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 
@@ -99,17 +109,61 @@ function projectTechnicalContribution(value: unknown): PublicProfileTechnicalCon
   return { projects };
 }
 
-/** Projects the shared upstream `Activity` shape rendered by both certifications and trainings. */
-function projectActivities(value: unknown): PublicProfileCertification[] | undefined {
+/** Blanks the epoch-zero placeholder date the artifact writes for "no date"; passes other values through. */
+function scrubEpochDate(value: unknown): string | undefined {
+  const date = pickString(value);
+  if (date === undefined) {
+    return undefined;
+  }
+  return date.includes(PUBLIC_PROFILE_EPOCH_PLACEHOLDER) ? '' : date;
+}
+
+// Public trainings, myprofile parity: keep allow-listed statuses + types, blank epoch dates, sort by
+// name. Raw `Status` drives the filter only and is never projected to the client.
+function projectTrainingActivities(value: unknown): PublicProfileTraining[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  return asRecordArray(value).map((activity) => ({
-    Name: pickString(activity['Name']),
-    Type: pickString(activity['Type']),
-    StartDate: pickString(activity['StartDate']),
-    EndDate: pickString(activity['EndDate']),
-  }));
+  return asRecordArray(value)
+    .filter((activity) => {
+      const status = pickString(activity['Status']);
+      const type = pickString(activity['Type']);
+      return (
+        status !== undefined && PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST.has(status) && type !== undefined && PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST.has(type)
+      );
+    })
+    .map((activity) => ({
+      Name: pickString(activity['Name']),
+      Type: pickString(activity['Type']),
+      StartDate: scrubEpochDate(activity['StartDate']),
+      EndDate: scrubEpochDate(activity['EndDate']),
+    }))
+    .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
+}
+
+// Public certifications, myprofile parity: completed only, drop epoch/absent StartDate. Raw `Status`
+// drives the filter only and is never projected to the client.
+function projectCertificationActivities(value: unknown): PublicProfileCertification[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return asRecordArray(value)
+    .filter((activity) => {
+      const status = pickString(activity['Status']);
+      const startDate = pickString(activity['StartDate']);
+      return (
+        status !== undefined &&
+        PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST.has(status) &&
+        startDate !== undefined &&
+        !startDate.includes(PUBLIC_PROFILE_EPOCH_PLACEHOLDER)
+      );
+    })
+    .map((activity) => ({
+      Name: pickString(activity['Name']),
+      Type: pickString(activity['Type']),
+      StartDate: pickString(activity['StartDate']),
+      EndDate: pickString(activity['EndDate']),
+    }));
 }
 
 function projectBadges(value: unknown): PublicProfileBadge[] | undefined {
@@ -132,8 +186,8 @@ export function projectPublicProfile(record: Record<string, unknown>): PublicPro
     basic: projectBasic(record['basic']),
     About: pickString(record['About']),
     technical_contribution: projectTechnicalContribution(record['technical_contribution']),
-    certification_activities: projectActivities(record['certification_activities']),
-    training_activities: projectActivities(record['training_activities']),
+    certification_activities: projectCertificationActivities(record['certification_activities']),
+    training_activities: projectTrainingActivities(record['training_activities']),
     badges: projectBadges(record['badges']),
   };
 }
