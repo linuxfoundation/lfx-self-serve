@@ -287,10 +287,12 @@ Add a dbt model at the exact consumption grain. This example preserves the origi
 WITH foundation_scopes AS (
   SELECT
     foundation_slug AS scope_slug,
-    total_followers,
-    platforms_active,
-    prior_total_followers
+    SUM(total_followers) AS total_followers,
+    MAX(platforms_active) AS platforms_active,
+    SUM(prior_total_followers) AS prior_total_followers
   FROM {{ ref('platinum_lfx_one_social_media_overview') }}
+  WHERE foundation_slug IS NOT NULL
+  GROUP BY 1
 ),
 
 all_scopes AS (
