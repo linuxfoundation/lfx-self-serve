@@ -6,13 +6,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { Committee } from '@lfx-one/shared/interfaces';
 
 /**
- * Visitor join CTA shared between the Overview and About tabs — a single "Interested in
- * joining?" card (or an invite-only notice) driven by the committee's `join_mode`.
- *
- * `canJoin()` only fires for `open` mode, so the CTA card's label/icon/description never actually
- * branch on mode — they're plain constants, not computeds. `showInviteOnlyNotice()` only fires for
- * `invite_only`/unset. Neither ever resolves for `application` mode (product-disabled for now, no
- * ticket yet), so an application-mode visitor sees neither card.
+ * Visitor join CTA shared between the Overview and About tabs — driven by the committee's `join_mode`.
  */
 @Component({
   selector: 'lfx-group-join-cta',
@@ -21,27 +15,34 @@ import { Committee } from '@lfx-one/shared/interfaces';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GroupJoinCtaComponent {
-  // Inputs
   public readonly committee = input.required<Committee>();
   public readonly isVisitor = input<boolean>(false);
   public readonly hasPendingInvite = input<boolean>(false);
+  public readonly hasPendingApplication = input<boolean>(false);
 
-  // Outputs
   public readonly joinRequested = output<void>();
 
-  // Constants — the only two modes that ever reach the template (see class doc) share one label/
-  // icon/description each, so there's nothing left to branch on.
   public readonly joinButtonLabel = 'Join Group';
   public readonly joinButtonIcon = 'fa-light fa-user-plus';
+  public readonly applyButtonLabel = 'Apply to Join';
+  public readonly applyButtonIcon = 'fa-light fa-file-signature';
   public readonly joinCtaIcon = 'fa-light fa-users';
+  public readonly applyCtaIcon = 'fa-light fa-inbox';
   public readonly joinCtaDescription = 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
+  public readonly applyCtaDescription = 'Submit a request to join this group. A group admin will review your application and notify you of their decision.';
   public readonly inviteOnlyTitle = 'Membership is by invitation only';
+  public readonly closedGroupTitle = 'This group is closed';
+  public readonly applicationPendingTitle = 'Application submitted';
+  public readonly applicationPendingDescription = 'Your request to join is pending review. A group admin will notify you once a decision is made.';
 
-  // Complex computed via private init functions
   public canJoin: Signal<boolean> = this.initCanJoin();
+  public canApply: Signal<boolean> = this.initCanApply();
+  public showApplicationPendingNotice: Signal<boolean> = this.initShowApplicationPendingNotice();
   public showInviteOnlyNotice: Signal<boolean> = this.initShowInviteOnlyNotice();
+  public showClosedNotice: Signal<boolean> = this.initShowClosedNotice();
   public joinCtaTitle: Signal<string> = this.initJoinCtaTitle();
   public inviteOnlyDescription: Signal<string> = this.initInviteOnlyDescription();
+  public closedGroupDescription: Signal<string> = this.initClosedGroupDescription();
 
   public onJoinClick(): void {
     this.joinRequested.emit();
@@ -54,11 +55,29 @@ export class GroupJoinCtaComponent {
     });
   }
 
+  private initCanApply(): Signal<boolean> {
+    return computed(() => {
+      const mode = this.committee().join_mode;
+      return this.isVisitor() && mode === 'application' && !this.hasPendingInvite() && !this.hasPendingApplication();
+    });
+  }
+
+  private initShowApplicationPendingNotice(): Signal<boolean> {
+    return computed(() => {
+      const mode = this.committee().join_mode;
+      return this.isVisitor() && mode === 'application' && !this.hasPendingInvite() && this.hasPendingApplication();
+    });
+  }
+
   private initShowInviteOnlyNotice(): Signal<boolean> {
     return computed(() => {
       const mode = this.committee().join_mode;
       return this.isVisitor() && (mode === 'invite_only' || !mode) && !this.hasPendingInvite();
     });
+  }
+
+  private initShowClosedNotice(): Signal<boolean> {
+    return computed(() => this.isVisitor() && this.committee().join_mode === 'closed' && !this.hasPendingInvite());
   }
 
   private initJoinCtaTitle(): Signal<string> {
@@ -68,7 +87,14 @@ export class GroupJoinCtaComponent {
   private initInviteOnlyDescription(): Signal<string> {
     return computed(() => {
       const name = this.committee().name;
-      return `${name} is invite only. A group admin must send you an invitation before you can join.`;
+      return `${name} is invite only. A group member or admin must send you an invitation before you can join.`;
+    });
+  }
+
+  private initClosedGroupDescription(): Signal<string> {
+    return computed(() => {
+      const name = this.committee().name;
+      return `${name} is closed to new members. You cannot join on your own — a group admin must add you before you can access group content.`;
     });
   }
 }

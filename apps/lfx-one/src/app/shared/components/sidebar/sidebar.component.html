@@ -113,7 +113,7 @@
           <p-popover #profileMenu appendTo="body" styleClass="w-60 profile-tabs-popover">
             <ng-template #content>
               <nav aria-label="Profile sections" class="py-1">
-                @for (tab of profileTabs; track tab.id) {
+                @for (tab of profileTabs(); track tab.id) {
                   <a
                     [routerLink]="['/profile', tab.route]"
                     (click)="closeProfileMenu()"
@@ -263,8 +263,9 @@
   @if (item.routerLink) {
     <a
       [routerLink]="item.routerLink"
+      [queryParams]="projectQueryParams()"
       routerLinkActive="bg-blue-100 font-medium text-gray-950"
-      [routerLinkActiveOptions]="{ exact: true }"
+      [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' }"
       class="flex items-center gap-2 px-2 h-[32px] rounded-lg transition-colors cursor-pointer w-full text-[13px] text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,

@@ -6,234 +6,379 @@
   <p-confirmDialog></p-confirmDialog>
 
   <!-- Committee Members Section -->
-  <lfx-card>
-    @if (!isMembersVisible()) {
+  <lfx-card [styleClass]="showPendingInvites() ? '[&_.p-card-body]:p-0 [&_.p-card-content]:p-0' : ''">
+    @if (!showMembersSection()) {
       <div class="text-sm text-gray-500 text-center py-6" data-testid="members-hidden-placeholder">Member list is not publicly visible for this group.</div>
+    } @else if (!showMemberRoster() && canSendMemberInvites()) {
+      <div class="flex flex-col items-center gap-4 py-4" data-testid="members-invite-only">
+        <p class="text-sm text-gray-500 text-center max-w-md">The member list is not visible for this group, but you can invite people to join.</p>
+        <lfx-button
+          icon="fa-light fa-paper-plane"
+          label="Invite Someone"
+          size="small"
+          severity="info"
+          (onClick)="openInviteMemberDialog()"
+          data-testid="invite-member-btn">
+        </lfx-button>
+      </div>
     } @else {
-      <!-- Quick Filter Chips -->
-      <div class="flex flex-wrap items-center gap-2 mb-4" data-testid="members-filter-chips">
-        @for (chip of chipConfig(); track chip.key) {
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-            [attr.aria-pressed]="memberFilterChip() === chip.key"
-            [class]="memberFilterChip() === chip.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-            (click)="selectChip(chip.key)"
-            [attr.data-testid]="'members-chip-' + chip.key">
-            {{ chip.label }} ({{ chip.count }})
-          </button>
-        }
-      </div>
+      @if (showPendingInvites()) {
+        <lfx-card-tabs-bar [options]="tabOptions()" [selectedFilter]="activeTab()" (filterChange)="onTabChange($event)" data-testid="members-tab-bar">
+        </lfx-card-tabs-bar>
+      }
 
-      <!-- Search, Filter Controls, and Add Member -->
-      <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 mb-6">
-        <!-- Search Input -->
-        <div class="flex-1">
-          <lfx-input-text [form]="filterForm" control="search" placeholder="Search members..." icon="fa-light fa-search" styleClass="w-full" size="small">
-          </lfx-input-text>
-        </div>
-
-        <!-- Role Filter -->
-        <div class="w-full sm:w-auto sm:shrink-0">
-          <lfx-select [form]="filterForm" control="role" size="small" [options]="roleOptions()" placeholder="All Roles" [showClear]="true" styleClass="w-full">
-          </lfx-select>
-        </div>
-
-        <!-- Voting Status Filter -->
-        <div class="w-full sm:w-auto sm:shrink-0">
-          <lfx-select
-            [form]="filterForm"
-            control="votingStatus"
-            size="small"
-            [options]="votingStatusOptions()"
-            placeholder="All Voting Status"
-            [showClear]="true"
-            styleClass="w-full">
-          </lfx-select>
-        </div>
-
-        <!-- Organization Filter -->
-        <div class="w-full sm:w-auto sm:shrink-0">
-          <lfx-select
-            [form]="filterForm"
-            control="organization"
-            size="small"
-            [options]="organizationOptions()"
-            placeholder="All Organizations"
-            [showClear]="true"
-            styleClass="w-full">
-          </lfx-select>
-        </div>
-
-        @if (canManageMembers()) {
-          <lfx-button
-            icon="fa-light fa-user-plus"
-            label="Add Member"
-            size="small"
-            severity="info"
-            (onClick)="openAddMemberDialog()"
-            data-testid="add-member-btn">
-          </lfx-button>
-        }
-      </div>
-
-      <!-- Table View -->
-      <lfx-table
-        [value]="filteredMembers()"
-        [paginator]="true"
-        [rows]="10"
-        [rowsPerPageOptions]="[10, 25, 50]"
-        [showCurrentPageReport]="true"
-        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} members"
-        styleClass="p-datatable-sm"
-        sortField="first_name"
-        [sortOrder]="1">
-        <ng-template #header>
-          <tr>
-            <th>
-              <span class="text-sm font-inter text-gray-500">Name</span>
-            </th>
-            <th>
-              <span class="text-sm font-inter text-gray-500">Email</span>
-            </th>
-            <th>
-              <span class="text-sm font-inter text-gray-500">Organization</span>
-            </th>
-            @if (committee()?.enable_voting) {
-              <th>
-                <span class="text-sm font-inter text-gray-500">Role</span>
-              </th>
-              <th>
-                <span class="text-sm font-inter text-gray-500">Voting Status</span>
-              </th>
-            }
-            <th>
-              <span class="text-sm font-inter text-gray-500">Permission</span>
-            </th>
-            <th style="width: 80px">
-              <div class="flex justify-center">
-                <span class="text-sm font-inter text-gray-500">Actions</span>
+      <div [class]="showPendingInvites() ? 'p-4 md:p-6' : ''">
+        @if (activeTab() === 'all') {
+          <!-- Quick Filter Chips + engagement window controls -->
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div class="flex flex-wrap items-center gap-2" data-testid="members-filter-chips">
+              @for (chip of chipConfig(); track chip.key) {
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                  [attr.aria-pressed]="memberFilterChip() === chip.key"
+                  [class]="memberFilterChip() === chip.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                  (click)="selectChip(chip.key)"
+                  [attr.data-testid]="'members-chip-' + chip.key">
+                  {{ chip.label }} ({{ chip.count }})
+                </button>
+              }
+            </div>
+            @if (engagementEnabled() && engagementAccessible()) {
+              <div class="flex flex-wrap items-center gap-3" data-testid="members-engagement-controls">
+                @if (isMockEngagement()) {
+                  <lfx-tag value="Sample data" severity="warn" data-testid="members-engagement-mock-tag" />
+                }
+                @if (engagementDataAvailable()) {
+                  <span class="text-xs text-gray-400" data-testid="members-engagement-freshness">{{ engagementFreshnessLabel() }}</span>
+                }
+                <lfx-filter-pills [options]="engagementWindowOptions" [selectedFilter]="engagementWindow()" (filterChange)="onEngagementWindowChange($event)" />
               </div>
-            </th>
-          </tr>
-        </ng-template>
-
-        <ng-template #body let-member>
-          <tr>
-            <td>
-              <span class="text-sm font-inter text-gray-900 font-medium">
-                {{ member | fullName | titlecase }}
-              </span>
-            </td>
-            <td>
-              <span class="text-sm font-inter text-gray-500">{{ member.email || '-' }}</span>
-            </td>
-            <td>
-              @if (member.organization?.website) {
-                <a
-                  [href]="member.organization.website"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-primary hover:text-primary-600 text-sm font-inter">
-                  {{ member.organization.name }}
-                </a>
-              } @else {
-                <span class="text-sm font-inter text-gray-500">{{ member.organization?.name || '-' }}</span>
-              }
-            </td>
-            @if (committee()?.enable_voting) {
-              <td>
-                <span class="text-sm font-inter text-gray-500">{{ member.role?.name || 'None' }}</span>
-              </td>
-              <td>
-                <span class="text-sm font-inter text-gray-500">{{ member.voting?.status || 'None' }}</span>
-              </td>
             }
-            <td>
-              @let permission = getMemberPermissionInfo(member);
-              <lfx-tag [value]="getMemberPermissionLabel(permission.level, permission.inherited)" [severity]="getMemberPermissionSeverity(permission.level)">
-              </lfx-tag>
-            </td>
-            <td class="text-right relative">
-              <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"> </lfx-menu>
-              @if (canManageMembers()) {
-                <lfx-button
-                  icon="fa-light fa-ellipsis-vertical"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  (onClick)="toggleMemberActionMenu($event, member, memberActionMenu)">
-                </lfx-button>
-              } @else {
-                <lfx-button
-                  icon="fa-light fa-envelope"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  [href]="'mailto:' + member.email"
-                  pTooltip="Send Message">
-                </lfx-button>
-              }
-            </td>
-          </tr>
-        </ng-template>
+          </div>
+        }
 
-        <!-- Empty Message Template -->
-        <ng-template #emptymessage>
-          @if (membersLoading()) {
-            <tr>
-              <td [attr.colspan]="committee()?.enable_voting ? 7 : 5" class="text-center py-8">
-                <div class="flex flex-col gap-4 px-4">
-                  @for (_ of [1, 2, 3]; track _) {
-                    <div class="flex items-center gap-4">
-                      <p-skeleton shape="circle" size="2rem" />
-                      <p-skeleton width="8rem" height="0.875rem" />
-                      <p-skeleton width="10rem" height="0.875rem" />
-                      <p-skeleton width="6rem" height="0.875rem" />
-                    </div>
-                  }
-                </div>
-              </td>
-            </tr>
-          } @else {
-            <tr>
-              <td [attr.colspan]="committee()?.enable_voting ? 7 : 5" class="text-center py-8">
-                <div class="text-center">
-                  <i class="fa-light fa-users text-3xl text-gray-300 mb-2"></i>
-                  <p class="text-sm font-medium text-gray-600">No members found</p>
-                  @if (canManageMembers()) {
-                    <div class="mt-3">
-                      <button class="text-xs text-blue-600 hover:text-blue-700 font-medium" (click)="openAddMemberDialog()">
-                        <i class="fa-light fa-user-plus mr-1"></i>Add the first member
-                      </button>
-                    </div>
-                  }
-                </div>
-              </td>
-            </tr>
+        <!-- Search, Filter Controls, and Add Member -->
+        <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 mb-6">
+          @if (activeTab() === 'all') {
+            <!-- Search Input -->
+            <div class="flex-1">
+              <lfx-input-text [form]="filterForm" control="search" placeholder="Search members..." icon="fa-light fa-search" styleClass="w-full" size="small">
+              </lfx-input-text>
+            </div>
+
+            <!-- Role Filter -->
+            <div class="w-full sm:w-auto sm:shrink-0">
+              <lfx-select
+                [form]="filterForm"
+                control="role"
+                size="small"
+                [options]="roleOptions()"
+                placeholder="All Roles"
+                [showClear]="true"
+                styleClass="w-full">
+              </lfx-select>
+            </div>
+
+            <!-- Voting Status Filter -->
+            <div class="w-full sm:w-auto sm:shrink-0">
+              <lfx-select
+                [form]="filterForm"
+                control="votingStatus"
+                size="small"
+                [options]="votingStatusOptions()"
+                placeholder="All Voting Status"
+                [showClear]="true"
+                styleClass="w-full">
+              </lfx-select>
+            </div>
+
+            <!-- Organization Filter -->
+            <div class="w-full sm:w-auto sm:shrink-0">
+              <lfx-select
+                [form]="filterForm"
+                control="organization"
+                size="small"
+                [options]="organizationOptions()"
+                placeholder="All Organizations"
+                [showClear]="true"
+                styleClass="w-full">
+              </lfx-select>
+            </div>
           }
-        </ng-template>
-      </lfx-table>
+
+          @if (canManageMembers()) {
+            <lfx-button
+              icon="fa-light fa-user-plus"
+              label="Add Member"
+              size="small"
+              severity="info"
+              (onClick)="openAddMemberDialog()"
+              data-testid="add-member-btn">
+            </lfx-button>
+          } @else if (canSendMemberInvites()) {
+            <lfx-button
+              icon="fa-light fa-paper-plane"
+              label="Invite Someone"
+              size="small"
+              severity="info"
+              (onClick)="openInviteMemberDialog()"
+              data-testid="invite-member-btn">
+            </lfx-button>
+          }
+        </div>
+
+        <!-- Table View -->
+        <lfx-table
+          [value]="tableRows()"
+          [paginator]="true"
+          [rows]="10"
+          [rowsPerPageOptions]="[10, 25, 50]"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords} entries"
+          styleClass="p-datatable-sm">
+          <ng-template #header>
+            <tr>
+              <th>
+                <span class="text-sm font-inter text-gray-500">Name</span>
+              </th>
+              <th>
+                <span class="text-sm font-inter text-gray-500">Email</span>
+              </th>
+              <th>
+                <span class="text-sm font-inter text-gray-500">Organization</span>
+              </th>
+              @if (committee()?.enable_voting) {
+                <th>
+                  <span class="text-sm font-inter text-gray-500">Role</span>
+                </th>
+                <th>
+                  <span class="text-sm font-inter text-gray-500">Voting Status</span>
+                </th>
+              }
+              @if (engagementEnabled() && engagementAccessible()) {
+                <th>
+                  <span class="text-sm font-inter text-gray-500">Meetings</span>
+                </th>
+                <th>
+                  <span class="text-sm font-inter text-gray-500">Engagement</span>
+                </th>
+              }
+              <th>
+                <span class="text-sm font-inter text-gray-500">Permission</span>
+              </th>
+              <th style="width: 80px">
+                <div class="flex justify-center">
+                  <span class="text-sm font-inter text-gray-500">Actions</span>
+                </div>
+              </th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-row>
+            <tr [attr.data-testid]="row.rowType === 'member' ? 'member-row-' + row.data.uid : 'invite-row-' + row.data.uid">
+              <!-- Name -->
+              <td>
+                @if (row.rowType === 'member') {
+                  <span class="text-sm font-inter text-gray-900 font-medium">
+                    {{ row.data | fullName | titlecase }}
+                  </span>
+                } @else {
+                  <div class="flex flex-wrap items-center gap-2">
+                    <lfx-tag value="Pending invitation" severity="warn" />
+                  </div>
+                }
+              </td>
+              <!-- Email -->
+              <td>
+                @if (row.rowType === 'member') {
+                  <span class="text-sm font-inter text-gray-500">{{ row.data.email || '-' }}</span>
+                } @else {
+                  <span class="text-sm font-inter text-gray-500">{{ row.data.invitee_email }}</span>
+                }
+              </td>
+              <!-- Organization -->
+              <td>
+                @if (row.rowType === 'member') {
+                  @if (row.data.organization?.website) {
+                    <a
+                      [href]="row.data.organization.website"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary hover:text-primary-600 text-sm font-inter">
+                      {{ row.data.organization.name }}
+                    </a>
+                  } @else {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.organization?.name || '-' }}</span>
+                  }
+                } @else {
+                  <span class="text-sm font-inter text-gray-500">{{ row.data.organization?.name || '—' }}</span>
+                }
+              </td>
+              @if (committee()?.enable_voting) {
+                <!-- Role -->
+                <td>
+                  @if (row.rowType === 'member') {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.role?.name || 'None' }}</span>
+                  } @else {
+                    <span class="text-sm font-inter text-gray-400">{{ row.data.role && row.data.role !== noRoleSentinel ? row.data.role : '—' }}</span>
+                  }
+                </td>
+                <!-- Voting Status -->
+                <td>
+                  @if (row.rowType === 'member') {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.voting?.status || 'None' }}</span>
+                  } @else {
+                    <span class="text-sm font-inter text-gray-400">—</span>
+                  }
+                </td>
+              }
+              @if (engagementEnabled() && engagementAccessible()) {
+                <!-- Meetings -->
+                <td>
+                  @if (row.rowType === 'member') {
+                    @if (engagementLoading()) {
+                      <p-skeleton width="2.5rem" height="0.875rem" />
+                    } @else {
+                      @let engagementView = memberEngagementRows().get(row.data.uid);
+                      <span class="text-sm font-inter text-gray-900" [attr.data-testid]="'members-engagement-meetings-' + row.data.uid">
+                        {{ engagementView?.meetingsLabel }}
+                      </span>
+                    }
+                  } @else {
+                    <span class="text-sm font-inter text-gray-400">—</span>
+                  }
+                </td>
+                <!-- Engagement -->
+                <td>
+                  @if (row.rowType === 'member') {
+                    @if (engagementLoading()) {
+                      <p-skeleton width="4rem" height="1.25rem" borderRadius="1rem" />
+                    } @else {
+                      @let engagementView = memberEngagementRows().get(row.data.uid);
+                      @if (engagementView && engagementView.row && engagementDataAvailable()) {
+                        <lfx-tag
+                          [value]="engagementView.row.classification"
+                          [severity]="engagementView.severity"
+                          [tooltip]="engagementView.context"
+                          [attr.data-testid]="'members-engagement-chip-' + row.data.uid" />
+                      } @else {
+                        <span class="text-sm font-inter text-gray-400" [attr.data-testid]="'members-engagement-chip-' + row.data.uid">—</span>
+                      }
+                    }
+                  } @else {
+                    <span class="text-sm font-inter text-gray-400">—</span>
+                  }
+                </td>
+              }
+              <!-- Permission -->
+              <td>
+                @if (row.rowType === 'member') {
+                  @let permission = getMemberPermissionInfo(row.data);
+                  <lfx-tag
+                    [value]="getMemberPermissionLabel(permission.level, permission.inherited)"
+                    [severity]="getMemberPermissionSeverity(permission.level)">
+                  </lfx-tag>
+                } @else {
+                  <span class="text-sm font-inter text-gray-400">—</span>
+                }
+              </td>
+              <!-- Actions -->
+              <td class="text-right relative">
+                @if (row.rowType === 'member') {
+                  <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+                  @if (canManageMembers()) {
+                    <lfx-button
+                      icon="fa-light fa-ellipsis-vertical"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      severity="secondary"
+                      (onClick)="toggleMemberActionMenu($event, row.data, memberActionMenu)">
+                    </lfx-button>
+                  } @else {
+                    <lfx-button
+                      icon="fa-light fa-envelope"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      severity="secondary"
+                      [href]="'mailto:' + row.data.email"
+                      pTooltip="Send Message">
+                    </lfx-button>
+                  }
+                } @else if (canManageMembers()) {
+                  <lfx-menu #inviteActionMenu [model]="inviteActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+                  <lfx-button
+                    icon="fa-light fa-ellipsis-vertical"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    ariaLabel="Invite actions"
+                    [attr.data-testid]="'invite-actions-btn-' + row.data.uid"
+                    (onClick)="toggleInviteActionMenu($event, row.data, inviteActionMenu)">
+                  </lfx-button>
+                }
+              </td>
+            </tr>
+          </ng-template>
+
+          <!-- Empty Message Template -->
+          <ng-template #emptymessage>
+            @if (membersLoading() || (activeTab() === 'pending' && invitesLoading())) {
+              <tr>
+                <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
+                  <div class="flex flex-col gap-4 px-4">
+                    @for (_ of [1, 2, 3]; track _) {
+                      <div class="flex items-center gap-4">
+                        <p-skeleton shape="circle" size="2rem" />
+                        <p-skeleton width="8rem" height="0.875rem" />
+                        <p-skeleton width="10rem" height="0.875rem" />
+                        <p-skeleton width="6rem" height="0.875rem" />
+                      </div>
+                    }
+                  </div>
+                </td>
+              </tr>
+            } @else {
+              <tr>
+                <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
+                  <div class="text-center">
+                    <i class="fa-light fa-users text-3xl text-gray-300 mb-2"></i>
+                    <p class="text-sm font-medium text-gray-600">{{ activeTab() === 'pending' ? 'No pending invitations' : 'No members found' }}</p>
+                    @if (canManageMembers() && activeTab() !== 'pending') {
+                      <div class="mt-3">
+                        <button class="text-xs text-blue-600 hover:text-blue-700 font-medium" (click)="openAddMemberDialog()">
+                          <i class="fa-light fa-user-plus mr-1"></i>Add the first member
+                        </button>
+                      </div>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </ng-template>
+        </lfx-table>
+      </div>
     }
   </lfx-card>
 
-  <!-- Pending Invitations Section (managers only) -->
-  @if (canManageMembers() && (invitesLoading() || invites().length > 0)) {
+  <!-- Pending Applications Section (managers only, application join mode) -->
+  @if (showPendingApplications()) {
     <lfx-card>
-      <div class="flex flex-col gap-3" data-testid="pending-invites">
+      <div class="flex flex-col gap-3" data-testid="pending-applications">
         <div class="flex items-center gap-2">
-          <i class="fa-light fa-envelope-open-text text-gray-500" aria-hidden="true"></i>
-          <h3 class="text-sm font-semibold text-gray-900">Pending Invitations</h3>
-          @if (!invitesLoading()) {
-            <span class="text-xs text-gray-400">({{ invites().length }})</span>
+          <i class="fa-light fa-inbox text-gray-500" aria-hidden="true"></i>
+          <h3 class="text-sm font-semibold text-gray-900">Pending Applications</h3>
+          @if (!applicationsLoading()) {
+            <span class="text-xs text-gray-400">({{ pendingApplications().length }})</span>
           }
         </div>
 
-        <p class="text-xs text-gray-400">Invited people appear here until they accept. They become members automatically on acceptance.</p>
+        <p class="text-xs text-gray-400">Review join requests from people who applied to this group.</p>
 
-        @if (invitesLoading()) {
+        @if (applicationsLoading()) {
           <div class="flex flex-col gap-2">
             @for (_ of [1, 2]; track _) {
               <div class="flex items-center gap-3">
@@ -244,31 +389,43 @@
           </div>
         } @else {
           <ul class="flex flex-col gap-2" role="list">
-            @for (invite of invites(); track invite.uid) {
+            @for (application of pendingApplications(); track application.uid) {
               <li
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-white"
-                [attr.data-testid]="'pending-invite-' + invite.invitee_email">
-                <i class="fa-light fa-clock text-amber-500" aria-hidden="true"></i>
+                class="flex flex-col sm:flex-row sm:items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-white"
+                [attr.data-testid]="'pending-application-' + application.applicant_email">
                 <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <span class="text-sm font-medium text-gray-900 truncate">{{ invite.invitee_email }}</span>
-                  @if (invite.role && invite.role !== noRoleSentinel) {
-                    <span class="text-xs text-gray-400">Invited as {{ invite.role }}</span>
+                  <span class="text-sm font-medium text-gray-900 truncate">{{ application.applicant_email }}</span>
+                  @if (application.message) {
+                    <span class="text-xs text-gray-500 line-clamp-2">{{ application.message }}</span>
+                  }
+                  @if (application.created_at) {
+                    <span class="text-xs text-gray-400">Submitted {{ application.created_at | date: 'MMM d, y' }}</span>
                   }
                 </div>
-                <lfx-tag value="Pending" severity="warn"></lfx-tag>
-                <lfx-button
-                  icon="fa-light fa-xmark"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  tooltip="Revoke invitation"
-                  ariaLabel="Revoke invitation"
-                  [loading]="revokingInviteUid() === invite.uid"
-                  [disabled]="!!revokingInviteUid()"
-                  (onClick)="revokeInvite(invite)"
-                  [attr.data-testid]="'revoke-invite-' + invite.invitee_email">
-                </lfx-button>
+                <div class="flex items-center gap-2 shrink-0">
+                  <lfx-tag value="Pending" severity="warn"></lfx-tag>
+                  <lfx-button
+                    label="Approve"
+                    icon="fa-light fa-check"
+                    size="small"
+                    severity="success"
+                    [loading]="processingApplicationUid() === application.uid"
+                    [disabled]="!!processingApplicationUid()"
+                    (onClick)="approveApplication(application)"
+                    [attr.data-testid]="'approve-application-' + application.applicant_email">
+                  </lfx-button>
+                  <lfx-button
+                    label="Reject"
+                    icon="fa-light fa-xmark"
+                    size="small"
+                    severity="danger"
+                    [outlined]="true"
+                    [loading]="processingApplicationUid() === application.uid"
+                    [disabled]="!!processingApplicationUid()"
+                    (onClick)="rejectApplication(application)"
+                    [attr.data-testid]="'reject-application-' + application.applicant_email">
+                  </lfx-button>
+                </div>
               </li>
             }
           </ul>

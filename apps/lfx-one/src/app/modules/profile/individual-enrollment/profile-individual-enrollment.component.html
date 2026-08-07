@@ -44,7 +44,7 @@
                 @if (!item.membership) {
                   <span class="text-xs font-medium text-gray-400">Individual Enrollment</span>
                 }
-                <span class="text-lg font-semibold text-gray-900">{{ item.ProductName }}</span>
+                <span class="text-lg font-semibold text-gray-900">{{ item.productName }}</span>
                 @if (item.membership) {
                   <span class="text-sm text-gray-500">{{ item.projectName }}</span>
                 }
@@ -74,16 +74,16 @@
                   <span class="text-sm font-normal text-gray-900">${{ item.price }}/year</span>
                 </div>
               }
-              @if (item.membership.PurchaseDate) {
+              @if (item.membership.purchaseDate) {
                 <div class="flex flex-col gap-1" data-testid="individual-enrollment-purchase-date">
                   <div class="flex items-center gap-1.5 text-xs text-gray-400">
                     <i class="fa-light fa-credit-card"></i>
                     <span>Purchased</span>
                   </div>
-                  <span class="text-sm font-normal text-gray-900">{{ item.membership.PurchaseDate | date: 'mediumDate' : 'UTC' }}</span>
+                  <span class="text-sm font-normal text-gray-900">{{ item.membership.purchaseDate | date: 'mediumDate' : 'UTC' }}</span>
                 </div>
               }
-              @if (item.membership.EndDate) {
+              @if (item.membership.endDate) {
                 <div class="flex flex-col gap-1">
                   <div class="flex items-center gap-1.5 text-xs text-gray-400">
                     @if (item.displayStatus === 'Expired') {
@@ -93,18 +93,18 @@
                     }
                     <span>{{ item.displayStatus === 'Expired' ? 'Expired on' : 'Renews' }}</span>
                   </div>
-                  <span class="text-sm font-normal text-gray-900">{{ item.membership.EndDate | date: 'mediumDate' : 'UTC' }}</span>
+                  <span class="text-sm font-normal text-gray-900">{{ item.membership.endDate | date: 'mediumDate' : 'UTC' }}</span>
                 </div>
               }
-              @if (item.membership.ExtPaymentType === 'stripe' && item.displayStatus !== 'Expired') {
+              @if (item.membership.extPaymentType === 'stripe' && item.displayStatus !== 'Expired') {
                 <div class="flex flex-col gap-1">
                   <div class="flex items-center gap-1.5 text-xs text-gray-400">
                     <i class="fa-light fa-arrow-rotate-right"></i>
                     <span>Auto-renew</span>
                   </div>
-                  <span class="text-sm font-normal text-gray-900">{{ item.membership.AutoRenew ? 'Enabled' : 'Disabled' }}</span>
+                  <span class="text-sm font-normal text-gray-900">{{ item.membership.autoRenew ? 'Enabled' : 'Disabled' }}</span>
                 </div>
-                @if (item.membership.AutoRenew) {
+                @if (item.membership.autoRenew) {
                   <lfx-button
                     class="-ml-6"
                     label="Disable auto-renew"

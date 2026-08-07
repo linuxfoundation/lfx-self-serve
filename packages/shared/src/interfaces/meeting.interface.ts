@@ -267,6 +267,10 @@ export interface Meeting {
   ai_summary_enabled?: boolean | null;
   /** Whether AI summary requires approval before being shared */
   require_ai_summary_approval?: boolean | null;
+  /** Whether an automatic reminder email is sent to participants before the meeting starts */
+  auto_email_reminder_enabled?: boolean | null;
+  /** Minutes before the meeting start time to send the reminder email (120-1440) */
+  auto_email_reminder_time?: number | null;
   /** Nested Zoom config from the indexed query-service projection (source for ai_summary_enabled on list views) */
   zoom_config?: MeetingZoomConfig | null;
 
@@ -401,6 +405,8 @@ export interface CreateMeetingRequest {
   organizers?: string[]; // Array of organizer email addresses
   ai_summary_enabled?: boolean; // Whether Zoom AI Companion summary is enabled
   require_ai_summary_approval?: boolean; // Whether AI summary requires approval before sharing
+  auto_email_reminder_enabled?: boolean; // Whether an automatic reminder email is sent to participants
+  auto_email_reminder_time?: number; // Minutes before the meeting start time to send the reminder email (120-1440)
 }
 
 export interface UpdateMeetingRequest {
@@ -428,6 +434,8 @@ export interface UpdateMeetingRequest {
   organizers?: string[]; // Array of organizer email addresses
   ai_summary_enabled?: boolean | null; // Whether Zoom AI Companion summary is enabled
   require_ai_summary_approval?: boolean | null; // Whether AI summary requires approval before sharing
+  auto_email_reminder_enabled?: boolean | null; // Whether an automatic reminder email is sent to participants
+  auto_email_reminder_time?: number | null; // Minutes before the meeting start time to send the reminder email (120-1440)
 }
 
 export interface DeleteMeetingRequest {
@@ -748,6 +756,19 @@ export interface PastMeeting extends Meeting {
   sessions: MeetingSession[];
   /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
   user_attended?: boolean;
+}
+
+/** Angular router target for navigating to a specific meeting occurrence. */
+export interface MeetingOccurrenceRoute {
+  path: string[];
+  queryParams?: Record<string, string>;
+}
+
+/** Options when building a meeting occurrence route. */
+export interface BuildMeetingOccurrenceRouteOptions {
+  password?: string;
+  /** Canonical past-meeting composite id (`meeting_and_occurrence_id`); skips `{id}-{timestamp}` suffixing. */
+  pastMeetingResourceId?: string;
 }
 
 /**

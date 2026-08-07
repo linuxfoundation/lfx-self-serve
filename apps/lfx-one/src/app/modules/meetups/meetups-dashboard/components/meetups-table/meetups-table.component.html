@@ -55,15 +55,18 @@
     <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'meetup-row-' + meetup.id">
       <!-- Meetup Name -->
       <td>
-        <a
-          [href]="meetup.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="lfx-table-name-link text-sm"
-          (click)="$event.stopPropagation()"
-          [attr.data-testid]="'meetup-name-' + meetup.id">
-          {{ meetup.name }}
-        </a>
+        <div class="flex items-center gap-2 flex-wrap">
+          <a
+            [href]="meetup.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="lfx-table-name-link text-sm"
+            (click)="$event.stopPropagation()"
+            [attr.data-testid]="'meetup-name-' + meetup.id">
+            {{ meetup.name }}
+          </a>
+          <lfx-tag value="OCG" styleClass="tag-neutral !text-[10px] !py-0 !px-1.5" [tooltip]="'Sourced from ocgroups.dev'" />
+        </div>
       </td>
 
       <!-- Community -->

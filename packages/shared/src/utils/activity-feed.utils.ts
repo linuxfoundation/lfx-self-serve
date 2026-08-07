@@ -1,132 +1,108 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Specific-file imports (not the '../constants' barrel): that barrel re-exports
-// dashboard-metrics.constants.ts, which imports '../utils' (the utils barrel, this file's own
-// barrel) — a real runtime import cycle that transitively pulls in Angular-only runtime code
-// (e.g. meeting.utils.ts's `@angular/common/http` import), which Vitest can't resolve outside an
-// Angular context. Importing the two constant files directly avoids the cycle. The '../interfaces'
-// import below is `import type` for the same reason: it's erased entirely, so it can't reintroduce
-// this cycle even if a future interface file adds a runtime import that reaches '../constants' or
-// '../utils'.
+// Specific-file imports (not the '../constants' barrel): this file is re-exported by the utils
+// barrel, so importing the constants barrel here would add a utils->constants edge — avoided
+// defensively (no cycle exists today; see constants/index.spec.ts for the invariant this protects).
+// The '../interfaces' import below is `import type`, so it can't introduce a runtime edge.
 import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
-import type { ActivityFeedItem, BuildActivityFeedInput } from '../interfaces';
-import { firstValidTimestamp } from './iso-timestamp.utils';
-import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
+import type { ActivityEvent, ActivityFeedItem } from '../interfaces';
 import { normalizePollStatus } from './poll.utils';
-import { getSurveyDisplayStatus } from './survey.utils';
 import { isValidUrl } from './url.utils';
 
-/** Per-source cap before merging, so one noisy source can't crowd out the rest. */
-const PER_SOURCE_LIMIT = 5;
-/** Final row count returned after the merge-sort. */
-const FEED_LIMIT = 8;
-
 /**
- * Parse an ISO timestamp to epoch ms for sorting, treating an absent/unparseable value as the
- * oldest possible. A plain `localeCompare` on the raw strings only sorts correctly when every
- * source emits the identical format/offset — this feed merges four sources across two upstream
- * services (query-service, committee-service), so a `+05:30`-offset or non-`Z` variant from any
- * one of them would otherwise sort into the wrong position relative to the others.
+ * Maps one committee-activity `ActivityEvent` (the server's source-agnostic wire contract,
+ * LFXV2-1707) to the Overview widget's `ActivityFeedItem` view-model (label/icon/click-action).
+ * The server already sorts, caps, and paginates — this is a pure per-event presentation mapping,
+ * not a merge. Ports the label/fallback/action logic the old client-side `buildActivityFeed` used
+ * to apply directly to raw `Vote`/`Survey`/`PastMeeting`/`CommitteeDocument` entities, now reading
+ * from `event.payload` instead so rendering stays identical across the data-source swap.
  */
-function timestampValue(timestamp: string): number {
-  const parsed = Date.parse(timestamp);
-  return Number.isNaN(parsed) ? -Infinity : parsed;
+function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | null {
+  switch (event.type) {
+    case 'meeting_held':
+      return {
+        type: 'past_meeting',
+        // meeting_occurrence_id, not meeting_id — a recurring meeting's occurrences share one
+        // meeting_id but need distinct @for tracking keys; meetingId (below) is still the
+        // navigation id, matching the "Past Meeting" card's own link.
+        key: `past_meeting-${event.payload.meeting_occurrence_id}`,
+        label: `Meeting held: ${event.payload.title}`,
+        timestamp: event.occurred_at,
+        icon: 'fa-light fa-clock-rotate-left',
+        action: { kind: 'past-meeting', meetingId: event.payload.meeting_id, password: event.payload.password },
+      };
+
+    case 'vote_opened':
+    case 'vote_closed': {
+      const { vote_uid, name, status } = event.payload;
+      const statusKey = normalizePollStatus(status);
+      return {
+        type: 'vote',
+        key: `vote-${vote_uid}`,
+        label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : status || 'Updated'}: ${name}`,
+        timestamp: event.occurred_at,
+        icon: 'fa-light fa-check-to-slot',
+        action: { kind: 'vote-drawer', voteUid: vote_uid },
+      };
+    }
+
+    case 'survey_published':
+    case 'survey_closed': {
+      const { survey_uid, title, status } = event.payload;
+      return {
+        type: 'survey',
+        key: `survey-${survey_uid}`,
+        label: `Survey ${SURVEY_STATUS_LABELS[status as keyof typeof SURVEY_STATUS_LABELS] ?? status}: ${title}`,
+        timestamp: event.occurred_at,
+        icon: 'fa-light fa-chart-simple',
+        action: { kind: 'survey-drawer', surveyUid: survey_uid },
+      };
+    }
+
+    // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a folder
+    // or link doesn't misrepresent itself as a file in the feed.
+    case 'document_uploaded': {
+      const { document_uid, name, document_type, url } = event.payload;
+      return {
+        type: 'document',
+        // document_type in the key, not just document_uid — folders, links, and files are three
+        // distinct upstream uid namespaces (matches eventKey's identical reasoning server-side in
+        // committee-activity.service.ts); a folder and a file coincidentally sharing a uid would
+        // otherwise collide on this @for tracking key (NG0955).
+        key: `document-${document_type}-${document_uid}`,
+        label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[document_type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${name}`,
+        timestamp: event.occurred_at,
+        icon: COMMITTEE_DOCUMENT_TYPE_ICONS[document_type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
+        // Only 'link' documents open directly — the Documents tab treats 'file' as a download
+        // (via a committee-scoped proxy URL, not doc.url) rather than an "open", and 'folder' has
+        // no standalone target outside the Documents tab's own drill-down state. isValidUrl is the
+        // same shared validator used across the app for untrusted-URL sinks.
+        action: document_type === 'link' && url && isValidUrl(url) ? { kind: 'external-url', url } : { kind: 'tab', tab: 'documents' },
+      };
+    }
+
+    // Deferred types (document_deleted, member_joined, member_left, notes_added) — never emitted
+    // by the server in v1; guarded defensively rather than assumed unreachable.
+    default:
+      return null;
+  }
 }
 
 /**
- * Group Overview "Recent Activity" stop-gap: merges the latest items across past meetings, votes,
- * surveys, and documents into one time-ordered list. Upcoming meetings are intentionally excluded
- * — they're future-dated, already covered by the "Next Meeting" card, and would otherwise dominate
- * a feed labelled "Recent Activity". Replaced by the real activity stream in LFXV2-1707.
+ * Maps a committee's server-fed `ActivityEvent[]` to `ActivityFeedItem[]` for the Overview
+ * "Recent Activity" widget. `votingEnabled` mirrors the old stop-gap's behavior: vote events are
+ * excluded entirely (not just hidden) when the committee has voting disabled, matching the Votes
+ * tab itself being hidden in that state. Applied at BOTH layers, not just here: the server
+ * (`CommitteeActivityService.getCommitteeActivity`) already excludes vote events from the response
+ * when `committee.enable_voting` is false, so this filter is defense-in-depth against a client
+ * that has a stale/different view of `committee()` than what the server resolved — not the sole gate.
  */
-export function buildActivityFeed(input: BuildActivityFeedInput): ActivityFeedItem[] {
-  const pastMeetingItems: ActivityFeedItem[] = [...input.pastMeetings]
-    .map((m) => {
-      // getPastMeetingStartTimeMs — the same helper meetings-dashboard.component.ts and
-      // meeting-organizer.component.ts already go through, so this feed can't quietly diverge if
-      // that helper's field-preference or zero-date handling ever changes. committee-overview's own
-      // lastMeeting computed does not go through it (pre-existing, raw start_time.localeCompare) —
-      // a Go zero-date start_time can therefore make the "Past Meeting" card and this feed's top
-      // row name different meetings, out of this fix's scope.
-      const startMs = getPastMeetingStartTimeMs(m);
-      return { meeting: m, timestamp: startMs !== null ? new Date(startMs).toISOString() : '' };
-    })
-    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
-    .slice(0, PER_SOURCE_LIMIT)
-    .map(({ meeting: m, timestamp }) => ({
-      type: 'past_meeting' as const,
-      // getPastMeetingResourceId (meeting_and_occurrence_id ?? id) for tracking — the same helper
-      // every other past-meeting surface uses (meeting-card, meeting-organizer, attachments) —
-      // deliberately independent of the navigation id below, which has a different job (matching
-      // an existing link) rather than uniquely identifying the occurrence.
-      key: `past_meeting-${getPastMeetingResourceId(m)}`,
-      label: `Meeting held: ${m.title}`,
-      timestamp,
-      icon: 'fa-light fa-clock-rotate-left',
-      // meeting.id, not getPastMeetingResourceId — matches the "Past Meeting" card's own link
-      // (committee-overview.component.html: `'/meetings/' + meeting.id`). The component maps this
-      // semantic action to that route (also carrying the meeting's password query param, matching
-      // the card); packages/shared doesn't carry the path string.
-      action: { kind: 'past-meeting' as const, meetingId: m.id },
-    }));
-
-  const voteItems: ActivityFeedItem[] = input.votingEnabled
-    ? [...input.votes]
-        .map((v) => ({ vote: v, timestamp: firstValidTimestamp(v.last_modified_time, v.creation_time) }))
-        .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
-        .slice(0, PER_SOURCE_LIMIT)
-        .map(({ vote: v, timestamp }) => {
-          const statusKey = normalizePollStatus(v.status);
-          return {
-            type: 'vote' as const,
-            key: `vote-${v.uid}`,
-            label: `Vote ${statusKey ? POLL_STATUS_LABELS[statusKey] : v.status || 'Updated'}: ${v.name}`,
-            timestamp,
-            icon: 'fa-light fa-check-to-slot',
-            action: { kind: 'vote-drawer' as const, voteUid: v.uid },
-          };
-        })
-    : [];
-
-  const surveyItems: ActivityFeedItem[] = [...input.surveys]
-    .map((s) => ({ survey: s, timestamp: firstValidTimestamp(s.last_modified_at, s.created_at) }))
-    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
-    .slice(0, PER_SOURCE_LIMIT)
-    .map(({ survey: s, timestamp }) => {
-      const displayStatus = getSurveyDisplayStatus(s);
-      return {
-        type: 'survey' as const,
-        key: `survey-${s.uid}`,
-        label: `Survey ${SURVEY_STATUS_LABELS[displayStatus] ?? displayStatus}: ${s.survey_title}`,
-        timestamp,
-        icon: 'fa-light fa-chart-simple',
-        action: { kind: 'survey-drawer' as const, surveyUid: s.uid },
-      };
-    });
-
-  // CommitteeDocument.type is 'file' | 'link' | 'folder' — differentiate icon/label so a folder
-  // or link doesn't misrepresent itself as a file in the feed.
-  const documentItems: ActivityFeedItem[] = [...input.documents]
-    .map((d) => ({ document: d, timestamp: firstValidTimestamp(d.updated_at, d.created_at) }))
-    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
-    .slice(0, PER_SOURCE_LIMIT)
-    .map(({ document: d, timestamp }) => ({
-      type: 'document' as const,
-      key: `document-${d.uid}`,
-      label: `${COMMITTEE_DOCUMENT_TYPE_LABELS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_LABELS.file}: ${d.name}`,
-      timestamp,
-      icon: COMMITTEE_DOCUMENT_TYPE_ICONS[d.type] ?? COMMITTEE_DOCUMENT_TYPE_ICONS.file,
-      // Only 'link' documents open directly — the Documents tab treats 'file' as a download
-      // (via a committee-scoped proxy URL, not doc.url) rather than an "open", and 'folder' has
-      // no standalone target outside the Documents tab's own drill-down state. isValidUrl is the
-      // same shared validator used across the app for untrusted-URL sinks.
-      action: d.type === 'link' && d.url && isValidUrl(d.url) ? { kind: 'external-url' as const, url: d.url } : { kind: 'tab' as const, tab: 'documents' },
-    }));
-
-  return [...pastMeetingItems, ...voteItems, ...surveyItems, ...documentItems]
-    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
-    .slice(0, FEED_LIMIT);
+export function mapActivityEventsToFeedItems(events: ActivityEvent[], opts: { votingEnabled: boolean }): ActivityFeedItem[] {
+  return events
+    .filter((event) => opts.votingEnabled || (event.type !== 'vote_opened' && event.type !== 'vote_closed'))
+    .map(mapActivityEventToFeedItem)
+    .filter((item): item is ActivityFeedItem => item !== null);
 }

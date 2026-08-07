@@ -29,6 +29,18 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public meeting join - no authentication required
   { pattern: '/meetings/', type: 'ssr', auth: 'optional' },
 
+  // Public group detail - anonymous access with optional auth for membership enrichment
+  { pattern: '/groups/', type: 'ssr', auth: 'optional' },
+
+  // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
+  // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
+  { pattern: /^\/u\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
+
+  // Public foundation and project group directories — unauthenticated discovery (LFXV2-2010)
+  // Regex-anchored to /:identifier/groups so the prefix cannot fail-open on unrelated paths
+  { pattern: /^\/foundations\/[^/]+\/groups(?:\/.*)?$/, type: 'ssr', auth: 'optional' },
+  { pattern: /^\/projects\/[^/]+\/groups(?:\/.*)?$/, type: 'ssr', auth: 'optional' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 

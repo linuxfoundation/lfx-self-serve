@@ -6,11 +6,14 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   CommitteeCreateData,
+  CommitteeOrganizationReference,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
 import { isFileTypeAllowed } from '@lfx-one/shared/utils';
@@ -23,6 +26,7 @@ import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
+import { GroupsEngagementStatsService } from '../services/groups-engagement-stats.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from '../services/committee.service';
@@ -37,6 +41,7 @@ const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 export class CommitteeController {
   private committeeService: CommitteeService = new CommitteeService();
   private meetingService: MeetingService = new MeetingService();
+  private groupsEngagementStatsService: GroupsEngagementStatsService = new GroupsEngagementStatsService();
 
   /**
    * GET /committees
@@ -75,6 +80,29 @@ export class CommitteeController {
       });
 
       res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/engagement-stats
+   * Groups dashboard rollup for the caller's visible set (Active Members, Meetings This Month).
+   * active_members reads live from the LFXV2-1705 dbt engagement model; meetings_this_month stays
+   * null pending a calendar-month data source — see GroupsEngagementStatsService.
+   */
+  public async getGroupsEngagementStats(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_groups_engagement_stats', {});
+
+    try {
+      const stats = await this.groupsEngagementStatsService.getEngagementStats(req);
+
+      logger.success(req, 'get_groups_engagement_stats', startTime, {
+        active_members: stats.active_members,
+        meetings_this_month: stats.meetings_this_month,
+      });
+
+      res.json(stats);
     } catch (error) {
       next(error);
     }
@@ -147,12 +175,15 @@ export class CommitteeController {
       // Get the committee by ID — include caller membership so the UI can render
       // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
-      // -> project_slug for navigation, and include inherited (parent-project) permissions
-      // so the members roster can label foundation-level managers correctly (LFXV2-2059).
+      // -> project_slug for navigation, include inherited (parent-project) permissions
+      // so the members roster can label foundation-level managers correctly (LFXV2-2059),
+      // and include mailing-list status (upstream does not reliably populate
+      // has_mailing_list on this endpoint — LFXV2-2914).
       const committee = await this.committeeService.getCommitteeById(req, id, {
         includeMembership: true,
         includeProjectMetadata: true,
         includeInheritedPermissions: true,
+        includeMailingListStatus: true,
       });
 
       // Log the success
@@ -786,7 +817,12 @@ export class CommitteeController {
         };
       }
 
-      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
+      // The LFID flow redirects to the committee page on success, so wait briefly for the
+      // membership to be readable. Translated into a server-side option rather than forwarded as
+      // a client claim; the strict `=== true` check matches the pre-check gate above. Safe as a
+      // client-influenced latency decision — the worst a caller can do is lengthen or skip their
+      // own bounded wait, and no authorization outcome depends on it.
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData, { confirmMembership: body.from_lfid_invite === true });
 
       logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
       res.status(204).send();
@@ -909,9 +945,6 @@ export class CommitteeController {
       }
 
       const data: CreateCommitteeDocumentRequest = req.body;
-
-      // Always override created_by_name from OIDC session — never trust client-provided values
-      data.created_by_name = (req.oidc?.user?.['name'] as string) || (req.oidc?.user?.['nickname'] as string) || '';
 
       // Validate required fields
       const validDocTypes = ['link', 'folder'];
@@ -1301,10 +1334,11 @@ export class CommitteeController {
    */
   public async joinCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
+    const { organization } = req.body as { organization?: CommitteeOrganizationReference };
     const startTime = logger.startOperation(req, 'join_committee', { committee_id: id });
 
     try {
-      const member = await this.committeeService.joinCommittee(req, id);
+      const member = await this.committeeService.joinCommittee(req, id, organization);
 
       logger.success(req, 'join_committee', startTime, { committee_id: id });
       res.status(201).json(member);
@@ -1327,6 +1361,109 @@ export class CommitteeController {
 
       logger.success(req, 'submit_committee_application', startTime, { committee_id: id });
       res.status(201).json(application);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/:id/applications
+   * Lists join applications for a committee from the query index.
+   */
+  public async getCommitteeApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_committee_applications', { committee_id: id });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'get_committee_applications',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const applications = await this.committeeService.getCommitteeApplications(req, id, req.query);
+
+      logger.success(req, 'get_committee_applications', startTime, {
+        committee_id: id,
+        application_count: applications.length,
+      });
+      res.json(applications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/applications/:applicationId/approve
+   */
+  public async approveApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'approve_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      if (!id || !applicationId) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID are required', {
+            operation: 'approve_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const body = (req.body ?? {}) as ApproveCommitteeJoinApplicationRequest;
+      const member = await this.committeeService.approveApplication(req, id, applicationId, body);
+
+      logger.success(req, 'approve_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+        member_id: member.uid,
+      });
+      res.status(201).json(member);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/applications/:applicationId/reject
+   */
+  public async rejectApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'reject_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      if (!id || !applicationId) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID are required', {
+            operation: 'reject_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const body = (req.body ?? {}) as RejectCommitteeJoinApplicationRequest;
+      const application = await this.committeeService.rejectApplication(req, id, applicationId, body);
+
+      logger.success(req, 'reject_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+      });
+      res.json(application);
     } catch (error) {
       next(error);
     }

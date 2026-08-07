@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type { Committee, QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors project.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
-const { proxyRequest, addAccessToResources } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, resolveAuditUserDisplayName } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
+  resolveAuditUserDisplayName: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/enums', () => ({ CommitteeMemberRole: {} }));
@@ -25,13 +26,21 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
-vi.mock('../utils/auth-helper', () => ({ cleanUserDisplayName: vi.fn(), getUsernameFromAuth: vi.fn() }));
+vi.mock('../helpers/query-service.helper', async () => {
+  const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+  return {
+    fetchAllQueryResources: vi.fn(actual.fetchAllQueryResources),
+  };
+});
+vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn() }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
 
 import type { Request } from 'express';
 
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { logger } from '../services/logger.service';
 import { CommitteeService } from './committee.service';
 
 const req = {} as unknown as Request;
@@ -46,6 +55,8 @@ describe('CommitteeService — create picker methods', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     addAccessToResources.mockReset();
+    resolveAuditUserDisplayName.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
     service = new CommitteeService();
   });
 
@@ -122,5 +133,144 @@ describe('CommitteeService — create picker methods', () => {
     for (const params of paramsSent) {
       expect(params['filter_grants'] === 'direct' || typeof params['name'] === 'string').toBe(true);
     }
+  });
+});
+
+describe('CommitteeService — getCommitteeDocuments', () => {
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    resolveAuditUserDisplayName.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    resolveAuditUserDisplayName.mockReturnValue('Resolved Display Name');
+    service = new CommitteeService();
+  });
+
+  it('threads resolveAuditUserDisplayName into uploaded_by for folders, links, and files', async () => {
+    proxyRequest
+      .mockResolvedValueOnce([{ uid: 'folder-1', name: 'Folder', created_by: { name: 'Ada Lovelace' }, committee_uid: 'committee-1' }])
+      .mockResolvedValueOnce([{ uid: 'link-1', name: 'Link', url: 'https://example.com', created_by: { name: 'Bob Builder' }, committee_uid: 'committee-1' }]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([
+      {
+        uid: 'file-1',
+        name: 'File',
+        content_type: 'application/pdf',
+        created_by: { name: 'Carol Danvers' },
+        uploaded_by_username: 'legacyuser',
+        committee_uid: 'committee-1',
+      },
+    ]);
+
+    const result = await service.getCommitteeDocuments(req, 'committee-1');
+
+    expect(result).toHaveLength(3);
+    expect(result.every((doc) => doc.uploaded_by === 'Resolved Display Name')).toBe(true);
+    expect(resolveAuditUserDisplayName).toHaveBeenCalledTimes(3);
+    expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Ada Lovelace' }, undefined);
+    expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Bob Builder' }, undefined);
+    expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Carol Danvers' }, 'legacyuser');
+  });
+});
+
+describe('CommitteeService.acceptCommitteeInvite — post-acceptance membership confirmation', () => {
+  let service: CommitteeService;
+  let getCommitteeById: ReturnType<typeof vi.spyOn>;
+
+  const COMMITTEE_UID = 'committee-1';
+  const INVITE_UID = 'invite-1';
+
+  /** The confirmation is opt-in, so most callers pass nothing and must not pay for it. */
+  const acceptWithConfirmation = () => service.acceptCommitteeInvite(req, COMMITTEE_UID, INVITE_UID, undefined, { confirmMembership: true });
+
+  const denied = (status: number) => Object.assign(new Error(`upstream ${status}`), { statusCode: status });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue(undefined);
+    vi.mocked(logger.warning).mockClear();
+    service = new CommitteeService();
+    getCommitteeById = vi.spyOn(service, 'getCommitteeById');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not confirm membership by default', async () => {
+    await service.acceptCommitteeInvite(req, COMMITTEE_UID, INVITE_UID);
+
+    expect(getCommitteeById).not.toHaveBeenCalled();
+  });
+
+  it('returns without delay when membership is already visible', async () => {
+    getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, my_role: 'Member' } as any);
+
+    await acceptWithConfirmation();
+
+    expect(getCommitteeById).toHaveBeenCalledOnce();
+    expect(getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_UID, { includeMembership: true });
+    // First probe is immediate — nothing was scheduled.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('resolves as soon as membership appears within the budget', async () => {
+    getCommitteeById
+      .mockResolvedValueOnce({ uid: COMMITTEE_UID } as any)
+      .mockResolvedValueOnce({ uid: COMMITTEE_UID } as any)
+      .mockResolvedValueOnce({ uid: COMMITTEE_UID, my_role: 'Member' } as any);
+
+    const pending = acceptWithConfirmation();
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(getCommitteeById).toHaveBeenCalledTimes(3);
+  });
+
+  it('proceeds and warns when the budget is exhausted', async () => {
+    getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID } as any);
+
+    const pending = acceptWithConfirmation();
+    await vi.runAllTimersAsync();
+
+    // Fails open: acceptance is still reported successful, the committee view covers the tail.
+    await expect(pending).resolves.toBeUndefined();
+    expect(vi.mocked(logger.warning)).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a 403 during confirmation as not-ready rather than a failure', async () => {
+    getCommitteeById
+      .mockRejectedValueOnce(denied(403))
+      .mockRejectedValueOnce(denied(403))
+      .mockResolvedValueOnce({ uid: COMMITTEE_UID, my_role: 'Member' } as any);
+
+    const pending = acceptWithConfirmation();
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(getCommitteeById).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(logger.warning)).not.toHaveBeenCalled();
+  });
+
+  it('stops polling on a non-403 error but still reports acceptance', async () => {
+    getCommitteeById.mockRejectedValue(denied(500));
+
+    const pending = acceptWithConfirmation();
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(getCommitteeById).toHaveBeenCalledOnce();
+    expect(vi.mocked(logger.warning)).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds no delay when re-accepting an invite whose membership already exists', async () => {
+    getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, my_role: 'Member' } as any);
+
+    await acceptWithConfirmation();
+    await acceptWithConfirmation();
+
+    expect(getCommitteeById).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

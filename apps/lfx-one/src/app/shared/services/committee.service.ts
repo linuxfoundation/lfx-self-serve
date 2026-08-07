@@ -1,22 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
+  ActivityEvent,
   Committee,
   CommitteeDocument,
   CommitteeDocumentType,
+  CommitteeEngagementResponse,
+  CommitteeEngagementWindow,
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeOrganizationReference,
   CommitteeUser,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberOptions,
   CreateCommitteeMemberRequest,
+  GroupsEngagementStats,
   MyCommittee,
+  PaginatedResponse,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
@@ -31,6 +39,47 @@ export class CommitteeService {
 
   public getCommittees(params?: HttpParams): Observable<Committee[]> {
     return this.http.get<Committee[]>('/api/committees', { params }).pipe(catchError(() => of([])));
+  }
+
+  /**
+   * Groups dashboard engagement rollup (Active Members, Meetings This Month) for the caller's
+   * visible set. `active_members` reads live from the LFXV2-1705 dbt model; `meetings_this_month`
+   * stays `null` pending a calendar-month data source. Resolves to `null` on error — logged here
+   * (the single error-handling site, matching `getMyCommittees` below) — so the caller can degrade
+   * gracefully (see `buildEngagementStatCards`) rather than let a failure block the groups list.
+   */
+  public getGroupsEngagementStats(): Observable<GroupsEngagementStats | null> {
+    return this.http.get<GroupsEngagementStats>('/api/committees/engagement-stats').pipe(
+      catchError((error: HttpErrorResponse) => {
+        // Narrow status/message only — the full HttpErrorResponse can carry response headers/body
+        // content, and this reaches Datadog RUM error tracking (dealako review, LFXV2-1705).
+        console.error('Failed to load groups engagement stats:', error.status, error.message);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Per-member meeting-attendance rollup for one committee + window (LFXV2-1705). Resolves to
+   * `null` on any error — logged here, the single error-handling site (matching
+   * `getGroupsEngagementStats`) — so callers degrade to an "attendance unavailable" state without
+   * affecting the roster. A 403 is expected for non-auditor callers (the endpoint is
+   * `committee#auditor`-gated, stricter than roster visibility) and degrades the same way.
+   */
+  public getCommitteeEngagement(committeeUid: string, window: CommitteeEngagementWindow): Observable<CommitteeEngagementResponse | null> {
+    const params = new HttpParams().set('window', window);
+    return this.http.get<CommitteeEngagementResponse>(`/api/committees/${encodeURIComponent(committeeUid)}/engagement`, { params }).pipe(
+      catchError((error: HttpErrorResponse) => {
+        // 403 is the expected outcome for every non-auditor caller — logging it as an error would
+        // spam the console (and Datadog RUM error tracking) once per window switch for most users.
+        // Narrow status/message only (not the full HttpErrorResponse) when it does log — the full
+        // object can carry response headers/body content (dealako review, LFXV2-1705).
+        if (error.status !== 403) {
+          console.error('Failed to load committee engagement:', error.status, error.message);
+        }
+        return of(null);
+      })
+    );
   }
 
   public getCommitteesByProject(uid: string): Observable<Committee[]> {
@@ -151,8 +200,9 @@ export class CommitteeService {
   // ── Join / Leave Methods ──────────────────────────────────────────────────
 
   /** Self-join an open group */
-  public joinCommittee(committeeId: string): Observable<CommitteeMember> {
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, {}).pipe(take(1));
+  public joinCommittee(committeeId: string, organization?: CommitteeOrganizationReference): Observable<CommitteeMember> {
+    const body = organization ? { organization } : {};
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(take(1));
   }
 
   /** Leave a group */
@@ -161,9 +211,52 @@ export class CommitteeService {
   }
 
   /** Submit a join application for a group with join_mode 'application' */
-  public submitApplication(committeeId: string, message?: string): Observable<CommitteeJoinApplication> {
-    const body: CreateCommitteeJoinApplicationRequest = { message: message || '' };
+  public submitApplication(committeeId: string, message?: string, organization?: CommitteeOrganizationReference): Observable<CommitteeJoinApplication> {
+    const body: CreateCommitteeJoinApplicationRequest = { message: message || '', ...(organization ? { organization } : {}) };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
+  }
+
+  /** Lists join applications for a committee (from query index). */
+  public getCommitteeApplications(committeeId: string): Observable<CommitteeJoinApplication[]> {
+    return this.http.get<CommitteeJoinApplication[]>(`/api/committees/${committeeId}/applications`).pipe(take(1));
+  }
+
+  /** Approves a pending join application and adds the applicant as a member. */
+  public approveApplication(committeeId: string, applicationId: string, body?: ApproveCommitteeJoinApplicationRequest): Observable<CommitteeMember> {
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body }).pipe(take(1));
+  }
+
+  /** Rejects a pending join application. */
+  public rejectApplication(
+    committeeId: string,
+    applicationId: string,
+    reviewerNotes?: string,
+    body?: RejectCommitteeJoinApplicationRequest
+  ): Observable<CommitteeJoinApplication> {
+    return this.http
+      .post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications/${applicationId}/reject`, {
+        notify: true,
+        reviewer_notes: reviewerNotes,
+        ...body,
+      })
+      .pipe(take(1));
+  }
+
+  // ── Activity Feed (LFXV2-1707) ──────────────────────────────────────────
+
+  /**
+   * Server-merged "Recent Activity" feed for the committee Overview widget (past meetings, votes,
+   * surveys, documents). Resolves to `[]` on error, matching every other Overview data source on
+   * this service — a feed failure must not break the rest of the page.
+   */
+  public getCommitteeActivity(committeeId: string): Observable<ActivityEvent[]> {
+    return this.http.get<PaginatedResponse<ActivityEvent>>(`/api/committees/${encodeURIComponent(committeeId)}/activity`).pipe(
+      map((response) => response.data),
+      catchError((error: HttpErrorResponse) => {
+        console.error('Failed to load committee activity feed:', { status: error.status, message: error.message });
+        return of([]);
+      })
+    );
   }
 
   // ── Committee Documents ─────────────────────────────────────────────────
@@ -231,8 +324,9 @@ export class CommitteeService {
       params = params.set('foundation_uid', foundationUid);
     }
     return this.http.get<MyCommittee[]>('/api/committees/my-committees', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load my committees:', error);
+      catchError((error: HttpErrorResponse) => {
+        // Narrow status/message only — see getCommitteeEngagement above (dealako review, LFXV2-1705).
+        console.error('Failed to load my committees:', error.status, error.message);
         return of([]);
       })
     );

@@ -55,7 +55,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -678,7 +678,7 @@ export class MeetingJoinComponent implements OnInit {
           }
 
           // Check if this is a past meeting occurrence ID (format: meetingId-timestamp)
-          if (this.isPastMeetingOccurrenceId(meetingId)) {
+          if (isPastMeetingCompositeId(meetingId)) {
             this.loadedViaPastMeetingId.set(true);
             return this.meetingService.getPublicPastMeeting(meetingId).pipe(
               tap((res: PublicPastMeetingResponse) => {
@@ -731,11 +731,6 @@ export class MeetingJoinComponent implements OnInit {
         })
       )
     ) as Signal<Meeting & { project: Partial<Project> }>;
-  }
-
-  private isPastMeetingOccurrenceId(id: string): boolean {
-    const parts = id.split('-');
-    return parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d{13}$/.test(parts[1]);
   }
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {

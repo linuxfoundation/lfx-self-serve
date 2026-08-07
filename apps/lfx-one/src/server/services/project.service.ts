@@ -121,6 +121,7 @@ import {
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
   UploadProjectDocumentRequest,
+  AuditUserProfile,
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
@@ -132,7 +133,7 @@ import FormData from 'form-data';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { cleanUserDisplayName } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
@@ -157,8 +158,8 @@ interface ProjectFolder {
   uid: string;
   project_uid?: string;
   name: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -172,8 +173,8 @@ interface ProjectLink {
   url?: string;
   description?: string;
   folder_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, auto-populated by upstream from the JWT. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -188,8 +189,8 @@ interface ProjectFolderQueryResult {
   uid: string;
   name: string;
   project_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, indexed from the upstream domain model. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -206,8 +207,8 @@ interface ProjectLinkQueryResult {
   description?: string;
   folder_uid?: string;
   project_uid?: string;
-  created_by_uid?: string;
-  /** LF username of the creator, indexed from the upstream domain model. */
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
@@ -6267,20 +6268,17 @@ export class ProjectService {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving child projects for foundation', { foundation_uid: foundationUid });
     const uids = [foundationUid];
     try {
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
+      const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'project',
           parent: `project:${foundationUid}`,
-        }
+          ...(pageToken && { page_token: pageToken }),
+        })
       );
       for (const r of resources) {
         // Skip ROOT — administrative pseudo-project, never a real foundation child.
-        if (r.data?.uid && r.data.slug !== ROOT_PROJECT_SLUG) {
-          uids.push(r.data.uid);
+        if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
+          uids.push(r.uid);
         }
       }
     } catch (error) {
@@ -6459,8 +6457,7 @@ export class ProjectService {
       name: f.name,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      created_by: f.created_by_uid,
-      uploaded_by: cleanUserDisplayName(f.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
       project_uid: f.project_uid,
     }));
 
@@ -6472,8 +6469,7 @@ export class ProjectService {
       description: l.description,
       created_at: l.created_at,
       updated_at: l.updated_at,
-      created_by: l.created_by_uid,
-      uploaded_by: cleanUserDisplayName(l.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
       parent_uid: l.folder_uid,
       project_uid: l.project_uid,
     }));
@@ -6487,7 +6483,7 @@ export class ProjectService {
       mime_type: f.content_type,
       created_at: f.created_at,
       updated_at: f.updated_at,
-      uploaded_by: cleanUserDisplayName(f.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       parent_uid: f.folder_uid,
       project_uid: f.project_uid,
     }));
@@ -6517,7 +6513,6 @@ export class ProjectService {
         undefined,
         {
           name: data.name,
-          created_by_name: data.created_by_name,
         },
         { 'X-Sync': 'true' }
       );
@@ -6556,8 +6551,7 @@ export class ProjectService {
         name: folder.name,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
-        created_by: folder.created_by_uid,
-        uploaded_by: cleanUserDisplayName(folder.created_by_username),
+        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
         project_uid: folder.project_uid,
       };
     }
@@ -6574,7 +6568,6 @@ export class ProjectService {
         url: data.url,
         description: data.description,
         folder_uid: data.parent_uid,
-        created_by_name: data.created_by_name,
       },
       { 'X-Sync': 'true' }
     );
@@ -6613,8 +6606,7 @@ export class ProjectService {
       description: link.description,
       created_at: link.created_at,
       updated_at: link.updated_at,
-      created_by: link.created_by_uid,
-      uploaded_by: cleanUserDisplayName(link.created_by_username),
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
       parent_uid: link.folder_uid,
       project_uid: link.project_uid,
     };
@@ -6696,7 +6688,7 @@ export class ProjectService {
       mime_type: result.content_type,
       created_at: result.created_at,
       updated_at: result.updated_at,
-      uploaded_by: cleanUserDisplayName(result.uploaded_by_username),
+      uploaded_by: resolveAuditUserDisplayName(result.created_by, result.uploaded_by_username),
       project_uid: result.project_uid,
     };
   }

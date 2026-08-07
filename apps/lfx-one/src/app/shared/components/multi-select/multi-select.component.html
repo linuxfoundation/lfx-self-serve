@@ -37,6 +37,20 @@
           {{ status }}
         </div>
       </ng-template>
+      <!-- Opt-in with panelStatus only. Unconditional #empty/#emptyfilter templates would override PrimeNG's
+           default empty rendering for every lfx-multi-select caller via @ContentChild. Here we need them so a
+           FALSY emptyMessage (blank during in-flight search) stays blank instead of PrimeNG's built-in
+           "No results found" — footer status is the single source of truth. -->
+      <ng-template #empty>
+        @if (emptyMessage()) {
+          <div class="px-3 py-2 text-center text-sm text-gray-500">{{ emptyMessage() }}</div>
+        }
+      </ng-template>
+      <ng-template #emptyfilter>
+        @if (emptyFilterMessage()) {
+          <div class="px-3 py-2 text-center text-sm text-gray-500">{{ emptyFilterMessage() }}</div>
+        }
+      </ng-template>
     }
     @if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">

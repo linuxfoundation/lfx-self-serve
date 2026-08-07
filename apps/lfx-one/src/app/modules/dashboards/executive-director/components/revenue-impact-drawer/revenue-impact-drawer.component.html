@@ -89,6 +89,130 @@
       </div>
     }
 
+    <!-- This drawer fetches attribution itself, so the section needs its own loading
+         and empty states — otherwise it renders blank both while in flight and on error. -->
+    @if (!attributionResolved()) {
+      <div class="flex flex-col gap-4" data-testid="revenue-impact-drawer-attribution-loading">
+        <p-skeleton width="100%" height="4rem" />
+        <p-skeleton width="100%" height="12rem" />
+      </div>
+    } @else if (attributionData().channels.length === 0) {
+      <div class="text-center py-8 border border-dashed border-gray-300 rounded-lg" data-testid="revenue-impact-drawer-attribution-empty">
+        <i class="fa-light fa-chart-mixed text-3xl text-gray-400 mb-2 block" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">No attribution data available for this period</p>
+      </div>
+    } @else {
+      <div class="flex flex-col gap-5" data-testid="revenue-impact-drawer-attribution-section">
+        <div class="flex items-center gap-2">
+          <i class="fa-light fa-chart-mixed text-indigo-500"></i>
+          <h3 class="text-base font-semibold text-gray-900">Marketing Attribution</h3>
+        </div>
+
+        <!-- Attribution Summary Stats -->
+        <div class="flex flex-wrap gap-4" data-testid="revenue-impact-drawer-attribution-stats">
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Total Sessions</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedSessions }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">First Touch</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedFirstTouchRevenue }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Last Touch</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedLastTouchRevenue }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Linear</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedLinearRevenue }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Time Decay</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ attributionTotals().formattedTimeDecayRevenue }}</span>
+            </div>
+          </lfx-card>
+        </div>
+
+        <!-- Channel Attribution Table -->
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-attribution-table">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Revenue by Channel</h3>
+            <p class="text-sm text-gray-600">Multi-touch attribution across marketing channels over the last 6 months</p>
+          </div>
+
+          <!-- Table Header -->
+          <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+            <span class="flex-[2] min-w-[120px]">Channel</span>
+            <span class="flex-1 text-right">Sessions</span>
+            <span class="flex-1 text-right">First Touch</span>
+            <span class="flex-1 text-right">Last Touch</span>
+            <span class="flex-1 text-right">Linear</span>
+            <span class="flex-1 text-right">Time Decay</span>
+            <span class="w-20 text-right">Rev/Session</span>
+          </div>
+
+          <!-- Channel Rows -->
+          @for (channel of attributionChannelRows(); track channel.channel) {
+            <div
+              class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+              role="button"
+              tabindex="0"
+              [attr.aria-expanded]="expandedChannels().has(channel.channel)"
+              (click)="toggleChannel(channel.channel)"
+              (keydown.enter)="toggleChannel(channel.channel)"
+              (keydown.space)="$event.preventDefault(); toggleChannel(channel.channel)"
+              data-testid="revenue-impact-drawer-attribution-channel-row">
+              <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2">{{ channel.channel }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedSessions }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedFirstTouchRevenue }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedLastTouchRevenue }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedLinearRevenue }}</span>
+              <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ channel.formattedTimeDecayRevenue }}</span>
+              <span class="w-20 text-right text-sm font-semibold text-gray-900">{{ channel.formattedRevPerSession }}</span>
+            </div>
+
+            <!-- Expanded Project Rows -->
+            @if (expandedChannels().has(channel.channel)) {
+              @for (project of channel.projects; track project.projectName) {
+                <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="revenue-impact-drawer-attribution-project-row">
+                  <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="project.projectName">{{ project.projectName }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedSessions }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedFirstTouchRevenue }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedLastTouchRevenue }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedLinearRevenue }}</span>
+                  <span class="flex-1 text-right text-xs text-gray-600">{{ project.formattedTimeDecayRevenue }}</span>
+                  <span class="w-20"></span>
+                </div>
+              }
+            }
+          }
+
+          <!-- Total Row -->
+          <div class="flex items-center py-2.5 px-1 border-t-2 border-gray-300 font-bold">
+            <span class="flex-[2] min-w-[120px] text-sm text-gray-900">TOTAL</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedSessions }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedFirstTouchRevenue }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedLastTouchRevenue }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedLinearRevenue }}</span>
+            <span class="flex-1 text-right text-sm text-gray-900">{{ attributionTotals().formattedTimeDecayRevenue }}</span>
+            <span class="w-20"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Divider -->
+      <hr class="border-gray-200" />
+    }
+
     <!-- Event Registration Attribution -->
     @if (data().eventRegistrationAttribution.channelBreakdown.length > 0) {
       <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-event-attr">
@@ -149,94 +273,5 @@
     }
 
     <!-- Paid Media by Project -->
-    @if (data().projectBreakdown.length > 0) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-project-breakdown">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Paid Media by Project</h3>
-          <p class="text-sm text-gray-600">Impressions by project and channel over the last 6 months</p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="revenue-impact-drawer-project-breakdown-legend">
-          @for (legend of projectBreakdownLegend(); track legend.channel) {
-            <div class="flex items-center gap-2 text-xs text-gray-600">
-              <span class="inline-block w-3 h-3 rounded-sm" [class]="legend.bgClass"></span>
-              <span>{{ legend.label }}</span>
-            </div>
-          }
-        </div>
-
-        <div class="flex flex-col gap-0">
-          <div class="flex items-center justify-between py-2 px-1 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200">
-            <span class="flex-1">Project</span>
-            <span class="flex-[2] px-2">Channel Mix</span>
-            <span class="w-32 text-right">Total Impressions</span>
-          </div>
-          @for (project of sortedProjectBreakdown(); track project.project) {
-            <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="revenue-impact-drawer-project-breakdown-row">
-              <span class="flex-1 text-sm font-medium text-gray-900 truncate pr-2">{{ project.project }}</span>
-              <div class="flex-[2] px-2">
-                <div class="flex w-full h-3 rounded-sm overflow-hidden bg-gray-100">
-                  @for (segment of project.segments; track segment.channel) {
-                    <div class="h-full" [class]="segment.bgClass" [style.width.%]="segment.sharePercent" [title]="segment.title"></div>
-                  }
-                </div>
-              </div>
-              <span class="w-32 text-right text-sm font-semibold text-gray-900">{{ project.formattedTotalImpressions }}</span>
-            </div>
-          }
-        </div>
-
-        <p class="text-xs text-gray-400">Spend and revenue are only available at the foundation level, not per project.</p>
-      </div>
-    }
-
-    <!-- Attribution Channels -->
-    @if (attributionChannelsView().length > 0) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-channels">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Attribution Channels</h3>
-          <p class="text-sm text-gray-600">Impression share by paid media channel over the last 6 months</p>
-        </div>
-        <div class="flex flex-col gap-3">
-          @for (channel of attributionChannelsView(); track channel.channel) {
-            <div class="flex flex-col gap-1" data-testid="revenue-impact-drawer-channel-row">
-              <div class="flex items-center justify-between">
-                <span class="text-sm font-medium text-gray-900">{{ channel.label }}</span>
-                <span class="text-sm font-semibold text-gray-900">{{ channel.impressions | number }} · {{ channel.formattedPercentage }}%</span>
-              </div>
-              <div class="w-full h-2 bg-gray-100 rounded-full">
-                <div class="h-2 bg-blue-500 rounded-full" [style.width.%]="channel.percentage"></div>
-              </div>
-            </div>
-          }
-        </div>
-      </div>
-    }
-
-    <!-- SECTION 2: Paid Media (Marketing Attribution) -->
-    @if (data().paidMedia.monthlyTrend.length > 1) {
-      <div class="flex flex-col gap-4" data-testid="revenue-impact-drawer-paid-media">
-        <h3 class="text-sm font-semibold text-gray-900">Paid Media</h3>
-        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-paid-media-trend">
-          <div class="flex flex-col gap-1">
-            <h3 class="text-sm font-semibold text-gray-900">Paid Media Trend</h3>
-            <p class="text-sm text-gray-600">Monthly spend vs first-touch revenue over the last 6 months</p>
-          </div>
-          <div class="h-[240px]" data-testid="revenue-impact-drawer-paid-media-chart">
-            <lfx-chart type="bar" [data]="paidMediaTrendChartData()" [options]="paidMediaTrendChartOptions" height="100%"></lfx-chart>
-          </div>
-          <div class="grid grid-cols-2 gap-2 text-xs text-gray-500">
-            <div class="flex items-center gap-2">
-              <span class="inline-block w-3 h-3 rounded-sm bg-blue-500"></span>
-              <span>Spend — dollars per month</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="inline-block w-3 h-3 rounded-sm bg-emerald-600"></span>
-              <span>Revenue — first-touch attributed revenue per month</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    }
   </div>
 </p-drawer>

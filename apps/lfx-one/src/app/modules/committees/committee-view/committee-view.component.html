@@ -35,8 +35,20 @@
     </ng-template>
   </p-toast>
 
-  <!-- Loading State -->
-  @if (loading()) {
+  <!-- Finalizing-access State — an initial denial is provisional while the retry window runs, so
+       this stands in for the error view rather than flashing access-denied. -->
+  @if (accessFinalizing()) {
+    <div class="flex justify-center items-center min-h-96">
+      <div class="text-center max-w-md" data-testid="committee-view-access-finalizing">
+        <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-600" aria-hidden="true"></i>
+        </div>
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">Finalizing your access</h2>
+        <p class="text-sm text-gray-500">This should only take a moment.</p>
+      </div>
+    </div>
+  } @else if (loading()) {
+    <!-- Loading State -->
     <lfx-route-loading />
   } @else if (error()) {
     <!-- Error State -->
@@ -64,12 +76,30 @@
                 data-testid="committee-view-invitation-error-decline" />
             </div>
           } @else {
-            <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-              <i class="fa-light fa-exclamation-triangle text-2xl text-red-500"></i>
+            <!-- Access denied with no pending invite. Deliberately says nothing about whether the
+                 group exists — the same copy is shown to a user who just joined and is still
+                 waiting on propagation, and to a user with no access at all. -->
+            <div class="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
+              <i class="fa-light fa-lock text-2xl text-amber-500"></i>
             </div>
-            <h2 class="text-lg font-semibold text-gray-900 mb-2">Group Not Found</h2>
-            <p class="text-sm text-gray-500 mb-6">The group you're looking for doesn't exist, has been removed, or you may not have permission to view it.</p>
-            <lfx-button label="Back to Groups" severity="secondary" [outlined]="true" icon="fa-light fa-arrow-left" (onClick)="goBack()"></lfx-button>
+            <h2 class="text-lg font-semibold text-gray-900 mb-2">We couldn't load this group</h2>
+            <p class="text-sm text-gray-500 mb-6">If you just joined, your access may still be finalizing. Try again in a moment.</p>
+            <div class="flex items-center justify-center gap-3">
+              <lfx-button
+                label="Try Again"
+                severity="info"
+                [outlined]="true"
+                icon="fa-light fa-rotate-right"
+                (onClick)="refreshCommittee()"
+                data-testid="committee-view-access-denied-retry"></lfx-button>
+              <lfx-button
+                label="Back to Groups"
+                severity="secondary"
+                [outlined]="true"
+                icon="fa-light fa-arrow-left"
+                (onClick)="goBack()"
+                data-testid="committee-view-access-denied-back"></lfx-button>
+            </div>
           }
         } @else if (errorType() === 'not-found') {
           <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
@@ -134,27 +164,7 @@
           </div>
         </div>
       }
-      <!-- Application-only join mode coming soon notice -->
-      @if (committee()?.join_mode === 'application') {
-        <div
-          class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4"
-          role="region"
-          aria-label="Join mode notice"
-          data-testid="committee-view-application-mode-banner">
-          <i class="fa-light fa-triangle-exclamation mt-0.5 text-lg text-amber-600 shrink-0" aria-hidden="true"></i>
-          <div class="flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-900">Apply to Join — Coming Soon</span>
-            <p class="text-sm text-gray-600">
-              This group uses "Apply to Join" mode, but join request management is not yet available in LFX. New join requests are currently disabled and
-              existing applications cannot be reviewed or approved.
-              @if (canEdit()) {
-                If you manage this group, consider changing the join mode to <strong>Open</strong>, <strong>Invite Only</strong>, or <strong>Closed</strong> in
-                the Settings tab below to continue letting members in while this feature is being built.
-              }
-            </p>
-          </div>
-        </div>
-      }
+      <!-- Application-only join mode notice removed — apply flow enabled (LFXV2-2690) -->
       <!-- Header Section -->
       <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-view-header">
         <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
@@ -172,9 +182,9 @@
             @if (!committee()?.public) {
               <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
             }
-            <!-- Join / Contact Admin / Leave actions.
+            <!-- Join / Apply / Contact Admin / Leave actions.
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
-                 Suppressed for invite-only and application-only groups — visitors must wait for an invitation or admin add. -->
+                 Invite-only visitors see no header action (must wait for invitation). -->
             <div class="ml-auto flex items-center gap-2">
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
@@ -183,9 +193,18 @@
                     icon="fa-light fa-user-plus"
                     severity="info"
                     size="small"
-                    [loading]="joiningOrLeaving()"
+                    [loading]="joiningOrLeaving() || resolvingOrg()"
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-join-btn" />
+                } @else if (committee()?.join_mode === 'application' && !hasPendingApplication()) {
+                  <lfx-button
+                    label="Apply to Join"
+                    icon="fa-light fa-file-signature"
+                    severity="info"
+                    size="small"
+                    [loading]="joiningOrLeaving() || resolvingOrg()"
+                    (onClick)="handleJoinRequest()"
+                    data-testid="committee-view-apply-btn" />
                 } @else if (committee()?.join_mode === 'closed') {
                   <lfx-button
                     label="Contact Admin"
@@ -389,8 +408,15 @@
             [myMemberUid]="myMemberUid()"
             [myRoleLoading]="myRoleLoading()"
             [hasPendingInvite]="!!pendingInvitation()"
+            [hasPendingApplication]="hasPendingApplication()"
             [meetings]="upcomingMeetings()"
             [upcomingMeetingsLoading]="meetingsLoading()"
+            [engagementEnabled]="engagementMetricsEnabled()"
+            [engagement]="engagement()"
+            [engagementLoading]="engagementLoading()"
+            [engagementWindow]="engagementWindow()"
+            [engagementAccessible]="canAccessEngagement()"
+            (engagementWindowChange)="onEngagementWindowChange($event)"
             (joinRequested)="handleJoinRequest()"
             (tabNavigated)="handleTabNavigation($event)"
             (committeeUpdated)="refreshMembers()" />
@@ -401,6 +427,7 @@
             [canEdit]="canEdit()"
             [isVisitor]="isVisitor()"
             [hasPendingInvite]="!!pendingInvitation()"
+            [hasPendingApplication]="hasPendingApplication()"
             [associatedMailingLists]="associatedMailingLists()"
             [subGroups]="subGroups()"
             [subGroupsLoading]="subGroupsLoading()"
@@ -422,6 +449,15 @@
               [membersLoading]="membersLoading()"
               [invites]="invites()"
               [invitesLoading]="invitesLoading()"
+              [applications]="applications()"
+              [applicationsLoading]="applicationsLoading()"
+              [canSendMemberInvites]="canSendMemberInvites()"
+              [engagementEnabled]="engagementMetricsEnabled()"
+              [engagementAccessible]="canAccessEngagement()"
+              [engagement]="engagement()"
+              [engagementLoading]="engagementLoading()"
+              [engagementWindow]="engagementWindow()"
+              (engagementWindowChange)="onEngagementWindowChange($event)"
               (refresh)="onMembersRefreshed()" />
           }
         }

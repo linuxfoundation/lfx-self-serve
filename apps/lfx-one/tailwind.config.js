@@ -10,10 +10,11 @@ import {
   DELTA_DIRECTION_TEXT_CLASS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
+  GROUPS_ENGAGEMENT_ICON_CLASS,
   lfxColors,
   lfxFontSizes,
   ORG_MEETINGS_KPI_ICON_CLASS,
-} from '@lfx-one/shared';
+} from '@lfx-one/shared/constants';
 import PrimeUI from 'tailwindcss-primeui';
 
 /** @type {import('tailwindcss').Config} */
@@ -36,6 +37,8 @@ export default {
     // DELTA_DIRECTION_TEXT_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(ORG_MEETINGS_KPI_ICON_CLASS).flatMap((classes) => classes.split(' ')),
     ...Object.values(DELTA_DIRECTION_TEXT_CLASS),
+    // Groups dashboard engagement stat cards (GROUPS_ENGAGEMENT_ICON_CLASS in @lfx-one/shared, not scanned here)
+    ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
     // Meeting summary modal — dynamic section border/icon colors (applied via [ngClass])
     'border-l-blue-400',
     'border-l-emerald-400',

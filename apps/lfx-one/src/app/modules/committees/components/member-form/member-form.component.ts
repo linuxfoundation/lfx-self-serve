@@ -7,6 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -29,7 +30,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 @Component({
   selector: 'lfx-member-form',
-  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, CalendarComponent, OrganizationSearchComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, CheckboxComponent, SelectComponent, InputTextComponent, CalendarComponent, OrganizationSearchComponent],
   templateUrl: './member-form.component.html',
   styleUrl: './member-form.component.scss',
 })
@@ -162,7 +163,9 @@ export class MemberFormComponent {
 
       const operation = this.isEditing
         ? this.committeeService.updateCommitteeMember(committeeId, this.member!.uid as string, memberData)
-        : this.committeeService.createCommitteeMember(committeeId, memberData);
+        : this.committeeService.createCommitteeMember(committeeId, memberData, {
+            skipNotification: !this.form().get('send_notification')!.value,
+          });
 
       operation
         .pipe(
@@ -313,6 +316,7 @@ export class MemberFormComponent {
         voting_status_start: new FormControl(null),
         voting_status_end: new FormControl(null),
         permission: new FormControl<CommitteePermissionLevel>('member'),
+        send_notification: new FormControl<boolean>(true, { nonNullable: true }),
       },
       {
         validators: this.committee?.enable_voting

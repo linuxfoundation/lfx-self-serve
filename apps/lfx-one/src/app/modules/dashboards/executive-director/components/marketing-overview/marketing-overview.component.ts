@@ -39,7 +39,6 @@ import { FlywheelConversionDrawerComponent } from '../flywheel-conversion-drawer
 import { MemberAcquisitionDrawerComponent } from '../member-acquisition-drawer/member-acquisition-drawer.component';
 import { PaidSocialReachDrawerComponent } from '../paid-social-reach-drawer/paid-social-reach-drawer.component';
 import { RevenueImpactDrawerComponent } from '../revenue-impact-drawer/revenue-impact-drawer.component';
-import { SocialMediaDrawerComponent } from '../social-media-drawer/social-media-drawer.component';
 import { WebsiteVisitsDrawerComponent } from '../website-visits-drawer/website-visits-drawer.component';
 
 const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
@@ -190,7 +189,6 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     WebsiteVisitsDrawerComponent,
     EmailCtrDrawerComponent,
     PaidSocialReachDrawerComponent,
-    SocialMediaDrawerComponent,
     EngagedCommunityDrawerComponent,
     MemberAcquisitionDrawerComponent,
     FlywheelConversionDrawerComponent,
@@ -241,11 +239,9 @@ export class MarketingOverviewComponent {
   });
   protected readonly revenueImpactData = computed<RevenueImpactResponse>(() => this.edEvolutionData().revenueImpact);
 
+  // Rendered directly by the carousel, in array order — the category split that used
+  // to sit here regrouped the cards and overrode the intended sequence.
   protected readonly filteredCards: Signal<DashboardMetricCard[]> = this.initFilteredCards();
-
-  protected readonly northStarCards = computed<DashboardMetricCard[]>(() => this.filteredCards().filter((c) => c.category === 'memberships'));
-  protected readonly nonNorthStarCards = computed<DashboardMetricCard[]>(() => this.filteredCards().filter((c) => c.category !== 'memberships'));
-  protected readonly totalCardCount = computed<number>(() => this.filteredCards().length);
 
   // === Public Methods ===
   public handleCardClick(drawerType: DashboardDrawerType): void {
