@@ -11,7 +11,8 @@ import { ExpandableTextComponent } from '@components/expandable-text/expandable-
 import { HeaderComponent } from '@components/header/header.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { JOIN_MODE_LABELS } from '@lfx-one/shared/constants';
-import { PublicGroupDetail } from '@lfx-one/shared/interfaces';
+import { PublicGroupDetail, PublicGroupExternalSource } from '@lfx-one/shared/interfaces';
+import { isValidUrl } from '@lfx-one/shared/utils';
 import { IcalSubscribeDialogComponent } from '@modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { GroupService } from '@services/group.service';
@@ -79,7 +80,11 @@ export class GroupDetailComponent {
 
   protected readonly hasUpcomingMeetings = computed(() => (this.group()?.upcoming_meetings?.length ?? 0) > 0);
 
-  protected readonly hasExternalSources = computed(() => (this.group()?.external_sources?.length ?? 0) > 0);
+  protected readonly safeExternalSources: Signal<PublicGroupExternalSource[]> = computed(
+    () => this.group()?.external_sources?.filter((source) => isValidUrl(source.url)) ?? []
+  );
+
+  protected readonly hasExternalSources = computed(() => this.safeExternalSources().length > 0);
 
   protected readonly projectLogoUrl = computed(() => {
     const ctx = this.group()?.context;
